@@ -3782,7 +3782,51 @@ COMMENT ON COLUMN graphitron_minted_conflict.variants IS 'how many distinct payl
 -- resolution asks for by name. Its own relation rather than a join repeated per arm: the
 -- admission test and the naming rule are one decision each, and stating them once is what stops
 -- an arm disagreeing with its siblings about which fields are carriers.
-CREATE VIEW graphitron_connection_carrier
+CREATE TABLE graphitron_connection_carrier (
+  graph_name          VARCHAR   NOT NULL,
+  type_name           VARCHAR   NOT NULL,
+  field_name          VARCHAR   NOT NULL,
+  coordinate          VARCHAR   NOT NULL,
+  connection_name     VARCHAR   NOT NULL,
+  edge_name           VARCHAR   NOT NULL,
+  element_type        VARCHAR   NOT NULL,
+  item_sdl            VARCHAR   NOT NULL,
+  item_non_null       BOOLEAN   NOT NULL,
+  non_null            BOOLEAN   NOT NULL,
+  ordinal             INT       NOT NULL,
+  description         VARCHAR,
+  default_first_value INT,
+  argument_count      INT       NOT NULL,
+  source_name         VARCHAR   NOT NULL,
+  source_line         INT       NOT NULL,
+  source_column       INT       NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  -- The field the author wrote, which a carrier stops being when the document drops it.
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphql_field (graph_name, type_name, field_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_connection_carrier IS 'A field @asConnection expands, with the names and wrapping its expansion needs: one row per carrier. For example films: [Film!]! @asConnection on Query is one row naming QueryFilmsConnection, QueryFilmsConnectionEdge and the element Film!, where the same directive on a films: Film field is no row at all.';
+COMMENT ON COLUMN graphitron_connection_carrier.graph_name IS 'the owning graph''s partition, carried from the application';
+COMMENT ON COLUMN graphitron_connection_carrier.type_name IS 'the type declaring the carrier';
+COMMENT ON COLUMN graphitron_connection_carrier.field_name IS 'the carrier field itself';
+COMMENT ON COLUMN graphitron_connection_carrier.coordinate IS 'the carrier''s coordinate, spelled as graphitron_element spells one';
+COMMENT ON COLUMN graphitron_connection_carrier.connection_name IS 'the connection type this carrier mints: what @asConnection(connectionName:) asked for, or the default built from the carrier''s own coordinate. Two carriers may land on one name, which is a disagreement the anchor resolves rather than a key this relation holds';
+COMMENT ON COLUMN graphitron_connection_carrier.edge_name IS 'the edge type, which is the connection''s name and a suffix; derived here so no arm spells the rule a second time';
+COMMENT ON COLUMN graphitron_connection_carrier.element_type IS 'the carrier''s element type, wrappers stripped: what the connection pages over';
+COMMENT ON COLUMN graphitron_connection_carrier.item_sdl IS 'that element as the machinery fields write it, carrying the item nullability the author gave the list';
+COMMENT ON COLUMN graphitron_connection_carrier.item_non_null IS 'whether the list''s items are non-null, which the machinery fields carry into the shapes they mint';
+COMMENT ON COLUMN graphitron_connection_carrier.non_null IS 'whether the carrier itself is non-null, which the rewritten field keeps';
+COMMENT ON COLUMN graphitron_connection_carrier.ordinal IS 'the carrier''s position on its type, which the rewrite does not change';
+COMMENT ON COLUMN graphitron_connection_carrier.description IS 'the carrier''s docstring, carried across the rewrite unchanged';
+COMMENT ON COLUMN graphitron_connection_carrier.default_first_value IS 'the page size @asConnection asked for, or NULL where it asked for none';
+COMMENT ON COLUMN graphitron_connection_carrier.argument_count IS 'how many arguments the author wrote on the carrier, which is where the minted pagination arguments start numbering; they follow the authored ones rather than displacing them';
+COMMENT ON COLUMN graphitron_connection_carrier.source_name IS 'the document the application was written in, carried so a reader can say which application minted a name';
+COMMENT ON COLUMN graphitron_connection_carrier.source_line IS 'the application''s line, on source_name''s terms';
+COMMENT ON COLUMN graphitron_connection_carrier.source_column IS 'the application''s column, on source_name''s terms';
+COMMENT ON COLUMN graphitron_connection_carrier.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_connection_carrier_rule
   (graph_name, type_name, field_name, coordinate, connection_name, edge_name,
    element_type, item_sdl, item_non_null, non_null, ordinal, description, default_first_value,
    argument_count,
@@ -3819,24 +3863,24 @@ SELECT b.graph_name, b.type_name, b.field_name, b.coordinate, b.connection_name,
          -- used to read it off type_sdl by hand because the anchor did not carry the column.
          WHERE ca.directive_name = 'asConnection' AND ca.ordinal = 0
            AND f.is_list AND f.list_depth = 1) b;
-COMMENT ON VIEW graphitron_connection_carrier IS 'A field @asConnection expands, with the names and wrapping its expansion needs: one row per carrier. For example films: [Film!]! @asConnection on Query is one row naming QueryFilmsConnection, QueryFilmsConnectionEdge and the element Film!, where the same directive on a films: Film field is no row at all.';
--- COMMENT ON COLUMN graphitron_connection_carrier.graph_name IS 'the owning graph''s partition, carried from the application';
--- COMMENT ON COLUMN graphitron_connection_carrier.type_name IS 'the type declaring the carrier';
--- COMMENT ON COLUMN graphitron_connection_carrier.field_name IS 'the carrier field itself';
--- COMMENT ON COLUMN graphitron_connection_carrier.coordinate IS 'the carrier''s coordinate, spelled as graphitron_element spells one';
--- COMMENT ON COLUMN graphitron_connection_carrier.connection_name IS 'the connection type this carrier mints: what @asConnection(connectionName:) asked for, or the default built from the carrier''s own coordinate. Two carriers may land on one name, which is a disagreement the anchor resolves rather than a key this relation holds';
--- COMMENT ON COLUMN graphitron_connection_carrier.edge_name IS 'the edge type, which is the connection''s name and a suffix; derived here so no arm spells the rule a second time';
--- COMMENT ON COLUMN graphitron_connection_carrier.element_type IS 'the carrier''s element type, wrappers stripped: what the connection pages over';
--- COMMENT ON COLUMN graphitron_connection_carrier.item_sdl IS 'that element as the machinery fields write it, carrying the item nullability the author gave the list';
--- COMMENT ON COLUMN graphitron_connection_carrier.item_non_null IS 'whether the list''s items are non-null, which the machinery fields carry into the shapes they mint';
--- COMMENT ON COLUMN graphitron_connection_carrier.non_null IS 'whether the carrier itself is non-null, which the rewritten field keeps';
--- COMMENT ON COLUMN graphitron_connection_carrier.ordinal IS 'the carrier''s position on its type, which the rewrite does not change';
--- COMMENT ON COLUMN graphitron_connection_carrier.description IS 'the carrier''s docstring, carried across the rewrite unchanged';
--- COMMENT ON COLUMN graphitron_connection_carrier.default_first_value IS 'the page size @asConnection asked for, or NULL where it asked for none';
--- COMMENT ON COLUMN graphitron_connection_carrier.argument_count IS 'how many arguments the author wrote on the carrier, which is where the minted pagination arguments start numbering; they follow the authored ones rather than displacing them';
--- COMMENT ON COLUMN graphitron_connection_carrier.source_name IS 'the document the application was written in, carried so a reader can say which application minted a name';
--- COMMENT ON COLUMN graphitron_connection_carrier.source_line IS 'the application''s line, on source_name''s terms';
--- COMMENT ON COLUMN graphitron_connection_carrier.source_column IS 'the application''s column, on source_name''s terms';
+COMMENT ON VIEW graphitron_connection_carrier_rule IS 'One row the connection carrier rule computes, in the shape graphitron_connection_carrier stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_carrier, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_connection_carrier.graph_name';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_connection_carrier.type_name';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_connection_carrier.field_name';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_connection_carrier.coordinate';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.connection_name IS 'the connection_name of a row of this rule, which the stage writes into graphitron_connection_carrier.connection_name';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.edge_name IS 'the edge_name of a row of this rule, which the stage writes into graphitron_connection_carrier.edge_name';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.element_type IS 'the element_type of a row of this rule, which the stage writes into graphitron_connection_carrier.element_type';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.item_sdl IS 'the item_sdl of a row of this rule, which the stage writes into graphitron_connection_carrier.item_sdl';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.item_non_null IS 'the item_non_null of a row of this rule, which the stage writes into graphitron_connection_carrier.item_non_null';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.non_null IS 'the non_null of a row of this rule, which the stage writes into graphitron_connection_carrier.non_null';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_connection_carrier.ordinal';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.description IS 'the description of a row of this rule, which the stage writes into graphitron_connection_carrier.description';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.default_first_value IS 'the default_first_value of a row of this rule, which the stage writes into graphitron_connection_carrier.default_first_value';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.argument_count IS 'the argument_count of a row of this rule, which the stage writes into graphitron_connection_carrier.argument_count';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_connection_carrier.source_name';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_connection_carrier.source_line';
+-- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_connection_carrier.source_column';
 
 CREATE VIEW graphitron_element_authored (graph_name, coordinate, element_kind) AS
 SELECT graph_name, coordinate, element_kind
@@ -19154,6 +19198,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_field'),
   ('macro-expansion', 'graphitron_minted_coinage'),
   ('macro-expansion', 'graphitron_minted_conflict'),
+  ('macro-expansion', 'graphitron_connection_carrier'),
   ('macro-expansion', 'graphitron_type'),
   ('macro-expansion', 'graphitron_type_member'),
   ('macro-expansion', 'graphitron_scalar_class'),
@@ -21267,7 +21312,11 @@ INSERT INTO meta_relation VALUES
   ('graphitron_connection_carrier', 'connection-carrier', 'graphitron',
    'A field @asConnection expands, with the names and wrapping its expansion needs: one row per carrier.',
    'For example films: [Film!]! @asConnection on Query is one row naming QueryFilmsConnection, QueryFilmsConnectionEdge and the element Film!, where the same directive on a films: Film field is no row at all.',
-   'The admission test and the naming rule are one decision each, and this is where each is made. Every arm of the mint reads it, so an arm cannot disagree with its siblings about which fields are carriers or what a carrier''s connection is called, which is what happens when the join is repeated per arm. Admission is a column test rather than a parse: a bare list of a named type is is_list with list_depth 1, and the expansion used to read that off type_sdl by hand because the anchor dropped the column the entry had already captured. The position travels with the row because the anchor resolving two carriers onto one connection name has to say which application it honoured, and a coordinate cannot say that.'),
+   'The admission test and the naming rule are one decision each, and this is where each is made. Every arm of the mint reads it, so an arm cannot disagree with its siblings about which fields are carriers or what a carrier''s connection is called, which is what happens when the join is repeated per arm. Admission is a column test rather than a parse: a bare list of a named type is is_list with list_depth 1, and the expansion used to read that off type_sdl by hand because the anchor dropped the column the entry had already captured. The position travels with the row because the anchor resolving two carriers onto one connection name has to say which application it honoured, and a coordinate cannot say that. Stored, by macro expansion before anything it expands, and keyed into the authored field it describes: the authored fields exclude carriers by anti-join, and as a view joining four relations it was re-evaluated once per field, which on a large consumer schema took the field write from half a second to forty.'),
+  ('graphitron_connection_carrier_rule', 'connection-carrier', 'graphitron',
+   'One row the connection carrier rule computes, in the shape graphitron_connection_carrier stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_carrier, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_connection_facet', 'carrier-facet', 'graphitron',
    'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments.',
    'For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.',

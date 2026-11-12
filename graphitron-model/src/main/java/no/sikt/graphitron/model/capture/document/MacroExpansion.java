@@ -18,6 +18,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS_RULE;
@@ -120,7 +122,9 @@ public final class MacroExpansion {
      * the second stopped finding would stay.
      */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
-        // First, because every arm below withholds what this finds.
+        // The carriers first, since every minted arm and the authored fields read them.
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_CARRIER, GRAPHITRON_CONNECTION_CARRIER_RULE);
+        // Then the conflicts, because every arm below withholds what this finds.
         conflicts(dsl, graphName);
         elements(dsl, graphName, touchedAt);
         changedKinds(dsl, graphName);
