@@ -226,6 +226,16 @@ The first Graphitron 9 consumer studied is sis, an internal application on Graph
 - It already depends on declared order within a kind, and carries handlers an earlier one of the same kind shadows (in `LeggTilVeivalgperioderForKullError`, `UgyldigInput`'s `I01_EMNEKOMBINASJON` ahead of `VeivalgperiodeFinnesAllerede`'s `I01_EMNEKOMBINASJON_VALG`; in `OpprettStudieoppbygningsdelerError`, a `code`-only handler ahead of two narrower ones). `UgyldigInput` holds two exact duplicate pairs, and two unions repeat a `UgyldigInput` tuple in another member; rule 8 rejects every channel that contains them, which Graphitron 9 accepted. Input for R1168.
 - Its `FantIngenOppforingAaEndre` maps Graphitron 9.4's `NoRowsAffectedException` in 12 unions: R1170.
 
+The above is sis's main branch. sis also has a Graphitron 10 port in progress (branch `sis/upgrade-graphitron`, tracked in its `sis/GRAPHITRON10_STATUS.md`), which rebuilt Graphitron 9's consumer code as handlers before this item existed. Read on 2026-11-12, as it bears on this item:
+
+- `UgyldigInput` is declared last in every union (79 reordered), so the specific members win under today's single order.
+- `UgyldigInput` carries a `GENERIC` handler on `IllegalArgumentException` without `description:`, and a `GENERIC` catch-all on `DataAccessException`, last in its list, whose message a `FetcherErrorResponse` recomputes as Graphitron 9's text plus the trace reference (on R1087's hooks).
+- The duplicate criteria came off `UgyldigInput` because rule 8 forced it.
+- `ErrorMapper` throws a new `SjekkskrankeException` for ORA-02290 instead of `UgyldigVerdiException`, so `UgyldigId`'s `GENERIC` handler does not take it ahead of the catch-all, which gives Graphitron 9's answer.
+- `FantIngenOppforingAaEndre` matches `GENERIC IllegalStateException` with `matches: "matched zero rows"`, the shape `ZeroRowsMatchedException` keeps matching, plus a `GENERIC` handler on its own `FinnesIkkeException`.
+
+Under the rule here the port answers as it does today: its `DATABASE` handlers already precede its `GENERIC` ones for every database error, since `UgyldigInput`, the only member carrying both, is last, and none of its exceptions wraps a database error in a non-jOOQ class. What the port shows is what this item and R1171 spare the next Graphitron 9 consumer: the union reordering, and the exception reclassification that keeps a `GENERIC` handler on a `DataAccessException` subclass from claiming ahead of the default.
+
 ## Architect consultation
 
 `principles-architect` was consulted four times: at take-up, again when the plan's claims had been checked against the tree and the Graphitron 9.3.0 source, on the revision against the first consumer, and on the answer to review round 1 (both below). The first two accepted the runtime phase (a fact about the throw, not the schema) and the two-kind rule. What the plan took from them, where the revision has not replaced it:

@@ -19,3 +19,7 @@ A schema written for Graphitron 9.4 that maps a write which changed no rows with
 The first consumer studied (sis, on Graphitron 9.4.4) maps it in 12 unions, through one `@error` type (`FantIngenOppforingAaEndre`) on `@mutation(typeName: UPDATE)` fields. Graphitron 9.4 throws it from `QueryHelper.requireRowsAffected`, after a batched write whose statements report a zero row count.
 
 Open at pickup: whether Graphitron 9.4's set of writes that throw (any batched write, including deletes) matches the set where Graphitron 10 throws `ZeroRowsMatchedException` (list-input `UPDATE`); whether the answer is a classify-time alias of the class name, a rejection whose message names the replacement, or both; and how the message differs, since a handler without `description:` answers the exception's own text.
+
+## Note, 2026-11-12
+
+The sis Graphitron 10 port already solved this without graphitron's help (its decision D12): `FantIngenOppforingAaEndre` matches `{handler: GENERIC, className: "java.lang.IllegalStateException", matches: "matched zero rows"}`, the shape `ZeroRowsMatchedException`'s own javadoc says it keeps matching. sis is the only Graphitron 9 consumer with `@error` handlers in its repository. What is left is at most a line in `migrating-from-legacy.adoc` naming that replacement; this item is a candidate for discard.
