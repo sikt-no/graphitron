@@ -1093,6 +1093,10 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
   decodes move from the graphitron entries into the `federation_` family,
   `graphitron_federation_link` becomes `federation_link`, and a minted directive the link's version
   cannot import is a defect row rather than an undeclared-directive error.
+  * **A key selecting `id` alone is captured once** `open`. `graphitron_minted_key_rule`'s stand-down
+    and `graphitron_key_field_binding_rule`'s node id arm both probe the key's parse for one
+    selection whose one segment is `id`; the parse states it once per application, a column on the
+    key entry, and both rules read it.
 * **The MCP lists the composed vocabulary** `open`. MCP's `DirectivesResource` reads
   `graphitron_directive`, as the editor does, so a federated schema's `@key` and `@tag` are known to
   both rather than to the editor alone.
@@ -1152,6 +1156,14 @@ output package they are written to are settled.
 * **The node id encoder is not planned** `open`. It renders from the store already and is written
   straight from it, as `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER`
   goes, with `PlanCompileGraph`'s edge to it.
+* **`Query.node` and `_entities` each read their own query** `open`. Node resolution and entity
+  resolution are separate lookups with a query each against the store (ruled 2026-11-12, in
+  `fact-model.adoc`). `Query.node` reads the nodes off `graphitron_node`, filtered to those whose
+  `id` binds `NODE_ID`, with their type ids and key columns; `EntityKeyQuery`'s alternatives become
+  exactly the type's `@key` applications, so its prepended node id alternative and the resolvable-node
+  disjunct in its entity selection go, as does the matching prepend in `EntityResolutionBuilder`. A
+  key whose field binds the node id still decodes as `Query.node` does; today the two stay apart only
+  because a synthesised key covers every federated node, which this makes a matter of shape.
 * **The facade, dev executor, registrations and schema class read the store** `open`.
   `GraphitronFacadeGenerator`, `GraphitronDevExecutorGenerator`, `FetcherRegistrationsEmitter` and
   `GraphitronSchemaClassGenerator` take roots, nodes, scalars, error types and entities from the
