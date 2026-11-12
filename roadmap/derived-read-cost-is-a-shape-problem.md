@@ -306,8 +306,10 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     derivation and a store-reading emitter writes the records. The per-connection facets delegate builds the record from
     the helper's buckets, and its registrations arm, its schema-shape planner arm and its
     compile-graph edges leave with the connection units.
-  * Removing `ConnectionHelper.totalCount(env)`, which `runtime-api.adoc` documents, breaks
-    consumers: that commit is `feat!` with a `BREAKING-CHANGE:` footer.
+  * `ConnectionHelper.totalCount(env)` is generated wiring, not consumer API: `runtime-api.adoc`
+    names it only as an example of a helper using the `graphitronContext(env)` shim, and no
+    consumer calls it. Removing it changes nothing an author or consumer sees, so that commit is a
+    `refactor` (Alf, 2026-11-12); the `runtime-api.adoc` sentence is reworded to the closure's count.
   * `totalCount` and facets read the producer's arguments: the count's condition and each facet's
     condition are the arguments bound (`RootLauncherRenderer.facetBindings`), built eagerly by the
     producer today whether or not they are selected (Alf, 2026-11-11). So the closure carries the
@@ -344,8 +346,8 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     the cost of coarser dev-loop recompiles), the five construction sites building the
     closures (`Scoped` and `BatchCounts` becoming how a producer makes its count function, moved
     with the cursor codec into the small utility), the registrations reading each position's member,
-    and the per-type fetchers and `ConnectionHelper`'s resolvers going. A `feat!` with a
-    `BREAKING-CHANGE:` footer, since `runtime-api.adoc` documents `ConnectionHelper.totalCount(env)`. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
+    and the per-type fetchers and `ConnectionHelper`'s resolvers going. A `refactor`:
+    `ConnectionHelper` is generated wiring, not consumer API. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
     batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
     `runtime-api.adoc`, `runtime-extension-points.adoc` and `code-generation-triggers.adoc` change.
   * **The runtime connection vocabulary goes** `blocked`, on "The producers return the connection type's class".
