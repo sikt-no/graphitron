@@ -1,13 +1,13 @@
 ---
 id: R1169
 title: "Connection pagination on a routine-backed child field"
-status: Backlog
+status: Spec
 bucket: feature
 priority: 5
 theme: routine
 depends-on: []
 created: 2026-11-11
-last-updated: 2026-11-11
+last-updated: 2026-11-12
 ---
 
 # Connection pagination on a routine-backed child field
