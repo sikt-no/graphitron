@@ -7,7 +7,9 @@
 #
 # The near misses draw nothing: FilmLanguageInput's element fields may be left out, one through a
 # nullable nested input, and are still one value each; FilmPlainInput carries the same node id and
-# list outside any list, where they are a filter's ordinary terms.
+# list outside any list, where they are a filter's ordinary terms. Under filmsUnderOverride's
+# override: true @condition the list is the condition's, not compared as rows, so its node id and its
+# list draw nothing there; its element's @condition is still refused.
 
 interface Node { id: ID! }
 
@@ -47,6 +49,9 @@ type Query {
     filmsByCellFilter(filter: FilmCellFilter): [Film!]!
     filmsByLanguages(languages: [FilmLanguageInput]): [Film!]!
     filmsByPlain(filter: FilmPlainInput): [Film!]!
+    filmsUnderOverride(filter: FilmCellFilter): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "outerOverrideMethod"}, override: true)
 }
 
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
@@ -73,4 +78,16 @@ extend schema @expectEquals(relation: "graphitron_occurrence_list_element_defect
   LIST_ELEMENT_NODE_ID,       Query.filmsByCells(cells.filmId:)
   LIST_ELEMENT_NOT_ONE_VALUE, Query.filmsByCellFilter(filter.cells.lengths:)
   LIST_ELEMENT_NOT_ONE_VALUE, Query.filmsByCells(cells.lengths:)
+  LIST_ELEMENT_CONDITION,     Query.filmsUnderOverride(filter.cells.titlePrefix:)
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_overridden",
+    where: "coordinate LIKE 'Query.filmsUnderOverride%'", rows: """
+  coordinate
+  Query.filmsUnderOverride
+  Query.filmsUnderOverride(filter.cells.filmId:)
+  Query.filmsUnderOverride(filter.cells.lengths:)
+  Query.filmsUnderOverride(filter.cells.titlePrefix:)
+  Query.filmsUnderOverride(filter.cells:)
+  Query.filmsUnderOverride(filter:)
   """)

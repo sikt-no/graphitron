@@ -20,6 +20,7 @@ import no.sikt.graphitron.model.derive.OccurrenceBuilds;
 import no.sikt.graphitron.model.derive.OccurrenceDepthDefects;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceLists;
+import no.sikt.graphitron.model.derive.OccurrenceOverrides;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceValues;
@@ -141,6 +142,10 @@ public final class GraphitronAssemblyCapture {
         // declared elements alone; before the depths, whose readers it serves.
         new AnchorStage("occurrence-lists", OccurrenceLists.class,
             OccurrenceLists::derive),
+        // Which occurrences an override: true @condition at or above them stands in for, off the
+        // occurrences and the directive applications alone; before the depths.
+        new AnchorStage("occurrence-overrides", OccurrenceOverrides.class,
+            OccurrenceOverrides::derive),
         // Each occurrence's producer, its service call's pin and fills and what it produces, for the
         // whole graph: they read nothing the depths write, and the depths' sources read them.
         new AnchorStage("occurrence-producers", OccurrenceProducers.class,

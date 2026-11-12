@@ -91,6 +91,7 @@ public class StageAnswerAgreementTest {
         new Stage("graphitron_path_element_table", "graphitron_path_element_table_rule"),
         new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
         new Stage("graphitron_occurrence_list_element", "graphitron_occurrence_list_element_rule"),
+        new Stage("graphitron_occurrence_overridden", "graphitron_occurrence_overridden_rule"),
         new Stage("graphitron_occurrence_list_element_defect", "graphitron_occurrence_list_element_defect_rule"),
         new Stage(DEFECTS, "graphitron_entity_key_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_build_entry_defect_rule"),

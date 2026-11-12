@@ -4512,6 +4512,39 @@ COMMENT ON VIEW graphitron_occurrence_list_element_rule IS 'One row the list ele
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.list_coordinate IS 'the list_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.list_coordinate';
 
+CREATE TABLE graphitron_occurrence_overridden (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_overridden IS 'An occurrence at or under a @condition written with override: true, whose generated predicates that condition stands in for: one row per occurrence carrying one, and per argument or input-field occurrence under one. For example Query.films(filter:) @condition(..., override: true) on the field draws rows for Query.films, Query.films(filter:) and every input field under filter, and none for a field nested under Query.films.';
+COMMENT ON COLUMN graphitron_occurrence_overridden.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_overridden.coordinate IS 'the occurrence; with the graph, the grain';
+COMMENT ON COLUMN graphitron_occurrence_overridden.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_occurrence_overridden_rule (graph_name, coordinate) AS
+-- An occurrence whose declaration carries @condition written with override: true.
+SELECT o.graph_name, o.coordinate
+  FROM graphitron_occurrence o
+ WHERE EXISTS (SELECT 1 FROM graphitron_directive_application_arg a
+                WHERE a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+                  AND a.directive_name = 'condition' AND a.directive_argument_name = 'override'
+                  AND a.value_sdl = 'true')
+UNION
+-- An argument or input field under one, the depth above's stored rows; a field nested under it
+-- filters by its own arguments.
+SELECT o.graph_name, o.coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_overridden p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD');
+COMMENT ON VIEW graphitron_occurrence_overridden_rule IS 'One row the overridden rule computes, in the shape graphitron_occurrence_overridden stores: the rule itself, evaluated a depth at a time rather than read off disk. For example the occurrence-overrides stage inserts this view''s rows at one depth into graphitron_occurrence_overridden, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_overridden_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_overridden.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_overridden_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_overridden.coordinate';
+
 -- An argMapping entry binding a parameter to an argument path, under one occurrence of its call.
 -- One pair of a written argMapping, named: the mapping's site and the parameter the pair binds, the
 -- first written of two naming one parameter kept. The entry's position rides along for a defect.
@@ -17530,15 +17563,25 @@ SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_CONDITION'
                   AND c.directive_name = 'condition')
 UNION ALL
 -- It is a node id, whose decoded key a cell of plain values cannot hold.
+-- Under an override on the list or above it the condition owns the list, which is then not
+-- compared as rows; only a @condition inside an element is still refused there.
 SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NODE_ID'
   FROM element e
- WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_list_element ol
+                    JOIN graphitron_occurrence_overridden ov
+                      ON ov.graph_name = ol.graph_name AND ov.coordinate = ol.list_coordinate
+                   WHERE ol.graph_name = e.graph_name AND ol.coordinate = e.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
                 WHERE n.graph_name = e.graph_name AND n.coordinate = e.coordinate)
 UNION ALL
 -- It is itself a list, and one cell holds one value.
 SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NOT_ONE_VALUE'
   FROM element e
- WHERE EXISTS (SELECT 1 FROM graphitron_field f
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_list_element ol
+                    JOIN graphitron_occurrence_overridden ov
+                      ON ov.graph_name = ol.graph_name AND ov.coordinate = ol.list_coordinate
+                   WHERE ol.graph_name = e.graph_name AND ol.coordinate = e.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_field f
                 WHERE f.graph_name = e.graph_name AND f.coordinate = e.element_coordinate AND f.is_list)
 UNION ALL
 -- A @condition with a parameter filled from a field read per element of a list the condition is not
@@ -19566,15 +19609,16 @@ INSERT INTO meta_stage VALUES
   ('fetchers', 'graphitron', 29, 'no.sikt.graphitron.model.derive.Fetchers'),
   ('occurrence-participants', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
   ('occurrence-lists', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
-  ('occurrence-producers', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
-  ('occurrence-depths', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-bindings', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-builds', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 38, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 39, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 40, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-overrides', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
+  ('occurrence-producers', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
+  ('occurrence-depths', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-builds', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 39, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 40, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 41, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -19669,6 +19713,7 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
   ('occurrence-lists', 'graphitron_occurrence_list_element'),
+  ('occurrence-overrides', 'graphitron_occurrence_overridden'),
   ('occurrence-depths', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_occurrence_binding'),
@@ -20170,6 +20215,9 @@ INSERT INTO meta_grain VALUES
    'graph_name, type_name, field_name', 'sdl'),
   ('graph-occurrence',
    'one use of one declared field, argument or input field reached along a chain, in one graph',
+   'graph_name, coordinate', 'sdl'),
+  ('occurrence-overridden',
+   'one occurrence at or under a @condition written with override: true, in one graph',
    'graph_name, coordinate', 'sdl'),
   ('occurrence-list-element',
    'one input-field occurrence and one list above it that it is read once per element of, in one graph',
@@ -22192,6 +22240,14 @@ INSERT INTO meta_relation VALUES
    'One occurrence of an element, a use of a declared field, argument or input field reached along a chain: one row per nested coordinate.',
    'For example Emne.navn.en is en on the type Emne.navn returns, which has no table of its own, and Query.films(filter.cast.firstName:) an input field under the argument filter.',
    'A field of a type with no table of its own, an argument and an input field mean something different under each parent: which table they read, where their path starts, what their parent holds. Stated once per parent chain at a coordinate, every fact that depends on the parent has one row per occurrence, and a reader reads it without choosing among the tables a declaration-keyed row carries. Stored rather than a view because its population is a walk with a first-visit guard over a graph that can cycle, which a view cannot state safely, and because the parent-dependent relations key into it.'),
+  ('graphitron_occurrence_overridden', 'occurrence-overridden', 'graphitron',
+   'An occurrence at or under a @condition written with override: true, whose generated predicates that condition stands in for: one row per occurrence carrying one, and per argument or input-field occurrence under one.',
+   'For example Query.films(filter:) @condition(..., override: true) on the field draws rows for Query.films, Query.films(filter:) and every input field under filter, and none for a field nested under Query.films.',
+   'What an override suppresses, stated once at the occurrence: the list element defects read it, so a list an override owns is not compared as rows, and the condition reader can drop the terms it suppresses without walking parents. Read off the override: written on the directive application, not off graphitron_occurrence_condition, whose copy of it is carried for the transition. Written a depth at a time, an occurrence''s row read off its parent''s, by a stage of its own before the depths.'),
+  ('graphitron_occurrence_overridden_rule', 'occurrence-overridden', 'graphitron',
+   'One row the overridden rule computes, in the shape graphitron_occurrence_overridden stores: the rule itself, evaluated a depth at a time rather than read off disk.',
+   'For example the occurrence-overrides stage inserts this view''s rows at one depth into graphitron_occurrence_overridden, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_occurrence_list_element', 'occurrence-list-element', 'graphitron',
    'An input field read once per element of a list above it: one row per input-field occurrence and each argument or input-field occurrence above it whose type is a list.',
    'For example Query.filmActorsByPairs(filter.pairs.actorId:) is read once per element of Query.filmActorsByPairs(filter.pairs:), and Query.filmsByFilter(filter.title:) draws no row.',
