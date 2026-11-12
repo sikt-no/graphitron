@@ -67,11 +67,13 @@ class StageAnswerAgreementTest {
      */
     private static final String DEFECTS = "graphitron_entry_defect";
 
-    /** The defect rule views and the stages that run them, as {@code EntryDefects.RULES} has them. */
-    private static final Map<String, String> DEFECT_RULES = Map.of(
-        "graphitron_entity_key_entry_defect_rule", "entity-key-alternatives",
-        "graphitron_outbox_entry_defect_rule", "outbox",
-        "graphitron_entry_defect_rule", "entry-defects");
+    /**
+     * The defect rule views and the stages that run them, read from the writer's own list so a stage
+     * taking codes of its own is compared the day it lands.
+     */
+    private static final Map<String, String> DEFECT_RULES = EntryDefects.RULES.stream()
+        .collect(java.util.stream.Collectors.toMap(
+            rule -> rule.view().getName().toLowerCase(java.util.Locale.ROOT), EntryDefects.Rule::stage));
 
     /**
      * The stage-written tables and their rules, in stage order.
@@ -94,6 +96,8 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_input_field_resolving_table",
             "graphitron_input_field_resolving_table_rule"),
         new Stage(DEFECTS, "graphitron_entity_key_entry_defect_rule"),
+        new Stage(DEFECTS, "graphitron_occurrence_build_entry_defect_rule"),
+        new Stage(DEFECTS, "graphitron_occurrence_depth_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_outbox_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_entry_defect_rule"));
 
