@@ -7,6 +7,10 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_HANDED_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_HANDED_CLASS_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_HANDED_RECORD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_HANDED_RECORD_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_TABLE;
@@ -57,8 +61,13 @@ public final class OccurrenceSourceClaims {
         new Rule("argumentCopy", "TABLE"), new Rule("argumentPath", "TABLE"),
         new Rule("inputFieldCopy", "TABLE"));
 
-    /** The stage: the rules that read nothing a depth writes, for the whole graph, then their sweep. */
+    /**
+     * The stage: the class each field hands back and the tables it is a record of, which the rules
+     * under such a field read by its key; then the rules that read nothing a depth writes, for the
+     * whole graph, and their sweep.
+     */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        writeHanded(dsl, graph, touchedAt);
         for (Rule rule : AHEAD) {
             write(dsl, graph, null, touchedAt, rule);
         }
@@ -74,6 +83,37 @@ public final class OccurrenceSourceClaims {
             write(dsl, graph, depth, touchedAt, rule);
         }
         sweep(dsl, graph, depth, touchedAt, PER_DEPTH);
+    }
+
+    /** The handed classes, then the tables they are records of, each swept of what this reading did not state. */
+    private static void writeHanded(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var h = GRAPHITRON_FIELD_HANDED_CLASS;
+        var hr = GRAPHITRON_FIELD_HANDED_CLASS_RULE;
+        dsl.insertInto(h)
+            .columns(h.GRAPH_NAME, h.TYPE_NAME, h.FIELD_NAME, h.CLASS_NAME, h.TOUCHED_AT)
+            .select(selectDistinct(hr.GRAPH_NAME, hr.TYPE_NAME, hr.FIELD_NAME, hr.CLASS_NAME,
+                    val(touchedAt, h.TOUCHED_AT))
+                .from(hr).where(hr.GRAPH_NAME.eq(graph)))
+            .onConflict(h.GRAPH_NAME, h.TYPE_NAME, h.FIELD_NAME)
+            .doUpdate()
+            .set(h.CLASS_NAME, excluded(h.CLASS_NAME))
+            .set(h.TOUCHED_AT, excluded(h.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(h).where(h.GRAPH_NAME.eq(graph)).and(h.TOUCHED_AT.ne(touchedAt)).execute();
+        var t = GRAPHITRON_FIELD_HANDED_RECORD;
+        var tr = GRAPHITRON_FIELD_HANDED_RECORD_RULE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA,
+                t.TABLE_NAME, t.TOUCHED_AT)
+            .select(selectDistinct(tr.GRAPH_NAME, tr.TYPE_NAME, tr.FIELD_NAME, tr.TABLE_SOURCE_NAME,
+                    tr.TABLE_SCHEMA, tr.TABLE_NAME, val(touchedAt, t.TOUCHED_AT))
+                .from(tr).where(tr.GRAPH_NAME.eq(graph)))
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA,
+                t.TABLE_NAME)
+            .doUpdate()
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).and(t.TOUCHED_AT.ne(touchedAt)).execute();
     }
 
     /** One rule's claims, at {@code depth} or for the whole graph where it is null, supertype first. */

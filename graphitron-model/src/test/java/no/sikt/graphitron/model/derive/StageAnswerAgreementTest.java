@@ -100,6 +100,8 @@ public class StageAnswerAgreementTest {
         new Stage("graphitron_occurrence_list_element", "graphitron_occurrence_list_element_rule"),
         new Stage("graphitron_occurrence_overridden", "graphitron_occurrence_overridden_rule"),
         new Stage("graphitron_occurrence_list_element_defect", "graphitron_occurrence_list_element_defect_rule"),
+        new Stage("graphitron_field_handed_class", "graphitron_field_handed_class_rule"),
+        new Stage("graphitron_field_handed_record", "graphitron_field_handed_record_rule"),
         new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),
         new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),
         new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_root_routine_rule", "rootRoutine"),

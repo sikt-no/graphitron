@@ -18892,6 +18892,82 @@ COMMENT ON VIEW intent_argmapping_projection_defect IS 'Deprecated with the whol
 -- as it completes, and the stages before it sweep their own, so every stored row a rule reads is
 -- current.
 
+CREATE TABLE graphitron_field_handed_class (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  class_name VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_handed_class IS 'The class a field''s service or external field hands back: one row per field one of them names a class for. For example a field whose @service returns a List of FilmRecord hands back FilmRecord, and one whose @externalField''s Field carries a FilmBlurbHolder hands back that class.';
+COMMENT ON COLUMN graphitron_field_handed_class.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_handed_class.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_field_handed_class.field_name IS 'the field; with the graph and the type, the grain';
+COMMENT ON COLUMN graphitron_field_handed_class.class_name IS 'the binary name of the class handed back: the element class of the field''s service result, else the class its @externalField''s Field carries';
+COMMENT ON COLUMN graphitron_field_handed_class.touched_at IS 'the reading that last wrote this row; the stage sweeps what an older reading wrote';
+
+CREATE VIEW graphitron_field_handed_class_rule (graph_name, type_name, field_name, class_name) AS
+SELECT DISTINCT pf.graph_name, pf.type_name, pf.field_name,
+       COALESCE(m.result_element_class, xm.result_first_argument_class)
+  FROM graphitron_field pf
+  LEFT JOIN graphitron_producer_service ps
+    ON ps.graph_name = pf.graph_name AND ps.type_name = pf.type_name AND ps.field_name = pf.field_name
+  LEFT JOIN code_method m
+    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
+   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
+  LEFT JOIN graphitron_code_reference xr
+    ON xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
+   AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
+  LEFT JOIN code_method xm
+    ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
+   AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
+ WHERE COALESCE(m.result_element_class, xm.result_first_argument_class) IS NOT NULL;
+COMMENT ON VIEW graphitron_field_handed_class_rule IS 'One row the handed class rule computes, in the shape graphitron_field_handed_class stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_field_handed_class, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_field_handed_class_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_handed_class.graph_name';
+-- COMMENT ON COLUMN graphitron_field_handed_class_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_handed_class.type_name';
+-- COMMENT ON COLUMN graphitron_field_handed_class_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_handed_class.field_name';
+-- COMMENT ON COLUMN graphitron_field_handed_class_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_field_handed_class.class_name';
+
+CREATE TABLE graphitron_field_handed_record (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, table_source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field_handed_class (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_handed_record IS 'A table, in the graph''s own catalog, whose record is the class a field hands back: one row per field and such table. For example a field handing back FilmRecord draws a row naming the film table of each catalog source the graph reads that generates it.';
+COMMENT ON COLUMN graphitron_field_handed_record.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_handed_record.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_field_handed_record.field_name IS 'the field handing the record back';
+COMMENT ON COLUMN graphitron_field_handed_record.table_source_name IS 'the catalog source of the table whose record the class is, one the graph reads';
+COMMENT ON COLUMN graphitron_field_handed_record.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_field_handed_record.table_name IS 'that table''s own name; with the field''s key, the grain';
+COMMENT ON COLUMN graphitron_field_handed_record.touched_at IS 'the reading that last wrote this row; swept with the handed class';
+
+CREATE VIEW graphitron_field_handed_record_rule
+  (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT hc.graph_name, hc.type_name, hc.field_name, st.source_name, st.table_schema, st.table_name
+  FROM graphitron_field_handed_class hc
+  JOIN store_graph_source gs ON gs.graph_name = hc.graph_name
+  JOIN sql_table st ON st.source_name = gs.source_name AND st.record_class_fqn = hc.class_name;
+COMMENT ON VIEW graphitron_field_handed_record_rule IS 'One row the handed record rule computes, in the shape graphitron_field_handed_record stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_field_handed_record, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_field_handed_record_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_handed_record.graph_name';
+-- COMMENT ON COLUMN graphitron_field_handed_record_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_handed_record.type_name';
+-- COMMENT ON COLUMN graphitron_field_handed_record_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_handed_record.field_name';
+-- COMMENT ON COLUMN graphitron_field_handed_record_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_field_handed_record.table_source_name';
+-- COMMENT ON COLUMN graphitron_field_handed_record_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_field_handed_record.table_schema';
+-- COMMENT ON COLUMN graphitron_field_handed_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_field_handed_record.table_name';
+
 CREATE TABLE graphitron_occurrence_source_claim (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -19096,23 +19172,12 @@ COMMENT ON VIEW graphitron_occurrence_source_claim_argument_write_rule IS 'One c
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
 
 CREATE VIEW graphitron_occurrence_source_claim_record_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'record', 'TABLE', st.source_name, st.table_schema, st.table_name
+SELECT DISTINCT o.graph_name, o.coordinate, 'record', 'TABLE', hr.table_source_name, hr.table_schema, hr.table_name
   FROM graphitron_occurrence o
   JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
   JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  LEFT JOIN graphitron_producer_service ps
-    ON ps.graph_name = pf.graph_name AND ps.type_name = pf.type_name AND ps.field_name = pf.field_name
-  LEFT JOIN code_method m
-    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
-   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
-  LEFT JOIN graphitron_code_reference xr
-    ON xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
-   AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
-  LEFT JOIN code_method xm
-    ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
-   AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
-  JOIN store_graph_source gs ON gs.graph_name = o.graph_name
-  JOIN sql_table st ON st.source_name = gs.source_name AND st.record_class_fqn = COALESCE(m.result_element_class, xm.result_first_argument_class)
+  JOIN graphitron_field_handed_record hr
+    ON hr.graph_name = pf.graph_name AND hr.type_name = pf.type_name AND hr.field_name = pf.field_name
   JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
  WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
@@ -19130,26 +19195,17 @@ COMMENT ON VIEW graphitron_occurrence_source_claim_record_rule IS 'One claim the
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
 
 CREATE VIEW graphitron_occurrence_source_claim_object_rule (graph_name, coordinate, rule, kind, class_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'object', 'OBJECT', COALESCE(m.result_element_class, xm.result_first_argument_class)
+SELECT DISTINCT o.graph_name, o.coordinate, 'object', 'OBJECT', hc.class_name
   FROM graphitron_occurrence o
   JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
   JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
-  LEFT JOIN graphitron_producer_service ps
-    ON ps.graph_name = pf.graph_name AND ps.type_name = pf.type_name AND ps.field_name = pf.field_name
-  LEFT JOIN code_method m
-    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
-   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
-  LEFT JOIN graphitron_code_reference xr
-    ON xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
-   AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
-  LEFT JOIN code_method xm
-    ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
-   AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
+  JOIN graphitron_field_handed_class hc
+    ON hc.graph_name = pf.graph_name AND hc.type_name = pf.type_name AND hc.field_name = pf.field_name
   JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
- WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND COALESCE(m.result_element_class, xm.result_first_argument_class) IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source gs
-                     JOIN sql_table st ON st.source_name = gs.source_name
-                    WHERE gs.graph_name = o.graph_name AND st.record_class_fqn = COALESCE(m.result_element_class, xm.result_first_argument_class))
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_handed_record hr
+                     WHERE hr.graph_name = pf.graph_name AND hr.type_name = pf.type_name
+                       AND hr.field_name = pf.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
                      WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate AND po.kind = 'OBJECT')
    AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
@@ -20404,6 +20460,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-producers', 'graphitron_occurrence_producer_routine'),
   ('occurrence-producers', 'graphitron_occurrence_producer_service'),
   ('occurrence-producers', 'graphitron_occurrence_producer_write'),
+  ('occurrence-source-claims', 'graphitron_field_handed_class'),
+  ('occurrence-source-claims', 'graphitron_field_handed_record'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_object'),
@@ -20677,6 +20735,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('field-record-table',
+   'one table whose record is the class one field hands back, in one graph',
+   'graph_name, type_name, field_name, table_source_name, table_schema, table_name', 'sdl'),
   ('source-claim',
    'one rule''s claim on where one occurrence''s values come from, in one graph',
    'graph_name, coordinate, rule', 'sdl'),
@@ -21745,6 +21806,22 @@ INSERT INTO meta_relation VALUES
    'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_write, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_field_handed_class', 'expanded-field', 'graphitron',
+   'The class a field''s service or external field hands back: one row per field one of them names a class for.',
+   'For example a field whose @service returns a List of FilmRecord hands back FilmRecord, and one whose @externalField''s Field carries a FilmBlurbHolder hands back that class.',
+   'What a field under this one reads depends on the class this one hands back, a table''s record or an object, and the source rules asked it of the parent field at every depth by joining the parent''s service and external field to the classpath and taking the first class either names. It is a fact of the field, never of a depth, so it is stored once ahead of the depth loop and the rules join it by the parent field''s key.'),
+  ('graphitron_field_handed_record', 'field-record-table', 'graphitron',
+   'A table, in the graph''s own catalog, whose record is the class a field hands back: one row per field and such table.',
+   'For example a field handing back FilmRecord draws a row naming the film table of each catalog source the graph reads that generates it.',
+   'The record side of graphitron_field_handed_class: which tables the class is the record of, among the graph''s own catalog sources, so a source rule asking whether a parent hands over a table''s record joins it by the field''s key rather than matching a record class against every table of every source per row.'),
+  ('graphitron_field_handed_class_rule', 'expanded-field', 'graphitron',
+   'One row the handed class rule computes, in the shape graphitron_field_handed_class stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_field_handed_class, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_field_handed_record_rule', 'field-record-table', 'graphitron',
+   'One row the handed record rule computes, in the shape graphitron_field_handed_record stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_field_handed_record, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_occurrence_source_claim', 'source-claim', 'graphitron',
    'A rule''s claim on where one occurrence''s values come from: one row per occurrence and rule that claims it.',
    'For example a field under Query.films is claimed by nestedCopy, its parent''s film table, and an argument a service takes as a FilmRecord by recordParameter, beside what its field''s target claims.',

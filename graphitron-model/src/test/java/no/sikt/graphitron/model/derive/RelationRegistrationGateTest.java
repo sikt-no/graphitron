@@ -366,6 +366,10 @@ class RelationRegistrationGateTest {
         registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
+        registrations.put("graphitron_field_handed_class", Arm.DERIVED);
+        registrations.put("graphitron_field_handed_class_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_handed_record", Arm.DERIVED);
+        registrations.put("graphitron_field_handed_record_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_table", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_object", Arm.DERIVED);
