@@ -12297,68 +12297,180 @@ COMMENT ON VIEW graphitron_entry_defect_parameter_rule IS 'One call parameter a 
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.position IS 'the parameter''s position in the call''s method';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without -parameters';
 
--- Where a @nodeId's decoded value lands in Java: at each occurrence of an argument or input field
--- claiming NODE_ID whose root argument a @service call hands to a parameter, that parameter and the
--- shape it takes the value in. The decode-into-Java defects read it.
-CREATE VIEW graphitron_node_id_slot
-  (graph_name, element_coordinate, id_coordinate, site, named, by_name, parameter_name,
-   landing_type, slot_shape, method_source_name, parameter_type) AS
-SELECT graph_name, element_coordinate, id_coordinate, site, named, by_name, parameter_name,
-       CASE WHEN slot_shape = 'LIST' THEN element_class ELSE erased_class END, slot_shape,
-       method_source_name, parameter_type
-  FROM (SELECT o.graph_name, o.element_coordinate, o.coordinate AS id_coordinate, o.kind AS site,
-               cl.named, cp.parameter_name, mp.erased_class, mp.element_class,
-               mp.source_name AS method_source_name, mp.parameter_type,
-               -- The parameter the root argument is named for, which no written pair redirects: a
-               -- pair's own refusals are the argMapping family's.
-               cp.parameter_name = ra.name
-                 AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
-                                   JOIN graphitron_argmapping_pair p
-                                     ON p.graph_name = po.graph_name
-                                    AND p.coordinate = po.element_coordinate
-                                    AND p.directive_name = 'service'
-                                  WHERE po.graph_name = cp.graph_name
-                                    AND po.coordinate = cp.coordinate
-                                    AND p.parameter_name = cp.parameter_name) AS by_name,
-               CASE WHEN mp.erased_class IS NULL THEN NULL
-                    WHEN ga.list_depth = 1 AND mp.erased_class = 'java.util.List' THEN 'LIST'
-                    WHEN ga.list_depth = 0 AND mp.delivery IS DISTINCT FROM 'MANY' THEN 'SINGLE'
-                    ELSE 'MISMATCH' END AS slot_shape
-          FROM graphitron_occurrence o
-          JOIN graphitron_binding_claim cl
-            ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-           AND cl.kind = 'NODE_ID'
-          JOIN graphitron_occurrence ra
-            ON ra.graph_name = o.graph_name
-           AND ra.coordinate = COALESCE(o.argument_coordinate, o.coordinate)
-          JOIN graphitron_argument a
-            ON a.graph_name = ra.graph_name AND a.coordinate = ra.element_coordinate
-          JOIN graphql_argument ga
-            ON ga.graph_name = a.graph_name AND ga.type_name = a.type_name
-           AND ga.field_name = a.field_name AND ga.argument_name = a.argument_name
-          JOIN graphitron_occurrence_call_parameter cp
-            ON cp.graph_name = ra.graph_name AND cp.fill = 'ARGUMENT'
-           AND cp.landing_coordinate = ra.coordinate
-          JOIN graphitron_occurrence_call_method ps
-            ON ps.graph_name = cp.graph_name AND ps.coordinate = cp.coordinate AND ps.call = cp.call
-           AND ps.call_kind = 'SERVICE'
-          JOIN code_method_parameter mp
-            ON mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
-           AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
-           AND mp.position = cp.position
-         WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')) shaped;
-COMMENT ON VIEW graphitron_node_id_slot IS 'One Java parameter a @nodeId''s decoded value lands in: one row per id occurrence and the parameter its root argument fills. For example Query.greetings(userId: ID @nodeId(typeName: "Film")) on a @service whose method takes String userId is one row, by name, landing on java.lang.String in the SINGLE shape.';
--- COMMENT ON COLUMN graphitron_node_id_slot.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_node_id_slot.element_coordinate IS 'the declared argument or input field carrying the @nodeId';
--- COMMENT ON COLUMN graphitron_node_id_slot.id_coordinate IS 'the occurrence of it';
--- COMMENT ON COLUMN graphitron_node_id_slot.site IS 'FIELD_ARGUMENT or INPUT_FIELD, the occurrence''s kind';
--- COMMENT ON COLUMN graphitron_node_id_slot.named IS 'the typeName: written, a node type or a container; null for a bare @nodeId';
--- COMMENT ON COLUMN graphitron_node_id_slot.by_name IS 'whether the parameter is the one the root argument is named for with no written argMapping pair on it';
--- COMMENT ON COLUMN graphitron_node_id_slot.parameter_name IS 'the parameter, what a message names';
--- COMMENT ON COLUMN graphitron_node_id_slot.landing_type IS 'the class the decoded value meets: a list parameter''s element, otherwise the parameter''s erased class; null where the census names no class';
--- COMMENT ON COLUMN graphitron_node_id_slot.slot_shape IS 'LIST, SINGLE or MISMATCH, the parameter''s shape against the argument''s list depth; null where the parameter names no class';
--- COMMENT ON COLUMN graphitron_node_id_slot.method_source_name IS 'the classpath entry declaring the method, the leading half of the parameter type''s key in code_type';
--- COMMENT ON COLUMN graphitron_node_id_slot.parameter_type IS 'the parameter''s type as declared, whose element''s type arguments code_type_element_argument states';
+-- Where a @nodeId's decoded value lands in Java, one row per place: a call parameter taking it, the
+-- member of the class its input object is built into, or the jOOQ record its parent is built into.
+-- The supertype carries what every landing is judged on, the class one decoded value meets and the
+-- shape it meets it in, so the decode shape and the slot defects read one row; each subtype holds
+-- the place to the row it is.
+CREATE TABLE graphitron_occurrence_node_id_slot (
+  graph_name       VARCHAR   NOT NULL,
+  coordinate       VARCHAR   NOT NULL,
+  slot             VARCHAR   NOT NULL,
+  kind             VARCHAR   NOT NULL,
+  list_depth       INT       NOT NULL,
+  erased_class     VARCHAR,
+  element_class    VARCHAR,
+  delivery         VARCHAR,
+  slot_shape       VARCHAR GENERATED ALWAYS AS (
+                     CASE WHEN erased_class IS NULL THEN NULL
+                          WHEN list_depth = 1 AND erased_class = 'java.util.List' THEN 'LIST'
+                          WHEN list_depth = 0 AND delivery IS DISTINCT FROM 'MANY' THEN 'SINGLE'
+                          ELSE 'MISMATCH' END),
+  landing_class    VARCHAR GENERATED ALWAYS AS (
+                     CASE WHEN list_depth = 1 AND erased_class = 'java.util.List' THEN element_class
+                          ELSE erased_class END),
+  type_source_name VARCHAR,
+  declared_type    VARCHAR,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, slot),
+  -- What each subtype references, so a subtype row can only hang under a slot of its own kind.
+  UNIQUE (graph_name, coordinate, slot, kind),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind IN ('PARAMETER', 'MEMBER', 'RECORD')),
+  CHECK (delivery IS NULL OR delivery IN ('DIRECT', 'WRAPPED', 'MANY')),
+  CHECK ((type_source_name IS NULL) = (declared_type IS NULL))
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot IS 'Where a node id at an occurrence lands in Java: one row per node id occurrence and place it lands. For example Query.greetings(userId:), written @nodeId(typeName: "Film") on a @service whose method takes String userId, lands on that parameter, at java.lang.String in the SINGLE shape.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.coordinate IS 'the occurrence carrying the @nodeId, an argument''s or an input field''s';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.slot IS 'the place, spelled from its subtype''s own key as graphitron_occurrence_binding.bound is: a parameter''s call occurrence, call and position; a member''s bound; a record''s class';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.kind IS 'PARAMETER, a call parameter taking the id, whole or one key column an argMapping pair projects; MEMBER, the member of the class its input object is built into that the id fills; RECORD, the jOOQ record its parent input object is built into, whose columns take the key. Each kind''s subtype holds the place';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.list_depth IS 'the id''s own list depth, as the field or argument the generator works with states it';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.erased_class IS 'the place''s erased class, the record''s own for RECORD; null where the census names no class';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.element_class IS 'a collection place''s element class; null otherwise';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.delivery IS 'how the place takes values, DIRECT, WRAPPED or MANY, as the census states it; null for RECORD';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.slot_shape IS 'LIST, SINGLE or MISMATCH: a list id at a java.util.List, a single id at a single value, or neither; null where the place names no class. Generated, so nothing writes it';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.landing_class IS 'the class one decoded value meets: a list''s element where the place is a java.util.List the list id fills, otherwise its erased class. Generated, so nothing writes it';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.type_source_name IS 'the classpath entry declaring the place, the leading half of its declared type''s key in code_type';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.declared_type IS 'the place''s type as declared, whose element''s type arguments code_type_element_argument states';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote, the subtype rows with them';
+
+-- A call parameter a node id lands on, of every call kind: the ARGUMENT fill landing on the id,
+-- whether the parameter takes it whole or one key column a pair projects out of it, which the fill's
+-- pair and its landing's key column state.
+CREATE TABLE graphitron_occurrence_node_id_slot_parameter (
+  graph_name      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  position        INT       NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  slot            VARCHAR GENERATED ALWAYS AS (call_coordinate || ' ' || call || ' ' || position) NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, call_coordinate, call, position),
+  FOREIGN KEY (graph_name, coordinate, slot, kind)
+    REFERENCES graphitron_occurrence_node_id_slot (graph_name, coordinate, slot, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, call_coordinate, call, position)
+    REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position)
+    ON DELETE CASCADE,
+  CHECK (kind = 'PARAMETER')
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot_parameter IS 'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id. For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.call_coordinate IS 'the occurrence making the call; with call and position, the parameter';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.call IS 'which of its calls';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.position IS 'the parameter''s position';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.coordinate IS 'the node id occurrence the fill lands on';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.kind IS 'always PARAMETER, pinned so the foreign key holds the row to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.slot IS 'the slot the supertype states, spelled from the parameter. Generated, so nothing writes it';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_parameter.touched_at IS 'the reading that last wrote this row';
+
+-- The member of a built class a node id fills, its own MEMBER binding.
+CREATE TABLE graphitron_occurrence_node_id_slot_member (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  bound      VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_node_id_slot (graph_name, coordinate, slot, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_member (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (kind = 'MEMBER')
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot_member IS 'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding. For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_member.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_member.coordinate IS 'the node id occurrence';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_member.bound IS 'its MEMBER binding''s bound, class and member, which is the slot';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_member.kind IS 'always MEMBER, pinned so the foreign key holds the row to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_member.touched_at IS 'the reading that last wrote this row';
+
+-- The jOOQ record a node id's parent input object is built into, whose columns take its key.
+CREATE TABLE graphitron_occurrence_node_id_slot_record (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  class_name        VARCHAR   NOT NULL,
+  parent_coordinate VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, class_name),
+  FOREIGN KEY (graph_name, coordinate, class_name, kind)
+    REFERENCES graphitron_occurrence_node_id_slot (graph_name, coordinate, slot, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, parent_coordinate, class_name)
+    REFERENCES graphitron_occurrence_built_class (graph_name, coordinate, class_name) ON DELETE CASCADE,
+  CHECK (kind = 'RECORD')
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot_record IS 'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into. For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.coordinate IS 'the node id occurrence';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.class_name IS 'the record class, which is the slot';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.parent_coordinate IS 'the parent input object''s occurrence, the built class''s own';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.kind IS 'always RECORD, pinned so the foreign key holds the row to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.touched_at IS 'the reading that last wrote this row';
+
+-- The rule each subtype is written from, its supertype row with it.
+CREATE VIEW graphitron_occurrence_node_id_slot_parameter_rule
+  (graph_name, coordinate, call_coordinate, call, position, slot, list_depth, erased_class,
+   element_class, delivery, type_source_name, declared_type) AS
+SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate, cp.call, cp.position,
+       cp.coordinate || ' ' || cp.call || ' ' || cp.position,
+       COALESCE(a.list_depth, f.list_depth), mp.erased_class, mp.element_class, mp.delivery,
+       mp.source_name, mp.parameter_type
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
+  JOIN graphitron_occurrence_call_method m
+    ON m.graph_name = cp.graph_name AND m.coordinate = cp.coordinate AND m.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = m.method_source_name AND mp.class_name = m.method_class_name
+   AND mp.method_name = m.method_name AND mp.descriptor = m.method_descriptor
+   AND mp.position = cp.position
+  LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+ WHERE cp.fill = 'ARGUMENT';
+COMMENT ON VIEW graphitron_occurrence_node_id_slot_parameter_rule IS 'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_parameter stores. For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.';
+
+CREATE VIEW graphitron_occurrence_node_id_slot_member_rule
+  (graph_name, coordinate, bound, list_depth, erased_class, element_class, delivery,
+   type_source_name, declared_type) AS
+SELECT bm.graph_name, bm.coordinate, bm.bound, f.list_depth, w.erased_class, w.element_class,
+       w.delivery, w.source_name, w.slot_type
+  FROM graphitron_occurrence_binding_member bm
+  JOIN graphitron_occurrence o ON o.graph_name = bm.graph_name AND o.coordinate = bm.coordinate
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN code_write_slot w
+    ON w.source_name = bm.slot_source_name AND w.class_name = bm.class_name
+   AND w.method_name = bm.slot_method_name AND w.descriptor = bm.slot_descriptor
+   AND w.position = bm.slot_position;
+COMMENT ON VIEW graphitron_occurrence_node_id_slot_member_rule IS 'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_member stores. For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.';
+
+CREATE VIEW graphitron_occurrence_node_id_slot_record_rule
+  (graph_name, coordinate, class_name, parent_coordinate, list_depth, type_source_name,
+   declared_type) AS
+SELECT o.graph_name, o.coordinate, bc.class_name, bc.coordinate, f.list_depth, bc.class_source_ref,
+       bc.class_name_ref
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.record_table IS NOT NULL;
+COMMENT ON VIEW graphitron_occurrence_node_id_slot_record_rule IS 'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_record stores. For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.';
 
 -- Which shape each node id binding lands in at a root argument's parameter, judged once: the node
 -- table's own record, a supertype of it for an id of several node types, a jOOQ tuple typed by the
@@ -12380,13 +12492,24 @@ WITH binding (graph_name, coordinate, bound, arity, record_class, sole_column_ty
      AND c.table_name = n.table_name AND c.column_name = n.column_name
    GROUP BY n.graph_name, n.coordinate, n.bound
 ),
+-- The parameters a @service hands an argument's id to, whole or one key column of it.
 landing (graph_name, coordinate, landing_class, method_source_name, parameter_type, polymorphic) AS (
-  SELECT DISTINCT s.graph_name, s.id_coordinate, s.landing_type, s.method_source_name, s.parameter_type,
-         EXISTS (SELECT 1 FROM graphitron_type ct
-                  WHERE ct.graph_name = s.graph_name AND ct.type_name = s.named
-                    AND ct.kind IN ('INTERFACE', 'UNION'))
-    FROM graphitron_node_id_slot s
-   WHERE s.site = 'FIELD_ARGUMENT' AND s.landing_type IS NOT NULL AND s.slot_shape <> 'MISMATCH'
+  SELECT DISTINCT s.graph_name, s.coordinate, s.landing_class, s.type_source_name, s.declared_type,
+         EXISTS (SELECT 1 FROM graphitron_binding_claim cl
+                   JOIN graphitron_type ct
+                     ON ct.graph_name = cl.graph_name AND ct.type_name = cl.named
+                    AND ct.kind IN ('INTERFACE', 'UNION')
+                  WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+                    AND cl.kind = 'NODE_ID')
+    FROM graphitron_occurrence_node_id_slot_parameter sp
+    JOIN graphitron_occurrence_node_id_slot s
+      ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+   WHERE o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE' AND s.landing_class IS NOT NULL
+     AND s.slot_shape <> 'MISMATCH'
 )
 SELECT graph_name, coordinate, bound, landing_class, decode_shape
   FROM (SELECT b.graph_name, b.coordinate, b.bound, l.landing_class,
@@ -12542,16 +12665,32 @@ COMMENT ON VIEW graphitron_occurrence_built_class_rule IS 'The class an input ob
 -- member defect agree.
 CREATE VIEW graphitron_entry_defect_member_rule
   (graph_name, source_name, source_line, source_column, code, member_type_name) AS
+-- A container id's places under a @service: a parameter of its call, or a member or record its input
+-- object is built into where the root argument goes to one.
 WITH container_slot (graph_name, element_coordinate, site, container_name, landing_type,
                      slot_shape) AS (
-  SELECT DISTINCT s.graph_name, s.element_coordinate, s.site, s.named, s.landing_type, s.slot_shape
-    FROM graphitron_node_id_slot s
+  SELECT DISTINCT s.graph_name, o.element_coordinate, o.kind, cl.named, s.landing_class, s.slot_shape
+    FROM graphitron_occurrence_node_id_slot s
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN graphitron_binding_claim cl
+      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
     JOIN graphitron_type t
-      ON t.graph_name = s.graph_name AND t.type_name = s.named AND t.kind IN ('INTERFACE', 'UNION')
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_node n
-                      WHERE n.graph_name = s.graph_name AND n.type_name = s.named)
+      ON t.graph_name = cl.graph_name AND t.type_name = cl.named AND t.kind IN ('INTERFACE', 'UNION')
+    LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
+      ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
+    LEFT JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+   WHERE (cp.call_kind = 'SERVICE'
+          OR s.kind IN ('MEMBER', 'RECORD')
+             AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter rp
+                          WHERE rp.graph_name = o.graph_name AND rp.fill = 'ARGUMENT'
+                            AND rp.landing_coordinate = o.argument_coordinate
+                            AND rp.call_kind = 'SERVICE'))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                      WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype ct
-                      WHERE ct.graph_name = s.graph_name AND ct.type_name = s.named)
+                      WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
 ),
 member (graph_name, container_name, member_type_name, is_table, is_node, binds,
         table_source_name, table_schema, table_name) AS (
@@ -15033,6 +15172,24 @@ container_id (graph_name, element_coordinate, container_name, field_element) AS 
       ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
    WHERE NOT EXISTS (SELECT 1 FROM graphitron_node nd
                       WHERE nd.graph_name = cl.graph_name AND nd.type_name = cl.named)
+),
+-- A node id's places under a @service: a parameter of its call, or a member or record its input
+-- object is built into where the root argument goes to one; the parameter is the call's, or the
+-- root argument's for a member or record.
+service_slot (graph_name, element_coordinate, parameter_name, slot_shape) AS (
+  SELECT s.graph_name, o.element_coordinate, COALESCE(cp.parameter_name, rp.parameter_name),
+         s.slot_shape
+    FROM graphitron_occurrence_node_id_slot s
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
+      ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
+    LEFT JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+    LEFT JOIN graphitron_occurrence_call_parameter rp
+      ON s.kind IN ('MEMBER', 'RECORD') AND rp.graph_name = o.graph_name AND rp.fill = 'ARGUMENT'
+     AND rp.landing_coordinate = o.argument_coordinate AND rp.call_kind = 'SERVICE'
+   WHERE cp.call_kind = 'SERVICE' OR rp.call_kind IS NOT NULL
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
@@ -16681,22 +16838,32 @@ UNION ALL
 -- detail, the least where uses differ.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
        MIN(v.parameter_name)
-  FROM (SELECT s.graph_name, s.element_coordinate, s.parameter_name,
+  FROM (SELECT s.graph_name, o.element_coordinate, cp.parameter_name,
                CASE WHEN s.slot_shape = 'MISMATCH' THEN 'NODE_ID_SLOT_SHAPE_MISMATCH'
                     WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
-                                  WHERE d.graph_name = s.graph_name AND d.coordinate = s.id_coordinate
-                                    AND d.landing_class = s.landing_type) THEN NULL
+                                  WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                                    AND d.landing_class = s.landing_class) THEN NULL
                     WHEN tc.degree = k.arity THEN 'NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT'
                     WHEN k.arity > 1 THEN 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT'
-                    WHEN s.landing_type <> k.sole_column_type
+                    WHEN s.landing_class <> k.sole_column_type
                     THEN 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT' END AS code
-          FROM graphitron_node_id_slot s
-          JOIN decode_key k ON k.graph_name = s.graph_name AND k.id_coordinate = s.id_coordinate
-          LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_type
-         WHERE s.site = 'FIELD_ARGUMENT' AND s.by_name
+          FROM graphitron_occurrence_node_id_slot_parameter sp
+          JOIN graphitron_occurrence_node_id_slot s
+            ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+          JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+          JOIN graphitron_occurrence_call_parameter cp
+            ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+           AND cp.position = sp.position
+          JOIN decode_key k ON k.graph_name = s.graph_name AND k.id_coordinate = s.coordinate
+          LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
+         -- The parameter named for the argument, which no written pair fills.
+         WHERE o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE' AND cp.parameter_name = o.name
+           AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
+                            WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
+                              AND pp.call = cp.call AND pp.position = cp.position)
            AND NOT EXISTS (SELECT 1 FROM container_id c
-                            WHERE c.graph_name = s.graph_name
-                              AND c.element_coordinate = s.element_coordinate)) v
+                            WHERE c.graph_name = o.graph_name
+                              AND c.element_coordinate = o.element_coordinate)) v
   JOIN graphitron_directive_application da
     ON da.graph_name = v.graph_name AND da.coordinate = v.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
@@ -16714,7 +16881,7 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON da.graph_name = c.graph_name AND da.coordinate = c.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
  WHERE da.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node_id_slot s
+   AND NOT EXISTS (SELECT 1 FROM service_slot s
                     WHERE s.graph_name = c.graph_name
                       AND s.element_coordinate = c.element_coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
@@ -16748,12 +16915,12 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
                                         AND pm.container_name = c.container_name)
                     THEN 'NODE_ID_NO_TABLE_MEMBERS' END AS code
           FROM container_id c
-          JOIN graphitron_node_id_slot s
+          JOIN service_slot s
             ON s.graph_name = c.graph_name AND s.element_coordinate = c.element_coordinate
         UNION ALL
         SELECT c.graph_name, c.element_coordinate, s.parameter_name, 'NODE_ID_SLOT_SHAPE_MISMATCH'
           FROM container_id c
-          JOIN graphitron_node_id_slot s
+          JOIN service_slot s
             ON s.graph_name = c.graph_name AND s.element_coordinate = c.element_coordinate
          WHERE s.slot_shape = 'MISMATCH') v
   JOIN graphitron_directive_application da
@@ -18110,7 +18277,7 @@ SELECT r.graph_name, r.source_name, r.source_line, r.source_column, r.position, 
                                         r.source_column, r.position) AS INT),
        r.parameter_type, r.element_class, r.delivery
   FROM resolved r;
-COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The Java type the left side of an argMapping pair denotes: what the value the path resolves has to be assignable to. The missing half of every type question about this family, and the reason one existed to be missing is that the two populations answering it are unrelated relations. A @routine parameter is a position on a generated Routines method and its type comes from the catalog census, while every other site''s parameter is a position on an authored Java method and its type comes from the classpath census; a reader wanting "the type of the parameter this pair binds" had to know which of the two to ask, and therefore had to switch on site, which is the switch this relation performs once. One row per pair whose parameter resolves, at graphitron_ast_argmapping_pair_entry''s own grain, so it joins that relation and everything derived from it on the mapping string''s key and the position with no reshaping. Two arms, and the split is not the pair relation''s: one resolves an authored (class, method) pair against the classpath census, and the routine arm is the other and reaches sql_routine_parameter through graphitron_path_element_routine instead. The classpath arm reads the method graphitron_code_reference settled for the code reference the mapping is a field of, found through graphitron_argmapping_site, so a name two overloads answer resolves nothing here rather than a row per overload. A @routine mapping is an argument of the directive and no code reference''s field, so it draws no row on that arm. Matching is by parameter name on both sides, which is the same match the generator itself makes and inherits the same dependency: a consumer compiling without -parameters has no names to match, so a pair resolves nothing here and every reader sees that as absence. One vocabulary on both arms, and reaching it is the reason the classpath arm joins one relation further than it looks like it needs to. The catalog arm''s binding type is fully qualified, while code_type.display_name drops the package by design; comparing the two would never match, and the mismatch would look exactly like a genuine type disagreement. So the classpath arm takes the root of the parameter''s declared-type decomposition instead, code_type.root_class, which is the qualified binary name. That relation has no row where the position names no class, so a primitive parameter resolves no type here rather than resolving int. The join to it is therefore an outer one and such a parameter is a row carrying a NULL intent_argmapping_bound_parameter_type.java_type, which is the membership question and the type question being kept apart on the terms graphitron_node_id_slot states for the same chain: the name-matched code_method_parameter row is what makes the pair a member, and the type is a payload the row may not carry. intent_argmapping_key_column_candidate.column_java_type is the other operand of the very same equality and already reads this way, its comment arguing that such an absence is a payload absence rather than a missing row. Absence of a row is therefore three facts and this relation distinguishes none of them: the reference resolved no method, the method declares no parameter of that name, or names were not compiled in. A fourth, the parameter''s type naming no class, is a NULL payload on a row that is here. That is deliberate, each being a condition other relations already state or reject, and it is what keeps this relation one answer rather than a verdict; what a reader does where the answer is missing is the reader''s own decision, and the projection''s own comment argues its choice. What it must not do is decide the reading, which is why candidates is a column: an overloaded method or a class declared by two classpath entries resolves two rows, and a reader requiring one type requires candidates = 1 rather than picking. DISTINCT within each arm collapses the ordinary duplicate, one method reached through two graph sources naming the same type, so candidates above one means the types genuinely differ. No assignability rule lives here and none should: this states one type per pair and comparing it to another is the asking reader''s predicate, the widenings worth admitting being a use-site question rather than a fact about a parameter.';
+COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. The Java type the left side of an argMapping pair denotes: what the value the path resolves has to be assignable to. The missing half of every type question about this family, and the reason one existed to be missing is that the two populations answering it are unrelated relations. A @routine parameter is a position on a generated Routines method and its type comes from the catalog census, while every other site''s parameter is a position on an authored Java method and its type comes from the classpath census; a reader wanting "the type of the parameter this pair binds" had to know which of the two to ask, and therefore had to switch on site, which is the switch this relation performs once. One row per pair whose parameter resolves, at graphitron_ast_argmapping_pair_entry''s own grain, so it joins that relation and everything derived from it on the mapping string''s key and the position with no reshaping. Two arms, and the split is not the pair relation''s: one resolves an authored (class, method) pair against the classpath census, and the routine arm is the other and reaches sql_routine_parameter through graphitron_path_element_routine instead. The classpath arm reads the method graphitron_code_reference settled for the code reference the mapping is a field of, found through graphitron_argmapping_site, so a name two overloads answer resolves nothing here rather than a row per overload. A @routine mapping is an argument of the directive and no code reference''s field, so it draws no row on that arm. Matching is by parameter name on both sides, which is the same match the generator itself makes and inherits the same dependency: a consumer compiling without -parameters has no names to match, so a pair resolves nothing here and every reader sees that as absence. One vocabulary on both arms, and reaching it is the reason the classpath arm joins one relation further than it looks like it needs to. The catalog arm''s binding type is fully qualified, while code_type.display_name drops the package by design; comparing the two would never match, and the mismatch would look exactly like a genuine type disagreement. So the classpath arm takes the root of the parameter''s declared-type decomposition instead, code_type.root_class, which is the qualified binary name. That relation has no row where the position names no class, so a primitive parameter resolves no type here rather than resolving int. The join to it is therefore an outer one and such a parameter is a row carrying a NULL intent_argmapping_bound_parameter_type.java_type, which is the membership question and the type question being kept apart on the terms graphitron_occurrence_node_id_slot states for the same chain: the name-matched code_method_parameter row is what makes the pair a member, and the type is a payload the row may not carry. intent_argmapping_key_column_candidate.column_java_type is the other operand of the very same equality and already reads this way, its comment arguing that such an absence is a payload absence rather than a missing row. Absence of a row is therefore three facts and this relation distinguishes none of them: the reference resolved no method, the method declares no parameter of that name, or names were not compiled in. A fourth, the parameter''s type naming no class, is a NULL payload on a row that is here. That is deliberate, each being a condition other relations already state or reject, and it is what keeps this relation one answer rather than a verdict; what a reader does where the answer is missing is the reader''s own decision, and the projection''s own comment argues its choice. What it must not do is decide the reading, which is why candidates is a column: an overloaded method or a class declared by two classpath entries resolves two rows, and a reader requiring one type requires candidates = 1 rather than picking. DISTINCT within each arm collapses the ordinary duplicate, one method reached through two graph sources naming the same type, so candidates above one means the types genuinely differ. No assignability rule lives here and none should: this states one type per pair and comparing it to another is the asking reader''s predicate, the widenings worth admitting being a use-site question rather than a fact about a parameter.';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.graph_name IS 'the owning graph''s partition, carried from the pair relation';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.source_name IS 'the file the mapping string was written in, the first of the four columns that are its key in graphitron_ast_argmapping_pair_entry; with the line, the column and the position the grain, and where a message about the pair points';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.source_line IS 'source line of the mapping string, 1-based; part of its key';
@@ -19375,6 +19542,10 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-builds', 'graphitron_occurrence_binding_member'),
   ('occurrence-builds', 'graphitron_occurrence_built_class'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_shape'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_member'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_parameter'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record'),
   ('occurrence-depth-defects', 'graphitron_entry_defect'),
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect'),
   ('occurrence-depths', 'graphitron_join_path'),
@@ -19873,6 +20044,18 @@ INSERT INTO meta_grain VALUES
    'graph_name, coordinate, bound, position', 'sdl'),
   ('occurrence-built-class',
    'one class one input object occurrence is built into, in one graph',
+   'graph_name, coordinate, class_name', 'sdl'),
+  ('occurrence-node-id-slot',
+   'one place one occurrence''s node id lands in Java, in one graph',
+   'graph_name, coordinate, slot', 'sdl'),
+  ('occurrence-node-id-slot-parameter',
+   'one call parameter a node id lands on, in one graph',
+   'graph_name, call_coordinate, call, position', 'sdl'),
+  ('occurrence-node-id-slot-member',
+   'one built class member a node id fills, in one graph',
+   'graph_name, coordinate, bound', 'sdl'),
+  ('occurrence-node-id-slot-record',
+   'one record a node id''s parent is built into, in one graph',
    'graph_name, coordinate, class_name', 'sdl'),
   ('occurrence-node-id-shape',
    'one class one occurrence''s node id at one node table lands in, in one graph',
@@ -20577,6 +20760,34 @@ INSERT INTO meta_relation VALUES
    'One key column a node id at an occurrence packs or unpacks: one row per occurrence, node table and key position.',
    'For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.',
    'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only an inference that reads where a need lands lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands, the binding cascading with it as a derivation goes with what it was derived from.'),
+  ('graphitron_occurrence_node_id_slot', 'occurrence-node-id-slot', 'graphitron',
+   'Where a node id at an occurrence lands in Java: one row per node id occurrence and place it lands.',
+   'For example Query.greetings(userId:), written @nodeId(typeName: "Film") on a @service whose method takes String userId, lands on that parameter, at java.lang.String in the SINGLE shape.',
+   'What the decode shape and the decode-into-Java defects judge, stated once rather than each reader climbing to the place: the supertype of the three places an id lands, carrying the class and shape every landing is judged on. Keyed by the place spelled from its subtype''s own key, as graphitron_occurrence_binding.bound is, there being no key the three places share (Alf, 2026-11-12).'),
+  ('graphitron_occurrence_node_id_slot_parameter', 'occurrence-node-id-slot-parameter', 'graphitron',
+   'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id.',
+   'For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.',
+   'The PARAMETER subtype of graphitron_occurrence_node_id_slot, keyed by the parameter itself, one id landing on one parameter. Whole or projected is the fill''s own provenance, its pair and its landing''s key column, so it is not restated here.'),
+  ('graphitron_occurrence_node_id_slot_member', 'occurrence-node-id-slot-member', 'graphitron',
+   'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding.',
+   'For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.',
+   'The MEMBER subtype of graphitron_occurrence_node_id_slot, keyed by the id''s own MEMBER binding, whose bound is the slot.'),
+  ('graphitron_occurrence_node_id_slot_record', 'occurrence-node-id-slot-record', 'graphitron',
+   'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into.',
+   'For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.',
+   'The RECORD subtype of graphitron_occurrence_node_id_slot, keyed by the record class its parent is built into, which is the slot; held to that built class.'),
+  ('graphitron_occurrence_node_id_slot_parameter_rule', 'occurrence-node-id-slot-parameter', 'graphitron',
+   'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_parameter stores.',
+   'For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.',
+   'The rule graphitron_occurrence_node_id_slot_parameter and its supertype row are written from, one plain read of the rows the place already is, after the depth loop and the build have written them.'),
+  ('graphitron_occurrence_node_id_slot_member_rule', 'occurrence-node-id-slot-member', 'graphitron',
+   'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_member stores.',
+   'For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.',
+   'The rule graphitron_occurrence_node_id_slot_member and its supertype row are written from, one plain read of the rows the place already is, after the depth loop and the build have written them.'),
+  ('graphitron_occurrence_node_id_slot_record_rule', 'occurrence-node-id-slot-record', 'graphitron',
+   'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_record stores.',
+   'For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.',
+   'The rule graphitron_occurrence_node_id_slot_record and its supertype row are written from, one plain read of the rows the place already is, after the depth loop and the build have written them.'),
   ('graphitron_occurrence_node_id_shape', 'occurrence-node-id-shape', 'graphitron',
    'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class.',
    'For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.',
@@ -21234,10 +21445,6 @@ INSERT INTO meta_relation VALUES
    'One table a defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a TABLE_AMBIGUOUS defect whose spelling two schemas answer draws a row for each schema''s table.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the defect''s own detail is the spelling it matched, so the candidates are read from the defect rather than resolved a second time.'),
-  ('graphitron_node_id_slot', 'graph-occurrence', 'graphitron',
-   'One Java parameter a @nodeId''s decoded value lands in: one row per id occurrence and the parameter its root argument fills.',
-   'For example Query.greetings(userId: ID @nodeId(typeName: "Film")) on a @service whose method takes String userId is one row, by name, landing on java.lang.String in the SINGLE shape.',
-   'What the decode-into-Java defects judge, stated once for the three readers that weigh it: the single-node and polymorphic rules and the member rule. Read off the call''s fills and the method''s parameter census, and on the occurrence because a fill is per call.'),
   ('graphitron_entry_defect_path_step', 'entry-defect-path-step', 'graphitron',
    'One @routine a field''s written path steps through, under the claim defect it conflicts in: one row per defect and step.',
    'For example a field carrying @service and a @routine below a root without @splitQuery draws a CLAIMS_CONFLICT with a SERVICE claim and this row for the routine.',

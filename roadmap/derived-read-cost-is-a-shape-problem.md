@@ -511,7 +511,7 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
   * a `@referenceFor` on a slot without `@nodeId`, which only the walk refuses today.
 
   The slot and container rules are already entry defects, the `NODE_ID_` codes over
-  `graphitron_node_id_slot`, with the members a container defect names in
+  `graphitron_occurrence_node_id_slot`, with the members a container defect names in
   `graphitron_entry_defect_member`, and the landing's are `NODE_ID_LANDS_ON_TABLE` and
   `NODE_ID_LANDING_TYPE_DISAGREES`, each branch judged on its own route. `ReferenceForParticipantDefects`
   reads the rows. The walk's copies of the same refusals go with
@@ -758,7 +758,9 @@ static method needs no holder.
     on the bound name for a service and the GraphQL name for a condition), the node id slot stored
     per call parameter for every call kind, and the shape relation widened to those slots. The first
     two are stated: `graphitron_occurrence_built_class` and `graphitron_occurrence_binding_member`,
-    which `BuildQuery` reads in place of matching member names.
+    which `BuildQuery` reads in place of matching member names. The slot is stored too:
+    `graphitron_occurrence_node_id_slot`, a supertype over the call parameter, the built class's
+    member and the built record an id lands on, each subtype written by one plain rule.
     * **`BuildQuery`'s refusals are defects** `open`, E's. A class nothing constructs, a field
       filling no member, a list that cannot group, two fields on one member, a `@condition` taking a
       jOOQ record and a record's field naming no column are entry defects at the field, and a node id
@@ -782,11 +784,6 @@ static method needs no holder.
       critical path. A build defect's detail is the least class or member where an input is built
       into several, so which class and occurrence failed is lost; a detail relation, as the
       parameter defects have, names each.
-    * **The node id slot is stored, and the shape rule reads it** `open`, E's. `graphitron_node_id_slot`
-      is a view, its landing the root parameter's class, and
-      `graphitron_occurrence_node_id_shape_rule` reads it, a view reading a view. Stored per node id
-      binding, a parameter's, a bean member's or a record's, it gives a bean member its landing and
-      the shape rule a table to read.
     * **Grouping under a record is decided once** `open`, off the critical path.
       `BuildQuery.columns` decides in Java that a nested input object under a jOOQ record groups onto
       it, which `graphitron_occurrence_built_class` states as a `GROUPING` row; it reads the row.
@@ -1392,8 +1389,8 @@ someone to profile.
   (`fact-model.adoc` § Every relation has a grain) are not yet met. Views reading views:
   `graphitron_occurrence_call_pin` (and `_call_rule`, `_call_method_rule` reading it),
   `graphitron_entry_defect_parameter_rule`, `graphitron_outbox_key_rule`,
-  `graphitron_argmapping_pair_defect_rule`, `graphitron_entry_defect_member_rule` (over the
-  `graphitron_node_id_slot` view and `graphql_poly_member`), `graphitron_occurrence_call_parameter_rule`
+  `graphitron_argmapping_pair_defect_rule`, `graphitron_entry_defect_member_rule` (over
+  `graphql_poly_member`), `graphitron_occurrence_call_parameter_rule`
   and `_defect`, `graphitron_argmapping_step_head_rule` and `graphitron_occurrence_node_id_rule`.
   Oversized rule views, each a derivation skipped upstream: `graphitron_entry_defect_rule`,
   `graphitron_occurrence_condition_parameter_rule`, `graphitron_occurrence_producer_lift_rule` and

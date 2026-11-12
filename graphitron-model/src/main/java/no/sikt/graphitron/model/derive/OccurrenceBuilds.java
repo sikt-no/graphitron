@@ -31,12 +31,14 @@ public final class OccurrenceBuilds {
     private OccurrenceBuilds() {}
 
     /**
-     * The stage: the built classes and member bindings, then the shape each node id lands in, each
-     * swept, then the defects judging both.
+     * The stage: the built classes and member bindings, then where each node id lands and the shape
+     * it lands in, each swept, then the defects judging them.
      */
     public static void derive(DSLContext dsl, String graph, LocalDateTime readAt) {
         write(dsl, graph, readAt);
         sweep(dsl, graph, readAt);
+        OccurrenceNodeIdSlots.write(dsl, graph, readAt);
+        OccurrenceNodeIdSlots.sweep(dsl, graph, readAt);
         OccurrenceNodeIdShapes.write(dsl, graph, readAt);
         OccurrenceNodeIdShapes.sweep(dsl, graph, readAt);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.BUILDS);

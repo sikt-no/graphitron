@@ -83,3 +83,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_member", ro
   Query.countFilmSurvey(in.mood:),                 no.sikt.graphitron.rewrite.test.services.FilmSurvey#mood,          Query.countFilmSurvey(in:)
   Query.countFilmSurvey(in.note:),                 no.sikt.graphitron.rewrite.test.services.FilmSurvey#note,          Query.countFilmSurvey(in:)
   """)
+
+# A node id in an input object built into a jOOQ record lands on that record, whose columns take its
+# key; it fills no member.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows: """
+  coordinate,                                   kind,   landing_class,                                                           slot_shape
+  Query.countFilmRecordDatedDrafts(in.filmId:), RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, SINGLE
+  """)

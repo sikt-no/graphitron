@@ -136,13 +136,17 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
   """)
 
-# A container's slot is one, the parameter the argument is named for.
-extend schema @expectEquals(relation: "graphitron_node_id_slot", where: """
-  element_coordinate IN ('Query.occupant(occupant:)', 'Query.greet(userId:)')
+# A container's slot is one, the parameter the argument is named for, and inside a @service's input
+# the member of the bean its input object is built into.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", where: """
+  coordinate IN ('Query.occupant(occupant:)', 'Query.greet(userId:)')
+     OR coordinate LIKE 'Query.assignOccupant%'
   """, rows: """
-  element_coordinate,        parameter_name, by_name
-  Query.greet(userId:),      userId,         TRUE
-  Query.occupant(occupant:), occupant,       TRUE
+  coordinate,                                    kind,      slot_shape, landing_class
+  Query.assignOccupantRecord(in.occupant:),      MEMBER,    SINGLE,     org.jooq.UpdatableRecord
+  Query.assignOccupantRecordList(in.occupants:), MEMBER,    LIST,       org.jooq.UpdatableRecord
+  Query.greet(userId:),                          PARAMETER, SINGLE,     java.lang.String
+  Query.occupant(occupant:),                     PARAMETER, SINGLE,     org.jooq.UpdatableRecord
   """)
 
 # A container binding a table itself binds no node id, at an argument, at an input field or under a

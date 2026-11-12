@@ -22,10 +22,10 @@ type Query {
 
 # The slot is the mapped parameter, typed off the method the reference resolved to, and not the
 # one the argument is named for.
-extend schema @expectEquals(relation: "graphitron_node_id_slot", rows: """
-  element_coordinate, parameter_name, by_name, landing_type
-  Query.film(ids:),   id,             FALSE,   java.lang.Integer
-  Query.films(ids:),  userId,         FALSE,   java.lang.String
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows: """
+  coordinate,        kind,      landing_class
+  Query.film(ids:),  PARAMETER, java.lang.Integer
+  Query.films(ids:), PARAMETER, java.lang.String
   """)
 
 # One destination however the parameter was reached: the name match stands aside where a pair

@@ -13,9 +13,8 @@ import static org.jooq.impl.DSL.val;
  * Writes {@code graphitron_occurrence_node_id_shape}: how each node id lands in the class it is
  * handed to, where a shape fits, from the rule view beside it, marked and swept.
  *
- * <p>A step of {@link OccurrenceBuilds}' stage, after {@link OccurrenceDepths}, since a landing joins a
- * node id binding to the call parameter its root argument fills, which that stage writes at different
- * depths.
+ * <p>A step of {@link OccurrenceBuilds}' stage, after {@link OccurrenceNodeIdSlots}, whose landings it
+ * judges.
  */
 public final class OccurrenceNodeIdShapes {
 

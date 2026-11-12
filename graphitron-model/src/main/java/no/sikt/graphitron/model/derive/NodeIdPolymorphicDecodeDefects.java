@@ -18,8 +18,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
@@ -65,7 +67,9 @@ public final class NodeIdPolymorphicDecodeDefects {
      */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT_SITE,
         GRAPHITRON_ENTRY_DEFECT_MEMBER, GRAPHITRON_BINDING_CLAIM, GRAPHITRON_TYPE, GRAPHITRON_NODE,
-        GRAPHITRON_NODE_ID_SLOT, GRAPHITRON_OCCURRENCE, GRAPHITRON_ARGUMENT, GRAPHQL_ARGUMENT,
+        GRAPHITRON_OCCURRENCE_NODE_ID_SLOT, GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER,
+        GRAPHITRON_OCCURRENCE, GRAPHITRON_OCCURRENCE_CALL_PARAMETER,
+        GRAPHITRON_ARGUMENT, GRAPHQL_ARGUMENT,
         GRAPHQL_POLY_MEMBER, GRAPHITRON_TABLETYPE, SQL_TABLE);
 
     /** Which precondition stopped the polymorphic decode, in the view's own closed vocabulary. */
@@ -205,22 +209,37 @@ public final class NodeIdPolymorphicDecodeDefects {
         return new Detection(out);
     }
 
-    /** Each declared argument or input field's slot, the least parameter where uses differ. */
+    /**
+     * Each declared argument or input field's slot under a {@code @service}, the least parameter where
+     * uses differ: a parameter of its call, or a member or record its input object is built into
+     * where the root argument goes to one, which names the root argument's parameter.
+     */
     private static Map<String, Slot> slots(DSLContext dsl, String graphName) {
-        var s = GRAPHITRON_NODE_ID_SLOT;
+        var s = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+        var sp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
         var o = GRAPHITRON_OCCURRENCE;
+        var cp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var rp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER.as("rp");
         var a = GRAPHITRON_ARGUMENT;
         var g = GRAPHQL_ARGUMENT;
+        var parameter = coalesce(cp.PARAMETER_NAME, rp.PARAMETER_NAME);
         var out = new HashMap<String, Slot>();
-        dsl.select(s.ELEMENT_COORDINATE, s.PARAMETER_NAME, s.LANDING_TYPE, s.SLOT_SHAPE, g.LIST_DEPTH)
+        dsl.select(o.ELEMENT_COORDINATE, parameter, s.LANDING_CLASS, s.SLOT_SHAPE, g.LIST_DEPTH)
             .from(s)
-            .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.ID_COORDINATE))
+            .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE))
+            .leftJoin(sp).on(sp.GRAPH_NAME.eq(s.GRAPH_NAME), sp.COORDINATE.eq(s.COORDINATE),
+                sp.SLOT.eq(s.SLOT))
+            .leftJoin(cp).on(cp.GRAPH_NAME.eq(sp.GRAPH_NAME), cp.COORDINATE.eq(sp.CALL_COORDINATE),
+                cp.CALL.eq(sp.CALL), cp.POSITION.eq(sp.POSITION))
+            .leftJoin(rp).on(s.KIND.in("MEMBER", "RECORD"), rp.GRAPH_NAME.eq(o.GRAPH_NAME),
+                rp.FILL.eq("ARGUMENT"), rp.LANDING_COORDINATE.eq(o.ARGUMENT_COORDINATE),
+                rp.CALL_KIND.eq("SERVICE"))
             .join(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME),
                 a.COORDINATE.eq(coalesce(o.ARGUMENT_COORDINATE, o.COORDINATE)))
             .join(g).on(g.GRAPH_NAME.eq(a.GRAPH_NAME), g.TYPE_NAME.eq(a.TYPE_NAME),
                 g.FIELD_NAME.eq(a.FIELD_NAME), g.ARGUMENT_NAME.eq(a.ARGUMENT_NAME))
-            .where(s.GRAPH_NAME.eq(graphName))
-            .orderBy(s.ELEMENT_COORDINATE, s.PARAMETER_NAME)
+            .where(s.GRAPH_NAME.eq(graphName), cp.CALL_KIND.eq("SERVICE").or(rp.CALL_KIND.isNotNull()))
+            .orderBy(o.ELEMENT_COORDINATE, parameter)
             .forEach(r -> out.putIfAbsent(r.value1(), new Slot(r.value2(),
                 "LIST".equals(r.value4()) ? "java.util.List" : r.value3(), r.value5())));
         return out;

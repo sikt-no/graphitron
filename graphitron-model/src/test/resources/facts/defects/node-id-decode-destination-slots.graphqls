@@ -1,6 +1,6 @@
-# Whether a decoded node id reaches a Java parameter, and which one, keyed at the root of the use
-# site: an argument fed to a parameter is a slot, and so is an input field below it, because the
-# argument is. Where no parameter is fed the decode binds a table predicate and draws no slot row,
+# Whether a decoded node id reaches Java, and where: an argument fed to a parameter lands on it whole,
+# and an input field below it lands on the member of the class its input object is built into, or on
+# the record. Where no parameter is fed the decode binds a table predicate and draws no slot row,
 # however the key lands.
 
 type Film @table(name: "film") @node { title: String }
@@ -38,18 +38,19 @@ type Query {
   # An overload resolves both candidate slots.
   byIds(ids: ID @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "byIds"})
-  # An input field reaches Java because its root argument does ...
+  # An input field reaches Java where it fills a member of the class its argument is built into, and
+  # FilmTitleFilter has none for filmId ...
   echo(by: Filter): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
   # ... and binds a predicate where nothing consumes that argument.
   filtered(where: Filter): [Film!]!
 }
 
-# An overload resolves to no one method, so it is no slot here: the reference's own defect says so.
-extend schema @expectEquals(relation: "graphitron_node_id_slot", rows: """
-  element_coordinate,         id_coordinate,           parameter_name, by_name, landing_type
-  Filter.filmId,              Query.echo(by.filmId:),  by,             TRUE,    no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter
-  Query.film(id:),            Query.film(id:),         id,             TRUE,    java.lang.Integer
-  Query.modifyFilmRecord(in:), Query.modifyFilmRecord(in:), in,        TRUE,    no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
-  Query.untyped(ids:),        Query.untyped(ids:),     ids,            TRUE,
+# An overload resolves to no one method, so it is no slot here: the reference's own defect says so. A
+# primitive parameter is a slot with no class.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows: """
+  coordinate,                  kind,      landing_class,                                                           slot_shape
+  Query.film(id:),             PARAMETER, java.lang.Integer,                                                       SINGLE
+  Query.modifyFilmRecord(in:), PARAMETER, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, SINGLE
+  Query.untyped(ids:),         PARAMETER,                                                                         ,
   """)

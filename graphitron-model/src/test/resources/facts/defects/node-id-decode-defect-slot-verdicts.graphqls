@@ -99,13 +99,13 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """)
 
 # What the decode lands in at each slot the verdicts read.
-extend schema @assertContains(relation: "graphitron_node_id_slot", rows: """
-  element_coordinate,            parameter_name, by_name, slot_shape, landing_type
-  Query.greetings(userId:),      userId,         TRUE,    SINGLE,     java.lang.String
-  Query.pairingsByIds(ids:),     ids,            TRUE,    LIST,       java.lang.Integer
-  Query.rateFilms(ratings:),     ratings,        TRUE,    LIST,       no.sikt.graphitron.rewrite.test.services.FilmRating
-  Query.titleTitlecase(films:),  films,          TRUE,    MISMATCH,   java.util.Set
-  Query.filmActorByIds(ids:),    ids,            TRUE,    MISMATCH,   java.util.List
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", rows: """
+  coordinate,                    kind,      slot_shape, landing_class
+  Query.greetings(userId:),      PARAMETER, SINGLE,     java.lang.String
+  Query.pairingsByIds(ids:),     PARAMETER, LIST,       java.lang.Integer
+  Query.rateFilms(ratings:),     PARAMETER, LIST,       no.sikt.graphitron.rewrite.test.services.FilmRating
+  Query.titleTitlecase(films:),  PARAMETER, MISMATCH,   java.util.Set
+  Query.filmActorByIds(ids:),    PARAMETER, MISMATCH,   java.util.List
   """)
 
 # How each decode that resolves lands: the node's own record, its one column's value, or a jOOQ

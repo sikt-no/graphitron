@@ -166,8 +166,11 @@ class SupertypeSignatureGateTest {
         Set.of("graphql_implements_interface", "graphql_union_member"),
         // An occurrence's source and its binding, whose payload is their kind alone: what each kind
         // takes is its subtype's, so a binding and a source are two supertypes of the occurrence, not
-        // one fact under two keys.
-        Set.of("graphitron_occurrence_binding", "graphitron_occurrence_source"),
+        // one fact under two keys. A node id's member slot joins them on the same terms: its payload
+        // is the kind its supertype pins, and the bound it is keyed by is its own MEMBER binding's,
+        // which it references rather than restates.
+        Set.of("graphitron_occurrence_binding", "graphitron_occurrence_node_id_slot_member",
+            "graphitron_occurrence_source"),
         // A call and the methods it could make, whose payload is the call's kind alone: a candidate is
         // stated before the pin that decides which call exists, so it cannot key into the call, and
         // the call keeps the kind its subtypes key on. Two grains, not one fact under two keys.

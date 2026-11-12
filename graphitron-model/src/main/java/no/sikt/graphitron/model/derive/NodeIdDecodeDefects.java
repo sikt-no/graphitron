@@ -16,8 +16,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -37,7 +41,7 @@ import static org.jooq.impl.DSL.selectOne;
  * receives either has its decode carried out or is one of the three refusals below. The refusals
  * are entry defects at the {@code @nodeId}, which the graphitron rule picks between on the slot's
  * shape and then the node key's arity; what remains here is the decode of those codes into
- * {@link Rejection} arms and the prose they carry, from the slot in {@code graphitron_node_id_slot}
+ * {@link Rejection} arms and the prose they carry, from the slot in {@code graphitron_occurrence_node_id_slot}
  * and the key the occurrence binds in {@code graphitron_occurrence_node_id}.
  *
  * <p>A {@code java.util.List} parameter at a list argument is judged on its element, which is where
@@ -63,8 +67,9 @@ import static org.jooq.impl.DSL.selectOne;
  * the node id instead of a parameter name matching it, and the shared vocabulary lives in
  * {@link NodeIdMessages}. What differs is the remedy, and it differs because the carrier does: an
  * author who wrote an {@code argMapping} entry is told about their entry, and an author who wrote
- * none is told about the name match that found the parameter, which is the provenance the slot
- * relation's {@code carrier} column exists to make sayable.
+ * none is told about the name match that found the parameter, which is the provenance
+ * {@code graphitron_occurrence_call_parameter_pair} makes sayable: a parameter a pair fills has a row
+ * there, and this family judges only those that have none.
  */
 public final class NodeIdDecodeDefects {
 
@@ -73,7 +78,9 @@ public final class NodeIdDecodeDefects {
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = NodeIdMessages.readsWith(
         Set.of(GRAPHITRON_ENTRY_DEFECT_SITE, GRAPHITRON_BINDING_CLAIM, GRAPHITRON_TYPE, GRAPHITRON_NODE,
-            GRAPHITRON_NODE_ID_SLOT, GRAPHITRON_OCCURRENCE_NODE_ID,
+            GRAPHITRON_OCCURRENCE_NODE_ID_SLOT, GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER,
+            GRAPHITRON_OCCURRENCE, GRAPHITRON_OCCURRENCE_CALL_PARAMETER,
+            GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR, GRAPHITRON_OCCURRENCE_NODE_ID,
             GRAPHITRON_ARGUMENT, GRAPHQL_ARGUMENT, SQL_COLUMN, SQL_TABLE));
 
     /** Which precondition stopped the decode, in the view's own closed vocabulary. */
@@ -208,28 +215,40 @@ public final class NodeIdDecodeDefects {
      * slot's shape and landing, the argument's list depth, and the key its occurrence binds.
      */
     private static Map<String, Slot> slots(DSLContext dsl, String graphName) {
-        var s = GRAPHITRON_NODE_ID_SLOT;
+        var s = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+        var sp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+        var o = GRAPHITRON_OCCURRENCE;
+        var cp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var pp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
         var c = SQL_COLUMN;
         var t = SQL_TABLE;
         var a = GRAPHITRON_ARGUMENT;
         var g = GRAPHQL_ARGUMENT;
         var out = new HashMap<String, Slot>();
-        dsl.select(s.ELEMENT_COORDINATE, s.PARAMETER_NAME, a.ARGUMENT_NAME, s.LANDING_TYPE,
+        dsl.select(o.ELEMENT_COORDINATE, cp.PARAMETER_NAME, a.ARGUMENT_NAME, s.LANDING_CLASS,
                 s.SLOT_SHAPE, g.LIST_DEPTH, min(n.NODE_TYPE_NAME), count(), min(n.COLUMN_NAME),
                 min(c.BINDING_TYPE), min(t.RECORD_CLASS_FQN))
-            .from(s)
-            .join(n).on(n.GRAPH_NAME.eq(s.GRAPH_NAME), n.COORDINATE.eq(s.ID_COORDINATE))
+            .from(sp)
+            .join(s).on(s.GRAPH_NAME.eq(sp.GRAPH_NAME), s.COORDINATE.eq(sp.COORDINATE), s.SLOT.eq(sp.SLOT))
+            .join(o).on(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE))
+            .join(cp).on(cp.GRAPH_NAME.eq(sp.GRAPH_NAME), cp.COORDINATE.eq(sp.CALL_COORDINATE),
+                cp.CALL.eq(sp.CALL), cp.POSITION.eq(sp.POSITION))
+            .join(n).on(n.GRAPH_NAME.eq(s.GRAPH_NAME), n.COORDINATE.eq(s.COORDINATE))
             .leftJoin(c).on(c.SOURCE_NAME.eq(n.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(n.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(n.TABLE_NAME), c.COLUMN_NAME.eq(n.COLUMN_NAME))
             .leftJoin(t).on(t.SOURCE_NAME.eq(n.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(n.TABLE_SCHEMA),
                 t.TABLE_NAME.eq(n.TABLE_NAME))
-            .join(a).on(a.GRAPH_NAME.eq(s.GRAPH_NAME), a.COORDINATE.eq(s.ELEMENT_COORDINATE))
+            .join(a).on(a.GRAPH_NAME.eq(o.GRAPH_NAME), a.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .join(g).on(g.GRAPH_NAME.eq(a.GRAPH_NAME), g.TYPE_NAME.eq(a.TYPE_NAME),
                 g.FIELD_NAME.eq(a.FIELD_NAME), g.ARGUMENT_NAME.eq(a.ARGUMENT_NAME))
-            .where(s.GRAPH_NAME.eq(graphName), s.SITE.eq("FIELD_ARGUMENT"), s.BY_NAME.isTrue())
-            .groupBy(s.ELEMENT_COORDINATE, s.ID_COORDINATE, s.PARAMETER_NAME, a.ARGUMENT_NAME,
-                s.LANDING_TYPE, s.SLOT_SHAPE, g.LIST_DEPTH)
+            // The parameter a @service's call names for the argument, which no written pair fills.
+            .where(sp.GRAPH_NAME.eq(graphName), o.KIND.eq("FIELD_ARGUMENT"),
+                cp.CALL_KIND.eq("SERVICE"), cp.PARAMETER_NAME.eq(o.NAME),
+                notExists(selectOne().from(pp).where(pp.GRAPH_NAME.eq(cp.GRAPH_NAME),
+                    pp.COORDINATE.eq(cp.COORDINATE), pp.CALL.eq(cp.CALL), pp.POSITION.eq(cp.POSITION))))
+            .groupBy(o.ELEMENT_COORDINATE, s.COORDINATE, cp.PARAMETER_NAME, a.ARGUMENT_NAME,
+                s.LANDING_CLASS, s.SLOT_SHAPE, g.LIST_DEPTH)
             .forEach(r -> {
                 int arity = r.value8();
                 String record = "org.jooq.Record".equals(r.value11()) ? null : r.value11();

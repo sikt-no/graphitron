@@ -84,15 +84,13 @@ class DetectionReadReachGateTest {
             "intent_resolved_node_key_shape"));
 
         // The defects are entry defects, read off the site view, which places them through the
-        // element field; the facts a message names come from the slot view, over stored tables.
+        // element field; the facts a message names come from the stored slot table.
         REACH.put("NodeIdDecodeDefects", Set.of(
             "graphitron_entry_defect_site",
-            "graphitron_node_id_slot",
             "graphql_element_field"));
 
         REACH.put("NodeIdPolymorphicDecodeDefects", Set.of(
             "graphitron_entry_defect_site",
-            "graphitron_node_id_slot",
             "graphql_element_field",
             // A container's members, in declared order, for the messages that list them.
             "graphql_poly_member"));
