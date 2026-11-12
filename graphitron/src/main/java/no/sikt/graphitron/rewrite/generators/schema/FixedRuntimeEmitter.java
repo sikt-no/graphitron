@@ -17,7 +17,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
  * The runtime classes every generating run writes the same way: the request context interface, the
  * transaction provider, the constraint-violation helper, the client exception, the zero-rows-matched
  * exception, the error router and the outcome carrier. What they say depends on nothing but the package they are written under, so
- * there is nothing to plan: this reads the package off {@code store_graph_output} and renders.
+ * there is nothing to plan: this reads the package off {@code store_graph_output} and renders. A graph
+ * that vouches adds the voucher runtime ({@link no.sikt.graphitron.emit.VoucherRuntime}), whose gate is the store's.
  *
  * <p>The units it returns are the record of what was written, which the incremental compile graph
  * reads in place of a planned entry per class.
@@ -41,7 +42,25 @@ public final class FixedRuntimeEmitter {
             .fetchOptional(STORE_GRAPH_OUTPUT.OUTPUT_PACKAGE)
             .orElseThrow(() -> new IllegalStateException("graph '" + store.graphName()
                 + "' has no output coordinates in the store; only a generating run writes classes"));
-        return render(outputPackage);
+        var units = new ArrayList<>(render(outputPackage));
+        if (no.sikt.graphitron.emit.VoucherRuntime.vouches(store)) {
+            units.addAll(renderVoucherRuntime(outputPackage));
+        }
+        return List.copyOf(units);
+    }
+
+    /** The voucher runtime written under {@code outputPackage}, in a graph that vouches. */
+    public static List<Unit> renderVoucherRuntime(String outputPackage) {
+        var units = new GeneratedUnits(outputPackage);
+        var specs = no.sikt.graphitron.emit.VoucherRuntime.render(outputPackage);
+        var out = new ArrayList<Unit>();
+        add(out, GlobalUnitKind.VOUCHER_CODEC,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.CODEC), specs.subList(0, 1));
+        add(out, GlobalUnitKind.VOUCHER_KEYS,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.KEYS), specs.subList(1, 2));
+        add(out, GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.REJECTED), specs.subList(2, 3));
+        return List.copyOf(out);
     }
 
     /** The fixed runtime classes written under {@code outputPackage}. */

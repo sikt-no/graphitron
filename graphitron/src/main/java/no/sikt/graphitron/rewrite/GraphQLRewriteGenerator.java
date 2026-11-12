@@ -700,7 +700,8 @@ public class GraphQLRewriteGenerator {
             case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, sessionIdentity, connectionKeyShape, tenantColumn);
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, sessionIdentity);
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
-                 ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME -> throw new IllegalStateException(command.kind()
+                 ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME, VOUCHER_CODEC, VOUCHER_KEYS,
+                 VOUCHER_REJECTED_EXCEPTION -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);

@@ -9,9 +9,10 @@ package no.sikt.graphitron.command;
  * {@link #FACETS})
  * are absent when their producer-side membership predicate excludes them.
  *
- * <p>Seven kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
+ * <p>Ten kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
  * {@link #CONSTRAINT_VIOLATIONS}, {@link #CLIENT_EXCEPTION}, {@link #ZERO_ROWS_MATCHED_EXCEPTION},
- * {@link #ERROR_ROUTER} and {@link #OUTCOME} are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
+ * {@link #ERROR_ROUTER}, {@link #OUTCOME} and the voucher runtime's {@link #VOUCHER_CODEC},
+ * {@link #VOUCHER_KEYS} and {@link #VOUCHER_REJECTED_EXCEPTION} are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
  * what it wrote by these constants so the compile graph's wiring for them stays one switch.
  *
  * <p>A pure key: where a unit of the kind lands is carried by the command's {@link UnitRef}s,
@@ -49,6 +50,12 @@ public enum GlobalUnitKind {
     ZERO_ROWS_MATCHED_EXCEPTION,
     ERROR_ROUTER,
     OUTCOME,
+    /** Written exactly when the graph vouches: the voucher format's owner. */
+    VOUCHER_CODEC,
+    /** Written exactly when the graph vouches: the keys vouchers are signed and verified with. */
+    VOUCHER_KEYS,
+    /** Written exactly when the graph vouches: the rejection a failed voucher check throws. */
+    VOUCHER_REJECTED_EXCEPTION,
     ERROR_MAPPINGS,
     SCHEMA_CLASS,
     /** Present exactly when the schema classifies at least one node type. */

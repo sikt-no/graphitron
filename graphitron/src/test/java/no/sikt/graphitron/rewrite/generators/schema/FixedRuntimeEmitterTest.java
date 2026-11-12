@@ -30,6 +30,17 @@ class FixedRuntimeEmitterTest {
                 tuple(GlobalUnitKind.OUTCOME, "com.example.gen.schema.Outcome", "Outcome"));
     }
 
+    @Test
+    void theVoucherRuntimeIsThreeClassesUnderTheSchemaPackage() {
+        assertThat(FixedRuntimeEmitter.renderVoucherRuntime("com.example.gen"))
+            .extracting(FixedRuntimeEmitter.Unit::kind, unit -> unit.ref().fqcn(), unit -> unit.spec().name())
+            .containsExactly(
+                tuple(GlobalUnitKind.VOUCHER_CODEC, "com.example.gen.schema.VoucherCodec", "VoucherCodec"),
+                tuple(GlobalUnitKind.VOUCHER_KEYS, "com.example.gen.schema.VoucherKeys", "VoucherKeys"),
+                tuple(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION, "com.example.gen.schema.VoucherRejectedException",
+                    "VoucherRejectedException"));
+    }
+
     /**
      * The package is read off the run's captured output coordinates, so a store holding none, as
      * a validating run's does, refuses rather than writing under a package nobody configured. The

@@ -306,7 +306,12 @@ public final class PlanCompileGraph {
                      CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
-                     ERROR_MAPPINGS -> { }
+                     ERROR_MAPPINGS, VOUCHER_KEYS, VOUCHER_REJECTED_EXCEPTION -> { }
+                // The codec signs with the keys and throws the rejection.
+                case VOUCHER_CODEC -> {
+                    precise(units.get(0), require(GlobalUnitKind.VOUCHER_KEYS));
+                    precise(units.get(0), require(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION));
+                }
                 // Always a Facets row, never a fixed one; its edges are the row's arm above.
                 case FACETS -> { }
                 // The context interface always names the per-operation carrier.

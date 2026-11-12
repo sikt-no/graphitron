@@ -381,7 +381,8 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
 * *Key synthesis.* The minted key and `@inaccessible` show in the served `_service.sdl` on both sides,
   and A's issuing type shows `voucher` alone. B's authored keys, `@node` and the relay id are not touched.
 * *Clock skew.* B accepts a voucher up to a fixed 30 seconds past its expiry, so a small difference
-  between A's and B's clocks does not reject fresh vouchers. The constant lives beside the one-claims-per-operation limit.
+  between A's and B's clocks does not reject fresh vouchers. The constant lives on the codec, which is
+  the one place that reads it.
 * *Issue.* The fetcher that reads an `@issue` row selects the voucher components' columns whenever
   `voucher` is selected (nothing else can select them, since they are not fields), and computes the token
   after the rows are read, one signature per row, the caller read from the carrier's `SessionState`. A row
@@ -454,9 +455,14 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    it; slice 6 moves them to `scenarios`. Until
    slice 6, a temporary defect refuses `@issue` at generate time so that a valid schema never reaches an
    emitter that does not exist; slice 6 removes it, and it is listed under Retired vocabulary.
-5. *Codec.* The generated codec, key provider, `Vouch` and `VoucherRejectedException`, emitted only when a
-   marker entry exists; compilation-tier tests and execution tests of the emitted codec. May run beside
-   slice 4.
+5. *Codec.* The generated codec, key provider and `VoucherRejectedException`, emitted only when the
+   graph mints a voucher key (`graphitron_minted_key`, the stored decision a marker applies, so slice 7's
+   `ACCEPT` rows widen the gate with no change to it); compilation-tier tests and execution tests of the
+   emitted codec. The codec signs through an issuer made once per operation and scope, which fixes the
+   vouch id, scope, caller, expiry and key id, and verifies through a verifier made once per request,
+   which fixes the instant and the caller and checks each vouch id's vouchers agree as it goes, so the
+   dispatcher has no separate consistency step to remember. `Vouch` is not here: it is typed by B's
+   claims, so it arrives with them in slice 8. May run beside slice 4.
 6. *Issuing.* A's runtime schema, the walk and the runtime wiring reading the one membership-reading
    removal; the issue fetcher, `SessionState.of(caller, ...)` and the key parameter on
    `Graphitron.runtime(...)`, gated on the issue entry; A-alone execution tests (tokens decode, one vouch
@@ -465,7 +471,7 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    `@inaccessible`, the voucher alternative in the entity key alternatives. The same temporary-refusal device as slice 4,
    removed in slice 8.
 8. *Dispatch.* The claims as a part of `ConnectionKey`, the dispatcher's verify and group, vouched
-   acquisition, `MountedSession.vouch()`, the A and B RLS execution fixture, and the recorded composition
+   acquisition, `Vouch` typed by the claims and `MountedSession.vouch()`, the A and B RLS execution fixture, and the recorded composition
    check.
 
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)

@@ -46,7 +46,10 @@ class EmitPlanTest {
         GlobalUnitKind.CLIENT_EXCEPTION,
         GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION,
         GlobalUnitKind.ERROR_ROUTER,
-        GlobalUnitKind.OUTCOME));
+        GlobalUnitKind.OUTCOME,
+        GlobalUnitKind.VOUCHER_CODEC,
+        GlobalUnitKind.VOUCHER_KEYS,
+        GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION));
 
     @Test
     void plainSchema_producesTheUnconditionalKinds() {
