@@ -194,9 +194,26 @@ census it replaced is gone.
     `ClasspathMethods`, `ExternalFieldLifters`, `DeclarationFacts`, `ScalarTypeCompletions`,
     `ArgMappingCompletions`, `InlayFacts` and the MCP's `SchemaQueries` still read `code_` rows through
     `store_graph_source`, so where two entries declare a name they can answer with the shadowed copy.
-  * **A catalog source is read alone** `open`. Not yet checked: whether the jOOQ catalog reading
-    writes anything for a source that depends on the sources read beside it, or skips a source
-    store-wide as the classpath reading does.
+  * **A catalog source is read alone** `open`. The reading is sound: every capture reads each
+    catalog whole with no store-wide skip, and nothing in it depends on the order sources are read
+    in. What is not:
+    * **A graph's catalog claims are dropped when it stops claiming them** `open`. Membership is
+      insert-or-ignore (`JooqFactCapture` around 929-939, and the early returns at 102-108), so a
+      graph that changes or drops `jooqPackage` keeps reading the old sources; drop the memberships
+      a pass did not claim, as `GraphQLSourceCapture.dropMembership` does.
+    * **Two graphs loading different builds of one jOOQ package are told so** `open`. The source is
+      keyed by package name and filled from the reading graph's loader, so the last capture wins
+      silently and its sweep deletes the other build's rows; stamp the source with its content and
+      refuse or report a disagreement.
+    * **Every read of `sql_table` by record class goes through the graph's sources** `open`.
+      `graphitron_occurrence_depth_entry_defect_rule` and `graphitron_entry_defect_rule` match a
+      record class against any graph's catalog.
+    * `sql_table_record_supertype` is never swept and is filled through the reading graph's
+      classpath, so it holds the union of every reader's: ends with "A class's supertypes are one
+      code fact". `NameMatchedKeys` matches functions against every catalog in the store: ends with
+      "`sql_name_matched_key_column` is gone". A table with no schema takes the empty source name,
+      and a foreign key to a table outside the pass guesses its source from the declaring table:
+      both minor, fixed where those lines are next touched.
   * **What a class is by its supertypes is derived per graph** `blocked`, on "A class's supertypes
     are one code fact". Throwable, lifter, enum and parameter role are classified through
     `ClassAncestry` over the reading graph's classpath and written into shared rows, so the first
