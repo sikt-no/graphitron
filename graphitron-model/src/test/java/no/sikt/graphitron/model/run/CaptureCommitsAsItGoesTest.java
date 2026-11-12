@@ -20,7 +20,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * A capture commits as it goes, and {@code store_graph_progress} says how far it got.
+ * A capture commits as it goes, and {@code store_graph_progress} says how far it got. A reading
+ * that runs to its end completes every row, which {@code CapturedGraphInvariantsTest} holds of every
+ * fact document's graph; this is the reading that does not.
  *
  * <p>The failure is made the way a late failure happens: a relation the graphitron gatherer writes
  * is gone, so the reading stops after every gatherer before it has committed. On a store of the
@@ -32,23 +34,6 @@ class CaptureCommitsAsItGoesTest {
     Path tmp;
 
     private static final String SDL = "type Query { film: Film }\ntype Film { title: String }\n";
-
-    /** Every gatherer a capture runs, in the order it runs them, and the capture as a whole. */
-    private static final List<String> GATHERERS = List.of("capture", "store", "jooq",
-        "classpath-source", "code", "graphql-source", "graphql-ast", "federation", "sdl",
-        "graphitron", "graphql-assembly", "derivation");
-
-    @Test
-    @DisplayName("a reading that runs to its end completes every gatherer's row and the capture's")
-    void aCompleteReadingCompletesEveryRow() throws IOException {
-        try (var store = FactStores.inMemory()) {
-            GraphitronStore.capture(store, graph(), corpus(), List.of(), null);
-
-            assertThat(finished(store.dsl()).keySet()).containsExactlyInAnyOrderElementsOf(GATHERERS);
-            assertThat(finished(store.dsl()).values()).as("every row says how long it took")
-                .allMatch(finished -> finished);
-        }
-    }
 
     @Test
     @DisplayName("a reading that stops partway leaves what it finished, and says where it stopped")

@@ -5,7 +5,6 @@ import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.SchemaLoader;
-import no.sikt.graphitron.model.test.AgreementCorpus;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
@@ -29,7 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * two ways, once by capture's own notes and once by re-enumerating the run's inputs here (the SDL
  * registry's source census, the catalog's schema packages, the classpath's declared entries).
  *
- * <p>Two graphs in one store, one catalog-bearing and one SDL-only, so "this graph's sources" is
+ * <p>Two graphs in one store, each a fact document: one catalog-bearing, {@code element-declaration}
+ * over two files declaring a schema block, a directive, an input and an enum beside its types, and
+ * one SDL-only, the anchor layout read with no catalog and no classpath. So "this graph's sources" is
  * distinguishable from "sources anyone read": the SDL-only graph must not inherit the sibling's
  * catalog membership, and capturing it must leave the sibling's rows standing.
  */
@@ -40,8 +41,7 @@ class ModelCaptureMembershipTest {
     void membershipEqualsTheRunsReadSet(@TempDir Path tmp) {
         var jooq = new JooqCatalog(TestRunContext.JOOQ_PACKAGE);
         var classpath = ClasspathCorpus.entries();
-        String bSdl = "type Query { ping: String }";
-        try (var store = CapturedStore.ofCatalogWith(tmp, "a", AgreementCorpus.SDL,
+        try (var store = CapturedStore.ownStoreOfDocument(tmp, "scenarios/element-declaration", "a",
                 CatalogInput.of(TestRunContext.JOOQ_PACKAGE), classpath)) {
             var expectedA = new LinkedHashSet<>(sdlSourceNames(store.registry()));
             for (var entry : jooq.allTableEntries()) {
@@ -53,8 +53,8 @@ class ModelCaptureMembershipTest {
 
             // The second graph is SDL alone: no catalog and no classpath, so a source in its
             // membership that is not its own file is one it inherited.
-            store.andGraph("b", bSdl);
-            var expectedB = new LinkedHashSet<>(sdlSourceNames(CapturedStore.registryOf(tmp, "b", bSdl)));
+            var b = store.andDocument("layouts/anchor", "b", null, List.of());
+            var expectedB = new LinkedHashSet<>(sdlSourceNames(b.written().read().registry()));
             expectedB.add(FederationCapture.SOURCE_NAME);
             assertThat(membership(store.dsl(), "b"))
                 .as("an SDL-only capture's membership is its own file census and the federation"

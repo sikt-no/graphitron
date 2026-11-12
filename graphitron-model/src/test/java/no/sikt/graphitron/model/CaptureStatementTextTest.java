@@ -1,27 +1,13 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.run.ModelCapture;
-import no.sikt.graphitron.model.run.SubjectConfig;
-import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.test.ThreadConfinedStore;
-import org.jooq.DSLContext;
-import org.jooq.ExecuteContext;
-import org.jooq.ExecuteListener;
-import org.jooq.impl.DSL;
-import org.jooq.impl.DefaultExecuteListenerProvider;
+import no.sikt.graphitron.model.test.FactGraphs;
+import no.sikt.graphitron.model.test.Scenario;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.io.IOException;
-import java.io.UncheckedIOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.time.LocalDateTime;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Set;
+import java.time.ZoneOffset;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -29,71 +15,39 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A capture's statements read the same from one capture to the next, so H2 plans each once and
  * reuses the plan: the instant a reading marks its rows with is a bind parameter, never a literal
  * rendered into the text, where every capture would make it a statement H2 has not seen.
+ *
+ * <p>Read off every statement the fact documents' captures ran
+ * ({@link FactGraphs.Reader#statementTexts}), stepped scenarios' later readings among them. Every
+ * scenario's clock starts at {@link Scenario#T0} and moves by minutes, so an instant rendered into a
+ * statement would carry that day; a timestamp literal of any day is refused too, the wall clock's
+ * included.
  */
 class CaptureStatementTextTest {
 
-    private static final String GRAPH = "statement-text";
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
+    private static final Pattern TIMESTAMP_LITERAL = Pattern.compile("(?i)\\btimestamp\\s*'");
 
     /**
-     * Enough to run the writers that mark and sweep: types and fields for the anchors, a path the
-     * field paths stage walks, and written defects, so the entry-defect merge and its sweep run with
-     * rows.
+     * The one timestamp literal a statement may carry: the epoch a claim's check counts instants
+     * from, the same in every statement, so no reading's instant.
      */
-    private static final String SDL = """
-        type Query {
-          films: [Film] @service(service: {className: "example.Missing", method: "films"})
-          film(id: ID): Film
-        }
-        type Film @table(name: "film") {
-          title: String
-          language: Language @reference(path: [{key: "no_such_key"}])
-        }
-        type Language @table(name: "language") { name: String }
-        """;
+    private static final String EPOCH = "TIMESTAMP '1970-01-01 00:00:00'";
 
     @Test
-    @DisplayName("a second capture of one schema issues no statement text the first did not")
-    void aSecondCaptureRepeatsTheFirstsStatements(@TempDir Path directory) {
-        try {
-            Files.writeString(directory.resolve("schema.graphqls"), SDL);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
-        var first = LocalDateTime.of(2026, 1, 1, 12, 0);
+    @DisplayName("no statement a capture runs carries the instant it reads at")
+    void noStatementCarriesItsInstant() {
+        var texts = FACTS.statementTexts();
 
-        ThreadConfinedStore.run(dsl -> {
-            var firstTexts = capture(dsl, directory, config, first);
-            var secondTexts = capture(dsl, directory, config, first.plusMinutes(1));
-
-            assertThat(firstTexts).as("the capture ran statements").isNotEmpty();
-            assertThat(firstTexts)
-                .as("statements carrying a timestamp literal, the reading's instant inlined")
-                .noneMatch(sql -> sql.contains("timestamp '"));
-            var unseen = new LinkedHashSet<>(secondTexts);
-            unseen.removeAll(firstTexts);
-            assertThat(unseen)
-                .as("statements the second capture issued in a text the first did not")
-                .isEmpty();
-        });
+        assertThat(texts).as("the captures ran statements").hasSizeGreaterThan(100);
+        assertThat(texts)
+            .as("statements carrying a timestamp literal or the scenario clock's day, the reading's"
+                + " instant inlined")
+            .noneMatch(sql -> TIMESTAMP_LITERAL.matcher(sql.replace(EPOCH, "")).find()
+                || sql.contains(T0_DAY));
     }
 
-    /** Every distinct statement text a capture at {@code readAt} issues, binds left as markers. */
-    private static Set<String> capture(DSLContext dsl, Path directory, SubjectConfig config,
-                                       LocalDateTime readAt) {
-        var texts = new LinkedHashSet<String>();
-        var recording = DSL.using(dsl.configuration().derive(new DefaultExecuteListenerProvider(
-            new ExecuteListener() {
-                @Override
-                public void executeStart(ExecuteContext ctx) {
-                    if (ctx.sql() != null) {
-                        texts.add(ctx.sql());
-                    }
-                }
-            })));
-        ModelCapture.capture(recording, new GraphIdentity(GRAPH, directory), config, List.of(), null,
-            readAt);
-        return texts;
-    }
+    /** The day every scenario's readings fall on, as a statement would spell it. */
+    private static final String T0_DAY = Scenario.T0.atOffset(ZoneOffset.UTC).toLocalDate().toString();
 }

@@ -84,6 +84,14 @@ public final class FactGraphs implements AutoCloseable {
     /** How many stores each catalog's graphs are spread over. */
     static final int SHARDS_PER_CATALOG = 4;
 
+    /**
+     * How many distinct statement texts each store's query statistics keep. H2 drops the least
+     * recently run past this, so it stands well above what a store runs in a whole population: one
+     * capture runs some 560, and a store of some seventy graphs, its claims' and readers'
+     * statements beside its captures', some 1200.
+     */
+    public static final int STATEMENT_TEXTS = 10_000;
+
     private static final ExtensionContext.Namespace NAMESPACE =
         ExtensionContext.Namespace.create(FactGraphs.class);
 
@@ -231,6 +239,11 @@ public final class FactGraphs implements AutoCloseable {
             if (store == null) {
                 store = FactStores.inMemory(StoreUse.LONG_LIVED);
                 BOOTS.incrementAndGet();
+                // Every statement the store runs, captures and reads alike, kept by its text for the
+                // checks over what the population's captures ran; room for every distinct text a
+                // shard sees, so none is evicted before those checks read it.
+                store.dsl().execute("SET QUERY_STATISTICS_MAX_ENTRIES " + STATEMENT_TEXTS);
+                store.dsl().execute("SET QUERY_STATISTICS TRUE");
             }
             // The scenario run: its renders captured into this store as a build reads a folder, under
             // the configuration its own file states, and each claim checked as it arrives.
@@ -362,6 +375,31 @@ public final class FactGraphs implements AutoCloseable {
                 }
             }
             return results;
+        }
+
+        /**
+         * Every distinct statement text the population's stores have run, every document captured
+         * first: the captures' statements, with the claims' and readers' beside them, as each
+         * store's query statistics keep them, binds left as markers. Fails rather than hand back a
+         * set a store may have dropped texts from.
+         */
+        public Set<String> statementTexts() {
+            warm(paths());
+            var texts = new TreeSet<String>();
+            eachStore((dsl, graphs) -> {
+                var held = dsl.fetch("SELECT SQL_STATEMENT FROM INFORMATION_SCHEMA.QUERY_STATISTICS")
+                    .getValues(0, String.class);
+                // H2 drops the least recently run third when the statistics overflow, and a store
+                // that has dropped any holds two thirds of the limit at least from then on.
+                if (held.size() >= STATEMENT_TEXTS / 2) {
+                    throw new IllegalStateException("a store of " + graphs.size() + " graphs ran "
+                        + held.size() + " distinct statements, near enough to the limit of "
+                        + STATEMENT_TEXTS + " that some may have been dropped; raise the limit");
+                }
+                texts.addAll(held);
+                return null;
+            });
+            return texts;
         }
 
         private FactGraphs population() {

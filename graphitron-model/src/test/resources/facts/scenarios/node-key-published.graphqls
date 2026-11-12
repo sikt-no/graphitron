@@ -1,0 +1,23 @@
+# A node by inference keys on the columns its table's class publishes: Keyed implements Node over
+# published_elsewhere, whose class publishes code as the key, and carries no @node, so no pinned list
+# answers before the published one. Its pinned twin, node-key-pinned, binds the same type name to the
+# same table with a list of its own, which is what lets a test owning a store of several graphs ask
+# whether one graph's tier answers in another.
+#
+# The table has a column named id beside the key, so the node id says it is one with @nodeId.
+
+interface Node { id: ID! }
+
+type Keyed implements Node @table(name: "published_elsewhere") { id: ID! @nodeId }
+
+type Query { keyed: [Keyed!]! }
+
+extend schema @expectEquals(relation: "graphitron_node", rows: """
+  type_name, type_id_origin
+  Keyed,     JOOQ_METADATA
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_keycolumn", rows: """
+  type_name, position, column_name, column_origin
+  Keyed,     0,        code,        JOOQ_METADATA
+  """)

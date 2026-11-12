@@ -208,11 +208,12 @@ class RelationRegistrationGateTest {
             registrations.put(relation, Arm.UNSHADOWED);
         }
         // How far a capture got, which is the run's own record and no fact of any schema, so the
-        // walk has nothing to agree with. CaptureCommitsAsItGoesTest pins it, over a reading that
-        // finishes and one that stops partway.
+        // walk has nothing to agree with. CapturedGraphInvariantsTest pins a reading that finishes,
+        // over every fact document, and CaptureCommitsAsItGoesTest one that stops partway.
         registrations.put("store_graph_progress", Arm.UNSHADOWED);
         // How long the capture spent writing each table, the run's own record as well.
-        // WriteTimesTest pins it, over a capture that finishes and a second that writes less.
+        // CapturedGraphInvariantsTest pins it over every fact document's graph, and
+        // minted-element-sweep claims that each of its readings keeps its own rows.
         registrations.put("store_graph_write", Arm.UNSHADOWED);
         registrations.put("store_graph_write_stage", Arm.UNSHADOWED);
         registrations.put("store_graph_read", Arm.UNSHADOWED);

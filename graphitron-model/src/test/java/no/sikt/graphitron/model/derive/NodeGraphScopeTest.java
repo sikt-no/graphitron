@@ -1,10 +1,13 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,53 +22,51 @@ import static org.assertj.core.api.Assertions.tuple;
 /**
  * Nodes and their key columns are a graph's own, which is the one thing a fact document cannot
  * state, a document being one graph. Three graphs share a store here: two read the fixture
- * catalog and bind the same table, one inferring its key from the published metadata and one
- * pinning another column, and the third reads no catalog at all and binds a table the store
- * holds only for the others.
+ * catalog and bind the same table, one inferring its key from the published metadata
+ * ({@code node-key-published}) and one pinning another column ({@code node-key-pinned}), and the
+ * third is the pinned document again read against no catalog at all, binding a table the store
+ * holds only for the others. The documents claim each graph's own rows; what is asked here is only
+ * that the graphs keep them apart.
  */
 class NodeGraphScopeTest {
 
-    private static final String INFERRED = """
-        interface Node { id: ID! }
-        type Keyed implements Node @table(name: "published_elsewhere") { id: ID! }
-        type Query { keyed: [Keyed!]! }
-        """;
-
-    private static final String PINNED = """
-        interface Node { id: ID! }
-        type Keyed implements Node @table(name: "published_elsewhere") @node(keyColumns: ["alt"]) { id: ID! }
-        type Query { keyed: [Keyed!]! }
-        """;
-
     @TempDir
-    Path tmp;
+    static Path tmp;
+
+    private static CapturedStore store;
+
+    @BeforeAll
+    static void threeGraphs() {
+        var jooq = CatalogInput.of(TestRunContext.of());
+        // No classpath: nothing these graphs ask is read off one, and the capture is cheaper without.
+        var classpath = List.<ClasspathEntry>of();
+        store = CapturedStore.ownStoreOfDocument(tmp, "scenarios/node-key-published", "inferred", jooq,
+            classpath);
+        store.andDocument("scenarios/node-key-pinned", "pinned", jooq, classpath);
+        // A null fixture is a run that declared no catalog, the document naming none of its own.
+        store.andDocument("scenarios/node-key-pinned", "uncatalogued", null, classpath);
+    }
+
+    @AfterAll
+    static void close() {
+        store.close();
+    }
 
     @Test
     void aSiblingGraphsPinnedListDoesNotAnswerHere() {
-        try (var store = threeGraphs()) {
-            assertThat(keys(store.dsl(), "inferred"))
-                .as("this graph keeps its own tier rather than borrowing the sibling's pinned list")
-                .containsExactly(tuple("code", "JOOQ_METADATA"));
-            assertThat(keys(store.dsl(), "pinned")).containsExactly(tuple("alt", "SDL_PINNED"));
-        }
+        assertThat(keys(store.dsl(), "inferred"))
+            .as("this graph keeps its own tier rather than borrowing the sibling's pinned list")
+            .containsExactly(tuple("code", "JOOQ_METADATA"));
+        assertThat(keys(store.dsl(), "pinned")).containsExactly(tuple("alt", "SDL_PINNED"));
     }
 
     @Test
     void aTableInACatalogThisGraphDidNotReadMakesNoNode() {
-        try (var store = threeGraphs()) {
-            assertThat(nodes(store.dsl(), "inferred")).containsExactly("Keyed");
-            assertThat(nodes(store.dsl(), "uncatalogued"))
-                .as("the store holds the table, for the other graphs; this one never read it")
-                .isEmpty();
-            assertThat(keys(store.dsl(), "uncatalogued")).isEmpty();
-        }
-    }
-
-    private CapturedStore threeGraphs() {
-        var jooq = CatalogInput.of(TestRunContext.of());
-        return CapturedStore.ownStoreOfCatalog(tmp, "inferred", INFERRED, jooq)
-            .andCatalogGraph("pinned", PINNED, jooq)
-            .andGraph("uncatalogued", PINNED);
+        assertThat(nodes(store.dsl(), "inferred")).containsExactly("Keyed");
+        assertThat(nodes(store.dsl(), "uncatalogued"))
+            .as("the store holds the table, for the other graphs; this one never read it")
+            .isEmpty();
+        assertThat(keys(store.dsl(), "uncatalogued")).isEmpty();
     }
 
     private static List<String> nodes(DSLContext dsl, String graph) {

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.sink.WriteTimes;
 import no.sikt.graphitron.model.test.FactGraphs;
 import org.jooq.DSLContext;
 import org.jooq.Record;
@@ -10,12 +11,15 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.math.BigDecimal;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 
@@ -33,18 +37,28 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.META_RELATION;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_PROGRESS;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_READ;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE_STAGE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.lower;
+import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
+import static org.jooq.impl.DSL.sum;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
 
 /**
  * What holds of any captured graph, whatever it states, checked over every fact document's graph
- * ({@link FactGraphs}): the element anchors agree with their attribute relations, and every source
- * the reading drew on is recorded as the file it is.
+ * ({@link FactGraphs}): the element anchors agree with their attribute relations, every source the
+ * reading drew on is recorded as the file it is, the capture timed its own writes and reads, and it
+ * completed every gatherer it ran.
  *
  * <p>Each case compares one graph at a time, graphs being the inner loop, so one statement's text
  * repeats with only the graph bound and stays planned; a comparison over a whole store at once holds
@@ -156,6 +170,153 @@ class CapturedGraphInvariantsTest {
             .isPositive();
         assertThat(wrong).as("schema files whose recorded modification time is not the file's").isEmpty();
     }
+
+    /**
+     * A finished capture records how long it spent writing each table, under the gatherer at work,
+     * which is the one the table's declaration names as its owner: a write timed under another
+     * gatherer puts its cost where nobody looks for it. The run's own record of itself, its
+     * progress and its timings, is not part of what it times.
+     */
+    @Test
+    @DisplayName("a relation's write is timed under the gatherer that owns it, the run's own rows are not")
+    void writesAreTimedUnderTheirOwner() {
+        var w = STORE_GRAPH_WRITE;
+        var r = STORE_GRAPH_READ;
+        var m = META_RELATION;
+        var elsewhere = new TreeSet<String>();
+        var own = new ArrayList<String>();
+        int[] owned = {0};
+        eachGraph((dsl, graph) -> {
+            owned[0] += dsl.fetchCount(dsl.select(w.TABLE_NAME).from(w)
+                .join(m).on(m.RELATION_NAME.eq(lower(w.TABLE_NAME)))
+                .where(w.GRAPH_NAME.eq(graph)));
+            dsl.selectDistinct(w.TABLE_NAME, w.GATHERER_NAME).from(w)
+                .join(m).on(m.RELATION_NAME.eq(lower(w.TABLE_NAME)))
+                .where(w.GRAPH_NAME.eq(graph), w.GATHERER_NAME.ne(m.OWNER_NAME))
+                .fetch()
+                .forEach(row -> elsewhere.add(row.value1() + " under " + row.value2()));
+            dsl.select(w.TABLE_NAME).from(w)
+                .where(w.GRAPH_NAME.eq(graph), w.TABLE_NAME.in(RUN_RECORD))
+                .fetch(w.TABLE_NAME)
+                .forEach(table -> own.add(graph + " the run's own " + table + " timed as a write"));
+            dsl.select(r.RELATION_NAME).from(r)
+                .where(r.GRAPH_NAME.eq(graph), r.RELATION_NAME.in(RUN_RECORD))
+                .fetch(r.RELATION_NAME)
+                .forEach(relation -> own.add(graph + " the run's own " + relation + " timed as a read"));
+        });
+        assertThat(owned[0]).as("the captures write declared relations, so this pins something")
+            .isPositive();
+        assertThat(own).as("the run's own record timed as part of the run").isEmpty();
+        assertThat(elsewhere).as("writes timed under a gatherer other than the table's declared owner")
+            .isSubsetOf(TIMED_ELSEWHERE.keySet());
+        assertThat(TIMED_ELSEWHERE.keySet())
+            .as("a known write now timed under its owner: take it off the list")
+            .isSubsetOf(elsewhere);
+    }
+
+    /**
+     * Writes timed under a gatherer other than the one {@code meta_relation} declares the table's
+     * owner when this case landed, as table and gatherer, each beside the owner it is declared to.
+     * Not yet ruled on: either the declaration names the gatherer that writes, or the write moves
+     * into the owner's window.
+     */
+    private static final Map<String, String> TIMED_ELSEWHERE = Map.of(
+        "GRAPHITRON_ARGUMENT_SCOPE_TABLE under derivation", "declared the graphitron gatherer's",
+        "GRAPHITRON_FIELD_SCOPE_TABLE under derivation", "declared the graphitron gatherer's",
+        "GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE under derivation", "declared the graphitron gatherer's",
+        "INTENT_TYPE_DOMAIN under derivation", "declared the sdl gatherer's",
+        "GRAPHQL_SCHEMA_PROBLEM under graphql-source", "declared the graphql-assembly gatherer's;"
+            + " the source reading writes what would not parse",
+        "STORE_CLASS_FILE under code", "declared the classpath-source gatherer's");
+
+    /**
+     * A stage that fetches its rule into Java and inserts the rows evaluates the rule in the read, so
+     * the reads are timed beside the writes, under the instant the capture's writes carry, and the
+     * slowest statements of a graph name both, from its latest capture alone. A read under a
+     * millisecond, its preparing included, is left out, which the relation's own check holds. H2
+     * parses and plans a statement before it runs, which for a rule of many arms can cost more than
+     * running it, so preparing is counted apart, for each table and for each anchor stage.
+     */
+    @Test
+    @DisplayName("a capture's reads are timed beside its writes, preparing apart, the slowest from the latest")
+    void readsAreTimedBesideWrites() {
+        var w = STORE_GRAPH_WRITE;
+        var r = STORE_GRAPH_READ;
+        var s = STORE_GRAPH_WRITE_STAGE;
+        var wrong = new ArrayList<String>();
+        long[] totals = new long[3];
+        var kinds = new TreeSet<WriteTimes.Kind>();
+        eachGraph((dsl, graph) -> {
+            totals[0] += dsl.fetchCount(r, r.GRAPH_NAME.eq(graph));
+            totals[1] += dsl.select(coalesce(sum(w.PREPARE_MS), BigDecimal.ZERO)).from(w)
+                .where(w.GRAPH_NAME.eq(graph)).fetchSingle().value1().longValue();
+            totals[2] += dsl.select(coalesce(sum(s.PREPARE_MS), BigDecimal.ZERO)).from(s)
+                .where(s.GRAPH_NAME.eq(graph)).fetchSingle().value1().longValue();
+            dsl.selectDistinct(r.CAPTURED_AT).from(r)
+                .where(r.GRAPH_NAME.eq(graph))
+                .andNotExists(selectOne().from(w)
+                    .where(w.GRAPH_NAME.eq(graph), w.CAPTURED_AT.eq(r.CAPTURED_AT)))
+                .fetch(r.CAPTURED_AT)
+                .forEach(at -> wrong.add(graph + " reads at " + at + ", when no capture wrote"));
+            var latest = dsl.select(max(w.CAPTURED_AT)).from(w).where(w.GRAPH_NAME.eq(graph))
+                .fetchSingle().value1();
+            var slowest = WriteTimes.slowest(dsl, graph, Integer.MAX_VALUE);
+            slowest.forEach(statement -> kinds.add(statement.kind()));
+            int ofTheLatest = dsl.fetchCount(w, w.GRAPH_NAME.eq(graph), w.CAPTURED_AT.eq(latest))
+                + dsl.fetchCount(r, r.GRAPH_NAME.eq(graph), r.CAPTURED_AT.eq(latest));
+            if (slowest.size() != ofTheLatest) {
+                wrong.add(graph + " slowest names " + slowest.size() + " statements, its latest capture"
+                    + " timed " + ofTheLatest);
+            }
+        });
+        assertThat(wrong).as("reads timed apart from the capture that ran them").isEmpty();
+        assertThat(totals[0]).as("the captures read for a millisecond somewhere").isPositive();
+        assertThat(totals[1]).as("the captures plan their statements for a millisecond somewhere")
+            .isPositive();
+        assertThat(totals[2]).as("the anchor stages' planning is counted under each stage too")
+            .isPositive();
+        assertThat(kinds).as("the slowest name reads and writes alike")
+            .contains(WriteTimes.Kind.READ, WriteTimes.Kind.WRITE);
+    }
+
+    /**
+     * A reading that runs to its end completes every gatherer's progress row and the capture's own:
+     * each row's last completion is after its last start, so it says how long that reading took.
+     * Whatever a document states, its capture ran to its end, so every graph of the population has a
+     * completed row for each gatherer a capture runs, and none left open.
+     */
+    @Test
+    @DisplayName("a reading that runs to its end completes every gatherer's row and the capture's")
+    void everyFinishedReadingCompletesItsProgress() {
+        var p = STORE_GRAPH_PROGRESS;
+        var wrong = new ArrayList<String>();
+        int[] graphs = {0};
+        eachGraph((dsl, graph) -> {
+            graphs[0]++;
+            var rows = dsl.select(p.GATHERER_NAME, p.TIME_SPENT_MS).from(p)
+                .where(p.GRAPH_NAME.eq(graph)).fetchMap(p.GATHERER_NAME, p.TIME_SPENT_MS);
+            if (!rows.keySet().equals(GATHERERS)) {
+                wrong.add(graph + " has progress rows for " + new TreeSet<>(rows.keySet()));
+            }
+            rows.forEach((gatherer, spent) -> {
+                if (spent == null) {
+                    wrong.add(graph + " " + gatherer + " left open");
+                }
+            });
+        });
+        assertThat(graphs[0]).as("the population holds graphs").isPositive();
+        assertThat(wrong).as("graphs whose finished reading did not complete every progress row")
+            .isEmpty();
+    }
+
+    /** Every gatherer a capture runs, and the capture as a whole. */
+    private static final Set<String> GATHERERS = Set.of("capture", "store", "jooq",
+        "classpath-source", "code", "graphql-source", "graphql-ast", "federation", "sdl",
+        "graphitron", "graphql-assembly", "derivation");
+
+    /** The run's own record of itself, which a capture writes and does not time. */
+    private static final List<String> RUN_RECORD = List.of("STORE_GRAPH_PROGRESS", "STORE_GRAPH_WRITE",
+        "STORE_GRAPH_WRITE_STAGE", "STORE_GRAPH_READ");
 
     /** The supertype's kind for the schema block, the one element no anchor relation describes. */
     private static final String SCHEMA = "SCHEMA";

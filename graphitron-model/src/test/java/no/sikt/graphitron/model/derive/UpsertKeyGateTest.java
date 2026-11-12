@@ -1,15 +1,10 @@
 package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
-import no.sikt.graphitron.model.test.ScaledSchemaFixture;
-import no.sikt.graphitron.model.test.TestRunContext;
+import no.sikt.graphitron.model.test.FactGraphs;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -25,13 +20,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code OR} finds no index: the statement scans the whole table, every graph's rows, on each
  * capture, which is how a stage's time comes to grow with the graphs in a store. Naming the
  * conflict key with {@code onConflict} gives the {@code ON} one key and the plan an index. Read off
- * the statements a capture actually runs, with H2's query statistics on, so no upsert is missed for
- * being spelled somewhere this gate does not look.
+ * the statements every capture of the fact documents actually ran
+ * ({@link FactGraphs.Reader#statementTexts}), so no upsert is missed for being spelled somewhere
+ * this gate does not look, nor for being reached only by a shape one document states.
  */
 class UpsertKeyGateTest {
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /** Upserts known to match on either key when this gate landed, each with why it stands. */
     private static final Map<String, String> KNOWN = Map.of(
@@ -48,30 +44,19 @@ class UpsertKeyGateTest {
     @Test
     @DisplayName("no upsert a capture runs matches on either of two keys")
     void everyUpsertNamesItsKey() {
-        var jooq = CatalogInput.of(TestRunContext.of());
-        String sdl = ScaledSchemaFixture.scaledSdl(2);
         Set<String> merges = new TreeSet<>();
         Set<String> either = new TreeSet<>();
-        try (var store = CapturedStore.ownStoreOfCatalogWith(tmp, "g1", sdl, jooq,
-                ClasspathCorpus.entries())) {
-            var dsl = store.dsl();
-            dsl.execute("SET QUERY_STATISTICS_MAX_ENTRIES 5000");
-            dsl.execute("SET QUERY_STATISTICS TRUE");
-            store.andCatalogGraphWith("g2", sdl, jooq, ClasspathCorpus.entries());
-            for (var sql : dsl.fetch("SELECT SQL_STATEMENT FROM INFORMATION_SCHEMA.QUERY_STATISTICS")
-                    .getValues(0, String.class)) {
-                var m = MERGE.matcher(sql.replaceAll("\\s+", " "));
-                if (m.find()) {
-                    merges.add(m.group(1));
-                    if (m.group(2).toLowerCase().contains(" or (")) {
-                        either.add(m.group(1));
-                    }
+        for (var sql : FACTS.statementTexts()) {
+            var m = MERGE.matcher(sql.replaceAll("\\s+", " "));
+            if (m.find()) {
+                merges.add(m.group(1));
+                if (m.group(2).toLowerCase().contains(" or (")) {
+                    either.add(m.group(1));
                 }
             }
-            dsl.execute("SET QUERY_STATISTICS FALSE");
         }
 
-        assertThat(merges).as("the capture's upserts, read off what it ran").hasSizeGreaterThan(20);
+        assertThat(merges).as("the captures' upserts, read off what they ran").hasSizeGreaterThan(20);
         assertThat(either)
             .as("an upsert matching on either key scans every graph's rows: name its conflict key "
                 + "with onConflict")

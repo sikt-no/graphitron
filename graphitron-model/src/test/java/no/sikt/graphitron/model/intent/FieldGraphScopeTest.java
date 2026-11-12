@@ -1,9 +1,12 @@
 package no.sikt.graphitron.model.intent;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -19,44 +22,46 @@ import static org.assertj.core.api.Assertions.assertThat;
  * A field's scope, its column table and the connection shapes it navigates are a graph's own, the
  * one thing a fact document cannot state, a document being one graph. Two graphs share a store and
  * one catalog and declare the same fields, with {@code Language} bound to different tables, so a
- * rule that lost its graph predicate would answer each coordinate from both bindings.
+ * rule that lost its graph predicate would answer each coordinate from both bindings; a third graph
+ * declares no connection at all. Each graph is a fact document, which claims its own rows; what is
+ * asked here is only that the graphs keep them apart.
  */
 class FieldGraphScopeTest {
 
-    private static final String SDL = """
-        type Film @table(name: "film") { title: String, languages: [Language] }
-        type Language @table(name: "%s") { name: String }
-        type LanguageConnection { edges: [LanguageEdge] }
-        type LanguageEdge { node: Language }
-        type Query { films: [Film], languageConnection: LanguageConnection }
-        """;
-
     @TempDir
-    Path tmp;
+    static Path tmp;
+
+    private static CapturedStore store;
+
+    @BeforeAll
+    static void threeGraphs() {
+        var jooq = CatalogInput.of(TestRunContext.of());
+        // No classpath: nothing these graphs ask is read off one, and the capture is cheaper without.
+        var classpath = List.<ClasspathEntry>of();
+        store = CapturedStore.ownStoreOfDocument(tmp, "scenarios/field-scope-binding-language", "language",
+            jooq, classpath);
+        store.andDocument("scenarios/field-scope-binding-actor", "actor", jooq, classpath);
+        store.andDocument("layouts/anchor", "other", jooq, classpath);
+    }
+
+    @AfterAll
+    static void close() {
+        store.close();
+    }
 
     @Test
     void eachGraphResolvesItsOwnBinding() {
-        try (var store = twoGraphs()) {
-            assertThat(columnTables(store.dsl(), "language")).containsExactly("language");
-            assertThat(columnTables(store.dsl(), "actor")).containsExactly("actor");
-            assertThat(scopeTables(store.dsl(), "language")).containsExactly("film", "language");
-            assertThat(scopeTables(store.dsl(), "actor")).containsExactly("actor", "film");
-        }
+        assertThat(columnTables(store.dsl(), "language")).containsExactly("language");
+        assertThat(columnTables(store.dsl(), "actor")).containsExactly("actor");
+        assertThat(scopeTables(store.dsl(), "language")).containsExactly("film", "language");
+        assertThat(scopeTables(store.dsl(), "actor")).containsExactly("actor", "film");
     }
 
     @Test
     void aConnectionShapeIsReadInTheGraphThatDeclaresIt() {
-        try (var store = twoGraphs()) {
-            assertThat(connections(store.dsl(), "language")).containsExactly("LanguageConnection");
-            assertThat(connections(store.dsl(), "other")).isEmpty();
-        }
-    }
-
-    private CapturedStore twoGraphs() {
-        var jooq = CatalogInput.of(TestRunContext.of());
-        return CapturedStore.ownStoreOfCatalog(tmp, "language", SDL.formatted("language"), jooq)
-            .andCatalogGraph("actor", SDL.formatted("actor"), jooq)
-            .andGraph("other", "type Query { ping: String }");
+        assertThat(connections(store.dsl(), "language")).containsExactly("LanguageConnection");
+        assertThat(connections(store.dsl(), "actor")).containsExactly("LanguageConnection");
+        assertThat(connections(store.dsl(), "other")).isEmpty();
     }
 
     private static List<String> columnTables(DSLContext dsl, String graph) {

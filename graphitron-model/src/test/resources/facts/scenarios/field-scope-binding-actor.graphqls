@@ -1,0 +1,30 @@
+# The twin of field-scope-binding-language with Language bound to actor rather than language: the
+# same coordinates, so each scope, landing table and connection here is this graph's own reading of
+# its own binding. No key joins film to actor, so the field names the path through film_actor.
+
+type Film @table(name: "film") {
+  title: String
+  languages: [Language] @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+type Language @table(name: "actor") { name: String @field(name: "first_name") }
+type LanguageConnection { edges: [LanguageEdge] }
+type LanguageEdge { node: Language }
+type Query { films: [Film], languageConnection: LanguageConnection }
+
+extend schema @expectEquals(relation: "graphitron_field_scope_table", rows: """
+  type_name,    field_name,         basis,            table_name
+  Film,         languages,          NAMED_TYPE_TABLE, actor
+  LanguageEdge, node,               NAMED_TYPE_TABLE, actor
+  Query,        films,              NAMED_TYPE_TABLE, film
+  Query,        languageConnection, NAMED_TYPE_TABLE, actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_need_table", where: "coordinate = 'Film.languages'", rows: """
+  start_table, landing_table
+  film,        actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_connection", rows: """
+  type_name,          edge_type_name
+  LanguageConnection, LanguageEdge
+  """)

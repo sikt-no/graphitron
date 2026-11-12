@@ -3,7 +3,6 @@ package no.sikt.graphitron.model.sink;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
-import no.sikt.graphitron.model.test.ScaledSchemaFixture;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -29,9 +28,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * match finds no index. A small store hides both. Each relation's time, written or read, is read
  * from {@code store_graph_write} and {@code store_graph_read}, so a stage that fetches its rule
  * into Java counts as surely as one that writes from it, for the first graph of a store, which was
- * alone when it was captured, and for the eighth, the same schema each time; the slower of the two
- * may be a generous multiple of the first plus a floor, timing ratios being noisy under a parallel
- * build, and is the best of two stores. A backstop for a stage that blows up rather than a
+ * alone when it was captured, and for the eighth, the same fact document each time; the slower of
+ * the two may be a generous multiple of the first plus a floor, timing ratios being noisy under a
+ * parallel build, and is the best of two stores. A backstop for a stage that blows up rather than a
  * sensitive measure: an upsert matching on either of two keys grows less than the slack allows
  * here, and {@code UpsertKeyGateTest} reads the statements for that instead.
  */
@@ -39,6 +38,12 @@ class GraphCountGrowthGateTest {
 
     @TempDir
     Path tmp;
+
+    /**
+     * The one schema every graph of a store is: a fact document with nodes, fetchers and paths
+     * enough to write the stages this gate is about, among the corpus's largest.
+     */
+    private static final String DOCUMENT = "scenarios/path-origin";
 
     private static final int GRAPHS = 8;
     private static final double RATIO = 4.0;
@@ -55,14 +60,14 @@ class GraphCountGrowthGateTest {
     @DisplayName("one graph's time per relation, written or read, does not grow with the other graphs")
     void aStagesTimeDoesNotGrowWithTheOtherGraphs() {
         var jooq = CatalogInput.of(TestRunContext.of());
-        String sdl = ScaledSchemaFixture.scaledSdl(10);
+        var classpath = ClasspathCorpus.entries();
         List<Map<String, Long>> alones = new ArrayList<>();
         List<Map<String, Long>> shareds = new ArrayList<>();
         for (int run = 0; run < 2; run++) {
-            try (var store = CapturedStore.ownStoreOfCatalogWith(tmp.resolve("store" + run), "g1", sdl,
-                    jooq, ClasspathCorpus.entries())) {
+            try (var store = CapturedStore.ownStoreOfDocument(tmp.resolve("store" + run), DOCUMENT, "g1",
+                    jooq, classpath)) {
                 for (int i = 2; i <= GRAPHS; i++) {
-                    store.andCatalogGraphWith("g" + i, sdl, jooq, ClasspathCorpus.entries());
+                    store.andDocument(DOCUMENT, "g" + i, jooq, classpath);
                 }
                 alones.add(times(store.dsl(), "g1"));
                 shareds.add(times(store.dsl(), "g" + GRAPHS));
