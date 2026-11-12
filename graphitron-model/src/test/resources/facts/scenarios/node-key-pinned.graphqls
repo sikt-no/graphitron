@@ -1,5 +1,7 @@
-# A list pinned on @node(keyColumns:) beats the columns the table's class publishes: Keyed binds
-# published_elsewhere, whose class publishes code, and pins alt. The published twin,
+# A list pinned on @node(keyColumns:) answers before the columns the table's class publishes: Keyed
+# binds published_elsewhere, whose class publishes code, and pins code itself, so the key is the
+# author's statement rather than the catalog's. A pinned list that disagreed with the published key
+# would be refused by the generator. The published twin,
 # node-key-published, binds the same type name to the same table with no list, so a store holding
 # both graphs shows whether either graph's tier leaks into the other.
 #
@@ -7,7 +9,7 @@
 
 interface Node { id: ID! }
 
-type Keyed implements Node @table(name: "published_elsewhere") @node(keyColumns: ["alt"]) { id: ID! @nodeId }
+type Keyed implements Node @table(name: "published_elsewhere") @node(keyColumns: ["code"]) { id: ID! @nodeId }
 
 type Query { keyed: [Keyed!]! }
 
@@ -18,5 +20,5 @@ extend schema @expectEquals(relation: "graphitron_node", rows: """
 
 extend schema @expectEquals(relation: "graphitron_node_keycolumn", rows: """
   type_name, position, column_name, column_origin
-  Keyed,     0,        alt,         SDL_PINNED
+  Keyed,     0,        code,        SDL_PINNED
   """)

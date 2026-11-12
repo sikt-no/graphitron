@@ -57,7 +57,7 @@ class NodeGraphScopeTest {
         assertThat(keys(store.dsl(), "inferred"))
             .as("this graph keeps its own tier rather than borrowing the sibling's pinned list")
             .containsExactly(tuple("code", "JOOQ_METADATA"));
-        assertThat(keys(store.dsl(), "pinned")).containsExactly(tuple("alt", "SDL_PINNED"));
+        assertThat(keys(store.dsl(), "pinned")).containsExactly(tuple("code", "SDL_PINNED"));
     }
 
     @Test
