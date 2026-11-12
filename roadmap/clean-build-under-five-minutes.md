@@ -139,16 +139,17 @@ Which tests move:
 - **The rest keep the clearing store, or a store of their own.** That is 31 classes with an unscoped
   read, and those that write or assert store-wide relations.
 
-The design fork, open for Alf and Filip. The architect's reading is that the route should be the
-`FactGraphs` population taking inline SDL into its own shards, read through its select-only
-connection, rather than a second accumulating store on `CapturedStore`:
-- a writer would then fail loudly on that connection;
-- one ballast graph per shard would make an unscoped read fail every run instead of depending on
-  test order;
-- A2 would later only swap the inline SDL for a document path.
-
-One cost the `FactGraphs` route has to answer: a shard has a single writing connection, so the four
-test threads would queue on it.
+*Decided 2026-11-12 (Alf): the route is the `FactGraphs` population.* The ruling is in
+`docs/architecture/how-to/testing.adoc`.
+- `FactGraphs.Reader.readInline` takes inline SDL into a store kept per thread, catalog and
+  classpath, seeded with a ballast graph, and reads it through the select-only connection.
+  `EmittedRegistryAgreementTest`, `NodeIdDecodeDefectsTest` and `ArgmappingProjectionDefectsTest`
+  read there, and in interleaved pairs they cost 78% less CPU (the A1 audit, § "The `FactGraphs`
+  route, priced").
+- `InlineCaptures` counts `readInline`, so a moved site stays inline until its SDL becomes a
+  document.
+- **What remains:** move the other scoped classes. Possibly key the stores by a small pool instead
+  of by thread, since what the key buys is that two captures never queue on one writing connection.
 
 The stores booted per capture (`ownStore*`, `BuiltStore`) are a separate 807 s. They follow where
 their reason for a store of their own allows.

@@ -199,3 +199,23 @@ store's capture CPU, and most of the next ten classes by CPU are scoped as well.
 graph in the store still names it, and the capture aborts on the foreign key. That is a production
 bug for any store holding several graphs, filed as R1177. The spike works around it by keeping its
 files.
+
+## The `FactGraphs` route, priced, 2026-11-12
+
+Alf chose the population as the route (`docs/architecture/how-to/testing.adoc`, § "Where a
+store-backed test gets its store"). `FactGraphs.Reader.readInline` captures a test's inline SDL:
+- under a graph name of its own;
+- into a store the population keeps per thread, catalog and classpath, never cleared, and seeded
+  with a ballast graph;
+- read back through the select-only connection.
+
+The same three classes moved onto it, all 25 of their tests passing on the select-only connection.
+A system property switches the route to a fresh store per capture for the comparison.
+
+| | pair 1 | pair 2 |
+|---|---:|---:|
+| a fresh store per capture, fork CPU | 573.0 s | 547.1 s |
+| the population's inline store, fork CPU | 120.2 s | 123.9 s |
+
+**About 560 down to about 122 CPU-seconds, 78% less,** in agreement with the spike. The first pair,
+552.6 against 122.5, was discarded. Every run passed.
