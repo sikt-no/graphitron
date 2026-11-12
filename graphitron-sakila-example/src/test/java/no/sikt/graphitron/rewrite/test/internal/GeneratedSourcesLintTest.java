@@ -312,6 +312,78 @@ class GeneratedSourcesLintTest {
             .isEmpty();
     }
 
+    private static final Pattern LOADER_CONSTRUCTION = Pattern.compile("\\bnew(?:Mapped)?DataLoader\\(");
+
+    private static final Pattern LOADER_OPTIONS_LAST = Pattern.compile("\\bErrorRouter\\.loaderOptions\\(\\w+\\)\\s*$");
+
+    /** Lower bound on the loader constructions the scan must see, so it cannot pass on an empty tree. */
+    private static final int LOADER_CONSTRUCTION_FLOOR = 10;
+
+    /**
+     * Every loader is built with the request's options, {@code ErrorRouter.loaderOptions(env)}, as
+     * the call's last argument: that is where a consumer's {@code BatchSizeLimit} takes effect, so
+     * a loader built without them silently ignores the limit. The generator has one way to build
+     * a loader, the {@code LoaderConstruction} fragment; this catches an emitter that names
+     * {@code DataLoaderFactory} itself, once the example schema exercises it.
+     */
+    @Test
+    void emittedLoadersAreBuiltWithTheRequestsOptions() throws IOException {
+        assertThat(GENERATED_REWRITE_ROOT).exists();
+        var offenders = new ArrayList<String>();
+        var constructions = new int[1];
+        try (Stream<Path> paths = Files.walk(GENERATED_REWRITE_ROOT)) {
+            paths.filter(p -> p.toString().endsWith(".java")).forEach(p -> {
+                try {
+                    String source = Files.readString(p);
+                    Matcher m = LOADER_CONSTRUCTION.matcher(source);
+                    while (m.find()) {
+                        constructions[0]++;
+                        String arguments = argumentsOfCallOpenedAt(source, m.end() - 1);
+                        if (arguments == null || !LOADER_OPTIONS_LAST.matcher(arguments).find()) {
+                            int line = (int) source.substring(0, m.start()).chars().filter(c -> c == '\n').count() + 1;
+                            offenders.add(p.getFileName() + ":" + line);
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        assertThat(offenders)
+            .as("Generated sources must build every DataLoader with ErrorRouter.loaderOptions(env)\n"
+                + "as the factory call's last argument, or the loader ignores the consumer's\n"
+                + "BatchSizeLimit. Build it through LoaderConstruction rather than naming\n"
+                + "DataLoaderFactory at the emit site.")
+            .isEmpty();
+        assertThat(constructions[0])
+            .as("loader constructions scanned (the walk must not be vacuous)")
+            .isGreaterThanOrEqualTo(LOADER_CONSTRUCTION_FLOOR);
+    }
+
+    /**
+     * The text between the parenthesis at {@code open} and the one that closes it, or
+     * {@code null} when it is never closed. String and character literals are stepped over, so a
+     * parenthesis inside one does not count.
+     */
+    private static String argumentsOfCallOpenedAt(String source, int open) {
+        int depth = 0;
+        for (int i = open; i < source.length(); i++) {
+            char c = source.charAt(i);
+            if (c == '"' || c == '\'') {
+                for (i++; i < source.length() && source.charAt(i) != c; i++) {
+                    if (source.charAt(i) == '\\') {
+                        i++;
+                    }
+                }
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')' && --depth == 0) {
+                return source.substring(open + 1, i);
+            }
+        }
+        return null;
+    }
+
     private static boolean isCommentLine(String line) {
         String trimmed = line.trim();
         return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");

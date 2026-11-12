@@ -39,6 +39,8 @@ class UnifiedEmissionPinsTest {
     private static final Path GENERATORS_DIR =
         Path.of("src/main/java/no/sikt/graphitron/rewrite/generators");
 
+    private static final Path MAIN_SOURCES = Path.of("src/main/java/no/sikt/graphitron");
+
     @Test
     void fetcherEmitter_unifiedDispatch() throws IOException {
         // Every DataFetcher MethodSpec emit site in the generators package routes through
@@ -92,20 +94,20 @@ class UnifiedEmissionPinsTest {
     @Test
     void dataLoaderFactory_registrationHomes() throws IOException {
         // The DataLoader-regime census: every source file (recursively under generators/) that
-        // emits a DataLoaderFactory.newDataLoader / newMappedDataLoader call is a registration
-        // home, and the homes are named exactly so a new hand-rolled regime cannot hide. The
-        // three: DataLoaderFetcherEmitter (the unified seam; container-forked factory name),
+        // builds a loader through LoaderConstruction is a registration home, and the homes are
+        // named exactly so a new hand-rolled regime cannot hide. The three:
+        // DataLoaderFetcherEmitter (the unified seam; container-forked entry point),
         // MultiTablePolymorphicEmitter (the batched polymorphic family's list and connection
         // fetchers; positional-list by the batched leaves' constructor entailment), and
         // util/QueryNodeFetcherClassGenerator (the node-resolution batch loader). A fourth
         // match means a fourth regime: fold it through the seam or name it here deliberately.
-        Pattern factoryCall = Pattern.compile("\\$T\\.new(Mapped)?DataLoader\\(|\"new(Mapped)?DataLoader\"");
+        Pattern construction = Pattern.compile("LoaderConstruction\\s*\\.(positional|mapped)\\(");
         var homes = new java.util.TreeMap<String, Long>();
         try (var stream = Files.walk(GENERATORS_DIR)) {
             stream.filter(p -> p.getFileName().toString().endsWith(".java"))
                 .forEach(p -> {
                     try {
-                        long n = factoryCall.matcher(Files.readString(p)).results().count();
+                        long n = construction.matcher(Files.readString(p)).results().count();
                         if (n > 0) homes.put(p.getFileName().toString(), n);
                     } catch (IOException e) {
                         throw new RuntimeException(e);
@@ -113,13 +115,43 @@ class UnifiedEmissionPinsTest {
                 });
         }
         assertThat(homes)
-            .as("DataLoaderFactory emission homes under generators/ (file -> factory-call "
-                + "emission count); a new entry is a new DataLoader regime and a deliberate "
+            .as("DataLoader construction homes under generators/ (file -> LoaderConstruction "
+                + "call count); a new entry is a new DataLoader regime and a deliberate "
                 + "review point")
             .containsExactly(
                 java.util.Map.entry("DataLoaderFetcherEmitter.java", 2L),
                 java.util.Map.entry("MultiTablePolymorphicEmitter.java", 2L),
                 java.util.Map.entry("QueryNodeFetcherClassGenerator.java", 1L));
+    }
+
+    @Test
+    void dataLoaderFactory_isNamedByTheConstructionFragmentAlone() throws IOException {
+        // A loader built anywhere else would be built without the request's options, and so
+        // without the consumer's batch size limit: naming DataLoaderFactory is the tell, in
+        // generators/ or in any other package that emits.
+        Pattern factoryName = Pattern.compile("\"DataLoaderFactory\"|\\.new(Mapped)?DataLoader\\(");
+        var namers = new java.util.TreeSet<String>();
+        try (var stream = Files.walk(MAIN_SOURCES)) {
+            stream.filter(p -> p.getFileName().toString().endsWith(".java"))
+                .forEach(p -> {
+                    try {
+                        if (factoryName.matcher(stripComments(Files.readString(p))).find()) {
+                            namers.add(p.getFileName().toString());
+                        }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
+                    }
+                });
+        }
+        assertThat(namers)
+            .as("main sources naming DataLoaderFactory; a loader is built through "
+                + "LoaderConstruction, which passes ErrorRouter.loaderOptions")
+            .containsExactly("LoaderConstruction.java");
+    }
+
+    /** {@code source} without its block and line comments, which may show the emitted shape. */
+    private static String stripComments(String source) {
+        return source.replaceAll("(?s)/\\*.*?\\*/", "").replaceAll("(?m)//.*$", "");
     }
 
     private static long countAcrossGenerators(Pattern pattern, String excludeFile) throws IOException {

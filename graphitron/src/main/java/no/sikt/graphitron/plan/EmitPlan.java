@@ -331,9 +331,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     }
 
     /**
-     * The connection runtime's unit set: the three fixed units and the {@code FetcherErrorLog} and
-     * {@code FetcherErrorResponse} interfaces (unconditional; only the log's surface varies with the
-     * tenant key), plus the generated hook class and the {@code SessionMountException} a throwing
+     * The connection runtime's unit set: the three fixed units and the {@code FetcherErrorLog},
+     * {@code FetcherErrorResponse} and {@code BatchSizeLimit} interfaces (unconditional; only the
+     * log's surface varies with the tenant key), plus the generated hook class and the {@code SessionMountException} a throwing
      * mount becomes, plus the {@code MountedSession} and {@code SessionState} the consumer builds the
      * input with, all exactly when the graph supplies session identity
      * ({@link SessionIdentityRows#emitsHookImplementation()}, the same fact the generator gates on),
@@ -356,6 +356,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorLog"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorResponse"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "BatchSizeLimit"));
         if (sessionHooks.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "MountedSession"));

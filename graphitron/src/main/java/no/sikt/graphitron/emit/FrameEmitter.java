@@ -5,6 +5,7 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.render.LoaderConstruction;
 
 import javax.lang.model.element.Modifier;
 import java.util.Objects;
@@ -26,7 +27,7 @@ import java.util.function.Function;
  *             DataFetchingEnvironment first = (DataFetchingEnvironment) batch.getKeyContextsList().get(0);
  *             DSLContext dsl = graphitronContext(first).getDslContext(first);
  *             return CompletableFuture.completedFuture(FilmTitleUppercase.call(keys, first, dsl));
- *         }));
+ *         }, ErrorRouter.loaderOptions(env)));
  *     CompletableFuture<String> loaded;
  *     try {
  *         loaded = loader.load(((Record) env.getSource()).into(Tables.FILM.FILM_ID), env);
@@ -55,7 +56,6 @@ public final class FrameEmitter {
     private static final ClassName RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
     private static final ClassName FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName LOADER = ClassName.get("org.dataloader", "DataLoader");
-    private static final ClassName LOADER_FACTORY = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_ENV = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName LIST = ClassName.get("java.util", "List");
@@ -162,14 +162,8 @@ public final class FrameEmitter {
             .map(c -> CodeBlock.of("$L.$L", constants, c.javaName())).toList(), ", ");
         var declared = declared(row, valueType, runtime);
         var resultType = ParameterizedTypeName.get(RESULT, declared);
-        var loader = CodeBlock.builder()
-            .add("$T<$T, $T> loader = env.getDataLoaderRegistry().computeIfAbsent(\n",
-                LOADER, keyType, valueType)
-            .indent()
-            .add("$T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S,\n",
-                String.class, "/", "@" + row.declaringType())
-            .add("name -> $T.newMappedDataLoader(($T<$T> keys, $T batch) -> {\n",
-                LOADER_FACTORY, SET, keyType, BATCH_ENV)
+        var batchLambda = CodeBlock.builder()
+            .add("($T<$T> keys, $T batch) -> {\n", SET, keyType, BATCH_ENV)
             .indent()
             .addStatement("$T first = ($T) batch.getKeyContextsList().get(0)", ENV, ENV)
             .addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("first"))
@@ -181,7 +175,17 @@ public final class FrameEmitter {
             .addStatement("return $T.failedFuture(thrown)", FUTURE)
             .endControlFlow()
             .unindent()
-            .add("}));\n")
+            .add("}")
+            .build();
+        var loader = CodeBlock.builder()
+            .add("$T<$T, $T> loader = env.getDataLoaderRegistry().computeIfAbsent(\n",
+                LOADER, keyType, valueType)
+            .indent()
+            .add("$T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S,\n",
+                String.class, "/", "@" + row.declaringType())
+            // Built with the request's options, where a consumer's batch size limit takes effect.
+            .add("name -> $L);\n", LoaderConstruction.mapped(
+                batchLambda, "env", runtime.errorRouter()))
             .unindent()
             .build();
         var method = MethodSpec.methodBuilder(methodName)

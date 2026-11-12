@@ -588,6 +588,69 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
+    void batchSizeLimit_isAFunctionalInterfaceWithOneMethodAndNothingElse() {
+        TypeSpec limit = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),
+            ConnectionRuntimeClassGenerator.BATCH_SIZE_LIMIT_CLASS_NAME);
+
+        assertThat(limit.kind()).isEqualTo(TypeSpec.Kind.INTERFACE);
+        assertThat(limit.annotations()).extracting(a -> a.type().toString())
+            .containsExactly(FunctionalInterface.class.getName());
+        assertThat(limit.methodSpecs()).extracting(MethodSpec::name).containsExactly("maxBatchSize");
+        MethodSpec maxBatchSize = method(limit, "maxBatchSize");
+        assertThat(maxBatchSize.returnType().toString()).isEqualTo("int");
+        assertThat(parameterTypes(maxBatchSize)).containsExactly("graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void runtime_carriesTheBatchSizeLimitThroughAWitherAndAnOptionalAccessor() {
+        TypeSpec runtime = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),
+            ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        var limitType = ClassName.get(SCHEMA_PACKAGE, ConnectionRuntimeClassGenerator.BATCH_SIZE_LIMIT_CLASS_NAME);
+
+        MethodSpec wither = method(runtime, "withBatchSizeLimit");
+        assertThat(wither.returnType()).isEqualTo(ClassName.get(SCHEMA_PACKAGE, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME));
+        assertThat(wither.parameters()).extracting(ParameterSpec::type).containsExactly(limitType);
+        assertThat(method(runtime, "batchSizeLimit").returnType())
+            .isEqualTo(ParameterizedTypeName.get(ClassName.get(Optional.class), limitType));
+    }
+
+    @Test
+    void withBatchSizeLimit_returnsACopyCarryingTheLimit_whichTheOtherWithersKeep() throws Throwable {
+        Class<?> limitClass = harness.load(
+            SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.BATCH_SIZE_LIMIT_CLASS_NAME);
+        Class<?> logClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+        Class<?> responseClass = harness.load(
+            SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
+        Object limit = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{limitClass},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLimit"));
+        Object log = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{logClass},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLog"));
+        Object response = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{responseClass},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingResponse"));
+        Object original = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
+            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+
+        Object limited = runtimeClass.getMethod("withBatchSizeLimit", limitClass).invoke(original, limit);
+        Object logged = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(limited, log);
+        Object all = runtimeClass.getMethod("withFetcherErrorResponse", responseClass).invoke(logged, response);
+        Object relimited = runtimeClass.getMethod("withBatchSizeLimit", limitClass).invoke(all, limit);
+
+        assertThat(runtimeClass.getMethod("batchSizeLimit").invoke(original)).isEqualTo(Optional.empty());
+        assertThat(runtimeClass.getMethod("batchSizeLimit").invoke(limited)).isEqualTo(Optional.of(limit));
+        assertThat(runtimeClass.getMethod("batchSizeLimit").invoke(all))
+            .as("the log's and the response's withers carry the limit over").isEqualTo(Optional.of(limit));
+        assertThat(runtimeClass.getMethod("fetcherErrorLog").invoke(relimited)).isEqualTo(Optional.of(log));
+        assertThat(runtimeClass.getMethod("fetcherErrorResponse").invoke(relimited)).isEqualTo(Optional.of(response));
+        assertThatThrownBy(() -> {
+            try {
+                runtimeClass.getMethod("withBatchSizeLimit", limitClass).invoke(original, (Object) null);
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        }).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
     void withFetcherErrorResponse_keepsTheLog_andWithFetcherErrorLogKeepsTheResponse() throws Throwable {
         Class<?> logClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
         Class<?> responseClass = harness.load(

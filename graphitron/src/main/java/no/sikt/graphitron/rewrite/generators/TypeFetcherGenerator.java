@@ -328,7 +328,6 @@ public class TypeFetcherGenerator {
     // Fetcher-specific constants (cross-generator constants come from GeneratorUtils via static import)
     private static final ClassName COMPLETABLE_FUTURE   = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
-    private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_LOADER_ENV     = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
     private static final ClassName SET                  = ClassName.get("java.util", "Set");
@@ -7001,7 +7000,8 @@ public class TypeFetcherGenerator {
             GeneratorUtils.buildServiceKeyExtraction(sourceKey, keySource),
             asyncTail,
             syncCatch,
-            TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
+            TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage),
+            ErrorRouterClassGenerator.routerClass(outputPackage));
     }
 
     // -----------------------------------------------------------------------
@@ -7100,7 +7100,8 @@ public class TypeFetcherGenerator {
                     .add(asyncWrapTail(resultValueType, outputPackage, handDown.handDown()))
                     .build(),
                 dataLoaderSyncCatchBody(resultValueType, outputPackage),
-                TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+                TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage),
+                ErrorRouterClassGenerator.routerClass(outputPackage));
         }
         if (parentSource instanceof ParentSourceBinding.TableRow) {
             prelude = CodeBlock.of("");
@@ -7133,7 +7134,8 @@ public class TypeFetcherGenerator {
                     .add(asyncWrapTail(resultValueType, outputPackage))
                     .build(),
             dataLoaderSyncCatchBody(resultValueType, outputPackage),
-            TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+            TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage),
+            ErrorRouterClassGenerator.routerClass(outputPackage));
     }
 
     /**
@@ -7227,7 +7229,8 @@ public class TypeFetcherGenerator {
             GeneratorUtils.buildKeyExtraction(field.sourceKey(), parentTable),
             asyncWrapTail(RECORD, outputPackage),
             dataLoaderSyncCatchBody(RECORD, outputPackage),
-            TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+            TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage),
+            ErrorRouterClassGenerator.routerClass(outputPackage));
     }
 
     // -----------------------------------------------------------------------

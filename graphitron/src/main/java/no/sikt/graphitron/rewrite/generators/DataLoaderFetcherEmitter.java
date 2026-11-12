@@ -5,6 +5,7 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
+import no.sikt.graphitron.render.LoaderConstruction;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 
 import javax.lang.model.element.Modifier;
@@ -18,8 +19,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
  * <ol>
  *   <li>resolve the DataLoader name: the response path
  *       ({@code env.getExecutionStepInfo().getPath()}) plus the declaring parent type</li>
- *   <li>register / look up the typed {@code DataLoader<K, V>} on the registry, picking the
- *       factory by {@link LoaderRegistration#container()}</li>
+ *   <li>register / look up the typed {@code DataLoader<K, V>} on the registry, building it
+ *       through {@link LoaderConstruction} (the entry point chosen by
+ *       {@link LoaderRegistration#container()}), so it carries the request's batch-size options</li>
  *   <li>extract the per-fetch key (or keys list); caller-supplied as {@code keyExtraction}
  *       because the extraction shape depends on the parent record carrier and on per-field
  *       null-handling</li>
@@ -34,7 +36,6 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.ENV;
 public final class DataLoaderFetcherEmitter {
 
     private static final ClassName DATA_LOADER          = ClassName.get("org.dataloader", "DataLoader");
-    private static final ClassName DATA_LOADER_FACTORY  = ClassName.get("org.dataloader", "DataLoaderFactory");
 
     private DataLoaderFetcherEmitter() {}
 
@@ -78,6 +79,8 @@ public final class DataLoaderFetcherEmitter {
      *                              {@code DataFetcherResult<P>} via {@code .thenApply(...)} and
      *                              routes any escaped throw via {@code .exceptionally(...)}.
      * @param loaderNameDeclaration the pre-built loader-name statement declaring {@code name}.
+     * @param errorRouter           the generated {@code ErrorRouter}, whose {@code loaderOptions}
+     *                              the loader is built with.
      */
     public static MethodSpec build(
             String fieldName,
@@ -90,10 +93,11 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock keyExtraction,
             CodeBlock asyncWrapTail,
             CodeBlock syncCatchBody,
-            CodeBlock loaderNameDeclaration) {
+            CodeBlock loaderNameDeclaration,
+            ClassName errorRouter) {
         return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
             batchLoaderLambda, preRegistrationPrelude, keyExtraction, asyncWrapTail, syncCatchBody,
-            loaderNameDeclaration, false);
+            loaderNameDeclaration, errorRouter, false);
     }
 
     /**
@@ -115,10 +119,11 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock keyExtraction,
             CodeBlock asyncWrapTail,
             CodeBlock syncCatchBody,
-            CodeBlock loaderNameDeclaration) {
+            CodeBlock loaderNameDeclaration,
+            ClassName errorRouter) {
         return build(fieldName, keyType, loaderValueType, outerReturnType, registration,
             batchLoaderLambda, preRegistrationPrelude, keyExtraction, asyncWrapTail, syncCatchBody,
-            loaderNameDeclaration, true);
+            loaderNameDeclaration, errorRouter, true);
     }
 
     private static MethodSpec build(
@@ -133,12 +138,13 @@ public final class DataLoaderFetcherEmitter {
             CodeBlock asyncWrapTail,
             CodeBlock syncCatchBody,
             CodeBlock loaderNameDeclaration,
+            ClassName errorRouter,
             boolean keyFirst) {
 
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, loaderValueType);
-        String factoryMethod = registration.container() == LoaderRegistration.Container.MAPPED_SET
-            ? "newMappedDataLoader"
-            : "newDataLoader";
+        CodeBlock construction = registration.container() == LoaderRegistration.Container.MAPPED_SET
+            ? LoaderConstruction.mapped(batchLoaderLambda, "env", errorRouter)
+            : LoaderConstruction.positional(batchLoaderLambda, "env", errorRouter);
 
         // The key extraction runs synchronously, before the async .exceptionally tail exists, so
         // a throw out of it (e.g. a jOOQ into(...)/accessor failure) would escape
@@ -152,8 +158,8 @@ public final class DataLoaderFetcherEmitter {
             .add(loaderNameDeclaration)
             .add(
                 "$T loader = env.getDataLoaderRegistry()\n" +
-                "    .computeIfAbsent(name, k -> $T.$L($L));\n",
-                loaderType, DATA_LOADER_FACTORY, factoryMethod, batchLoaderLambda)
+                "    .computeIfAbsent(name, k -> $L);\n",
+                loaderType, construction)
             .build();
         var b = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

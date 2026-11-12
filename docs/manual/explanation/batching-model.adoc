@@ -44,12 +44,28 @@ At request time, a fresh `DataLoaderRegistry` is created per request and stashed
 
 You don't author DataLoaders by hand; the generator does it. The xref:../reference/runtime-api.adoc[runtime API] documents the sealed `GraphitronContext` contract; the host application's job is to call `Graphitron.newExecutionInput(dsl, ...)` with the `DSLContext` and any `contextArgument` values, and the generator wires the per-request `GraphQLContext` from those typed parameters. xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping] covers the per-request DSLContext routing recipe (currently a deferral banner: the schema-side tenant-column inference it needs is not built yet).
 
+[#bounding-a-batch]
+== Bounding a batch
+
+A batch is as large as the request makes it: a split child under 2,000 parents is one statement with 2,000 keys. To bound it, give the runtime a `BatchSizeLimit`:
+
+[source,java]
+----
+var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
+    .withBatchSizeLimit(env -> 500);
+----
+
+A batch over the limit runs as several statements of at most that many keys, one after another, and each parent still gets its own rows. For a `@service` child it is your method that is called once per chunk of keys. A statement that fails takes down only the fields whose keys were in it, and the chunks after it still run, so a request whose every chunk times out waits for each in turn. Each failed chunk is its own log record, with its own reference (see xref:../how-to/error-channel.adoc#unmatched-exceptions[unmatched exceptions]).
+
+`BatchSizeLimit` is generated into your schema package next to `GraphitronRuntime`. The limit is asked once per batch with the first field's environment, so it can depend on the field; return 0 for no limit, which is also what you get without a `BatchSizeLimit`. If your limit throws, the batch is unbounded and Graphitron logs one ERROR line naming your limit's class, the class of what it threw and the field's path. On the escape-hatch engine (`Graphitron.newGraphQL()`), which has no runtime, put it into each request's context under `BatchSizeLimit.class`.
+
 == When you should care
 
 Most schemas don't need to think about batching at all; the rules are mechanical and the generator picks the right shape. You should look here when:
 
 * *A request runs more queries than expected.* Read the generated `*Fetchers.java` for the slow field. Either it's not batched (no `@splitQuery` / `@lookupKey` where one is needed), or its parent isn't part of the same execution batch.
 * *Rows show up under the wrong parent.* The N × M contract was violated by a `@condition` method on a `@lookupKey` field. The condition needs to be a per-pair predicate.
+* *One batched statement is too large for the database.* Thousands of parents make thousands of keys in one statement: slow to plan, and a timeout fails every parent at once. <<bounding-a-batch,Bound the batch>>.
 * *DataLoader cache hits surprise you across requests.* They shouldn't; the registry is per-request. If you see cross-request leakage, the host application is reusing a registry across requests; that's a wiring bug.
 
 == See also

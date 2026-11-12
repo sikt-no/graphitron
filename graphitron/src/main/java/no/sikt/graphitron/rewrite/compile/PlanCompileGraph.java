@@ -327,6 +327,7 @@ public final class PlanCompileGraph {
                     var connectionKey = runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME);
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
+                    var batchSizeLimit = runtimeUnit("BatchSizeLimit");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
                     pinned.ifPresent(p -> mountException.ifPresent(m -> declared(p, m)));
                     // The response's clientErrorMessage takes the client exception.
@@ -336,6 +337,7 @@ public final class PlanCompileGraph {
                         pinned.ifPresent(p -> declared(r, p));
                         fetcherErrorLog.ifPresent(l -> declared(r, l));
                         fetcherErrorResponse.ifPresent(l -> declared(r, l));
+                        batchSizeLimit.ifPresent(l -> declared(r, l));
                         refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> declared(r, i));
                     });
                     tenantConnections.ifPresent(t -> {
@@ -368,6 +370,7 @@ public final class PlanCompileGraph {
                     runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
+                    runtimeUnit("BatchSizeLimit").ifPresent(l -> declared(instrumentation, l));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
                     // A mutation field whose transaction fails to settle is reported through the
                     // router, in every owned build.
@@ -383,6 +386,9 @@ public final class PlanCompileGraph {
                     precise(nodeFetcher, require(GlobalUnitKind.NODE_ID_ENCODER));
                     precise(nodeFetcher, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                     refOf(GlobalUnitKind.ENTITY_FETCHER_DISPATCH).ifPresent(d -> precise(nodeFetcher, d));
+                    // dispatchNodes, emitted in every build that has the unit, builds its loader
+                    // with the router's options.
+                    precise(nodeFetcher, require(GlobalUnitKind.ERROR_ROUTER));
                 }
                 case FACADE -> {
                     var facade = units.get(0);

@@ -169,6 +169,12 @@ public final class ConnectionRuntimeClassGenerator {
      * held by the runtime beside {@link #FETCHER_ERROR_LOG_CLASS_NAME} and read by {@code ErrorRouter}.
      */
     public static final String FETCHER_ERROR_RESPONSE_CLASS_NAME = "FetcherErrorResponse";
+    /**
+     * The consumer-implemented callback that bounds how many keys one batched query carries; held
+     * by the runtime beside {@link #FETCHER_ERROR_LOG_CLASS_NAME} and read by
+     * {@code ErrorRouter.loaderOptions}.
+     */
+    public static final String BATCH_SIZE_LIMIT_CLASS_NAME = "BatchSizeLimit";
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
@@ -303,6 +309,7 @@ public final class ConnectionRuntimeClassGenerator {
         var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
+        var batchSizeLimit = ErrorRouterClassGenerator.batchSizeLimitClass(outputPackage);
         var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
         var clientException = ClassName.get(clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
@@ -322,7 +329,7 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
-            identity, tenantKey, multiTenant, tenantConnections));
+            batchSizeLimit, identity, tenantKey, multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException,
             keyType, connectionKey));
@@ -331,6 +338,7 @@ public final class ConnectionRuntimeClassGenerator {
         }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
+        units.add(batchSizeLimit(batchSizeLimit));
         if (identity.emitsHookImplementation()) {
             units.add(mountedSession(schemaPackage, tenantKey, multiTenant));
             units.add(sessionState(schemaPackage, identity));
@@ -827,6 +835,7 @@ public final class ConnectionRuntimeClassGenerator {
      */
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
+                                    ClassName batchSizeLimit,
                                     SessionIdentityRows identity, TypeName tenantKey,
                                     boolean multiTenant, ClassName tenantConnections) {
         var payload = payloadParams(identity, runtime);
@@ -877,6 +886,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("The consumer's choice of what the client reads for a fetcher exception, or\n"
                 + "{@code null} for Graphitron's default text. Application-scoped like the sources; set by\n"
                 + "{@link #withFetcherErrorResponse}.\n")
+            .build();
+        var batchSizeLimitField = FieldSpec.builder(batchSizeLimit, "batchSizeLimit", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The consumer's bound on how many keys one batched query carries, or {@code null} for\n"
+                + "no bound. Application-scoped like the sources; set by {@link #withBatchSizeLimit}.\n")
             .build();
 
         var sourceMapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), source);
@@ -930,7 +943,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .endControlFlow();
         }
         canonicalBuilder.addStatement("this.fetcherErrorLog = null")
-            .addStatement("this.fetcherErrorResponse = null");
+            .addStatement("this.fetcherErrorResponse = null")
+            .addStatement("this.batchSizeLimit = null");
 
         // The wither's copy constructor: every field as-is, so a multi-tenant runtime's fan-out
         // executor is shared rather than a second pool created, and the source map is not
@@ -946,6 +960,7 @@ public final class ConnectionRuntimeClassGenerator {
         }
         copyBuilder.addParameter(fetcherErrorLog, "fetcherErrorLog")
             .addParameter(fetcherErrorResponse, "fetcherErrorResponse")
+            .addParameter(batchSizeLimit, "batchSizeLimit")
             .addStatement("this.defaultSource = defaultSource")
             .addStatement("this.sourcesByTenant = sourcesByTenant");
         if (multiTenant) {
@@ -956,6 +971,7 @@ public final class ConnectionRuntimeClassGenerator {
         var copyConstructor = copyBuilder
             .addStatement("this.fetcherErrorLog = fetcherErrorLog")
             .addStatement("this.fetcherErrorResponse = fetcherErrorResponse")
+            .addStatement("this.batchSizeLimit = batchSizeLimit")
             .build();
 
         var withFetcherErrorLog = MethodSpec.methodBuilder("withFetcherErrorLog")
@@ -963,14 +979,14 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(runtime)
             .addParameter(fetcherErrorLog, "log")
             .addStatement("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S),"
-                    + " fetcherErrorResponse)",
+                    + " fetcherErrorResponse, batchSizeLimit)",
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "log")
             .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
                 + "claims to {@code log} instead of Graphitron's own ERROR line, and every exception a\n"
                 + "handler caught to its {@code matched}. The client's response does not change. The copy\n"
                 + "shares this runtime's sources"
-                + (multiTenant ? " and fan-out executor" : "") + " and its {@code FetcherErrorResponse};\n"
-                + "this runtime is unchanged.\n"
+                + (multiTenant ? " and fan-out executor" : "") + ", its {@code FetcherErrorResponse} and its\n"
+                + "{@code BatchSizeLimit}; this runtime is unchanged.\n"
                 + "@param log the consumer's log; must not be {@code null}\n"
                 + "@return a runtime carrying {@code log}\n")
             .build();
@@ -979,15 +995,37 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(runtime)
             .addParameter(fetcherErrorResponse, "response")
             .addStatement("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog,"
-                    + " $T.requireNonNull(response, $S))",
+                    + " $T.requireNonNull(response, $S), batchSizeLimit)",
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "response")
             .addJavadoc("A copy of this runtime that asks {@code response} for the reference of every fetcher\n"
                 + "exception, the {@code message:} of every error a handler caught and the top-level message\n"
                 + "of every error none caught. The copy shares this runtime's sources"
-                + (multiTenant ? " and fan-out executor" : "") + " and its\n"
-                + "{@code FetcherErrorLog}; this runtime is unchanged.\n"
+                + (multiTenant ? " and fan-out executor" : "") + ", its\n"
+                + "{@code FetcherErrorLog} and its {@code BatchSizeLimit}; this runtime is unchanged.\n"
                 + "@param response the consumer's response; must not be {@code null}\n"
                 + "@return a runtime carrying {@code response}\n")
+            .build();
+        var withBatchSizeLimit = MethodSpec.methodBuilder("withBatchSizeLimit")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(runtime)
+            .addParameter(batchSizeLimit, "limit")
+            .addStatement("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog, fetcherErrorResponse,"
+                    + " $T.requireNonNull(limit, $S))",
+                runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "limit")
+            .addJavadoc("A copy of this runtime that asks {@code limit} how many keys one batched query may\n"
+                + "carry: a batch over the answer runs as several queries of at most that many keys. Without\n"
+                + "one a batch is as large as the request makes it. The copy shares this runtime's sources"
+                + (multiTenant ? " and\nfan-out executor" : "") + ",\n"
+                + "its {@code FetcherErrorLog} and its {@code FetcherErrorResponse}; this runtime is\n"
+                + "unchanged.\n"
+                + "@param limit the consumer's limit; must not be {@code null}\n"
+                + "@return a runtime carrying {@code limit}\n")
+            .build();
+        var batchSizeLimitAccessor = MethodSpec.methodBuilder("batchSizeLimit")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(OPTIONAL, batchSizeLimit))
+            .addStatement("return $T.ofNullable(batchSizeLimit)", OPTIONAL)
+            .addJavadoc("The limit set by {@link #withBatchSizeLimit}, or empty for unbounded batches.\n")
             .build();
         var fetcherErrorLogAccessor = MethodSpec.methodBuilder("fetcherErrorLog")
             .addModifiers(Modifier.PUBLIC)
@@ -1313,8 +1351,9 @@ public final class ConnectionRuntimeClassGenerator {
                 + "demarcates one transaction per top-level mutation field (via the instrumentation {@link #newGraphQL}\n"
                 + "attaches). Holds no per-request state and no hook state: the mount choice is emitted\n"
                 + "code, never a held value. The callbacks it holds are the consumer's application-scoped\n"
-                + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}) and {@code FetcherErrorResponse}\n"
-                + "({@link #withFetcherErrorResponse}).\n");
+                + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}), {@code FetcherErrorResponse}\n"
+                + "({@link #withFetcherErrorResponse}) and {@code BatchSizeLimit}\n"
+                + "({@link #withBatchSizeLimit}).\n");
         if (multiTenant) {
             builder.addField(defaultFanOutConcurrencyField)
                 .addField(defaultFanOutTimeoutField);
@@ -1327,7 +1366,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addField(fanOutTimeoutField);
         }
         builder.addField(fetcherErrorLogField)
-            .addField(fetcherErrorResponseField);
+            .addField(fetcherErrorResponseField)
+            .addField(batchSizeLimitField);
         builder.addMethod(canonicalConstructor)
             .addMethod(copyConstructor);
         if (multiTenant) {
@@ -1349,6 +1389,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(fetcherErrorLogAccessor)
             .addMethod(withFetcherErrorResponse)
             .addMethod(fetcherErrorResponseAccessor)
+            .addMethod(withBatchSizeLimit)
+            .addMethod(batchSizeLimitAccessor)
             .addMethod(wrapSources);
         if (multiTenant) {
             builder.addMethod(fanOutExecutorAccessor)
@@ -2640,6 +2682,43 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(matchedMessage)
             .addMethod(clientErrorMessage)
             .addMethod(unmatchedMessage)
+            .build();
+    }
+
+    /**
+     * The consumer-implemented {@code BatchSizeLimit}: one abstract method and nothing else, so a
+     * lambda is a complete limit. It carries only the consumer's contract; graphitron's call into
+     * it, with its containment, is {@code ErrorRouter.loaderOptions}.
+     */
+    private static TypeSpec batchSizeLimit(ClassName self) {
+        var maxBatchSize = MethodSpec.methodBuilder("maxBatchSize")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .returns(int.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The most keys one batched query for this field may carry. Asked once per batched\n"
+                + "field per request, when the first field that needs the batch is fetched, so the answer\n"
+                + "can depend on the field ({@code env.getFieldDefinition()},\n"
+                + "{@code env.getExecutionStepInfo()}) and on the request.\n"
+                + "@param env the environment of the first field that needed the batch\n"
+                + "@return the limit; a value below 1 means no limit\n")
+            .build();
+        return TypeSpec.interfaceBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(FunctionalInterface.class)
+            .addJavadoc("Bounds how many keys one batched query carries. A {@code @splitQuery} or batched\n"
+                + "{@code @service} child runs once for every parent in the request, so by default one\n"
+                + "query carries every parent's key: 2,000 parents are one statement with 2,000 keys. Give\n"
+                + "the runtime one of these ({@code GraphitronRuntime.withBatchSizeLimit}) and a batch over\n"
+                + "the limit runs as several queries of at most that many keys, one after another; each\n"
+                + "parent still gets its own rows. For a {@code @service} child it is the service method\n"
+                + "that is called once per chunk of keys. A query that fails takes down only the fields\n"
+                + "whose keys were in it, and the chunks after it still run.\n"
+                + "\n"
+                + "<p>On the escape-hatch engine, which has no runtime, put the limit into each request's\n"
+                + "{@code GraphQLContext} under this class. If the limit throws, the batch is unbounded and\n"
+                + "Graphitron logs one ERROR line naming the limit's class, the class of what it threw and\n"
+                + "the field's path; only JVM-fatal errors propagate.\n")
+            .addMethod(maxBatchSize)
             .build();
     }
 

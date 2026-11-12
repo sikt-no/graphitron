@@ -45,8 +45,10 @@ Every `@splitQuery` fetcher registers a `DataLoader` under a name built from the
 ----
 String name = String.join("/", env.getExecutionStepInfo().getPath().getKeysOnly()) + "@Film";
 DataLoader<K, V> loader = env.getDataLoaderRegistry()
-    .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoader(...));
+    .computeIfAbsent(name, k -> DataLoaderFactory.newDataLoader(..., ErrorRouter.loaderOptions(env)));
 ----
+
+The loader is built with the request's options, which is where a `BatchSizeLimit` you configure bounds the keys one batched statement carries (xref:../explanation/batching-model.adoc#bounding-a-batch[Bounding a batch]).
 
 The suffix after `@` is the declaring type, here `Film`, a constant in the generated fetcher.
 

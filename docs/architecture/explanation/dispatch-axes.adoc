@@ -101,7 +101,7 @@ Each emit site reads off whichever axis it actually forks on, without re-derivin
 
 * `GeneratorUtils.buildKeyExtraction` (for table-bound parents on the split-query and service paths) switches over `sourceKey.wrap()` to choose between `DSL.row(...)`, `parent.into(table.col, ...)`, and a per-column copy onto a fresh typed record; one axis, one read. All three arms read the same `sourceKey.columns()`, so the axis picks the shape of the key and never its contents.
 
-* `DataLoaderFetcherEmitter.build` reads `registration.container()` to pick `DataLoaderFactory.newDataLoader` vs `newMappedDataLoader`, and `registration.dispatch()` to pick `loader.load(key)` vs `loader.loadMany(keys)`. Two axes, two reads; the same `SourceKey` can be paired with either container.
+* `DataLoaderFetcherEmitter.build` reads `registration.container()` to pick `LoaderConstruction.positional` vs `LoaderConstruction.mapped` (`DataLoaderFactory.newDataLoader` vs `newMappedDataLoader`, each built with `ErrorRouter.loaderOptions(env)`, the one spelling every loader-building emitter shares), and `registration.dispatch()` to pick `loader.load(key)` vs `loader.loadMany(keys)`. Two axes, two reads; the same `SourceKey` can be paired with either container.
 
 * `RowsMethodCall.batchLoaderLambda` reads `registration.container()` to choose `List<K>` vs `Set<K>` for the lambda's keys parameter; one axis, one read.
 

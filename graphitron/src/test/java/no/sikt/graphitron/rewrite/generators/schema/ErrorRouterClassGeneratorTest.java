@@ -176,6 +176,19 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
+    void loaderOptions_signature_isPublic_andAnswersTheLoadersOptions() {
+        // Every loader construction names it, so it is public, and it is where the consumer's
+        // BatchSizeLimit is asked.
+        var loaderOptions = method(generate(), "loaderOptions");
+        assertThat(loaderOptions.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(loaderOptions.returnType().toString()).isEqualTo("org.dataloader.DataLoaderOptions");
+        assertThat(loaderOptions.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.DataFetchingEnvironment");
+        assertThat(ErrorRouterClassGenerator.batchSizeLimitClass("com.example").toString())
+            .isEqualTo("com.example.schema.BatchSizeLimit");
+    }
+
+    @Test
     void clientMessage_signature_takesTheSourceTheDefaultAndTheEnvironment() {
         var clientMessage = method(generate(), "clientMessage");
         assertThat(clientMessage.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);

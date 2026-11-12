@@ -74,7 +74,7 @@ class EmitPlanTest {
         var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections", "FetcherErrorLog",
-                "FetcherErrorResponse");
+                "FetcherErrorResponse", "BatchSizeLimit");
     }
 
     @Test
@@ -84,7 +84,7 @@ class EmitPlanTest {
             DEFAULT_OUTPUT_PACKAGE, SessionIdentityFixtures.handleLess());
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
-                "FetcherErrorLog", "FetcherErrorResponse", "GraphitronSessionHook", "MountedSession",
+                "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "GraphitronSessionHook", "MountedSession",
                 "SessionState", "SessionMountException");
     }
 

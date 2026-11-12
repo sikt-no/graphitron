@@ -271,27 +271,29 @@ class PackageImportDirectionTest {
      * by exact class with its reason. Per-class collectors the shell owns, and emission spellings
      * the walk's emitters share, so one shape keeps one spelling while both kinds of emitter exist.
      */
-    private static final java.util.Map<String, String> EMIT_ALLOWANCES = java.util.Map.of(
-        "no.sikt.graphitron.render.ArgPathHelperRegistry",
-            "the host class's collector of dotted-path descent helpers: a call and the helper it names land on one class",
-        "no.sikt.graphitron.render.ProjectedKeyReads",
-            "the method's node-id decodes, for an argument whose path projects a key column",
-        "no.sikt.graphitron.render.RoutineCallEmitter",
-            "a routine IN parameter's request read has one spelling, shared with the read chain's call",
-        "no.sikt.graphitron.render.CatalogRefs",
-            "the one decode of captured class and binding-type names, arrays included",
-        "no.sikt.graphitron.render.ColumnComparison",
-            "the one mint of a column equality, which reconciles a converter on one side",
-        "no.sikt.graphitron.render.ErrorDispatchFragments",
-            "the catch arm's dispositions and the Outcome wrap have one spelling",
-        "no.sikt.graphitron.render.FetcherResult",
-            "the DataFetcherResult envelope has one spelling",
-        "no.sikt.graphitron.render.ConnectionKeyHandDown",
-            "the success envelope takes a hand-down so only tenant code fills localContext; a routine write hands none",
-        "no.sikt.graphitron.render.ProjectionCall",
-            "the $project call has one spelling",
-        "no.sikt.graphitron.render.NodeIdDecodeFailure",
-            "a refused node id fails with one client error whichever emitter decoded it");
+    private static final java.util.Map<String, String> EMIT_ALLOWANCES = java.util.Map.ofEntries(
+        java.util.Map.entry("no.sikt.graphitron.render.ArgPathHelperRegistry",
+            "the host class's collector of dotted-path descent helpers: a call and the helper it names land on one class"),
+        java.util.Map.entry("no.sikt.graphitron.render.ProjectedKeyReads",
+            "the method's node-id decodes, for an argument whose path projects a key column"),
+        java.util.Map.entry("no.sikt.graphitron.render.RoutineCallEmitter",
+            "a routine IN parameter's request read has one spelling, shared with the read chain's call"),
+        java.util.Map.entry("no.sikt.graphitron.render.CatalogRefs",
+            "the one decode of captured class and binding-type names, arrays included"),
+        java.util.Map.entry("no.sikt.graphitron.render.ColumnComparison",
+            "the one mint of a column equality, which reconciles a converter on one side"),
+        java.util.Map.entry("no.sikt.graphitron.render.ErrorDispatchFragments",
+            "the catch arm's dispositions and the Outcome wrap have one spelling"),
+        java.util.Map.entry("no.sikt.graphitron.render.FetcherResult",
+            "the DataFetcherResult envelope has one spelling"),
+        java.util.Map.entry("no.sikt.graphitron.render.ConnectionKeyHandDown",
+            "the success envelope takes a hand-down so only tenant code fills localContext; a routine write hands none"),
+        java.util.Map.entry("no.sikt.graphitron.render.ProjectionCall",
+            "the $project call has one spelling"),
+        java.util.Map.entry("no.sikt.graphitron.render.NodeIdDecodeFailure",
+            "a refused node id fails with one client error whichever emitter decoded it"),
+        java.util.Map.entry("no.sikt.graphitron.render.LoaderConstruction",
+            "a loader is built one way, with the request's batch-size options, whichever emitter builds it"));
 
     /** The allowance {@code ref} falls under, or null. A nested or static member counts as its class. */
     private static String emitAllowanceFor(String ref) {

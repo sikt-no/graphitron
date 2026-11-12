@@ -12,8 +12,10 @@ import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.ColumnComparison;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
+import no.sikt.graphitron.render.LoaderConstruction;
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.ValuesJoinRowBuilder;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -157,7 +159,6 @@ public final class MultiTablePolymorphicEmitter {
     /** Returns {@code org.jooq.RecordN} for the given arity (1..22). jOOQ's typed Record tops out at Record22. */
     private static ClassName recordClass(int arity) { return ClassName.get("org.jooq", "Record" + arity); }
     private static final ClassName DATA_LOADER         = ClassName.get("org.dataloader", "DataLoader");
-    private static final ClassName DATA_LOADER_FACTORY = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_LOADER_ENV    = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName COMPLETABLE_FUTURE  = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
@@ -1690,8 +1691,9 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
-            + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
-            loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+            + "    .computeIfAbsent(name, k -> $L);\n",
+            loaderType, LoaderConstruction.positional(lambdaBlock, "env",
+                ErrorRouterClassGenerator.routerClass(outputPackage)));
 
         // Parent-object key extraction: delegated to the canonical KeyLift helper against the
         // binding's source expression. Emits the typed {@code <KeyType> key = ...} statement
@@ -1769,8 +1771,9 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
-            + "    .computeIfAbsent(name, k -> $T.newDataLoader($L));\n",
-            loaderType, DATA_LOADER_FACTORY, lambdaBlock);
+            + "    .computeIfAbsent(name, k -> $L);\n",
+            loaderType, LoaderConstruction.positional(lambdaBlock, "env",
+                ErrorRouterClassGenerator.routerClass(outputPackage)));
 
         builder.addCode(GeneratorUtils.buildRecordParentKeyExtraction(batchKey.sourceKey(),
             parentKeyLift, parentKeyOwnerTable, parentResultType,

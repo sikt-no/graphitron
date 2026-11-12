@@ -216,8 +216,9 @@ class IncrementalCompileHarnessTest {
             }
         });
         assertThat(frozenReferences).isEqualTo(Map.of(
-            "schema.ErrorRouter", Set.of("schema.FetcherErrorLog", "schema.FetcherErrorResponse",
-                "schema.GraphitronClientException", "schema.TenantConnections"),
+            // BatchSizeLimit: one abstract method on an interface emitted the same in every build.
+            "schema.ErrorRouter", Set.of("schema.BatchSizeLimit", "schema.FetcherErrorLog",
+                "schema.FetcherErrorResponse", "schema.GraphitronClientException", "schema.TenantConnections"),
             "util.ConnectionHelper", Set.of("schema.GraphitronClientException", "schema.GraphitronContext",
                 "util.ColumnValues", "util.ConnectionResult", "util.PageInfo"),
             "util.ConnectionResult", Set.of("util.ConnectionHelper"),

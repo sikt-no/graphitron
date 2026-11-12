@@ -15,6 +15,11 @@ public final class ErrorRouter {
             .build();
     }
 
+    /** The options a loader is built with: the defaults, a stub having no limit to ask. */
+    public static org.dataloader.DataLoaderOptions loaderOptions(DataFetchingEnvironment env) {
+        return org.dataloader.DataLoaderOptions.newOptions().build();
+    }
+
     /** Claims a throw whose message is {@code refused}, under the first mapping; nothing else. */
     public static Throwable claim(Throwable thrown, String[] mappings, DataFetchingEnvironment env) {
         return "refused".equals(thrown.getMessage()) ? new Claimed(mappings[0] + " " + thrown.getMessage()) : null;

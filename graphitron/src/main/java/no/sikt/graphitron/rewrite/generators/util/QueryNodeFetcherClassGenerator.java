@@ -8,6 +8,8 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.LoaderConstruction;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -63,7 +65,6 @@ public class QueryNodeFetcherClassGenerator {
     private static final ClassName ARRAYS                 = ClassName.get("java.util", "Arrays");
     private static final ClassName COMPLETABLE_FUTURE     = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_LOADER            = ClassName.get("org.dataloader", "DataLoader");
-    private static final ClassName DATA_LOADER_FACTORY    = ClassName.get("org.dataloader", "DataLoaderFactory");
     private static final ClassName BATCH_LOADER_ENV       = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName CODE_REGISTRY_BLDR     = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
     private static final ClassName DATA_FETCHER_RESULT    = ClassName.get("graphql.execution", "DataFetcherResult");
@@ -189,11 +190,15 @@ public class QueryNodeFetcherClassGenerator {
                 ENV, ENV_IMPL, MAP, "id")
             .addCode("        $T name = path;\n", String.class)
             .addCode("        $T loader = idEnv.getDataLoaderRegistry().computeIfAbsent(name, k ->\n", loaderType)
-            .addCode("            $T.newDataLoader(($T keys, $T batchEnv) -> {\n",
-                DATA_LOADER_FACTORY, listOfString, BATCH_LOADER_ENV)
-            .addCode("                $T dfe = ($T) batchEnv.getKeyContextsList().get(0);\n", ENV, ENV)
-            .addCode("                return $T.completedFuture(rowsNodes(keys, dfe));\n", COMPLETABLE_FUTURE)
-            .addCode("            }));\n")
+            .addCode("            $L);\n", LoaderConstruction.positional(
+                CodeBlock.builder()
+                    .add("($T keys, $T batchEnv) -> {\n", listOfString, BATCH_LOADER_ENV)
+                    .add("                $T dfe = ($T) batchEnv.getKeyContextsList().get(0);\n", ENV, ENV)
+                    .add("                return $T.completedFuture(rowsNodes(keys, dfe));\n", COMPLETABLE_FUTURE)
+                    .add("            }")
+                    .build(),
+                "idEnv",
+                ErrorRouterClassGenerator.routerClass(outputPackage)))
             .addCode("        return loader.load(id, idEnv);\n")
             .addCode("    })\n")
             .addCode("    .toList();\n")

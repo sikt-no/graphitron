@@ -31,9 +31,10 @@ import java.util.List;
  *   <li>Read the request's {@code SessionState} off the {@code graphQLContext} (the key
  *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
  *       per-request extraction {@code @service} call sites use).</li>
- *   <li>Publish the runtime's {@code FetcherErrorLog} and {@code FetcherErrorResponse}, each when
- *       one is set, under its class key, where {@code ErrorRouter} reads them for every fetcher
- *       exception.</li>
+ *   <li>Publish the runtime's {@code FetcherErrorLog}, {@code FetcherErrorResponse} and
+ *       {@code BatchSizeLimit}, each when one is set, under its class key, where {@code ErrorRouter}
+ *       reads the first two for every fetcher exception and the third for every loader it builds
+ *       options for.</li>
  *   <li>Publish the per-operation {@code TenantConnections} carrier under its own class key, on
  *       both topologies. Acquisition is lazy on every path: fetchers resolve contexts through
  *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault} /
@@ -161,17 +162,19 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var requestTenants = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
+        var batchSizeLimit = ErrorRouterClassGenerator.batchSizeLimitClass(outputPackage);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
         return List.of(instrumentation(self, runtime, tenantConnections, requestTenants, fetcherErrorLog,
-            fetcherErrorResponse, commitPolicy, state, tenantKey, sessionHooks, errorRouter));
+            fetcherErrorResponse, batchSizeLimit, commitPolicy, state, tenantKey, sessionHooks, errorRouter));
     }
 
     private static TypeSpec instrumentation(
             ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
-            ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName commitPolicy, ClassName state,
+            ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName batchSizeLimit,
+            ClassName commitPolicy, ClassName state,
             TypeName tenantKey, SessionIdentityRows sessionHooks, ClassName errorRouter) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -298,12 +301,15 @@ public final class GraphitronConnectionInstrumentationGenerator {
             carrierArgs.append(", ").append(p);
         }
         var beginExecuteOperation = beginExecuteOperationBuilder
-            .addComment("The consumer's log and response for fetcher exceptions, application-scoped on the")
-            .addComment("runtime; ErrorRouter reads them from here for every field of the operation.")
+            .addComment("The consumer's log and response for fetcher exceptions and its batch size limit,")
+            .addComment("application-scoped on the runtime; ErrorRouter reads them from here for every field")
+            .addComment("of the operation.")
             .addStatement("runtime.fetcherErrorLog().ifPresent(log -> graphQLContext.put($T.class, log))",
                 fetcherErrorLog)
             .addStatement("runtime.fetcherErrorResponse().ifPresent(response -> graphQLContext.put($T.class, response))",
                 fetcherErrorResponse)
+            .addStatement("runtime.batchSizeLimit().ifPresent(limit -> graphQLContext.put($T.class, limit))",
+                batchSizeLimit)
             .addCode("\n")
             .addComment("Publish the per-operation carrier; acquisition is lazy on every path. Fetchers")
             .addComment("resolve contexts through the carrier (getDslContext / dslFor / dslDefault), which")

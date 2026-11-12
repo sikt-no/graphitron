@@ -29,6 +29,8 @@ import java.util.function.Supplier;
  * {@code clientErrorAt} for
  * {@code FetcherErrorResponse}, all contained by one private helper),
  * {@code describe}, the one-line summary a database failure is logged as,
+ * {@code loaderOptions}, the {@code DataLoaderOptions} every loader is built with, which carry the
+ * consumer's {@code BatchSizeLimit},
  * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
@@ -100,6 +102,7 @@ public final class ErrorRouterClassGenerator {
     private static final ClassName OPTIONAL_CN                = ClassName.get(java.util.Optional.class);
     private static final ClassName COMPLETION_EXCEPTION       = ClassName.get(java.util.concurrent.CompletionException.class);
     private static final ClassName EXECUTION_EXCEPTION        = ClassName.get(java.util.concurrent.ExecutionException.class);
+    private static final ClassName DATA_LOADER_OPTIONS        = ClassName.get("org.dataloader", "DataLoaderOptions");
 
     private ErrorRouterClassGenerator() {}
 
@@ -132,6 +135,16 @@ public final class ErrorRouterClassGenerator {
     public static ClassName fetcherErrorResponseClass(String outputPackage) {
         return connectionRuntimeUnit(outputPackage,
             no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
+    }
+
+    /**
+     * The emitted {@code BatchSizeLimit} interface, a {@code CONNECTION_RUNTIME} unit beside
+     * {@code FetcherErrorLog} that {@code loaderOptions} names; resolved through the plan's naming
+     * vocabulary like the router.
+     */
+    public static ClassName batchSizeLimitClass(String outputPackage) {
+        return connectionRuntimeUnit(outputPackage,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.BATCH_SIZE_LIMIT_CLASS_NAME);
     }
 
     /**
@@ -223,7 +236,10 @@ public final class ErrorRouterClassGenerator {
                 + "<p>The consumer's {@code FetcherErrorLog} and {@code FetcherErrorResponse} are read from\n"
                 + "the request's {@code GraphQLContext} under their classes, and every call into either is\n"
                 + "contained: a throw (or, from the response, a {@code null}) is one ERROR line naming the\n"
-                + "hook's class and the class of what it threw, and the default stands.\n"
+                + "hook's class and the class of what it threw, and the default stands. The consumer's\n"
+                + "{@code BatchSizeLimit} is read and contained the same way ({@code loaderOptions}): it is\n"
+                + "the one hook here that is not about errors, kept on this class so that every call into\n"
+                + "a consumer hook goes through the one containment.\n"
                 + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
                 + "no-runtime-jar invariant.\n")
@@ -242,6 +258,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(buildDescribeMethod())
             .addMethod(toConfiguredLog)
             .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
+            .addMethod(buildLoaderOptionsMethod(batchSizeLimitClass(outputPackage)))
             .addMethod(buildClientMessageMethod(fetcherErrorResponse))
             .addMethod(surfaceClientErrorOrRedact)
             .addMethod(buildClientErrorAtMethod(clientExceptionClass(outputPackage)))
@@ -896,6 +913,43 @@ public final class ErrorRouterClassGenerator {
             .endControlFlow()
             .addStatement("return answer(response, hook -> hook.matchedMessage(source, defaultMessage,"
                 + " reference, env), () -> $S + reference)", "reference = ")
+            .build();
+    }
+
+    /**
+     * {@code loaderOptions(env)}: the {@code DataLoaderOptions} a loader is built with, carrying the
+     * configured {@code BatchSizeLimit}'s answer for the field. Every loader construction names it
+     * (the render fragment {@link no.sikt.graphitron.render.LoaderConstruction} is their one
+     * spelling), inside the registry's {@code computeIfAbsent}, so the limit is asked once per
+     * loader per request. The hook interface carries only the consumer's contract; the call into
+     * it lives here with the other hook calls, through the same containment.
+     */
+    private static MethodSpec buildLoaderOptionsMethod(ClassName batchSizeLimit) {
+        return MethodSpec.methodBuilder(no.sikt.graphitron.render.LoaderConstruction.LOADER_OPTIONS_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DATA_LOADER_OPTIONS)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The options a DataLoader for this field is built with. With no {@link $T} configured\n"
+                + "for the request (the {@code GraphQLContext} entry under its class, which the\n"
+                + "owned-connection runtime publishes and an escape-hatch caller puts there) they are the\n"
+                + "defaults, and a batch is as large as the request makes it. A configured limit is asked\n"
+                + "for this field's bound: an answer of 1 or more caps the keys one batch function call\n"
+                + "receives, so a larger batch runs as several calls; an answer below 1 is no bound. If\n"
+                + "the limit throws, one ERROR line names its class, the class of what it threw and the\n"
+                + "field's path, and the batch is unbounded; only a {@link VirtualMachineError}\n"
+                + "propagates. Called once per loader per request, when the loader is first needed.\n"
+                + "@param env the environment of the first field that needed the loader\n"
+                + "@return the loader's options, never {@code null}\n", batchSizeLimit)
+            .addStatement("$T.Builder options = $T.newOptions()", DATA_LOADER_OPTIONS, DATA_LOADER_OPTIONS)
+            .addStatement("$T limit = configured(env, $T.class)", batchSizeLimit, batchSizeLimit)
+            .beginControlFlow("if (limit != null)")
+            .addStatement("$T max = contained($T.class, limit, hook -> hook.maxBatchSize(env), () -> $S + pathOf(env))",
+                Integer.class, batchSizeLimit, "path = ")
+            .beginControlFlow("if (max != null && max >= 1)")
+            .addStatement("options.setMaxBatchSize(max)")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return options.build()")
             .build();
     }
 
