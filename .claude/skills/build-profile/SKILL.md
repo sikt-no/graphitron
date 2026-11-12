@@ -54,6 +54,25 @@ JVM being recorded and their allocation, GC, locks and stacks all land in the fi
 **`dumponexit=true`** because the file is written at exit. A recording that looks empty mid-run is
 not broken.
 
+### Recording the forks instead
+
+When the cost you want is in the forked test JVMs, as it is for a module whose `-DforkCount=0` run
+changes what it measures, record the forks and keep them forked:
+
+```bash
+JDK_JAVA_OPTIONS='-XX:StartFlightRecording=filename=/abs/dir/jfr-%p.jfr,settings=default,dumponexit=true' \
+  mvn test -pl <module>
+```
+
+`JDK_JAVA_OPTIONS` is read by the `java` launcher in every JVM the build starts, so the Maven JVM,
+each surefire fork and any process the build execs write one file apiece; `%p` keeps them apart.
+Tell them apart by `jdk.JVMInformation.javaArguments`.
+
+Do not set `MAVEN_OPTS` as well, or the Maven JVM records twice. And do not reach for `-DargLine`:
+the LSP, MCP and plugin modules hard-set their `<argLine>`, so surefire ignores `-DargLine` there,
+and `@{argLine}` is late-evaluated against *project* properties, which a `-D` user property does not
+reach. Checked on those three modules.
+
 ## Reading it
 
 ```bash
