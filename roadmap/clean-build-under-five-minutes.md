@@ -77,6 +77,15 @@ From the audit, on trunk `8d34bcd6a3`, sequential, `BUILD SUCCESS`, 33:56:
 | planning by stage | `PathNeeds.write` 20% of samples, `OccurrenceSources.write` 7%, `OccurrenceProducers` 4%, `TypeBackings` 4%, `EntryDefects` 4%, `OccurrenceConditions` 3% |
 | captures per build | at least 695 in `graphitron`'s tests, 210 in LSP, 92 in `generate-test-schemas`, 36 in MCP; 1,256 inline capture sites in `graphitron`'s tests |
 
+### Re-measured at `7737fe1f`, 2026-11-12
+
+`audits/2026-11-12-the-clean-build-re-measured-at-7737fe1f.md` repeats the recorded build after 117
+more commits, on the 4-core agent sandbox, with every fork recorded for the first time (B6): 36:45
+wall, 6,745 CPU-s, 3.06 of 4 cores busy. Against the earlier build on the same box, CPU is 6% lower
+and `graphitron` is flat (3,554 CPU-s, 53% of the build, 73% of its Java CPU in H2 preparation, 26%
+of it through `TestSchemaHelper`). Whole-build numbers from the two machines are not comparable;
+the CPU split is.
+
 ## The plan
 
 It runs in three tracks, which do not wait for each other.
