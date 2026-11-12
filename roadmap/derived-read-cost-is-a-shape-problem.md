@@ -174,6 +174,24 @@ built-in directive means what graphql-java executes.
 census it replaced is gone.
 
 * **A class's supertypes are one code fact** `open`. Every type a class is, transitively, is one `code_` relation over every class the reading reads, and `code_throwable_supertype` and `sql_table_record_supertype` dissolve into it; the readers are `@error` handler matching, the node-id slot's supertype checks and `RESULT_SHAPES_CONFLICT`, which asks whether an object is an `org.jooq.Record` and today only recognises a table's own record class.
+* **A graph's `code_` answers are a function of its own entries, whatever else the store holds** `open`.
+  An entry is shared by every graph that reads it, so what the store holds for it may depend on the
+  entry alone. Absorbs R1182: today a graph's backings change with what was captured before it, and a
+  graph read after another can be given a wrong backing.
+  * **An entry is read alone** `open`. `ClassfileCensus.read` keeps a class name once across the
+    entries it reads together, so a reading of corpus and library drops the library's copy, and the
+    store-wide stamp skip in `ClasspathSourceCapture.held` hands that pass's rows to every later
+    graph; `nestedSlots` collects names from the whole store. Each entry is read with `readEntry`,
+    which copy a graph sees being the derivations' question, as `graphitron_type_backing_rule`
+    already asks it.
+  * **What a class is by its supertypes is derived per graph** `blocked`, on "A class's supertypes
+    are one code fact". Throwable, lifter, enum and parameter role are classified through
+    `ClassAncestry` over the reading graph's classpath and written into shared rows, so the first
+    graph's answer is everyone's.
+  * **The test population shares stores across classpaths** `blocked`, on the two above.
+    `FactGraphs` shards by catalog and name alone, the library fixtures are distinct classes compiled
+    with and without `-parameters`, graphitron-model's heap pin goes, and a document's `code_` claims
+    read through its graph's entries rather than additively.
 
 ### A resolution keeps what a diagnostic needs `open`
 
