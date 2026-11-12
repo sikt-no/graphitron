@@ -1,0 +1,21 @@
+# One class name on two entries of the graph's classpath, the classpath corpus first and the
+# library after it, and a @service naming a method both copies declare. The reference resolves to
+# the corpus's copy, whose blurb() delivers the corpus's FilmBlurb, rather than the library's, whose
+# blurb() delivers lib.Blurb: the graph sees the first entry declaring the name, so the two copies
+# are no ambiguity and the reference draws its row. What is refused is the holder, a record with no
+# constructor the generator can call for an instance method, which is a judgement on the class the
+# reference resolved to.
+extend schema @withConfiguration(classpath: "corpus-and-library-named")
+
+type Query {
+  heldBlurb: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder", method: "blurb"})
+}
+
+extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
+  coordinate,      method_class_name,                                         method_name, method_descriptor
+  Query.heldBlurb, no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, blurb,       ()Lno/sikt/graphitron/rewrite/test/services/FilmBlurb;
+  """)
+# Not ambiguous: the holder refusal is the defect's own document's to pin, and none of the code
+# reference codes is drawn.
+extend schema @assertEmpty(relation: "graphitron_entry_defect", where: "code LIKE 'CODE_REFERENCE_%'")

@@ -7,7 +7,7 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
@@ -28,8 +28,9 @@ import static org.jooq.impl.DSL.val;
  * edit above it in the file changes no row; where it was written rides along for a defect to point
  * at.
  *
- * <p>Only a settled resolution is a row: the count is per reference, and a name two overloads or two
- * classpath entries answer draws none, which the anti-join reports. Marked and swept: the statement
+ * <p>Only a settled resolution is a row: the class is the one the graph resolves the name to in
+ * {@code code_graph_class}, the first entry on its classpath declaring it, and the count is per
+ * reference, so a name two overloads answer draws none, which the anti-join reports. Marked and swept: the statement
  * upserts on the reading's instant and the delete after it takes the references this reading no
  * longer resolves.
  */
@@ -39,7 +40,7 @@ final class GraphitronCodeReferences {
 
     static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var s = GRAPHITRON_CODE_REFERENCE_SITE;
-        var gs = STORE_GRAPH_SOURCE;
+        var v = CODE_GRAPH_CLASS;
         var m = CODE_METHOD;
         var t = GRAPHITRON_CODE_REFERENCE;
 
@@ -53,8 +54,10 @@ final class GraphitronCodeReferences {
                 count().over(partitionBy(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL,
                     s.OWNER)).as("candidates"))
             .from(s)
-            .join(gs).on(gs.GRAPH_NAME.eq(s.GRAPH_NAME))
-            .join(m).on(m.SOURCE_NAME.eq(gs.SOURCE_NAME), m.CLASS_NAME.eq(s.CLASS_NAME),
+            // The class the graph resolves the name to, so classpath order settles a name two
+            // entries declare and only overloads are left to count.
+            .join(v).on(v.GRAPH_NAME.eq(s.GRAPH_NAME), v.CLASS_NAME.eq(s.CLASS_NAME))
+            .join(m).on(m.SOURCE_NAME.eq(v.SOURCE_NAME), m.CLASS_NAME.eq(v.CLASS_NAME),
                 m.METHOD_NAME.eq(s.METHOD_NAME))
             .where(s.GRAPH_NAME.eq(graph))
             .asTable("resolved");

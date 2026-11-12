@@ -73,6 +73,7 @@ public class StageAnswerAgreementTest {
      * the same equality, across two graphs in one store, is checked in the generator's module.
      */
     public static final List<Stage> STAGES = List.of(
+        new Stage("code_graph_class", "code_graph_class_rule"),
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),

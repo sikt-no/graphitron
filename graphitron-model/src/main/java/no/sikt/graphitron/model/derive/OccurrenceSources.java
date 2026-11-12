@@ -14,7 +14,7 @@ import org.jooq.impl.SQLDataType;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
@@ -46,7 +46,6 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
@@ -152,22 +151,17 @@ public final class OccurrenceSources {
             .set(t.TABLE_NAME_REF, excluded(t.TABLE_NAME_REF))
             .execute();
 
-        // A class is referenced in the graph's own classpath entries, the first by name where two
-        // entries declare it.
+        // A class is referenced as the graph resolves its name, the copy on the first entry of the
+        // graph's classpath declaring it.
         var b = GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
-        var oc = CODE_CLASS.as("oc");
-        var ocAny = CODE_CLASS.as("oc_any");
-        var ogs = STORE_GRAPH_SOURCE.as("ogs");
+        var oc = CODE_GRAPH_CLASS.as("oc");
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.KIND, b.CLASS_NAME, b.TOUCHED_AT,
                 b.CLASS_SOURCE_REF, b.CLASS_NAME_REF)
             .select(selectDistinct(cGraph, cCoordinate, cKind, cClass, val(touchedAt, b.TOUCHED_AT),
                     oc.SOURCE_NAME, oc.CLASS_NAME)
                 .from(c)
-                .leftJoin(oc).on(oc.CLASS_NAME.eq(cClass), oc.SOURCE_NAME.eq(field(
-                    select(min(ocAny.SOURCE_NAME)).from(ocAny)
-                        .join(ogs).on(ogs.SOURCE_NAME.eq(ocAny.SOURCE_NAME))
-                        .where(ogs.GRAPH_NAME.eq(cGraph), ocAny.CLASS_NAME.eq(cClass)))))
+                .leftJoin(oc).on(oc.GRAPH_NAME.eq(cGraph), oc.CLASS_NAME.eq(cClass))
                 .where(cKind.eq(OBJECT)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE)
             .doUpdate()

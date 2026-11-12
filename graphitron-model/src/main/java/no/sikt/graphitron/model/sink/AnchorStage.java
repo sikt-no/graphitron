@@ -1,6 +1,5 @@
-package no.sikt.graphitron.model.capture.document;
+package no.sikt.graphitron.model.sink;
 
-import no.sikt.graphitron.model.sink.WriteTimes;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -31,7 +30,7 @@ public record AnchorStage(String name, Class<?> owner, Body body) {
      * Runs {@code stages} in order, each named to the writer's {@link WriteTimes} while it runs, so
      * {@code store_graph_write_stage} says which stage wrote what.
      */
-    static void runAll(DSLContext dsl, String graph, LocalDateTime readAt, List<AnchorStage> stages) {
+    public static void runAll(DSLContext dsl, String graph, LocalDateTime readAt, List<AnchorStage> stages) {
         try {
             for (var stage : stages) {
                 WriteTimes.stage(dsl, stage.name());

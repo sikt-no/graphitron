@@ -185,14 +185,18 @@ census it replaced is gone.
     declaring entry. Nested slots are read for the names an entry's own methods carry, so a nested
     class one entry names and only another declares is not read, accepted by Alf (2026-11-12) since
     reading it would write rows under an entry the reading did not open and cannot sweep.
-  * **A graph's visible class is one relation, read by every rule that resolves a name** `open`. The
-    first-declaring-entry predicate is written inline three times in the type-backing rule, and
-    about 25 rules joining `code_` rows through `store_graph_source` do not apply it yet
-    (`graphitron_occurrence_built_class_rule`, the condition candidates, the producer lift and
-    result rules, `graphitron_path_element_method_rule`, `graphitron_scalar_class_rule`,
-    `graphitron_session_handle_member`, the outbox targets, among others); nor does code reference
-    resolution, which draws no row when the classpath offers two candidates. One relation of
-    (graph, class name, entry), anchored, replaces the predicate everywhere.
+  * **A graph's visible class is one relation, read by every rule that resolves a name** `done`.
+    `code_graph_class`, anchored by the code gatherer's `graph-classes` stage on every capture, holds
+    the entry each of a graph's class names resolves to; the type-backing rule, code reference
+    resolution, the path-element method, scalar class, session handle, occurrence condition, built
+    class and producer result rules, and the entry-defect arms that count candidates read it.
+    Whether a graph-keyed relation belongs in the `code_` family or in `graphitron_` is Alf's and
+    Filip's to rule; `FactSchemaGateTest` admits it by name meanwhile.
+  * **The editor and the MCP resolve a class name as the generator does** `open`. The LSP's
+    `ClasspathClasses`, `ClassNameCompletions`, `Hovers`, `DiagnosticFacts`, `ClassMemberSlots`,
+    `ClasspathMethods`, `ExternalFieldLifters`, `DeclarationFacts`, `ScalarTypeCompletions`,
+    `ArgMappingCompletions`, `InlayFacts` and the MCP's `SchemaQueries` still read `code_` rows through
+    `store_graph_source`, so where two entries declare a name they can answer with the shadowed copy.
   * **A catalog source is read alone** `open`. Not yet checked: whether the jOOQ catalog reading
     writes anything for a source that depends on the sources read beside it, or skips a source
     store-wide as the classpath reading does.

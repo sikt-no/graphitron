@@ -63,6 +63,15 @@ class RulePlanGateTest {
         "GRAPHITRON_FEDERATION_LINK_IMPORT", "the names one link imports, a handful",
         "STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY", "one row per entry of the configured common payload, a handful");
 
+    /**
+     * Partition reads that are the rule's answer rather than a lookup, keyed as the known list is,
+     * each with why: every row of the partition read is a row out, so the cost follows the answer.
+     */
+    private static final Map<String, String> ENUMERATED = Map.of(
+        "CODE_GRAPH_CLASS_RULE CODE_CLASS",
+        "every class of each of the graph's entries is a candidate for the name it declares, and all"
+            + " but the shadowed copies are rows of the answer");
+
     /** Partition reads on trunk when this gate landed, each to be indexed or exempted. */
     private static final Set<String> KNOWN = Set.of(
         "GRAPHITRON_ENTRY_DEFECT_RULE SQL_TABLE",
@@ -115,6 +124,7 @@ class RulePlanGateTest {
         return reads(dsl).stream()
             .filter(read -> !SMALL.containsKey(read.table()))
             .filter(read -> !KNOWN.contains(key(read)))
+            .filter(read -> !ENUMERATED.containsKey(key(read)))
             .toList();
     }
 

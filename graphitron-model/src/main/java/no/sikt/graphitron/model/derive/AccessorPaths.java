@@ -6,7 +6,7 @@ import org.jooq.Select;
 
 import java.time.LocalDateTime;
 
-import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCESSOR_PATH_STEP;
@@ -16,14 +16,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.castNull;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
@@ -78,19 +76,14 @@ public final class AccessorPaths {
         // The class reached is referenced in the graph's own classpath entries, the first by name
         // where two entries declare it.
         var a = GRAPHITRON_ACCESSOR_PATH;
-        var cc = CODE_CLASS.as("cc");
-        var ccAny = CODE_CLASS.as("cc_any");
-        var cgs = STORE_GRAPH_SOURCE.as("cgs");
+        var cc = CODE_GRAPH_CLASS.as("cc");
         dsl.insertInto(a)
             .columns(a.GRAPH_NAME, a.COORDINATE, a.TARGET_TYPE, a.KIND, a.TARGET_CLASS_NAME,
                 a.TOUCHED_AT, a.TARGET_CLASS_SOURCE_REF, a.TARGET_CLASS_NAME_REF)
             .select(selectDistinct(cGraph, cCoordinate, cTarget, inline(ACCESSOR), cClass,
                     val(touchedAt, a.TOUCHED_AT), cc.SOURCE_NAME, cc.CLASS_NAME)
                 .from(c)
-                .leftJoin(cc).on(cc.CLASS_NAME.eq(cClass), cc.SOURCE_NAME.eq(field(
-                    select(min(ccAny.SOURCE_NAME)).from(ccAny)
-                        .join(cgs).on(cgs.SOURCE_NAME.eq(ccAny.SOURCE_NAME))
-                        .where(cgs.GRAPH_NAME.eq(cGraph), ccAny.CLASS_NAME.eq(cClass))))))
+                .leftJoin(cc).on(cc.GRAPH_NAME.eq(cGraph), cc.CLASS_NAME.eq(cClass)))
             .onConflict(a.GRAPH_NAME, a.COORDINATE, a.TARGET_TYPE)
             .doUpdate()
             .set(a.TARGET_CLASS_NAME, excluded(a.TARGET_CLASS_NAME))
@@ -130,9 +123,8 @@ public final class AccessorPaths {
         var n = GRAPHITRON_PATH_NEED_OBJECT.as("n");
         var o = GRAPHITRON_OCCURRENCE.as("o");
         var f = GRAPHITRON_FIELD.as("f");
-        var gs = STORE_GRAPH_SOURCE.as("gs");
+        var gs = CODE_GRAPH_CLASS.as("gs");
         var sl = CODE_READ_SLOT.as("sl");
-        var gs2 = STORE_GRAPH_SOURCE.as("gs2");
         var sl2 = CODE_READ_SLOT.as("sl2");
         var c = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_CANDIDATE.as("c");
         var c2 = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_CANDIDATE.as("c2");
@@ -144,14 +136,14 @@ public final class AccessorPaths {
             .from(n)
             .join(o).on(o.GRAPH_NAME.eq(n.GRAPH_NAME), o.COORDINATE.eq(n.COORDINATE))
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
-            .join(gs).on(gs.GRAPH_NAME.eq(n.GRAPH_NAME))
-            .join(sl).on(sl.SOURCE_NAME.eq(gs.SOURCE_NAME), sl.CLASS_NAME.eq(n.START_CLASS),
+            // The start class as the graph resolves its name.
+            .join(gs).on(gs.GRAPH_NAME.eq(n.GRAPH_NAME), gs.CLASS_NAME.eq(n.START_CLASS))
+            .join(sl).on(sl.SOURCE_NAME.eq(gs.SOURCE_NAME), sl.CLASS_NAME.eq(gs.CLASS_NAME),
                 sl.SLOT_NAME.eq(f.BOUND_NAME))
             .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt), o.DEPTH.eq(depth))
-            .and(field(selectCount().from(gs2)
-                .join(sl2).on(sl2.SOURCE_NAME.eq(gs2.SOURCE_NAME), sl2.CLASS_NAME.eq(n.START_CLASS),
-                    sl2.SLOT_NAME.eq(f.BOUND_NAME))
-                .where(gs2.GRAPH_NAME.eq(n.GRAPH_NAME))).eq(1))
+            .and(field(selectCount().from(sl2)
+                .where(sl2.SOURCE_NAME.eq(gs.SOURCE_NAME), sl2.CLASS_NAME.eq(gs.CLASS_NAME),
+                    sl2.SLOT_NAME.eq(f.BOUND_NAME))).eq(1))
             // A producer that takes its keys through its one candidate member reads them there; its
             // member is the lift's, not a path's.
             .and(notExists(selectOne().from(c)
@@ -169,7 +161,7 @@ public final class AccessorPaths {
         var n = GRAPHITRON_PATH_NEED_OBJECT.as("n");
         var o = GRAPHITRON_OCCURRENCE.as("o");
         var f = GRAPHITRON_FIELD.as("f");
-        var gs = STORE_GRAPH_SOURCE.as("gs");
+        var gs = CODE_GRAPH_CLASS.as("gs");
         var sl = CODE_READ_SLOT.as("sl");
         var tb = GRAPHITRON_TYPE_BACKING.as("tb");
         return select(n.GRAPH_NAME, n.COORDINATE, n.TARGET_TYPE, inline(EMPTY), n.START_CLASS,
@@ -180,9 +172,9 @@ public final class AccessorPaths {
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .where(n.GRAPH_NAME.eq(graph), n.TOUCHED_AT.eq(touchedAt), o.DEPTH.eq(depth))
             .and(notExists(selectOne().from(gs)
-                .join(sl).on(sl.SOURCE_NAME.eq(gs.SOURCE_NAME), sl.CLASS_NAME.eq(n.START_CLASS),
+                .join(sl).on(sl.SOURCE_NAME.eq(gs.SOURCE_NAME), sl.CLASS_NAME.eq(gs.CLASS_NAME),
                     sl.SLOT_NAME.eq(f.BOUND_NAME))
-                .where(gs.GRAPH_NAME.eq(n.GRAPH_NAME))))
+                .where(gs.GRAPH_NAME.eq(n.GRAPH_NAME), gs.CLASS_NAME.eq(n.START_CLASS))))
             .and(exists(selectOne().from(tb)
                 .where(tb.GRAPH_NAME.eq(n.GRAPH_NAME), tb.TYPE_NAME.eq(n.TARGET_TYPE),
                     tb.CLASS_NAME.eq(n.START_CLASS))));

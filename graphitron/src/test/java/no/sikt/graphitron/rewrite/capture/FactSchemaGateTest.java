@@ -666,7 +666,10 @@ class FactSchemaGateTest {
      * key-freedom. For {@code code_} the argument is the sharing itself: what a classpath entry
      * declares is true of the entry whoever reads it, so a second graph reading the same entry
      * reads the same rows rather than a copy of them, and a reading replaces the rows of the
-     * entries it read and no others.
+     * entries it read and no others. The one graph-keyed relation in the family is
+     * {@code code_graph_class}, which class a graph's name resolves to: a question about the graph's
+     * classpath order rather than about any entry, so it leads with {@code graph_name}, written by
+     * the code gatherer's anchor stage over the entry rows.
      * {@code federation_} leads with {@code source_name} on the same terms: the federation library
      * is one source every graph claims, and what it supports is true of it whoever reads it.
      * {@code java_} partitions by source too, at the grain its refresh runs at, and its dimension
@@ -705,7 +708,9 @@ class FactSchemaGateTest {
                     }
                     continue;
                 }
-                if (table.startsWith("sql_")
+                if ("code_graph_class".equals(table)) {
+                    expected = "graph_name";
+                } else if (table.startsWith("sql_")
                     || table.startsWith("code_")
                     || table.startsWith("federation_")) {
                     expected = "source_name";

@@ -110,7 +110,8 @@ class FactGraphsTest {
         "defects/type-backing-partition-library-named", "library-named",
         "defects/type-backing-partition-library-nameless", "library-nameless",
         "scenarios/type-backing-partition-corpus-and-library", "corpus-and-library-named",
-        "scenarios/code-reference-copied-entry", "service-copy");
+        "scenarios/code-reference-copied-entry", "service-copy",
+        "defects/classpath-order-code-reference", "corpus-and-library-named");
 
     @Test
     @DisplayName("graphs of different classpaths never share a store, so a class read off a fixture is no row beside a corpus graph")

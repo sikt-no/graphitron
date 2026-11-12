@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.sink.AnchorStage;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.classpath.ClassfileCensus;
 import no.sikt.graphitron.model.classpath.ScalarConstantInput;
@@ -142,12 +143,24 @@ public final class CodeCapture {
     public static void capture(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {
         Progress.started(dsl, reading.graph(), GATHERER);
-        dsl.transaction(tx -> gather(tx.dsl(), reading, loader, touchedAt));
+        dsl.transaction(tx -> {
+            gather(tx.dsl(), reading, loader, touchedAt);
+            // Whatever the reading re-read or skipped: what the graph sees is a function of its
+            // entries' order as well as of their rows, and the order is the graph's own.
+            AnchorStage.runAll(tx.dsl(), reading.graph(), touchedAt, STAGES);
+        });
         Progress.completed(dsl, reading.graph(), GATHERER);
     }
 
     /** This gatherer's row in {@code store_graph_progress}, under the graph the reading was for. */
-    private static final String GATHERER = "code";
+    public static final String GATHERER = "code";
+
+    /**
+     * The anchor phase's stages, in the order they run, which is {@code meta_stage}'s order for this
+     * gatherer: after the reading, so a name resolves among the rows the reading has just written.
+     */
+    public static final List<AnchorStage> STAGES = List.of(
+        new AnchorStage("graph-classes", GraphClasses.class, GraphClasses::write));
 
     private static void gather(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {

@@ -14,3 +14,18 @@ extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   LibBlurb,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,       ACCESSOR
   AssignmentInput, lib.Assignment,                                           PRODUCER
   """)
+
+# The class each name resolves to, which the backings above read: FilmBlurbHolder, declared by both
+# entries, is the corpus's, and lib.HolderService, declared by the library alone, is the library's.
+extend schema @expectEquals(relation: "code_graph_class",
+    where: "class_name IN ('no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder', 'lib.HolderService') AND source_name LIKE '%library-named'",
+    rows: """
+  class_name
+  lib.HolderService
+  """)
+extend schema @expectEquals(relation: "code_graph_class",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder' AND source_name NOT LIKE '%library-named'",
+    rows: """
+  class_name
+  no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder
+  """)

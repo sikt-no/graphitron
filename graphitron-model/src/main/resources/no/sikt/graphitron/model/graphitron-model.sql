@@ -320,8 +320,6 @@ COMMENT ON COLUMN store_graph_dependency.origin IS 'how this entry reached the c
 COMMENT ON COLUMN store_graph_dependency.coordinate IS 'the entry''s groupId:artifactId, or the module name for a reactor sibling found by convention; NULL for the project''s own output, which is what the origin beside it already says. Here for the same reason the refusals carry it: "declare a dependency on module X" needs a name no target/classes path supplies';
 COMMENT ON COLUMN store_graph_dependency.position IS 'where the entry stands on the classpath, 0-based in the order the build handed it over, an entry listed twice standing where it was first listed. What a class name two of the graph''s entries declare resolves by: the declaring entry with the lowest position is the copy a classloader would load, so it is the one the graph''s derivations read. Stored rather than taken from the classpath at resolve time, the classpath being gone by then and the store holding every entry''s rows whatever order any graph reads them in';
 COMMENT ON COLUMN store_graph_dependency.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the entries the build no longer declares, which an upsert cannot find because there is no incoming row to match';
-CREATE INDEX store_graph_dependency_position_ix ON store_graph_dependency (graph_name, position);
-COMMENT ON INDEX store_graph_dependency_position_ix IS 'Serves resolving a class name to the graph''s first entry declaring it: graphitron_type_backing_rule asks, per slot, which of the graph''s entries stand ahead of the one the slot was read off, which is a range on the position within one graph. The primary key leads with the graph and then the entry, so it reads the graph''s whole classpath for every slot instead.';
 
 CREATE TABLE store_graph_module (
   graph_name        VARCHAR NOT NULL,
@@ -5959,9 +5957,50 @@ CREATE TABLE code_class (
 );
 COMMENT ON TABLE code_class IS 'One class the reading read, and the file under the entry it was read out of. For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.';
 COMMENT ON COLUMN code_class.file_path IS 'the file it was read out of, under that entry. Not part of the key, a file being free to declare more than one class; the foreign key is what lets a file the next reading does not find take its classes, and their members, with it';
-COMMENT ON COLUMN code_class.source_name IS 'the classpath entry the class was read from; the key''s leading dimension, and the reason one name declared by two entries is two classes. A graph reaches it through store_graph_source like any source-keyed fact';
+COMMENT ON COLUMN code_class.source_name IS 'the classpath entry the class was read from; the key''s leading dimension, and the reason one name declared by two entries is two classes. A graph resolves a name to one of them through code_graph_class, which holds the copy its classpath order puts first; a reader that wants every entry declaring a name, to name the entry in a refusal, reaches this relation through store_graph_source';
 COMMENT ON COLUMN code_class.class_name IS 'the fully-qualified binary name as the classfile spells it';
 COMMENT ON COLUMN code_class.touched_at IS 'when the reading that produced this row ran; swept with the entry it was read from';
+
+CREATE TABLE code_graph_class (
+  graph_name  VARCHAR   NOT NULL,
+  class_name  VARCHAR   NOT NULL,
+  source_name VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, class_name),
+  FOREIGN KEY (graph_name, source_name)
+    REFERENCES store_graph_source (graph_name, source_name) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
+);
+CREATE INDEX code_graph_class_source_ix ON code_graph_class (source_name, class_name);
+COMMENT ON INDEX code_graph_class_source_ix IS 'Serves the cascade from code_class: an entry the next reading no longer finds deletes its classes, and each deletes the rows naming it here, which the primary key, leading with the graph, cannot find without a scan.';
+COMMENT ON TABLE code_graph_class IS 'The class a graph''s name resolves to: one row per class name any entry on the graph''s classpath declares, naming the entry whose copy the graph sees. For example a FilmService on the consumer''s own output and on a library jar listed after it is one row naming the output. The sakila example graph holds 5,403 rows.';
+COMMENT ON COLUMN code_graph_class.graph_name IS 'the reading graph''s partition; with the class name, the key';
+COMMENT ON COLUMN code_graph_class.class_name IS 'the fully-qualified binary name, as code_class spells it; with the graph, the key, so a name two entries declare is one row';
+COMMENT ON COLUMN code_graph_class.source_name IS 'the entry whose copy the graph sees: of the graph''s entries declaring the name, the one with the lowest store_graph_dependency.position, as the JVM would load it. An entry the graph claims without a position, a capture handed no build classpath being the case, stands after every positioned entry, and two of those are ordered by name. Not part of the key, which is the point: a reader joining code_ rows on this column and the class name reads one copy, where joining through store_graph_source reads every entry''s';
+COMMENT ON COLUMN code_graph_class.touched_at IS 'when the reading that last wrote this row ran. Every capture of the graph rewrites the whole partition and deletes the graph''s rows carrying another instant, never skipping it because no entry changed: the order is the graph''s and can move under unchanged entries, and a winning entry leaving hands its names to the next entry declaring them';
+
+CREATE VIEW code_graph_class_rule (graph_name, class_name, source_name) AS
+-- The graph's entries declaring the name, and none ahead of this one: a lower position, or, where
+-- neither has one or both share one, a lower name. The anti-join probes code_class's key with each
+-- of the graph's entries, which is a seek per entry rather than a scan.
+SELECT g.graph_name, c.class_name, c.source_name
+  FROM store_graph_source g
+  JOIN code_class c ON c.source_name = g.source_name
+  LEFT JOIN store_graph_dependency d
+    ON d.graph_name = g.graph_name AND d.source_name = g.source_name
+ WHERE NOT EXISTS (SELECT 1 FROM store_graph_source ag
+                     JOIN code_class ac ON ac.source_name = ag.source_name AND ac.class_name = c.class_name
+                     LEFT JOIN store_graph_dependency ad
+                       ON ad.graph_name = ag.graph_name AND ad.source_name = ag.source_name
+                    WHERE ag.graph_name = g.graph_name AND ag.source_name <> g.source_name
+                      AND (COALESCE(ad.position, 2147483647) < COALESCE(d.position, 2147483647)
+                           OR (COALESCE(ad.position, 2147483647) = COALESCE(d.position, 2147483647)
+                               AND ag.source_name < g.source_name)));
+COMMENT ON VIEW code_graph_class_rule IS 'One row the graph class rule computes, in the shape code_graph_class stores: the rule itself, evaluated on demand rather than read off disk. For example the code gatherer''s graph-classes stage inserts this view''s rows for one graph into code_graph_class, which is the name every reader spells.';
+-- COMMENT ON COLUMN code_graph_class_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into code_graph_class.graph_name';
+-- COMMENT ON COLUMN code_graph_class_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into code_graph_class.class_name';
+-- COMMENT ON COLUMN code_graph_class_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into code_graph_class.source_name';
 
 CREATE TABLE code_type (
   source_name  VARCHAR NOT NULL,
@@ -6814,14 +6853,14 @@ COMMENT ON COLUMN graphitron_path_element_method.touched_at IS 'when the reading
 CREATE VIEW graphitron_path_element_method_rule
   (graph_name, source_name, source_line, source_column,
    method_source_name, method_class_name, method_name, method_descriptor) AS
--- The class and method as written, among the condition methods the graph's classpath declares; an
--- element naming no class or no method names nothing.
+-- The class and method as written, among the condition methods of the class the graph resolves the
+-- name to; an element naming no class or no method names nothing.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
        cm.source_name, cm.class_name, cm.method_name, cm.descriptor
   FROM graphitron_ast_reference_condition_step_entry c
-  JOIN store_graph_source m ON m.graph_name = c.graph_name
+  JOIN code_graph_class m ON m.graph_name = c.graph_name AND m.class_name = c.class_name
   JOIN code_condition_method cm
-    ON cm.source_name = m.source_name AND cm.class_name = c.class_name AND cm.method_name = c.method;
+    ON cm.source_name = m.source_name AND cm.class_name = m.class_name AND cm.method_name = c.method;
 COMMENT ON VIEW graphitron_path_element_method_rule IS 'One row the path element method rule computes, in the shape graphitron_path_element_method stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_path_element_method, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_path_element_method_rule.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
 -- COMMENT ON COLUMN graphitron_path_element_method_rule.source_name IS 'the file the element was written in';
@@ -7875,9 +7914,10 @@ SELECT graph_name, type_name, 'SCALAR', MIN(java_class)
            AND e.source_line = da.source_line AND e.source_column = da.source_column
           JOIN graphitron_type t
             ON t.graph_name = da.graph_name AND t.type_name = da.coordinate AND t.kind = 'SCALAR'
-          JOIN store_graph_source g ON g.graph_name = da.graph_name
+          JOIN code_graph_class g
+            ON g.graph_name = da.graph_name AND g.class_name = e.scalar_ref_class_part
           JOIN code_scalar_constant k
-            ON k.source_name = g.source_name AND k.class_name = e.scalar_ref_class_part
+            ON k.source_name = g.source_name AND k.class_name = g.class_name
            AND k.field_name = e.scalar_ref_field_part
          WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL) c
  GROUP BY graph_name, type_name
@@ -10351,8 +10391,8 @@ COMMENT ON VIEW graphitron_outbox_target_rule IS 'One row the outbox target rule
 
 CREATE VIEW graphitron_session_handle_member
   (graph_name, member_name, source_name, class_name, method_name, descriptor) AS
--- The join is the whole of the rule: the handle class the graph configures, read from one of the
--- graph's own sources, and the slots that class declares itself. declaring_class = class_name keeps
+-- The join is the whole of the rule: the handle class the graph configures, as the graph resolves
+-- the name, and the slots that class declares itself. declaring_class = class_name keeps
 -- the accessors a jOOQ record handle's generated class declares and not the Record API beneath them;
 -- the classpath reading writes only those for a handle class, but the rule belongs to this relation
 -- and not to how the reading reached it. The slot is the accessor the member is read through, so
@@ -10360,9 +10400,10 @@ CREATE VIEW graphitron_session_handle_member
 SELECT handle.graph_name, slot.slot_name, slot.source_name, slot.class_name, slot.method_name,
        slot.descriptor
   FROM store_graph_session_handle handle
-  JOIN store_graph_source source ON source.graph_name = handle.graph_name
+  JOIN code_graph_class source
+    ON source.graph_name = handle.graph_name AND source.class_name = handle.handle_class
   JOIN code_read_slot slot
-    ON slot.source_name = source.source_name AND slot.class_name = handle.handle_class
+    ON slot.source_name = source.source_name AND slot.class_name = source.class_name
  WHERE slot.declaring_class = slot.class_name;
 COMMENT ON VIEW graphitron_session_handle_member IS 'One accessor of the class a graph names as its session handle, under the property name an author writes after $session. For example a handle record with components brukerId and sokerId draws two rows, and a class offering getTitle and isTitle draws two rows under one name.';
 -- COMMENT ON COLUMN graphitron_session_handle_member.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_handle';
@@ -12718,14 +12759,9 @@ SELECT r.graph_name, r.coordinate, r.depth, r.class_name, r.declared_via, r.memb
        rc.source_name, rc.table_schema, rc.table_name
   FROM reached r
   LEFT JOIN recorded rc ON rc.graph_name = r.graph_name AND rc.record_class = r.class_name
-  -- The class by its key, among the graph's own entries declaring it the first by name, as
+  -- The class by its key, the copy the graph resolves the name to, as
   -- graphitron_occurrence_source_object decides it.
-  LEFT JOIN code_class cc
-    ON cc.class_name = r.class_name
-   AND cc.source_name = (SELECT MIN(gs.source_name)
-                           FROM store_graph_source gs
-                           JOIN code_class ca ON ca.source_name = gs.source_name AND ca.class_name = r.class_name
-                          WHERE gs.graph_name = r.graph_name);
+  LEFT JOIN code_graph_class cc ON cc.graph_name = r.graph_name AND cc.class_name = r.class_name;
 COMMENT ON VIEW graphitron_occurrence_built_class_rule IS 'The class an input object occurrence is built into: one row per occurrence and class, in the shape graphitron_occurrence_built_class stores, with the depth the writer steps through and when the parent row it reads was written. For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.';
 
 
@@ -14399,10 +14435,8 @@ session_pair (graph_name, source_name, source_line, source_column, position, bou
 session_handle_found (graph_name, handle_class) AS (
   SELECT h.graph_name, h.handle_class
     FROM store_graph_session_handle h
-   WHERE EXISTS (SELECT 1 FROM store_graph_source gs
-                   JOIN code_class c ON c.source_name = gs.source_name
-                                    AND c.class_name = h.handle_class
-                  WHERE gs.graph_name = h.graph_name)
+   WHERE EXISTS (SELECT 1 FROM code_graph_class c
+                  WHERE c.graph_name = h.graph_name AND c.class_name = h.handle_class)
 ),
 session_unknown_member (graph_name, source_name, source_line, source_column, position, detail) AS (
   SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position, sp.member
@@ -15719,8 +15753,9 @@ UNION ALL
 -- @externalField and a FieldSort.method under @order or @defaultOrder. A @condition, and a
 -- condition a path element names, take an overload set, whose rules are their own codes. Under
 -- @order and @defaultOrder a reference is a FieldSort.method or a FieldSort.path[].condition, told
--- apart by the object field it is written at. Counted by descriptor, so one class two entries
--- declare is one method.
+-- apart by the object field it is written at. Counted on the class the graph resolves the name to,
+-- as the resolution reads it, so a name two entries declare is the first entry's class and a
+-- method only a later entry's copy declares is not found.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
        CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
             WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
@@ -15728,16 +15763,15 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
        CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
   FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
                c.type_name, c.field_name, c.class_name, c.method_name, c.directive_name,
-               (SELECT COUNT(*) FROM store_graph_source g
-                  JOIN code_class k ON k.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
-               (SELECT COUNT(*) FROM store_graph_source g
-                  JOIN code_method m ON m.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
+               (SELECT COUNT(*) FROM code_graph_class k
+                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
+               (SELECT COUNT(*) FROM code_graph_class k
+                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
+                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
                    AND m.method_name = c.method_name) AS methods,
-               (SELECT COUNT(DISTINCT m.descriptor) FROM store_graph_source g
-                  JOIN code_method m ON m.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
+               (SELECT COUNT(DISTINCT m.descriptor) FROM code_graph_class k
+                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
+                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
                    AND m.method_name = c.method_name) AS descriptors,
                (SELECT v.object_field_name FROM graphql_ast_value_entry v
                  WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
@@ -15767,8 +15801,8 @@ UNION ALL
 -- static modifier, the return type, the throws clause, then the first position that is a table in
 -- some declarations and not others, or is no table and differs in name or declared type. A position
 -- is a table where its role is one of the two table roles, which is the assignability the
--- classpath reading decided. Every declaration is the class's public methods of the name in the
--- graph's classpath, one per descriptor.
+-- classpath reading decided. Every declaration is the public methods of the name on the class the
+-- graph resolves the name to, one per descriptor.
 SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
        'CONDITION_OVERLOAD_SHAPE_DISAGREES',
        CASE WHEN y.arities > 1 THEN 'parameter count'
@@ -15781,13 +15815,12 @@ SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
                -- Two throws clauses disagree where an exception one overload declares is missing
                -- from another's; compared as sets, row by row.
                CASE WHEN EXISTS (
-                      SELECT 1 FROM store_graph_source g
-                        JOIN code_method m ON m.source_name = g.source_name
-                        JOIN store_graph_source ge ON ge.graph_name = g.graph_name
+                      SELECT 1 FROM code_graph_class k
+                        JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
                         JOIN code_method_exception e
-                          ON e.source_name = ge.source_name AND e.class_name = m.class_name
+                          ON e.source_name = k.source_name AND e.class_name = m.class_name
                          AND e.method_name = m.method_name
-                       WHERE g.graph_name = x.graph_name AND m.class_name = x.class_name
+                       WHERE k.graph_name = x.graph_name AND k.class_name = x.class_name
                          AND m.method_name = x.method_name
                          AND NOT EXISTS (SELECT 1 FROM code_method_exception f
                                           WHERE f.source_name = m.source_name
@@ -15796,12 +15829,12 @@ SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
                                             AND f.descriptor = m.descriptor
                                             AND f.exception_class = e.exception_class))
                     THEN 2 ELSE 1 END AS clauses,
-               (SELECT p.position FROM store_graph_source g
-                  JOIN code_method m ON m.source_name = g.source_name
+               (SELECT p.position FROM code_graph_class k
+                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
                   JOIN code_method_parameter p
                     ON p.source_name = m.source_name AND p.class_name = m.class_name
                    AND p.method_name = m.method_name AND p.descriptor = m.descriptor
-                 WHERE g.graph_name = x.graph_name AND m.class_name = x.class_name
+                 WHERE k.graph_name = x.graph_name AND k.class_name = x.class_name
                    AND m.method_name = x.method_name
                  GROUP BY p.position
                 HAVING COUNT(DISTINCT CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) > 1
@@ -15822,9 +15855,10 @@ SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
                                    AND p.method_name = m.method_name
                                    AND p.descriptor = m.descriptor) AS arity
                           FROM graphitron_code_reference_site c
-                          JOIN store_graph_source g ON g.graph_name = c.graph_name
+                          JOIN code_graph_class k
+                            ON k.graph_name = c.graph_name AND k.class_name = c.class_name
                           JOIN code_method m
-                            ON m.source_name = g.source_name AND m.class_name = c.class_name
+                            ON m.source_name = k.source_name AND m.class_name = k.class_name
                            AND m.method_name = c.method_name
                          WHERE c.directive_name = 'condition') d
                  GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column,
@@ -16005,10 +16039,11 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
    AND EXISTS (SELECT 1 FROM store_graph_source g
                  JOIN code_class k ON k.source_name = g.source_name
                 WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
-                     JOIN code_scalar_constant c ON c.source_name = g.source_name
-                    WHERE g.graph_name = e.graph_name
-                      AND c.class_name = e.scalar_ref_class_part
+   AND NOT EXISTS (SELECT 1 FROM code_graph_class k
+                     JOIN code_scalar_constant c
+                       ON c.source_name = k.source_name AND c.class_name = k.class_name
+                    WHERE k.graph_name = e.graph_name
+                      AND k.class_name = e.scalar_ref_class_part
                       AND c.field_name = e.scalar_ref_field_part)
 UNION ALL
 -- Two node types answering to one type id, so Query.node has an id it cannot dispatch. Reported at
@@ -17178,15 +17213,9 @@ SELECT r.graph_name, r.coordinate, r.shape, r.class_name, r.runtime_kind, r.tabl
            AND t.table_name = s.table_name)
        r (graph_name, coordinate, shape, class_name, runtime_kind, table_source_name, table_schema,
           table_name)
-  -- The class by its key: among the graph's own classpath entries declaring it, the first by name,
-  -- as graphitron_occurrence_source_object decides it, reached through the entries so the lookup
-  -- seeks code_class's key rather than scanning it by name.
-  LEFT JOIN code_class oc
-    ON oc.class_name = r.class_name
-   AND oc.source_name = (SELECT MIN(gs.source_name)
-                           FROM store_graph_source gs
-                           JOIN code_class ca ON ca.source_name = gs.source_name AND ca.class_name = r.class_name
-                          WHERE gs.graph_name = r.graph_name);
+  -- The class by its key: the copy the graph resolves the name to, as
+  -- graphitron_occurrence_source_object decides it.
+  LEFT JOIN code_graph_class oc ON oc.graph_name = r.graph_name AND oc.class_name = r.class_name;
 COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_result, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.coordinate';
@@ -17387,9 +17416,9 @@ offered (graph_name, coordinate, bound, method_source_name, method_class_name, m
     FROM bound_table b
     JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
     JOIN written w ON w.graph_name = o.graph_name AND w.element_coordinate = o.element_coordinate
-    JOIN store_graph_source m ON m.graph_name = o.graph_name
+    JOIN code_graph_class m ON m.graph_name = o.graph_name AND m.class_name = w.class_name
     JOIN code_condition_method cm
-      ON cm.source_name = m.source_name AND cm.class_name = w.class_name AND cm.method_name = w.method_name
+      ON cm.source_name = m.source_name AND cm.class_name = m.class_name AND cm.method_name = w.method_name
     JOIN sql_table st
       ON st.source_name = b.source_name AND st.table_schema = b.schema_name AND st.table_name = b.table_name
     JOIN code_method_parameter p
@@ -18170,21 +18199,12 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
                                          WHERE te.graph_name = o.graph_name
                                            AND te.coordinate = o.target_type_name
                                            AND te.directive_name = 'table'))
-     AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+     -- The class the graph resolves the name to, as hop reads it.
+     AND NOT EXISTS (SELECT 1 FROM code_graph_class v
                        JOIN code_read_slot sl
-                         ON sl.source_name = g.source_name AND sl.class_name = m.result_element_class
+                         ON sl.source_name = v.source_name AND sl.class_name = v.class_name
                         AND sl.slot_name = df.bound_name
-                      WHERE g.graph_name = s.graph_name
-                        -- The class the graph resolves the name to, which is its first entry
-                        -- declaring it, as hop states.
-                        AND NOT EXISTS (SELECT 1 FROM store_graph_dependency here
-                                         JOIN store_graph_dependency ahead
-                                           ON ahead.graph_name = here.graph_name AND ahead.position < here.position
-                                         JOIN store_graph_source ag
-                                           ON ag.graph_name = ahead.graph_name AND ag.source_name = ahead.source_name
-                                         JOIN code_class ac
-                                           ON ac.source_name = ahead.source_name AND ac.class_name = sl.class_name
-                                        WHERE here.graph_name = g.graph_name AND here.source_name = g.source_name))
+                      WHERE v.graph_name = s.graph_name AND v.class_name = m.result_element_class)
   UNION
   SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s
@@ -18231,22 +18251,16 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN graphql_type child
       ON child.graph_name = f.graph_name AND child.type_name = f.named_type
      AND child.kind IN ('OBJECT', 'INPUT_OBJECT')
-    JOIN store_graph_source g ON g.graph_name = f.graph_name
     JOIN graphitron_field bf
       ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
+    JOIN store_graph_source g ON g.graph_name = f.graph_name
     JOIN code_read_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
+    -- A class name two of the graph's entries declare is the copy the graph sees, as a classloader
+    -- would load it: a slot read off another entry's copy is no edge.
+    JOIN code_graph_class v
+      ON v.graph_name = g.graph_name AND v.class_name = sl.class_name AND v.source_name = sl.source_name
    WHERE sl.element_class IS NOT NULL
-     -- A class name two of the graph's entries declare is the copy on the first of them, as a
-     -- classloader would load it: a slot read off a later entry's copy is no edge.
-     AND NOT EXISTS (SELECT 1 FROM store_graph_dependency here
-                      JOIN store_graph_dependency ahead
-                        ON ahead.graph_name = here.graph_name AND ahead.position < here.position
-                      JOIN store_graph_source ag
-                        ON ag.graph_name = ahead.graph_name AND ag.source_name = ahead.source_name
-                      JOIN code_class ac
-                        ON ac.source_name = ahead.source_name AND ac.class_name = sl.class_name
-                     WHERE here.graph_name = g.graph_name AND here.source_name = g.source_name)
      -- Read off the stored applications rather than the reference sites: H2 evaluates a view
      -- again for every hop row, and on a consumer schema that was most of the rule's time.
      AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application x
@@ -18262,20 +18276,14 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN graphql_type child
       ON child.graph_name = f.graph_name AND child.type_name = f.named_type
      AND child.kind IN ('OBJECT', 'INPUT_OBJECT')
-    JOIN store_graph_source g ON g.graph_name = f.graph_name
     JOIN graphitron_field bf
       ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
+    JOIN store_graph_source g ON g.graph_name = f.graph_name
     JOIN code_write_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
+    JOIN code_graph_class v
+      ON v.graph_name = g.graph_name AND v.class_name = sl.class_name AND v.source_name = sl.source_name
    WHERE sl.element_class IS NOT NULL
-     AND NOT EXISTS (SELECT 1 FROM store_graph_dependency here
-                      JOIN store_graph_dependency ahead
-                        ON ahead.graph_name = here.graph_name AND ahead.position < here.position
-                      JOIN store_graph_source ag
-                        ON ag.graph_name = ahead.graph_name AND ag.source_name = ahead.source_name
-                      JOIN code_class ac
-                        ON ac.source_name = ahead.source_name AND ac.class_name = sl.class_name
-                     WHERE here.graph_name = g.graph_name AND here.source_name = g.source_name)
 ),
 -- The closure from the seeds over the hops. H2 has no CYCLE clause and its UNION does not discard
 -- a row an earlier step produced, so a cyclic type graph would recurse forever: the path of pairs
@@ -19568,6 +19576,12 @@ INSERT INTO meta_stage VALUES
   ('outbox', 'graphitron', 39, 'no.sikt.graphitron.model.derive.Outboxes'),
   ('entry-defects', 'graphitron', 40, 'no.sikt.graphitron.model.derive.EntryDefects');
 
+-- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
+-- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
+-- dependency, beside the code rows its own reading has just written.
+INSERT INTO meta_stage VALUES
+  ('graph-classes', 'code', 0, 'no.sikt.graphitron.model.capture.code.GraphClasses');
+
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
   relation_name VARCHAR NOT NULL,
@@ -19729,7 +19743,8 @@ INSERT INTO meta_stage_write VALUES
   ('entry-defects', 'graphitron_entry_defect_member'),
   ('entry-defects', 'graphitron_entry_defect_key_column'),
   ('entry-defects', 'graphitron_entry_defect_path_step'),
-  ('entry-defects', 'graphitron_entry_defect_table');
+  ('entry-defects', 'graphitron_entry_defect_table'),
+  ('graph-classes', 'code_graph_class');
 
 CREATE TABLE store_graph_progress (
   graph_name     VARCHAR   NOT NULL,
@@ -20466,6 +20481,9 @@ INSERT INTO meta_grain VALUES
   ('classpath-class',
    'one class of one classpath entry',
    'source_name, class_name', 'classpath'),
+  ('graph-class',
+   'one class name the classpath of one graph declares',
+   'graph_name, class_name', 'classpath'),
   ('class-file',
    'one class file under one classpath entry',
    'source_name, file_path', 'classpath'),
@@ -22426,6 +22444,14 @@ INSERT INTO meta_relation VALUES
    'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.',
    'A method''s parameters are the method''s own fact, so they are held once and the arms read them. Written rather than derived because a descriptor states types and nothing else: the name a binding targets is in the MethodParameters attribute, and the role is an assignability question the descriptor cannot answer. The role vocabulary is four values and they are exclusive because no type satisfies two; it is one column rather than one per arm because a position typed as a jOOQ table is typed that way whether the method is reached at @condition or anywhere else, and the arm''s reading of what that means is the arm''s. Keyed on position and not on name, since the name is exactly the part a classfile may omit.'),
+  ('code_graph_class', 'graph-class', 'code',
+   'The class a graph''s name resolves to: one row per class name any entry on the graph''s classpath declares, naming the entry whose copy the graph sees.',
+   'For example a FilmService on the consumer''s own output and on a library jar listed after it is one row naming the output. The sakila example graph holds 5,403 rows.',
+   'Graphs on different classpaths share a store, and an entry''s rows are a function of that entry alone, so one class name declared by two entries is two code_class rows and which one a graph sees is a question about the graph: the first entry on its classpath declaring the name, as the JVM would load it. Every rule that resolves a name read that predicate inline, an anti-join over the graph''s entries per candidate, or settled for the first entry by name, which classpath order does not decide. Stated once here, the readers join it on its key. The whole visible set rather than the names some reader asks about, because the readers are many and their questions are not known to the gatherer that owns the classpath. Written by the code gatherer''s anchor stage, after its own reading and the store and classpath-source gatherers it depends on, and rewritten for the graph on every capture, since the order is the graph''s and moves under entries that did not change.'),
+  ('code_graph_class_rule', 'graph-class', 'code',
+   'One row the graph class rule computes, in the shape code_graph_class stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the code gatherer''s graph-classes stage inserts this view''s rows for one graph into code_graph_class, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_target_rule''s terms, so the stage and the rule can be compared row for row on every fact document.'),
   ('code_class', 'classpath-class', 'code',
    'One class the reading read, and the file under the entry it was read out of.',
    'For example a consumer''s FilmService on the reactor''s own output, beside a jOOQ interface on a declared jar.',

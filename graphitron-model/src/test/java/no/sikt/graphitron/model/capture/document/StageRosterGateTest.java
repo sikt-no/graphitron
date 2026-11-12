@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.capture.code.CodeCapture;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
@@ -49,6 +50,24 @@ class StageRosterGateTest {
             assertThat(runs).as("GraphitronAstCapture.STAGES against meta_stage's rows for "
                     + GATHERER + " by position; a stage added, moved or renamed in one and not the"
                     + " other runs in an order nothing checks")
+                .containsExactlyElementsOf(roster);
+        });
+    }
+
+    @Test
+    @DisplayName("the code gatherer runs the stages its roster states, in the roster's order")
+    void theCodeRosterIsWhatTheCodeGathererRuns() {
+        ThreadConfinedStore.run(dsl -> {
+            var roster = dsl.select(META_STAGE.STAGE_NAME, META_STAGE.STAGE_CLASS)
+                .from(META_STAGE)
+                .where(META_STAGE.GATHERER_NAME.eq(CodeCapture.GATHERER))
+                .orderBy(META_STAGE.POSITION)
+                .fetch(r -> r.value1() + " " + r.value2());
+            var runs = CodeCapture.STAGES.stream()
+                .map(stage -> stage.name() + " " + stage.owner().getName())
+                .toList();
+            assertThat(runs).as("CodeCapture.STAGES against meta_stage's rows for "
+                    + CodeCapture.GATHERER + " by position")
                 .containsExactlyElementsOf(roster);
         });
     }
