@@ -606,7 +606,7 @@ public class ConnectionHelperClassGenerator {
         // selects totalCount, so the count SQL is skipped on every query that does not ask for
         // it. The carrier's count slot decides the statement: Scoped on a root connection, one
         // grouped count shared by the batch on a batched one, zero on the empty page. Returns null
-        // only when the slot is absent, which no producer builds.
+        // when the slot is absent, which only the polymorphic empty-participants path builds.
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         // Multi-tenant: read the DSLContext the owning fetcher bound on the carrier (see the

@@ -853,10 +853,16 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(tenantDsl.declaration());
 
         if (participants.isEmpty()) {
-            // The store refuses a field over a union or interface with no table-bound participant
-            // (FIELD_WITHOUT_FETCHER), so the generator never reaches one.
-            throw new IllegalStateException("Graphitron generator bug: '" + fieldName + "' is fetched per"
-                + " table-bound participant but has none; FIELD_WITHOUT_FETCHER refuses it before generation");
+            if (isList) {
+                builder.addStatement("$T payload = $T.of()", listOfRecord, LIST);
+            } else {
+                builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
+            }
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(noChannelCatchArm(outputPackage));
+            builder.endControlFlow();
+            return builder.build();
         }
 
         // Ahead of stage 1: an id no branch can decode is a client mistake, not an empty result.
@@ -953,10 +959,16 @@ public final class MultiTablePolymorphicEmitter {
         builder.addStatement("$T dsl = $L", DSL_CONTEXT, TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
 
         if (participants.isEmpty()) {
-            // The store refuses a field over a union or interface with no table-bound participant
-            // (FIELD_WITHOUT_FETCHER), so the generator never reaches one.
-            throw new IllegalStateException("Graphitron generator bug: '" + fieldName + "' is fetched per"
-                + " table-bound participant but has none; FIELD_WITHOUT_FETCHER refuses it before generation");
+            if (isList) {
+                builder.addStatement("$T payload = $T.of()", listOfRecord, LIST);
+            } else {
+                builder.addStatement("$T payload = ($T) null", RECORD, RECORD);
+            }
+            builder.addCode(returnSyncSuccess(valueType, "payload"));
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(noChannelCatchArm(outputPackage));
+            builder.endControlFlow();
+            return builder.build();
         }
 
         if (parentKeyLift instanceof KeyLift.Accessor ac) {
@@ -1055,8 +1067,8 @@ public final class MultiTablePolymorphicEmitter {
      * (pagesTable, DSL.noCondition())} so the same UNION-ALL derived table backs both the page
      * query and {@code ConnectionHelper.totalCount}'s {@code SELECT count(*)}; the count
      * resolver remains lazy on selection (graphql-java only invokes it when the client picks
-     * the field). A field with no table-bound participant is refused before generation
-     * ({@code FIELD_WITHOUT_FETCHER}).
+     * the field). The empty-participants path, an interface carrying {@code @table} with no
+     * participant, keeps {@code (null, null)} since there is no derived table to count.
      *
      * <p>The order and the cursor columns come from the field's lowered ordering. The one caller
      * without an ordering is the degenerate all-unbound child connection, which lowers none; it
@@ -1091,10 +1103,22 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(tenantDsl.declaration());
 
         if (participants.isEmpty()) {
-            // The store refuses a field over a union or interface with no table-bound participant
-            // (FIELD_WITHOUT_FETCHER), so the generator never reaches one.
-            throw new IllegalStateException("Graphitron generator bug: '" + fieldName + "' is fetched per"
-                + " table-bound participant but has none; FIELD_WITHOUT_FETCHER refuses it before generation");
+            // No table-bound participant: the store refuses such a field (FIELD_WITHOUT_FETCHER)
+            // except over an interface carrying @table itself with no participant at all, which
+            // still lands on its table; it answers an empty page. List.of() flows cleanly through
+            // ConnectionResult: pageInfo.startCursor/endCursor return null, edges/nodes return
+            // empty.
+            builder.addStatement("$T page = $T.pageRequest(null, null, null, null, $L,\n"
+                + "        $T.of(), $T.of(), $T.of())",
+                pageRequestClass, connectionHelperClass, defaultPageSize, LIST, LIST, LIST);
+            builder.addStatement("$T payload = new $T($T.of(), page, null, null"
+                + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")",
+                valueType, connectionResultClass, LIST);
+            builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
+            builder.nextControlFlow("catch ($T e)", Exception.class);
+            builder.addCode(noChannelCatchArm(outputPackage));
+            builder.endControlFlow();
+            return builder.build();
         }
 
         // Ahead of stage 1, exactly as the list twin: without it a no-branch-matches id would
