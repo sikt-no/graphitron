@@ -339,7 +339,8 @@ public final class FactGraphs implements AutoCloseable {
                             + " a scenario keeps the catalog its first configuration names");
                     }
                     built[0] = CapturedStore.captureFolder(dsl, folder, path, catalog, classpath,
-                        FactDocuments.StatedConfiguration.of(texts), at, !first);
+                        FactDocuments.StatedConfiguration.of(texts),
+                        FactDocuments.StatedConfiguration.fileAnnotations(texts), at, !first);
                 },
                 claim -> verification.check(dsl, claim));
             if (built[0] == null) {

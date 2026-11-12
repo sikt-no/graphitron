@@ -1,0 +1,99 @@
+# What a <schemaInput descriptionNote> does to the elements of the file it configures: the note is
+# appended to the description of every field, argument, input field and enum value the file
+# declares, and of every object, interface, input, enum and union type whose base definition it
+# holds, after a blank line where the element has a description and alone where it has none. A
+# type's description is its base definition's, so a note reaches a type only through the file
+# declaring it, and a field through the file declaring the field, extension or not. A scalar takes no
+# note. The part relations carry the description the emitted schema does, and the schema as written
+# carries none of it.
+#
+# Two files read together, each extending a type the other declares, and only the first noted.
+extend schema @withConfiguration(fileAnnotations: [
+  {file: "shapes/configured-note/cinema", note: "Part of cinema."}])
+
+extend schema @withFacts(docs: [
+  {path: "shapes/configured-note/cinema"},
+  {path: "shapes/configured-note/shared"}])
+
+extend schema @expectEquals(relation: "store_graph_schema_input", rows: """
+  ordinal, kind, description_note
+  0,       file, Part of cinema.
+  1,       file,
+  """)
+
+# Every type whose base definition the noted file holds, and none other: not the store, whose base
+# is in the other file, and not the scalar.
+extend schema @expectEquals(relation: "graphitron_type", where: """
+  description LIKE '%Part of cinema.'
+  """, rows: """
+  coordinate
+  Address
+  AddressOccupant
+  Customer
+  FilmFilter
+  Film
+  MpaaRating
+  Node
+  Payment
+  Query
+  Staff
+  """)
+
+# After a blank line where the type has a description of its own. The text spans lines, which a CSV
+# cell cannot, so it is stated in the predicate: a wrong text drops the row.
+extend schema @expectEquals(relation: "graphitron_type", where: """
+  description LIKE CONCAT('%', CHAR(10), CHAR(10), 'Part of cinema.')
+  """, rows: """
+  coordinate
+  Film
+  Query
+  """)
+
+extend schema @assertContains(relation: "graphitron_type", where: """
+  description = CONCAT('A film.', CHAR(10), CHAR(10), 'Part of cinema.')
+  """, rows: """
+  coordinate
+  Film
+  """)
+
+# A field takes the note of the file declaring it, extension or not.
+extend schema @expectEquals(relation: "graphitron_field", where: """
+  coordinate IN ('Film.releaseYear', 'Film.length', 'Store.storeId', 'Store.lastUpdate')
+  """, rows: """
+  coordinate,       description
+  Film.length,
+  Film.releaseYear, Part of cinema.
+  Store.lastUpdate,
+  Store.storeId,    Part of cinema.
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field", where: """
+  description = CONCAT('Its title.', CHAR(10), CHAR(10), 'Part of cinema.')
+  """, rows: """
+  coordinate
+  Film.title
+  """)
+
+extend schema @assertContains(relation: "graphitron_argument", rows: """
+  coordinate,                    description
+  Query.films(title:),           Part of cinema.
+  Query.filmsByFilter(filter:),  Part of cinema.
+  """)
+
+extend schema @expectEquals(relation: "graphitron_enum_value", where: """
+  coordinate LIKE 'MpaaRating.%'
+  AND description <> CONCAT('Parental.', CHAR(10), CHAR(10), 'Part of cinema.')
+  """, rows: """
+  coordinate,       description
+  MpaaRating.G,     Part of cinema.
+  MpaaRating.NC_17, Part of cinema.
+  MpaaRating.PG_13, Part of cinema.
+  MpaaRating.R,     Part of cinema.
+  """)
+
+extend schema @expectEquals(relation: "graphitron_enum_value", where: """
+  description = CONCAT('Parental.', CHAR(10), CHAR(10), 'Part of cinema.')
+  """, rows: """
+  coordinate
+  MpaaRating.PG
+  """)

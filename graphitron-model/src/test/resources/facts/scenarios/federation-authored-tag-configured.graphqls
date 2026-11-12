@@ -1,0 +1,28 @@
+# A file whose author links federation and imports @tag, read under a configured tag. The configured
+# tag joins the author's link rather than minting one of its own, and the link already imports @tag,
+# so it imports nothing twice and the composition declares every tag it applies. The configuration
+# changes what the assembly judges and nothing the transcription or the decode writes:
+# GraphQLSchemaProblemsTest compares this reading with the file read alone.
+extend schema @withConfiguration(fileAnnotations: [{file: "shapes/federation-authored-tag", tag: "catalog"}])
+
+extend schema @withFacts(docs: [{path: "shapes/federation-authored-tag"}])
+
+extend schema @expectEquals(relation: "store_graph_schema_input", rows: """
+  ordinal, kind, tag
+  0,       file, catalog
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
+  origin,   version
+  AUTHORED, v2.10
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
+  ordinal, name
+  0,       @key
+  1,       @shareable
+  2,       @tag
+  3,       @inaccessible
+  """)
+
+extend schema @assertEmpty(relation: "graphql_schema_problem")

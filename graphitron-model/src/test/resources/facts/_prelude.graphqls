@@ -29,6 +29,12 @@ directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
 # other graph reads; jooqPackage: null is a run that declared no catalog. All graphs share one store,
 # so a graph without the fixture catalog still sits beside the rows the others' reading of it wrote,
 # which is what a claim on whose catalog a rule reads is tested against.
+#
+# fileAnnotations gives rendered files of the scenario's folder the tag and the description note a
+# build's <schemaInput tag> and <schemaInput descriptionNote> configure on the entry reading that
+# file. Each entry names a file as @withFacts wrote it, its as: or else its path, or the scenario's
+# own path for its own file, and the capture refuses a name the folder does not hold. It annotates
+# what the run reads and never says what that is: the files read are always the folder's.
 directive @withConfiguration(
   jooqPackage: String,
   supergraph: String,
@@ -40,8 +46,10 @@ directive @withConfiguration(
   lintExcludedTypes: [String!],
   sessionState: Boolean,
   sessionHandle: String,
-  maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String
+  maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String,
+  fileAnnotations: [FileAnnotation!]
 ) repeatable on SCHEMA
+input FileAnnotation { file: String!, tag: String, note: String }
 
 # @withFacts(docs: [{path: "layouts/anchor"}, {path: "shapes/film", as: "shapes/film"}]) renders
 # each document, and first what it pulls in, into the scenario's folder as the file its entry names

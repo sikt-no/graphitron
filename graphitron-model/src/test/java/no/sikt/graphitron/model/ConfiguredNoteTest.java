@@ -7,96 +7,44 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
-import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What a {@code <schemaInput descriptionNote>} does to a file's elements, read off the two schemas
- * capture hands back: the post-synthesis schema appends the note to every element the file
- * declares, after a blank line where the element has a description and alone where it has none,
- * and the schema as written carries none of it.
+ * capture hands back for the {@code scenarios/configured-note} document: the post-synthesis schema
+ * appends the note to every element the file declares, after a blank line where the element has a
+ * description and alone where it has none, and the schema as written carries none of it.
  *
  * <p>The elements are the fields, input fields, arguments and enum values the file declares, and
  * the object, interface, input, enum and union types whose base definition it holds. A type's
  * description is its base definition's, so a note reaches a type only through the file declaring
  * it, and reaches a field through the file declaring the field, extension or not. A scalar takes no
- * note.
+ * note. The document claims the descriptions the part relations carry; this reads the schema the
+ * generator emits from them.
  */
 class ConfiguredNoteTest {
 
     private static final String NOTE = "Part of cinema.";
 
-    private static final String CINEMA = """
-        "The root."
-        type Query {
-          film(id: ID): Film
-          search(filter: FilmFilter): [Result]
-          rated: Rating
-        }
-        "A film."
-        type Film {
-          "Its title."
-          title: String
-          year: Int
-        }
-        extend type Studio { founded: Int }
-        interface Named { name: String }
-        input FilmFilter { title: String }
-        enum Rating { G "Parental." PG }
-        union Result = Film
-        scalar Date
-        """;
-
-    private static final String SHARED = """
-        type Studio { name: String }
-        extend type Film { length: Int }
-        """;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     private static GraphQLSchema emitted;
     private static GraphQLSchema written;
-    private static Map<String, String> anchored;
 
     @BeforeAll
-    static void capture(@TempDir Path tmp) throws IOException {
-        var cinema = Files.writeString(tmp.resolve("cinema.graphqls"), CINEMA);
-        var shared = Files.writeString(tmp.resolve("shared.graphqls"), SHARED);
-        try (var store = CapturedStore.configured(tmp, List.of(
-                new SchemaInput(SchemaSource.file(cinema), Optional.empty(), Optional.of(NOTE)),
-                new SchemaInput(SchemaSource.file(shared), Optional.empty(), Optional.empty())))) {
-            emitted = ((SchemaAssembly.Assembled) store.schema().synthesised().orElseThrow()).schema();
-            written = ((SchemaAssembly.Assembled) store.schema().written().assembly()).schema();
-            var dsl = store.dsl();
-            anchored = new HashMap<>();
-            dsl.select(GRAPHITRON_TYPE.COORDINATE, GRAPHITRON_TYPE.DESCRIPTION).from(GRAPHITRON_TYPE)
-                .forEach(r -> anchored.put(r.value1(), r.value2()));
-            dsl.select(GRAPHITRON_FIELD.COORDINATE, GRAPHITRON_FIELD.DESCRIPTION).from(GRAPHITRON_FIELD)
-                .forEach(r -> anchored.put(r.value1(), r.value2()));
-            dsl.select(GRAPHITRON_ARGUMENT.COORDINATE, GRAPHITRON_ARGUMENT.DESCRIPTION)
-                .from(GRAPHITRON_ARGUMENT)
-                .forEach(r -> anchored.put(r.value1(), r.value2()));
-            dsl.select(GRAPHITRON_ENUM_VALUE.COORDINATE, GRAPHITRON_ENUM_VALUE.DESCRIPTION)
-                .from(GRAPHITRON_ENUM_VALUE)
-                .forEach(r -> anchored.put(r.value1(), r.value2()));
-        }
+    static void read() {
+        FACTS.read("scenarios/configured-note", graph -> {
+            emitted = ((SchemaAssembly.Assembled) graph.schema().synthesised().orElseThrow()).schema();
+            written = ((SchemaAssembly.Assembled) graph.schema().written().assembly()).schema();
+            return null;
+        });
     }
 
     @Test
@@ -104,28 +52,30 @@ class ConfiguredNoteTest {
     void types() {
         assertThat(description("Query")).isEqualTo("The root.\n\n" + NOTE);
         assertThat(description("Film")).isEqualTo("A film.\n\n" + NOTE);
-        assertThat(description("Named")).isEqualTo(NOTE);
+        assertThat(description("Node")).isEqualTo(NOTE);
         assertThat(description("FilmFilter")).isEqualTo(NOTE);
-        assertThat(description("Rating")).isEqualTo(NOTE);
-        assertThat(description("Result")).isEqualTo(NOTE);
-        assertThat(description("Date")).as("a scalar takes no note").isNullOrEmpty();
-        assertThat(description("Studio")).as("its base definition is in the other file").isNullOrEmpty();
+        assertThat(description("MpaaRating")).isEqualTo(NOTE);
+        assertThat(description("AddressOccupant")).isEqualTo(NOTE);
+        assertThat(description("BigDecimal")).as("a scalar takes no note").isNullOrEmpty();
+        assertThat(description("Store")).as("its base definition is in the other file")
+            .isEqualTo(((GraphQLNamedType) written.getType("Store")).getDescription())
+            .doesNotContain(NOTE);
     }
 
     @Test
     @DisplayName("a field, argument, input field or enum value the file declares takes the note")
     void members() {
         var query = (GraphQLObjectType) emitted.getType("Query");
-        assertThat(query.getFieldDefinition("film").getDescription()).isEqualTo(NOTE);
-        assertThat(query.getFieldDefinition("film").getArgument("id").getDescription()).isEqualTo(NOTE);
+        assertThat(query.getFieldDefinition("films").getDescription()).isEqualTo(NOTE);
+        assertThat(query.getFieldDefinition("films").getArgument("title").getDescription()).isEqualTo(NOTE);
         var film = (GraphQLObjectType) emitted.getType("Film");
         assertThat(film.getFieldDefinition("title").getDescription()).isEqualTo("Its title.\n\n" + NOTE);
-        assertThat(film.getFieldDefinition("year").getDescription()).isEqualTo(NOTE);
-        assertThat(((GraphQLInterfaceType) emitted.getType("Named")).getFieldDefinition("name")
+        assertThat(film.getFieldDefinition("releaseYear").getDescription()).isEqualTo(NOTE);
+        assertThat(((GraphQLInterfaceType) emitted.getType("Node")).getFieldDefinition("id")
             .getDescription()).isEqualTo(NOTE);
         assertThat(((GraphQLInputObjectType) emitted.getType("FilmFilter")).getFieldDefinition("title")
             .getDescription()).isEqualTo(NOTE);
-        var rating = (GraphQLEnumType) emitted.getType("Rating");
+        var rating = (GraphQLEnumType) emitted.getType("MpaaRating");
         assertThat(rating.getValue("G").getDescription()).isEqualTo(NOTE);
         assertThat(rating.getValue("PG").getDescription()).isEqualTo("Parental.\n\n" + NOTE);
     }
@@ -133,26 +83,11 @@ class ConfiguredNoteTest {
     @Test
     @DisplayName("a field takes the note of the file declaring it, extension or not")
     void extensions() {
-        var studio = (GraphQLObjectType) emitted.getType("Studio");
-        assertThat(studio.getFieldDefinition("founded").getDescription()).isEqualTo(NOTE);
-        assertThat(studio.getFieldDefinition("name").getDescription()).isNull();
+        var store = (GraphQLObjectType) emitted.getType("Store");
+        assertThat(store.getFieldDefinition("storeId").getDescription()).isEqualTo(NOTE);
+        assertThat(store.getFieldDefinition("lastUpdate").getDescription()).isNull();
         var film = (GraphQLObjectType) emitted.getType("Film");
         assertThat(film.getFieldDefinition("length").getDescription()).isNull();
-    }
-
-    /**
-     * The store states the description the generator emits, so a reader of the anchors and a reader
-     * of the emitted schema agree without either composing the note.
-     */
-    @Test
-    @DisplayName("the part relations carry the description the emitted schema does")
-    void theAnchorsCarryTheEmittedDescription() {
-        assertThat(anchored).containsEntry("Film", "A film.\n\n" + NOTE)
-            .containsEntry("Film.title", "Its title.\n\n" + NOTE)
-            .containsEntry("Film.year", NOTE)
-            .containsEntry("Query.film(id:)", NOTE)
-            .containsEntry("Rating.PG", "Parental.\n\n" + NOTE)
-            .containsEntry("Studio.name", null);
     }
 
     @Test
@@ -160,8 +95,8 @@ class ConfiguredNoteTest {
     void theWrittenSchemaIsAsWritten() {
         assertThat(((GraphQLNamedType) written.getType("Film")).getDescription()).isEqualTo("A film.");
         var film = (GraphQLObjectType) written.getType("Film");
-        assertThat(film.getFieldDefinition("year").getDescription()).isNull();
-        assertThat(((GraphQLEnumType) written.getType("Rating")).getValue("G").getDescription()).isNull();
+        assertThat(film.getFieldDefinition("releaseYear").getDescription()).isNull();
+        assertThat(((GraphQLEnumType) written.getType("MpaaRating")).getValue("G").getDescription()).isNull();
     }
 
     private static String description(String type) {

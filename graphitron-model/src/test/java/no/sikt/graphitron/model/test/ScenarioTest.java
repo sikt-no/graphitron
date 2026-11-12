@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.test;
 
+import no.sikt.graphitron.model.schema.input.SchemaInput;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -256,6 +258,111 @@ class ScenarioTest {
                 "scenarios/s", "extend schema @withFacts(docs: [{path: \"shapes/none\"}])\n")))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("scenarios/s names the fact document 'shapes/none'");
+    }
+
+    @Test
+    @DisplayName("fileAnnotations gives a rendered file, named as @withFacts wrote it, the tag and the note a schema input configures")
+    void fileAnnotationsAnnotateRenderedFiles() throws IOException {
+        var inputs = new ArrayList<List<SchemaInput>>();
+        Scenario.load("scenarios/s", p -> Optional.ofNullable(Map.of(
+                "scenarios/s", """
+                    extend schema @withFacts(docs: [{path: "shapes/b", as: "shapes/renamed"}])
+                    extend schema @withConfiguration(fileAnnotations: [
+                      {file: "shapes/renamed", tag: "catalog"},
+                      {file: "scenarios/s", note: "Part of cinema."}])
+                    type Rating { stars: Int }
+                    """,
+                "shapes/b", "type Language { name: String }\n").get(p)))
+            .run(folder, (dir, at, first, configuration) -> inputs.add(FactDocuments.annotated(dir,
+                    files(dir), FactDocuments.fileAnnotations(configuration))),
+                claim -> { });
+
+        assertThat(inputs.getFirst()).as("the first reading ran before any configuration was stated")
+            .extracting(SchemaInput::tag, SchemaInput::descriptionNote)
+            .containsOnly(org.assertj.core.groups.Tuple.tuple(Optional.empty(), Optional.empty()));
+        assertThat(inputs.getLast()).extracting(input -> folder.relativize(
+                    ((SchemaSource.File) input.source()).path()).toString(),
+                SchemaInput::tag, SchemaInput::descriptionNote)
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("scenarios/s.graphqls", Optional.empty(),
+                    Optional.of("Part of cinema.")),
+                org.assertj.core.groups.Tuple.tuple("shapes/renamed.graphqls", Optional.of("catalog"),
+                    Optional.empty()));
+    }
+
+    @Test
+    @DisplayName("a file annotation naming a file the folder does not hold is refused, the recipe staying the folder's")
+    void fileAnnotationsNameOnlyRenderedFiles() {
+        assertThatThrownBy(() -> Scenario.load("scenarios/s", p -> Optional.ofNullable(Map.of(
+                "scenarios/s", """
+                    extend schema @withConfiguration(fileAnnotations: [{file: "shapes/b", tag: "catalog"}])
+                    type Rating { stars: Int }
+                    """).get(p)))
+            .run(folder, (dir, at, first, configuration) -> FactDocuments.annotated(dir, files(dir),
+                    FactDocuments.fileAnnotations(configuration)),
+                claim -> { }))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("names shapes/b, a file the scenario's folder does not hold")
+            .hasMessageContaining("[scenarios/s]");
+    }
+
+    @Test
+    @DisplayName("a file named twice in fileAnnotations is refused")
+    void fileAnnotationsNameAFileOnce() {
+        assertThatThrownBy(() -> FactDocuments.fileAnnotations("""
+                extend schema @withConfiguration(fileAnnotations: [
+                  {file: "scenarios/s", tag: "a"}, {file: "scenarios/s", note: "b"}])
+                """))
+            .hasMessageContaining("names scenarios/s twice");
+    }
+
+    @Test
+    @DisplayName("fileAnnotations in a document pulled in is ignored, as the rest of its configuration is")
+    void fileAnnotationsPulledInAreIgnored() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withFacts(docs: [{path: "shapes/a"}])
+                type Rating { stars: Int }
+                """,
+            "shapes/a", """
+                extend schema @withConfiguration(fileAnnotations: [{file: "shapes/a", tag: "catalog"}])
+                type Film { title: String }
+                """));
+
+        assertThat(run.captures()).hasSize(2)
+            .allSatisfy(capture -> assertThat(FactDocuments.fileAnnotations(capture.configuration()))
+                .isEmpty());
+    }
+
+    @Test
+    @DisplayName("a later @withConfiguration changes the file annotations the readings after it run under")
+    void fileAnnotationsChangeBetweenSteps() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withConfiguration(fileAnnotations: [{file: "scenarios/s", tag: "catalog"}])
+                type Rating { stars: Int }
+                extend schema @tick(ms: 60000)
+                extend schema @withConfiguration(fileAnnotations: [{file: "shapes/a", note: "Shared."}])
+                extend schema @withFacts(docs: [{path: "shapes/a"}])
+                extend schema @tick(ms: 60000)
+                extend schema @withConfiguration
+                extend schema @withFacts(docs: [{path: "shapes/a"}])
+                """,
+            "shapes/a", "type Film { title: String }\n"));
+
+        assertThat(run.captures()).extracting(capture -> FactDocuments.fileAnnotations(capture.configuration()))
+            .containsExactly(
+                List.of(new FactDocuments.FileAnnotation("scenarios/s", Optional.of("catalog"), Optional.empty())),
+                List.of(new FactDocuments.FileAnnotation("shapes/a", Optional.empty(), Optional.of("Shared."))),
+                List.of());
+    }
+
+    private static List<Path> files(Path dir) {
+        try (Stream<Path> paths = Files.walk(dir)) {
+            return paths.filter(file -> file.toString().endsWith(CorpusDocuments.SUFFIX)).sorted().toList();
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
     }
 
     private Run run(String path, Map<String, String> documents) throws IOException {

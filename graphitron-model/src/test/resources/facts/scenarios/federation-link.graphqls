@@ -1,5 +1,8 @@
 # federation-link, read in steps: each @withFacts writes the files of one reading, the clock
-# moving between readings, and the claims after it check what that reading left.
+# moving between readings, and the claims after it check what that reading left. A graph opts in to
+# federation by an authored link, which the first readings add, narrow and drop, or by a tag its
+# configuration puts on a file, which the later readings configure, stand down under an authored
+# link, and configure away.
 
 extend schema @withFacts(docs: [
   {path: "layouts/anchor"},
@@ -54,3 +57,64 @@ extend schema @assertAbsent(relation: "graphitron_federation_link_import", rows:
   name
   @key
   """)
+
+# The configured opt-in: the same linkless file, now read under a configured tag. A tag the
+# composition applies needs the @link that declares @tag, so the graph is federated by its
+# configuration, at the version the generator writes, naming no file, and importing the tag alone.
+extend schema @tick(ms: 60000)
+
+extend schema @withConfiguration(fileAnnotations: [{file: "federation-link.a", tag: "catalog"}])
+
+extend schema @withFacts(docs: [
+  {path: "shapes/federation-link/a-t120", as: "federation-link.a"}])
+
+extend schema @expectEquals(relation: "store_graph_schema_input", rows: """
+  ordinal, kind, tag,     description_note
+  0,       file, catalog,
+  1,       file,        ,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
+  origin,     version, source_name, touched_at
+  CONFIGURED, v2.10,              , 1000000180
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
+  ordinal, name, alias, touched_at
+  0,       @tag,      , 1000000180
+  """)
+
+# An authored link under the same tag stands the configured one down, and the pass carries the
+# configured tag into the link the author wrote: it imports what the author imports and then @tag,
+# so the composition declares every tag it applies and the reading records no problem.
+extend schema @tick(ms: 60000)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/federation-link/a-t60", as: "federation-link.a"}])
+
+extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
+  origin,   version, touched_at
+  AUTHORED, v2.10,   1000000240
+  """)
+
+extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
+  ordinal, name, alias, touched_at
+  0,       @key,      , 1000000240
+  1,       @tag,      , 1000000240
+  """)
+
+extend schema @assertEmpty(relation: "graphql_schema_problem")
+
+# The tag configured away and the link dropped again: no opt-in of either kind stands.
+extend schema @tick(ms: 60000)
+
+extend schema @withConfiguration
+
+extend schema @withFacts(docs: [
+  {path: "shapes/federation-link/a-t120", as: "federation-link.a"}])
+
+extend schema @assertEmpty(relation: "store_graph_schema_input", where: """
+  tag IS NOT NULL
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_federation_link")

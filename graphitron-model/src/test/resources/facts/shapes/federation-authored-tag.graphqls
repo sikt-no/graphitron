@@ -1,0 +1,12 @@
+# A federated graph whose author applies the tags its link imports, so every @tag the file applies
+# is declared by the author's own link. The federation-authored-tag-configured scenario reads this
+# same file under a configured tag.
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
+                    import: ["@key", "@shareable", "@tag", "@inaccessible"])
+
+type Query { films: [Film!]! }
+
+type Film @table(name: "film") @key(fields: "filmId") @shareable {
+  filmId: Int! @field(name: "film_id")
+  title: String @tag(name: "public") @inaccessible
+}

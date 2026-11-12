@@ -7,6 +7,7 @@ import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.FactDocuments;
 import no.sikt.graphitron.model.test.Scenario;
@@ -35,7 +36,10 @@ import java.util.List;
  * <p>A scenario is a fact document the store records no defect for, which is the folder's claim and
  * {@code FactExpectationTest}'s to check; a scenario this refuses is a defect the store does not
  * record. A scenario stating the configuration its graph is captured under is about how the store
- * reads a configuration, and is not generated.
+ * reads a configuration, and is not generated, with one exception: a file annotation, the tag and
+ * the description note a schema input entry configures on its file, travels with the inputs, so a
+ * scenario stating only those generates as a build configured with them would, under the
+ * annotations its last reading ran under.
  *
  * <p>Test code, because it opens the store: the generator is handed one and never decides which, a
  * mojo or a test does ({@code FactTierBoundaryTest}). {@code graphitron}'s {@code pom.xml} compiles
@@ -64,16 +68,20 @@ public final class GenerateTestSchemas {
         var directory = Files.createTempDirectory("graphitron-test-schemas");
         try {
             for (var scenario : FactDocuments.documents(FactDocuments.Claim.SCENARIO)) {
-                if (FactDocuments.statesConfiguration(scenario)) {
+                if (FactDocuments.statesRunConfiguration(scenario)) {
                     continue;
                 }
                 var path = FactDocuments.path(FactDocuments.Claim.SCENARIO, scenario);
                 var folder = directory.resolve(path);
-                // The scenario's final folder, as the engine renders it; the run below is the build
-                // that reads it, so no capture is asked of the engine here.
-                Scenario.load(path).run(folder, (dir, at, first, configuration) -> { }, claim -> { });
-                generate(filesIn(folder), path, packagePrefix + "." + scenario.id().replace('-', '_'),
-                    outputDirectory);
+                // The scenario's final folder, as the engine renders it, and the configuration its
+                // last reading ran under; the run below is the build that reads it, so no capture
+                // is asked of the engine here.
+                var last = new String[] {""};
+                Scenario.load(path).run(folder, (dir, at, first, configuration) -> last[0] = configuration,
+                    claim -> { });
+                generate(FactDocuments.annotated(folder, filesIn(folder),
+                        FactDocuments.fileAnnotations(last[0])),
+                    path, packagePrefix + "." + scenario.id().replace('-', '_'), outputDirectory);
             }
         } finally {
             delete(directory);
@@ -81,12 +89,11 @@ public final class GenerateTestSchemas {
     }
 
     /** One scenario's run: its context, its capture, and the generator over what it captured. */
-    private static void generate(List<Path> files, String graph, String outputPackage,
+    private static void generate(List<SchemaInput> inputs, String graph, String outputPackage,
                                  Path outputDirectory) {
-        var inputs = files.stream().map(SchemaInput::file).toList();
         var ctx = new RunContext(
             inputs,
-            files.getFirst().getParent(),
+            ((SchemaSource.File) inputs.getFirst().source()).path().getParent(),
             graph,
             outputDirectory,
             outputDirectory.getParent().resolve("generated-resources-graphitron"),

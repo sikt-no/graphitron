@@ -269,7 +269,8 @@ public final class CapturedStore implements AutoCloseable {
                 var texts = stated.isEmpty() ? List.<String>of() : List.of(stated);
                 built[0] = captureFolder(dsl, rendered, graphName,
                     FactDocuments.StatedConfiguration.catalog(texts, fixture), classpath,
-                    FactDocuments.StatedConfiguration.of(texts), at, !first);
+                    FactDocuments.StatedConfiguration.of(texts),
+                    FactDocuments.StatedConfiguration.fileAnnotations(texts), at, !first);
             },
             claim -> { });
         if (built[0] == null) {
@@ -563,19 +564,22 @@ public final class CapturedStore implements AutoCloseable {
      * A scenario's rendered folder captured into the store {@code dsl} writes, the way a build reads a
      * schema directory: every {@code .graphqls} file under {@code folder} as one graph, read at
      * {@code at}, warm where a capture of the graph came before it in the run, so the sweep does what
-     * it would after an edit.
+     * it would after an edit. {@code annotations} give files of the folder the tag and note a build's
+     * schema input entry configures, and name no file the folder does not hold.
      */
     public static CapturedSchema captureFolder(DSLContext dsl, Path folder, String graphName,
                                                CatalogInput jooq, List<ClasspathEntry> classpath,
-                                               SubjectConfig configuration, Instant at, boolean warm) {
+                                               SubjectConfig configuration,
+                                               List<FactDocuments.FileAnnotation> annotations,
+                                               Instant at, boolean warm) {
         List<Path> files;
         try (var paths = Files.walk(folder)) {
             files = paths.filter(file -> file.toString().endsWith(".graphqls")).sorted().toList();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
-        return captureFiles(dsl, files, folder, graphName, jooq, warm, classpath,
-            LocalDateTime.ofInstant(at, ZoneOffset.UTC), configuration);
+        return captureInputs(dsl, FactDocuments.annotated(folder, files, annotations), folder,
+            graphName, jooq, classpath, LocalDateTime.ofInstant(at, ZoneOffset.UTC), configuration);
     }
 
     /**
@@ -672,12 +676,30 @@ public final class CapturedStore implements AutoCloseable {
                                                String graphName, CatalogInput jooq, boolean warm,
                                                List<ClasspathEntry> classpath, LocalDateTime readAt,
                                                SubjectConfig configuration) {
+        return captureInputs(dsl, files.stream().map(SchemaInput::file).toList(), directory,
+            graphName, jooq, classpath, readAt, configuration);
+    }
+
+    /**
+     * The same over inputs that may carry the tag and the note a build's schema input entry
+     * configures: the recipe is one literal entry per input, in order, with its attribution, which
+     * is what a run whose files are configured differently hands the pass.
+     */
+    private static CapturedSchema captureInputs(DSLContext dsl, List<SchemaInput> inputs,
+                                                Path directory, String graphName, CatalogInput jooq,
+                                                List<ClasspathEntry> classpath, LocalDateTime readAt,
+                                                SubjectConfig configuration) {
         FactStores.countCapture();
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document family, and runs the
         // derivations at its tail.
-        var corpus = corpusOf(files, directory);
+        var corpus = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
+            inputs.stream()
+                .map(input -> new SchemaRecipe.Binding(new SchemaRecipe.Entry.Literal(input.source()),
+                    input.tag(), input.descriptionNote()))
+                .toList(),
+            List.of("graphqls")));
         var subject = new SubjectConfig(corpus.recipe(), configuration.jooqPackage(),
             configuration.supergraph(), configuration.output(), configuration.tenantColumn(),
             configuration.lint(), configuration.sessionState(),

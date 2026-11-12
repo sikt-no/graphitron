@@ -1,0 +1,48 @@
+# The file of the configured-note scenario its configuration notes: it declares an element of every
+# kind a note reaches, some with a description of their own and some without, a scalar, which takes
+# no note, and an extension of a type whose base definition is in the other file.
+"The root."
+type Query {
+  films(title: String): [Film!]!
+  filmsByFilter(filter: FilmFilter): [Film!]!
+  filmsByRating(rating: MpaaRating): [Film!]!
+  addresses: [Address!]!
+  stores: [Store!]!
+  payments: [Payment!]!
+}
+
+"A film."
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  "Its title."
+  title: String
+  releaseYear: Int @field(name: "release_year")
+}
+
+extend type Store { storeId: Int @field(name: "store_id") }
+
+interface Node { id: ID! }
+
+input FilmFilter { title: String }
+
+enum MpaaRating { G "Parental." PG PG_13 R NC_17 }
+
+type Address @table(name: "address") {
+  occupants: [AddressOccupant!]!
+}
+
+union AddressOccupant = Customer | Staff
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+type Staff @table(name: "staff") {
+  firstName: String @field(name: "first_name")
+}
+
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+
+type Payment @table(name: "payment") {
+  amount: BigDecimal!
+}

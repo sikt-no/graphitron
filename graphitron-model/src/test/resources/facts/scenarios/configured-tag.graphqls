@@ -1,0 +1,97 @@
+# What a <schemaInput tag> puts on the elements of the file it configures: every field of an object
+# or an interface, wherever the type's sites declare it, every argument, input field and enum value,
+# and every union, each tagged after what its author tagged; never a type declaration, and never an
+# element carrying a @tag of its own, which keeps that one alone. The schema as written carries none
+# of it. A connection carrier its author tagged coins its connection, edge and page info, which
+# inherit the carrier's own tag, and the fields the carrier does not tag itself take the configured
+# one. No federation link is authored: the configured tag is the opt-in, and its link declares the
+# @tag this file applies.
+extend schema @withConfiguration(fileAnnotations: [{file: "scenarios/configured-tag", tag: "catalog"}])
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  title: String
+  releaseYear: Int @field(name: "release_year") @tag(name: "own")
+}
+
+# A field declared by an extension is tagged as one its base declares.
+extend type Film { length: Int }
+
+input FilmFilter { title: String }
+
+enum MpaaRating { G PG PG_13 R NC_17 }
+
+type Address @table(name: "address") {
+  occupants: [AddressOccupant!]!
+}
+
+union AddressOccupant = Customer | Staff
+
+type Customer @table(name: "customer") {
+  firstName: String @field(name: "first_name")
+}
+
+type Staff @table(name: "staff") {
+  firstName: String @field(name: "first_name")
+}
+
+type Query {
+  films(title: String): [Film!]!
+  filmsByFilter(filter: FilmFilter): [Film!]!
+  filmsByRating(rating: MpaaRating): [Film!]!
+  addresses: [Address!]!
+  filmsConnection: [Film!]! @asConnection @tag(name: "public")
+}
+
+# Every field, wherever its type's sites declare it, every argument, input field and enum value, and
+# the union; not a type declaration, and not Film.releaseYear or the carrier, which tag themselves.
+extend schema @expectEquals(relation: "graphitron_configured_tag", rows: """
+  coordinate,                     ordinal
+  Address.occupants,              0
+  AddressOccupant,                0
+  Customer.firstName,             0
+  Film.id,                        0
+  Film.length,                    0
+  Film.title,                     0
+  FilmFilter.title,               0
+  MpaaRating.G,                   0
+  MpaaRating.NC_17,               0
+  MpaaRating.PG,                  0
+  MpaaRating.PG_13,               0
+  MpaaRating.R,                   0
+  Node.id,                        0
+  Query.addresses,                0
+  Query.films,                    0
+  Query.films(title:),            0
+  Query.filmsByFilter,            0
+  Query.filmsByFilter(filter:),   0
+  Query.filmsByRating,            0
+  Query.filmsByRating(rating:),   0
+  Staff.firstName,                0
+  """)
+
+# The configured tag's value is SDL, quotes and all, which a CSV cell would unquote, so it is stated
+# in the predicate: a wrong value drops the row.
+extend schema @assertContains(relation: "graphitron_configured_tag", where: """
+  value_sdl = '"catalog"'
+  """, rows: """
+  coordinate
+  Film.title
+  """)
+
+# The carrier coins its connection, edge and page info, which inherit the tag it carries.
+extend schema @assertContains(relation: "graphitron_inherited_directive", rows: """
+  type_name,                     directive_name, ordinal
+  PageInfo,                      tag,            0
+  QueryFilmsConnectionConnection, tag,           0
+  """)
+
+extend schema @expectEquals(relation: "store_graph_schema_input", rows: """
+  ordinal, kind, tag
+  0,       file, catalog
+  """)
+
+# The tagged composition assembles: its link declares every @tag it applies, the author's included.
+extend schema @assertEmpty(relation: "graphql_schema_problem")

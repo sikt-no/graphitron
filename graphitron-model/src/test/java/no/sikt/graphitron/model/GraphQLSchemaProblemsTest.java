@@ -6,14 +6,17 @@ import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.EntryFamilyFixture;
+import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
@@ -409,26 +412,25 @@ class GraphQLSchemaProblemsTest {
     /**
      * The decode walks the corpus as written, so a tag configuration that changes what the
      * assembly judges changes no transcription and no decode. Driven through the whole pass, which
-     * is the only place the decode runs.
+     * is the only place the decode runs: the file read alone, and the scenario reading it under a
+     * configured tag, each into a store of its own under one graph and one folder, so the two
+     * readings differ by the configuration and nothing else. That the tagged reading assembled
+     * cleanly is the scenario's own claim.
      */
     @Test
     @DisplayName("the transcription and the decode do not vary with the tag configuration")
     void theDecodeDoesNotVaryWithConfiguration(@TempDir Path tmp) {
-        write(tmp, "linked.graphqls", LINKED);
-        var readAt = LocalDateTime.of(2026, 1, 1, 12, 0);
-
+        var catalog = CatalogInput.of(TestRunContext.of());
         var untagged = new LinkedHashMap<String, List<String>>();
-        withSeededStore(GRAPH, dsl -> {
-            capture(dsl, tmp, SchemaRecipe.Binding.pattern("*.graphqls"), readAt);
-            untagged.putAll(transcribed(dsl));
-        });
+        try (var store = CapturedStore.ownStoreOfDocument(tmp, "shapes/federation-authored-tag", GRAPH,
+                catalog, List.<ClasspathEntry>of())) {
+            untagged.putAll(transcribed(store.dsl()));
+        }
         var tagged = new LinkedHashMap<String, List<String>>();
-        withSeededStore(GRAPH, dsl -> {
-            capture(dsl, tmp, tagged("*.graphqls"), readAt);
-            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
-                .as("the control: the tagged arm composed and assembled cleanly").isZero();
-            tagged.putAll(transcribed(dsl));
-        });
+        try (var store = CapturedStore.ownStoreOfDocument(tmp,
+                "scenarios/federation-authored-tag-configured", GRAPH, catalog, List.<ClasspathEntry>of())) {
+            tagged.putAll(transcribed(store.dsl()));
+        }
 
         assertThat(untagged.values().stream().filter(rows -> !rows.isEmpty()).count())
             .as("a comparison over relations nobody wrote to agrees by being empty")
@@ -459,34 +461,6 @@ class GraphQLSchemaProblemsTest {
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp, List.of(tagged("*.graphqls")), LocalDateTime.now());
             assertRefusedOnce(dsl, "DeclarationCollision", file);
-        });
-    }
-
-    /**
-     * The attribution reaches the link through the whole pass, not only when a case drives the
-     * gatherers one at a time. A pass that dropped the tags on the way would leave the link
-     * importing the author's @key alone, and the composition would refuse the tags it applies.
-     */
-    @Test
-    @DisplayName("the pass carries the recipe's tags into the link the assembly composes")
-    void thePassCarriesTheAttribution(@TempDir Path tmp) {
-        write(tmp, "untagged.graphqls", """
-            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
-
-            type Query { film: Film }
-            type Film @key(fields: "id") { id: ID! }
-            """);
-
-        withSeededStore(GRAPH, dsl -> {
-            capture(dsl, tmp, tagged("*.graphqls"), LocalDateTime.now());
-            assertThat(dsl.select(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME)
-                    .from(GRAPHITRON_FEDERATION_LINK_IMPORT)
-                    .orderBy(GRAPHITRON_FEDERATION_LINK_IMPORT.ORDINAL)
-                    .fetch(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME))
-                .containsExactly("@key", "@tag");
-            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM)
-                    .fetch(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS))
-                .isEmpty();
         });
     }
 
@@ -523,15 +497,6 @@ class GraphQLSchemaProblemsTest {
                 .fetch(row -> row.value1() + ": " + row.value2()))
             .as("the assembly judged the merged corpus rather than a composition stopped partway")
             .containsExactlyInAnyOrderElementsOf(expected);
-    }
-
-    /** One whole pass, decode and derivations included, over the directory under one binding. */
-    private static void capture(DSLContext dsl, Path baseDir, SchemaRecipe.Binding binding,
-                                LocalDateTime readAt) {
-        ModelCapture.capture(dsl, new GraphIdentity(GRAPH, baseDir),
-            SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"), List.of(binding),
-                List.of("graphqls"))),
-            List.of(), null, readAt);
     }
 
     /**

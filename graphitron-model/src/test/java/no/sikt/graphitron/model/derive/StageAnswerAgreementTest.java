@@ -1,14 +1,11 @@
 package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactGraphs;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,9 +37,8 @@ import static org.jooq.impl.DSL.table;
  *
  * <p>Over the whole population of fact documents ({@link FactGraphs}), since the agreement is an
  * invariant of any captured graph: every scenario's final reading is compared, a stepped scenario's
- * included, so a row an earlier step left behind is seen. The population reaches nearly every arm;
- * the one it cannot is a per-file configured tag, which no document can state, so that reading is
- * captured into a store of this class's own. The non-vacuity cases say the population did its job:
+ * included, so a row an earlier step left behind is seen, the configured-tag reading among them,
+ * which {@code scenarios/configured-tag} states. The non-vacuity cases say the population did its job:
  * a comparison between two empty relations passes while asserting nothing, and one over a single
  * arm passes while asserting a fraction of the rule.
  */
@@ -51,8 +47,6 @@ class StageAnswerAgreementTest {
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
-    @TempDir
-    Path tmp;
 
     /** One stage: the table it writes and the view stating the rule it inserts from. */
     private record Stage(String target, String ruleView) {}
@@ -201,10 +195,10 @@ class StageAnswerAgreementTest {
 
     /**
      * Runs {@code body} over each store of the population with the graphs it holds, every document
-     * captured first, and over the configured-tag reading no document can state. A comparison runs
-     * per graph, as a stage does: a rule view evaluated over a whole store at once holds every
-     * graph's intermediate rows on the heap. Graphs are the inner loop so one statement's text
-     * repeats with only the graph bound, and the session's plan cache keeps it planned.
+     * captured first. A comparison runs per graph, as a stage does: a rule view evaluated over a
+     * whole store at once holds every graph's intermediate rows on the heap. Graphs are the inner
+     * loop so one statement's text repeats with only the graph bound, and the session's plan cache
+     * keeps it planned.
      */
     private void eachReading(java.util.function.BiConsumer<Set<String>, DSLContext> body) {
         FACTS.warm(FACTS.paths());
@@ -212,10 +206,6 @@ class StageAnswerAgreementTest {
             body.accept(graphs, dsl);
             return null;
         });
-        try (var store = CapturedStore.tagged(tmp.resolve("configured-tag"), federationSdl(),
-                "catalog")) {
-            body.accept(Set.of(CapturedStore.GRAPH), store.dsl());
-        }
     }
 
     /**
@@ -262,17 +252,5 @@ class StageAnswerAgreementTest {
             .fetch(0, String.class).stream()
             .map(column -> field(name(column)))
             .toList());
-    }
-
-    /**
-     * A connection carrier tagged by its author, in a file the configuration tags: the carrier coins
-     * the connection, its edge and the page info, carries its own tag, and every field it does not
-     * tag itself takes the configured one.
-     */
-    private static String federationSdl() {
-        return """
-            type Query { films: [Film!]! @asConnection @tag(name: "public") }
-            type Film { title: String }
-            """;
     }
 }

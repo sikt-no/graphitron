@@ -1,0 +1,8 @@
+# A second file of the configured-note scenario, configured with no note: it holds the base
+# definition of a type the noted file extends, and extends a type the noted file declares, so a note
+# is seen to follow the file declaring each element rather than the type it lands on.
+type Store @table(name: "store") {
+  lastUpdate: String @field(name: "last_update")
+}
+
+extend type Film { length: Int }
