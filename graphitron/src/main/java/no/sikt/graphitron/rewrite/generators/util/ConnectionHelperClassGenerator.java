@@ -7,6 +7,7 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 
@@ -21,6 +22,15 @@ import java.util.OptionalInt;
  * {@code nodes}, {@code pageInfo}, the lazy {@code totalCount} and {@code facets},
  * {@code edgeNode}, {@code edgeCursor}) plus a nested {@code Edge} class carrying a
  * {@code Record} and its cursor string.
+ *
+ * <p>Also the producer-callable pieces those resolvers are built from, none of which reads a
+ * {@code ConnectionResult}: the page flags ({@code trim}, {@code hasNextPage},
+ * {@code hasPreviousPage}), the cursor function {@code cursorOf}, the facet bucketing
+ * {@code facetBuckets}, and the nested count and facet types: {@value #TOTAL_COUNT_CLASS_NAME}
+ * (the count behind {@code totalCount}), {@value #SCOPED_CLASS_NAME} (a root connection's own
+ * {@code count(*)}), {@value #BATCH_COUNTS_CLASS_NAME} (one grouped count per DataLoader batch,
+ * handing out a {@value #SLOT_CLASS_NAME} per parent) and {@value #FACET_SPEC_CLASS_NAME} (one
+ * facet arm). The {@code ConnectionResult} carrier stores these and delegates its page flags here.
  *
  * <p>Cursor encoding, the bytes Graphitron 9 issued on Oracle: a JSON array with one element per
  * order column and no whitespace, SQL {@code NULL} as {@code null} and every other value as
@@ -59,11 +69,30 @@ public class ConnectionHelperClassGenerator {
 
     public static final String CLASS_NAME = "ConnectionHelper";
 
+    /** The nested count interface the {@code totalCount} resolver calls. */
+    public static final String TOTAL_COUNT_CLASS_NAME = "TotalCount";
+
+    /** The nested {@code TotalCount} counting {@code (table, condition)} with its own statement. */
+    public static final String SCOPED_CLASS_NAME = "Scoped";
+
+    /** The nested per-batch memo whose slots share one grouped count. */
+    public static final String BATCH_COUNTS_CLASS_NAME = "BatchCounts";
+
+    /** The {@code TotalCount} a {@code BatchCounts} hands out per parent index, nested in it. */
+    public static final String SLOT_CLASS_NAME = "Slot";
+
+    /** The nested runtime entry for one facet arm. */
+    public static final String FACET_SPEC_CLASS_NAME = "FacetSpec";
+
     private static final ClassName ENV              = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName RESULT           = ClassName.get("org.jooq", "Result");
     private static final ClassName RECORD           = ClassName.get("org.jooq", "Record");
     private static final ClassName JOOQ_FIELD       = ClassName.get("org.jooq", "Field");
     private static final ClassName DSL              = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DSL_CONTEXT      = ClassName.get("org.jooq", "DSLContext");
+    private static final ClassName CONDITION        = ClassName.get("org.jooq", "Condition");
+    private static final ClassName JOOQ_TABLE       = ClassName.get("org.jooq", "Table");
+    private static final ClassName FUNCTION         = ClassName.get("java.util.function", "Function");
     private static final ClassName LIST_CLASS       = ClassName.get(List.class);
     private static final ClassName MAP              = ClassName.get("java.util", "Map");
     private static final ClassName ARRAY_LIST       = ClassName.get("java.util", "ArrayList");
@@ -130,6 +159,8 @@ public class ConnectionHelperClassGenerator {
         var sortFieldWildcard = ParameterizedTypeName.get(sortField, WildcardTypeName.subtypeOf(Object.class));
         var listOfSortField = ParameterizedTypeName.get(LIST_CLASS, sortFieldWildcard);
         var fieldArray = ArrayTypeName.of(fieldWildcard);
+        var tableWildcard = ParameterizedTypeName.get(JOOQ_TABLE, WildcardTypeName.subtypeOf(Object.class));
+        var totalCountRef = ClassName.get(outputPackage + ".util", CLASS_NAME, TOTAL_COUNT_CLASS_NAME);
 
         // --- PageRequest nested class ---
         // Carries the resolved pagination state from pageRequest(...) back to the fetcher body
@@ -559,6 +590,55 @@ public class ConnectionHelperClassGenerator {
 
         var listOfRecord = ParameterizedTypeName.get(LIST_CLASS, RECORD);
 
+        // --- trim(List<Record>, int, boolean) → List<Record> ---
+        // The page's rows: the over-fetched row dropped, re-reversed for backward pagination (the
+        // backward query runs in reverse order).
+        var trimMethod = MethodSpec.methodBuilder("trim")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfRecord)
+            .addParameter(listOfRecord, "rows")
+            .addParameter(int.class, "pageSize")
+            .addParameter(boolean.class, "backward")
+            .addStatement("$T raw = rows.size() <= pageSize ? rows : rows.subList(0, pageSize)", listOfRecord)
+            .addCode("if (!backward) return raw;\n")
+            .addStatement("$T<$T> rev = new $T<>(raw.size())", ARRAY_LIST, RECORD, ARRAY_LIST)
+            .addCode("for (int i = raw.size() - 1; i >= 0; i--) rev.add(raw.get(i));\n")
+            .addStatement("return rev")
+            .build();
+
+        // --- hasNextPage(List<Record>, int, String, boolean) → boolean ---
+        // Forward: the query over-fetched. Backward: an after cursor was supplied.
+        var hasNextPageMethod = MethodSpec.methodBuilder("hasNextPage")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(listOfRecord, "rows")
+            .addParameter(int.class, "pageSize")
+            .addParameter(String.class, "afterCursor")
+            .addParameter(boolean.class, "backward")
+            .addStatement("return backward ? afterCursor != null : rows.size() > pageSize")
+            .build();
+
+        // --- hasPreviousPage(List<Record>, int, String, boolean) → boolean ---
+        // Forward: an after cursor was supplied. Backward: the query over-fetched.
+        var hasPreviousPageMethod = MethodSpec.methodBuilder("hasPreviousPage")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(listOfRecord, "rows")
+            .addParameter(int.class, "pageSize")
+            .addParameter(String.class, "afterCursor")
+            .addParameter(boolean.class, "backward")
+            .addStatement("return backward ? rows.size() > pageSize : afterCursor != null")
+            .build();
+
+        // --- cursorOf(List<Field<?>>) → Function<Record, String> ---
+        // The cursor of a row over the given order columns, as encodeCursor writes it.
+        var cursorOfMethod = MethodSpec.methodBuilder("cursorOf")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(FUNCTION, RECORD, ClassName.get(String.class)))
+            .addParameter(listOfField, "columns")
+            .addStatement("return record -> encodeCursor(record, columns)")
+            .build();
+
         // --- edges(DataFetchingEnvironment) → List<Edge> ---
         var edgeClassName = ClassName.get("", "Edge");
         var listOfEdge = ParameterizedTypeName.get(LIST_CLASS, edgeClassName);
@@ -569,9 +649,10 @@ public class ConnectionHelperClassGenerator {
             .addParameter(ENV, "env")
             .addStatement("$T cr = env.getSource()", connectionResultClass)
             .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
+            .addStatement("$T<$T, String> cursor = cursorOf(cr.orderByColumns())", FUNCTION, RECORD)
             .addStatement("$T<Edge> edges = new $T<>(trimmed.size())", ARRAY_LIST, ARRAY_LIST)
             .addCode("for ($T record : trimmed) {\n", RECORD)
-            .addCode("    edges.add(new Edge(record, encodeCursor(record, cr.orderByColumns())));\n")
+            .addCode("    edges.add(new Edge(record, cursor.apply(record)));\n")
             .addCode("}\n")
             .addStatement("return edges")
             .build();
@@ -596,8 +677,9 @@ public class ConnectionHelperClassGenerator {
             .addParameter(ENV, "env")
             .addStatement("$T cr = env.getSource()", connectionResultClass)
             .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
-            .addStatement("String startCursor = trimmed.isEmpty() ? null : encodeCursor(trimmed.get(0), cr.orderByColumns())")
-            .addStatement("String endCursor = trimmed.isEmpty() ? null : encodeCursor(trimmed.get(trimmed.size() - 1), cr.orderByColumns())")
+            .addStatement("$T<$T, String> cursor = cursorOf(cr.orderByColumns())", FUNCTION, RECORD)
+            .addStatement("String startCursor = trimmed.isEmpty() ? null : cursor.apply(trimmed.get(0))")
+            .addStatement("String endCursor = trimmed.isEmpty() ? null : cursor.apply(trimmed.get(trimmed.size() - 1))")
             .addStatement("return new $T(cr.hasNextPage(), cr.hasPreviousPage(), startCursor, endCursor)", pageInfoClass)
             .build();
 
@@ -646,7 +728,8 @@ public class ConnectionHelperClassGenerator {
         // native order (count DESC, then Comparable value ASC, NULL bucket last; enums sort in
         // declaration order). The statement itself needs no ORDER BY at all; rows demultiplex by
         // the facet label column.
-        var facetSpecClass = connectionResultClass.nestedClass("FacetSpec");
+        var facetSpecClass = ClassName.get(outputPackage + ".util", CLASS_NAME, FACET_SPEC_CLASS_NAME);
+        var listOfFacetSpec = ParameterizedTypeName.get(LIST_CLASS, facetSpecClass);
         var listOfEntryMap = ParameterizedTypeName.get(LIST_CLASS, mapStringObject);
         var facetsReturn = ParameterizedTypeName.get(MAP, ClassName.get(String.class), listOfEntryMap);
         var selectedFieldClass = ClassName.get("graphql.schema", "SelectedField");
@@ -657,27 +740,54 @@ public class ConnectionHelperClassGenerator {
         var conditionClass = ClassName.get("org.jooq", "Condition");
         var jooqFieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD,
             com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
-        var facetsMethod = MethodSpec.methodBuilder("facets")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(facetsReturn)
+        // selectedFacetSpecs: the specs whose label the client selected as an immediate field of
+        // the facets object, in spec order.
+        var selectedFacetSpecs = MethodSpec.methodBuilder("selectedFacetSpecs")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(listOfFacetSpec)
             .addParameter(ENV, "env")
-            .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addCode("if (cr.facetSpecs() == null || cr.table() == null || cr.facetBaseCondition() == null) return null;\n")
+            .addParameter(listOfFacetSpec, "facetSpecs")
             .addStatement("$T<String> selected = new $T<>()",
                 ClassName.get("java.util", "Set"), ClassName.get("java.util", "LinkedHashSet"))
             .addCode("for ($T sf : env.getSelectionSet().getImmediateFields()) {\n", selectedFieldClass)
             .addCode("    selected.add(sf.getName());\n")
             .addCode("}\n")
             .addStatement("$T<$T> specs = new $T<>()", LIST_CLASS, facetSpecClass, ARRAY_LIST)
-            .addCode("for ($T f : cr.facetSpecs()) {\n", facetSpecClass)
+            .addCode("for ($T f : facetSpecs) {\n", facetSpecClass)
             .addCode("    if (selected.contains(f.label())) specs.add(f);\n")
             .addCode("}\n")
-            .addCode("if (specs.isEmpty()) return $T.of();\n", MAP)
+            .addStatement("return specs")
+            .build();
+
+        // The resolver: the carrier's facet plan, or null without one. An empty map when no facet
+        // field is selected, decided before the DSLContext is resolved.
+        var facetsMethod = MethodSpec.methodBuilder("facets")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(facetsReturn)
+            .addParameter(ENV, "env")
+            .addStatement("$T cr = env.getSource()", connectionResultClass)
+            .addCode("if (cr.facetSpecs() == null || cr.table() == null || cr.facetBaseCondition() == null) return null;\n")
+            .addCode("if (selectedFacetSpecs(env, cr.facetSpecs()).isEmpty()) return $T.of();\n", MAP)
             .addCode(lazyDslDeclaration)
+            .addStatement("return facetBuckets(dsl, env, cr.facetBaseCondition(), cr.facetConditions(), cr.facetSpecs())")
+            .build();
+
+        // facetBuckets: the bucketing itself, callable without a carrier. The env is read only for
+        // the selected immediate fields.
+        var facetBucketsMethod = MethodSpec.methodBuilder("facetBuckets")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(facetsReturn)
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addParameter(ENV, "env")
+            .addParameter(CONDITION, "base")
+            .addParameter(ParameterizedTypeName.get(MAP, ClassName.get(String.class), CONDITION), "facetConditions")
+            .addParameter(listOfFacetSpec, "facetSpecs")
+            .addStatement("$T<$T> specs = selectedFacetSpecs(env, facetSpecs)", LIST_CLASS, facetSpecClass)
+            .addCode("if (specs.isEmpty()) return $T.of();\n", MAP)
             .addStatement("$T union = null", orderByStepOfRecord3)
             .addCode("for ($T f : specs) {\n", facetSpecClass)
-            .addCode("    $T cond = cr.facetBaseCondition();\n", conditionClass)
-            .addCode("    for ($T<String, $T> e : cr.facetConditions().entrySet()) {\n",
+            .addCode("    $T cond = base;\n", conditionClass)
+            .addCode("    for ($T<String, $T> e : facetConditions.entrySet()) {\n",
                 ClassName.get("java.util", "Map", "Entry"), conditionClass)
             .addCode("        if (!e.getKey().equals(f.label())) cond = cond.and(e.getValue());\n")
             .addCode("    }\n")
@@ -778,6 +888,10 @@ public class ConnectionHelperClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addType(edgeClass)
             .addType(pageRequestClass)
+            .addType(facetSpecClass(fieldWildcard, tableWildcard))
+            .addType(totalCountInterface())
+            .addType(scopedClass(totalCountRef, tableWildcard))
+            .addType(batchCountsClass(outputPackage, totalCountRef, tableWildcard))
             .addMethod(encodeCursor)
             .addMethod(databaseValue)
             .addMethod(writeJsonString)
@@ -790,11 +904,17 @@ public class ConnectionHelperClassGenerator {
             .addMethod(readJsonString)
             .addMethod(reverseOrderBy)
             .addMethod(pageRequest)
+            .addMethod(trimMethod)
+            .addMethod(hasNextPageMethod)
+            .addMethod(hasPreviousPageMethod)
+            .addMethod(cursorOfMethod)
             .addMethod(edgesMethod)
             .addMethod(nodesMethod)
             .addMethod(pageInfoMethod)
             .addMethod(totalCountMethod)
             .addMethod(facetsMethod)
+            .addMethod(facetBucketsMethod)
+            .addMethod(selectedFacetSpecs)
             .addMethod(compareFacetEntries)
             .addMethod(compareFacetValues)
             .addMethod(graphitronContextShim)
@@ -805,6 +925,198 @@ public class ConnectionHelperClassGenerator {
             .initializer("$L", max)
             .build()));
         return List.of(builder.build());
+    }
+
+    private static TypeSpec facetSpecClass(ParameterizedTypeName fieldWildcard,
+                                           ParameterizedTypeName tableWildcard) {
+        // FacetSpec: the runtime entry for one facet arm. The GraphQL-facing label (the facets
+        // field name), the arm's source (the carrier's FROM, or that FROM inner-joined along a
+        // @reference path), the typed GROUP BY column on that source, whether the facet value is
+        // nullable (a non-null value appends an IS NOT NULL scrub to its arm), and the count key:
+        // empty counts rows, non-empty counts distinct carrier keys (a joined source can repeat
+        // a carrier row). All resolved by the launcher; the helper reads them without branching
+        // on what kind of facet it is.
+        var fieldArray = ArrayTypeName.of(fieldWildcard);
+        return TypeSpec.classBuilder(FACET_SPEC_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addField(FieldSpec.builder(String.class, "label", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(tableWildcard, "source", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(fieldWildcard, "column", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(boolean.class, "valueNullable", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(fieldArray, "countKey", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(String.class, "label")
+                .addParameter(tableWildcard, "source")
+                .addParameter(fieldWildcard, "column")
+                .addParameter(boolean.class, "valueNullable")
+                .addParameter(fieldArray, "countKey")
+                .addStatement("this.label = label")
+                .addStatement("this.source = source")
+                .addStatement("this.column = column")
+                .addStatement("this.valueNullable = valueNullable")
+                .addStatement("this.countKey = countKey")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("label")
+                .addModifiers(Modifier.PUBLIC).returns(String.class)
+                .addStatement("return label").build())
+            .addMethod(MethodSpec.methodBuilder("source")
+                .addModifiers(Modifier.PUBLIC).returns(tableWildcard)
+                .addStatement("return source").build())
+            .addMethod(MethodSpec.methodBuilder("column")
+                .addModifiers(Modifier.PUBLIC).returns(fieldWildcard)
+                .addStatement("return column").build())
+            .addMethod(MethodSpec.methodBuilder("valueNullable")
+                .addModifiers(Modifier.PUBLIC).returns(boolean.class)
+                .addStatement("return valueNullable").build())
+            .addMethod(MethodSpec.methodBuilder("countKey")
+                .addModifiers(Modifier.PUBLIC).returns(fieldArray)
+                .addStatement("return countKey").build())
+            .build();
+    }
+
+    private static TypeSpec totalCountInterface() {
+        return TypeSpec.interfaceBuilder(TOTAL_COUNT_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC)
+            .addJavadoc("The count behind a connection's {@code totalCount}, run on the {@code DSLContext} the\n"
+                + "resolver hands in. Never returns {@code null}.\n")
+            .addMethod(MethodSpec.methodBuilder("count")
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(Integer.class)
+                .addParameter(DSL_CONTEXT, "dsl")
+                .build())
+            .build();
+    }
+
+    private static TypeSpec scopedClass(ClassName totalCountRef, TypeName tableWildcard) {
+        return TypeSpec.classBuilder(SCOPED_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addSuperinterface(totalCountRef)
+            .addJavadoc("A root connection's count: one {@code count(*)} over the page query's own source and\n"
+                + "predicate.\n")
+            .addField(FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(tableWildcard, "table")
+                .addParameter(CONDITION, "condition")
+                .addStatement("this.table = table")
+                .addStatement("this.condition = condition")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("count")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(Integer.class)
+                .addParameter(DSL_CONTEXT, "dsl")
+                .addStatement("return dsl.selectCount().from(table).where(condition).fetchOne(0, $T.class)",
+                    Integer.class)
+                .build())
+            .build();
+    }
+
+    /**
+     * The per-batch count memo, the one mutable, lazy object in the generated runtime (the
+     * carrier and the scatter helpers are otherwise immutable). A batched producer creates one
+     * per DataLoader batch over its cursor-independent source, which projects the parent's batch
+     * index for every row of every parent, and hands slot {@code i} to parent {@code i}'s
+     * carrier. The first slot to resolve runs {@code select idx, count(*) ... group by idx} once;
+     * later slots read the filled array. An index with no group row counts 0, which is what a
+     * per-parent {@code count(*)} returns for an empty connection, so a slot never returns
+     * {@code null}. A failed grouped statement is kept and rethrown by every later slot, so each
+     * parent's {@code totalCount} reports the failure at its own path without re-running it.
+     *
+     * <p>The memo leans on one invariant: every carrier of a batch would count on the same
+     * context, so whichever resolves first may supply the {@code DSLContext} for all. In a
+     * multi-tenant build the producer binds its own routed context on every carrier of the batch
+     * and a loader batch holds one tenant; in a single-tenant build there is one context per
+     * request and DataLoaders are request-scoped. Synchronized because the carriers of one batch
+     * may resolve on different threads under an executor strategy.
+     *
+     * <p>Producers: {@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter#buildScatterConnectionByIdxHelper(String, boolean)}
+     * and the batched connection rows method of
+     * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}.
+     */
+    private static TypeSpec batchCountsClass(String outputPackage, ClassName totalCountRef, TypeName tableWildcard) {
+        var batchCountsRef = ClassName.get(outputPackage + ".util", CLASS_NAME, BATCH_COUNTS_CLASS_NAME);
+        var fieldOfInteger = ParameterizedTypeName.get(JOOQ_FIELD, ClassName.get(Integer.class));
+        var record2 = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record2"),
+            ClassName.get(Integer.class), ClassName.get(Integer.class));
+
+        var slotClass = TypeSpec.classBuilder(SLOT_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addSuperinterface(totalCountRef)
+            .addJavadoc("One parent's view of the batch's grouped count.\n")
+            .addField(FieldSpec.builder(batchCountsRef, "counts", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(int.class, "index", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(batchCountsRef, "counts")
+                .addParameter(int.class, "index")
+                .addStatement("this.counts = counts")
+                .addStatement("this.index = index")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("count")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(Integer.class)
+                .addParameter(DSL_CONTEXT, "dsl")
+                .addStatement("return counts.count(dsl, index)")
+                .build())
+            .build();
+
+        return TypeSpec.classBuilder(BATCH_COUNTS_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("The counts of one DataLoader batch, computed by one grouped statement the first time any\n"
+                + "of its slots resolves {@code totalCount}, then answered from memory. The only mutable,\n"
+                + "lazy object in the generated runtime: it relies on every carrier of the batch counting\n"
+                + "on the same {@code DSLContext}, which holds because a batch is request-scoped and, in a\n"
+                + "multi-tenant build, routed to one tenant. An index with no group row counts 0; a failed\n"
+                + "statement is rethrown by every later slot rather than re-run.\n")
+            .addField(FieldSpec.builder(tableWildcard, "source", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(fieldOfInteger, "idx", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(int.class, "keyCount", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(int[].class, "counts", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(RuntimeException.class, "failure", Modifier.PRIVATE).build())
+            .addType(slotClass)
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(tableWildcard, "source")
+                .addParameter(fieldOfInteger, "idx")
+                .addParameter(int.class, "keyCount")
+                .addStatement("this.source = source")
+                .addStatement("this.idx = idx")
+                .addStatement("this.keyCount = keyCount")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("slot")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(totalCountRef)
+                .addParameter(int.class, "index")
+                .addStatement("return new $T(this, index)", batchCountsRef.nestedClass(SLOT_CLASS_NAME))
+                .build())
+            .addMethod(MethodSpec.methodBuilder("count")
+                .addModifiers(Modifier.PRIVATE, Modifier.SYNCHRONIZED)
+                .returns(int.class)
+                .addParameter(DSL_CONTEXT, "dsl")
+                .addParameter(int.class, "index")
+                .addCode(CodeBlock.builder()
+                    .addStatement("if (failure != null) throw failure")
+                    .beginControlFlow("if (counts == null)")
+                    .addStatement("int[] filled = new int[keyCount]")
+                    .beginControlFlow("try")
+                    .beginControlFlow("for ($T r : dsl.select(idx, $T.count()).from(source).groupBy(idx).fetch())",
+                        record2, DSL)
+                    .addStatement("filled[r.value1()] = r.value2()")
+                    .endControlFlow()
+                    .nextControlFlow("catch ($T e)", RuntimeException.class)
+                    .addStatement("failure = e")
+                    .addStatement("throw e")
+                    .endControlFlow()
+                    .addStatement("counts = filled")
+                    .endControlFlow()
+                    .addStatement("return counts[index]")
+                    .build())
+                .build())
+            .build();
     }
 
     private static TypeSpec buildPageRequestClass(

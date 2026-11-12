@@ -499,7 +499,7 @@ public final class RootLauncherRenderer {
             code.addStatement("facetConditions.put($S, $L)",
                 facet.spec().inputFieldName(), glueExpression(facet.condition(), tableLocal));
         }
-        var facetSpecRuntime = className(connection.carrier()).nestedClass("FacetSpec");
+        var facetSpecRuntime = className(connection.helper()).nestedClass("FacetSpec");
         var specsArgs = CodeBlock.builder();
         for (int i = 0; i < plan.facets().size(); i++) {
             var facet = plan.facets().get(i);

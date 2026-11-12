@@ -1,12 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
-import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
-import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import javax.lang.model.element.Modifier;
@@ -21,8 +18,11 @@ import java.util.List;
  * Connection-level resolvers ({@code edges}, {@code nodes}, {@code pageInfo},
  * {@code totalCount}).
  *
- * <p>Carries a nullable {@code TotalCount} slot the lazy {@code totalCount} resolver calls; the
- * empty page a batched fetcher answers for a parent whose key cannot match counts 0.
+ * <p>Carries a nullable {@code ConnectionHelper.TotalCount} slot the lazy {@code totalCount}
+ * resolver calls; the empty page a batched fetcher answers for a parent whose key cannot match
+ * counts 0. The count types, the facet spec and the page-flag logic live on
+ * {@code ConnectionHelper} (see {@link ConnectionHelperClassGenerator}); the carrier stores them
+ * and its {@code trimmedResult}, {@code hasNextPage} and {@code hasPreviousPage} delegate there.
  * Root fetchers bind {@code Scoped} over the page query's own {@code (table, condition)}, which
  * the carrier also keeps as the facet source; batched producers
  * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter#buildScatterConnectionByIdxHelper(String, boolean)}
@@ -39,24 +39,11 @@ public class ConnectionResultClassGenerator {
 
     public static final String CLASS_NAME = "ConnectionResult";
 
-    /** The nested count-slot interface the {@code totalCount} resolver calls. */
-    public static final String TOTAL_COUNT_CLASS_NAME = "TotalCount";
-
-    /** The nested {@code TotalCount} counting {@code (table, condition)} with its own statement. */
-    public static final String SCOPED_CLASS_NAME = "Scoped";
-
-    /** The nested per-batch memo whose slots share one grouped count. */
-    public static final String BATCH_COUNTS_CLASS_NAME = "BatchCounts";
-
-    /** The {@code TotalCount} a {@code BatchCounts} hands out per parent index, nested in it. */
-    public static final String SLOT_CLASS_NAME = "Slot";
-
     private static final ClassName RECORD       = ClassName.get("org.jooq", "Record");
     private static final ClassName JOOQ_FIELD   = ClassName.get("org.jooq", "Field");
     private static final ClassName JOOQ_TABLE   = ClassName.get("org.jooq", "Table");
     private static final ClassName CONDITION    = ClassName.get("org.jooq", "Condition");
     private static final ClassName DSL_CONTEXT  = ClassName.get("org.jooq", "DSLContext");
-    private static final ClassName JOOQ_DSL     = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName LIST         = ClassName.get(List.class);
 
     public static List<TypeSpec> generate(String outputPackage) {
@@ -94,8 +81,9 @@ public class ConnectionResultClassGenerator {
         var conditionField = FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build();
         // The count slot: Scoped over a non-null (table, condition) pair, a BatchCounts slot, or
         // the empty page's zero.
-        var totalCountRef = ClassName.get(outputPackage + ".util", CLASS_NAME, TOTAL_COUNT_CLASS_NAME);
-        var scopedRef = ClassName.get(outputPackage + ".util", CLASS_NAME, SCOPED_CLASS_NAME);
+        var helperRef = ClassName.get(outputPackage + ".util", ConnectionHelperClassGenerator.CLASS_NAME);
+        var totalCountRef = helperRef.nestedClass(ConnectionHelperClassGenerator.TOTAL_COUNT_CLASS_NAME);
+        var scopedRef = helperRef.nestedClass(ConnectionHelperClassGenerator.SCOPED_CLASS_NAME);
         var totalCountField = FieldSpec.builder(totalCountRef, "totalCount", Modifier.PRIVATE, Modifier.FINAL).build();
         // Facet plan — nullable as a unit: only the root connection fetcher of a faceted
         // @asConnection carrier binds it (via the facet-carrying constructor below); every other
@@ -103,7 +91,7 @@ public class ConnectionResultClassGenerator {
         // (table, condition) contract.
         var mapOfCondition = ParameterizedTypeName.get(
             ClassName.get("java.util", "Map"), ClassName.get(String.class), CONDITION);
-        var facetSpecRef = ClassName.get(outputPackage + ".util", CLASS_NAME, "FacetSpec");
+        var facetSpecRef = helperRef.nestedClass(ConnectionHelperClassGenerator.FACET_SPEC_CLASS_NAME);
         var listOfFacetSpec = ParameterizedTypeName.get(LIST, facetSpecRef);
         var facetBaseConditionField = FieldSpec.builder(CONDITION, "facetBaseCondition", Modifier.PRIVATE, Modifier.FINAL).build();
         var facetConditionsField = FieldSpec.builder(mapOfCondition, "facetConditions", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -261,51 +249,6 @@ public class ConnectionResultClassGenerator {
                 + " page.backward(), page.extraFields(), table, condition," + facetPlanTail)
             .build();
 
-        // FacetSpec: the runtime entry for one facet arm. The GraphQL-facing label (the facets
-        // field name), the arm's source (the carrier's FROM, or that FROM inner-joined along a
-        // @reference path), the typed GROUP BY column on that source, whether the facet value is
-        // nullable (a non-null value appends an IS NOT NULL scrub to its arm), and the count key:
-        // empty counts rows, non-empty counts distinct carrier keys (a joined source can repeat
-        // a carrier row). All resolved by the launcher; the helper reads them without branching
-        // on what kind of facet it is.
-        var fieldArray = ArrayTypeName.of(fieldWildcard);
-        var facetSpecClass = TypeSpec.classBuilder("FacetSpec")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addField(FieldSpec.builder(String.class, "label", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(tableWildcard, "source", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(fieldWildcard, "column", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(boolean.class, "valueNullable", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(fieldArray, "countKey", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(String.class, "label")
-                .addParameter(tableWildcard, "source")
-                .addParameter(fieldWildcard, "column")
-                .addParameter(boolean.class, "valueNullable")
-                .addParameter(fieldArray, "countKey")
-                .addStatement("this.label = label")
-                .addStatement("this.source = source")
-                .addStatement("this.column = column")
-                .addStatement("this.valueNullable = valueNullable")
-                .addStatement("this.countKey = countKey")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("label")
-                .addModifiers(Modifier.PUBLIC).returns(String.class)
-                .addStatement("return label").build())
-            .addMethod(MethodSpec.methodBuilder("source")
-                .addModifiers(Modifier.PUBLIC).returns(tableWildcard)
-                .addStatement("return source").build())
-            .addMethod(MethodSpec.methodBuilder("column")
-                .addModifiers(Modifier.PUBLIC).returns(fieldWildcard)
-                .addStatement("return column").build())
-            .addMethod(MethodSpec.methodBuilder("valueNullable")
-                .addModifiers(Modifier.PUBLIC).returns(boolean.class)
-                .addStatement("return valueNullable").build())
-            .addMethod(MethodSpec.methodBuilder("countKey")
-                .addModifiers(Modifier.PUBLIC).returns(fieldArray)
-                .addStatement("return countKey").build())
-            .build();
-
         // Accessors
         var getResult = MethodSpec.methodBuilder("result")
             .addModifiers(Modifier.PUBLIC)
@@ -379,31 +322,24 @@ public class ConnectionResultClassGenerator {
             .addStatement("return facetSpecs")
             .build();
 
-        // trimmedResult() — trims to pageSize; re-reverses for backward pagination
+        // The page flags delegate to ConnectionHelper's statics, which hold the logic once.
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         var trimmedResult = MethodSpec.methodBuilder("trimmedResult")
             .addModifiers(Modifier.PUBLIC)
             .returns(listOfRecord)
-            .addStatement("$T raw = result.size() <= pageSize ? result : result.subList(0, pageSize)", listOfRecord)
-            .addCode("if (!backward) return raw;\n")
-            .addStatement("$T<$T> rev = new $T<>(raw.size())",
-                ClassName.get("java.util", "ArrayList"), RECORD, ClassName.get("java.util", "ArrayList"))
-            .addCode("for (int i = raw.size() - 1; i >= 0; i--) rev.add(raw.get(i));\n")
-            .addStatement("return rev")
+            .addStatement("return $T.trim(result, pageSize, backward)", helperRef)
             .build();
 
-        // hasNextPage() — for forward: over-fetched; for backward: afterCursor was supplied
         var hasNextPage = MethodSpec.methodBuilder("hasNextPage")
             .addModifiers(Modifier.PUBLIC)
             .returns(boolean.class)
-            .addStatement("return backward ? afterCursor != null : result.size() > pageSize")
+            .addStatement("return $T.hasNextPage(result, pageSize, afterCursor, backward)", helperRef)
             .build();
 
-        // hasPreviousPage() — for forward: afterCursor was supplied; for backward: over-fetched
         var hasPreviousPage = MethodSpec.methodBuilder("hasPreviousPage")
             .addModifiers(Modifier.PUBLIC)
             .returns(boolean.class)
-            .addStatement("return backward ? result.size() > pageSize : afterCursor != null")
+            .addStatement("return $T.hasPreviousPage(result, pageSize, afterCursor, backward)", helperRef)
             .build();
 
         var specBuilder = TypeSpec.classBuilder(CLASS_NAME)
@@ -433,10 +369,6 @@ public class ConnectionResultClassGenerator {
                     .build());
         }
         var spec = specBuilder
-            .addType(facetSpecClass)
-            .addType(totalCountInterface(totalCountRef))
-            .addType(scopedClass(totalCountRef, tableWildcard))
-            .addType(batchCountsClass(outputPackage, totalCountRef, tableWildcard))
             .addMethod(storingConstructor)
             .addMethod(assigningConstructor)
             .addMethod(constructor)
@@ -481,150 +413,6 @@ public class ConnectionResultClassGenerator {
         return builder
             .addStatement("return new $T($T.of(), pageSize, null, null, false, $T.of(), null, null,"
                 + " counted -> 0, null, null, null" + (multiTenant ? ", dsl)" : ")"), self, LIST, LIST)
-            .build();
-    }
-
-    private static TypeSpec totalCountInterface(ClassName totalCountRef) {
-        return TypeSpec.interfaceBuilder(TOTAL_COUNT_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC)
-            .addJavadoc("The count behind a connection's {@code totalCount}, run on the {@code DSLContext} the\n"
-                + "resolver hands in. Never returns {@code null}.\n")
-            .addMethod(MethodSpec.methodBuilder("count")
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .returns(Integer.class)
-                .addParameter(DSL_CONTEXT, "dsl")
-                .build())
-            .build();
-    }
-
-    private static TypeSpec scopedClass(ClassName totalCountRef, TypeName tableWildcard) {
-        return TypeSpec.classBuilder(SCOPED_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addSuperinterface(totalCountRef)
-            .addJavadoc("A root connection's count: one {@code count(*)} over the page query's own source and\n"
-                + "predicate.\n")
-            .addField(FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(tableWildcard, "table")
-                .addParameter(CONDITION, "condition")
-                .addStatement("this.table = table")
-                .addStatement("this.condition = condition")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("count")
-                .addAnnotation(Override.class)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(Integer.class)
-                .addParameter(DSL_CONTEXT, "dsl")
-                .addStatement("return dsl.selectCount().from(table).where(condition).fetchOne(0, $T.class)",
-                    Integer.class)
-                .build())
-            .build();
-    }
-
-    /**
-     * The per-batch count memo, the one mutable, lazy object in the generated runtime (the
-     * carrier and the scatter helpers are otherwise immutable). A batched producer creates one
-     * per DataLoader batch over its cursor-independent source, which projects the parent's batch
-     * index for every row of every parent, and hands slot {@code i} to parent {@code i}'s
-     * carrier. The first slot to resolve runs {@code select idx, count(*) ... group by idx} once;
-     * later slots read the filled array. An index with no group row counts 0, which is what a
-     * per-parent {@code count(*)} returns for an empty connection, so a slot never returns
-     * {@code null}. A failed grouped statement is kept and rethrown by every later slot, so each
-     * parent's {@code totalCount} reports the failure at its own path without re-running it.
-     *
-     * <p>The memo leans on one invariant: every carrier of a batch would count on the same
-     * context, so whichever resolves first may supply the {@code DSLContext} for all. In a
-     * multi-tenant build the producer binds its own routed context on every carrier of the batch
-     * and a loader batch holds one tenant; in a single-tenant build there is one context per
-     * request and DataLoaders are request-scoped. Synchronized because the carriers of one batch
-     * may resolve on different threads under an executor strategy.
-     *
-     * <p>Producers: {@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter#buildScatterConnectionByIdxHelper(String, boolean)}
-     * and the batched connection rows method of
-     * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}.
-     */
-    private static TypeSpec batchCountsClass(String outputPackage, ClassName totalCountRef, TypeName tableWildcard) {
-        var batchCountsRef = ClassName.get(outputPackage + ".util", CLASS_NAME, BATCH_COUNTS_CLASS_NAME);
-        var fieldOfInteger = ParameterizedTypeName.get(JOOQ_FIELD, ClassName.get(Integer.class));
-        var record2 = ParameterizedTypeName.get(ClassName.get("org.jooq", "Record2"),
-            ClassName.get(Integer.class), ClassName.get(Integer.class));
-
-        var slotClass = TypeSpec.classBuilder(SLOT_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addSuperinterface(totalCountRef)
-            .addJavadoc("One parent's view of the batch's grouped count.\n")
-            .addField(FieldSpec.builder(batchCountsRef, "counts", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(int.class, "index", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PRIVATE)
-                .addParameter(batchCountsRef, "counts")
-                .addParameter(int.class, "index")
-                .addStatement("this.counts = counts")
-                .addStatement("this.index = index")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("count")
-                .addAnnotation(Override.class)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(Integer.class)
-                .addParameter(DSL_CONTEXT, "dsl")
-                .addStatement("return counts.count(dsl, index)")
-                .build())
-            .build();
-
-        return TypeSpec.classBuilder(BATCH_COUNTS_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("The counts of one DataLoader batch, computed by one grouped statement the first time any\n"
-                + "of its slots resolves {@code totalCount}, then answered from memory. The only mutable,\n"
-                + "lazy object in the generated runtime: it relies on every carrier of the batch counting\n"
-                + "on the same {@code DSLContext}, which holds because a batch is request-scoped and, in a\n"
-                + "multi-tenant build, routed to one tenant. An index with no group row counts 0; a failed\n"
-                + "statement is rethrown by every later slot rather than re-run.\n")
-            .addField(FieldSpec.builder(tableWildcard, "source", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(fieldOfInteger, "idx", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(int.class, "keyCount", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(int[].class, "counts", Modifier.PRIVATE).build())
-            .addField(FieldSpec.builder(RuntimeException.class, "failure", Modifier.PRIVATE).build())
-            .addType(slotClass)
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(tableWildcard, "source")
-                .addParameter(fieldOfInteger, "idx")
-                .addParameter(int.class, "keyCount")
-                .addStatement("this.source = source")
-                .addStatement("this.idx = idx")
-                .addStatement("this.keyCount = keyCount")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("slot")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(totalCountRef)
-                .addParameter(int.class, "index")
-                .addStatement("return new $T(this, index)", batchCountsRef.nestedClass(SLOT_CLASS_NAME))
-                .build())
-            .addMethod(MethodSpec.methodBuilder("count")
-                .addModifiers(Modifier.PRIVATE, Modifier.SYNCHRONIZED)
-                .returns(int.class)
-                .addParameter(DSL_CONTEXT, "dsl")
-                .addParameter(int.class, "index")
-                .addCode(CodeBlock.builder()
-                    .addStatement("if (failure != null) throw failure")
-                    .beginControlFlow("if (counts == null)")
-                    .addStatement("int[] filled = new int[keyCount]")
-                    .beginControlFlow("try")
-                    .beginControlFlow("for ($T r : dsl.select(idx, $T.count()).from(source).groupBy(idx).fetch())",
-                        record2, JOOQ_DSL)
-                    .addStatement("filled[r.value1()] = r.value2()")
-                    .endControlFlow()
-                    .nextControlFlow("catch ($T e)", RuntimeException.class)
-                    .addStatement("failure = e")
-                    .addStatement("throw e")
-                    .endControlFlow()
-                    .addStatement("counts = filled")
-                    .endControlFlow()
-                    .addStatement("return counts[index]")
-                    .build())
-                .build())
             .build();
     }
 }

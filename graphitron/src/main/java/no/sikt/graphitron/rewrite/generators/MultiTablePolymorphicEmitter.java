@@ -1828,7 +1828,7 @@ public final class MultiTablePolymorphicEmitter {
      * parallel {@code int[] parentIdxByOuter} populated from each stage-1 row's {@code __idx__}
      * scatters the typed Records into per-parent {@code List<Record>} buckets. Each
      * per-parent {@code ConnectionResult} binds slot {@code i} of one
-     * {@code ConnectionResult.BatchCounts} over the SAME {@code pagesTable} reference, so the
+     * {@code ConnectionHelper.BatchCounts} over the SAME {@code pagesTable} reference, so the
      * first {@code totalCount} to resolve runs
      * {@code SELECT __idx__, count(*) FROM pagesTable GROUP BY __idx__} once for the batch and
      * every parent reads its own count from it: one count query when totalCount is selected,
@@ -1852,10 +1852,10 @@ public final class MultiTablePolymorphicEmitter {
 
         var connectionResult = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionResult();
         var connectionResultClass = ClassName.get(connectionResult.packageName(), connectionResult.simpleName());
-        var batchCountsClass = connectionResultClass.nestedClass(
-            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.BATCH_COUNTS_CLASS_NAME);
         var connectionHelperClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
+        var batchCountsClass = connectionHelperClass.nestedClass(
+            no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.BATCH_COUNTS_CLASS_NAME);
         var pageRequestClass = ClassName.get(outputPackage + ".util",
             "ConnectionHelper", "PageRequest");
         var integerClass = ClassName.get(Integer.class);

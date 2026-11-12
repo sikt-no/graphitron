@@ -222,7 +222,7 @@ public final class SplitRowsMethodEmitter {
      * lives per-partition in the windowed CTE, so each parent's bucket is 0..(pageSize+1).
      *
      * <p>{@code countSource} is the shared cursor-independent count derived table emitted by
-     * the rows method. The helper wraps it in one {@code ConnectionResult.BatchCounts} for the
+     * the rows method. The helper wraps it in one {@code ConnectionHelper.BatchCounts} for the
      * batch and binds slot {@code i} on parent {@code i}'s carrier, so the generated
      * {@code ConnectionHelper.totalCount} runs one {@code count(*)} grouped by {@code __idx__}
      * for the whole batch on first selection (same shape as the polymorphic batched path over
@@ -241,8 +241,9 @@ public final class SplitRowsMethodEmitter {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
         var connectionResult = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionResult();
         ClassName connectionResultClass = ClassName.get(connectionResult.packageName(), connectionResult.simpleName());
-        ClassName batchCountsClass = connectionResultClass.nestedClass(
-            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.BATCH_COUNTS_CLASS_NAME);
+        var connectionHelper = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionHelper();
+        ClassName batchCountsClass = ClassName.get(connectionHelper.packageName(), connectionHelper.simpleName(),
+            no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.BATCH_COUNTS_CLASS_NAME);
         ClassName pageRequestClass = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
         TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));

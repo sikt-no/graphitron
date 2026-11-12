@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
+import no.sikt.graphitron.generated.util.ConnectionHelper;
 import no.sikt.graphitron.generated.util.ConnectionResult;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
@@ -16,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
- * Execution-tier coverage of the generated {@code ConnectionResult.BatchCounts}, the per-batch
+ * Execution-tier coverage of the generated {@code ConnectionHelper.BatchCounts}, the per-batch
  * memo both batched connection producers bind behind {@code totalCount}. The GraphQL-level tests
  * in {@link GraphQLQueryTest} pin that a batch costs one grouped count; these pin the two cases no
  * batched fixture reaches: a parent with no rows, and a grouped statement that fails.
@@ -55,7 +56,7 @@ class BatchCountsExecutionTest {
         // Seed: film 1 -> {1, 2}, film 2 -> {1, 3}, film 3 -> {1}. keyCount 4 adds a parent the
         // grouped count returns no row for.
         var source = filmActorsByIndex();
-        var counts = new ConnectionResult.BatchCounts(source, source.field("__idx__", Integer.class), 4);
+        var counts = new ConnectionHelper.BatchCounts(source, source.field("__idx__", Integer.class), 4);
 
         QUERY_COUNT.set(0);
         assertThat(counts.slot(0).count(dsl)).isEqualTo(2);
@@ -71,7 +72,7 @@ class BatchCountsExecutionTest {
         var source = dsl.select(DSL.inline(0).as("__idx__"))
             .from(DSL.table(DSL.name("no_such_table")))
             .asTable("countSource");
-        var counts = new ConnectionResult.BatchCounts(source, source.field(idx), 2);
+        var counts = new ConnectionHelper.BatchCounts(source, source.field(idx), 2);
 
         QUERY_COUNT.set(0);
         Throwable first = catchThrowable(() -> counts.slot(0).count(dsl));
