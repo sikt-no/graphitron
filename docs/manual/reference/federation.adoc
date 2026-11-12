@@ -16,6 +16,8 @@ In a federation-linked graph, every resolvable node type is given `@key(fields: 
 
 A node whose `id` carries `@field(name:)` encodes no node id, so neither `Query.node` nor a representation's `id` is decoded for it; it is resolved only through the keys its author writes.
 
+A type whose field carries xref:directives/issue.adoc[`@issue`] is given `@key(fields: "<that field>", resolvable: false)` after the keys its author wrote, and the field is marked `@inaccessible`: the type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher.
+
 == What a key may select
 
 Each refusal below is reported at the `@key` that breaks it.

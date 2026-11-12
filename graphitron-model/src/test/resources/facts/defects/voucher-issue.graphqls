@@ -82,3 +82,18 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,              detail
   COLUMN_UNRESOLVED, FilmRef.voucher
   """)
+
+# The voucher keys its type, as a key this subgraph does not resolve, and is kept from clients; the
+# link is given @inaccessible to import.
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name, role,  fields,  resolvable, ordinal
+  FilmRef,   ISSUE, voucher, FALSE,      0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_directive_application", where: """
+  origin = 'MINTED'
+  """, rows: """
+  coordinate,      directive_name, ordinal
+  FilmRef,         key,            0
+  FilmRef.voucher, inaccessible,   0
+  """)

@@ -69,6 +69,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
 import static org.jooq.impl.DSL.field;
@@ -122,8 +123,12 @@ import static org.jooq.impl.DSL.val;
  * from rows, and nothing is lost there because a minted element has no authored detail to lose: no
  * expansion applies a directive.
  *
- * <p>Nothing is removed. The store holding no row for something the registry declares would be a
- * capture defect rather than a deletion to perform, and stating it as a difference is a gate's job.
+ * <p>Nothing is removed for want of a row. The store holding no row for something the registry
+ * declares would be a capture defect rather than a deletion to perform, and stating it as a difference
+ * is a gate's job. What is removed is removed because the store says so: a field an {@code @issue}
+ * absorbs, which {@code graphitron_voucher_member} states, is sealed into the voucher and withheld from
+ * every declaration site of its type ({@link #withhold}), and Graphitron's own directives and the
+ * support types nothing references are unpublished.
  *
  * <p>The elements are patched on object types only. Every row of {@code graphitron_type_minted} is
  * an {@code OBJECT}, because the macros mint nothing else, so an input object, enum, union,
@@ -256,6 +261,7 @@ public final class EmittedRegistry {
             }
         }
         apply(patched, replacements);
+        withhold(patched, store);
         var nodeTypes = mintedNodeTypes(store);
         refuseAuthoredNodeType(patched, nodeTypes);
         applyUnwritten(patched, store);
@@ -495,6 +501,41 @@ public final class EmittedRegistry {
     }
 
     private record Replacement(SDLDefinition<?> old, SDLDefinition<?> replacement) {}
+
+    /**
+     * Withholds the fields each {@code @issue} absorbs, as {@code graphitron_voucher_member} states
+     * them, from every declaration site of their type, its extensions included: the voucher seals
+     * them, so the subgraph publishes the voucher alone. A removal read off the membership rather than
+     * off a field's absence from the anchors, which would turn a capture defect into a silent deletion.
+     */
+    private static void withhold(TypeDefinitionRegistry patched, StoreHandle store) {
+        var m = GRAPHITRON_VOUCHER_MEMBER;
+        var membersByType = new LinkedHashMap<String, java.util.Set<String>>();
+        store.dsl().select(m.TYPE_NAME, m.FIELD_NAME).from(m)
+            .where(m.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(m.TYPE_NAME, m.FIELD_NAME)
+            .forEach(r -> membersByType.computeIfAbsent(r.value1(), t -> new java.util.LinkedHashSet<>())
+                .add(r.value2()));
+        var replacements = new ArrayList<Replacement>();
+        membersByType.forEach((typeName, members) -> {
+            var sites = new ArrayList<ObjectTypeDefinition>();
+            if (patched.getTypeOrNull(typeName) instanceof ObjectTypeDefinition object) {
+                sites.add(object);
+            }
+            sites.addAll(patched.objectTypeExtensions().getOrDefault(typeName, List.of()));
+            for (var site : sites) {
+                var kept = site.getFieldDefinitions().stream()
+                    .filter(field -> !members.contains(field.getName()))
+                    .toList();
+                if (kept.size() != site.getFieldDefinitions().size()) {
+                    replacements.add(new Replacement(site, site instanceof ObjectTypeExtensionDefinition extension
+                        ? extension.transformExtension(b -> b.fieldDefinitions(kept))
+                        : site.transform(b -> b.fieldDefinitions(kept))));
+                }
+            }
+        });
+        apply(patched, replacements);
+    }
 
     // ---------------------------------------------------------------------------------------
     // What is not published

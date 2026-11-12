@@ -45,7 +45,8 @@ type VgsResultat @table(name: "soknad_vgs_resultat") {
 
 == What the subgraph publishes
 
-* Only the voucher field. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
+* Only the voucher field, marked `@inaccessible` so clients never see it. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
+* `@key(fields: "voucher", resolvable: false)` on the issuing type, naming the field you marked, after any key you wrote. The type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher. The link imports `@inaccessible` for you.
 * Every absorbed field is withheld whatever else is refused, so a schema whose `@issue` is refused for another reason still never publishes them.
 
 == Constraints
@@ -55,6 +56,9 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 [cols="1,3"]
 |===
 | Code | Rule
+
+| `VOUCHER_WITHOUT_FEDERATION_LINK`
+| The schema has a federation `@link`: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.
 
 | `VOUCHER_ISSUE_TWICE`
 | A type issues one voucher: one field per type carries `@issue`.
@@ -96,7 +100,7 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 | Each absorbed field reads a column of the issuing type's table, by its `@field(name:)` or its own name.
 |===
 
-Every absorbed field stays withheld whichever of these is reported. A field marked `@issue` or `@accept` is never absorbed. The voucher also requires a federation `@link`.
+Every absorbed field stays withheld whichever of these is reported. A field marked `@issue` or `@accept` is never absorbed.
 
 == See also
 

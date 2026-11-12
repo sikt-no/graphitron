@@ -165,7 +165,7 @@ public final class GraphitronAstCapture {
         new AnchorStage("federation-link", FederationLinks.class, FederationLinks::link),
         // The keys federation's rules mint, from the nodes and the link just written, ahead of the
         // emitted population whose minted applications render them.
-        new AnchorStage("minted-keys", MintedKeys.class, (dsl, graph, readAt) -> MintedKeys.derive(dsl, graph)),
+        new AnchorStage("minted-keys", MintedKeys.class, MintedKeys::derive),
         // The directives applied across the expanded schema, whose minted applications render the
         // nodes and the keys just written.
         new AnchorStage("directive-applications", MacroExpansion.class, MacroExpansion::directives),

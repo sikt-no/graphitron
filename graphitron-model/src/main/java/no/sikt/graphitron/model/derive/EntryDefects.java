@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
@@ -85,11 +86,14 @@ public final class EntryDefects {
     public static final Rule ENTITY_KEYS =
         new Rule("entity-key-alternatives", GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE);
 
+    /** The minted-keys stage's rule, {@link MintedKeys}. */
+    public static final Rule MINTED_KEYS = new Rule("minted-keys", GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE);
+
     /** The voucher stage's rule, {@link Vouchers}. */
     public static final Rule VOUCHERS = new Rule("vouchers", GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE);
 
     /** Every owner's rule, one per owner stage. */
-    public static final List<Rule> RULES = List.of(VOUCHERS, ENTITY_KEYS, BUILDS, DEPTHS, OUTBOX, GRAPHITRON);
+    public static final List<Rule> RULES = List.of(VOUCHERS, MINTED_KEYS, ENTITY_KEYS, BUILDS, DEPTHS, OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

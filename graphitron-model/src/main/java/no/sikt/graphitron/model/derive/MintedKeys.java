@@ -31,4 +31,15 @@ public final class MintedKeys {
                 .where(r.GRAPH_NAME.eq(graphName)))
             .execute();
     }
+
+    /**
+     * The stage: the graph's minted keys, then its codes' rows from
+     * {@code graphitron_minted_key_entry_defect_rule}, marked with {@code readAt}, through
+     * {@link EntryDefects#derive}: a voucher marker in a graph with no federation link, refused here
+     * because this stage reads the link for the keys it mints.
+     */
+    public static void derive(DSLContext dsl, String graphName, java.time.LocalDateTime readAt) {
+        derive(dsl, graphName);
+        EntryDefects.derive(dsl, graphName, readAt, EntryDefects.MINTED_KEYS);
+    }
 }

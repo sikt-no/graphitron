@@ -418,6 +418,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_outbox_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_entity_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_voucher_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_minted_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
         registrations.put("graphitron_producer_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_service", Arm.DERIVED);

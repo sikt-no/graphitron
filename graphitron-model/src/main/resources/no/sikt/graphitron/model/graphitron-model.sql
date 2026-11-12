@@ -7562,13 +7562,13 @@ CREATE TABLE graphitron_minted_key (
   UNIQUE (graph_name, type_name, ordinal),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_tabletype (graph_name, type_name)
     ON DELETE CASCADE,
-  CHECK (role IN ('NODE'))
+  CHECK (role IN ('NODE', 'ISSUE'))
 );
 COMMENT ON TABLE graphitron_minted_key IS 'One federation key a graph mints on one of its table-bound types, with the rule that minted it. For example a node type of a federation-linked graph whose author wrote no id key carries one NODE row, fields id and resolvable.';
 COMMENT ON COLUMN graphitron_minted_key.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_minted_key.type_name IS 'the type the key is minted on. Into graphitron_tabletype because every rule minting a key mints it on a table-bound type, and cascading because a type that stops resolving to a table stops carrying one';
-COMMENT ON COLUMN graphitron_minted_key.role IS 'the rule that minted the key: NODE, federation''s entity rule, a resolvable node of a federated graph keyed by its id where no authored key spells id';
-COMMENT ON COLUMN graphitron_minted_key.fields IS 'the key''s field set as federation spells it inside @key(fields:), unquoted: id for a NODE key';
+COMMENT ON COLUMN graphitron_minted_key.role IS 'the rule that minted the key: NODE, federation''s entity rule, a resolvable node of a federated graph keyed by its id where no authored key spells id; ISSUE, the voucher key, an @issue field keying its type, not resolvable here';
+COMMENT ON COLUMN graphitron_minted_key.fields IS 'the key''s field set as federation spells it inside @key(fields:), unquoted: id for a NODE key; the marked field''s name for an ISSUE key';
 COMMENT ON COLUMN graphitron_minted_key.resolvable IS 'what the key''s resolvable: argument says, whether this subgraph resolves the entity by it: true for a NODE key, a stub never being minted one';
 COMMENT ON COLUMN graphitron_minted_key.ordinal IS 'the key''s place among the type''s @key applications: after every key its author wrote, then in the order of the roles that minted keys on it. Stated here rather than counted by each set that renders the application, so the application and its arguments cannot disagree about which @key they are';
 
@@ -7609,7 +7609,24 @@ SELECT n.graph_name, n.type_name, 'NODE', 'id', TRUE,
                                        WHERE h.graph_name = g.graph_name AND h.source_name = g.source_name
                                          AND h.source_line = g.source_line
                                          AND h.source_column = g.source_column AND h.position = 0
-                                         AND h.segment_position = 1));
+                                         AND h.segment_position = 1))
+UNION ALL
+-- @issue: the voucher field keys the issuing type, not resolvable here, so a router can reach the
+-- other subgraph's entity from this one only through the voucher. Its field set is the field the
+-- author marked; the first where two share a type, which the voucher stage refuses. Not on a node,
+-- which the voucher stage refuses too, so the type carries no node key beside it.
+SELECT tt.graph_name, tt.type_name, 'ISSUE', MIN(i.field_name), FALSE,
+       CAST((SELECT COUNT(*) FROM graphql_directive_application k
+              WHERE k.graph_name = tt.graph_name AND k.coordinate = tt.type_name
+                AND k.directive_name = 'key') AS INT)
+  FROM graphql_directive_application d
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+  JOIN graphitron_tabletype tt ON tt.graph_name = i.graph_name AND tt.type_name = i.type_name
+ WHERE d.directive_name = 'issue'
+   AND EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = tt.graph_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                    WHERE n.graph_name = tt.graph_name AND n.type_name = tt.type_name)
+ GROUP BY tt.graph_name, tt.type_name;
 COMMENT ON VIEW graphitron_minted_key_rule IS 'One key the minting rules compute, in the shape graphitron_minted_key stores: the rules themselves, evaluated on demand rather than read off disk. For example the minted-keys stage writes this view''s rows for one graph into graphitron_minted_key, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.type_name IS 'the type the key is minted on';
@@ -7638,7 +7655,17 @@ SELECT t.graph_name, t.type_name, 'nodeType',
                 AND d.directive_name = 'nodeType') AS INT),
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
   FROM graphitron_synthesized_node_type_id t
-  JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name;
+  JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name
+UNION ALL
+-- The voucher field of an ISSUE key is kept from the client schema.
+SELECT k.graph_name, k.type_name || '.' || k.fields, 'inaccessible',
+       CAST((SELECT COUNT(*) FROM graphql_directive_application d
+              WHERE d.graph_name = k.graph_name AND d.coordinate = k.type_name || '.' || k.fields
+                AND d.directive_name = 'inaccessible') AS INT),
+       'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
+  FROM graphitron_minted_key k
+  JOIN graphitron_element e ON e.graph_name = k.graph_name AND e.coordinate = k.type_name || '.' || k.fields
+ WHERE k.role = 'ISSUE';
 COMMENT ON VIEW graphitron_directive_application_minted IS 'One of the three sets graphitron_directive_application is the union of: an application macro expansion adds. For example @key(fields: "id") on a node type in a federation-linked graph whose author declared no id key, or the @tag a minted Connection inherits from its carrier.';
 -- COMMENT ON COLUMN graphitron_directive_application_minted.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_directive_application_minted.coordinate IS 'the coordinate the macro applies the directive to';
@@ -14293,6 +14320,24 @@ COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher sta
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.code IS 'the rule broken';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.detail IS 'the type, the coordinate, or the claim or duration as written'
 
+-- The minted-keys stage's refusals: a voucher marker in a graph with no federation link, since a
+-- voucher only makes sense where a router plans across subgraphs and the key it is reached by needs
+-- the link. Reported at the marker.
+CREATE VIEW graphitron_minted_key_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_WITHOUT_FEDERATION_LINK',
+       d.coordinate
+  FROM graphql_directive_application d
+ WHERE d.directive_name = 'issue'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = d.graph_name);
+COMMENT ON VIEW graphitron_minted_key_entry_defect_rule IS 'One row the minted-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an @issue in a graph with no federation @link gives one VOUCHER_WITHOUT_FEDERATION_LINK row at the @issue.';
+-- COMMENT ON COLUMN graphitron_minted_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_minted_key_entry_defect_rule.source_name IS 'the marker''s file';
+-- COMMENT ON COLUMN graphitron_minted_key_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_minted_key_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_minted_key_entry_defect_rule.code IS 'the rule broken';
+-- COMMENT ON COLUMN graphitron_minted_key_entry_defect_rule.detail IS 'the marked field''s coordinate'
+
 CREATE VIEW graphitron_argmapping_pair_defect_rule
   (graph_name, source_name, source_line, source_column, position, code, detail) AS
 WITH
@@ -19472,6 +19517,7 @@ INSERT INTO meta_stage_write VALUES
   ('table-types', 'graphitron_tabletype'),
   ('nodes', 'graphitron_node'),
   ('minted-keys', 'graphitron_minted_key'),
+  ('minted-keys', 'graphitron_entry_defect'),
   ('voucher-members', 'graphitron_voucher_member'),
   ('vouchers', 'graphitron_voucher_component'),
   ('vouchers', 'graphitron_voucher_claim'),
@@ -20634,6 +20680,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'entry-defects'),
   ('CLAIMS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_CLAIMS_CONFLICT',
    'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.', 'entry-defects'),
+  ('VOUCHER_WITHOUT_FEDERATION_LINK', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_FEDERATION_LINK',
+   '@issue needs a federation @link: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.', 'minted-keys'),
   ('VOUCHER_ISSUE_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_TWICE',
    'A type carries @issue on two fields, and a type issues one voucher: keep one.', 'vouchers'),
   ('VOUCHER_ISSUE_ON_KEYED_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_KEYED_TYPE',
@@ -21485,6 +21533,10 @@ INSERT INTO meta_relation VALUES
    'One row the outbox routine target rule computes, in the shape graphitron_outbox_routine_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_routine_target, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_minted_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the minted-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example an @issue in a graph with no federation @link gives one VOUCHER_WITHOUT_FEDERATION_LINK row at the @issue.',
+   'Owned by the stage that already reads the federation link for the keys it mints, so "this graph is federated" is read in one place for the key and the refusal alike.'),
   ('graphitron_voucher_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an @issue whose claims name a field the type does not declare gives one VOUCHER_CLAIM_NOT_ABSORBED row at the @issue.',
