@@ -151,8 +151,11 @@ Which tests move:
 - The stores are a pool, not one per thread (Alf, 2026-11-12). A capture borrows a store no
   other capture holds, so concurrent captures never queue on one writing connection, whichever
   threads the engine uses.
-- **What remains:** move the other scoped classes, about 35 that read only their own graph and 12
-  that read only relations no capture changes.
+- **The rest of the scoped classes move under R1160, not here (Alf, 2026-11-12).** That is about 35
+  that read only their own graph and 12 that read only relations no capture changes. R1160 moves
+  them onto fact documents, which the population already reads cheaply. A test that has to keep its
+  schema inline captures through `readInline`, never through the thread store that clears between
+  tests.
 
 The stores booted per capture (`ownStore*`, `BuiltStore`) are a separate 807 s. They follow where
 their reason for a store of their own allows.
