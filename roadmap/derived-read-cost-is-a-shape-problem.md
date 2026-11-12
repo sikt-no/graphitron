@@ -1268,6 +1268,12 @@ someone to profile.
 * **A capture's time grows in proportion to its schema** `open`. A synthetic schema captured at two
   sizes fails a stage whose time grows faster than the schema, which is what catches a join that fans
   out and a graph filter pushed into a rule's plan.
+* **The connection carrier is stored before the fields it excludes** `open`, F's. On sis the
+  macro-expansion write of `graphitron_field` took 0.57 s on 2026-11-07 and 40 s cold, 19 s warm on
+  2026-11-12, with `graphitron_field_authored` alone at 0.14 s against 50 to 90 s. 6754b03786 moved
+  `graphitron_connection_carrier` onto a join over four relations, and the authored fields' anti-join
+  re-evaluates it once per field, 7,190 times. Stored by macro expansion first, keyed into
+  `graphql_field`, with its rule beside it.
 * **A stage's time does not grow with the other graphs in the store** `open`. The same schema
   captured into a store holding one graph and into one holding many fails a stage whose time grows
   with the number of other graphs, since a rule reading across graphs is a regression caught early.
