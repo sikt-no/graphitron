@@ -3433,6 +3433,8 @@ COMMENT ON COLUMN graphitron_field.default_value_sdl IS 'the default literal whe
 COMMENT ON COLUMN graphitron_field.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
 COMMENT ON COLUMN graphitron_field.bound_name IS 'the name the field reads by: its @field(name:) where the field''s first @field application wrote one, else the field''s own name. Stated once here so that no reader joins the binding and falls back to the field name itself; what a name finds, a column or a member of a class, is the reader''s question';
 COMMENT ON COLUMN graphitron_field.bound_name_upper IS 'the upper-cased form of bound_name, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper. Generated, so nothing writes it';
+CREATE INDEX graphitron_field_name_ix ON graphitron_field (graph_name, field_name);
+COMMENT ON INDEX graphitron_field_name_ix IS 'Serves a rule asking a graph for the fields of one name, as the Relay shape names its edges and node fields: without it, a rule filtered to one graph probes the fields by graph alone, and graphitron_edge_rule did so once per object type, 2.9 s on sis against 0.1 s with this index.';
 
 CREATE TABLE graphitron_enum_value (
   graph_name  VARCHAR NOT NULL,
