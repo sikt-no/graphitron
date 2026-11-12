@@ -14746,51 +14746,15 @@ CREATE TABLE graphitron_occurrence_list_element_defect (
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
-  CHECK (code IN ('LIST_ELEMENT_CONDITION', 'LIST_ELEMENT_NODE_ID', 'LIST_ELEMENT_NOT_ONE_VALUE'))
+  CHECK (code IN ('LIST_ELEMENT_CONDITION', 'LIST_ELEMENT_NODE_ID', 'LIST_ELEMENT_NOT_ONE_VALUE',
+                  'LIST_CONDITION_BELOW_LIST'))
 );
-COMMENT ON TABLE graphitron_occurrence_list_element_defect IS 'An element field of a list of input objects a filter compares that cannot be one cell of the row its element is, at one occurrence: one row per input-field occurrence and rule it breaks there. For example Query.filmsByCells(cells.filmId:), a node id read per element of cells, draws a LIST_ELEMENT_NODE_ID row.';
+COMMENT ON TABLE graphitron_occurrence_list_element_defect IS 'A list of input objects a filter compares as rows that cannot be compared so, at one occurrence: one row per occurrence and rule it breaks there, an element field that cannot be one cell of its row or a @condition taking a value read per element. For example Query.filmsByCells(cells.filmId:), a node id read per element of cells, draws a LIST_ELEMENT_NODE_ID row.';
 COMMENT ON COLUMN graphitron_occurrence_list_element_defect.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_list_element_defect.coordinate IS 'the input-field occurrence read per element of a list a filter compares';
-COMMENT ON COLUMN graphitron_occurrence_list_element_defect.code IS 'the rule it breaks there, LIST_ELEMENT_CONDITION, LIST_ELEMENT_NODE_ID or LIST_ELEMENT_NOT_ONE_VALUE; with the graph and the coordinate, the grain';
+COMMENT ON COLUMN graphitron_occurrence_list_element_defect.coordinate IS 'the occurrence breaking the rule: an element field read per element of the list, or for LIST_CONDITION_BELOW_LIST the occurrence carrying the @condition';
+COMMENT ON COLUMN graphitron_occurrence_list_element_defect.code IS 'the rule it breaks there, LIST_ELEMENT_CONDITION, LIST_ELEMENT_NODE_ID, LIST_ELEMENT_NOT_ONE_VALUE or LIST_CONDITION_BELOW_LIST; with the graph and the coordinate, the grain';
 COMMENT ON COLUMN graphitron_occurrence_list_element_defect.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
 
-CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
--- An input-field occurrence read per element of a list a filter compares: its field reads, looks up
--- or counts rows, and its argument is not a @lookupKey, whose fields are the lookup's key.
-WITH element (graph_name, coordinate, element_coordinate) AS (
-  SELECT DISTINCT o.graph_name, o.coordinate, o.element_coordinate
-    FROM graphitron_occurrence_list_element le
-    JOIN graphitron_occurrence o ON o.graph_name = le.graph_name AND o.coordinate = le.coordinate
-    JOIN graphitron_occurrence_producer fp
-      ON fp.graph_name = o.graph_name AND fp.coordinate = o.field_coordinate
-     AND fp.kind IN ('SELECT', 'LOOKUP', 'COUNT')
-    JOIN graphitron_occurrence ao ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application k
-                      WHERE k.graph_name = ao.graph_name AND k.coordinate = ao.element_coordinate
-                        AND k.directive_name = 'lookupKey')
-)
--- It carries @condition, whose value would be read through the list as one object.
-SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_CONDITION'
-  FROM element e
- WHERE EXISTS (SELECT 1 FROM graphitron_directive_application c
-                WHERE c.graph_name = e.graph_name AND c.coordinate = e.element_coordinate
-                  AND c.directive_name = 'condition')
-UNION ALL
--- It is a node id, whose decoded key a cell of plain values cannot hold.
-SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NODE_ID'
-  FROM element e
- WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
-                WHERE n.graph_name = e.graph_name AND n.coordinate = e.coordinate)
-UNION ALL
--- It is itself a list, and one cell holds one value.
-SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NOT_ONE_VALUE'
-  FROM element e
- WHERE EXISTS (SELECT 1 FROM graphitron_field f
-                WHERE f.graph_name = e.graph_name AND f.coordinate = e.element_coordinate AND f.is_list);
-COMMENT ON VIEW graphitron_occurrence_list_element_defect_rule IS 'One row the list element defect rule computes, in the shape graphitron_occurrence_list_element_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_occurrence_list_element_defect, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.code';
 
 CREATE VIEW graphitron_occurrence_depth_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
@@ -15154,7 +15118,18 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        CAST(NULL AS VARCHAR)
   FROM graphitron_occurrence_list_element_defect d
   JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate;
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE d.code <> 'LIST_CONDITION_BELOW_LIST'
+UNION ALL
+-- A list field's @condition taking a value read per element of the list, at the @condition.
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column, d.code,
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_list_element_defect d
+  JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
+  JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'condition' AND da.source_name IS NOT NULL
+ WHERE d.code = 'LIST_CONDITION_BELOW_LIST';
 COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
 
 
@@ -17502,6 +17477,62 @@ COMMENT ON COLUMN graphitron_occurrence_condition.call IS 'the call it is, condi
 COMMENT ON COLUMN graphitron_occurrence_condition.call_kind IS 'always CONDITION, pinned so the foreign key holds the row to a call of that kind';
 COMMENT ON COLUMN graphitron_occurrence_condition.override_written IS 'whether the @condition was written with override: true, false where override: was not written; carried for the transition and retired with the rule that decides what a condition consumes';
 COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
+-- An input-field occurrence read per element of a list a filter compares: its field reads, looks up
+-- or counts rows, and its argument is not a @lookupKey, whose fields are the lookup's key.
+WITH element (graph_name, coordinate, element_coordinate) AS (
+  SELECT DISTINCT o.graph_name, o.coordinate, o.element_coordinate
+    FROM graphitron_occurrence_list_element le
+    JOIN graphitron_occurrence o ON o.graph_name = le.graph_name AND o.coordinate = le.coordinate
+    JOIN graphitron_occurrence_producer fp
+      ON fp.graph_name = o.graph_name AND fp.coordinate = o.field_coordinate
+     AND fp.kind IN ('SELECT', 'LOOKUP', 'COUNT')
+    JOIN graphitron_occurrence ao ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application k
+                      WHERE k.graph_name = ao.graph_name AND k.coordinate = ao.element_coordinate
+                        AND k.directive_name = 'lookupKey')
+)
+-- It carries @condition, whose value would be read through the list as one object.
+SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_CONDITION'
+  FROM element e
+ WHERE EXISTS (SELECT 1 FROM graphitron_directive_application c
+                WHERE c.graph_name = e.graph_name AND c.coordinate = e.element_coordinate
+                  AND c.directive_name = 'condition')
+UNION ALL
+-- It is a node id, whose decoded key a cell of plain values cannot hold.
+SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NODE_ID'
+  FROM element e
+ WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                WHERE n.graph_name = e.graph_name AND n.coordinate = e.coordinate)
+UNION ALL
+-- It is itself a list, and one cell holds one value.
+SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NOT_ONE_VALUE'
+  FROM element e
+ WHERE EXISTS (SELECT 1 FROM graphitron_field f
+                WHERE f.graph_name = e.graph_name AND f.coordinate = e.element_coordinate AND f.is_list)
+UNION ALL
+-- A @condition with a parameter filled from a field read per element of a list the condition is not
+-- itself read under: the list field's own, or the field's reaching through it. One call has no
+-- single value for it.
+SELECT DISTINCT c.graph_name, c.coordinate, 'LIST_CONDITION_BELOW_LIST'
+  FROM graphitron_occurrence_condition c
+  JOIN graphitron_occurrence_call_parameter p
+    ON p.graph_name = c.graph_name AND p.coordinate = c.coordinate AND p.call = c.call
+   AND p.fill = 'ARGUMENT'
+  JOIN graphitron_occurrence_list_element le
+    ON le.graph_name = p.graph_name AND le.coordinate = p.landing_coordinate
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_list_element own
+                    WHERE own.graph_name = c.graph_name AND own.coordinate = c.coordinate
+                      AND own.list_coordinate = le.list_coordinate)
+  JOIN graphitron_occurrence lo ON lo.graph_name = c.graph_name AND lo.coordinate = c.coordinate
+  JOIN graphitron_occurrence_producer fp
+    ON fp.graph_name = lo.graph_name AND fp.coordinate = lo.field_coordinate
+   AND fp.kind IN ('SELECT', 'LOOKUP', 'COUNT');
+COMMENT ON VIEW graphitron_occurrence_list_element_defect_rule IS 'One row the list element defect rule computes, in the shape graphitron_occurrence_list_element_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_occurrence_list_element_defect, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_list_element_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_occurrence_list_element_defect.code';
 
 CREATE VIEW graphitron_occurrence_condition_parameter_rule
   (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name, fill,
@@ -20520,6 +20551,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.', 'occurrence-depth-defects'),
   ('LIST_ELEMENT_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NODE_ID',
    'An input field of a list of input objects a filter compares as rows is a node id, whose decoded key one cell of a row of plain values cannot hold: move it out of the element type.', 'occurrence-depth-defects'),
+  ('LIST_CONDITION_BELOW_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_CONDITION_BELOW_LIST',
+   'A @condition binds a parameter to a field read once per element of a list of input objects, which one call has no single value for: bind the whole list instead.', 'occurrence-depth-defects'),
   ('LIST_ELEMENT_NOT_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NOT_ONE_VALUE',
    'An input field of a list of input objects a filter compares as rows is itself a list, and one cell of a row holds one value: declare one value, or move the field out of the element type.', 'occurrence-depth-defects'),
   ('MANY_KEYS_INTO_ONE', 'error', 'GRAPHITRON', 'GRAPHITRON_MANY_KEYS_INTO_ONE',
@@ -21528,7 +21561,7 @@ INSERT INTO meta_relation VALUES
    'For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_key_column under the defects it marked, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the code, so one statement says where a defect is and which key columns it names.'),
   ('graphitron_occurrence_list_element_defect', 'occurrence-list-element-defect', 'graphitron',
-   'An element field of a list of input objects a filter compares that cannot be one cell of the row its element is, at one occurrence: one row per input-field occurrence and rule it breaks there.',
+   'A list of input objects a filter compares as rows that cannot be compared so, at one occurrence: one row per occurrence and rule it breaks there, an element field that cannot be one cell of its row or a @condition taking a value read per element.',
    'For example Query.filmsByCells(cells.filmId:), a node id read per element of cells, draws a LIST_ELEMENT_NODE_ID row.',
    'The predicate the list element defects share, which list an occurrence is read through, whether its field filters and whether its argument is a lookup key, stated once at the occurrence and stored, so the defect rule groups its rows to the declaration over one table rather than repeating the joins per code. Written by occurrence-depth-defects before its defect rule, which reads it, and swept by its mark.'),
   ('graphitron_occurrence_list_element_defect_rule', 'occurrence-list-element-defect', 'graphitron',

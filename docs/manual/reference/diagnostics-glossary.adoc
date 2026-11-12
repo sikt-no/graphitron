@@ -165,9 +165,13 @@ routine is applied to:
 * `LIST_ELEMENT_NODE_ID`: `An input field of a list of input objects a filter compares as rows is a node id, whose decoded key one cell of a row of plain values cannot hold`.
 * `LIST_ELEMENT_CONDITION`: `An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object`.
 
+A fourth sits at a `@condition` rather than an element field:
+
+* `LIST_CONDITION_BELOW_LIST`: `A @condition binds a parameter to a field read once per element of a list of input objects, which one call has no single value for`. Its `argMapping` reaches below the list, whether the `@condition` is on the list field itself or on the field and reaching through it; bind the whole list instead.
+
 *Cause.* A filter field typed as a list of input objects matches rows equal to any one element, comparing the element's fields together as one row (`(c1, c2) IN ((..), (..))`). That reading holds only when every element field is one value bound to a column, so the build refuses an element field that is itself a list or a list of input objects, is a node id, or carries `@condition`; one that binds no column is `COLUMN_UNRESOLVED`, as anywhere else. Each defect sits at the element field, because the same input type is fine elsewhere (as a non-list nested input, or as a `@service` parameter), and one declaration read through two list filters is one defect. A `@lookupKey` list is the lookup's key rather than a filter, and none of this applies to it.
 
-The element fields' columns may all sit on the filtered table, or all on one table reached through the same `@reference` path, so the build also refuses an element field whose column is reached through a different `@reference` path than the first element field's ("its column is reached through a different @reference path than element field '<first>'"), or that mixes the filtered table's own columns with a path. A `@condition` on the list field itself whose `argMapping` reaches below the list is refused the same way, at the list field.
+The element fields' columns may all sit on the filtered table, or all on one table reached through the same `@reference` path, so the build also refuses an element field whose column is reached through a different `@reference` path than the first element field's ("its column is reached through a different @reference path than element field '<first>'"), or that mixes the filtered table's own columns with a path.
 
 *Next step.* Give every element field the same `@reference` path, or move the field out of the element type. To filter on a shape the row cannot express, put `@condition(override: true)` on the list field; the method receives the whole list and owns the predicate. xref:directives/field.adoc#list-of-input-filter[`@field` on a list-of-input filter] describes the semantics.
 

@@ -1,0 +1,53 @@
+# A @condition that binds a parameter to a field read once per element of a list of input objects
+# has no single value to hand the one call it makes: LIST_CONDITION_BELOW_LIST, at the @condition.
+# FilmIdListFilter.films carries its own @condition reaching into its elements' filmId, and
+# filmsReachingThrough's field-level @condition reaches through the same list. filmsByOne is the
+# near miss: its field-level @condition binds an input field read through no list.
+
+type Film @table(name: "film") { title: String }
+
+input FilmIdInput {
+    filmId: Int! @field(name: "film_id")
+}
+
+input FilmIdListFilter {
+    films: [FilmIdInput] @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmIdKeyEquals", argMapping: "filmId: films.filmId"})
+}
+
+input FilmIdThroughFilter {
+    films: [FilmIdInput]
+}
+
+input FilmOneFilter {
+    filmId: Int @field(name: "film_id")
+}
+
+type Query {
+    filmsByListCondition(filter: FilmIdListFilter): [Film!]!
+    filmsReachingThrough(filter: FilmIdThroughFilter): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmIdKeyEquals", argMapping: "filmId: filter.films.filmId"})
+    filmsByOne(filter: FilmOneFilter): [Film!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmIdKeyEquals", argMapping: "filmId: filter.filmId"}, override: true)
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                      coordinate
+  LIST_CONDITION_BELOW_LIST, FilmIdListFilter.films
+  LIST_CONDITION_BELOW_LIST, Query.filmsReachingThrough
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  coordinate
+  Query.filmsByOne
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_list_element_defect",
+    where: "code = 'LIST_CONDITION_BELOW_LIST'", rows: """
+  code,                      coordinate
+  LIST_CONDITION_BELOW_LIST, Query.filmsByListCondition(filter.films:)
+  LIST_CONDITION_BELOW_LIST, Query.filmsReachingThrough
+  """)

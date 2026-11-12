@@ -685,14 +685,15 @@ static method needs no holder.
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
     * **A list of input objects' element fields are refused by the store where they cannot be compared as rows** `open`.
-      `LIST_ELEMENT_CONDITION`, `LIST_ELEMENT_NODE_ID` and `LIST_ELEMENT_NOT_ONE_VALUE` are the store's,
-      at the element field's declaration, grouped from `graphitron_occurrence_list_element_defect`,
-      the rule each occurrence breaks. Left: an element field whose value no row cell takes, written by a stage after
+      `LIST_ELEMENT_CONDITION`, `LIST_ELEMENT_NODE_ID` and `LIST_ELEMENT_NOT_ONE_VALUE` are the store's
+      at the element field's declaration, and `LIST_CONDITION_BELOW_LIST` at a `@condition` binding
+      below a list, each grouped from `graphitron_occurrence_list_element_defect`, the rule each
+      occurrence breaks. Left: an element field whose value no row cell takes, written by a stage after
       `occurrence-values`, whose value binding it reads; element fields reaching their columns by
       different paths, one defect at the list field, skipped under an override, each element occurrence
-      and its path a row beneath it, so no field is blamed for coming second; and a list
-      field's own `@condition` binding a parameter below the list, a condition's code rather than a
-      `PARAMETER_` one, since a `@service` fill lifts through a list. Each is pinned by a `defects/`
+      and its path a row beneath it, so no field is blamed for coming second, a step being its
+      position, the table it reaches and the column pairs of `graphitron_join_path_step_column`
+      (principles review, 2026-11-12). Each is pinned by a `defects/`
       document with near misses, and the glossary's "An element field a list-of-input filter cannot
       compare" names it. The walk's cap of 22 element fields, an artefact of jOOQ's typed rows, is not
       carried into the store: it goes after the flip as a relaxed refusal of its own.
