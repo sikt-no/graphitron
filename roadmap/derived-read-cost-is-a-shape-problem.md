@@ -252,17 +252,18 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   does not compose, a `@service` or an index-backed connection, a `totalCount` or facets raises a
   defect rather than generating nothing. No connection producer today is one: every page is built
   by graphitron's own statements, so this lands with the first that is not.
-* **A type a statement lands on is stored** `open`. `graphitron_type_landing`, one row per type a
-  statement graphitron runs lands on, `via` `SELF` (bound by a resolved or written `@table`) or
-  `PARTICIPANT` (a union or interface with a bound member), and `graphitron_type_landing_table`, one
-  row per landing type and table it lands on through which type; a written `@table` that resolves
-  nowhere lands with no table row, its own defect. Written by a graphitron stage after the table
-  types and type members, marked and swept, a rule view beside each (Alf, 2026-11-12: stored; the
-  model is a proposal awaiting his reading). Its readers move one at a time with a row-for-row
-  agreement: `graphitron_producer_rule`'s `landing` and the reader rule's arm first, then the entry
-  defect arm and `graphitron_occurrence_producer_result_rule`, then the field scope's
-  `PARTICIPANT_TABLE`. F's "A polymorphic type's members are stored" migrates the same readers off
-  `graphql_poly_member`, so F is told before the first move.
+* **The participant askers read the occurrence's source tables** `open`. Five field-keyed rules
+  ask whether, or across which tables, a union or interface target is read per table-bound
+  participant: `graphitron_producer_rule`'s `landing`, the reader rule's polymorphic arm, the
+  `ORDERING_ACROSS_PARTICIPANTS` arm, `graphitron_field_scope_table`'s `PARTICIPANT_TABLE`, and
+  `graphitron_occurrence_producer_result_rule`'s polymorphic flag. Each joins
+  `graphitron_tabletype` (resolved) or the written `@table` with the type's members; no relation of
+  its own is owed, since that would restate stored facts at a grain that cannot hold a nested type
+  bound per occurrence (Alf, 2026-11-12). Which tables an occurrence's statement reads is
+  `graphitron_occurrence_source_table`; the askers move onto it as the field-keyed family
+  dissolves, "whether it runs anything" reading the written claim and "which tables" the resolved
+  binding. F's "A polymorphic type's members are stored" touches the same rules, so F is told
+  before either moves one.
 * **A connection's producer returns the connection, and its fields read it** `open`.
   A connection's producer returns an instance of a class graphitron generates for the connection
   type, holding the page and closures over how the result set was produced, and each field of the
@@ -318,15 +319,12 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     participant, which the polymorphic emitter answered with an empty page and no count, is
     refused as `FIELD_WITHOUT_FETCHER` wherever graphitron would fetch it (Alf, 2026-11-12): the
     reader rule no longer reads it as `NESTED` and the producer rule no longer splits it, and its
-    defensive branches stay for the one shape the store still lets through: an interface carrying
-    `@table` itself with no participant at all, which lands on its table and answers empty with no
-    count. Whether that is refused too is Alf's call. The page a tenant-routed batched fetcher answers
+    defensive branches are generator invariants; an interface's own `@table` does not count, so one
+    carrying it that no table-bound type implements is refused as well (Alf, 2026-11-12). The page a tenant-routed batched fetcher answers
     for a parent whose key cannot match counts 0 (Alf, 2026-11-12). `FIELD_WITHOUT_FETCHER` is
     stated in `diagnostics-glossary.adoc` under "Named structural errors" (Alf, 2026-11-12).
-    "A type a statement lands on" is spelled by `graphitron_producer_rule`'s `landing`, the reader
-    rule's polymorphic arm, an `graphitron_entry_defect_rule` arm and
-    `graphitron_occurrence_producer_result_rule`; it is stored (Alf, 2026-11-12), see "A type a
-    statement lands on is stored".
+    The askers of "read per table-bound participant" are listed in "The participant askers read the
+    occurrence's source tables".
     "A connection is recognised by the specification's shape" states the positions before the
     classes.
   * **Each connection type and edge type has a generated class** `blocked`, on "A connection is recognised by the specification's shape".

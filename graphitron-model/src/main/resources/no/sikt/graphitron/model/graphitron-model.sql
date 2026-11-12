@@ -10034,9 +10034,14 @@ bound (graph_name, type_name) AS (
   UNION
   SELECT graph_name, coordinate FROM graphitron_directive_application WHERE directive_name = 'table'
 ),
--- A type a statement lands on: bound itself, or a union or interface with a bound participant.
+-- A type a statement lands on: an object bound itself, or a union or interface with a bound
+-- participant. An interface's own @table does not land a statement: it is read per participant, so
+-- one with no bound participant has nothing to read.
 landing (graph_name, type_name) AS (
-  SELECT graph_name, type_name FROM bound
+  SELECT b.graph_name, b.type_name
+    FROM bound b
+    JOIN graphitron_type t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
+   WHERE t.kind NOT IN ('INTERFACE', 'UNION')
   UNION
   SELECT pm.graph_name, pm.container_name
     FROM graphql_poly_member pm
@@ -17481,17 +17486,11 @@ SELECT f.graph_name, f.type_name, f.field_name,
                       AND p.field_name = f.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim c
                     WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate)
-   -- A union or interface under a row is fetched per table-bound participant, so one that lands
-   -- nowhere, neither bound itself nor through a member, reads nothing off the row and nothing
-   -- fetches it: the field is left without a fetcher. Under an object its value is read off the
-   -- object. A type is bound with a table resolved or written, as graphitron_producer_rule's
-   -- landing spells it.
+   -- A union or interface under a row is fetched per table-bound participant, so one with none
+   -- reads nothing off the row and nothing fetches it: the field is left without a fetcher. Its own
+   -- @table does not count, as graphitron_producer_rule's landing says. Under an object its value
+   -- is read off the object. A participant is bound with a table resolved or written.
    AND NOT (r.shape = 'ROW' AND tt.kind IN ('INTERFACE', 'UNION')
-            AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
-                             WHERE b.graph_name = tt.graph_name AND b.type_name = tt.type_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application d
-                             WHERE d.graph_name = tt.graph_name AND d.coordinate = tt.type_name
-                               AND d.directive_name = 'table')
             AND NOT EXISTS (SELECT 1 FROM graphitron_type_member m
                               JOIN graphitron_tabletype b
                                 ON b.graph_name = m.graph_name AND b.type_name = m.member_type_name

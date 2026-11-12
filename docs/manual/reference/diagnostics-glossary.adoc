@@ -191,7 +191,7 @@ routine is applied to:
 *Cause.* Every field either runs something of its own (a query, a lookup, a write, a `@service`, a `@routine`) or reads its value from what its parent holds (a column of the parent's row, a member of the parent's object). A field doing neither is a field graphitron would leave unanswered, so the build stops. Two shapes reach it:
 
 * A field on a root type with nothing written on it whose return type lands on no table, for example a `Mutation` field with no `@mutation`, `@service` or `@routine`.
-* A field returning a union or interface none of whose implementers is xref:directives/table.adoc[`@table`]-bound, wherever graphitron would fetch it: at the root, or under a table-bound parent, as a list, a single value or a connection. Graphitron fetches such a field per table-bound participant, so with none there is nothing to fetch. Under a value a `@service` handed back, the field is read off that value instead, and is no defect.
+* A field returning a union or interface none of whose implementers is xref:directives/table.adoc[`@table`]-bound, wherever graphitron would fetch it: at the root, or under a table-bound parent, as a list, a single value or a connection. Graphitron fetches such a field per table-bound participant, so with none there is nothing to fetch; an interface's own `@table` does not count, so one carrying `@table` that no table-bound type implements is refused too. Under a value a `@service` handed back, the field is read off that value instead, and is no defect.
 
 *Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
 

@@ -19,6 +19,8 @@ type Film @table(name: "film") {
   "A child over the interface no table-bound type implements, as a list and as a connection."
   props: [Prop!]!
   pagedProps: [Prop!]! @asConnection
+  "A child over the interface carrying @table no type implements."
+  shelves: [Shelf!]!
 }
 
 type FilmDetails {
@@ -67,6 +69,9 @@ type Orphan { label: String }
 interface Prop { label: String }
 type PlainProp implements Prop { label: String }
 
+"An interface carrying @table no type implements: read per participant, so nothing to read."
+interface Shelf @table(name: "film") { title: String }
+
 type AddFilmPayload { film: Film }
 input FilmInput @table(name: "film") { title: String }
 
@@ -89,6 +94,8 @@ type Query {
   "Over the interface no table-bound type implements, as a connection and as a list."
   pagedProps: [Prop!]! @asConnection
   propList: [Prop!]!
+  "Over the interface carrying @table no type implements."
+  shelves: [Shelf!]!
 }
 
 type Mutation {
@@ -191,6 +198,8 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   Query.propList,   FIELD_WITHOUT_FETCHER
   Film.props,       FIELD_WITHOUT_FETCHER
   Film.pagedProps,  FIELD_WITHOUT_FETCHER
+  Query.shelves,    FIELD_WITHOUT_FETCHER
+  Film.shelves,     FIELD_WITHOUT_FETCHER
   """)
 
 extend schema @assertContains(relation: "graphitron_producer", rows: """

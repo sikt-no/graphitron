@@ -30,8 +30,7 @@ import java.util.List;
  * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}) bind a slot of one
  * shared {@code BatchCounts}, so a batch of N parents issues one grouped count rather than N. A
  * union or interface connection with no table-bound participant is refused before generation
- * ({@code FIELD_WITHOUT_FETCHER}), except over an interface carrying {@code @table} with no
- * participant at all, whose empty page binds no count and whose resolver returns {@code null}.
+ * ({@code FIELD_WITHOUT_FETCHER}), so every page a producer builds carries a count.
  *
  * <p>Generated as a source file rather than shipped as a library dependency so that consuming
  * projects have no runtime dependency on Graphitron itself.
@@ -93,8 +92,8 @@ public class ConnectionResultClassGenerator {
         // page query's own pair, which the facets resolver reads as its source.
         var tableField = FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build();
         var conditionField = FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build();
-        // The count slot: Scoped over a non-null (table, condition) pair, a BatchCounts slot, the
-        // empty page's zero, or null on the polymorphic empty-participants path.
+        // The count slot: Scoped over a non-null (table, condition) pair, a BatchCounts slot, or
+        // the empty page's zero.
         var totalCountRef = ClassName.get(outputPackage + ".util", CLASS_NAME, TOTAL_COUNT_CLASS_NAME);
         var scopedRef = ClassName.get(outputPackage + ".util", CLASS_NAME, SCOPED_CLASS_NAME);
         var totalCountField = FieldSpec.builder(totalCountRef, "totalCount", Modifier.PRIVATE, Modifier.FINAL).build();
