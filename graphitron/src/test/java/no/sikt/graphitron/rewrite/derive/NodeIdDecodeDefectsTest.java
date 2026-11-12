@@ -4,6 +4,8 @@ import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
@@ -11,9 +13,7 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.assertj.core.api.InstanceOfAssertFactories;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -61,8 +61,8 @@ class NodeIdDecodeDefectsTest {
         jooq = CatalogInput.of(ctx);
     }
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     // ===== The three verdicts =====
 
@@ -320,18 +320,16 @@ class NodeIdDecodeDefectsTest {
 
     /** Captures {@code sdl} against both corpora and runs the polymorphic sibling's detection. */
     private List<ValidationError> detectPolymorphic(String sdl) {
-        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, jooq,
-                TestSchemaHelper.testClasspath())) {
-            return NodeIdPolymorphicDecodeDefects.detect(store.dsl(), GRAPH).violations();
-        }
+        return FACTS.readInline(GRAPH, sdl, jooq, TestSchemaHelper.testClasspath(), graph ->
+            NodeIdPolymorphicDecodeDefects.detect(graph.handle().dsl(), graph.handle().graphName())
+                .violations());
     }
 
     /** Captures {@code sdl} against both corpora and runs the detection over what capture wrote. */
     private List<ValidationError> detect(String sdl) {
-        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, jooq,
-                TestSchemaHelper.testClasspath())) {
-            return NodeIdDecodeDefects.detect(store.dsl(), GRAPH).violations();
-        }
+        return FACTS.readInline(GRAPH, sdl, jooq, TestSchemaHelper.testClasspath(), graph ->
+            NodeIdDecodeDefects.detect(graph.handle().dsl(), graph.handle().graphName())
+                .violations());
     }
 
     /** The violations' messages, the surface an author actually meets. */

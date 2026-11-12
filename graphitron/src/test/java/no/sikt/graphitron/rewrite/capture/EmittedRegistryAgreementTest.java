@@ -6,12 +6,12 @@ import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaPrinter;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.DeclaredDirectives;
 import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -19,9 +19,8 @@ import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -104,6 +103,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class EmittedRegistryAgreementTest {
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     /**
      * The corpus documents whose two printings differ today. Struck off as each cause is settled; a
      * document that starts or stops disagreeing fails this test either way.
@@ -124,7 +126,7 @@ class EmittedRegistryAgreementTest {
 
     @Test
     @DisplayName("the store-derived schema and the incumbent agree on every corpus document but the recorded ones")
-    void theProducersAgreeExceptWhereRecorded(@TempDir Path tmp) {
+    void theProducersAgreeExceptWhereRecorded() {
         var ctx = TestConfiguration.testContext();
         var jooq = CatalogInput.of(ctx);
         var classpath = TestSchemaHelper.testClasspath();
@@ -155,20 +157,17 @@ class EmittedRegistryAgreementTest {
                 continue;
             }
 
-            GraphQLSchema derived;
-            try (var store = CapturedStore.ofCatalogWith(tmp.resolve(document.id()),
-                    CapturedStore.GRAPH, sdl, jooq, classpath)) {
-                var assembly = SchemaAssembly.of(EmittedRegistry.derive(store.registry(),
-                    new StoreHandle(store.dsl(), CapturedStore.GRAPH)).registry());
-                if (!(assembly instanceof SchemaAssembly.Assembled assembled)) {
-                    var rejected = (SchemaAssembly.Rejected) assembly;
-                    unusable.add(document.id() + ": the derived registry did not assemble: "
-                        + rejected.errors().stream().limit(3)
-                            .map(e -> e.errorClass() + " " + e.message()).toList());
-                    continue;
-                }
-                derived = assembled.schema();
+            var assembly = FACTS.readInline(CapturedStore.GRAPH, sdl, jooq, classpath,
+                graph -> SchemaAssembly.of(EmittedRegistry.derive(graph.registry(), graph.handle())
+                    .registry()));
+            if (!(assembly instanceof SchemaAssembly.Assembled assembled)) {
+                var rejected = (SchemaAssembly.Rejected) assembly;
+                unusable.add(document.id() + ": the derived registry did not assemble: "
+                    + rejected.errors().stream().limit(3)
+                        .map(e -> e.errorClass() + " " + e.message()).toList());
+                continue;
             }
+            GraphQLSchema derived = assembled.schema();
 
             String left = published(model).print(incumbent);
             String right = printer.print(derived);

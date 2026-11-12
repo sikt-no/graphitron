@@ -111,4 +111,56 @@ class FactGraphsTest {
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("scenarios/field-key-row");
     }
+
+    private static final String INLINE_SDL = """
+        type Query { inlineFilm: InlineFilm }
+        type InlineFilm { title: String }
+        """;
+
+    @Test
+    @DisplayName("an inline schema is captured under a name of its own and read back scoped to it")
+    void inlineSchemasAreReadScoped() {
+        var catalog = CatalogInput.of(TestRunContext.of());
+        record Read(String graph, int fields, boolean typed) {}
+        var first = FACTS.readInline("fixture", INLINE_SDL, catalog, graph -> new Read(
+            graph.handle().graphName(),
+            graph.handle().dsl().fetchCount(GRAPHITRON_FIELD,
+                GRAPHITRON_FIELD.GRAPH_NAME.eq(graph.handle().graphName())),
+            graph.registry().types().containsKey("InlineFilm")));
+        var second = FACTS.readInline("fixture", INLINE_SDL, catalog,
+            graph -> graph.handle().graphName());
+
+        assertThat(first.fields()).as("the inline graph's fields").isPositive();
+        assertThat(first.typed()).as("the registry of the file the SDL was written to").isTrue();
+        assertThat(second).as("each inline schema gets a graph of its own").isNotEqualTo(first.graph());
+    }
+
+    @Test
+    @DisplayName("an inline store holds the ballast graph, so an unscoped read meets rows not its own")
+    void inlineStoresHoldTheBallast() {
+        var graphs = FACTS.readInline("fixture", INLINE_SDL, null, graph -> graph.handle().dsl()
+            .selectDistinct(GRAPHITRON_FIELD.GRAPH_NAME).from(GRAPHITRON_FIELD)
+            .fetch(GRAPHITRON_FIELD.GRAPH_NAME));
+        assertThat(graphs).contains(FactGraphs.BALLAST).hasSizeGreaterThan(1);
+    }
+
+    @Test
+    @DisplayName("a write inside an inline read is refused by the database")
+    void inlineWritesAreRefused() {
+        assertThatThrownBy(() -> FACTS.readInline("fixture", INLINE_SDL, null,
+                graph -> graph.handle().dsl().deleteFrom(GRAPHITRON_FIELD).execute()))
+            .isInstanceOf(DataAccessException.class);
+    }
+
+    @Test
+    @DisplayName("one thread's inline schemas over one catalog and classpath share one store")
+    void inlineSchemasShareTheThreadsStore() {
+        long before = FactGraphs.boots();
+        FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
+        long afterFirst = FactGraphs.boots();
+        FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
+        FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
+        assertThat(afterFirst - before).as("at most the first capture boots").isLessThanOrEqualTo(1);
+        assertThat(FactGraphs.boots()).as("later captures boot nothing").isEqualTo(afterFirst);
+    }
 }

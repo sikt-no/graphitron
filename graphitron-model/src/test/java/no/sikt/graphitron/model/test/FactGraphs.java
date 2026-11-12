@@ -8,6 +8,9 @@ import no.sikt.graphitron.model.boot.StoreUse;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.CapturedSchema;
+import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.extension.AfterAllCallback;
 import org.junit.jupiter.api.extension.BeforeAllCallback;
@@ -76,6 +79,18 @@ import java.util.stream.Stream;
  * {@link CapturedStore#captureFolder}. A test that only counts what a read costs reads the
  * population through a handle whose configuration counts the statements it executes.
  *
+ * <p><b>Inline schemas.</b> A test whose schema is still inline SDL, and that reads only its own
+ * graph, hands the SDL to {@link Reader#readInline} rather than capturing it into a store of its
+ * own. The graph goes in under a name of its own, into a store kept for the asking thread, the
+ * catalog and the classpath: per thread, because a store has one writing connection and the test
+ * threads would otherwise queue on it, and per catalog and classpath for the reason documents are
+ * sharded by catalog. Such a store is never cleared, which is the point: a capture into a store
+ * that already holds graphs and has kept its statement cache costs a fraction of one into an empty
+ * store. Each holds a {@linkplain #BALLAST ballast graph} from its first capture, so a read that
+ * forgets to filter on its graph meets rows that are not its own on every run, whatever ran before
+ * it. The system property {@value #INLINE_PROPERTY} set to {@code false} captures each inline schema
+ * into a fresh store instead, for a measurement.
+ *
  * <p><b>Lifetime.</b> The population lives in the root {@link ExtensionContext}'s store, so it is
  * one per run, and is closed with it.
  */
@@ -83,6 +98,24 @@ public final class FactGraphs implements AutoCloseable {
 
     /** How many stores each catalog's graphs are spread over. */
     static final int SHARDS_PER_CATALOG = 4;
+
+    /** The system property that, set to {@code false}, captures each inline schema into a fresh store. */
+    static final String INLINE_PROPERTY = "graphitron.inlineShards";
+
+    /**
+     * The graph every inline store holds before its first test's, so an unscoped read sees rows of
+     * another graph on every run rather than only when another test happened to capture first.
+     */
+    static final String BALLAST = "ballast";
+
+    private static final String BALLAST_SDL = """
+        type Query { ballast: Ballast ballasts: [Ballast] }
+        type Ballast { ballastField: String ballastKind: BallastKind }
+        enum BallastKind { BALLAST }
+        input BallastInput { ballastField: String }
+        """;
+
+    private static final AtomicLong INLINE = new AtomicLong();
 
     /**
      * How many distinct statement texts each store's query statistics keep. H2 drops the least
@@ -104,8 +137,11 @@ public final class FactGraphs implements AutoCloseable {
     private final List<ClasspathEntry> classpath;
     private final Path directory;
     private final Map<ShardKey, Shard> shards = new ConcurrentHashMap<>();
+    private final Map<InlineKey, Shard> inline = new ConcurrentHashMap<>();
 
     private record ShardKey(Optional<String> catalog, int index) {}
+
+    private record InlineKey(long thread, Optional<String> catalog, List<ClasspathEntry> classpath) {}
 
     private FactGraphs() {
         var plain = new LinkedHashMap<String, CorpusDocuments.Document>();
@@ -191,6 +227,19 @@ public final class FactGraphs implements AutoCloseable {
     @Override
     public void close() {
         shards.values().forEach(Shard::close);
+        inline.values().forEach(Shard::close);
+    }
+
+    /** The inline store for this thread, {@code catalog} and {@code classpath}. */
+    private Shard inlineShardOf(CatalogInput catalog, List<ClasspathEntry> classpath) {
+        var key = new InlineKey(Thread.currentThread().threadId(),
+            Optional.ofNullable(catalog).map(CatalogInput::jooqPackage), List.copyOf(classpath));
+        return inline.computeIfAbsent(key, ignored -> new Shard());
+    }
+
+    /** Where an inline graph's file is written: kept for the run, since its store outlives the test. */
+    private Path inlineDirectory(String graphName) {
+        return directory.resolve("inline").resolve(graphName);
     }
 
     /**
@@ -273,6 +322,28 @@ public final class FactGraphs implements AutoCloseable {
             return schema;
         }
 
+        /**
+         * Captures {@code sdl} under {@code graphName}, booting the store and capturing the ballast
+         * first if this is its first graph. Every inline graph has a name of its own, so nothing is
+         * captured twice.
+         */
+        synchronized CapturedSchema ensureInline(String graphName, Path folder, String stem,
+                                                 String sdl, CatalogInput catalog,
+                                                 List<ClasspathEntry> classpath, Path ballastFolder) {
+            if (store == null) {
+                store = FactStores.inMemory(StoreUse.LONG_LIVED);
+                BOOTS.incrementAndGet();
+                CapturedStore.captureInline(store.dsl(), ballastFolder, BALLAST, BALLAST, BALLAST_SDL,
+                    catalog, classpath);
+                graphs.put(BALLAST, null);
+            }
+            var schema = CapturedStore.captureInline(store.dsl(), folder, stem, graphName, sdl,
+                catalog, classpath);
+            graphs.put(graphName, schema);
+            captures.merge(graphName, 1, Integer::sum);
+            return schema;
+        }
+
         synchronized Map<String, Verification> verifications() {
             return new LinkedHashMap<>(verifications);
         }
@@ -302,6 +373,14 @@ public final class FactGraphs implements AutoCloseable {
      * store and which are values a read may keep.
      */
     public record FactGraph(StoreHandle handle, CapturedSchema schema) {}
+
+    /**
+     * An inline schema's graph as a read sees it: the handle scoped to the graph, valid only inside
+     * the read that handed it out, what the capture built, and the registry of the one file the SDL
+     * was written to, which a test comparing the written schema with a derived one reads.
+     */
+    public record InlineGraph(StoreHandle handle, CapturedSchema schema,
+                              TypeDefinitionRegistry registry) {}
 
     /**
      * A class's handle on the population, registered as an extension so the readers it mints close
@@ -339,6 +418,46 @@ public final class FactGraphs implements AutoCloseable {
             var shard = population.shardOf(path, population.documents.get(path));
             return answer(readerOf(shard).read(dsl -> body.apply(
                 new FactGraph(new StoreHandle(dsl, path), schema))));
+        }
+
+        /**
+         * Captures {@code sdl} into this thread's inline store for {@code catalog} and
+         * {@code classpath}, under a graph name of its own, and runs {@code body} over it in one read
+         * transaction. The schema file is named {@code stem}{@code .graphqls}. A null
+         * {@code catalog} is a run that declared no catalog.
+         */
+        public <T> T readInline(String stem, String sdl, CatalogInput catalog,
+                                List<ClasspathEntry> classpath, Function<InlineGraph, T> body) {
+            var population = population();
+            var graphName = "inline-" + INLINE.incrementAndGet();
+            var folder = population.inlineDirectory(graphName);
+            if ("false".equals(System.getProperty(INLINE_PROPERTY))) {
+                try (var store = FactStores.inMemory(StoreUse.ONE_CAPTURE)) {
+                    var schema = CapturedStore.captureInline(store.dsl(), folder, stem, graphName, sdl,
+                        catalog, classpath);
+                    var registry = registryOf(folder, stem);
+                    try (var reader = store.reader(new ReadBudget.Unbounded())) {
+                        return answer(reader.read(dsl -> body.apply(
+                            new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
+                    }
+                }
+            }
+            var shard = population.inlineShardOf(catalog, classpath);
+            var schema = shard.ensureInline(graphName, folder, stem, sdl, catalog, classpath,
+                population.inlineDirectory(BALLAST + "-" + INLINE.incrementAndGet()));
+            var registry = registryOf(folder, stem);
+            return answer(readerOf(shard).read(dsl -> body.apply(
+                new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
+        }
+
+        /** {@link #readInline(String, String, CatalogInput, List, Function)} with no classpath. */
+        public <T> T readInline(String stem, String sdl, CatalogInput catalog,
+                                Function<InlineGraph, T> body) {
+            return readInline(stem, sdl, catalog, List.of(), body);
+        }
+
+        private static TypeDefinitionRegistry registryOf(Path folder, String stem) {
+            return SchemaLoader.load(List.of(SchemaSource.file(CapturedStore.fixtureFile(folder, stem))));
         }
 
         /** Captures every graph in {@code paths} not yet captured, in parallel across stores. */

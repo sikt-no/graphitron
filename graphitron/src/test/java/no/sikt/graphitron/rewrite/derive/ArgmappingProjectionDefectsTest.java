@@ -3,13 +3,13 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
@@ -40,8 +40,8 @@ class ArgmappingProjectionDefectsTest {
     private static final String GRAPH = CapturedStore.GRAPH;
     private static final String SERVICE_STUB = "no.sikt.graphitron.rewrite.TestServiceStub";
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     // ===== The bare form, which is what used to ship base64 =====
 
@@ -388,9 +388,9 @@ class ArgmappingProjectionDefectsTest {
      * store with none is a state this rule never meets in production.
      */
     private List<ValidationError> detect(String sdl) {
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
-            return ArgmappingProjectionDefects.detect(store.dsl(), GRAPH).violations();
-        }
+        return FACTS.readInline(GRAPH, sdl, jooq(), graph ->
+            ArgmappingProjectionDefects.detect(graph.handle().dsl(), graph.handle().graphName())
+                .violations());
     }
 
     private static CatalogInput jooq() {

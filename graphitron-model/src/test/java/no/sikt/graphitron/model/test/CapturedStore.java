@@ -687,6 +687,19 @@ public final class CapturedStore implements AutoCloseable {
     }
 
     /**
+     * {@code sdl} written into {@code directory} as {@code stem}'s file and captured into the store
+     * {@code dsl} writes under {@code graphName}: how {@link FactGraphs} takes a test's inline schema
+     * into a store that holds other graphs. A null {@code jooq} is a run that declared no catalog.
+     */
+    public static CapturedSchema captureInline(DSLContext dsl, Path directory, String stem,
+                                               String graphName, String sdl, CatalogInput jooq,
+                                               List<ClasspathEntry> classpath) {
+        Path file = write(directory, stem, sdl);
+        return captureFiles(dsl, List.of(file), directory, graphName, jooq, false, classpath,
+            LocalDateTime.now(), SubjectConfig.none());
+    }
+
+    /**
      * The corpus the pass reads, stated as the configuration a run would have had.
      *
      * <p>A merged registry used to be the whole of what a capture needed, and a pass given one took
