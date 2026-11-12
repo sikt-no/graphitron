@@ -805,6 +805,8 @@ type Query {
     # A @nodeId filter naming a federation stub: StudyLevel's table carries catalog node metadata,
     # and the id decodes against it. See the `study_level` fixtures below.
     levelIntervals(filter: LevelIntervalFilter): [LevelInterval!]! @defaultOrder(primaryKey: true)
+    # A federation stub's own id is its node id, encoded from its key like any node's.
+    studyLevels: [StudyLevel!]! @defaultOrder(primaryKey: true)
     # Junction chains: the parent reaches the node type through a table that pairs them, so the
     # first hop is traversed against its foreign key's direction and no parent column holds the
     # node's key. Nothing in the chain renames a column and the terminal hop arrives on the node
@@ -3391,9 +3393,10 @@ input XlatChildFilter {
 # Paired with `levelIntervals`, `updateLevelInterval` and the `study_level` tables in `init.sql`.
 # StudyLevel is a federation stub, an entity another subgraph owns: @node(resolvable: false) and no
 # `implements Node`, over a table whose catalog metadata publishes type id StudyLevel and key `code`.
-# No field returns it: the decode helper a @nodeId leaf names is emitted because a leaf names it.
+# It carries its id like any node, encoded from that key; `studyLevels` returns it.
 
 type StudyLevel @table(name: "study_level") @node(resolvable: false) {
+    id: ID!
     code: String! @field(name: "code")
     name: String!
 }

@@ -1558,13 +1558,8 @@ class TypeBuilder {
             return new TableType(name, location, tableRef);
         }
 
-        // @node declared — the type must implement the Relay Node interface (id: ID!).
-        // `implements Node` is a schema-level contract published to clients; we cannot promote
-        // a type to NodeType without it.
-        if (!NodeDeclaration.implementsNode(objType)) {
-            return new UnclassifiedType(name, location, Rejection.structural(
-                "@node requires the type to implement the Relay Node interface — add 'implements Node' to the type declaration"));
-        }
+        // A @node without the Relay Node interface is NODE_WITHOUT_NODE_INTERFACE, which the store
+        // states and which stops a graph before this runs.
 
         // Resolve SDL-declared values.
         String sdlTypeId = argString(objType, DIR_NODE, ARG_TYPE_ID).orElse(null);

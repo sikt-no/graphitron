@@ -104,6 +104,32 @@ class TableOnlyNodeIdLeafExecutionTest {
     }
 
     @Test
+    void aStubsOwnIdIsItsKeyEncodedAsTheStubsNodeId() {
+        Map<String, Object> data = execute("{ studyLevels { id code } }");
+
+        assertThat((List<Map<String, Object>>) data.get("studyLevels"))
+            .extracting(r -> r.get("id"), r -> r.get("code"))
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(level("BA"), "BA"),
+                org.assertj.core.groups.Tuple.tuple(level("MA"), "MA"),
+                org.assertj.core.groups.Tuple.tuple(level("PHD"), "PHD"));
+    }
+
+    @Test
+    void aStubsOwnIdDecodesWhereAnIdNamingTheStubIsTaken() {
+        Map<String, Object> levels = execute("{ studyLevels { id code } }");
+        var ba = ((List<Map<String, Object>>) levels.get("studyLevels")).getFirst().get("id");
+
+        Map<String, Object> data = execute("""
+            { levelIntervals(filter: {fromLevelIds: ["%s"]}) { intervalId } }
+            """.formatted(ba));
+
+        assertThat((List<Map<String, Object>>) data.get("levelIntervals"))
+            .extracting(r -> r.get("intervalId"))
+            .containsExactly(1, 2);
+    }
+
+    @Test
     void filter_returnsTheIntervalsStartingAtTheGivenLevels() {
         Map<String, Object> data = execute("""
             { levelIntervals(filter: {fromLevelIds: ["%s"]}) { intervalId } }

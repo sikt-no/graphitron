@@ -181,17 +181,19 @@ A subgraph often refers to an entity another subgraph owns, by an id it receives
 [source,graphql]
 ----
 type StudyLevel @table(name: "study_level") @node(resolvable: false) {
+    id: ID!
     code: String!
 }
 ----
 
-A stub is a node for its id: its `typeId` and key columns resolve exactly as a node's do, from `@node`, else from the table class's published metadata, else from the type's name and primary key, and its `typeId` counts towards the uniqueness rule below. It is not a node this subgraph serves: it implements no `Node` interface, `Query.node` and `Query.nodes` do not dispatch it, and a federated graph gets no `@key(fields: "id")` synthesised for it. The owning subgraph does those.
+A stub is a node for its id, and declares it like any node, its own `id` carrying the encoded id: its `typeId` and key columns resolve exactly as a node's do, from `@node`, else from the table class's published metadata, else from the type's name and primary key, and its `typeId` counts towards the uniqueness rule below. It is not a node this subgraph serves: it implements no `Node` interface, `Query.node` and `Query.nodes` do not dispatch it, and a federated graph gets no `@key(fields: "id")` synthesised for it. The owning subgraph does those.
 
-The build refuses a stub that implements `Node`, since the interface promises the fetch the stub withholds, and a xref:nodeId.adoc[`@nodeId(typeName:)`] naming a `@table` type over a table that publishes node metadata without declaring it a stub.
+The build refuses a stub that declares no `id` field, and a stub that implements `Node`, since the interface promises the fetch the stub withholds, and a xref:nodeId.adoc[`@nodeId(typeName:)`] naming a `@table` type over a table that publishes node metadata without declaring it a stub.
 
 == Constraints
 
 * The decorated type must also carry xref:table.adoc[`@table`]; the bound table supplies the columns to embed.
+* The type must declare an `id` field, a stub included; a `@node` type declaring none is refused as `NODE_WITHOUT_ID_FIELD`.
 * The type must implement the `Node` interface (`type X implements Node ...`). Without the interface, `Query.node(id:)` cannot return the type, and `@node` alone is rejected. A stub, `@node(resolvable: false)`, is the reverse: it must not implement `Node`; see <<federation-stubs>>.
 * `@node` itself is *optional* when the bound jOOQ class publishes node metadata. `implements Node @table(name: "x")` is then a complete node declaration and takes both values from the catalog; see <<Inferring the identity parameters>>. Write `@node` when the generator has published nothing, or to override either value.
 * The node's own `id: ID!` field does not need xref:nodeId.adoc[`@nodeId`]. The `id` field satisfying the `Node` interface on a node type is a node ID by construction. Elsewhere an `ID` slot needs the directive, except an input field or argument named for the target's own `id`, which reads as that node's ID; see the constraints of xref:nodeId.adoc[`@nodeId`]. The one exception is a bound table that also has a column named `id`: there the field is ambiguous and the build fails until you write `@nodeId` or `@field`; see <<When the table has its own `id` column>>.

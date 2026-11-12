@@ -40,12 +40,11 @@ import static no.sikt.graphitron.model.grammar.DirectiveArgs.argString;
  * its own probe. Sharing those helpers is what keeps the two from drifting on the inference path,
  * where they agree by construction.
  *
- * <p>They deliberately part on one shape. {@code @node} without {@code implements Node} reads as a
- * node here, because this is a declaration-level question, while the classifier rejects the type:
- * the Relay interface requirement is the classifier's to enforce. The consequence is contained,
- * since such a type fails the build on that rejection whether or not it was seeded here or given a
- * synthesised federation key. But widening this predicate does not on its own widen what classifies
- * as a node, nor the reverse; a change to the rule belongs in both places.
+ * <p>{@code @node} without {@code implements Node} reads as a node here, because this is a
+ * declaration-level question. The Relay interface requirement is the store's to enforce, as
+ * {@code NODE_WITHOUT_NODE_INTERFACE}, and a graph it refuses is never classified, so neither this
+ * predicate nor the classifier has to. But widening this predicate does not on its own widen what
+ * classifies as a node, nor the reverse; a change to the rule belongs in both places.
  *
  * <p>A stub, {@code @node(resolvable: false)}, is no node here: every consumer asks whether this
  * subgraph fetches the type, and a stub is another subgraph's to fetch. It classifies as the

@@ -161,17 +161,6 @@ class NodeIdPipelineTest {
                     .containsExactly("id_1", "id_2");
             }),
 
-        NODE_WITHOUT_IMPLEMENTS_NODE(
-            "`@node` on a type that does not `implements Node` → UnclassifiedType (schema contract violation)",
-            """
-            type Foo @table(name: "bar") @node { name: String }
-            type Query { foo: Foo }
-            """,
-            schema -> {
-                var t = (GraphitronType.UnclassifiedType) schema.type("Foo");
-                assertThat(t.reason()).contains("implements Node");
-            }),
-
         NO_METADATA_NO_NODE(
             "`@table` on a table without metadata → TableType (no synthesis)",
             """

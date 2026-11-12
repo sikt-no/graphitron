@@ -7437,7 +7437,7 @@ COMMENT ON COLUMN graphitron_minted_key.ordinal IS 'the key''s place among the t
 -- already spells id, federation needing the entity declaration in the emitted SDL and a
 -- node carrying a globally unique id by definition. A node is graphitron_node's, explicit or inferred
 -- from the table's node metadata alike, and a graph is federated however it opted in. A stub,
--- @node(resolvable: false), is another subgraph's to resolve and has no id field to key on. The key
+-- @node(resolvable: false), is another subgraph's to resolve, and that subgraph publishes its key. The key
 -- comes after every key the author wrote. Decided from the transcription, the node relation and the
 -- link, all upstream of the emitted population; the application sets join the element themselves.
 CREATE VIEW graphitron_minted_key_rule
@@ -15093,6 +15093,24 @@ SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
                 WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
                   AND i.interface_name = 'Node')
 UNION ALL
+-- A @node on a type that declares no id field. A node's id is its contract, a stub's included, so
+-- a node without one has nothing to carry it. A type implementing Node is held to the field by the
+-- interface already, its absence a schema problem, so only a type without the interface draws this:
+-- a stub, or a type refused as NODE_WITHOUT_NODE_INTERFACE beside it. Reported at the @node, on the
+-- terms above.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_ID_FIELD', CAST(NULL AS VARCHAR)
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
+                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
+                      AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphql_field f
+                    WHERE f.graph_name = n.graph_name AND f.type_name = n.coordinate
+                      AND f.field_name = 'id')
+UNION ALL
 -- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
 -- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
 -- root operation type is a root before it is anything else. A type that also lacks the interface
@@ -19724,6 +19742,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node: add implements Node, or write @node(resolvable: false) where another subgraph owns the entity.', 'entry-defects'),
   ('NODE_STUB_WITH_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_STUB_WITH_NODE_INTERFACE',
    'A type carries @node(resolvable: false) and implements the Relay Node interface, which promises that Query.node fetches it by its id, where a stub is a node this subgraph does not fetch: drop the interface, or the resolvable: false.', 'entry-defects'),
+  ('NODE_WITHOUT_ID_FIELD', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_ID_FIELD',
+   'A type carries @node and declares no id field. A node''s id is its contract, a federation stub''s included, so a node without one has nothing to carry it: declare id: ID!.', 'entry-defects'),
   ('NODE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_TABLE',
    'A type carries @node and no @table. A node is a row of a table, its id encoding that row''s key, so a type bound to no table has nothing to be a node of.', 'entry-defects'),
   ('NODE_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_KEY_COLUMN_UNRESOLVED',

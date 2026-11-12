@@ -635,29 +635,6 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
-    void declaredNodeThatDidNotClassify_rejectsPointingAtItsOwnError() {
-        // @node without implements Node: the type carries @node but is not a node type, so there
-        // is no decode helper to install, and adding @node is not the remedy.
-        String sdl = """
-            type Qux @table(name: "qux") @node { name: String }
-            type Query {
-                quxesByIds(ids: [ID!]! @nodeId(typeName: "Qux")): [Qux!]!
-            }
-            """;
-        var bctx = buildBuildContext(sdl);
-        var arg = ((GraphQLObjectType) bctx.schema.getType("Query"))
-            .getFieldDefinition("quxesByIds").getArgument("ids");
-
-        var resolved = bctx.nodeIdLeafResolver().resolve(arg, "ids", bctx.resolveTable("qux").orElseThrow(),
-            /*participant=*/null, /*authorOwnedPredicate=*/false);
-
-        assertThat(resolved).isInstanceOfSatisfying(NodeIdLeafResolver.Resolved.Rejected.class,
-            rejected -> assertThat(rejected.message())
-                .contains("'Qux' carries @node but did not classify as a node type")
-                .doesNotContain("Annotate"));
-    }
-
-    @Test
     void targetKeys_answerForANodeAndAStubAndRefuseTheRest() {
         // Bar's table publishes node metadata, but without @node it is no node: the store refuses
         // naming it as NODE_ID_TYPE_NAME_UNDECLARED_STUB, and the walk agrees.
@@ -665,7 +642,6 @@ class NodeIdLeafResolverTest {
             type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Bar @table(name: "bar") { name: String }
             type BarStub @table(name: "bar") @node(resolvable: false) { name: String }
-            type Qux @table(name: "qux") @node { name: String }
             type Query { x: String }
             """;
         var bctx = buildBuildContext(sdl);
@@ -681,7 +657,6 @@ class NodeIdLeafResolverTest {
                 assertThat(stub.keyColumns()).extracting(c -> c.sqlName()).containsExactly("id_1", "id_2");
             });
         assertThat(targetKeys(bctx, "Bar", "bar")).isInstanceOf(BuildContext.TargetKeys.Rejected.class);
-        assertThat(targetKeys(bctx, "Qux", "qux")).isInstanceOf(BuildContext.TargetKeys.Rejected.class);
     }
 
     private static BuildContext.TargetKeys targetKeys(BuildContext bctx, String typeName, String table) {

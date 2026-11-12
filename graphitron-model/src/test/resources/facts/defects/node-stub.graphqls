@@ -1,15 +1,19 @@
 # A federation stub, @node(resolvable: false): a node for its id that this subgraph does not fetch by
 # it. Its id resolves on the node tiers and binds like any node's, and it implements no Node. Writing
 # the interface on one is a defect, and so is naming a type of the stub's shape that leaves the
-# directive out. study_level's class publishes type id StudyLevel and key code.
+# directive out. A stub has an id field like any node, and one declaring none is a defect too.
+# study_level's class publishes type id StudyLevel and key code.
 
 interface Node { id: ID! }
 
 # A stub answering to the id its table's class publishes.
-type Level @table(name: "study_level") @node(resolvable: false) { code: String }
+type Level @table(name: "study_level") @node(resolvable: false) { id: ID! code: String }
 
 # A stub pinning its own type id.
-type PinnedLevel @table(name: "study_level") @node(typeId: "LV", resolvable: false) { code: String }
+type PinnedLevel @table(name: "study_level") @node(typeId: "LV", resolvable: false) { id: ID! code: String }
+
+# A stub declaring no id field.
+type IdlessLevel @table(name: "study_level") @node(resolvable: false) { code: String }
 
 # A stub that implements Node, which promises Query.node fetches it.
 type ClaimingLevel implements Node @table(name: "study_level") @node(typeId: "CL", resolvable: false) {
@@ -44,24 +48,28 @@ extend schema @expectEquals(relation: "graphitron_node", rows: """
   type_name,     type_id,    type_id_origin, resolvable
   ClaimingLevel, CL,         SDL_DECLARED,   FALSE
   Film,          Film,       TYPE_NAME,      TRUE
+  IdlessLevel,   StudyLevel, JOOQ_METADATA,  FALSE
   Level,         StudyLevel, JOOQ_METADATA,  FALSE
   PinnedLevel,   LV,         SDL_DECLARED,   FALSE
   """)
 
 # Level carries no interface and draws nothing for it, ClaimingLevel carries it and draws the stub's
-# own defect instead, BareLevel's name is the undeclared stub, and Level's binds clean.
+# own defect instead, BareLevel's name is the undeclared stub, and Level's binds clean. IdlessLevel
+# declares no id, where Level and PinnedLevel declare one and draw nothing.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_WITHOUT_NODE_INTERFACE', 'NODE_STUB_WITH_NODE_INTERFACE',
            'NODE_ID_TYPE_NAME_NOT_NODE', 'NODE_ID_TYPE_NAME_UNDECLARED_STUB',
-           'NODE_ID_LANDS_ON_TABLE', 'NODE_ID_LANDING_TYPE_DISAGREES')
+           'NODE_ID_LANDS_ON_TABLE', 'NODE_ID_LANDING_TYPE_DISAGREES', 'NODE_WITHOUT_ID_FIELD')
   """, rows: """
   coordinate,             code,                              detail
   ClaimingLevel,          NODE_STUB_WITH_NODE_INTERFACE,
+  IdlessLevel,            NODE_WITHOUT_ID_FIELD,
   IntervalFilter.toLevel, NODE_ID_TYPE_NAME_UNDECLARED_STUB, BareLevel
   """)
 
-# The stub's id binds against its key like any node's.
+# The stub's id binds against its key like any node's, its own id field and an id naming it alike.
 extend schema @assertContains(relation: "graphitron_occurrence_node_id", rows: """
   coordinate,                        node_type_name, table_name,  column_name
+  Level.id,                          Level,          study_level, code
   Query.intervals(where.fromLevel:), Level,          study_level, code
   """)

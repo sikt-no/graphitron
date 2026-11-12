@@ -15,8 +15,8 @@ type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeI
 
 type Customer implements Node @table(name: "customer") @node { id: ID! @nodeId }
 
-# A stub publishes no id: the subgraph owning the entity does.
-type Level @table(name: "study_level") @node(resolvable: false) { code: String }
+# A stub publishes no type id: the subgraph owning the entity does. It carries its id all the same.
+type Level @table(name: "study_level") @node(resolvable: false) { id: ID! code: String }
 
 type Query {
   level: Level
