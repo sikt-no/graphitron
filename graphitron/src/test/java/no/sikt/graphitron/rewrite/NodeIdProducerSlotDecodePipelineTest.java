@@ -36,8 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>What the store still owns is unchanged and not re-asserted here: whether the key column's type
  * and the parameter's agree, and whether the key's arity fits a slot holding one value, both being
- * facts the walk cannot read before capture. Those live in
- * {@link no.sikt.graphitron.rewrite.derive.NodeIdDecodeDefectsTest}.
+ * facts the walk cannot read before capture. Those live in the
+ * {@code node-id-decode-defect-slot-verdicts} fact document under graphitron-model's
+ * {@code src/test/resources/facts}.
  */
 @PipelineTier
 class NodeIdProducerSlotDecodePipelineTest {
@@ -276,8 +277,8 @@ class NodeIdProducerSlotDecodePipelineTest {
     // ===== Helpers =====
 
     /**
-     * The same schema shape {@code NodeIdDecodeDefectsTest} uses, so a case here and a case there
-     * differ in what they assert about one coordinate rather than in which coordinate they are about.
+     * One schema shape for every case, so the cases differ in what they assert about one coordinate
+     * rather than in which coordinate they are about.
      */
     private static String schema(String nodeType, String method) {
         return """

@@ -362,9 +362,7 @@ public final class NodeIdDecodeCoverageFacts {
 
     /**
      * The build-error consumer's population: the coordinate's owning type is a member of the
-     * classification domain. The same predicate {@link NodeIdDecodeDefects} scopes its verdicts by,
-     * and for the same reason: only a coordinate the generator intends to classify can fail a
-     * build.
+     * classification domain: only a coordinate the generator intends to classify can fail a build.
      */
     private static Condition inDomain(String graphName, Field<String> typeName) {
         var d = INTENT_TYPE_DOMAIN;

@@ -83,18 +83,6 @@ class DetectionReadReachGateTest {
             "intent_resolved_node_key_projection",
             "intent_resolved_node_key_shape"));
 
-        // The defects are entry defects, read off the site view, which places them through the
-        // element field; the facts a message names come from the stored slot table.
-        REACH.put("NodeIdDecodeDefects", Set.of(
-            "graphitron_entry_defect_site",
-            "graphql_element_field"));
-
-        REACH.put("NodeIdPolymorphicDecodeDefects", Set.of(
-            "graphitron_entry_defect_site",
-            "graphql_element_field",
-            // A container's members, in declared order, for the messages that list them.
-            "graphql_poly_member"));
-
         // graphql_poly_member is the participants of a field's target, read beside the stored target
         // and binding. It is the union of the two captured member tables, and the
         // reference-for application that reaches it answers no slower than it did through the

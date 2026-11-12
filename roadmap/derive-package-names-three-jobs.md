@@ -31,8 +31,7 @@ Classified by what each file does, over 17 files:
 | Verdict to prose
 | 1078
 | A view carries a closed `verdict` vocabulary; these turn a row into a located rejection with its
-  English text. `ArgmappingProjectionDefects`, `AuthoredClaimConflicts`, `NodeIdDecodeDefects`,
-  `StoreDetections`.
+  English text. `ArgmappingProjectionDefects`, `AuthoredClaimConflicts`, `StoreDetections`.
 
 | Store read to value
 | 420

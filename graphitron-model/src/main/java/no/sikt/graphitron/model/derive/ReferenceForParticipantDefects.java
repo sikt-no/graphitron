@@ -53,11 +53,10 @@ import static org.jooq.impl.DSL.selectOne;
  * output field's. It is here because the remedy prose and the two arms below are the same ones, and
  * two sites spelling them would be the first step towards two answers.
  *
- * <p>Both populations are narrowed to what the generator intends to classify, on
- * {@link NodeIdDecodeDefects}'s terms: the input-field population to applications whose input field
- * has at least one occurrence, the argument population to a coordinate whose owning type is in the
- * classification domain. An input type nothing consumes fails no build, which
- * is what keeps this from reporting on SDL the generator never reads.
+ * <p>Both populations are narrowed to what the generator intends to classify: the input-field
+ * population to applications whose input field has at least one occurrence, the argument population
+ * to a coordinate whose owning type is in the classification domain. An input type nothing consumes
+ * fails no build, which is what keeps this from reporting on SDL the generator never reads.
  *
  * <p>Output-field applications are excluded structurally: the input-field arm reads the
  * {@code INPUT_FIELD} occurrences of the application's own field, so an application on an object or

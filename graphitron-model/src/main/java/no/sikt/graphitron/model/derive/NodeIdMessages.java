@@ -47,18 +47,6 @@ final class NodeIdMessages {
     }
 
     /**
-     * The coordinate lead a message opens with at the {@code @nodeId} input-field site:
-     * {@code input field 'Type.field'}. Minted here rather than at the one family that has both
-     * sites, because the next family with both will want the same words: the argument site is
-     * already spelled {@code argument 'x'} in two places and reads as one rule, and an input field
-     * spelled two ways would not. The colon and whatever follows the coordinate belong to the
-     * caller, a family that names the branch or the use site putting it between the two.
-     */
-    static String inputFieldLead(String typeName, String fieldName) {
-        return "input field '" + typeName + "." + fieldName + "'";
-    }
-
-    /**
      * The trailing name of a fully qualified Java type. Types are qualified in the store because
      * that is what makes them comparable; a message reads better unqualified, and two types that
      * differ only in package are the rarer case than two that differ in name.
@@ -89,25 +77,5 @@ final class NodeIdMessages {
             .where(k.GRAPH_NAME.eq(graphName), k.TYPE_NAME.eq(nodeTypeRef))
             .orderBy(k.POSITION)
             .fetch(r -> r.value1());
-    }
-
-    /**
-     * The Java types jOOQ binds the node type's key columns as, in key order and by simple name: the
-     * type arguments a {@code RecordN} or {@code RowN} taking the key has to carry. Empty on the
-     * same terms as {@link #keyColumnsOf}.
-     */
-    static List<String> keyColumnTypesOf(DSLContext dsl, String graphName, String nodeTypeRef) {
-        if (nodeTypeRef == null) {
-            return List.of();
-        }
-        var k = GRAPHITRON_NODE_KEYCOLUMN;
-        var c = no.sikt.graphitron.model.Tables.SQL_COLUMN;
-        return dsl.select(c.BINDING_TYPE)
-            .from(k)
-            .join(c).on(c.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
-                c.TABLE_NAME.eq(k.TABLE_NAME), c.COLUMN_NAME.eq(k.COLUMN_NAME))
-            .where(k.GRAPH_NAME.eq(graphName), k.TYPE_NAME.eq(nodeTypeRef))
-            .orderBy(k.POSITION)
-            .fetch(r -> r.value1().substring(r.value1().lastIndexOf('.') + 1));
     }
 }

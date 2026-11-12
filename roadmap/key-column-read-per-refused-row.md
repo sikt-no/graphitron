@@ -12,10 +12,9 @@ last-updated: 2026-08-23
 
 # The defect readers ask a window-function view for one node type's key columns, once per refused row
 
-`NodeIdMessages.keyColumnsOf` is called from inside a fetch lambda in two readers, so it issues one
+`NodeIdMessages.keyColumnsOf` is called from inside a fetch lambda in one reader, so it issues one
 statement per row of the answer:
 
-* `NodeIdDecodeDefects.detect`, once per refused decode.
 * `ArgmappingProjectionDefects.authorDefects`, once per refused projection, at the identical line
   shape.
 

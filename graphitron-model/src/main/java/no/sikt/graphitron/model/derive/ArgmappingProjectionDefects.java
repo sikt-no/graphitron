@@ -76,10 +76,7 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
  * and a projection either arm covers fails the build saying so, which is the honest state: emitting
  * nothing, or emitting the raw base64, are the two outcomes they exist to prevent.
  *
- * <p>The message vocabulary is shared with {@link NodeIdDecodeDefects}, which refuses the same two
- * facts one carrier over, where a producer parameter's name matches the {@code @nodeId} argument
- * instead of an entry here binding it. {@link NodeIdMessages} holds what must not drift between them;
- * the remedies differ, and differ because the carrier does.
+ * <p>The message vocabulary is {@link NodeIdMessages}'.
  *
  * <p>Locations are the view's: the {@code argMapping} string's own position, so a message points
  * at the {@code argMapping} the author wrote rather than at the input type's declaration. The

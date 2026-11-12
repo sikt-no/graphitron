@@ -23,20 +23,6 @@ import java.util.Set;
  * would otherwise recover by parsing a message. {@link #violations()} is the one place the error
  * stream is assembled, in family declaration order, so no caller decides the order for itself.
  *
- * <p>{@link #argmappingProjections} and {@link #nodeIdDecodes} are two families rather than one
- * because they refuse the same two {@code @nodeId} facts at two carriers a store row tells apart, an
- * {@code argMapping} entry binding the node id and a producer parameter matching its name, and each
- * keys its rows on the coordinate its own remedy names. One family spanning both would have had to
- * pick one keying and restate the other's rows under it.
- *
- * <p>{@link #nodeIdPolymorphicDecodes} is the {@code @nodeId} family whose question is about the
- * <em>set</em> of node types an id may belong to rather than about one: a {@code typeName:} naming a
- * multitable interface or union. Separate from {@link #nodeIdDecodes} for the reason its view is
- * separate from that family's, and the two populations are disjoint by construction: the incumbent
- * joins the node key's shape on the slot's resolved type, and a container resolves no key of its own.
- * It is also the one {@code @nodeId} family that reports at every site, its first verdict being that
- * the coordinate is not one the polymorphic rule reaches at all.
- *
  * <p>{@link #referenceForParticipants} is the family whose question no single coordinate can ask:
  * a {@code @referenceFor} on a {@code @nodeId} filter input field names a participant of the
  * <em>consuming</em> query's return type, and one input type may be consumed by several queries with
@@ -64,8 +50,6 @@ import java.util.Set;
  */
 public record StoreDetections(ClaimConflicts.Detection claims,
                               ArgmappingProjectionDefects.Detection argmappingProjections,
-                              NodeIdDecodeDefects.Detection nodeIdDecodes,
-                              NodeIdPolymorphicDecodeDefects.Detection nodeIdPolymorphicDecodes,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               SessionIdentityDefects.Detection sessionIdentity,
                               ResolvedKeyProjections.Projections keyProjections,
@@ -90,8 +74,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
         var roster = new LinkedHashMap<String, Set<Table<?>>>();
         roster.put("ClaimConflicts", ClaimConflicts.READS);
         roster.put("ArgmappingProjectionDefects", ArgmappingProjectionDefects.READS);
-        roster.put("NodeIdDecodeDefects", NodeIdDecodeDefects.READS);
-        roster.put("NodeIdPolymorphicDecodeDefects", NodeIdPolymorphicDecodeDefects.READS);
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
         roster.put("SessionIdentityDefects", SessionIdentityDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
@@ -113,8 +95,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
             case ClassifiedRun.Present present -> {
                 yield new StoreDetections(ClaimConflicts.detect(dsl, graphName),
                     ArgmappingProjectionDefects.detect(dsl, graphName),
-                    NodeIdDecodeDefects.detect(dsl, graphName),
-                    NodeIdPolymorphicDecodeDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     SessionIdentityDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
@@ -128,8 +108,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
     public static StoreDetections empty() {
         return new StoreDetections(ClaimConflicts.Detection.empty(),
             ArgmappingProjectionDefects.Detection.empty(),
-            NodeIdDecodeDefects.Detection.empty(),
-            NodeIdPolymorphicDecodeDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
             SessionIdentityDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
@@ -141,8 +119,6 @@ public record StoreDetections(ClaimConflicts.Detection claims,
     public List<ValidationError> violations() {
         var out = new ArrayList<>(claims.violations());
         out.addAll(argmappingProjections.violations());
-        out.addAll(nodeIdDecodes.violations());
-        out.addAll(nodeIdPolymorphicDecodes.violations());
         out.addAll(referenceForParticipants.violations());
         out.addAll(sessionIdentity.violations());
         return List.copyOf(out);
