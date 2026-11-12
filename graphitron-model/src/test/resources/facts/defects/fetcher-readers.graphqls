@@ -16,6 +16,9 @@ type Film @table(name: "film") {
   texts: Texts
   "Nested here, and handed back by a service below as film's own record: two shapes graphitron does not serve."
   recordTexts: RecordTexts
+  "A child over the interface no table-bound type implements, as a list and as a connection."
+  props: [Prop!]!
+  pagedProps: [Prop!]! @asConnection
 }
 
 type FilmDetails {
@@ -60,6 +63,10 @@ type Unresolved @table(name: "no_such_table") { label: String }
 "Returned by nothing, so no result reaches it and nothing fetches its field."
 type Orphan { label: String }
 
+"A plain interface no table-bound type implements: a field returning it has nothing to fetch."
+interface Prop { label: String }
+type PlainProp implements Prop { label: String }
+
 type AddFilmPayload { film: Film }
 input FilmInput @table(name: "film") { title: String }
 
@@ -79,6 +86,9 @@ type Query {
   recordTexts(id: Int): RecordTexts
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
   unresolved: Unresolved
+  "Over the interface no table-bound type implements, as a connection and as a list."
+  pagedProps: [Prop!]! @asConnection
+  propList: [Prop!]!
 }
 
 type Mutation {
@@ -177,6 +187,10 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   coordinate,       code
   Mutation.nothing, FIELD_WITHOUT_FETCHER
   RecordTexts,      RESULT_SHAPES_CONFLICT
+  Query.pagedProps, FIELD_WITHOUT_FETCHER
+  Query.propList,   FIELD_WITHOUT_FETCHER
+  Film.props,       FIELD_WITHOUT_FETCHER
+  Film.pagedProps,  FIELD_WITHOUT_FETCHER
   """)
 
 extend schema @assertContains(relation: "graphitron_producer", rows: """
@@ -187,6 +201,7 @@ extend schema @assertContains(relation: "graphitron_producer", rows: """
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   coordinate,   code
   Query.unresolved, FIELD_WITHOUT_FETCHER
+  Query.pagedMedia, FIELD_WITHOUT_FETCHER
   CarrierError, RESULT_SHAPES_CONFLICT
   Texts,        RESULT_SHAPES_CONFLICT
   Orphan.label, FIELD_WITHOUT_FETCHER

@@ -249,8 +249,9 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
 * **A connection's facets are a producer of their own** `open`. The `FACETS` sibling of
   `totalCount`, with the same start.
 * **A count or facets graphitron cannot run is a defect** `open`. Under a producer graphitron
-  does not compose, a `@service` connection, a `totalCount` or facets raises a defect rather than
-  generating nothing.
+  does not compose, a `@service` or an index-backed connection, a `totalCount` or facets raises a
+  defect rather than generating nothing. No connection producer today is one: every page is built
+  by graphitron's own statements, so this lands with the first that is not.
 * **A connection's producer returns the connection, and its fields read it** `open`.
   A connection's producer returns an instance of a class graphitron generates for the connection
   type, holding the page and closures over how the result set was produced, and each field of the
@@ -302,13 +303,25 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   * `PageInfo` is one generated class shared by every connection, and each facets type and facet
     value type has a generated class of its own (Alf, 2026-11-11; `emitter-conventions.adoc`
     § Return types).
-  * "A count or facets graphitron cannot run is a defect" removes the null paths, and
-    "A connection is recognised by the specification's shape" states the positions; both above,
-    both before the classes.
+  * Every page a producer builds carries its count. A union or interface field with no table-bound
+    participant, which the polymorphic emitter answered with an empty page and no count, is
+    refused as `FIELD_WITHOUT_FETCHER` wherever graphitron would fetch it (Alf, 2026-11-12): the
+    reader rule no longer reads it as `NESTED` and the producer rule no longer splits it, and its
+    defensive branches are generator invariants. The page a tenant-routed batched fetcher answers
+    for a parent whose key cannot match counts 0 (Alf, 2026-11-12). Open for Alf and Filip: which
+    reference page states `FIELD_WITHOUT_FETCHER`; `asConnection.adoc`, `splitQuery.adoc` and
+    `polymorphic-types.adoc` state the case, and a glossary entry under "Named structural errors"
+    is the candidate. "A type a statement lands on" is now spelled twice, by
+    `graphitron_producer_rule`'s `landing` and the reader rule's polymorphic arm (which reads
+    `graphitron_type_member`, the producer rule still `graphql_poly_member`): a type-grain fact to
+    store once, now or inside F's "A polymorphic type's members are stored", Alf's and Filip's call,
+    with F told.
+    "A connection is recognised by the specification's shape" states the positions before the
+    classes.
   * **Each connection type and edge type has a generated class** `blocked`, on "A connection is recognised by the specification's shape".
     An emitter writes the classes from the store while the producers still return
     `ConnectionResult`. Pinned by the sakila compile and the emission census.
-  * **The producers return the connection type's class** `blocked`, on "Each connection type and edge type has a generated class" and "A count or facets graphitron cannot run is a defect".
+  * **The producers return the connection type's class** `blocked`, on "Each connection type and edge type has a generated class".
     The five construction sites change, and the per-type fetchers and `ConnectionHelper`'s resolvers
     go. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
     batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
