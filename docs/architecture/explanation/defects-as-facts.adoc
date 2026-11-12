@@ -115,6 +115,17 @@ three parameter codes because a different stage reports it: those three go to `o
 straight after the depth loop that settles every fill, and this one stays in `entry-defects` until it is
 one rule over the node-id slots and their decode shapes.
 
+Three rulings narrow that rule (Alf, 2026-11-12). A whole decoded key lands only on a record or a
+tuple: the node's own record, a record supertype for an id of several node types, or a `RecordN` or
+`RowN` matching the key. Handing a single-column key's value to a parameter of the column's type
+without saying so is dropped; an author wanting one column projects it with `argMapping`, so
+`NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT` only ever judges a projected column against its parameter, at
+the `@service` or `@condition` reference. What a parameter receives of the id, the whole key or one
+key column, is a fact of the landing, stated once beside the parameter the id lands on, and not of
+the decode shape, which keeps a row only where a shape fits. And the node-id slot defects go to
+`occurrence-builds`, whose rule view already reports the build's defects, rather than to a stage of
+their own: the stage is cheap, and one rule view per stage reads simplest.
+
 [#adding-a-defect]
 == Adding a defect
 
