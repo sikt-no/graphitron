@@ -1,0 +1,49 @@
+"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Until the issuing fetcher is generated, @issue is refused at the application."
+type FilmRef @table(name: "film") {
+  filmId: ID! @field(name: "film_id")
+  title(lang: String): String
+  voucher: String! @issue(scope: "films", ttl: "PT5M", claims: "title")
+}
+
+type Language @table(name: "language") {
+  name: String
+  films: [FilmRef!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  languages: [Language!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_issue_entry", rows: """
+  scope, ttl,  claims
+  films, PT5M, title
+  """)
+
+# Every other field of the type is a member, the marked one never.
+extend schema @expectEquals(relation: "graphitron_voucher_member", rows: """
+  type_name, field_name, issuing_field
+  FilmRef,   filmId,     voucher
+  FilmRef,   title,      voucher
+  """)
+
+# The members, and a member's argument, are no part of the emitted population; the voucher field is.
+extend schema @assertAbsent(relation: "graphitron_element", rows: """
+  coordinate
+  FilmRef.filmId
+  FilmRef.title
+  FilmRef.title(lang:)
+  """)
+
+extend schema @assertContains(relation: "graphitron_element", rows: """
+  coordinate
+  FilmRef.voucher
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'VOUCHER_ISSUE_NOT_GENERATED'
+  """, rows: """
+  code,                        type_name, detail
+  VOUCHER_ISSUE_NOT_GENERATED, FilmRef,   FilmRef.voucher
+  """)

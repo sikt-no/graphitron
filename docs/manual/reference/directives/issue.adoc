@@ -1,0 +1,59 @@
+= @issue
+:description: Mark the voucher field of a table-bound type, so this subgraph vouches for its rows to another subgraph.
+:!toc:
+
+Marks the *voucher* field of a table-bound type in a federated subgraph that vouches for the rows its own rules let a caller see, so another subgraph can grant access to them through its database's row-level security. Every other field of the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching field `@accept`.
+
+NOTE: Graphitron captures `@issue` and derives what the subgraph publishes for it, but does not yet generate the fetcher that issues vouchers, so a schema using it is refused with `VOUCHER_ISSUE_NOT_GENERATED` (see xref:../diagnostics-glossary.adoc#voucher-issue-not-generated[the glossary entry]) for now.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @issue(scope: String!, ttl: String!, claims: String!) on FIELD_DEFINITION
+----
+
+[cols="1,1,3"]
+|===
+| Parameter | Type | Meaning
+
+| `scope`
+| `String!`
+| What the voucher is for. The accepting subgraph's `@accept(scope:)` must name the same scope.
+
+| `ttl`
+| `String!`
+| How long a voucher stays valid, as an ISO-8601 duration such as `PT5M`. Every voucher an operation issues expires at the operation's start plus this.
+
+| `claims`
+| `String!`
+| The absorbed fields that are the voucher's claims, a field set as `@key(fields:)` spells one: whose rows are vouched for. The accepting subgraph's `@accept(claims:)` names the same fields; the remaining absorbed fields are the key of the vouched row.
+|===
+
+== Canonical example
+
+[source,graphql]
+----
+type VgsResultat @table(name: "soknad_vgs_resultat") {
+  id: ID! @field(name: "vgs_resultat_id")
+  eierId: String! @field(name: "eier_id")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", claims: "eierId")
+}
+----
+
+`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `voucher` alone. Name and type the absorbed fields exactly as the other subgraph's key fields and claims fields; a mismatch shows up as every voucher being rejected there.
+
+== What the subgraph publishes
+
+* Only the voucher field. The absorbed fields, and any arguments they declare, are not part of the published schema, though they stay in the schema as written, where the editor shows and checks them.
+* Every absorbed field is withheld whatever else is refused, so a schema whose `@issue` is refused for another reason still never publishes them.
+
+== Constraints
+
+* Requires a federation `@link`.
+* A field marked `@issue` or `@accept` is never absorbed.
+
+== See also
+
+* xref:../../how-to/federation-keys.adoc[How-to: Federation keys], for how an entity is reached by its keys.
+* xref:../federation.adoc[Federation reference].

@@ -2679,6 +2679,31 @@ COMMENT ON COLUMN graphitron_ast_outbox_entry.touched_at IS 'when the reading th
 COMMENT ON COLUMN graphitron_ast_outbox_entry.event_ref IS 'the event argument exactly as written, or NULL where the author left it out; what an omitted event defaults to is the anchor''s resolution, not a value to keep here';
 COMMENT ON COLUMN graphitron_ast_outbox_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its entries name is a question for the derivation over the argument-mapping pairs';
 
+CREATE TABLE graphitron_ast_issue_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  scope         VARCHAR,
+  ttl           VARCHAR,
+  claims        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_issue_entry IS 'What an @issue application says: the scope, the lifetime and the claims of the vouchers it issues, as written. For example voucher: String! @issue(scope: "results", ttl: "PT5M", claims: "ownerId") gives one row.';
+COMMENT ON COLUMN graphitron_ast_issue_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_ast_issue_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_issue_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_issue_entry.source_column IS 'source column of the same; the four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry';
+COMMENT ON COLUMN graphitron_ast_issue_entry.touched_at IS 'when the reading that produced this row ran; the reading finishes by deleting its file''s rows carrying an older instant';
+COMMENT ON COLUMN graphitron_ast_issue_entry.scope IS 'the scope argument as written, or NULL where it is missing';
+COMMENT ON COLUMN graphitron_ast_issue_entry.ttl IS 'the ttl argument as written, an ISO-8601 duration, or NULL where it is missing; parsing it is the voucher stage''s';
+COMMENT ON COLUMN graphitron_ast_issue_entry.claims IS 'the claims argument, the field set as written, or NULL where it is missing; which fields it names is decided by the voucher stage';
+
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
 -- relation below keyed by the position of the @ token, which is
@@ -3687,10 +3712,63 @@ COMMENT ON VIEW graphitron_connection_carrier_rule IS 'One row the connection ca
 -- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_connection_carrier.source_line';
 -- COMMENT ON COLUMN graphitron_connection_carrier_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_connection_carrier.source_column';
 
+-- An @issue absorbs every other field of its type into the voucher: a member is withheld from the
+-- emitted population, so the authored sets below anti-join it, and the transcription keeps it as
+-- written. Decided from structure alone, before the population is built and independently of every
+-- refusal, so a member whose column fails to resolve, or an @issue refused for any reason, still
+-- absorbs: A never publishes what the voucher seals. A field marked @issue or @accept is never a
+-- member; where two @issue share a type (refused by the voucher stage) a member belongs to the first.
+CREATE TABLE graphitron_voucher_member (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  coordinate    VARCHAR GENERATED ALWAYS AS (type_name || '.' || field_name) NOT NULL,
+  issuing_field VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  UNIQUE (graph_name, coordinate),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, issuing_field)
+    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (field_name <> issuing_field)
+);
+COMMENT ON TABLE graphitron_voucher_member IS 'One field declaration an @issue absorbs into its voucher, withheld from the emitted population. For example a VgsResultat whose voucher field carries @issue absorbs its id and eierId, two rows, while the voucher field itself is no member.';
+COMMENT ON COLUMN graphitron_voucher_member.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_voucher_member.type_name IS 'the issuing type';
+COMMENT ON COLUMN graphitron_voucher_member.field_name IS 'the absorbed field, as the transcription declares it';
+COMMENT ON COLUMN graphitron_voucher_member.coordinate IS 'the absorbed field''s coordinate, the key spelled out and generated from it, so nothing writes it; the authored element set anti-joins on it';
+COMMENT ON COLUMN graphitron_voucher_member.issuing_field IS 'the field carrying the @issue that absorbs it';
+
+CREATE VIEW graphitron_voucher_member_rule
+  (graph_name, type_name, field_name, issuing_field) AS
+SELECT f.graph_name, f.type_name, f.field_name, MIN(i.field_name)
+  FROM graphql_directive_application d
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+  JOIN graphql_field_element f
+    ON f.graph_name = i.graph_name AND f.type_name = i.type_name AND f.field_name <> i.field_name
+ WHERE d.directive_name = 'issue'
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application m
+                    WHERE m.graph_name = f.graph_name AND m.coordinate = f.coordinate
+                      AND m.directive_name IN ('issue', 'accept'))
+ GROUP BY f.graph_name, f.type_name, f.field_name;
+COMMENT ON VIEW graphitron_voucher_member_rule IS 'One voucher member the membership rule computes, in the shape graphitron_voucher_member stores: the rule itself, evaluated on demand rather than read off disk. For example the voucher-members stage writes this view''s rows for one graph into graphitron_voucher_member, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_voucher_member_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_voucher_member_rule.type_name IS 'the issuing type';
+-- COMMENT ON COLUMN graphitron_voucher_member_rule.field_name IS 'the absorbed field';
+-- COMMENT ON COLUMN graphitron_voucher_member_rule.issuing_field IS 'the field carrying the @issue, the first by name where two share a type';
+
 CREATE VIEW graphitron_element_authored (graph_name, coordinate, element_kind) AS
-SELECT graph_name, coordinate, element_kind
-  FROM graphql_element
- WHERE element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT');
+SELECT e.graph_name, e.coordinate, e.element_kind
+  FROM graphql_element e
+ WHERE e.element_kind IN ('NAMED_TYPE', 'FIELD', 'INPUT_FIELD', 'ENUM_VALUE', 'FIELD_ARGUMENT')
+   -- A field an @issue absorbs, and its arguments, are sealed into the voucher, not emitted.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_voucher_member m
+                    WHERE m.graph_name = e.graph_name AND m.coordinate = e.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphql_argument_element a
+                     JOIN graphitron_voucher_member m
+                       ON m.graph_name = a.graph_name AND m.type_name = a.type_name
+                      AND m.field_name = a.field_name
+                    WHERE a.graph_name = e.graph_name AND a.coordinate = e.coordinate);
 COMMENT ON VIEW graphitron_element_authored IS 'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors. For example the Film in type Film { title: String } is one row, and the Film.title written inside it is another.';
 -- COMMENT ON COLUMN graphitron_element_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
 -- COMMENT ON COLUMN graphitron_element_authored.coordinate IS 'the coordinate itself, as graphql_element spells it';
@@ -3955,7 +4033,11 @@ SELECT f.graph_name, f.type_name, f.field_name, f.type_name || '.' || f.field_na
   LEFT JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier c
                     WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
-                      AND c.field_name = f.field_name);
+                      AND c.field_name = f.field_name)
+   -- A field an @issue absorbs is sealed into the voucher, not emitted.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_voucher_member m
+                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name
+                      AND m.field_name = f.field_name);
 COMMENT ON VIEW graphitron_field_authored IS 'One of the two sets graphitron_field is the union of: a field an author declared that no expansion rewrote, carried across whole. For example the title in type Film { title: String }, where films: [Film!]! @asConnection is not here, the expansion having restated it.';
 -- COMMENT ON COLUMN graphitron_field_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
 -- COMMENT ON COLUMN graphitron_field_authored.type_name IS 'the type the field is declared on';
@@ -4142,7 +4224,11 @@ SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
        a.type_sdl, a.named_type, a.non_null, a.is_list, a.item_non_null, a.default_value_sdl,
        a.description, s.description_note
   FROM graphql_argument a
-  LEFT JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name;
+  LEFT JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
+ -- An argument of a field an @issue absorbs goes with its field.
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_voucher_member m
+                    WHERE m.graph_name = a.graph_name AND m.type_name = a.type_name
+                      AND m.field_name = a.field_name);
 COMMENT ON VIEW graphitron_argument_authored IS 'One of the two sets graphitron_argument is the union of: an argument an author declared, carried across whole. For example the lang in title(lang: Lang = NB): String, default included.';
 -- COMMENT ON COLUMN graphitron_argument_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 -- COMMENT ON COLUMN graphitron_argument_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
@@ -16331,7 +16417,14 @@ SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DI
   JOIN sql_enum_binding eb ON eb.source_name = c.source_name AND eb.class_fqn = c.binding_type
  WHERE NOT EXISTS (SELECT 1 FROM sql_enum_binding_literal el
                     WHERE el.source_name = eb.source_name AND el.class_fqn = eb.class_fqn
-                      AND el.literal = v.discriminator_value);
+                      AND el.literal = v.discriminator_value)
+UNION ALL
+-- @issue until its fetcher is generated: A's facts and published shape are derived, but nothing emits
+-- the voucher yet, so a valid schema is refused here rather than reaching an emitter that does not exist.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISSUE_NOT_GENERATED',
+       d.coordinate
+  FROM graphql_directive_application d
+ WHERE d.directive_name = 'issue';
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
@@ -18683,41 +18776,42 @@ ALTER TABLE graphitron_defect_type ADD FOREIGN KEY (owner_stage)
 -- The graphitron gatherer's anchor phase, in the order GraphitronAstCapture.STAGES runs it.
 INSERT INTO meta_stage VALUES
   ('anchor', 'graphitron', 0, 'no.sikt.graphitron.model.capture.document.GraphitronAnchor'),
-  ('macro-expansion', 'graphitron', 1, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
-  ('code-references', 'graphitron', 2, 'no.sikt.graphitron.model.capture.document.GraphitronCodeReferences'),
-  ('argmapping-sites', 'graphitron', 3, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingSites'),
-  ('argmapping-pairs', 'graphitron', 4, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingPairs'),
-  ('call-context-keys', 'graphitron', 5, 'no.sikt.graphitron.model.capture.document.GraphitronCallContextKeys'),
-  ('table-types', 'graphitron', 6, 'no.sikt.graphitron.model.derive.TableTypes'),
-  ('nodes', 'graphitron', 7, 'no.sikt.graphitron.model.derive.Nodes'),
-  ('federation-link', 'graphitron', 8, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
-  ('minted-keys', 'graphitron', 9, 'no.sikt.graphitron.model.derive.MintedKeys'),
-  ('directive-applications', 'graphitron', 10, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
-  ('federation-imports', 'graphitron', 11, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
-  ('federation-vocabulary', 'graphitron', 12, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
-  ('argmapping-candidates', 'graphitron', 13, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
-  ('node-key-columns', 'graphitron', 14, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
-  ('node-legacy-key-shapes', 'graphitron', 15, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('field-targets', 'graphitron', 16, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 17, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 18, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 19, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 20, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 21, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 22, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 23, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 24, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 25, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 26, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 27, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('occurrence-participants', 'graphitron', 28, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-depths', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-builds', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 33, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 34, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 35, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('voucher-members', 'graphitron', 1, 'no.sikt.graphitron.model.derive.VoucherMembers'),
+  ('macro-expansion', 'graphitron', 2, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
+  ('code-references', 'graphitron', 3, 'no.sikt.graphitron.model.capture.document.GraphitronCodeReferences'),
+  ('argmapping-sites', 'graphitron', 4, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingSites'),
+  ('argmapping-pairs', 'graphitron', 5, 'no.sikt.graphitron.model.capture.document.GraphitronArgMappingPairs'),
+  ('call-context-keys', 'graphitron', 6, 'no.sikt.graphitron.model.capture.document.GraphitronCallContextKeys'),
+  ('table-types', 'graphitron', 7, 'no.sikt.graphitron.model.derive.TableTypes'),
+  ('nodes', 'graphitron', 8, 'no.sikt.graphitron.model.derive.Nodes'),
+  ('federation-link', 'graphitron', 9, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('minted-keys', 'graphitron', 10, 'no.sikt.graphitron.model.derive.MintedKeys'),
+  ('directive-applications', 'graphitron', 11, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
+  ('federation-imports', 'graphitron', 12, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
+  ('federation-vocabulary', 'graphitron', 13, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
+  ('argmapping-candidates', 'graphitron', 14, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 15, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 16, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 17, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 18, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 19, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 20, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 21, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 22, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 23, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 24, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 25, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 26, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 27, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 28, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('occurrence-participants', 'graphitron', 29, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-depths', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-builds', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 34, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 35, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 36, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -18741,6 +18835,7 @@ INSERT INTO meta_stage_write VALUES
   ('table-types', 'graphitron_tabletype'),
   ('nodes', 'graphitron_node'),
   ('minted-keys', 'graphitron_minted_key'),
+  ('voucher-members', 'graphitron_voucher_member'),
   ('federation-link', 'graphitron_federation_link'),
   ('macro-expansion', 'graphitron_argument'),
   ('macro-expansion', 'graphitron_carrier_directive'),
@@ -19244,6 +19339,9 @@ INSERT INTO meta_grain VALUES
    'graph_name, type_name, field_name, position', 'sdl'),
   ('connection-carrier',
    'one field @asConnection expands, in one graph',
+   'graph_name, type_name, field_name', 'sdl'),
+  ('voucher-member',
+   'one field declaration an @issue absorbs into its voucher, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
   ('synthesized-node-type-id',
    'one node type whose wire type id the emitted schema publishes, in one graph',
@@ -19856,6 +19954,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'entry-defects'),
   ('CLAIMS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_CLAIMS_CONFLICT',
    'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.', 'entry-defects'),
+  ('VOUCHER_ISSUE_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ISSUE_NOT_GENERATED',
+   '@issue is captured and A''s published shape derived, but graphitron does not generate the fetcher that issues vouchers yet.', 'entry-defects'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.', 'entry-defects'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
@@ -20715,6 +20815,18 @@ INSERT INTO meta_relation VALUES
    'What an @asConnection application says: the page size the field defaults to and the Connection type name it overrides, as written.',
    'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row reading 25.',
    'A decode of one directive application, keyed by the application''s own position. Both columns are nullable and the definition''s own defaults are not filled in, so a bare @asConnection is a row of two nulls: that row is what says the directive was applied with nothing said, which is a different fact from an application naming the default page size explicitly, and the fallback itself already stands in graphql_directive_argument.default_value_sdl. The connection name argument is deprecated and the deprecation is the directive definition''s to state; a transcription records what was written and says nothing about whether it should have been.'),
+  ('graphitron_ast_issue_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @issue application says: the scope, the lifetime and the claims of the vouchers it issues, as written.',
+   'For example voucher: String! @issue(scope: "results", ttl: "PT5M", claims: "ownerId") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on is one join away rather than a column here. The arguments are kept as written: the duration is parsed and the claims resolved to fields by the voucher stage, where a malformed value can be a defect at the application.'),
+  ('graphitron_voucher_member', 'voucher-member', 'graphitron',
+   'One field declaration an @issue absorbs into its voucher, withheld from the emitted population.',
+   'For example a VgsResultat whose voucher field carries @issue absorbs its id and eierId, two rows, while the voucher field itself is no member.',
+   'An absorbed field is not a field classified and then hidden: the store keeps no binding, claim or occurrence for a coordinate that is no graphitron_element row, so the membership is decided before the population is built and the authored sets anti-join it. Decided from structure alone, the issue application and the type''s transcribed fields, and independently of every refusal, so a resolution failure or a refused @issue is a defect and never a field A publishes. Written by its own stage ahead of macro-expansion, since it has to exist before the population does.'),
+  ('graphitron_voucher_member_rule', 'voucher-member', 'graphitron',
+   'One voucher member the membership rule computes, in the shape graphitron_voucher_member stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the voucher-members stage writes this view''s rows for one graph into graphitron_voucher_member, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_ast_outbox_entry', 'sdl-declaration-site', 'graphitron',
    'What an @outbox application says: the event it names and the mapping that builds its payload, as written.',
    'For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.',

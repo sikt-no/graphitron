@@ -3,6 +3,7 @@ package no.sikt.graphitron.model.capture.document;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.MintedKeys;
+import no.sikt.graphitron.model.derive.VoucherMembers;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -131,6 +132,10 @@ public final class GraphitronAstCapture {
      */
     public static final List<AnchorStage> STAGES = Stream.concat(Stream.of(
         new AnchorStage("anchor", GraphitronAnchor.class, GraphitronAnchor::write),
+        // The fields each @issue absorbs into its voucher, from the transcription alone, ahead of the
+        // expansion whose authored sets withhold them.
+        new AnchorStage("voucher-members", VoucherMembers.class,
+            (dsl, graph, readAt) -> VoucherMembers.derive(dsl, graph)),
         // The schema the generator works with, macros expanded: it reads only the transcription and
         // the macros' own views, and every type-grained relation below keys into its types.
         new AnchorStage("macro-expansion", MacroExpansion.class, MacroExpansion::derive),

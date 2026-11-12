@@ -18,6 +18,7 @@ The rewrite generator declares and supports the following directives. Each is do
 * `@field`
 * `@globalData`
 * `@index`
+* `@issue`
 * `@lookupKey`
 * `@mutation`
 * `@node`

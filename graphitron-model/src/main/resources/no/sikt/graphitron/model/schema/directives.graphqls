@@ -630,6 +630,32 @@ directive @outbox(
 ) repeatable on FIELD_DEFINITION
 
 """
+Marks the voucher field of a table-bound type in a federated subgraph that vouches for its rows to
+another subgraph. Every other field of the type is absorbed into the voucher: sealed inside it, signed,
+and withheld from this subgraph's published schema, which publishes the voucher alone. The voucher is
+`@inaccessible`, and the type is keyed by it, so a router can reach the other subgraph's entity from
+here only through the voucher. Requires a federation `@link`. Generation does not issue vouchers yet,
+so a schema using `@issue` is refused for now.
+"""
+directive @issue(
+  """
+  What the voucher is for. The accepting subgraph's `@accept(scope:)` must name the same scope.
+  """
+  scope: String!
+  """
+  How long a voucher stays valid, as an ISO-8601 duration (for example `PT5M`). Every voucher an
+  operation issues expires at the operation's start plus this.
+  """
+  ttl: String!
+  """
+  The absorbed fields that are the voucher's claims, a field set as `@key(fields:)` spells one: whose
+  rows are vouched for. The accepting subgraph's `@accept(claims:)` must name the same fields; the
+  remaining absorbed fields are the key of the vouched row.
+  """
+  claims: String!
+) on FIELD_DEFINITION
+
+"""
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
 """
 directive @experimental_constructType(

@@ -14,6 +14,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
@@ -69,6 +70,7 @@ final class GraphitronFieldEntries {
         var routineApplications = wrote(applied(applications, "routine"), "name");
         routines(dsl, graph, touchedAt, routineApplications);
         outboxes(dsl, graph, touchedAt, applied(applications, "outbox"));
+        issues(dsl, graph, touchedAt, applied(applications, "issue"));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -80,7 +82,8 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_FIELD_CONDITION_ENTRY,
         GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_MUTATION_ENTRY,
-        GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY);
+        GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY,
+        GRAPHITRON_AST_ISSUE_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<Directive> applications) {
@@ -207,5 +210,28 @@ final class GraphitronFieldEntries {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.EVENT_REF, excluded(t.EVENT_REF))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
+    }
+
+    private static void issues(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                               List<Directive> applications) {
+        var t = GRAPHITRON_AST_ISSUE_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "scope"), t.SCOPE),
+            application -> val(string(application, "ttl"), t.TTL),
+            application -> val(string(application, "claims"), t.CLAIMS)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.SCOPE, t.TTL, t.CLAIMS)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.SCOPE, excluded(t.SCOPE))
+                .set(t.TTL, excluded(t.TTL))
+                .set(t.CLAIMS, excluded(t.CLAIMS)));
     }
 }

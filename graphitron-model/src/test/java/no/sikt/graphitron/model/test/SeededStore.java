@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.capture.document.MacroExpansion;
 import no.sikt.graphitron.model.derive.ColumnSpellings;
 import no.sikt.graphitron.model.derive.MintedKeys;
+import no.sikt.graphitron.model.derive.VoucherMembers;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
@@ -125,7 +126,9 @@ public final class SeededStore {
         // call, so a fixture cannot hold its own idea of what the emitted population is.
         for (var graph : dsl.select(STORE_GRAPH.GRAPH_NAME).from(STORE_GRAPH)
                 .fetch(STORE_GRAPH.GRAPH_NAME)) {
-            // The expanded schema, then the minted keys its minted applications render, then those.
+            // The voucher members the expansion withholds, the expanded schema, then the minted keys
+            // its minted applications render, then those.
+            VoucherMembers.derive(dsl, graph);
             MacroExpansion.derive(dsl, graph, SEED_INSTANT);
             MintedKeys.derive(dsl, graph);
             MacroExpansion.directives(dsl, graph, SEED_INSTANT);

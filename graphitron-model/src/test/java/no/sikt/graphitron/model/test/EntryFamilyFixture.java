@@ -256,6 +256,11 @@ public final class EntryFamilyFixture {
         input ImportInput {
           title: String
         }
+
+        type FilmVoucher @table(name: "film") {
+          filmId: ID @field(name: "film_id")
+          voucher: String @issue(scope: "films", ttl: "PT5M", claims: "filmId")
+        }
         """;
 
     /** Captures both documents into one graph, which is the shape every case here wants. */
