@@ -77,7 +77,7 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   """)
 
 # Each defect names the parameters it is about, under it.
-extend schema @assertContains(relation: "graphitron_entry_defect_parameter", rows: """
+extend schema @assertContains(relation: "graphitron_entry_defect_parameter_rule", rows: """
   code,                   coordinate,           call,     position, parameter_name
   PARAMETER_UNFILLED,     Query.unfilledFilms,  producer, 1,        ids
   PARAMETER_AMBIGUOUS,    Query.ambiguousFilms, producer, 1,        filmIds

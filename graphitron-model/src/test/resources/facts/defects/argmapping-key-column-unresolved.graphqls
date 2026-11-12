@@ -51,7 +51,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_key_column", rows
   """)
 
 # The parameter whose type is not the column's.
-extend schema @assertContains(relation: "graphitron_entry_defect_parameter", rows: """
+extend schema @assertContains(relation: "graphitron_entry_defect_parameter_rule", rows: """
   code,                                 coordinate,                 position, parameter_name
   NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, Query.languagesByPrimitive, 1,        languageId
   """)

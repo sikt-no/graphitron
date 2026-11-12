@@ -12,9 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
@@ -127,8 +125,8 @@ public final class EntryDefects {
      * Deletes the graph's defects of the codes {@code gatherer}'s stages own that the reading at
      * {@code readAt} did not mark. Another gatherer's codes are not touched, so each owner sweeps
      * only what it writes; a detail relation's rows under a swept defect go with it by their
-     * foreign key. One sweep covers every stage, each having marked its rows with the same instant. A detail row the reading did not mark under a defect it did, a method, claim,
-     * member, parameter, key column, table or path step a defect no longer names, is swept here first by its own mark.
+     * foreign key. One sweep covers every stage, each having marked its rows with the same instant. A detail row the reading did not mark under a defect it did, a claim,
+     * member, key column, table or path step a defect no longer names, is swept here first by its own mark.
      */
     public static void sweep(DSLContext dsl, String graphName, LocalDateTime readAt, String gatherer) {
         var target = GRAPHITRON_ENTRY_DEFECT;
@@ -136,12 +134,6 @@ public final class EntryDefects {
         var owned = select(type.CODE).from(type).join(META_STAGE)
             .on(META_STAGE.STAGE_NAME.eq(type.OWNER_STAGE))
             .where(META_STAGE.GATHERER_NAME.eq(gatherer));
-        var method = GRAPHITRON_ENTRY_DEFECT_METHOD;
-        dsl.deleteFrom(method)
-            .where(method.GRAPH_NAME.eq(graphName))
-            .and(method.TOUCHED_AT.ne(readAt))
-            .and(method.CODE.in(owned))
-            .execute();
         var claim = GRAPHITRON_ENTRY_DEFECT_CLAIM;
         dsl.deleteFrom(claim)
             .where(claim.GRAPH_NAME.eq(graphName))
@@ -153,12 +145,6 @@ public final class EntryDefects {
             .where(member.GRAPH_NAME.eq(graphName))
             .and(member.TOUCHED_AT.ne(readAt))
             .and(member.CODE.in(owned))
-            .execute();
-        var parameter = GRAPHITRON_ENTRY_DEFECT_PARAMETER;
-        dsl.deleteFrom(parameter)
-            .where(parameter.GRAPH_NAME.eq(graphName))
-            .and(parameter.TOUCHED_AT.ne(readAt))
-            .and(parameter.CODE.in(owned))
             .execute();
         var keyColumn = GRAPHITRON_ENTRY_DEFECT_KEY_COLUMN;
         dsl.deleteFrom(keyColumn)

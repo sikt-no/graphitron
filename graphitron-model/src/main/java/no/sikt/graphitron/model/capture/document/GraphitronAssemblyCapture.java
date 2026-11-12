@@ -4,11 +4,9 @@ import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
-import no.sikt.graphitron.model.derive.ConditionShapeDefectMethods;
 import no.sikt.graphitron.model.derive.EntryDefectClaims;
 import no.sikt.graphitron.model.derive.EntryDefectMembers;
 import no.sikt.graphitron.model.derive.EntryDefectKeyColumns;
-import no.sikt.graphitron.model.derive.EntryDefectParameters;
 import no.sikt.graphitron.model.derive.EntryDefectTables;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntityKeyAlternatives;
@@ -158,14 +156,12 @@ public final class GraphitronAssemblyCapture {
         // field's call writes, judged against the occurrences' producers above; then their defects.
         new AnchorStage("outbox", Outboxes.class, Outboxes::derive),
         // Last, the defects of every code no earlier stage writes itself, off everything above: the
-        // rule's rows marked with this reading, the declarations under each condition shape defect,
-        // then the argMapping entries under the strings they fault.
+        // rule's rows marked with this reading, the details under them, then the argMapping entries
+        // under the strings they fault.
         new AnchorStage("entry-defects", EntryDefects.class, (dsl, graph, readAt) -> {
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
-            ConditionShapeDefectMethods.derive(dsl, graph, readAt);
             EntryDefectClaims.derive(dsl, graph, readAt);
             EntryDefectMembers.derive(dsl, graph, readAt);
-            EntryDefectParameters.derive(dsl, graph, readAt);
             EntryDefectKeyColumns.derive(dsl, graph, readAt);
             EntryDefectTables.derive(dsl, graph, readAt);
             ArgMappingPairDefects.derive(dsl, graph);

@@ -93,19 +93,17 @@ keyed by the defect's key plus whatever the detail is about, with a foreign key 
 The detail goes in such a relation, not packed into the detail string. A detail no longer found under a defect still found is the owner's to remove as well, by
 marking and sweeping the detail rows or by rewriting them each reading.
 
-The condition overload defects are the example. `CONDITION_OVERLOAD_TIE` names the overloads that
-tie for a path step, `CONDITION_NO_OVERLOAD_FOR_PAIR` every overload the step considered, and
-`CONDITION_OVERLOAD_SHAPE_DISAGREES` the declarations whose shapes disagree. Each declaration is a
-row of `graphitron_entry_defect_method` under its defect, keyed to the method in `code_method`, so
-a reader lists them without parsing the detail.
+A detail relation is stored when a reader asks for it, and not before. The condition overload
+defects once wrote each declaration they name as a row under the defect; nothing read those rows,
+so they went, and the declarations stand in the detail string until a reader needs them listed.
 
-The call parameter defects are the other. `PARAMETER_UNFILLED`, `PARAMETER_AMBIGUOUS` and
+The call parameter defects are the example. `PARAMETER_UNFILLED`, `PARAMETER_AMBIGUOUS` and
 `PARAMETER_FILLED_TWICE` are stated for every call, a `@service` method's and a `@condition`'s alike,
 and worded to hold for both. A defect's key is its position and code, so one written directive that
 leaves parameters unfilled in several calls, a field binding two tables or an input field consumed
-under several fields, is one defect; which call, which bound table and which parameter is a row of a
-detail relation keyed by the defect plus the occurrence, the call and the parameter's position, never
-the detail string. Only locating the written directive differs by kind (Alf, 2026-11-10).
+under several fields, is one defect; which call, which bound table and which parameter is a row of
+`graphitron_entry_defect_parameter_rule`, keyed by the defect plus the occurrence, the call and the
+parameter's position, never the detail string. Only locating the written directive differs by kind (Alf, 2026-11-10).
 
 A projection out of a node id splits its refusals by grain the same way. One that resolves to no key
 column, several columns and none named, a name matching none, or a node id naming an interface or

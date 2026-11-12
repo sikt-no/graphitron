@@ -16,7 +16,6 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -28,7 +27,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
@@ -100,8 +98,7 @@ import static org.jooq.impl.DSL.when;
  * {@code ELEMENT_UNRESOLVED} for none, the first naming why where a condition alone takes any table
  * as its second parameter, {@code NO_ROUTE_TO_TARGET} where a walk takes every step and
  * ends off its target, {@code ELEMENT_UNRESOLVED} too at a root field's leading {@code @routine}
- * naming no routine, which no walk stands on, {@code ROUTINE_PARAMETER_UNBOUND}, and the two overload defects with the
- * declarations under each in {@code graphitron_entry_defect_method}. Each row is marked with the
+ * naming no routine, which no walk stands on, {@code ROUTINE_PARAMETER_UNBOUND}, and the two overload defects. Each row is marked with the
  * reading's instant as its depth is written, an overload defect's detail naming the pairs of every
  * depth; {@link EntryDefects#sweep} takes the rows of the gatherer's codes a reading did not mark.
  *
@@ -204,14 +201,14 @@ public final class Steps {
         }
         inferred(dsl, graph, depth, touchedAt);
         columns(dsl, graph, depth, touchedAt);
-        var methodDefects = methods(dsl, graph, touchedAt, written, defects);
+        methods(dsl, graph, touchedAt, written, defects);
         parameters(dsl, graph, touchedAt, routines, defects);
         paths(dsl, graph, touchedAt, walks.values(), defects);
         wildcardArrivals(dsl, graph, defects);
         if (depth == 0) {
             unresolvedRootRoutines(dsl, graph, defects);
         }
-        writeDefects(dsl, graph, touchedAt, defects, methodDefects);
+        writeDefects(dsl, graph, touchedAt, defects);
     }
 
     /**
@@ -763,11 +760,7 @@ public final class Steps {
 
     /** One declaration a condition step could call, with how exactly it takes each end. */
     private record Candidate(String source, String className, String method, String descriptor,
-                             boolean fromExact, boolean toExact, String fromType, String toType) {
-        Object[] key() {
-            return new Object[] {source, className, method, descriptor};
-        }
-    }
+                             boolean fromExact, boolean toExact, String fromType, String toType) {}
 
     /** A condition element and the pair one of its steps stepped between. */
     private record Pair(Pos element, Tbl from, Tbl to) {}
@@ -779,10 +772,9 @@ public final class Steps {
      * the candidate exact at every end any candidate is exact at. A step none takes is
      * {@code CONDITION_NO_OVERLOAD_FOR_PAIR} at its element, naming each pair and every declaration
      * the element names; candidates exact at the two ends apart with none exact at both are
-     * {@code CONDITION_OVERLOAD_TIE}, naming the competing declarations. Answers the declarations
-     * under each defect.
+     * {@code CONDITION_OVERLOAD_TIE}, naming the competing declarations.
      */
-    private static Map<DefectKey, Set<List<Object>>> methods(DSLContext dsl, String graph,
+    private static void methods(DSLContext dsl, String graph,
             LocalDateTime touchedAt, List<WrittenStep> written, Map<DefectKey, String> defects) {
         var pm = GRAPHITRON_PATH_ELEMENT_METHOD;
         var named = new LinkedHashMap<Pos, List<Object[]>>();
@@ -801,18 +793,12 @@ public final class Steps {
         var rows = new ArrayList<Object[]>();
         var noOverload = new LinkedHashMap<Pos, TreeSet<String>>();
         var tied = new LinkedHashMap<Pos, TreeSet<String>>();
-        var methods = new LinkedHashMap<DefectKey, Set<List<Object>>>();
         for (var entry : byPair.entrySet()) {
             var pair = entry.getKey();
             var candidates = candidates(dsl, graph, pair);
             String pairText = pair.from().name() + " to " + pair.to().name();
             if (candidates.isEmpty()) {
                 noOverload.computeIfAbsent(pair.element(), x -> new TreeSet<>()).add(pairText);
-                var under = methods.computeIfAbsent(new DefectKey(pair.element(), NO_OVERLOAD_FOR_PAIR),
-                    x -> new LinkedHashSet<>());
-                for (var m : named.get(pair.element())) {
-                    under.add(List.of(m));
-                }
                 continue;
             }
             boolean anyFrom = candidates.stream().anyMatch(Candidate::fromExact);
@@ -823,11 +809,6 @@ public final class Steps {
                     .sorted(Comparator.comparing(Candidate::descriptor)).toList();
                 tied.computeIfAbsent(pair.element(), x -> new TreeSet<>()).add(pairText + ": "
                     + competing.stream().map(Steps::declaration).collect(Collectors.joining(", ")));
-                var under = methods.computeIfAbsent(new DefectKey(pair.element(), OVERLOAD_TIE),
-                    x -> new LinkedHashSet<>());
-                for (var c : competing) {
-                    under.add(List.of(c.key()));
-                }
                 continue;
             }
             for (var c : candidates) {
@@ -850,7 +831,6 @@ public final class Steps {
             List.of(m.TOUCHED_AT, m.METHOD_SOURCE_REF, m.METHOD_CLASS_REF, m.METHOD_NAME_REF,
                 m.METHOD_DESCRIPTOR_REF),
             rows);
-        return methods;
     }
 
     /**
@@ -1081,28 +1061,15 @@ public final class Steps {
         }
     }
 
-    /** The walk's defects and the declarations under each, marked with the reading's instant. */
+    /** The walk's defects, marked with the reading's instant. */
     private static void writeDefects(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                     Map<DefectKey, String> defects,
-                                     Map<DefectKey, Set<List<Object>>> methods) {
+                                     Map<DefectKey, String> defects) {
         var rows = new ArrayList<Object[]>();
         defects.forEach((k, detail) -> rows.add(new Object[] {graph, k.pos().source(), k.pos().line(),
             k.pos().column(), k.code(), detail, touchedAt}));
         var d = GRAPHITRON_ENTRY_DEFECT;
         upsert(dsl, d, List.of(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE),
             List.of(d.DETAIL, d.TOUCHED_AT), rows);
-        var methodRows = new ArrayList<Object[]>();
-        methods.forEach((k, under) -> {
-            for (var m : under) {
-                methodRows.add(new Object[] {graph, k.pos().source(), k.pos().line(), k.pos().column(),
-                    k.code(), m.get(0), m.get(1), m.get(2), m.get(3), touchedAt});
-            }
-        });
-        var dm = GRAPHITRON_ENTRY_DEFECT_METHOD;
-        upsert(dsl, dm, List.of(dm.GRAPH_NAME, dm.SOURCE_NAME, dm.SOURCE_LINE, dm.SOURCE_COLUMN,
-                dm.CODE, dm.METHOD_SOURCE_NAME, dm.METHOD_CLASS_NAME, dm.METHOD_NAME,
-                dm.METHOD_DESCRIPTOR),
-            List.of(dm.TOUCHED_AT), methodRows);
     }
 
     /**

@@ -37,7 +37,7 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   Query.filmsByTitle
   """)
 
-extend schema @expectEquals(relation: "graphitron_entry_defect_parameter", rows: """
+extend schema @expectEquals(relation: "graphitron_entry_defect_parameter_rule", rows: """
   code,               coordinate,             call,                      position, parameter_name
   PARAMETER_UNFILLED, Query.filmsAmbiguous,   condition:public.film,     1,        titlePrefix
   PARAMETER_UNFILLED, Query.occupantsByStore, condition:public.customer, 1,        firstName

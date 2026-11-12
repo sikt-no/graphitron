@@ -100,19 +100,6 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   CONDITION_NO_OVERLOAD_FOR_PAIR, Customer.addressByObject,  customer to address
   """)
 
-# Each defect names the declarations it is about, one row each under it: the tie the two overloads
-# that compete for customer to address, and each no-overload defect every declaration its element
-# names, pairOnly's two and objectArrival, so the author sees what exists. The other condition
-# elements name methods under no defect.
-extend schema @expectEquals(relation: "graphitron_entry_defect_method", rows: """
-  code,                           method_name,   method_descriptor
-  CONDITION_OVERLOAD_TIE,         ambiguousPair, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lorg/jooq/Table;)Lorg/jooq/Condition;
-  CONDITION_OVERLOAD_TIE,         ambiguousPair, (Lorg/jooq/Table;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
-  CONDITION_NO_OVERLOAD_FOR_PAIR, pairOnly,      (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
-  CONDITION_NO_OVERLOAD_FOR_PAIR, pairOnly,      (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Staff;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/City;)Lorg/jooq/Condition;
-  CONDITION_NO_OVERLOAD_FOR_PAIR, objectArrival, (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/Object;)Lorg/jooq/Condition;
-  """)
-
 # Each step javac resolves to one declaration draws neither, the exact declaration beside a wildcard
 # one included; nor does a step its overloads tie on draw the no-overload defect, or the reverse.
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """

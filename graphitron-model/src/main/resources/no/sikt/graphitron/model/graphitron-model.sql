@@ -7888,40 +7888,6 @@ COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_de
 COMMENT ON COLUMN graphitron_entry_defect.detail IS 'the specific a rendered message quotes back, null where the code says everything';
 COMMENT ON COLUMN graphitron_entry_defect.touched_at IS 'when the reading that last found this defect ran: the mark the sweep reads. The gatherer of the stage owning the row''s code, graphitron_defect_type.owner_stage through meta_stage, deletes its own codes'' rows a reading did not mark, so a defect the schema no longer has goes and another owner''s rows stay';
 
-CREATE TABLE graphitron_entry_defect_method (
-  graph_name         VARCHAR NOT NULL,
-  source_name        VARCHAR NOT NULL,
-  source_line        INT     NOT NULL,
-  source_column      INT     NOT NULL,
-  code               VARCHAR NOT NULL,
-  method_source_name VARCHAR NOT NULL,
-  method_class_name  VARCHAR NOT NULL,
-  method_name        VARCHAR NOT NULL,
-  method_descriptor  VARCHAR NOT NULL,
-  touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code,
-               method_source_name, method_class_name, method_name, method_descriptor),
-  -- The defect it details, so a swept defect takes its methods with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
-    ON DELETE CASCADE,
-  -- The declaration, so a method the classpath no longer has is named by nothing.
-  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
-    REFERENCES code_method (source_name, class_name, method_name, descriptor)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_entry_defect_method IS 'One method a defect names, under the defect: for a condition overload defect, each declaration it is about. For example a step from customer to address whose condition ambiguousPair ties draws two rows under its CONDITION_OVERLOAD_TIE defect, ambiguousPair(Customer, Table<?>) and ambiguousPair(Table<?>, Address).';
-COMMENT ON COLUMN graphitron_entry_defect_method.graph_name IS 'the owning graph''s partition, carried from the defect';
-COMMENT ON COLUMN graphitron_entry_defect_method.source_name IS 'the file the defect is written in, the first of the five columns that are the defect''s key in graphitron_entry_defect';
-COMMENT ON COLUMN graphitron_entry_defect_method.source_line IS 'the defect''s source line, part of its key';
-COMMENT ON COLUMN graphitron_entry_defect_method.source_column IS 'the defect''s source column, part of its key';
-COMMENT ON COLUMN graphitron_entry_defect_method.code IS 'the defect''s code, completing its key. It also says what the method is to the defect: a declaration that ties under CONDITION_OVERLOAD_TIE, one the step considered and none of which took its pair under CONDITION_NO_OVERLOAD_FOR_PAIR, and one of the declarations whose shapes disagree under CONDITION_OVERLOAD_SHAPE_DISAGREES, so no role column is needed';
-COMMENT ON COLUMN graphitron_entry_defect_method.method_source_name IS 'the classpath entry the declaration was read from, the first of the four columns that are its key in code_method';
-COMMENT ON COLUMN graphitron_entry_defect_method.method_class_name IS 'the class declaring it';
-COMMENT ON COLUMN graphitron_entry_defect_method.method_name IS 'the method''s name';
-COMMENT ON COLUMN graphitron_entry_defect_method.method_descriptor IS 'the declaration''s descriptor, completing the method''s key and telling one overload from another';
-COMMENT ON COLUMN graphitron_entry_defect_method.touched_at IS 'when the reading that last named this method under this defect ran: the mark the owner''s defect sweep reads, so a method no longer named under a defect still found goes, as a defect no longer found takes its rows by the foreign key';
-
 -- The claims a claim defect is about, one row per claim the rule weighed and found in conflict: the
 -- defect names the element, and each claim where it was written.
 CREATE TABLE graphitron_entry_defect_claim (
@@ -12090,48 +12056,16 @@ SELECT d.graph_name, site.source_name, site.source_line, site.source_column, d.c
     ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
    AND ((d.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
         OR (d.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'));
-COMMENT ON VIEW graphitron_entry_defect_parameter_rule IS 'One row the parameter defect detail rule computes, in the shape graphitron_entry_defect_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_parameter under the defects it marked, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.graph_name';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.source_name';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.source_line';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.source_column';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.code';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.coordinate';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.call';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.position';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_entry_defect_parameter.parameter_name';
-
-CREATE TABLE graphitron_entry_defect_parameter (
-  graph_name     VARCHAR   NOT NULL,
-  source_name    VARCHAR   NOT NULL,
-  source_line    INT       NOT NULL,
-  source_column  INT       NOT NULL,
-  code           VARCHAR   NOT NULL,
-  coordinate     VARCHAR   NOT NULL,
-  call           VARCHAR   NOT NULL,
-  position       INT       NOT NULL,
-  parameter_name VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, coordinate, call, position),
-  -- The defect it details, so a swept defect takes its parameters with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
-    ON DELETE CASCADE,
-  -- The call the parameter belongs to, so a call the reading no longer makes is named by nothing.
-  FOREIGN KEY (graph_name, coordinate, call)
-    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_entry_defect_parameter IS 'One parameter a call parameter defect is about, under the defect: one row per defect, occurrence, call and position. For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.graph_name IS 'the owning graph''s partition, carried from the defect';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.source_name IS 'the defect''s file';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.source_line IS 'the defect''s line, 1-based';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.source_column IS 'the defect''s column, 1-based';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT; with the four columns before it, the defect''s key';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.coordinate IS 'the occurrence making the call, at its nested coordinate';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.call IS 'which of its calls, as graphitron_occurrence_call spells it: the condition''s on one table, or the producer''s';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.position IS 'the parameter''s position in the call''s method, completing the key';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without -parameters';
-COMMENT ON COLUMN graphitron_entry_defect_parameter.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
+COMMENT ON VIEW graphitron_entry_defect_parameter_rule IS 'One call parameter a parameter defect names, under the defect: one row per defect, occurrence, call and position. For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_name IS 'the defect''s file';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_line IS 'the defect''s line, 1-based';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_column IS 'the defect''s column, 1-based';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.coordinate IS 'the occurrence making the call, at its nested coordinate';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.call IS 'which of its calls, as graphitron_occurrence_call spells it';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.position IS 'the parameter''s position in the call''s method';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without -parameters';
 
 -- Where a @nodeId's decoded value lands in Java: at each occurrence of an argument or input field
 -- claiming NODE_ID whose root argument a @service call hands to a parameter, that parameter and the
@@ -15694,7 +15628,7 @@ SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
 UNION ALL
 -- A @service's or a @condition's method with a parameter no fill or two fills reach, under some
 -- occurrence of the call, at the reference: once per code, the parameters being
--- graphitron_entry_defect_parameter's under it.
+-- graphitron_entry_defect_parameter_rule's under it.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.code, MIN(d.detail)
   FROM graphitron_entry_defect_parameter_rule p
   JOIN graphitron_occurrence_call_parameter_defect d
@@ -19024,7 +18958,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-builds', 'graphitron_occurrence_built_class'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_shape'),
   ('occurrence-depth-defects', 'graphitron_entry_defect'),
-  ('occurrence-depths', 'graphitron_entry_defect_method'),
   ('occurrence-depths', 'graphitron_join_path'),
   ('occurrence-depths', 'graphitron_join_path_claimed'),
   ('occurrence-depths', 'graphitron_join_path_step'),
@@ -19079,9 +19012,7 @@ INSERT INTO meta_stage_write VALUES
   ('entry-defects', 'graphitron_entry_defect'),
   ('entry-defects', 'graphitron_entry_defect_claim'),
   ('entry-defects', 'graphitron_entry_defect_member'),
-  ('entry-defects', 'graphitron_entry_defect_parameter'),
   ('entry-defects', 'graphitron_entry_defect_key_column'),
-  ('entry-defects', 'graphitron_entry_defect_method'),
   ('entry-defects', 'graphitron_entry_defect_path_step'),
   ('entry-defects', 'graphitron_entry_defect_table');
 
@@ -19489,9 +19420,6 @@ INSERT INTO meta_grain VALUES
   ('entry-defect-path-step',
    'one path step one defect is about, in one graph',
    'graph_name, source_name, source_line, source_column, code, step_source_name, step_source_line, step_source_column', 'sdl'),
-  ('entry-defect-method',
-   'one method one defect names, in one graph',
-   'graph_name, source_name, source_line, source_column, code, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
   ('graphitron-entry-defect',
    'one defect one written graphitron directive carries, in one graph',
    'graph_name, source_name, source_line, source_column, code', 'sdl'),
@@ -20796,10 +20724,6 @@ INSERT INTO meta_relation VALUES
    'A defect a schema has, one row per defect at the written position an author edits to fix it under the code that names the rule: the supertype, which a gatherer is encouraged to extend with subtype and other detail relations where a defect has more to say than its code and detail.',
    'For example an @orderBy on a @routine mutation field draws one row at the @orderBy''s line, reading READ_SURFACE_ON_WRITE; a detail relation such as graphitron_argmapping_pair_defect is keyed by this key, with a foreign key to it ON DELETE CASCADE, so a swept defect takes its details with it.',
    'The key is the entry, not the coordinate. A coordinate is an aggregate over the sites that declare it, so keying a defect there loses which of two offending applications to fix and reintroduces by the key the ranking this relation exists without. The entry is what the author edits. One relation and not one per defect: eleven sibling relations differed almost only in payload, and every payload column went into a rendered sentence, a prose coordinate or a file position, with nothing computing on them. The family follows the grain rather than being chosen: a defect registers at an entry, this family owns those entries, so it is filed here. A defect at a grain this family does not own belongs with whoever owns it, which is why a generated class publishing malformed constants is not in this population. What the position is about is not stored: graphitron_entry_defect_site reaches the element in fixed hops. Several gatherers write it, each its own codes, and what one defect has to say beyond its code and detail is a relation of its writer''s keyed by this key, whose foreign key collects it when the owner sweeps the defect.'),
-  ('graphitron_entry_defect_method', 'entry-defect-method', 'graphitron',
-   'One method a defect names, under the defect: for a condition overload defect, each declaration it is about.',
-   'For example a step from customer to address whose condition ambiguousPair ties draws two rows under its CONDITION_OVERLOAD_TIE defect, ambiguousPair(Customer, Table<?>) and ambiguousPair(Table<?>, Address).',
-   'A defect''s detail is one string, and a condition overload defect is about a set of declarations an author has to see to fix it. A set held in a string is unreadable to anything but a person, so each declaration is a row under the defect, keyed by the defect''s key with a foreign key to it, the shape graphitron_entry_defect asks of every detail relation. Written by Steps in the pass that writes the defects, and keyed to code_method so the declaration is a fact rather than its spelling.'),
   ('graphitron_entry_defect_claim', 'entry-defect-claim', 'graphitron',
    'One claim a claim defect is about: one row per defect and claim in conflict.',
    'For example a field carrying both @service and @mutation draws a CLAIMS_CONFLICT at the field with a SERVICE row and an INSERT row under it, each claim pointing at where it was written.',
@@ -20820,14 +20744,10 @@ INSERT INTO meta_relation VALUES
    'One row the unresolved projection detail rule computes, in the shape graphitron_entry_defect_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_key_column under the defects it marked, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the code, so one statement says where a defect is and which key columns it names.'),
-  ('graphitron_entry_defect_parameter', 'entry-defect-parameter', 'graphitron',
-   'One parameter a call parameter defect is about, under the defect: one row per defect, occurrence, call and position.',
-   'For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.',
-   'One defect per written directive, its parameters a relation beneath it: a defect''s key is its position and code, so the calls one directive makes, under several fields or for several tables, are named here rather than packed into the detail string. Keyed by the defect, the occurrence, the call and the position, with a foreign key to the defect, so a swept defect takes the rows with it.'),
   ('graphitron_entry_defect_parameter_rule', 'entry-defect-parameter', 'graphitron',
-   'One row the parameter defect detail rule computes, in the shape graphitron_entry_defect_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_parameter under the defects it marked, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the three parameter codes, so one statement says where a defect is and which parameters it names.'),
+   'One call parameter a parameter defect names, under the defect: one row per defect, occurrence, call and position.',
+   'For example a @condition on a field returning a union of customer and staff whose method leaves name unfilled is one PARAMETER_UNFILLED defect at the condition with a row for each table''s call.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms; the entry defect rule reads it for the three parameter codes, so one statement says where a defect is and which parameters it names. A defect''s key is its position and code, so the calls one directive makes, under several fields or for several tables, are named here rather than packed into the detail string.'),
   ('graphitron_entry_defect_table', 'entry-defect-table', 'graphitron',
    'One table a defect names: one row per defect and candidate table.',
    'For example @table(name: "note") where multischema_a and multischema_b both declare note draws a TABLE_AMBIGUOUS defect with a row for each.',

@@ -91,15 +91,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   ROUTE_AMBIGUOUS,                ,                                                                                           Language.filmsByTable
   """)
 
-# Under the overload defects, the declarations they are about: for a tie the two competing, for no
-# overload every declaration the element names.
-extend schema @expectEquals(relation: "graphitron_entry_defect_method", rows: """
-  code,                           method_name,          method_descriptor
-  CONDITION_NO_OVERLOAD_FOR_PAIR, customerOnlyAddress,  (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
-  CONDITION_OVERLOAD_TIE,         tiedAddress,          (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Lorg/jooq/Table;)Lorg/jooq/Condition;
-  CONDITION_OVERLOAD_TIE,         tiedAddress,          (Lorg/jooq/Table;Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Address;)Lorg/jooq/Condition;
-  """)
-
 # Where each walk stopped, with the moves it found; the step before a stop is kept.
 extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
   coordinate,              target_type, position, element_place, moves
@@ -150,4 +141,3 @@ extend schema @expectEquals(relation: "graphitron_join_path", where: "coordinate
   coordinate,              target_type, target_table
   Query.people(storeId:),  Customer,    store
   """)
-
