@@ -413,6 +413,26 @@
                         </configuration>
                     </execution>
                     <!--
+                        Issuing fixture: a federated schema whose type vouches for its rows with
+                        @issue, in its own package, since a build that vouches takes voucher keys
+                        on every runtime. The execution tests decode the vouchers it issues.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-issuing</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/issuing.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>${jooqPackage}</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.issuing</outputPackage>
+                        </configuration>
+                    </execution>
+                    <!--
                         Multi-schema fixture (R83). A schema over the multischema_a / multischema_b
                         tables of the fixture catalog in graphitron-sakila-db, writing generated
                         emission to its own disjoint subpackage. Compiling it is the compile-tier

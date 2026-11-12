@@ -1,6 +1,6 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each claim names the member it is. Until the issuing fetcher is generated, @issue is refused at the application."
+"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each claim names the member it is. A schema whose voucher stage refuses nothing generates."
 type FilmRef @table(name: "film") {
   filmId: ID! @field(name: "film_id")
   title(lang: String): String
@@ -41,13 +41,6 @@ extend schema @assertAbsent(relation: "graphitron_element", rows: """
 extend schema @assertContains(relation: "graphitron_element", rows: """
   coordinate
   FilmRef.voucher
-  """)
-
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
-  code = 'VOUCHER_ISSUE_NOT_GENERATED'
-  """, rows: """
-  code,                        type_name, detail
-  VOUCHER_ISSUE_NOT_GENERATED, FilmRef,   FilmRef.voucher
   """)
 
 # Each member read off the issuing table, by its @field or its name, with the scalar that serializes it.

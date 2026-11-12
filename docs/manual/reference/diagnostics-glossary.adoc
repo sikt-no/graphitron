@@ -205,15 +205,6 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
 
-[#voucher-issue-not-generated]
-=== A voucher field graphitron does not issue yet (`VOUCHER_ISSUE_NOT_GENERATED`)
-
-*What it says.* `@issue is captured and A's published shape derived, but graphitron does not generate the fetcher that issues vouchers yet`, at the `@issue`.
-
-*Cause.* xref:directives/issue.adoc[`@issue`] is accepted, and what the subgraph publishes for it is derived, but the fetcher that signs a voucher for each row is not generated yet, so a schema using it would reach an emitter that does not exist. The build stops instead.
-
-*Next step.* None in the schema: remove the `@issue` field until a release that generates it.
-
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.

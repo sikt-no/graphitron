@@ -81,7 +81,7 @@ public class GeneratorCoverageTest {
                 + " dodging the pin, so a new dual-arm leaf is a deliberate edit here, not a"
                 + " silent derivation change")
             .containsExactlyInAnyOrder(ChildField.ColumnBackedField.class,
-                ChildField.ComputedField.class, ChildField.BatchedPivotField.class,
+                ChildField.ComputedField.class, ChildField.VoucherField.class, ChildField.BatchedPivotField.class,
                 ChildField.BatchedTableField.class, ChildField.ServiceTableField.class,
                 ChildField.ServiceRecordField.class, ChildField.TableInterfaceField.class,
                 ChildField.BatchedTableInterfaceField.class,

@@ -500,7 +500,7 @@ public class GraphQLRewriteGenerator {
      */
     private PassProducts runPipeline(Projection projection) {
         var jooq = new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
-        var attributed = AttributedRegistry.of(schemas.written(), jooq);
+        var attributed = AttributedRegistry.of(schemas.written(), jooq, store);
         // A document the loading rewrites refuse is refused as that, before its entries are judged.
         var accepted = acceptedSchema(attributed);
         // The store's verdict comes next: a graph it refuses is not classified, so an author meets
@@ -543,7 +543,8 @@ public class GraphQLRewriteGenerator {
             plan.errorChannels(),
             plan.outboxes(),
             recordAccessors,
-            services);
+            services,
+            plan.vouchers());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
@@ -714,7 +715,7 @@ public class GraphQLRewriteGenerator {
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, tenantKeyType != null);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches);
-            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity);
+            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity, vouches);
         };
     }
 

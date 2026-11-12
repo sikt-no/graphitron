@@ -507,8 +507,10 @@ public final class EmittedRegistry {
      * them, from every declaration site of their type, its extensions included: the voucher seals
      * them, so the subgraph publishes the voucher alone. A removal read off the membership rather than
      * off a field's absence from the anchors, which would turn a capture defect into a silent deletion.
+     * The one reader of the membership that removes anything: the walk's input
+     * ({@link AttributedRegistry#of}) takes the same removal, so neither classifies a member.
      */
-    private static void withhold(TypeDefinitionRegistry patched, StoreHandle store) {
+    static void withhold(TypeDefinitionRegistry patched, StoreHandle store) {
         var m = GRAPHITRON_VOUCHER_MEMBER;
         var membersByType = new LinkedHashMap<String, java.util.Set<String>>();
         store.dsl().select(m.TYPE_NAME, m.FIELD_NAME).from(m)

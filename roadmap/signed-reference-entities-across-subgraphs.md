@@ -466,7 +466,14 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
 6. *Issuing.* A's runtime schema, the walk and the runtime wiring reading the one membership-reading
    removal; the issue fetcher, `SessionState.of(caller, ...)` and the key parameter on
    `Graphitron.runtime(...)`, gated on the issue entry; A-alone execution tests (tokens decode, one vouch
-   id per operation and scope); the temporary refusal goes.
+   id per operation and scope); the temporary refusal goes. As built, in two commits: the runtime takes
+   the `VoucherKeys` on every public constructor and `runtime` overload and `SessionState.of` the caller,
+   gated on the stored voucher key read once per run; then the walk takes `EmittedRegistry`'s removal
+   through `AttributedRegistry.of`, the `@issue` field is a data-free `VoucherField` leaf, and
+   `VoucherIssueQuery` feeds both its projection and its fetcher (`VoucherIssueEmitter`), each value
+   serialized by its scalar's constant, a built-in's or the one `@scalarType` names. An enum member has
+   no such constant, so `VOUCHER_MEMBER_NOT_SCALAR` now refuses enums too; carrying an enum's wire value
+   can follow if a consumer needs it.
 7. *B's facts.* `@accept` and its capture entry, its claims rows, its refusals, the `ACCEPT` key and
    `@inaccessible`, the voucher alternative in the entity key alternatives. The same temporary-refusal device as slice 4,
    removed in slice 8.

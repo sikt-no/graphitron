@@ -141,6 +141,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.ARG_TYPE_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_AS_CONNECTION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_EXTERNAL_FIELD;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_ISSUE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_LOOKUP_KEY;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_MULTITABLE_REFERENCE;
@@ -8961,6 +8962,10 @@ class FieldBuilder {
                         + "ServiceDirectiveResolver's child-polymorphic classify arm defers this coordinate: field '"
                         + parentTypeName + "." + name + "'");
             };
+        }
+
+        if (fieldDef.hasAppliedDirective(DIR_ISSUE)) {
+            return new ChildField.VoucherField(parentTypeName, name, location);
         }
 
         if (fieldDef.hasAppliedDirective(DIR_EXTERNAL_FIELD)) {

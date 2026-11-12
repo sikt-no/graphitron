@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * {@link VoucherRuntime#vouches}, the gate on the voucher runtime: a graph minting a voucher key
- * vouches, over {@code defects/voucher-issue}; a federated graph minting only node keys does not,
+ * vouches, over {@code scenarios/voucher-issue}; a federated graph minting only node keys does not,
  * over {@code scenarios/entity-key-alternatives}.
  */
 @PipelineTier
@@ -20,7 +20,7 @@ class VoucherRuntimeGateTest {
 
     @Test
     void aGraphMintingAVoucherKeyVouches() {
-        boolean vouches = FACTS.read("defects/voucher-issue", graph -> VoucherRuntime.vouches(graph.handle()));
+        boolean vouches = FACTS.read("scenarios/voucher-issue", graph -> VoucherRuntime.vouches(graph.handle()));
         assertThat(vouches).isTrue();
     }
 

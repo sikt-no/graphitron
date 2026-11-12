@@ -15,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * What an issuing subgraph publishes for a type whose voucher field carries {@code @issue}, read off
- * the two schemas capture hands back for the {@code defects/voucher-issue} document: the emitted
+ * the two schemas capture hands back for the {@code scenarios/voucher-issue} document: the emitted
  * schema carries the voucher alone, kept from clients by {@code @inaccessible}, and keys the type by it
  * as a key this subgraph does not resolve, while the schema as written keeps every absorbed field.
  */
@@ -29,7 +29,7 @@ class VoucherPublishedShapeTest {
 
     @BeforeAll
     static void read() {
-        FACTS.read("defects/voucher-issue", graph -> {
+        FACTS.read("scenarios/voucher-issue", graph -> {
             emitted = ((SchemaAssembly.Assembled) graph.schema().synthesised().orElseThrow()).schema();
             written = ((SchemaAssembly.Assembled) graph.schema().written().assembly()).schema();
             return null;

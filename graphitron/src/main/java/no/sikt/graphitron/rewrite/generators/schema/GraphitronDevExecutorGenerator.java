@@ -54,7 +54,10 @@ public final class GraphitronDevExecutorGenerator {
     private GraphitronDevExecutorGenerator() {}
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
-            SessionIdentityRows identity) {
+            SessionIdentityRows identity, boolean vouches) {
+        if (vouches && !identity.supplied()) {
+            throw new IllegalArgumentException("a graph that vouches supplies session identity per request");
+        }
         String schemaPackage = outputPackage + ".schema";
         var facade = ClassName.get(outputPackage, GraphitronFacadeGenerator.CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
@@ -147,9 +150,18 @@ public final class GraphitronDevExecutorGenerator {
                     hookImpl, tenantArg);
             }
         }
+        if (vouches) {
+            var keys = ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS);
+            execute
+                .addComment("A dev run signs with a key pair of its own: its vouchers verify nowhere else.")
+                .addStatement("$T devKeyPair = $T.getInstance($T.ALGORITHM).generateKeyPair()",
+                    java.security.KeyPair.class, java.security.KeyPairGenerator.class, keys)
+                .addStatement("$T voucherKeys = $T.ed25519($S, devKeyPair.getPrivate(), $T.of($S, devKeyPair.getPublic()))",
+                    keys, keys, "dev", java.util.Map.class, "dev");
+        }
         execute
-            .addStatement("$T runtime = new $T(new $N(connection), $T.valueOf(dialect))",
-                runtime, runtime, DATA_SOURCE_WRAPPER, sqlDialect)
+            .addStatement("$T runtime = new $T(new $N(connection), $T.valueOf(dialect)$L)",
+                runtime, runtime, DATA_SOURCE_WRAPPER, sqlDialect, vouches ? ", voucherKeys" : "")
             .addStatement("$T engine = $T.newGraphQL($T.buildSchema(builder -> {}))\n"
                     + "    .instrumentation(new $T(runtime, $T.ROLLBACK_ONLY))\n"
                     + "    .build()",

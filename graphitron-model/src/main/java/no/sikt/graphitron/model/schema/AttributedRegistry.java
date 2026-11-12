@@ -7,6 +7,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 
@@ -16,8 +17,8 @@ import java.util.Objects;
 import java.util.Set;
 
 /**
- * The walk's input: the schema capture composed as written, with the federation keys
- * {@link KeyNodeSynthesiser} synthesises over it. It goes with the walk, the emitted schema being
+ * The walk's input: the schema capture composed as written, less the fields a voucher absorbs, with
+ * the federation keys {@link KeyNodeSynthesiser} synthesises over it. It goes with the walk, the emitted schema being
  * capture's own and the store minting the keys it carries.
  *
  * <p>{@code injectedNames} are the definitions the federation {@code @link} injector added, taken
@@ -76,14 +77,16 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
      * The walk's input over the schema capture assembled.
      *
      * <p>Capture has parsed, reduced and composed the corpus and recorded what each stage refused;
-     * this adds the key synthesis and nothing else. A refusal of the loading rewrites throws, and
+     * this withholds the voucher members, by the removal the emitted schema takes
+     * ({@code EmittedRegistry}'s, reading {@code graphitron_voucher_member}), and adds the key
+     * synthesis, and nothing else. A refusal of the loading rewrites throws, and
      * the parser's and the reduce's ride along in {@link #read}.
      *
      * <p>The reading is not edited: synthesis runs on a copy of its composition, so one capture can
      * serve every pass a caller runs over it.
      */
     public static AttributedRegistry of(GraphQLAssemblyCapture.AssemblyReading reading,
-                                        JooqCatalog jooq) {
+                                        JooqCatalog jooq, StoreHandle store) {
         var composed = switch (reading.composition()) {
             case LoadingRewrites.Outcome.Applied applied -> applied;
             case LoadingRewrites.Outcome.Refused refused -> throw refused.refusal().exception();
@@ -91,6 +94,7 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
         // Replayed through the reduce rather than TypeDefinitionRegistry.merge, which rebuilds the
         // parse order kind by kind and so hands back the same definitions in a different order.
         var registry = SchemaLoader.merge(List.of(composed.registry())).registry();
+        EmittedRegistry.withhold(registry, store);
         if (!composed.injectedNames().isEmpty()) {
             KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));
         }

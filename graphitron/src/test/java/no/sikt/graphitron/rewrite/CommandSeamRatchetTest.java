@@ -164,9 +164,11 @@ class CommandSeamRatchetTest {
      * Raised 57 to 58 when the same-row table child landed: its no-method arm in the fetcher
      * dispatch, a new leaf's one dispatch site. Lowered 58 to 56 when an errors field became an
      * outcome's alone: the switch over its two transports went with the transport. Lowered 56 to
-     * 55 when the same-row table child retired, taking its no-method arm with it.
+     * 55 when the same-row table child retired, taking its no-method arm with it. Raised 55 to 56
+     * when the voucher field landed: its no-method arm in the fetcher dispatch, a new leaf's one
+     * dispatch site, its method being the store's.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 55;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 56;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -312,8 +314,12 @@ class CommandSeamRatchetTest {
      *
      * <p>Lowered 143 to 142 when the connection classes came to be rendered from the store: the
      * fetchers planner's connection-pair arm went with the per-type connection fetchers.
+     *
+     * <p>Raised 142 to 144 when the voucher field landed: its contribution arm in the projection
+     * producer, which reads the voucher's columns off the store's rows, and its arm in the
+     * fetcher-edge membership switch, each a new leaf's own exhaustive-switch site.
      */
-    private static final int PLAN_LEAF_REFERENCES = 142;
+    private static final int PLAN_LEAF_REFERENCES = 144;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

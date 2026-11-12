@@ -128,6 +128,8 @@ class LeafReconstructionKeyTest {
             triple("parent record composite accessor", "inline", "composite record")),
         Map.entry(ChildField.ComputedField.class,
             triple("parent table row through a helper method", "inline", "computed column")),
+        Map.entry(ChildField.VoucherField.class,
+            triple("parent table row's absorbed columns", "inline", "signed voucher")),
         Map.entry(ChildField.SingleRecordIdField.class,
             triple("produced record's key columns", "inline", "encoded node id")),
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,

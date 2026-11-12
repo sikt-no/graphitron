@@ -4,8 +4,6 @@
 
 Marks the *voucher* field of a table-bound type in a federated subgraph that vouches for the rows its own rules let a caller see, so another subgraph can grant access to them through its database's row-level security. Every other field of the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching field `@accept`.
 
-NOTE: Graphitron captures `@issue` and derives what the subgraph publishes for it, but does not yet generate the fetcher that issues vouchers, so a schema using it is refused with `VOUCHER_ISSUE_NOT_GENERATED` (see xref:../diagnostics-glossary.adoc#voucher-issue-not-generated[the glossary entry]) for now.
-
 == SDL signature
 
 [source,graphql]
@@ -49,6 +47,13 @@ type VgsResultat @table(name: "soknad_vgs_resultat") {
 * `@key(fields: "voucher", resolvable: false)` on the issuing type, naming the field you marked, after any key you wrote. The type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher. The link imports `@inaccessible` for you.
 * Every absorbed field is withheld whatever else is refused, so a schema whose `@issue` is refused for another reason still never publishes them.
 
+== What is generated
+
+* The voucher field's fetcher signs one voucher per row it is selected on, after the row is read. Whenever the voucher is selected, the row's query also selects the absorbed fields' columns, so the voucher costs no extra statement. Each value is serialized by its field's scalar before it is signed, so the voucher carries what a plain representation of the field would.
+* Every voucher of one operation under one scope shares a random vouch id, the caller and an expiry of the operation's start plus `ttl`.
+* `SessionState.of(caller, mount, unmount)` takes the caller first: who the request is for, which every voucher is bound to. Both subgraphs must pass the same caller for the same user, for example the token's subject.
+* Every `Graphitron.runtime(...)` overload, and every `GraphitronRuntime` constructor, takes the `VoucherKeys` last, so a runtime without them does not compile. `VoucherKeys.issuing(keyId, privateKey)` signs with a JDK Ed25519 key; implement `VoucherKeys` to sign elsewhere.
+
 == Constraints
 
 Each refusal below is reported at the `@issue`, or at the absorbed field it is about.
@@ -91,7 +96,7 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 | No claim is named twice.
 
 | `VOUCHER_MEMBER_NOT_SCALAR`
-| Each absorbed field is a single scalar or enum value, not a list or an object.
+| Each absorbed field is a single scalar value, not an enum, a list or an object.
 
 | `VOUCHER_MEMBER_COMPUTED`
 | No absorbed field carries a directive giving it a value of its own, such as `@nodeId`, `@service`, `@routine`, `@reference`, `@externalField` or `@pivot`: the voucher reads each off the issuing row.

@@ -1,6 +1,6 @@
 extend schema @withConfiguration(sessionState: true)
 
-"The issuing side's refusals, each at the @issue or at the absorbed field it is about. A type issues one voucher, is reached only through it, and carries each absorbed field as one scalar read off its own table; the claims name absorbed fields, once each; the lifetime is a duration; and a voucher vouches for rows reached below a parent, never at the root."
+"The issuing side's refusals, each at the @issue or at the absorbed field it is about. A type issues one voucher, is reached only through it, and carries each absorbed field as one scalar, never an enum, read off its own table; the claims name absorbed fields, once each; the lifetime is a duration; and a voucher vouches for rows reached below a parent, never at the root."
 type Twice @table(name: "film") {
   filmId: ID @field(name: "film_id")
   a: String @issue(scope: "s", ttl: "PT5M", claims: "filmId")
@@ -42,6 +42,7 @@ type Members @table(name: "address") {
   addressId: Int @field(name: "address_id")
   tags: [String]
   owner: Language
+  phone: Phone @field(name: "phone")
   extra: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
   nosuch: String
   v: String @issue(scope: "s", ttl: "PT5M", claims: "addressId")
@@ -51,6 +52,8 @@ type Language @table(name: "language") {
   name: String
 }
 
+enum Phone { LANDLINE }
+
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
 type Query {
@@ -58,7 +61,7 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
-  code LIKE 'VOUCHER_%' AND code <> 'VOUCHER_ISSUE_NOT_GENERATED'
+  code LIKE 'VOUCHER_%'
   """, rows: """
   code,                             type_name,  detail
   VOUCHER_CLAIMS_EMPTY,             NoClaims,   NoClaims.v
@@ -72,6 +75,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   VOUCHER_MEMBER_COLUMN_UNRESOLVED, Members,    Members.nosuch
   VOUCHER_MEMBER_COMPUTED,          Members,    Members.extra
   VOUCHER_MEMBER_NOT_SCALAR,        Members,    Members.owner
+  VOUCHER_MEMBER_NOT_SCALAR,        Members,    Members.phone
   VOUCHER_MEMBER_NOT_SCALAR,        Members,    Members.tags
   VOUCHER_TTL_INVALID,              BadTtl,     5 minutes
   """)

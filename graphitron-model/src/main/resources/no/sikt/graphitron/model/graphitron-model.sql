@@ -14469,7 +14469,8 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLA
                   AND e.position < c.position AND e.field_name = c.field_name)
  GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
 UNION ALL
--- A member the voucher cannot carry as one value: a list, or an object, interface or union.
+-- A member the voucher cannot carry as one scalar value: a list, or an object, interface or union,
+-- or an enum, whose wire value the voucher's issuer has no scalar to serialize by.
 SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEMBER_NOT_SCALAR',
        m.coordinate
   FROM graphitron_voucher_member m
@@ -14478,7 +14479,7 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEM
  WHERE f.is_list = TRUE
     OR EXISTS (SELECT 1 FROM graphql_type t
                 WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type
-                  AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION', 'INPUT_OBJECT'))
+                  AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION', 'INPUT_OBJECT', 'ENUM'))
 UNION ALL
 -- A member given a value of its own, which the voucher would not read off the row.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_MEMBER_COMPUTED',
@@ -17333,13 +17334,6 @@ SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DI
  WHERE NOT EXISTS (SELECT 1 FROM sql_enum_binding_literal el
                     WHERE el.source_name = eb.source_name AND el.class_fqn = eb.class_fqn
                       AND el.literal = v.discriminator_value)
-UNION ALL
--- @issue until its fetcher is generated: A's facts and published shape are derived, but nothing emits
--- the voucher yet, so a valid schema is refused here rather than reaching an emitter that does not exist.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISSUE_NOT_GENERATED',
-       d.coordinate
-  FROM graphql_directive_application d
- WHERE d.directive_name = 'issue'
 UNION ALL
 -- @issue on a type a root operation field returns, directly or as a list: the vouched decision is
 -- the path from a parent A's rules admitted. A mutation payload's field is no root field.
@@ -21917,15 +21911,13 @@ INSERT INTO graphitron_defect_type VALUES
   ('VOUCHER_CLAIM_REPEATED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_REPEATED',
    '@issue''s claims names a field twice: name it once.', 'vouchers'),
   ('VOUCHER_MEMBER_NOT_SCALAR', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_NOT_SCALAR',
-   'A field @issue absorbs is a list or an object, and the voucher carries each absorbed field as one scalar value: absorb scalar fields only.', 'vouchers'),
+   'A field @issue absorbs is a list, an object or an enum, and the voucher carries each absorbed field as one scalar value: absorb scalar fields only.', 'vouchers'),
   ('VOUCHER_MEMBER_COMPUTED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_COMPUTED',
    'A field @issue absorbs carries a directive that gives it a value of its own, and the voucher reads each absorbed field off the issuing row: absorb fields that read a column.', 'vouchers'),
   ('VOUCHER_MEMBER_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_COLUMN_UNRESOLVED',
    'A field @issue absorbs reads no column of the issuing type''s table: name its column with @field(name:).', 'vouchers'),
   ('VOUCHER_ISSUE_ON_ROOT_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_ROOT_TYPE',
    'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.', 'entry-defects'),
-  ('VOUCHER_ISSUE_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ISSUE_NOT_GENERATED',
-   '@issue is captured and A''s published shape derived, but graphitron does not generate the fetcher that issues vouchers yet.', 'entry-defects'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.', 'entry-defects'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',

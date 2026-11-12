@@ -77,17 +77,6 @@ public final class GraphitronFacadeGenerator {
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
                                           boolean federationLink, boolean usesOneOf,
-                                          no.sikt.graphitron.emit.SessionIdentityRows identity) {
-        return generate(schema, outputPackage, federationLink, usesOneOf, identity, false);
-    }
-
-    /**
-     * As {@link #generate(GraphitronSchema, String, boolean, boolean, no.sikt.graphitron.emit.SessionIdentityRows)},
-     * for a build that may vouch: where {@code vouches}, every {@code runtime} overload takes the
-     * {@code VoucherKeys} last, so a runtime without them does not compile.
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
-                                          boolean federationLink, boolean usesOneOf,
                                           no.sikt.graphitron.emit.SessionIdentityRows identity, boolean vouches) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
@@ -311,7 +300,7 @@ public final class GraphitronFacadeGenerator {
 
     /** Convenience overload for non-federation usage. */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, outputPackage, false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty());
+        return generate(schema, outputPackage, false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty(), false);
     }
 
     /**

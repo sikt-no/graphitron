@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The runtime of a build that vouches, compiled at Java 17: every public constructor of the runtime
  * takes the voucher keys last, so a runtime without them does not compile, and the withers keep them;
- * the session state takes the caller first and hands it back; each operation publishes its issuers.
+ * the session state takes the caller first and hands it back.
  */
 @UnitTier
 class VouchingRuntimeTest {
@@ -38,7 +38,6 @@ class VouchingRuntimeTest {
     private static Class<?> runtime;
     private static Class<?> keys;
     private static Class<?> sessionState;
-    private static String instrumentationSource;
 
     @BeforeAll
     static void compile() {
@@ -52,7 +51,6 @@ class VouchingRuntimeTest {
         }
         for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, null, identity, true)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
-            instrumentationSource = spec.toString();
         }
         for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
@@ -119,18 +117,13 @@ class VouchingRuntimeTest {
     }
 
     @Test
-    void eachOperationPublishesItsIssuersBoundToTheKeysAndTheCaller() {
-        assertThat(instrumentationSource)
-            .contains("graphQLContext.put(com.example.schema.VoucherCodec.Issuers.class,"
-                + " new com.example.schema.VoucherCodec.Issuers(runtime.voucherKeys(), sessionState.caller(),"
-                + " java.time.Instant.now()))");
-    }
-
-    @Test
     void aBuildThatDoesNotVouchHasNeitherKeysNorCaller() {
         var plain = ConnectionRuntimeClassGenerator.generate(PACKAGE, SessionIdentityRows.handleLess(),
             ConnectionKeyShape.none(), null);
-        assertThat(plain).allSatisfy(spec -> assertThat(spec.toString())
-            .doesNotContain("VoucherKeys").doesNotContain("caller()"));
+        assertThat(plain).allSatisfy(spec -> {
+            assertThat(spec.methodSpecs()).noneMatch(m -> m.name().equals("voucherKeys") || m.name().equals("caller"));
+            assertThat(spec.methodSpecs()).allSatisfy(m -> assertThat(m.parameters())
+                .noneMatch(p -> p.type().toString().endsWith(VoucherRuntime.KEYS)));
+        });
     }
 }
