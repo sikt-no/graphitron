@@ -1,13 +1,13 @@
 ---
 id: R1167
 title: "Error-channel dispatch routes every throw where Graphitron 9 routed it"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: error-channel
 depends-on: []
 created: 2026-11-11
-last-updated: 2026-11-11
+last-updated: 2026-11-12
 ---
 
 # Error-channel dispatch routes every throw where Graphitron 9 routed it
