@@ -13,6 +13,34 @@ times are about twice a 16-core machine's where a phase is CPU-bound and about e
 test pool is the limit. Trunk moved under the work (other items landed derivation changes between
 runs); each figure names its commit or says it was taken in an interleaved pair.
 
+## Status, 2026-11-12: superseded in part, and corrected
+
+This is a snapshot of 2026-11-02 on a 4-core machine. Trunk has moved by some 700 commits since, the
+build has grown, and the plan in `roadmap/clean-build-under-five-minutes.md` was rewritten from a
+fresher measurement on the workstation (`2026-11-11-the-clean-build-measured-on-the-workstation.md`)
+and from `2026-11-11-what-a-capture-costs-by-store.md`. Read those for the current numbers. What in
+this document no longer holds, or never did:
+
+1. **The flusher is not `ALTER ... SELECTIVITY`.** The clear's `SET REFERENTIAL_INTEGRITY FALSE` then
+   `TRUE`, around its truncates, empties the statement cache; the statistics reset is harmless to it.
+   The mechanism stated under "Cold stores, boots and the reset" was inferred, not tested, and was wrong.
+2. **Lever 2 is refuted, and my measurement behind it was confounded.** The borrowed series (cleared
+   store, flushed cache) and the chained series (populated store, warm cache) differed in two ways at
+   once, and I credited the cache alone. The controlled comparison found that a store which loses its
+   rows costs 2.1 to 2.4 s a capture with the cache intact, against 0.3 s for a populated store that
+   keeps its cache. The lever is a populated store, which is the plan's A2a, priced at 77% less CPU and
+   moved under R1160. The 870 CPU-second bound below was an upper bound on the wrong thing.
+3. **The list of six statements is half stale.** Three of the six statements' targets
+   (`graphitron_argument_reference_step_target_keyed`, `graphitron_field_path`,
+   `graphitron_field_reference_step_hop_keyless`) are no longer in the schema, because the derivation
+   work has reshaped the stratum since. The statements to rank are the ones in the 2026-11-11 profile
+   (`PathNeeds.write`, `OccurrenceSources.write` and the occurrence stages), which the item's Track C
+   already does. What survives is the shape of the finding: the cost follows the views a statement
+   reads, not its own text.
+4. **The CPU budget has grown.** 7,192 CPU-seconds here against 9,711 on the workstation at a later
+   trunk; the floor argument (even perfect use of the threads leaves more than the target allows)
+   stands, and the later figure makes it stronger.
+
 ## Headline
 
 1. **The build is CPU-bound, and the target is below its CPU floor.** A sequential
@@ -32,10 +60,11 @@ runs); each figure names its commit or says it was taken in an interleaved pair.
 4. **Those statements are expensive because of the views under them, not their own text.** The
    heaviest has one `SELECT` and no joins and reads two relations directly, but reaches 116
    relations through 18 views; H2 expands a view where it is used and plans the whole expansion.
-5. **The statement cache that would remove most of it is flushed, or never warm.** A long-lived cache
-   takes a repeat capture's preparation from 1,231 ms to 50 ms, but the harness reset between cases
-   empties it (borrowed cases cost 3.15 s each, flat, against 1.25 s chained in one store), and 476
-   stores per `graphitron` run start cold.
+5. **A capture into an empty store costs several times one into a populated store.** A long-lived
+   cache takes a repeat capture's preparation from 1,231 ms to 50 ms, but the harness's clear between
+   cases both flushes that cache and empties the store (borrowed cases cost 3.15 s each, flat, against
+   1.25 s chained in one store), and 476 stores per `graphitron` run start cold. Which of the two does
+   the damage was not separated here; see the status above, where it was.
 6. **The test pool ran far more classes at once than its configured four.** About 19 in
    `graphitron`, 10 in the model, 15 in LSP, and 30 distinct threads booted the per-thread store.
    Holding the pool at four took 14 to 34% off those modules' runs.
@@ -216,11 +245,13 @@ owned long-lived store with no reset:
 | Borrowed, reset between | 3,600 | 3,163 | 3,129 | 3,188 | 3,193 | 3,126 |
 | Owned, chained, no reset | 3,268 | 2,030 | 1,284 | 1,195 | 1,297 | 1,354 |
 
-The reset restores column selectivities with one `ALTER TABLE ... SELECTIVITY` per drifted column,
-and a schema change empties every session's statement cache, so the borrowed series never warms.
+I attributed the borrowed series' failure to warm up to the reset's `ALTER TABLE ... SELECTIVITY`
+statements emptying the statement cache. That was a guess and it was wrong: see the status above. The
+two series also differ in whether the store holds other graphs' rows, and that, together with the
+referential-integrity toggle in the clear, is what the later controlled comparison found to matter.
 Over a `graphitron` phase the harness counted 719 captures and 262 boots (captures through the production
-facade are in neither count); at most about 450 captures could be warm, and at 1.9 s each that bounds the saving near 870 CPU-seconds, 12% of the
-build, an upper limit not yet tested.
+facade are in neither count). The bound I drew from that, about 870 CPU-seconds for keeping the cache
+warm alone, does not hold, since a cleared store stays expensive with the cache kept.
 
 By position in a store, at cache sizes 8 and 1,024 (three runs, mean): the first capture 2,639 and
 2,869 ms (no gain), captures two to six 1,967 and 1,365 ms (31% faster). The memory cost, over six
@@ -296,7 +327,7 @@ effects do not add.
 | # | Lever | Bound | Confidence | Note |
 |---|---|---|---|---|
 | 1 | Make the six statements cheaper to plan, by flattening or avoiding the view stacks under them (18 views, 116 relations under the entry-defect merge) | up to 851 CPU s in the `graphitron` JVM, 12% of the build, plus the model's share, unmeasured | high that the cost is there; the achievable part depends on the model | Modelling work; the derivation items already name these views |
-| 2 | Keep the statement and view-plan cache warm across harness cases: reset without the schema change that flushes it | up to about 870 CPU s (450 warm-capable captures at 1.9 s) | medium; the 1.9 s is measured, the count is an upper bound, and plan-sensitive tests depend on the reset | Not built or tested |
+| 2 | ~~Keep the statement and view-plan cache warm across harness cases~~ | refuted: a store that loses its rows stays at 2.1 to 2.4 s a capture with the cache kept | measured later, by another comparison | The working form is a populated store (A2a in the item); this row was written before that was separated |
 | 3 | Reuse booted, warm stores instead of fresh ones | about 420 CPU s (182 own-store boots at about 2.3 s) | medium | Needs shared fixtures reset between uses, with the leakage risk the harness documents |
 | 4 | Parallel reactor | at most 24% of wall here, none of the CPU | high | Does not move the CPU floor |
 | 5 | The 109 s `graphitron` test-schema exec, a single process | not investigated | | The largest non-test goal |
@@ -322,8 +353,8 @@ measurements.
   was not established.
 - Whether trunk's derivation work has already changed the six statements. Several landed while this
   was measured, and the tally is a single moment.
-- The reset flush's effect on a whole phase: the 1.9 s per case is measured on one fixture, the count
-  of warm-capable cases is a bound.
+- The reset flush's effect on a whole phase. Superseded: the later comparison separated the cache from
+  the population and priced the populated store.
 
 ## Where earlier readings in this work were wrong
 
@@ -351,6 +382,10 @@ Kept because a reader of the numbers above should know which instruments misled.
    the system's; relative offsets agreed.
 9. **A tool's garbled labels.** The skill's `mojos.py` printed unrelated class names for the compile
    and jOOQ rows; goals and phases were used instead.
+10. **A confounded comparison explained by a mechanism I had not tested.** Two series differed in the
+    cache and in the store's population; I credited the flush, and named the `ALTER` statements as the
+    cause. The cause was a different statement, and the population mattered as much. Name the statement
+    that flushes by testing it, arm by arm, as the later audit did.
 
 ## Reproducing
 
