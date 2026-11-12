@@ -1,4 +1,6 @@
-"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Until the issuing fetcher is generated, @issue is refused at the application."
+extend schema @withConfiguration(sessionState: true)
+
+"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each claim names the member it is. Until the issuing fetcher is generated, @issue is refused at the application."
 type FilmRef @table(name: "film") {
   filmId: ID! @field(name: "film_id")
   title(lang: String): String
@@ -46,4 +48,16 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """, rows: """
   code,                        type_name, detail
   VOUCHER_ISSUE_NOT_GENERATED, FilmRef,   FilmRef.voucher
+  """)
+
+# Each member read off the issuing table, by its @field or its name, with the scalar that serializes it.
+extend schema @expectEquals(relation: "graphitron_voucher_component", rows: """
+  type_name, field_name, table_name, column_name, scalar_name
+  FilmRef,   filmId,     film,       film_id,     ID
+  FilmRef,   title,      film,       title,       String
+  """)
+
+extend schema @expectEquals(relation: "graphitron_voucher_claim", rows: """
+  position, type_name, field_name
+  0,        FilmRef,   title
   """)

@@ -1,0 +1,77 @@
+extend schema @withConfiguration(sessionState: true)
+
+"The issuing side's refusals, each at the @issue or at the absorbed field it is about. A type issues one voucher, is reached only through it, and carries each absorbed field as one scalar read off its own table; the claims name absorbed fields, once each; the lifetime is a duration; and a voucher vouches for rows reached below a parent, never at the root."
+type Twice @table(name: "film") {
+  filmId: ID @field(name: "film_id")
+  a: String @issue(scope: "s", ttl: "PT5M", claims: "filmId")
+  b: String @issue(scope: "s", ttl: "PT5M", claims: "filmId")
+}
+
+# An authored @key would let a router around the voucher.
+type Keyed @table(name: "language") @key(fields: "languageId") {
+  languageId: Int @field(name: "language_id")
+  v: String @issue(scope: "s", ttl: "PT5M", claims: "languageId")
+}
+
+type Empty @table(name: "store") {
+  v: String @issue(scope: "s", ttl: "PT5M", claims: "x")
+}
+
+type BadTtl @table(name: "city") {
+  cityId: Int @field(name: "city_id")
+  v: String @issue(scope: "s", ttl: "5 minutes", claims: "cityId")
+}
+
+type NoClaims @table(name: "country") {
+  countryId: Int @field(name: "country_id")
+  v: String @issue(scope: "s", ttl: "PT5M", claims: "")
+}
+
+# The voucher field is no member, and a claim cannot nest: one row at the @issue, naming the first.
+type Unabsorbed @table(name: "film") {
+  filmId: ID @field(name: "film_id")
+  v: String @issue(scope: "s", ttl: "PT5M", claims: "v filmId { x }")
+}
+
+type Repeated @table(name: "category") {
+  categoryId: Int @field(name: "category_id")
+  v: String @issue(scope: "s", ttl: "PT5M", claims: "categoryId categoryId")
+}
+
+type Members @table(name: "address") {
+  addressId: Int @field(name: "address_id")
+  tags: [String]
+  owner: Language
+  extra: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  nosuch: String
+  v: String @issue(scope: "s", ttl: "PT5M", claims: "addressId")
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  badTtls: [BadTtl!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'VOUCHER_%' AND code <> 'VOUCHER_ISSUE_NOT_GENERATED'
+  """, rows: """
+  code,                             type_name,  detail
+  VOUCHER_CLAIMS_EMPTY,             NoClaims,   NoClaims.v
+  VOUCHER_CLAIM_NOT_ABSORBED,       Empty,      x
+  VOUCHER_CLAIM_NOT_ABSORBED,       Unabsorbed, filmId
+  VOUCHER_CLAIM_REPEATED,           Repeated,   categoryId
+  VOUCHER_ISSUE_ABSORBS_NOTHING,    Empty,      Empty
+  VOUCHER_ISSUE_ON_KEYED_TYPE,      Keyed,      Keyed
+  VOUCHER_ISSUE_ON_ROOT_TYPE,       BadTtl,     BadTtl.v
+  VOUCHER_ISSUE_TWICE,              Twice,      Twice
+  VOUCHER_MEMBER_COLUMN_UNRESOLVED, Members,    Members.nosuch
+  VOUCHER_MEMBER_COMPUTED,          Members,    Members.extra
+  VOUCHER_MEMBER_NOT_SCALAR,        Members,    Members.owner
+  VOUCHER_MEMBER_NOT_SCALAR,        Members,    Members.tags
+  VOUCHER_TTL_INVALID,              BadTtl,     5 minutes
+  """)

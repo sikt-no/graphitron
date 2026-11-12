@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
+import no.sikt.graphitron.model.grammar.FieldSetGrammar;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
@@ -14,6 +15,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_CLAIM_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
@@ -70,7 +72,9 @@ final class GraphitronFieldEntries {
         var routineApplications = wrote(applied(applications, "routine"), "name");
         routines(dsl, graph, touchedAt, routineApplications);
         outboxes(dsl, graph, touchedAt, applied(applications, "outbox"));
-        issues(dsl, graph, touchedAt, applied(applications, "issue"));
+        var issueApplications = applied(applications, "issue");
+        issues(dsl, graph, touchedAt, issueApplications);
+        issueClaims(dsl, graph, touchedAt, issueApplications);
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -83,7 +87,8 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_MUTATION_ENTRY,
         GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY,
-        GRAPHITRON_AST_ISSUE_ENTRY);
+        GRAPHITRON_AST_ISSUE_ENTRY,
+        GRAPHITRON_AST_ISSUE_CLAIM_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<Directive> applications) {
@@ -233,5 +238,37 @@ final class GraphitronFieldEntries {
                 .set(t.SCOPE, excluded(t.SCOPE))
                 .set(t.TTL, excluded(t.TTL))
                 .set(t.CLAIMS, excluded(t.CLAIMS)));
+    }
+
+    /** One selection of an {@code @issue}'s claims, at its index in the parse, with its segments. */
+    private record Claim(Directive application, int position, List<String> segments) {}
+
+    private static void issueClaims(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                    List<Directive> applications) {
+        var t = GRAPHITRON_AST_ISSUE_CLAIM_ENTRY;
+        var claims = new java.util.ArrayList<Claim>();
+        for (Directive application : applications) {
+            int position = 0;
+            for (List<String> segments : FieldSetGrammar.paths(string(application, "claims"))) {
+                claims.add(new Claim(application, position++, segments));
+            }
+        }
+        var rows = claims.stream().collect(Rows.toRowList(
+            claim -> val(graph, t.GRAPH_NAME),
+            claim -> GraphQLAstEntries.sourceName(claim.application()),
+            claim -> GraphQLAstEntries.sourceLine(claim.application()),
+            claim -> GraphQLAstEntries.sourceColumn(claim.application()),
+            claim -> val(claim.position(), t.POSITION),
+            claim -> val(touchedAt, t.TOUCHED_AT),
+            claim -> val(claim.segments().getFirst(), t.FIELD_NAME),
+            claim -> val(claim.segments().size() > 1, t.NESTED)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.POSITION, t.TOUCHED_AT, t.FIELD_NAME, t.NESTED)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.FIELD_NAME, excluded(t.FIELD_NAME))
+                .set(t.NESTED, excluded(t.NESTED)));
     }
 }

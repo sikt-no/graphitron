@@ -50,8 +50,53 @@ type VgsResultat @table(name: "soknad_vgs_resultat") {
 
 == Constraints
 
-* Requires a federation `@link`.
-* A field marked `@issue` or `@accept` is never absorbed.
+Each refusal below is reported at the `@issue`, or at the absorbed field it is about.
+
+[cols="1,3"]
+|===
+| Code | Rule
+
+| `VOUCHER_ISSUE_TWICE`
+| A type issues one voucher: one field per type carries `@issue`.
+
+| `VOUCHER_ISSUE_ON_KEYED_TYPE`
+| The issuing type carries no authored `@key`, which would let a router reach the other subgraph's entity without the voucher.
+
+| `VOUCHER_ISSUE_ON_NODE`
+| The issuing type is no node: a node is keyed by its id, which the voucher would absorb.
+
+| `VOUCHER_ISSUE_ON_ROOT_TYPE`
+| No root operation field returns the issuing type: a voucher vouches for rows reached below a parent this subgraph's rules admitted. A mutation payload's field is no root field.
+
+| `VOUCHER_ISSUE_ABSORBS_NOTHING`
+| The issuing type has fields besides the voucher.
+
+| `VOUCHER_WITHOUT_SESSION_STATE`
+| The build configures `<sessionState>`, whose `SessionState` carries the caller each voucher is bound to.
+
+| `VOUCHER_TTL_INVALID`
+| `ttl` is an ISO-8601 duration of hours, minutes and seconds, such as `PT5M`.
+
+| `VOUCHER_CLAIMS_EMPTY`
+| `claims` selects at least one field.
+
+| `VOUCHER_CLAIM_NOT_ABSORBED`
+| Each claim names an absorbed field: not a name the type does not declare, not the voucher field, not a nested selection.
+
+| `VOUCHER_CLAIM_REPEATED`
+| No claim is named twice.
+
+| `VOUCHER_MEMBER_NOT_SCALAR`
+| Each absorbed field is a single scalar or enum value, not a list or an object.
+
+| `VOUCHER_MEMBER_COMPUTED`
+| No absorbed field carries a directive giving it a value of its own, such as `@nodeId`, `@service`, `@routine`, `@reference`, `@externalField` or `@pivot`: the voucher reads each off the issuing row.
+
+| `VOUCHER_MEMBER_COLUMN_UNRESOLVED`
+| Each absorbed field reads a column of the issuing type's table, by its `@field(name:)` or its own name.
+|===
+
+Every absorbed field stays withheld whichever of these is reported. A field marked `@issue` or `@accept` is never absorbed. The voucher also requires a federation `@link`.
 
 == See also
 

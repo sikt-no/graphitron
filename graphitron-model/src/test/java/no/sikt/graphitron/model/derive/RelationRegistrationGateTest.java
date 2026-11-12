@@ -134,7 +134,7 @@ class RelationRegistrationGateTest {
             "graphitron_ast_field_condition_entry",
             "graphitron_ast_connection_entry",
             "graphitron_ast_mutation_entry",
-            "graphitron_ast_routine_entry", "graphitron_ast_outbox_entry", "graphitron_ast_issue_entry",
+            "graphitron_ast_routine_entry", "graphitron_ast_outbox_entry", "graphitron_ast_issue_entry", "graphitron_ast_issue_claim_entry",
             // Every Java code reference a document writes, read off the vocabulary's types rather
             // than off a site. Nothing older states the whole of it to agree with; the fact
             // document code-reference.graphqls pins one row per site the vocabulary allows.
@@ -259,6 +259,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_key_field_binding", Arm.DERIVED);
         registrations.put("graphitron_minted_key", Arm.DERIVED);
         registrations.put("graphitron_voucher_member", Arm.DERIVED);
+        registrations.put("graphitron_voucher_component", Arm.DERIVED);
+        registrations.put("graphitron_voucher_claim", Arm.DERIVED);
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
         // The legacy key shape each type id answers to and the rules a stated one breaks, both
         // written by one stage; GraphitronSchema has no word for either, and the node-legacy-key
@@ -415,6 +417,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_outbox_key_rule", Arm.DERIVED);
         registrations.put("graphitron_outbox_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_entity_key_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_voucher_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
         registrations.put("graphitron_producer_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_service", Arm.DERIVED);
@@ -427,6 +430,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_key_field_binding_rule", Arm.DERIVED);
         registrations.put("graphitron_minted_key_rule", Arm.DERIVED);
         registrations.put("graphitron_voucher_member_rule", Arm.DERIVED);
+        registrations.put("graphitron_voucher_component_rule", Arm.DERIVED);
+        registrations.put("graphitron_voucher_claim_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_candidate", Arm.DERIVED);

@@ -86,3 +86,14 @@ graphitron_field_minted graphql_field
 # type it returns are. Which declaration was anchored is a declaration site, which only the
 # transcription states, and a field the macro minted wrote no path.
 graphitron_routine_result_rule graphql_field
+
+# Adjudicated and kept: what an @issue absorbs is what an author wrote and nothing emits.
+#
+# A voucher member is withheld from the emitted population by construction, so graphitron_field and
+# graphitron_type hold no row for it; the transcription is the only population that states its type.
+# graphitron_voucher_component_rule reads a member's scalar there, and graphitron_voucher_entry_defect_rule
+# judges a member's shape there and reports at its own line.
+graphitron_voucher_component_rule graphql_field
+graphitron_voucher_component_rule graphql_type
+graphitron_voucher_entry_defect_rule graphql_field
+graphitron_voucher_entry_defect_rule graphql_type

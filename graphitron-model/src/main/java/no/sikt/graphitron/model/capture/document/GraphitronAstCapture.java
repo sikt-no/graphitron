@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.VoucherMembers;
+import no.sikt.graphitron.model.derive.Vouchers;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -157,6 +158,9 @@ public final class GraphitronAstCapture {
         // written and corpora captured before this one, and the mint below reads the second.
         new AnchorStage("table-types", TableTypes.class, (dsl, graph, readAt) -> TableTypes.derive(dsl, graph)),
         new AnchorStage("nodes", Nodes.class, (dsl, graph, readAt) -> Nodes.derive(dsl, graph)),
+        // Each voucher member's column and scalar and each claim's member, read over the tables and
+        // nodes just written, with the issuing side's refusals.
+        new AnchorStage("vouchers", Vouchers.class, Vouchers::derive),
         // Whether the graph opts in to federation, which the key mint below reads.
         new AnchorStage("federation-link", FederationLinks.class, FederationLinks::link),
         // The keys federation's rules mint, from the nodes and the link just written, ahead of the
