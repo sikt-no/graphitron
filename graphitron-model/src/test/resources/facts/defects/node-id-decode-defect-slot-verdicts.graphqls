@@ -1,7 +1,9 @@
 # A @nodeId argument whose decoded value reaches a Java parameter by name, judged at that parameter:
-# refused on the key's arity, on the key column's type, or on the slot's shape, and otherwise
-# carried out. Each verdict sits beside the shapes that resolve, since the relation is the
-# population the decode does not claim and an absence there is a resolution.
+# the whole key lands only on the node's own record or a tuple of its key, so it is refused at any
+# other class, on a tuple typed otherwise than the key, or on the slot's shape, and otherwise carried
+# out. One key column is taken by projecting it with argMapping. Each verdict sits beside the shapes
+# that resolve, since the relation is the population the decode does not claim and an absence there
+# is a resolution.
 
 type Film @table(name: "film") @node { title: String }
 
@@ -17,39 +19,47 @@ input PairingInput {
 }
 
 type Query {
-  # A composite key at a parameter holding one String: refused on the count alone.
+  # A composite key at a parameter holding one String: refused.
   pairings(userId: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
-  # The sole key column is an Integer and the parameter a String: refused naming both.
+  # A one-column key at a String parameter: refused the same way, a whole key never landing as a value.
   greetings(userId: ID @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
-  # The parameter takes an Integer, the key column's own type.
+  # ... even at the key column's own type, Integer ...
   film(id: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+  # ... and so is a pair handing the whole id to a parameter, at the column's type or another ...
+  filmByPair(ids: ID @nodeId(typeName: "Film")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
+  greetingsByPair(ids: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: ids"})
+  # ... which a pair projecting the column into the parameter takes as the column's value.
+  filmByProjection(ref: ID @nodeId(typeName: "Film")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ref.film_id"})
   # The node type's own record takes the whole tuple, at any arity.
   filmActorRecord(in: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmActorRecord"})
   # No parameter at all: a table predicate.
   films(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
-  # A key column the catalog cannot type draws no type verdict.
+  # A key column the catalog cannot type resolves no key, so nothing is judged.
   pinned(userId: ID @nodeId(typeName: "Pinned")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
-  # A primitive parameter names no class: no type verdict at one key column ...
+  # A primitive parameter is refused at one key column ...
   untyped(ids: ID @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "untyped"})
-  # ... and still refused on the arity at two.
+  # ... and at two.
   untypedPairing(ids: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "untyped"})
   # A list lands on the element: a List of the node type's own record ...
   filmActorsByIds(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor]
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService", method: "filmActorsByIds"})
-  # ... or of the sole key column's type.
+  # ... and not of the sole key column's type, refused per element ...
   filmsByIds(ids: [ID!] @nodeId(typeName: "Film")): [Film]
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
-  # An element the key column cannot take is refused on the element.
+  # ... as an element of another type is.
   rateFilms(ratings: [ID!] @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "rateFilms"})
-  # A composite key at a List of single values is refused on the arity, per element.
+  # A composite key at a List of single values is refused per element.
   pairingsByIds(ids: [ID!] @nodeId(typeName: "FilmActor")): [Film]
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   # A Set of the very record: the element is right and the container is not.
@@ -73,7 +83,7 @@ type Query {
   # A tuple of the key's degree whose types are not the key columns' is refused on the types ...
   pairByMistypedRow(key: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairByMistypedRow"})
-  # ... and one of another degree on the arity.
+  # ... and one of another degree as any class other than the key's.
   pairByWideTuple(key: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairByWideTuple"})
   # An input field whose root argument feeds a parameter: the value lands inside the bean.
@@ -89,12 +99,17 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   coordinate,                     code,                                 detail
   Query.pairByMistypedRow(key:),  NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT,  key
   Query.pairByWideTuple(key:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       key
-  Query.greetings(userId:),       NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, userId
+  Query.film(id:),                NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
+  Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
+  Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
+  Query.filmsByIds(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
+  Query.greetings(userId:),       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.pairings(userId:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.pairingsByIds(ids:),      NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
-  Query.rateFilms(ratings:),      NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, ratings
+  Query.rateFilms(ratings:),      NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ratings
   Query.titleTitlecase(films:),   NODE_ID_SLOT_SHAPE_MISMATCH,          films
   Query.filmActorByIds(ids:),     NODE_ID_SLOT_SHAPE_MISMATCH,          ids
+  Query.untyped(ids:),            NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.untypedPairing(ids:),     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   """)
 
@@ -108,11 +123,11 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", ro
   Query.filmActorByIds(ids:),    PARAMETER, MISMATCH,   java.util.List
   """)
 
-# How each decode that resolves lands: the node's own record, its one column's value, or a jOOQ
-# tuple typed by the key columns in key order.
+# How each decode that resolves lands: the node's own record, a jOOQ tuple typed by the key columns
+# in key order, or the value of the one column a pair projects.
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                 bound,             decode_shape
-  Query.film(id:),            public.film,       KEY_VALUE
+  Query.filmByProjection(ref:), public.film,      KEY_VALUE
   Query.filmActorRecord(in:), public.film_actor, OWN_RECORD
   Query.filmByTuple(key:),    public.film,       RECORD_N
   Query.pairByTuple(key:),    public.film_actor, RECORD_N

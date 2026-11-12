@@ -8213,8 +8213,8 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsByNodeIdService_decodesAListArgumentIntoAListOfKeyValues() {
-        // The arity-one sibling: a List<Integer> parameter takes one decoded film_id per wire id.
+    void filmsByNodeIdService_decodesAListArgumentIntoAListOfKeyTuples() {
+        // The arity-one sibling: a List<Record1<Integer>> parameter takes one decoded key per wire id.
         String film1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
         String film2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
         Map<String, Object> data = execute(

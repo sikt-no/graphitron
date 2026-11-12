@@ -2762,6 +2762,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   `@nodeId` field with no route onto that table is `NODE_ID_LANDS_ON_TABLE` under a `@service` too,
   as in utdanningsregisteret's `RegistrerCampusForUtdanningsmulighetInput.organisasjonsId`, which
   writes a `@reference` path through `campus` to build.
+* **Breaking: a whole node id never lands on a parameter as a single value** ("a whole node id lands
+  only on a record or a tuple"). A `@nodeId` argument a `@service` parameter takes whole, by name or
+  through an `argMapping` entry naming the argument, lands only on the node type's generated record, a
+  record supertype for an id of several node types, or a `RecordN` or `RowN` of the key's columns'
+  types. A parameter of the one key column's type, which used to receive that column's value, is
+  `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`; ask for the column with an `argMapping` entry projecting it, as
+  `id: key.film_id`. Unused in FS-plattform: its two `@service` fields taking a `@nodeId` argument take
+  the node's record.
 
 ## Retired vocabulary
 

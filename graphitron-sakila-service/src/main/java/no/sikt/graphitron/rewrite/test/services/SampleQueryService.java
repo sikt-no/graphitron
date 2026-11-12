@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.Configuration;
 import org.jooq.DSLContext;
+import org.jooq.Record1;
 import org.jooq.Result;
 import org.jooq.impl.DSL;
 
@@ -49,11 +50,11 @@ public final class SampleQueryService {
     }
 
     /**
-     * A list {@code @nodeId(typeName: "Film")} argument at a {@code java.util.List} of the sole key
-     * column's type: each wire id arrives decoded to its {@code film_id}.
+     * A list {@code @nodeId(typeName: "Film")} argument at a {@code java.util.List} of the key's
+     * tuple: each wire id arrives decoded to a {@code Record1} of its {@code film_id}.
      */
-    public static Result<FilmRecord> filmsByNodeIds(List<Integer> ids, DSLContext dsl) {
-        return filmsByService(dsl, ids);
+    public static Result<FilmRecord> filmsByNodeIds(List<Record1<Integer>> ids, DSLContext dsl) {
+        return filmsByService(dsl, ids.stream().map(Record1::value1).toList());
     }
 
     /**

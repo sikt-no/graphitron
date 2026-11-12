@@ -893,8 +893,8 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByService"
         })
-    # A list @nodeId argument at a java.util.List producer parameter of the sole key column's
-    # type: the list decode hands the service one decoded film_id per wire id.
+    # A list @nodeId argument at a java.util.List producer parameter of the key's tuple: the list
+    # decode hands the service one Record1 of the decoded film_id per wire id.
     filmsByNodeIdService(ids: [ID!]! @nodeId(typeName: "Film")): [Film!]!
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",

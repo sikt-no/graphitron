@@ -1,7 +1,6 @@
-# A @nodeId argument whose value an argMapping entry hands to a parameter the key column cannot
-# take: one fault, judged once. The pair-grain family reports it at the entry, and the decode-defect
-# relation, which judges a slot at the argument, stands aside on a mapped parameter. Both halves are
-# stated, because two verdicts for one fact would be invisible to a case asserting only an absence.
+# A @nodeId argument whose whole value an argMapping entry hands to a parameter: the parameter is its
+# slot, and the pair-grain relation states its own verdict on the entry. The refusal at the argument,
+# a whole key landing only on the node's record or a tuple of its key, is the slot verdicts' document's.
 
 # film_id is an Integer, and greet takes its userId as a String.
 type Film @table(name: "film") @node {
@@ -11,7 +10,7 @@ type Film @table(name: "film") @node {
 type Query {
   films(ids: ID @nodeId(typeName: "Film")): [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: ids"})
-  # lookup takes its id as an Integer, so the decode is carried out into it.
+  # lookup takes its id as an Integer, the key column's own type.
   film(ids: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
   # The parameter shares the argument's name and its mapping feeds it from another, so it is not
@@ -33,10 +32,4 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", rows
 extend schema @expectEquals(relation: "intent_argmapping_projection_defect", rows: """
   coordinate,  directive_name, param_name, written_path, verdict,                  column_java_type,  param_java_type
   Query.films, service,        userId,     ids,          KEY_COLUMN_TYPE_MISMATCH, java.lang.Integer, java.lang.String
-  """)
-
-# And no refusal at the argument, which is the stand-aside.
-extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
-  coordinate,        code
-  Query.films(ids:), NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT
   """)
