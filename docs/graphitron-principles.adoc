@@ -31,3 +31,5 @@ Generated code should be readable without special tools. Fewer runtime dependenc
 A schema is a long-lived contract, with the database underneath it and with the clients that call it. Applications built on an earlier Graphitron, and the clients built against them, should keep working when Graphitron is upgraded.
 
 We keep backwards compatibility with existing schemas unless we have very good reasons to break them. A break is a decision someone makes on purpose, never a side effect of other work, and an assumption that nobody depends on a behaviour is not on its own a very good reason.
+
+Node ids are the plainest case. Clients store them, so an upgrade must not force an id's value to change: a key that did not carry the tenant before is not made to carry it now.
