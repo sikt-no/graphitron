@@ -1,5 +1,5 @@
-# The third reading: the author made Film an interface over the same table.
+# The third reading: the author made Film an interface over the same table. No field returns it any
+# more, the query root being layouts/anchor's, since a field over an interface with no implementer
+# has nothing to fetch.
 
 interface Film @table(name: "film") { title: String }
-
-type Query { films: [Film!]! }

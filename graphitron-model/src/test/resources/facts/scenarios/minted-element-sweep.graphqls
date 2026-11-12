@@ -7,6 +7,7 @@
 # that reading left.
 
 extend schema @withFacts(docs: [
+  {path: "layouts/anchor"},
   {path: "shapes/minted-element-sweep/m-t0", as: "minted-element-sweep.m"}])
 
 extend schema @expectEquals(relation: "graphitron_element", where: """
@@ -26,7 +27,7 @@ extend schema @expectEquals(relation: "graphitron_type", where: "type_name = 'Fi
   Film,      OBJECT
   """)
 
-extend schema @expectEquals(relation: "graphitron_tabletype", rows: """
+extend schema @expectEquals(relation: "graphitron_tabletype", where: "type_name = 'Film'", rows: """
   type_name, named_type_kind, table_name
   Film,      OBJECT,          film
   """)
@@ -58,7 +59,7 @@ extend schema @expectEquals(relation: "graphitron_type", where: "type_name = 'Fi
   Film,      INTERFACE
   """)
 
-extend schema @expectEquals(relation: "graphitron_tabletype", rows: """
+extend schema @expectEquals(relation: "graphitron_tabletype", where: "type_name = 'Film'", rows: """
   type_name, named_type_kind, table_name
   Film,      INTERFACE,       film
   """)
