@@ -192,9 +192,9 @@ final class CodeQueries {
      * beside the name because a name is not an identity across classpath entries.
      *
      * <p>Paging is keyset on the class name, which is both the order and the cursor. The name
-     * identifies a row within a graph: a class present under more than one classpath entry is read
-     * once within a run, at the entry a classloader would resolve it from, so two rows under one name
-     * inside one graph's scope would mean two runs' entries had been folded into one graph.
+     * identifies a row within a graph: a class two entries on the graph's classpath declare is read
+     * at the one the graph resolves it to, the first in classpath order, through
+     * {@link StoreHandle#resolves}, so the population holds one row per name.
      *
      * <p>The bound is fetched as {@code limit + 1} rows so the last page is recognised by what came
      * back rather than by a second count, and the extra row is dropped before it reaches the wire.
@@ -204,7 +204,7 @@ final class CodeQueries {
     ) {
         var arm = armOf(kind);
         var filters = new ArrayList<Condition>();
-        filters.add(store.reads(arm.source()));
+        filters.add(store.resolves(arm.source(), arm.className()));
         filters.add(arm.narrowing());
         nameSubstring.ifPresent(n -> filters.add(arm.className().containsIgnoreCase(n)));
 

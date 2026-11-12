@@ -405,7 +405,7 @@ final class InlayFacts {
             .from(CODE_READ_SLOT)
             .join(GRAPHITRON_TYPE_BACKING)
             .on(GRAPHITRON_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
-            .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
+            .where(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
             .and(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
             .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME))

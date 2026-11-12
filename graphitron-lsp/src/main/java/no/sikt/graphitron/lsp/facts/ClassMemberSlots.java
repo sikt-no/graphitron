@@ -52,7 +52,7 @@ public final class ClassMemberSlots {
             .from(CODE_READ_SLOT)
             .join(CODE_TYPE).on(CODE_TYPE.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME)
                 .and(CODE_TYPE.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE)))
-            .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
+            .where(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
             .and(CODE_READ_SLOT.CLASS_NAME.eq(className))
             .and(slotFilter)
             .orderBy(CODE_READ_SLOT.SLOT_NAME, CODE_READ_SLOT.METHOD_NAME)

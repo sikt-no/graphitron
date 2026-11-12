@@ -155,6 +155,23 @@
             <type>test-jar</type>
             <scope>test</scope>
         </dependency>
+        <!--
+          The classpath corpus and classpath fixtures a fact document is read over: the service
+          module as the consumer's own code and the extended-scalars artifact as a library it
+          declares. Test scope only, for the cases that capture a document into a store of their
+          own, two entries declaring one class name among them.
+        -->
+        <dependency>
+            <groupId>no.sikt</groupId>
+            <artifactId>graphitron-sakila-service</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.graphql-java</groupId>
+            <artifactId>graphql-java-extended-scalars</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>

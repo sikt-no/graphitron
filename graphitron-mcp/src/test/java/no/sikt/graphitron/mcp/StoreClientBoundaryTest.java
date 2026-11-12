@@ -41,8 +41,10 @@ class StoreClientBoundaryTest {
 
     /**
      * The reactor edges this module may declare, by artifact and scope. Compile scope is the store's
-     * generated query surface; test scope is the generated jOOQ catalog a fixture captures against
-     * and the shared store harness it captures with.
+     * generated query surface; test scope is the generated jOOQ catalog a fixture captures against,
+     * the shared store harness it captures with, and the classpath corpus a fact document is read
+     * over, which is real Java compiled in {@code graphitron-sakila-service}: a case whose subject is
+     * two classpath entries declaring one class name reads that document rather than restating it.
      *
      * <p>The generator is on neither list, at neither scope, and that is the point of the map being
      * exhaustive: what used to keep the edge alive was a handful of tests that needed a real build,
@@ -56,6 +58,7 @@ class StoreClientBoundaryTest {
     private static final Map<String, String> ALLOWED_REACTOR_DEPENDENCIES = Map.of(
         "graphitron-model", "compile",
         "graphitron-sakila-db", "test",
+        "graphitron-sakila-service", "test",
         "graphitron-model test-jar", "test");
 
     /** The language server's package: off limits in both trees, the module having no edge to it. */

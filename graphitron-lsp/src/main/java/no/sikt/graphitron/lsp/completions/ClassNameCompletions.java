@@ -11,10 +11,9 @@ import org.jooq.Field;
 import java.util.ArrayList;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.when;
 
 /**
@@ -58,17 +57,18 @@ public final class ClassNameCompletions {
         // by residence would restore the bug the census widening fixed. Provenance is a join here
         // rather than a boolean on the row, which is what lets the same census also answer "from
         // which jar" without the projection's one-bit flattening.
-        Field<Integer> rank = min(when(STORE_SOURCE.SOURCE_KIND.eq(JAR), inline(1)).otherwise(inline(0)));
+        //
+        // One row per name, read off the graph's resolution rather than grouped out of every entry's
+        // copy: one FQN two entries declare is one candidate, ranked by where the copy the graph
+        // resolves it to lives, which is the first entry in classpath order and the one that loads.
+        var c = CODE_GRAPH_CLASS;
+        Field<Integer> rank = when(STORE_SOURCE.SOURCE_KIND.eq(JAR), inline(1)).otherwise(inline(0));
         var rows = store.dsl()
-            .select(CODE_CLASS.CLASS_NAME, rank)
-            .from(CODE_CLASS)
-            .join(STORE_SOURCE).on(STORE_SOURCE.SOURCE_NAME.eq(CODE_CLASS.SOURCE_NAME))
-            .where(store.reads(CODE_CLASS.SOURCE_NAME))
-            // Grouped by name, not listed per source: one FQN reachable from both the reactor and a
-            // jar is one candidate, and the reactor copy is the one that would load, so the lower
-            // rank wins. The projection could only offer it twice.
-            .groupBy(CODE_CLASS.CLASS_NAME)
-            .orderBy(rank, CODE_CLASS.CLASS_NAME)
+            .select(c.CLASS_NAME, rank)
+            .from(c)
+            .join(STORE_SOURCE).on(STORE_SOURCE.SOURCE_NAME.eq(c.SOURCE_NAME))
+            .where(c.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(rank, c.CLASS_NAME)
             .fetch();
         var items = new ArrayList<CompletionItem>(rows.size());
         for (var row : rows) {

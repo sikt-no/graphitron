@@ -54,7 +54,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
-import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -750,13 +750,14 @@ final class DiagnosticFacts {
                 foreignKeySpellings(store, questions.foreignKeyNames),
                 censusHolds(selectOne().from(SQL_REFERENTIAL_CONSTRAINT)
                     .where(store.reads(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME))),
-                multiset(selectDistinct(CODE_CLASS.CLASS_NAME)
-                    .from(CODE_CLASS)
-                    .where(store.reads(CODE_CLASS.SOURCE_NAME))
-                    .and(CODE_CLASS.CLASS_NAME.in(questions.classNames))
-                    .orderBy(CODE_CLASS.CLASS_NAME))
+                multiset(select(CODE_GRAPH_CLASS.CLASS_NAME)
+                    .from(CODE_GRAPH_CLASS)
+                    .where(CODE_GRAPH_CLASS.GRAPH_NAME.eq(store.graphName()))
+                    .and(CODE_GRAPH_CLASS.CLASS_NAME.in(questions.classNames))
+                    .orderBy(CODE_GRAPH_CLASS.CLASS_NAME))
                     .convertFrom(rows -> rows.map(Record1::value1)),
-                censusHolds(selectOne().from(CODE_CLASS).where(store.reads(CODE_CLASS.SOURCE_NAME))),
+                censusHolds(selectOne().from(CODE_GRAPH_CLASS)
+                    .where(CODE_GRAPH_CLASS.GRAPH_NAME.eq(store.graphName()))),
                 parameterArm(store, questions.methods),
                 nodeTypeBindingArm(store, questions.nodeTypeNames),
                 siteArm(store, questions.memberSites),
@@ -1025,7 +1026,7 @@ final class DiagnosticFacts {
             .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(CODE_METHOD.CLASS_NAME))
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(CODE_METHOD.METHOD_NAME))
             .and(CODE_METHOD_PARAMETER.DESCRIPTOR.eq(CODE_METHOD.DESCRIPTOR))
-            .where(store.reads(CODE_METHOD.SOURCE_NAME))
+            .where(store.resolves(CODE_METHOD.SOURCE_NAME, CODE_METHOD.CLASS_NAME))
             .and(named)
             .orderBy(CODE_METHOD.CLASS_NAME, CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR,
                 CODE_METHOD_PARAMETER.POSITION))
@@ -1201,7 +1202,7 @@ final class DiagnosticFacts {
             .from(CODE_READ_SLOT)
             .join(GRAPHITRON_TYPE_BACKING)
             .on(GRAPHITRON_TYPE_BACKING.CLASS_NAME.eq(CODE_READ_SLOT.CLASS_NAME))
-            .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
+            .where(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
             .and(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(store.graphName()))
             .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.in(typeNames))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.SLOT_NAME))

@@ -535,7 +535,9 @@ final class SchemaQueries {
      * The member names one backing class offers, read from the store's own member-slot relation.
      *
      * <p>Source-keyed like the reading it stands on, so the graph reaches it through
-     * {@link StoreHandle#reads} rather than by a graph column it does not carry. A class the reading
+     * {@link StoreHandle#resolves} rather than by a graph column it does not carry: the slots of the
+     * copy the graph resolves the class name to, the first entry on its classpath declaring it, so a
+     * class two entries declare offers one copy's members and not both. A class the reading
      * never reached answers with nothing, which is not a failure: the table arm's classes are generated
      * jOOQ records the reading deliberately never scans.
      *
@@ -552,7 +554,7 @@ final class SchemaQueries {
                 .on(CODE_TYPE.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME)
                     .and(CODE_TYPE.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE)))
                 .where(CODE_READ_SLOT.CLASS_NAME.eq(GRAPHITRON_TYPE_BACKING.CLASS_NAME)
-                    .and(store.reads(CODE_READ_SLOT.SOURCE_NAME)))
+                    .and(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME)))
                 .orderBy(CODE_READ_SLOT.SLOT_NAME.asc(), CODE_READ_SLOT.METHOD_NAME.asc()))
             .convertFrom(r -> r.map(Records.mapping(MemberSlot::new)));
     }

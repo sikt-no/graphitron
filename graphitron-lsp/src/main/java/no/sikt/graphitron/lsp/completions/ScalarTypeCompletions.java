@@ -63,20 +63,19 @@ public final class ScalarTypeCompletions {
         // Field-name match for the enclosing `scalar X` is offered first (case-insensitive, so
         // `scalar UUID` prefers `...ExtendedScalars.UUID`); everything else follows by name. The
         // preference is a sort key rather than a partition, so the ordering is one pass over one
-        // result rather than two accumulating sets. Aliased, and ordered by the alias, because a
-        // DISTINCT select may only order by its own result columns and re-rendering the expression
-        // in the ORDER BY makes it a second one.
+        // result rather than two accumulating sets. Aliased, and ordered by the alias, so the
+        // expression is rendered once rather than again in the ORDER BY.
         Field<Integer> rank = (scalarName == null
             ? inline(0)
             : when(lower(CODE_SCALAR_CONSTANT.FIELD_NAME).eq(scalarName.toLowerCase()), inline(0))
                 .otherwise(inline(1))).as("rank");
         var rows = store.dsl()
-            // Distinct, because one constant reachable through two sources is one candidate: the
-            // reference an author writes names the class and the field, and says nothing about which
-            // classpath entry it came from.
-            .selectDistinct(CODE_SCALAR_CONSTANT.CLASS_NAME, CODE_SCALAR_CONSTANT.FIELD_NAME, rank)
+            // Read off the copy the graph resolves each class to, the first entry on its classpath
+            // declaring it, so one constant two entries declare is one candidate: the reference an
+            // author writes names the class and the field, and says nothing about which entry.
+            .select(CODE_SCALAR_CONSTANT.CLASS_NAME, CODE_SCALAR_CONSTANT.FIELD_NAME, rank)
             .from(CODE_SCALAR_CONSTANT)
-            .where(store.reads(CODE_SCALAR_CONSTANT.SOURCE_NAME))
+            .where(store.resolves(CODE_SCALAR_CONSTANT.SOURCE_NAME, CODE_SCALAR_CONSTANT.CLASS_NAME))
             .orderBy(field(name("rank")), CODE_SCALAR_CONSTANT.CLASS_NAME, CODE_SCALAR_CONSTANT.FIELD_NAME)
             .fetch();
         var items = new ArrayList<CompletionItem>(rows.size());

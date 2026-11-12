@@ -189,11 +189,9 @@ census it replaced is gone.
     class and producer result rules, and the entry-defect arms that count candidates read it.
     It stays in `code_` though keyed by graph (Alf, 2026-11-12); `FactSchemaGateTest` admits it by
     name.
-  * **The editor and the MCP resolve a class name as the generator does** `open`. The LSP's
-    `ClasspathClasses`, `ClassNameCompletions`, `Hovers`, `DiagnosticFacts`, `ClassMemberSlots`,
-    `ClasspathMethods`, `ExternalFieldLifters`, `DeclarationFacts`, `ScalarTypeCompletions`,
-    `ArgMappingCompletions`, `InlayFacts` and the MCP's `SchemaQueries` still read `code_` rows through
-    `store_graph_source`, so where two entries declare a name they can answer with the shadowed copy.
+  * **The editor and the MCP resolve a class name as the generator does** `done`. Every LSP class
+    reader and the MCP's `SchemaQueries` and `CodeQueries` read through `code_graph_class`, the
+    member readers by `StoreHandle.resolves`; completions offer each visible name once.
   * **A catalog source is read alone** `open`. The reading is sound: every capture reads each
     catalog whole with no store-wide skip, and nothing in it depends on the order sources are read
     in. What is not:

@@ -2,11 +2,12 @@ package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
 
-import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 
 /**
  * Whether the classpath census holds a class under the FQN an author wrote: one read of
- * {@code code_class}, which is the guard every arm resolving a consumer's class name stands behind.
+ * {@code code_graph_class}, the name the graph resolves to the first entry on its classpath
+ * declaring it, which is the guard every arm resolving a consumer's class name stands behind.
  *
  * <p>The census's scope is the consumer's module, its reactor siblings, and the dependencies the
  * module declares itself; a class reachable only through a transitive dependency has no row here
@@ -52,11 +53,12 @@ public final class ClasspathClasses {
      * read here that is not case-insensitive.
      */
     public static Presence presenceOf(StoreHandle store, String classFqn) {
-        if (store.dsl().fetchExists(CODE_CLASS,
-                store.reads(CODE_CLASS.SOURCE_NAME).and(CODE_CLASS.CLASS_NAME.eq(classFqn)))) {
+        var c = CODE_GRAPH_CLASS;
+        if (store.dsl().fetchExists(c,
+                c.GRAPH_NAME.eq(store.graphName()).and(c.CLASS_NAME.eq(classFqn)))) {
             return Presence.KNOWN;
         }
-        return store.dsl().fetchExists(CODE_CLASS, store.reads(CODE_CLASS.SOURCE_NAME))
+        return store.dsl().fetchExists(c, c.GRAPH_NAME.eq(store.graphName()))
             ? Presence.UNKNOWN
             : Presence.NO_CENSUS;
     }

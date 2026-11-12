@@ -37,7 +37,7 @@ public final class ExternalFieldLifters {
         return new HashSet<>(store.dsl()
             .selectDistinct(CODE_EXTERNAL_FIELD_METHOD.DESCRIPTOR)
             .from(CODE_EXTERNAL_FIELD_METHOD)
-            .where(store.reads(CODE_EXTERNAL_FIELD_METHOD.SOURCE_NAME)
+            .where(store.resolves(CODE_EXTERNAL_FIELD_METHOD.SOURCE_NAME, CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME)
                 .and(CODE_EXTERNAL_FIELD_METHOD.CLASS_NAME.eq(classFqn)))
             .fetch(CODE_EXTERNAL_FIELD_METHOD.DESCRIPTOR));
     }

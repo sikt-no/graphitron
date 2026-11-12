@@ -6,6 +6,7 @@ import org.jooq.Field;
 
 import java.util.Objects;
 
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.selectOne;
@@ -57,5 +58,26 @@ public record StoreHandle(DSLContext dsl, String graphName) {
             .from(STORE_GRAPH_SOURCE)
             .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graphName))
             .and(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(sourceName)));
+    }
+
+    /**
+     * The predicate a {@code code_} row about a named class is scoped by: this graph resolves the
+     * class name to that row's entry. Where two entries on the graph's classpath declare one name,
+     * {@link #reads} admits both copies; this admits only the one {@code code_graph_class} names, the
+     * first in classpath order, which is the copy the generator resolves the name to. A semi-join, as
+     * {@link #reads} is, so a query keeps one row per fact.
+     *
+     * <p>Implies {@link #reads}: a graph resolves a name only to an entry it reads. A reader that
+     * wants every entry declaring a name, to name them all, keeps to {@link #reads} instead.
+     *
+     * @param sourceName the relation's own {@code source_name} column
+     * @param className the relation's own {@code class_name} column
+     */
+    public Condition resolves(Field<String> sourceName, Field<String> className) {
+        return exists(selectOne()
+            .from(CODE_GRAPH_CLASS)
+            .where(CODE_GRAPH_CLASS.GRAPH_NAME.eq(graphName))
+            .and(CODE_GRAPH_CLASS.CLASS_NAME.eq(className))
+            .and(CODE_GRAPH_CLASS.SOURCE_NAME.eq(sourceName)));
     }
 }

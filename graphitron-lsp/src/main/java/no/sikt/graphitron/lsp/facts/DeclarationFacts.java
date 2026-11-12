@@ -573,7 +573,7 @@ public final class DeclarationFacts {
         return multiset(selectDistinct(CODE_READ_SLOT.CLASS_NAME,
                 CODE_READ_SLOT.SLOT_NAME, CODE_READ_SLOT.METHOD_NAME, CODE_READ_SLOT.ORIGIN)
             .from(CODE_READ_SLOT)
-            .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
+            .where(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
             .and(CODE_READ_SLOT.SLOT_NAME.eq(memberName))
             .and(CODE_READ_SLOT.CLASS_NAME.in(backingCandidates(store, coord)))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.METHOD_NAME))
@@ -723,7 +723,7 @@ public final class DeclarationFacts {
                 store, coord)
             .union(select(CODE_READ_SLOT.METHOD_NAME)
                 .from(CODE_READ_SLOT)
-                .where(store.reads(CODE_READ_SLOT.SOURCE_NAME))
+                .where(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
                 .and(CODE_READ_SLOT.SLOT_NAME.eq(coord.memberName()))
                 .and(CODE_READ_SLOT.CLASS_NAME.in(backingCandidates(store, coord))))
             .union(routineCalls(select(SQL_ROUTINE.ROUTINES_METHOD_NAME), store, coord));

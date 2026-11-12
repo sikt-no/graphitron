@@ -105,7 +105,7 @@ public final class ArgMappingCompletions {
         var names = store.dsl()
             .select(CODE_METHOD_PARAMETER.PARAMETER_NAME)
             .from(CODE_METHOD_PARAMETER)
-            .where(store.reads(CODE_METHOD_PARAMETER.SOURCE_NAME))
+            .where(store.resolves(CODE_METHOD_PARAMETER.SOURCE_NAME, CODE_METHOD_PARAMETER.CLASS_NAME))
             .and(CODE_METHOD_PARAMETER.CLASS_NAME.eq(target.get().className()))
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(target.get().methodName()))
             .and(CODE_METHOD_PARAMETER.PARAMETER_NAME.isNotNull())

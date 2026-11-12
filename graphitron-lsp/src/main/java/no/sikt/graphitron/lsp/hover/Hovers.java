@@ -40,7 +40,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -282,22 +282,20 @@ public final class Hovers {
 
     /**
      * The class the cursor names, if this graph's classpath census holds it, with the Javadoc its
-     * source declaration carries. One query answers both: presence is a {@code code_class} row inside
-     * the graph's read set, and the description is a correlated select into the {@code java_} family
+     * source declaration carries. One query answers both: presence is the graph's
+     * {@code code_graph_class} row for the name, and the description is a correlated select into the {@code java_} family
      * by name, the only join that reaches a doc comment at all. Absence falls through to the SDL
      * docstring on the coordinate, which is what the author sees for a class nothing has compiled.
      */
     private static Optional<Hover> classNameHover(FileSnapshot file, StoreHandle store, Node valueNode) {
         String fqn = Nodes.unquote(Nodes.text(valueNode, file.source()));
         if (fqn.isEmpty()) return Optional.empty();
+        // The graph's resolution of the name, which is one row however many entries declare it.
         var row = store.dsl()
-            .select(SourceDeclarations.classJavadocOf(CODE_CLASS.CLASS_NAME))
-            .from(CODE_CLASS)
-            .where(store.reads(CODE_CLASS.SOURCE_NAME))
-            .and(CODE_CLASS.CLASS_NAME.eq(fqn))
-            // A class reachable under two classpath entries is two rows with one answer.
-            .orderBy(CODE_CLASS.SOURCE_NAME)
-            .limit(1)
+            .select(SourceDeclarations.classJavadocOf(CODE_GRAPH_CLASS.CLASS_NAME))
+            .from(CODE_GRAPH_CLASS)
+            .where(CODE_GRAPH_CLASS.GRAPH_NAME.eq(store.graphName()))
+            .and(CODE_GRAPH_CLASS.CLASS_NAME.eq(fqn))
             .fetchOne();
         if (row == null) return Optional.empty();
         var content = new StringBuilder("**Class** `").append(fqn).append("`");

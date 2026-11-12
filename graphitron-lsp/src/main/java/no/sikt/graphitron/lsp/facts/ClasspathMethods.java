@@ -45,9 +45,10 @@ public final class ClasspathMethods {
 
     /**
      * The one join these relations answer together. The left join keeps a no-argument method, whose
-     * parameter side is absent rather than empty; {@code selectDistinct} collapses a class
-     * reachable under two classpath entries, which would otherwise fold one method's parameters in
-     * twice, the same duplication the class-name read groups away.
+     * parameter side is absent rather than empty. The methods are read off the one copy of the
+     * class the graph resolves its name to, the first entry on its classpath declaring it, so a
+     * class two entries declare answers with the methods the generator would bind rather than both
+     * copies' folded together.
      *
      * <p>A type is joined rather than read off the method, twice and under two names, because how a
      * type renders is the type's own property and both a result and a parameter want it. Both joins
@@ -56,13 +57,13 @@ public final class ClasspathMethods {
     private static List<Method> read(StoreHandle store, String classFqn, String methodName) {
         var result = CODE_TYPE.as("result_type");
         var bound = CODE_TYPE.as("parameter_type");
-        var condition = store.reads(CODE_METHOD.SOURCE_NAME)
+        var condition = store.resolves(CODE_METHOD.SOURCE_NAME, CODE_METHOD.CLASS_NAME)
             .and(CODE_METHOD.CLASS_NAME.eq(classFqn));
         if (methodName != null) {
             condition = condition.and(CODE_METHOD.METHOD_NAME.eq(methodName));
         }
         var rows = store.dsl()
-            .selectDistinct(CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR, result.DISPLAY_NAME,
+            .select(CODE_METHOD.METHOD_NAME, CODE_METHOD.DESCRIPTOR, result.DISPLAY_NAME,
                 CODE_METHOD_PARAMETER.POSITION, CODE_METHOD_PARAMETER.PARAMETER_NAME,
                 bound.DISPLAY_NAME)
             .from(CODE_METHOD)
