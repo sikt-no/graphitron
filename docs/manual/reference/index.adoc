@@ -8,7 +8,7 @@ These pages are where Graphitron's rules are stated: what an author may write, w
 
 == Runtime API
 
-* xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `Graphitron.newExecutionInput(...)` schema-driven factory (`DSLContext` first, then typed `contextArgument` slots reflected from your `@service` / `@condition` directives), the sealed `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getValidator`), and the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues`/`decodeColumns` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers).
+* xref:runtime-api.adoc[Runtime API reference]: the `Graphitron.buildSchema(...)` facade (single-arg and federation two-arg overloads), the `Graphitron.newExecutionInput(...)` schema-driven factory (`DSLContext` first, then typed `contextArgument` slots reflected from your `@service` / `@condition` directives), the sealed `GraphitronContext` per-request interface (`getDslContext`, `getContextArgument`, `getValidator`), the `NodeIdEncoder` utility (generic `encode`/`peekTypeId`/`decodeValues`/`decodeColumns` plus per-Node `encode<TypeName>` and `decode<TypeName>` helpers), and the consumer hooks a `GraphitronRuntime` carries (`FetcherErrorLog`, `FetcherErrorResponse`, `BatchSizeLimit`).
 
 == Maven plugin
 

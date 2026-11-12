@@ -1,10 +1,10 @@
 = Runtime API reference
-:description: The hand-written-feeling runtime surface Graphitron emits into your generated sources. Covers the Graphitron facade's buildSchema entry point, the GraphitronContext per-request extension interface, and the NodeIdEncoder utility class.
+:description: The hand-written-feeling runtime surface Graphitron emits into your generated sources. Covers the Graphitron facade's buildSchema entry point, the GraphitronContext per-request extension interface, the NodeIdEncoder utility class, and the consumer hooks a GraphitronRuntime carries.
 :!toc:
 
 Three hand-written-feeling classes ship as part of every Graphitron code-generation run. They aren't pulled in from a runtime library; they are *emitted into your `<outputPackage>` source tree* alongside the type-specific fetchers, and your consumer module compiles them. This is what keeps the runtime dependency surface flat: your code depends on jOOQ, graphql-java, and your own generated sources, nothing else.
 
-This page documents the public method surface of all three. The directive reference under xref:directives/index.adoc[`reference/directives`] covers what gets emitted *because of* SDL declarations; this page covers what gets emitted *unconditionally* and how your consumer code calls into it.
+This page documents the public method surface of all three, and the <<runtime-hooks,consumer hooks>> the owned-connection runtime carries. The directive reference under xref:directives/index.adoc[`reference/directives`] covers what gets emitted *because of* SDL declarations; this page covers what gets emitted *unconditionally* and how your consumer code calls into it.
 
 == `Graphitron` facade
 
@@ -172,6 +172,37 @@ Three more helpers are public because generated code in other packages calls the
 === Why a final class with private constructor
 
 A single canonical wire format across every generated dispatcher is what makes nodeIds durable across schema evolution. Subclassing the encoder to override the encoding would let one corner of an app speak a different dialect from another, and the result would not round-trip. xref:../how-to/global-id.adoc[How-to: Global object IDs] covers Relay Node end-to-end, including stable-ID strategies and `keyColumns` migrations.
+
+[#runtime-hooks]
+== Consumer hooks on `GraphitronRuntime`
+
+Three interfaces are emitted unconditionally into `<outputPackage>.schema`, next to `GraphitronRuntime`. Each is a callback you implement and hand to the runtime through a wither, which returns a copy of the runtime carrying it; a runtime you configure nothing on behaves as the "default" column says. On the escape-hatch engine (`Graphitron.newGraphQL()`), which has no runtime, put the hook into each request's `GraphQLContext` under its class.
+
+[cols="2,3,3,3"]
+|===
+| Hook | Set with | Decides | Default
+
+| `FetcherErrorLog`
+| `withFetcherErrorLog(log)`
+| How an exception no `@error` handler claims is logged (`unmatched`), and whether one a handler caught is logged (`matched`). In a `<tenantColumn>` build, `tenantFailed` receives a tenant that failed in a fanned-out field.
+| An unclaimed exception is logged once per request at ERROR, however many fields it failed: a one-line summary when it came from the database driver (the full exception at DEBUG), its stack trace otherwise. A caught exception is not logged.
+
+| `FetcherErrorResponse`
+| `withFetcherErrorResponse(response)`
+| What the client reads for a fetcher exception: its `reference`, a caught error's `message:` (`matchedMessage`), and the top-level text of a client error (`clientErrorMessage`) or of anything else unclaimed (`unmatchedMessage`).
+| A random UUID as the reference, minted once per exception per request; the handler's `description:` or the exception's message; "An error occurred. Reference: <reference>."
+
+| `BatchSizeLimit`
+| `withBatchSizeLimit(limit)`
+| The most keys one batched query may carry (`maxBatchSize(env)`), asked once per batched field per request. A batch over the answer runs as several queries.
+| No limit: one query carries every parent's key. An answer below 1 means the same.
+|===
+
+A hook that throws never fails the request: the default stands, and Graphitron logs one ERROR line naming the hook's class and the class of what it threw. Only JVM-fatal errors propagate.
+
+`ErrorRouter.describe(thrown, env)`, also in `<outputPackage>.schema`, returns the one-line database summary the default log line uses, or an empty `Optional` for an exception that did not come from the driver, so a `FetcherErrorLog` can write the same line.
+
+xref:../how-to/error-channel.adoc#unmatched-exceptions[How-to: Error channel] covers the two error hooks in use; xref:../explanation/batching-model.adoc#bounding-a-batch[Bounding a batch] covers the limit.
 
 == See also
 
