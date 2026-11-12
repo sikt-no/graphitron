@@ -148,15 +148,20 @@ public final class GraphitronSchemaClassGenerator {
             body.addStatement("$T.registerFetchers(codeRegistry)", ClassName.get(schemaPackage, name + "Type"));
         }
 
-        // Node interface TypeResolver — only when the schema actually has at least one
-        // NodeType. Routes via the synthetic __typename column projected by every
-        // QueryNodeFetcher.getNode dispatch arm.
+        // Node interface TypeResolver, wherever the interface has an implementing node. Routes via
+        // the synthetic __typename column every dispatch arm projects. A graph serving Query.node
+        // registers it through QueryNodeFetcher; one whose nodes this subgraph resolves none of has
+        // no such class, and registers the same resolver here.
         boolean hasNodeTypes = schema.types().values().stream().anyMatch(t -> t instanceof NodeType);
-        if (hasNodeTypes) {
+        boolean servesNodes = schema.types().values().stream()
+            .anyMatch(t -> t instanceof NodeType node && node.resolvable());
+        if (servesNodes) {
             var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
                 QueryNodeFetcherClassGenerator.CLASS_NAME);
             body.addStatement("$T.$L(codeRegistry)", queryNodeFetcher,
                 QueryNodeFetcherClassGenerator.REGISTER_RESOLVER_METHOD);
+        } else if (hasNodeTypes) {
+            body.addStatement(QueryNodeFetcherClassGenerator.nodeTypeResolverRegistration());
         }
 
         // TableInterfaceType TypeResolvers — one per discriminated single-table interface.

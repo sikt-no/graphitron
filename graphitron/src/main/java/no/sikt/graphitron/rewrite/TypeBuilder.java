@@ -1542,18 +1542,14 @@ class TypeBuilder {
         // NodeDeclaration is the shared predicate; keeping the gate on it is what stops the
         // reachability seeds, the federation entity set and the LSP node view from disagreeing with
         // this verdict. `@table` + metadata *without* `implements Node` stays a TableType: nesting
-        // projections over a node-bearing table must not become second nodes. A stub,
-        // @node(resolvable: false), stays one too: it is another subgraph's to fetch, and its id
-        // decodes through BuildContext.resolveTargetKeys.
-        if (NodeDeclaration.isStub(objType)) {
-            return new TableType(name, location, tableRef);
-        }
+        // projections over a node-bearing table must not become second nodes. A node this subgraph
+        // does not resolve, @node(resolvable: false), is a node like any other, carrying the fact.
         boolean hasNode = objType.hasAppliedDirective(DIR_NODE);
         if (!hasNode) {
             if (NodeDeclaration.implementsNode(objType) && metadata.isPresent()) {
                 var meta = metadata.get();
                 return buildNodeType(name, location, tableRef, meta.typeId(),
-                    List.copyOf(meta.keyColumns()), NodeProvenance.fromMetadata());
+                    List.copyOf(meta.keyColumns()), NodeProvenance.fromMetadata(), true);
             }
             return new TableType(name, location, tableRef);
         }
@@ -1600,7 +1596,8 @@ class TypeBuilder {
                 }
                 resolvedKeyColumns = pk;
             }
-            return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns, provenance);
+            return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns, provenance,
+                NodeDeclaration.isResolvable(objType));
         }
 
         // Both @node and metadata present. SDL wins — it is the author's published wire-format
@@ -1633,7 +1630,8 @@ class TypeBuilder {
             }
             resolvedKeyColumns = List.copyOf(sdlKeyColumns);
         }
-        return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns, provenance);
+        return buildNodeType(name, location, tableRef, resolvedTypeId, resolvedKeyColumns, provenance,
+                NodeDeclaration.isResolvable(objType));
     }
 
     /**
@@ -1645,7 +1643,7 @@ class TypeBuilder {
      */
     private NodeType buildNodeType(String name, SourceLocation location, TableRef tableRef,
                                    String typeId, List<ColumnRef> keyColumns,
-                                   NodeProvenance provenance) {
+                                   NodeProvenance provenance, boolean resolvable) {
         ClassName encoderClass = ClassName.get(
             ctx.ctx.outputPackage() + ".util",
             NodeIdEncoderClassGenerator.CLASS_NAME);
@@ -1653,7 +1651,7 @@ class TypeBuilder {
         var decodeMethod = new HelperRef.Decode(encoderClass, no.sikt.graphitron.emit.NodeIdHelperNames.decode(name), keyColumns, typeId,
             tableRef);
         return new NodeType(name, location, tableRef, typeId, keyColumns, encodeMethod, decodeMethod,
-            provenance);
+            provenance, resolvable);
     }
 
     private static boolean columnListsMatch(List<ColumnRef> a, List<ColumnRef> b) {

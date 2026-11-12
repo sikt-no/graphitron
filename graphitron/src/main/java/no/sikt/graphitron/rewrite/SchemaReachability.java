@@ -186,7 +186,7 @@ public final class SchemaReachability {
         for (var type : schema.getAllTypesAsList()) {
             if (type instanceof GraphQLObjectType obj
                     && !obj.getName().startsWith("__")
-                    && (nodes.isNodeType(obj)
+                    && ((nodes.isNodeType(obj) && NodeDeclaration.isResolvable(obj))
                         || !obj.getAppliedDirectives("key").isEmpty())) {
                 seeds.add(obj);
             }

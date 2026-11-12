@@ -94,7 +94,8 @@ public final class EntityResolutionBuilder {
             // NodeTypes always get an entity entry: their NODE_ID alternative is the canonical
             // SELECT path used by Query.node, Query.nodes, and federation _entities, regardless
             // of whether federation @link is present.
-            boolean isNodeType = gType instanceof NodeType;
+            // A node this subgraph does not resolve is no entity by its id: another subgraph owns it.
+            boolean isNodeType = gType instanceof NodeType node && node.resolvable();
             if (keys.isEmpty() && !isNodeType) continue;
             // An entity is resolved by a SELECT on its table. A type that is not a table or node
             // type here is either a reference-only stub or refused by the store, and a type already
@@ -112,6 +113,11 @@ public final class EntityResolutionBuilder {
                 alternatives.add(alt);
             }
             if (refused) continue;
+            // A key over the id of a node this subgraph does not resolve is that node's to resolve,
+            // so the type is no entity here, as the store's entities say.
+            if (gType instanceof NodeType node && !node.resolvable() && hasNodeIdAlternative(alternatives)) {
+                continue;
+            }
             // Synthesise a NODE_ID alternative when no explicit @key(fields: "id") is among the
             // user-declared keys (KeyNodeSynthesiser fills this in at the registry level; tests
             // that bypass the attributed read rely on this synthesis instead). Prepend so the

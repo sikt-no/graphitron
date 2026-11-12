@@ -70,6 +70,21 @@ public class QueryNodeFetcherClassGenerator {
     private static final ClassName DATA_FETCHER_RESULT    = ClassName.get("graphql.execution", "DataFetcherResult");
 
     /**
+     * The statement registering the {@code Node} interface's {@code TypeResolver} on a
+     * {@code codeRegistry} in scope: it reads the synthetic {@code __typename} column every dispatch
+     * arm projects. One spelling for {@link #REGISTER_RESOLVER_METHOD} and for a schema class whose
+     * graph serves no node by id, which registers it without this class.
+     */
+    public static CodeBlock nodeTypeResolverRegistration() {
+        return CodeBlock.of("codeRegistry.typeResolver($S, env -> {\n"
+            + "    $T record = ($T) env.getObject();\n"
+            + "    if (record == null) return null;\n"
+            + "    String typeName = (String) record.get($S);\n"
+            + "    return typeName == null ? null : env.getSchema().getObjectType(typeName);\n"
+            + "})", NODE_INTERFACE_NAME, RECORD, RECORD, TYPENAME_COLUMN);
+    }
+
+    /**
      * The {@code QueryNodeFetcher} class. {@code multiTenant} says whether the build routes per tenant,
      * which makes each resolved node a {@code DataFetcherResult} carrying its tenant.
      */
@@ -260,12 +275,7 @@ public class QueryNodeFetcherClassGenerator {
             .addJavadoc("Registers the {@code Node} interface's {@code TypeResolver} on the\n"
                 + "shared {@code GraphQLCodeRegistry.Builder}. Reads the synthetic\n"
                 + "{@code __typename} column projected by {@link #" + DISPATCH_METHOD + "}.\n")
-            .addStatement("codeRegistry.typeResolver($S, env -> {\n"
-                + "    $T record = ($T) env.getObject();\n"
-                + "    if (record == null) return null;\n"
-                + "    String typeName = (String) record.get($S);\n"
-                + "    return typeName == null ? null : env.getSchema().getObjectType(typeName);\n"
-                + "})", NODE_INTERFACE_NAME, RECORD, RECORD, TYPENAME_COLUMN)
+            .addStatement(nodeTypeResolverRegistration())
             .build();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)

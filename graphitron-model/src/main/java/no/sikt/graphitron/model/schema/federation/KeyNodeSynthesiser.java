@@ -61,7 +61,7 @@ public final class KeyNodeSynthesiser {
         var replacements = new ArrayList<Replacement>();
         for (TypeDefinition<?> def : registry.types().values()) {
             if (def instanceof ObjectTypeDefinition obj
-                && nodes.isNodeType(obj)
+                && nodes.isNodeType(obj) && NodeDeclaration.isResolvable(obj)
                 && !hasIdKeyDirective(obj)) {
                 var synthesised = withKey(obj.getDirectives(), idKeyDirective());
                 replacements.add(new Replacement(obj, obj.transform(b -> b.directives(synthesised))));

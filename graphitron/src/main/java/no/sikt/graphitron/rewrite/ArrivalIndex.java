@@ -133,7 +133,7 @@ record ArrivalIndex(Map<String, Arrival> byName) {
                 // asked of NodeDeclaration, not read off @node, so an inferred node folds to Many
                 // exactly like a declared one.
                 if (type instanceof GraphQLObjectType obj
-                        && (nodes.isNodeType(obj)
+                        && ((nodes.isNodeType(obj) && NodeDeclaration.isResolvable(obj))
                             || !obj.getAppliedDirectives("key").isEmpty())) {
                     seeds.add(obj.getName());
                 }

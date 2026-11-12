@@ -12,9 +12,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A {@code @nodeId(typeName: T)} leaf on a DML input, a filter input or a filter argument, where
- * {@code T} is a federation stub, {@code @node(resolvable: false)} over a table carrying catalog
- * node metadata. The leaf decodes against the stub's id, through the {@code decode<T>} helper named
- * for the type; which helpers {@code NodeIdEncoder} carries is {@code NodeIdEncoderQueryTest}'s.
+ * {@code T} is a node this subgraph does not resolve, {@code @node(resolvable: false)}, over a table
+ * carrying catalog node metadata. It is a node like any other, so the leaf decodes against its id
+ * through the {@code decode<T>} helper named for it; which helpers {@code NodeIdEncoder} carries is
+ * {@code NodeIdEncoderQueryTest}'s.
  *
  * <p>Fixture: {@code idreffixture.studieprogram} carries metadata (type id {@code Studieprogram},
  * key {@code studieprogram_id}), and {@code studierett} has two non-key foreign keys to it, the
@@ -137,13 +138,14 @@ class TableOnlyNodeIdLeafPipelineTest {
     }
 
     @Test
-    void aStubIsNoNodeQueryNodeDispatches() {
+    void aNodeThisSubgraphDoesNotResolveIsANodeCarryingThatFact() {
         var schema = TestSchemaHelper.buildSchema(STUDIEPROGRAM + """
             type Query { studieprogrammer: [Studieprogram!]! }
             """);
 
         assertThat(schema.type("Studieprogram"))
-            .isNotInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
+            .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class,
+                node -> assertThat(node.resolvable()).isFalse());
     }
 
     private static void assertClassifies(GraphitronSchema schema, String type, String field) {

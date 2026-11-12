@@ -355,7 +355,7 @@ final class NodeIdLeafResolver {
                 + " jOOQ's typed Row22 cap. Reduce key arity or expose components as separate"
                 + " scalar arguments."));
         }
-        // Resolve the target TableRef ahead of every arm: a stub's decode is minted onto it, and
+        // Resolve the target TableRef ahead of every arm:
         // resolveFkJoinPath's parsePath call passes ref and name together, letting the
         // terminal-target verdict compare jOOQ table-class identity rather than the
         // schema-qualified @table echo. An unresolvable @table is UnclassifiedType upstream and
@@ -365,13 +365,10 @@ final class NodeIdLeafResolver {
             return new Resolved.Rejected(ctx.unknownTableRejection(targetTableResolution, targetTableName));
         }
         TableRef targetTable = targetTableResolved.entry().toTableRef(targetTableName);
-        // A node type carries its own helper; a stub's is minted under its own name, the encoder
-        // emitting one for every node the store holds, a stub's included.
+        // A node type carries its own helper, resolvable or not.
         HelperRef.Decode decodeMethod;
         switch (keys) {
             case BuildContext.TargetKeys.OfNode ofNode -> decodeMethod = ofNode.node().decodeMethod();
-            case BuildContext.TargetKeys.OfStub ofStub ->
-                decodeMethod = ctx.stubDecode(refTypeName, targetTable, ofStub);
         }
 
         // The route is chosen before the same-table short-circuit because the short-circuit's own

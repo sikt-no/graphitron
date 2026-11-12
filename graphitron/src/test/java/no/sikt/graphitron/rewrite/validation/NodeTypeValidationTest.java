@@ -30,7 +30,7 @@ class NodeTypeValidationTest {
         return new NodeType(name, null, RESOLVED_FILM, typeId, keys,
             new HelperRef.Encode(ENC, "encode" + name, keys),
             new HelperRef.Decode(ENC, "decode" + name, keys, typeId, RESOLVED_FILM),
-            NodeProvenance.fromMetadata());
+            NodeProvenance.fromMetadata(), true);
     }
 
     enum Case implements TypeValidatorCase {

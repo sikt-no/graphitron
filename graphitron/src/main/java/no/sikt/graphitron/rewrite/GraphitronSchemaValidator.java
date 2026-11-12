@@ -318,7 +318,7 @@ public class GraphitronSchemaValidator {
         schema.entitiesByType().keySet().forEach(t -> legacy.putIfAbsent(t, "a federation entity type"));
         for (var type : schema.types().values()) {
             switch (type) {
-                case no.sikt.graphitron.rewrite.model.GraphitronType.NodeType n ->
+                case no.sikt.graphitron.rewrite.model.GraphitronType.NodeType n when n.resolvable() ->
                     legacy.putIfAbsent(n.name(), "a Node type");
                 case no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType i ->
                     i.participants().forEach(p -> legacy.putIfAbsent(p.typeName(), "a participant of interface '" + i.name() + "'"));

@@ -2476,7 +2476,8 @@ public record TenantBindingIndex(
          */
         private void classifyNodeDispatch() {
             for (GraphitronType type : types.values()) {
-                if (!(type instanceof GraphitronType.NodeType nt)) continue;
+                // A node this subgraph does not resolve is not dispatched by its id here.
+                if (!(type instanceof GraphitronType.NodeType nt) || !nt.resolvable()) continue;
                 TableRef table = nt.table();
                 if (!tenantScoped(table)) continue;
                 List<ColumnRef> keyColumns = nt.nodeKeyColumns().isEmpty()

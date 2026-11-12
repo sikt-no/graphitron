@@ -635,13 +635,13 @@ class NodeIdLeafResolverTest {
     }
 
     @Test
-    void targetKeys_answerForANodeAndAStubAndRefuseTheRest() {
+    void targetKeys_answerForANodeResolvableOrNotAndRefuseTheRest() {
         // Bar's table publishes node metadata, but without @node it is no node: the store refuses
         // naming it as NODE_ID_TYPE_NAME_UNDECLARED_STUB, and the walk agrees.
         String sdl = """
             type Baz implements Node @table(name: "baz") @node { id: ID! @nodeId }
             type Bar @table(name: "bar") { name: String }
-            type BarStub @table(name: "bar") @node(resolvable: false) { name: String }
+            type BarElsewhere implements Node @table(name: "bar") @node(resolvable: false) { id: ID! name: String }
             type Query { x: String }
             """;
         var bctx = buildBuildContext(sdl);
@@ -651,10 +651,11 @@ class NodeIdLeafResolverTest {
                 assertThat(ofNode.node().name()).isEqualTo("Baz");
                 assertThat(ofNode.typeId()).isEqualTo("Baz");
             });
-        assertThat(targetKeys(bctx, "BarStub", "bar"))
-            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfStub.class, stub -> {
-                assertThat(stub.typeId()).isEqualTo("Bar");
-                assertThat(stub.keyColumns()).extracting(c -> c.sqlName()).containsExactly("id_1", "id_2");
+        assertThat(targetKeys(bctx, "BarElsewhere", "bar"))
+            .isInstanceOfSatisfying(BuildContext.TargetKeys.OfNode.class, ofNode -> {
+                assertThat(ofNode.node().resolvable()).isFalse();
+                assertThat(ofNode.typeId()).isEqualTo("Bar");
+                assertThat(ofNode.keyColumns()).extracting(c -> c.sqlName()).containsExactly("id_1", "id_2");
             });
         assertThat(targetKeys(bctx, "Bar", "bar")).isInstanceOf(BuildContext.TargetKeys.Rejected.class);
     }

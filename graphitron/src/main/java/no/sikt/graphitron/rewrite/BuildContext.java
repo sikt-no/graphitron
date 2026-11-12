@@ -3594,13 +3594,12 @@ class BuildContext {
      * {@link NodeIndex} by-name view answers it directly; how many other node types happen to
      * share the backing table is irrelevant.
      *
-     * <p>Empty when no NodeType carries that name, including for a {@code @table}-only type over a
-     * table with catalog node metadata, on purpose. The one caller is {@link ServiceCatalog}'s
+     * <p>Empty when no NodeType carries that name, a {@code @table}-only type over a table with
+     * catalog node metadata included, on purpose. The one caller is {@link ServiceCatalog}'s
      * named-parameter key slot, a {@code @service} parameter that takes a decoded key, and that slot
      * leaves the check of its Java parameter type against the key to the fact store, whose views read
-     * node types only; a {@code @table}-only target there would reach the Java compiler unchecked. A
-     * {@code @nodeId} leaf classifies itself entirely in the walk and mints a stub's decode
-     * through {@link #stubDecode} instead. Coordinates that legitimately hold only a table
+     * node types only; a {@code @table}-only target there would reach the Java compiler unchecked.
+     * Coordinates that legitimately hold only a table
      * resolve through {@link NodeIndex#forTable} at their own site, where an ambiguous table is a
      * rejection naming {@code typeName:} rather than a silent pick.
      */
@@ -3610,26 +3609,9 @@ class BuildContext {
     }
 
     /**
-     * The reference a {@code @nodeId(typeName:)} leaf holds to a federation stub's
-     * {@code decode<TypeName>} helper, a stub being no node type here: the method name is the authored type name,
-     * as for a node type. The helper itself is emitted from the store's nodes, a stub among them, so a
-     * reference to one the store does not hold fails to compile.
-     */
-    no.sikt.graphitron.rewrite.model.HelperRef.Decode stubDecode(
-            String refTypeName, TableRef targetTable, TargetKeys.OfStub keys) {
-        var encoderClass = com.palantir.javapoet.ClassName.get(
-            ctx.outputPackage() + ".util",
-            no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
-        return new no.sikt.graphitron.rewrite.model.HelperRef.Decode(encoderClass,
-            no.sikt.graphitron.emit.NodeIdHelperNames.decode(refTypeName), keys.keyColumns(), keys.typeId(),
-            targetTable);
-    }
-
-    /**
-     * Resolved key metadata for a {@code @nodeId(typeName:)} target, sealed over which kind of node
-     * answered: the wire-format {@code typeId} plus the key {@link ColumnRef} list on the two
-     * {@link Resolved} arms, a classified node or a federation stub, or a {@link Rejected} message for
-     * any other target, which the store refuses as a defect before the walk runs. Shared shape: both {@link NodeIdLeafResolver#resolve} and
+     * Resolved key metadata for a {@code @nodeId(typeName:)} target: the wire-format {@code typeId}
+     * plus the key {@link ColumnRef} list of the node type that answered, whether this subgraph
+     * resolves it or not, or a {@link Rejected} message for any other target, which the store refuses as a defect before the walk runs. Shared shape: both {@link NodeIdLeafResolver#resolve} and
      * {@link #resolveNodeIdRecordDecode} read their key columns through {@link #resolveTargetKeys},
      * so the {@code @node(keyColumns:)} fallback lives in exactly one place. The record path reads
      * only {@link Resolved}; the leaf reads the source too, because it decides where the decode
@@ -3649,23 +3631,13 @@ class BuildContext {
             @Override public List<ColumnRef> keyColumns() { return node.nodeKeyColumns(); }
         }
 
-        /**
-         * A federation stub, {@code @node(resolvable: false)}: a node for its id that is no
-         * {@link NodeType}, since this subgraph does not fetch it.
-         */
-        record OfStub(String typeId, List<ColumnRef> keyColumns) implements Resolved {
-            public OfStub {
-                keyColumns = List.copyOf(keyColumns);
-            }
-        }
-
         /** The target is no node; {@code message} is ready for a rejection. */
         record Rejected(String message) implements TargetKeys {}
     }
 
     /**
-     * Resolves the target's key metadata: the {@link NodeIndex} entry for a node type, a stub's own
-     * tiers for a stub, and {@link TargetKeys.Rejected} for anything else. Anything else is a defect
+     * Resolves the target's key metadata: the {@link NodeIndex} entry for a node type, resolvable or
+     * not, and {@link TargetKeys.Rejected} for anything else. Anything else is a defect
      * the store states, {@code NODE_ID_TYPE_NAME_NOT_NODE}, {@code NODE_ID_TYPE_NAME_UNDECLARED_STUB},
      * {@code NODE_ID_MEMBER_NOT_NODE_TYPE} or the unresolved node's own, so a graph that generates
      * never reaches the rejection.
@@ -3686,41 +3658,6 @@ class BuildContext {
         var ntOpt = nodes.forName(refTypeName);
         if (ntOpt.isPresent()) {
             return new TargetKeys.OfNode(ntOpt.get());
-        }
-        var meta = catalog.nodeIdMetadata(targetTableName);
-        // A stub, @node(resolvable: false), is a @table type with an id of its own: each axis is
-        // what its @node declares, else what the table publishes, else the type's name and the
-        // primary key, the tiers graphitron_node resolves on. Its helper is minted like a catalog
-        // one, under its own name.
-        if (NodeDeclaration.isStub(targetObj)) {
-            String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID)
-                .or(() -> meta.map(JooqCatalog.NodeIdMetadata::typeId))
-                .orElse(refTypeName);
-            var declared = argStringList(targetObj, DIR_NODE, ARG_KEY_COLUMNS);
-            List<ColumnRef> keyColumns;
-            if (!declared.isEmpty()) {
-                keyColumns = declared.stream()
-                    .map(c -> catalog.findColumn(targetTableName, c)
-                        .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType())))
-                    .flatMap(Optional::stream)
-                    .toList();
-                if (keyColumns.size() != declared.size()) {
-                    return new TargetKeys.Rejected("@node(keyColumns:) on stub '" + refTypeName
-                        + "' names a column table '" + targetTableName + "' does not have");
-                }
-            } else if (meta.isPresent()) {
-                keyColumns = List.copyOf(meta.get().keyColumns());
-            } else {
-                keyColumns = catalog.findPkColumns(targetTableName).stream()
-                    .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()))
-                    .toList();
-            }
-            if (keyColumns.isEmpty()) {
-                return new TargetKeys.Rejected("@nodeId(typeName: '" + refTypeName + "') targets stub '"
-                    + refTypeName + "' over table '" + targetTableName + "', which has no key columns"
-                    + " (no @node(keyColumns:), no catalog metadata, no primary key)");
-            }
-            return new TargetKeys.OfStub(typeId, keyColumns);
         }
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             return new TargetKeys.Rejected("@nodeId(typeName: '" + refTypeName + "'): '" + refTypeName

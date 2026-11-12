@@ -202,7 +202,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
         globals.add(one(GlobalUnitKind.SCHEMA_CLASS, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema")));
-        if (schema.types().values().stream().anyMatch(t -> t instanceof GraphitronType.NodeType)) {
+        if (schema.types().values().stream()
+                .anyMatch(t -> t instanceof GraphitronType.NodeType node && node.resolvable())) {
             globals.add(one(GlobalUnitKind.QUERY_NODE_FETCHER, units.queryNodeFetcher()));
         }
         globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));

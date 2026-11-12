@@ -9129,24 +9129,6 @@ class FieldBuilder {
             }
             return buildNodeIdOutputCarrier(parentTypeName, name, location, nodeType);
         }
-        // A federation stub's own id is its node id too: a stub classifies as a table type, not a
-        // node type, yet carries its id like any node, encoded from its key on the tiers the store
-        // resolves it on. An interim beside the node type's arm above, both going when an output
-        // field's node id is encoded from the store.
-        if (NODE_INTERFACE_ID_FIELD.equals(name) && isScalarId && !hasFieldDirective
-                && tableType.name().equals(parentTypeName)
-                && ctx.schema.getType(parentTypeName) instanceof GraphQLObjectType stubObj
-                && no.sikt.graphitron.model.grammar.NodeDeclaration.isStub(stubObj)
-                && ctx.resolveTargetKeys(stubObj, parentTypeName, tableType.table().tableName())
-                    instanceof BuildContext.TargetKeys.OfStub stub) {
-            var enc = new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
-                com.palantir.javapoet.ClassName.get(ctx.ctx.outputPackage() + ".util",
-                    no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME),
-                no.sikt.graphitron.emit.NodeIdHelperNames.encode(parentTypeName), stub.keyColumns());
-            return new ColumnBackedField(parentTypeName, name, location, stub.keyColumns(),
-                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.NodeIdEncodeKeys(enc));
-        }
-
         Optional<ColumnRef> column = svc.resolveColumn(columnName, tableType);
         if (column.isEmpty()) {
             String tableSqlName = tableType.table().tableName();
