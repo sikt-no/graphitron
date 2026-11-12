@@ -70,6 +70,5 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding",
   Query.filmsByKey,                   public.film,            TABLE
   Query.filmsByKey(film_id:),         public.film,            COLUMN
   Query.filmsByService,               public.film,            TABLE
-  Query.filmsByService(ids:),         "no.sikt.graphitron.rewrite.test.services.SampleQueryService#filmsByService(Lorg/jooq/DSLContext;Ljava/util/List;)Lorg/jooq/Result;:1", PARAMETER
   Query.rows.title,                   public.films_for_actor, COLUMN
   """)

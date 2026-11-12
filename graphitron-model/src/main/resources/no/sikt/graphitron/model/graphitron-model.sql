@@ -10804,13 +10804,13 @@ CREATE TABLE graphitron_occurrence_binding (
   UNIQUE (graph_name, coordinate, bound, kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'PARAMETER', 'EXPRESSION', 'RESULT_EXPRESSION'))
+  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'EXPRESSION', 'RESULT_EXPRESSION'))
 );
-COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and an argument a call consumes binds the parameter that takes it, once per candidate overload until the call is pinned.';
+COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.';
 COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
-COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the holder''s key, the method and the position for PARAMETER; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
-COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; PARAMETER, the parameter of a call that consumes the value; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
+COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
+COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The member each occurrence with an object source reads, off its accessor path.
@@ -12023,8 +12023,8 @@ COMMENT ON COLUMN graphitron_occurrence_producer_service.constructor_descriptor 
 COMMENT ON COLUMN graphitron_occurrence_producer_service.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- A service call's parameters and what fills each one: the fills an author wrote, the rule over
--- them and the inferred fills, the stored answer, the PARAMETER binding of an argument a call
--- consumes, and the parameters no fill or two fills reach.
+-- them and the inferred fills, the stored answer, an argument's fill naming the occurrence it takes,
+-- and the parameters no fill or two fills reach.
 CREATE TABLE graphitron_occurrence_call_parameter (
   graph_name         VARCHAR   NOT NULL,
   coordinate         VARCHAR   NOT NULL,
@@ -12078,7 +12078,7 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.call_kind IS 'the call''s
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.position IS 'the parameter''s position in the method the call resolved, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.parameter_name IS 'the parameter''s name, NULL where the class was compiled without -parameters, which only a fill decided by type or shape can then reach';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.fill IS 'what supplies the value. Written: SESSION, the session handle; SESSION_MEMBER, one member of it; CONTEXT_KEY, a value the request context carries; ARGUMENT, an argument or input field a pair names. Inferred where nothing is written: DSL_CONTEXT, the jOOQ context, by the parameter''s type; ARGUMENT, the call''s own argument of the parameter''s name; SOURCE, what the call''s source hands it, by a collection''s shape at a call with a source: the source''s keys, or the target''s where the source states them, which the split decides and building judges; TABLE, on a @condition''s call, the table it is applied to, by a table parameter';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence taken, whose PARAMETER binding is the same fact seen from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence taken; a reader at that occurrence asks here for the parameter it fills';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.session_member IS 'on SESSION_MEMBER, the member of the session handle, as written after $session.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_source_name IS 'on ARGUMENT, the catalog partition of the table whose generated jOOQ record the parameter takes, itself or as its element type; NULL where it takes no table''s record';
@@ -12152,36 +12152,6 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.owner IS 'what the m
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.parameter_name IS 'the parameter the pair binds';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.call_coordinate IS 'the call occurrence the landing is resolved under, the fill''s own';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
--- The parameter an argument or input field is taken by: the PARAMETER subtype of the binding, one
--- row per occurrence and call position, pinned to its kind through the binding's unique key.
-CREATE TABLE graphitron_occurrence_parameter (
-  graph_name        VARCHAR   NOT NULL,
-  coordinate        VARCHAR   NOT NULL,
-  bound             VARCHAR   NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  call_coordinate   VARCHAR   NOT NULL,
-  call              VARCHAR   NOT NULL,
-  position          INT       NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, bound),
-  FOREIGN KEY (graph_name, coordinate, bound, kind)
-    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
-  -- The fill it is the other side of, so the two cannot disagree.
-  FOREIGN KEY (graph_name, call_coordinate, call, position)
-    REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position)
-    ON DELETE CASCADE,
-  CHECK (kind = 'PARAMETER')
-);
-COMMENT ON TABLE graphitron_occurrence_parameter IS 'The parameter an argument or input-field occurrence is taken by: one row per occurrence and call position an ARGUMENT fill names. For example Query.filmsByPath(input.ids:) binds position 0 of FilmService#filmsByIds.';
-COMMENT ON COLUMN graphitron_occurrence_parameter.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_parameter.coordinate IS 'the argument or input-field occurrence taken';
-COMMENT ON COLUMN graphitron_occurrence_parameter.bound IS 'the parameter, spelled class#method(descriptor):position from the call''s resolved method';
-COMMENT ON COLUMN graphitron_occurrence_parameter.kind IS 'always PARAMETER, pinned so the foreign key holds the row to a binding of that kind';
-COMMENT ON COLUMN graphitron_occurrence_parameter.call_coordinate IS 'the occurrence whose call takes it; with the call and the position, its graphitron_occurrence_call_parameter';
-COMMENT ON COLUMN graphitron_occurrence_parameter.call IS 'which of that occurrence''s calls takes it';
-COMMENT ON COLUMN graphitron_occurrence_parameter.position IS 'the parameter''s position';
-COMMENT ON COLUMN graphitron_occurrence_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_call_parameter_defect
   (graph_name, coordinate, call, call_kind, position, parameter_name, code, detail) AS
@@ -12511,8 +12481,7 @@ CREATE VIEW graphitron_occurrence_built_class_rule
    class_source_ref, class_name_ref, constructible, record_source_name, record_schema, record_table) AS
 WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_names, built_at,
               parent_touched_at) AS (
-  -- Every call's ARGUMENT fill, a condition's among them, where a service's alone also has a
-  -- PARAMETER binding at the occurrence it lands on.
+  -- Every call's ARGUMENT fill, a condition's among them, at the occurrence it lands on.
   SELECT cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class),
          'PARAMETER',
          CASE WHEN MIN(s.call_kind) = 'CONDITION' AND MAX(s.call_kind) = 'CONDITION'
@@ -19276,7 +19245,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_argmapping_landing_key_column'),
   ('occurrence-depths', 'graphitron_occurrence_condition'),
   ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
-  ('occurrence-depths', 'graphitron_occurrence_parameter'),
   ('occurrence-depths', 'graphitron_occurrence_producer'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_accessor'),
@@ -20369,8 +20337,8 @@ INSERT INTO meta_relation VALUES
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_binding', 'graph-occurrence-binding', 'graphitron',
    'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place.',
-   'For example Film.title binds the column title at public.film, and an argument a call consumes binds the parameter that takes it, once per candidate overload until the call is pinned.',
-   'The supertype of what an occurrence takes, each kind''s subtype keyed by its key and pinned to its kind by the unique key beside it, as the producer family is; keyed by the bound place as well as the occurrence, since an occurrence binds once per table a forked end reaches and once per candidate overload of a call until the pin. Declared ahead of its writers so the subtypes of every kind can reference it: the column and node-id rows are written beside the path needs, the parameter and expression rows by the call''s owner.'),
+   'For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.',
+   'The supertype of what an occurrence takes, each kind''s subtype keyed by its key and pinned to its kind by the unique key beside it, as the producer family is; keyed by the bound place as well as the occurrence, since an occurrence binds once per table a forked end reaches. Declared ahead of its writers so the subtypes of every kind can reference it: the column and node-id rows are written beside the path needs, the expression rows by the call''s owner.'),
   ('graphitron_occurrence_column', 'graph-occurrence-binding', 'graphitron',
    'The column a scalar occurrence reads or binds where its path lands: one row per occurrence and landing table.',
    'For example Film.title reads title at public.film, Film.details.lastUpdate reads last_update at public.film, and Query.films(title:) binds title at public.film.',
@@ -20398,11 +20366,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_call_parameter', 'graph-occurrence-call-parameter', 'graphitron',
    'What fills one parameter of one call: one row per call and parameter position some fill reaches.',
    'For example Query.filmsByPath''s parameter ids takes Query.filmsByPath(input.ids:), and a DSLContext parameter takes the jOOQ context.',
-   'Stored because the call emitter reads it position by position and the PARAMETER binding keys into it. Keyed at the producer occurrence rather than the declared field, since a call under a nested type is made once per parent and its arguments are reached under each.'),
-  ('graphitron_occurrence_parameter', 'graph-occurrence-binding', 'graphitron',
-   'The parameter an argument or input-field occurrence is taken by: one row per occurrence and call position an ARGUMENT fill names.',
-   'For example Query.filmsByPath(input.ids:) binds position 0 of FilmService#filmsByIds.',
-   'The PARAMETER subtype of graphitron_occurrence_binding, on its key and pinned to its kind by the unique key beside it: the ARGUMENT fill seen from the occurrence, so a reader at an argument asks what takes it without going through the call.'),
+   'Stored because the call emitter reads it position by position, and an argument''s fill names the occurrence it takes. Keyed at the producer occurrence rather than the declared field, since a call under a nested type is made once per parent and its arguments are reached under each.'),
   ('graphitron_occurrence_call_parameter_defect', 'graph-occurrence-call-parameter-defect', 'graphitron',
    'A parameter of a call that no fill or two fills reach: one row per occurrence, call, parameter and code.',
    'For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED, whether a @service or a @condition names it.',

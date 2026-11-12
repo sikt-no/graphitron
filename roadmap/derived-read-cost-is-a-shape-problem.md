@@ -402,8 +402,7 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     entries and the decode copies beside them that the audit's second group lists, a family at a
     time, each family's fact shown to reach its readers another way or its reader named.
   * **Each relation written ahead of its reader names it** `open`. The audit's third group, among
-    them `graphitron_occurrence_source_object`, `graphitron_occurrence_parameter` and
-    `graphitron_entry_defect_method`: the owner names the reader in the graph, or the relation goes.
+    them `graphitron_occurrence_source_object` and `graphitron_entry_defect_method`: the owner names the reader in the graph, or the relation goes.
     `graphitron_fetcher` is read: `graphitron_producer` and `graphitron_reader` key into it as its
     subtypes and `graphitron_entry_defect_rule` reads it, a reach a census of Java readers does not
     see; it goes with them under "The producer's readers read the occurrence producer, and the field-keyed family goes".
@@ -416,9 +415,6 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     `graphitron_fetcher` goes under that same node, the fetcher being
     derived off `graphitron_occurrence_producer`, which the frame's query reads already.
     `graphitron_occurrence_source_object` is F's, the source being F's.
-    * **`graphitron_occurrence_parameter` goes** `open`, E's. The `ARGUMENT` fill's
-      `landing_coordinate` on `graphitron_occurrence_call_parameter` states the same pairing, and a
-      reader at an argument asks it there.
   * **Settings and catalog facts nothing reads go** `open`, F's. The audit's fourth group, among
     them the `store_graph_` settings and `sql_table_record_supertype`, each checked against the
     generator's configuration first.
@@ -581,10 +577,9 @@ static method needs no holder.
       and sweeps calls by kind, so a `@condition` whose binding goes leaves no call and no fills.
       What remains of the principles review's three commits (Alf, 2026-11-10):
       * **A `@condition`'s calls, candidates and fills are written per depth** `open`. Landed but
-        for two things: a condition applied to a node id's table or taking a decoded key does not
-        emit (`AUTHORED_NODE_ID`), and a condition's fill writes no `PARAMETER` binding, one overload
-        applied to two tables being two calls taking one argument at one position, which `bound`,
-        spelled from the method alone, cannot tell apart (Alf, 2026-11-10).
+        for one thing: a condition applied to a node id's table or taking a decoded key does not
+        emit (`AUTHORED_NODE_ID`). An argument's fill names the occurrence it takes, a condition's as
+        a service's, so no binding at the argument is owed.
     * **A `@condition` and a service pair a parameter with an argument by one rule** `open`, off the
       critical path. The condition keeps its own by-type pairing through the flip; the differences
       from the service's, listed under "A `@condition`'s fills", are closed then, one rule for every
@@ -990,8 +985,9 @@ classified records have no reader left and can go with the walk.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
 * **What an occurrence takes is a binding** `open`, F's and E's. The `COLUMN`, `NODE_ID`, `TABLE`,
-  `VALUE`, `MEMBER` and `PARAMETER` bindings are written; what is left is `EXPRESSION`, which has only
-  its kind in the binding's check and no writer.
+  `VALUE` and `MEMBER` bindings are written; an argument a call consumes binds none, the call's
+  parameter fill naming it. What is left is `EXPRESSION`, which has only its kind in the binding's
+  check and no writer.
 * **The result relations dissolve into the producer's result** `open`, E's. The key-row half has
   landed; `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` remain, saying per
   type what the producer's result says per producer, and go with the result rule's fixpoint, their
@@ -1942,15 +1938,15 @@ that depend on the parent fall three ways.
      children, and `graphitron_join_path_stop`;
   ** `graphitron_occurrence_binding` and a subtype per kind, keyed by
      `(graph_name, coordinate, bound)`, the bound spelled from names: a table for `TABLE`, `COLUMN`
-     and `NODE_ID`, a forked end being a binding per table, the holder's key, the method and the
-     position for `PARAMETER`, the method for `EXPRESSION` and `RESULT_EXPRESSION`, and the class
+     and `NODE_ID`, a forked end being a binding per table, the method for `EXPRESSION` and
+     `RESULT_EXPRESSION`, and the class
      and member for `VALUE`
      (`no.sikt.fs.EmneNavn#getEn`):
      `graphitron_occurrence_column` with its `sql_column` and whether the SQL or the jOOQ name
      matched, `graphitron_occurrence_node_id`, one row per key column by ordinal,
-     `graphitron_occurrence_binding_table`, `graphitron_occurrence_binding_value` and E's
-     `PARAMETER` and `EXPRESSION` subtypes. A miss is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS` at the field's written
-     position, and for an input under a parent bound `TABLE` only where no parameter binds it;
+     `graphitron_occurrence_binding_table`, `graphitron_occurrence_binding_value`,
+     `graphitron_occurrence_binding_member` and E's `EXPRESSION` subtype. A miss is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS` at the field's written
+     position, and for an input under a parent bound `TABLE` only where no parameter fill takes it;
   ** `graphitron_field_key_row` and its method subtype: the keys a parent hands a child `@service`,
      which no path end states;
   ** `graphitron_producer`, `graphitron_reader` and `graphitron_fetcher`, whose rules already decide
@@ -2136,9 +2132,10 @@ Today's writers build both sides, the accessor path being `graphitron_accessor_p
   source, and its children have it as their object source.
 * *Bind*: what it takes at the path's end: on the table side a scalar a column, an object or input
   object the table, an `id` on a `Node` or a `@nodeId` the node identity, the key columns there; on
-  the object side a member's value at the accessor path's end; and a value a call consumes, the
-  parameter that takes it. A root field with no path binds its target's table, once per table its
-  end would fork to. `PARAMETER` is decided before `COLUMN`: a scalar input with no binding under
+  the object side a member's value at the accessor path's end; a value a call consumes binds
+  nothing, the call's parameter fill naming it. A root field with no path binds its target's table,
+  once per table its end would fork to. A parameter fill is decided before `COLUMN`: a scalar input
+  with no binding under
   a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and `ARGUMENT_WITHOUT_CONSUMER`
   only where the generator cannot consume it, under `@service` or `@externalField`, and no
   parameter does.
@@ -2216,7 +2213,7 @@ entry.
   reads the record class and the key row off E's result facts rather than restating them, the key
   row through the occurrence's element until `graphitron_field_key_row` keys on the occurrence, a
   join that goes when it does. An input field under an argument bound to a `TableRecord` parameter
-  takes an ordinary table source once E's `PARAMETER` bindings stand. It is the successor of
+  takes an ordinary table source off the record table its call parameter fill names. It is the successor of
   `graphitron_field_path_start`, which starts only fields that wrote a path, and of
   `graphitron_field_source_table`. E's per-depth producer step runs in the source's loop before each
   depth's sources, as agreed with E; the writer marks the place.
@@ -2290,13 +2287,12 @@ entry.
   over steps and stops.
 * `graphitron_occurrence_binding`, anchoring, G's: one place an occurrence binds. Keyed by (graph,
   coordinate, bound), the place spelled from names: the schema-qualified table for `TABLE`, `COLUMN`
-  and `NODE_ID`, one row per forked end; the call's code reference, the method descriptor and the
-  position for `PARAMETER`, so each candidate overload binds; the class and the member read for
+  and `NODE_ID`, one row per forked end; the class and the member read for
   `VALUE`, `no.sikt.fs.EmneNavn#getEn`, the value at an accessor path's end. The kind is an
   attribute, and a subtype per kind carries what the kind needs, keyed by the supertype's key with a
   cascading foreign key to it, as the defect subtypes are, an ordinal where the kind needs one.
   `graphitron_occurrence_column`, G's, is the `COLUMN` subtype and `graphitron_occurrence_node_id`
-  the `NODE_ID` one, E's the `PARAMETER` one; `graphitron_occurrence_binding_table`, its `sql_table`,
+  the `NODE_ID` one; `graphitron_occurrence_binding_table`, its `sql_table`,
   is written beside the needs, since it reads the same ends; and `graphitron_occurrence_binding_value`,
   the class and member whose value it takes, waits on a producer's value object being bound. Every kind has its
   subtype, so the supertype holds the key and the kind alone (Alf, 2026-11-03).
@@ -2539,11 +2535,10 @@ is written at, never by a written position. Two kinds:
 
 A call states its method, the one overload every parameter of which is filled among the
 `code_method` rows its class and name find; for an instance `@service`, its holder; and per
-parameter, what fills it: an input occurrence's value (that occurrence's `PARAMETER` binding read the
-other way), a table at the call's path end or a step's from and to table, the source row's columns
+parameter, what fills it: an input occurrence's value, the fill naming the occurrence it lands on,
+a table at the call's path end or a step's from and to table, the source row's columns
 or keys, `$context`, `$session`, `$tenant` or the jOOQ context. Each holder owns its parameter rows,
-keyed by the holder, the method and the position, and a `PARAMETER` binding's place is spelled from
-the same key.
+keyed by the holder, the method and the position.
 
 **A `@condition`'s fills** (Alf, 2026-11-09). The rules are the manual's, maintained in
 `reference/directives/condition.adoc` § How the method's parameters are bound, which the flip

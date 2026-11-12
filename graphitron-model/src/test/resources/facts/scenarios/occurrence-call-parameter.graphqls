@@ -135,17 +135,6 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter", 
   Film.titlesLabelledSince,     2,        label,          ARGUMENT,       Film.titlesLabelledSince(tag:), ,
   """)
 
-extend schema @assertContains(relation: "graphitron_occurrence_parameter", rows: """
-  coordinate,                        call_coordinate,        position
-  Query.callFilms(ids:),             Query.callFilms,        1
-  Query.callFilmsRenamed(ids:),      Query.callFilmsRenamed, 1
-  Query.callFilmsByPath(input.ids:), Query.callFilmsByPath,  1
-  Query.holderOne(filmId:),          Query.holderOne,        0
-  Query.callFilmsByType(wanted:),    Query.callFilmsByType,  1
-  Query.countDrafts(in:),            Query.countDrafts,      0
-  Film.titlesSince(on:),             Film.titlesSince,       1
-  """)
-
 # Nothing in this document is unfilled or filled twice.
 extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defect", rows: """
   code

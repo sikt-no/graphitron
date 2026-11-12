@@ -181,9 +181,6 @@ and place it binds, keyed by the place and stating its kind.
 | `MEMBER`
 | A member of the class its parent input object is built into, which its value fills.
 
-| `PARAMETER`
-| A parameter of a call that consumes it, such as a `@service` method's.
-
 | `EXPRESSION`
 | A value an `@externalField` method computes in its producer's query.
 
@@ -212,9 +209,11 @@ rather than members. The input `in` that `Mutation.customerUpsert` takes is buil
 `CustomerRecord`, and so is its field `details`, which groups `firstName` and `lastName` onto the
 same record.
 
+An argument a call consumes binds no row here: the call's parameter is stated on the call, in
+`graphitron_occurrence_call_parameter`, whose fill names the occurrence it takes.
+
 The store does not state every binding yet. In the running example `Film.language`, `Film.actors`
-and `Film.inventory` have no `TABLE` row, and the arguments a `@routine` consumes have no
-`PARAMETER` row; their writers are still being moved onto the occurrence.
+and `Film.inventory` have no `TABLE` row; their writers are still being moved onto the occurrence.
 
 '''
 
@@ -265,8 +264,8 @@ and the one it pins a row of `graphitron_occurrence_call_method`, whatever its k
 constructor its object is made with;
 `graphitron_occurrence_producer_routine` a `ROUTINE` producer's database routine;
 `graphitron_occurrence_producer_write` a write's table. `graphitron_occurrence_call_parameter` says
-what fills each parameter of a call: an argument, which then binds that parameter, as
-`Query.filmsByService(ids:)` binds the second parameter of `filmsByService`, or a value graphitron
+what fills each parameter of a call: an argument, which fills that parameter, as
+`Query.filmsByService(ids:)` fills the second parameter of `filmsByService`, or a value graphitron
 supplies, such as the jOOQ context. `graphitron_occurrence_producer_lift` states how a child
 producer under an object is filled from it: the key constraint whose values the object supplies,
 read as columns or through a member (`graphitron_occurrence_producer_lift_accessor`), and how many
