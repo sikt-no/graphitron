@@ -183,7 +183,8 @@ census it replaced is gone.
     every copy of a class name; `store_graph_dependency.position` captures the graph's classpath
     order, and `graphitron_type_backing_rule`'s slot hops and pass-through test take the first
     declaring entry. Nested slots are read for the names an entry's own methods carry, so a nested
-    class one entry names and only another declares is not read: open for Alf's call.
+    class one entry names and only another declares is not read, accepted by Alf (2026-11-12) since
+    reading it would write rows under an entry the reading did not open and cannot sweep.
   * **A graph's visible class is one relation, read by every rule that resolves a name** `open`. The
     first-declaring-entry predicate is written inline three times in the type-backing rule, and
     about 25 rules joining `code_` rows through `store_graph_source` do not apply it yet
