@@ -12755,42 +12755,23 @@ COMMENT ON VIEW graphitron_occurrence_built_class_rule IS 'The class an input ob
 -- table, and a member with a table and no @discriminator.
 CREATE VIEW graphitron_entry_defect_member_rule
   (graph_name, source_name, source_line, source_column, code, member_type_name) AS
-WITH member (graph_name, container_name, member_type_name, is_table, is_node, binds,
-        table_source_name, table_schema, table_name) AS (
-  SELECT pm.graph_name, pm.container_name, pm.member_type_name, tt.type_name IS NOT NULL,
-         n.type_name IS NOT NULL,
-         n.type_name IS NOT NULL AND tt.type_name IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphql_poly_member pm2
-                             JOIN graphitron_tabletype tt2
-                               ON tt2.graph_name = pm2.graph_name
-                              AND tt2.type_name = pm2.member_type_name
-                            WHERE pm2.graph_name = pm.graph_name
-                              AND pm2.container_name = pm.container_name
-                              AND pm2.member_type_name <> pm.member_type_name
-                              AND tt2.table_source_name = tt.table_source_name
-                              AND tt2.table_schema = tt.table_schema
-                              AND tt2.table_name = tt.table_name),
-         tt.table_source_name, tt.table_schema, tt.table_name
-    FROM graphql_poly_member pm
-    LEFT JOIN graphitron_tabletype tt
-      ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
-    LEFT JOIN graphitron_node n
-      ON n.graph_name = pm.graph_name AND n.type_name = pm.member_type_name
-)
 -- A member of a container writing @discriminate that has no table, so it cannot be a row of the
 -- shared table nor of one joined to it, or that has a table and no @discriminator, so no value
 -- tells its rows apart: at the @discriminate, naming the member.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN m.is_table THEN 'DISCRIMINATOR_MISSING' ELSE 'TABLE_INTERFACE_PARTICIPANT_UNBOUND' END,
-       m.member_type_name
+       CASE WHEN tt.type_name IS NOT NULL THEN 'DISCRIMINATOR_MISSING'
+            ELSE 'TABLE_INTERFACE_PARTICIPANT_UNBOUND' END,
+       pm.member_type_name
   FROM graphitron_ast_discriminate_entry d
   JOIN graphql_directive_application da
     ON da.graph_name = d.graph_name AND da.source_name = d.source_name
    AND da.source_line = d.source_line AND da.source_column = d.source_column
-  JOIN member m ON m.graph_name = da.graph_name AND m.container_name = da.coordinate
- WHERE NOT m.is_table
+  JOIN graphql_poly_member pm ON pm.graph_name = da.graph_name AND pm.container_name = da.coordinate
+  LEFT JOIN graphitron_tabletype tt
+    ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
+ WHERE tt.type_name IS NULL
     OR NOT EXISTS (SELECT 1 FROM graphql_directive_application va
-                    WHERE va.graph_name = m.graph_name AND va.coordinate = m.member_type_name
+                    WHERE va.graph_name = pm.graph_name AND va.coordinate = pm.member_type_name
                       AND va.directive_name = 'discriminator');
 COMMENT ON VIEW graphitron_entry_defect_member_rule IS 'One member a @discriminate''s defect names, in the shape graphitron_entry_defect_member stores: the rule itself, evaluated on demand rather than read off disk. For example a @discriminate interface whose member Missing carries no @discriminator draws a DISCRIMINATOR_MISSING row naming Missing.';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.graph_name IS 'the owning graph''s partition';
@@ -14689,19 +14670,6 @@ COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMappin
 CREATE VIEW graphitron_occurrence_build_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 WITH
--- Each occurrence of an id whose typeName: names an interface or union that is no node itself, with
--- the field it is reached through.
-container_id (graph_name, element_coordinate, container_name, field_element) AS (
-  SELECT DISTINCT o.graph_name, o.element_coordinate, cl.named, fo.element_coordinate
-    FROM graphitron_occurrence o
-    JOIN graphitron_binding_claim_container k
-      ON k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate
-    JOIN graphitron_binding_claim cl
-      ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
-     AND cl.claimer = k.claimer
-    JOIN graphitron_occurrence fo
-      ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
-),
 -- A node id's places under a @service: a parameter of its call, or a member or record its input
 -- object is built into where the root argument goes to one; the parameter is the call's, or the
 -- root argument's for a member or record.
@@ -14897,9 +14865,8 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
                                         AND pj.call_coordinate = sp.call_coordinate
                                         AND pj.call = sp.call AND pj.position = sp.position)
                     ELSE cp.parameter_name = o.name END
-           AND NOT EXISTS (SELECT 1 FROM container_id c
-                            WHERE c.graph_name = o.graph_name
-                              AND c.element_coordinate = o.element_coordinate)) v
+           AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim_container k
+                            WHERE k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate)) v
   JOIN graphitron_directive_application da
     ON da.graph_name = v.graph_name AND da.coordinate = v.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
@@ -14911,53 +14878,57 @@ UNION ALL
 -- runs an @externalField or a @routine, whose parameters are not stated here, and where its
 -- @service resolved to no method, whose own defect says why.
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_CONTAINER_NOT_AT_A_SLOT', c.container_name
-  FROM container_id c
+       'NODE_ID_CONTAINER_NOT_AT_A_SLOT', cl.named
+  FROM graphitron_binding_claim_container k
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
+   AND cl.claimer = k.claimer
+  JOIN graphitron_occurrence o ON o.graph_name = k.graph_name AND o.element_coordinate = k.coordinate
+  JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
   JOIN graphitron_directive_application da
-    ON da.graph_name = c.graph_name AND da.coordinate = c.element_coordinate
+    ON da.graph_name = k.graph_name AND da.coordinate = k.coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
  WHERE da.source_line IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM service_slot s
-                    WHERE s.graph_name = c.graph_name
-                      AND s.element_coordinate = c.element_coordinate)
+                    WHERE s.graph_name = k.graph_name AND s.element_coordinate = k.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
-                    WHERE p.graph_name = c.graph_name AND p.coordinate = c.field_element
+                    WHERE p.graph_name = fo.graph_name AND p.coordinate = fo.element_coordinate
                       AND p.directive_name IN ('externalField', 'routine'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application p
-                    WHERE p.graph_name = c.graph_name AND p.coordinate = c.field_element
+                    WHERE p.graph_name = fo.graph_name AND p.coordinate = fo.element_coordinate
                       AND p.directive_name = 'service'
                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
                                         JOIN graphitron_occurrence_producer_service ps
                                           ON ps.graph_name = po.graph_name
                                          AND ps.coordinate = po.coordinate
-                                       WHERE po.graph_name = c.graph_name
-                                         AND po.element_coordinate = c.field_element))
+                                       WHERE po.graph_name = fo.graph_name
+                                         AND po.element_coordinate = fo.element_coordinate))
 UNION ALL
 -- A polymorphic id at a parameter whose container cannot be decoded per member, at the @nodeId: a
 -- container carrying @table itself, which binds one table and no members, a container none of
 -- whose members binds a table, or a parameter whose shape is not the argument's.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
        MIN(v.parameter_name)
-  FROM (SELECT c.graph_name, c.element_coordinate, s.parameter_name,
+  FROM (SELECT cl.graph_name, cl.coordinate AS element_coordinate, s.parameter_name,
                CASE WHEN EXISTS (SELECT 1 FROM graphitron_tabletype ct
-                                  WHERE ct.graph_name = c.graph_name
-                                    AND ct.type_name = c.container_name)
+                                  WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
                     THEN 'NODE_ID_SINGLE_TABLE_CONTAINER'
                     WHEN NOT EXISTS (SELECT 1 FROM graphql_poly_member pm
                                        JOIN graphitron_tabletype mt
                                          ON mt.graph_name = pm.graph_name
                                         AND mt.type_name = pm.member_type_name
-                                      WHERE pm.graph_name = c.graph_name
-                                        AND pm.container_name = c.container_name)
+                                      WHERE pm.graph_name = cl.graph_name
+                                        AND pm.container_name = cl.named)
                     THEN 'NODE_ID_NO_TABLE_MEMBERS' END AS code
-          FROM container_id c
-          JOIN service_slot s
-            ON s.graph_name = c.graph_name AND s.element_coordinate = c.element_coordinate
+          FROM graphitron_binding_claim_container k
+          JOIN graphitron_binding_claim cl
+            ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
+           AND cl.claimer = k.claimer
+          JOIN service_slot s ON s.graph_name = k.graph_name AND s.element_coordinate = k.coordinate
         UNION ALL
-        SELECT c.graph_name, c.element_coordinate, s.parameter_name, 'NODE_ID_SLOT_SHAPE_MISMATCH'
-          FROM container_id c
-          JOIN service_slot s
-            ON s.graph_name = c.graph_name AND s.element_coordinate = c.element_coordinate
+        SELECT k.graph_name, k.coordinate, s.parameter_name, 'NODE_ID_SLOT_SHAPE_MISMATCH'
+          FROM graphitron_binding_claim_container k
+          JOIN service_slot s ON s.graph_name = k.graph_name AND s.element_coordinate = k.coordinate
          WHERE s.slot_shape = 'MISMATCH') v
   JOIN graphitron_directive_application da
     ON da.graph_name = v.graph_name AND da.coordinate = v.element_coordinate
