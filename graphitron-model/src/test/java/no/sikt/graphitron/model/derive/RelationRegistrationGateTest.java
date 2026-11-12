@@ -128,16 +128,12 @@ class RelationRegistrationGateTest {
             "graphitron_ast_federation_key_segment_entry",
             "graphitron_ast_error_entry", "graphitron_ast_error_handler_entry",
             "graphitron_ast_error_generic_handler_entry",
-            "graphitron_ast_error_database_handler_entry",
             // The decode of a field-site application, on the same terms: keyed by the position of
             // the @ token, so an application repeated on one field is repeated rows here where
             // GraphitronSchema holds one binding per field under an ordinal it assigned.
             "graphitron_ast_field_condition_entry",
-            "graphitron_ast_service_entry",
-            "graphitron_ast_external_field_entry",
             "graphitron_ast_connection_entry",
-            "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
-            "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
+            "graphitron_ast_mutation_entry",
             "graphitron_ast_routine_entry", "graphitron_ast_outbox_entry",
             // Every Java code reference a document writes, read off the vocabulary's types rather
             // than off a site. Nothing older states the whole of it to agree with; the fact

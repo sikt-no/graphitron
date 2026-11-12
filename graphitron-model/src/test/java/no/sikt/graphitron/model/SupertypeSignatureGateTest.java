@@ -227,17 +227,13 @@ class SupertypeSignatureGateTest {
         // the roster is the ledger of what that commit has to delete, which is why the pairs are
         // spelled out here rather than exempted by a rule over the name.
         Set.of("graphitron_ast_field_condition_entry", "graphitron_ast_input_value_condition_entry"),
-        // Five, and they arrived by being stamped: an @enum application records a class, a method
-        // and an argMapping, which is what a service and an external field record too, in either
-        // half, entry or anchor. One of them is a path's method-call segment, at every site and under either
-        // directive: it is written the way every method call is, and its own relation is what says
-        // the method is a join at that position, which a @condition's method is not. What it would
-        // take to collapse them is a supertype at a coordinate none of them has, so the entry half
-        // of this set outlives the migration and this row does not.
-        Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
-               "graphitron_ast_reference_condition_step_entry",
-               "graphitron_ast_service_entry"),
-        Set.of("graphitron_ast_default_order_field_entry", "graphitron_ast_order_field_entry"),
+        // An @enum application records a class, a method and an argMapping, which is what a path's
+        // method-call segment records too, at every site and under either directive: it is written
+        // the way every method call is, and its own relation is what says the method is a join at
+        // that position, which a @condition's method is not. What it would take to collapse them is
+        // a supertype at a coordinate neither has, so this set outlives the migration and this row
+        // does not.
+        Set.of("graphitron_ast_enum_entry", "graphitron_ast_reference_condition_step_entry"),
         // What the step split leaves in place of the two wide relations, one per arm now that both
         // directives and every site write the same arm to one relation. The table arm sits with
         // @table, because naming a table is one fact wherever it is written, and the condition arm

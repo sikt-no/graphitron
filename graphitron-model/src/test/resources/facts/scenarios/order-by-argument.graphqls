@@ -55,8 +55,3 @@ extend schema @expectEquals(relation: "graphitron_ast_order_field_entry", rows: 
   name_ref
   title
   """)
-
-extend schema @expectEquals(relation: "graphitron_ast_default_order_entry", rows: """
-  index_ref, primary_key
-  ,          TRUE
-  """)

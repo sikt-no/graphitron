@@ -24,11 +24,11 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CODE_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
@@ -96,17 +96,18 @@ class EntryLegalityTest {
     void anOrderElementNamingAMethodIsTranscribed(@TempDir Path tmp) {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "method-entry", """
-                type Query {
-                    films: [Film!] @defaultOrder(fields: [{method: {className: "com.example.FilmKeys", method: "latest"}}])
-                }
+                type Query { films(order: FilmOrder): [Film!] }
                 type Film { title: String }
+                enum FilmOrder {
+                    LATEST @order(fields: [{method: {className: "com.example.FilmKeys", method: "latest"}}])
+                }
                 """));
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                 .from(GRAPHQL_SCHEMA_PROBLEM)
                 .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq("method-entry")).fetch())
                 .as("the corpus assembles")
                 .isEmpty();
-            var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
+            var e = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
             assertThat(dsl.select(e.NAME_REF).from(e).where(e.GRAPH_NAME.eq("method-entry")).fetch(e.NAME_REF))
                 .as("the element is transcribed, with no name")
                 .containsExactly((String) null);
@@ -124,13 +125,14 @@ class EntryLegalityTest {
     void anElementOfTheWrongShapeWithdrawsTheApplication(@TempDir Path tmp) {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "wrong-shape", """
-                type Query { films: [Film!] @defaultOrder(fields: ["title"]) }
+                type Query { films(order: FilmOrder): [Film!] }
                 type Film { title: String }
+                enum FilmOrder { TITLE @order(fields: ["title"]) }
                 """));
-            assertApplicationWasWritten(dsl, "wrong-shape", "defaultOrder");
+            assertEnumValueApplicationWasWritten(dsl, "wrong-shape", "order");
             assertRefusedByAssembly(dsl, "wrong-shape");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_ENTRY.GRAPH_NAME.eq("wrong-shape")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_ENTRY,
+                GRAPHITRON_AST_ORDER_ENTRY.GRAPH_NAME.eq("wrong-shape")))
                 .isZero();
         });
     }
@@ -141,19 +143,20 @@ class EntryLegalityTest {
     void anUndeclaredArgumentWithdrawsTheApplication(@TempDir Path tmp) {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "unknown-arg", """
-                type Query { films: [Film!] @defaultOrder(bogus: 1) }
+                type Query { films(order: FilmOrder): [Film!] }
                 type Film { title: String }
+                enum FilmOrder { TITLE @order(bogus: 1) }
                 """));
-            assertApplicationWasWritten(dsl, "unknown-arg", "defaultOrder");
+            assertEnumValueApplicationWasWritten(dsl, "unknown-arg", "order");
             assertRefusedByAssembly(dsl, "unknown-arg");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_ENTRY.GRAPH_NAME.eq("unknown-arg")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_ENTRY,
+                GRAPHITRON_AST_ORDER_ENTRY.GRAPH_NAME.eq("unknown-arg")))
                 .isZero();
         });
     }
 
     /**
-     * A scalar argument written as the wrong literal. {@code @defaultOrder(index:)} is a
+     * A scalar argument written as the wrong literal. {@code @order(index:)} is a
      * {@code String}, and an integer there is not a narrower string but a different type.
      */
     @Test
@@ -161,19 +164,20 @@ class EntryLegalityTest {
     void aScalarOfTheWrongTypeWithdrawsTheApplication(@TempDir Path tmp) {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "wrong-scalar", """
-                type Query { films: [Film!] @defaultOrder(index: 7) }
+                type Query { films(order: FilmOrder): [Film!] }
                 type Film { title: String }
+                enum FilmOrder { TITLE @order(index: 7) }
                 """));
-            assertApplicationWasWritten(dsl, "wrong-scalar", "defaultOrder");
+            assertEnumValueApplicationWasWritten(dsl, "wrong-scalar", "order");
             assertRefusedByAssembly(dsl, "wrong-scalar");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_ENTRY.GRAPH_NAME.eq("wrong-scalar")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_ENTRY,
+                GRAPHITRON_AST_ORDER_ENTRY.GRAPH_NAME.eq("wrong-scalar")))
                 .isZero();
         });
     }
 
     /**
-     * The site rule. {@code @table} is admitted on an object and {@code @defaultOrder} is not, and
+     * The site rule. {@code @table} is admitted on an object and {@code @order} is not, and
      * the two applications below differ in nothing else, so the type site's own entry stands while
      * the misplaced one does not.
      */
@@ -183,7 +187,7 @@ class EntryLegalityTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "wrong-site", """
                 type Query { films: [Film!] }
-                type Film @table(name: "film") @defaultOrder(fields: [{name: "title"}]) {
+                type Film @table(name: "film") @order(fields: [{name: "title"}]) {
                   title: String
                 }
                 """));
@@ -193,9 +197,9 @@ class EntryLegalityTest {
                 .as("@table is admitted on an object, so the legal neighbour is untouched and this "
                     + "case cannot pass by capturing nothing at all")
                 .isOne();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_ENTRY.GRAPH_NAME.eq("wrong-site")))
-                .as("@defaultOrder is admitted on a field definition and nowhere else")
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_ENTRY,
+                GRAPHITRON_AST_ORDER_ENTRY.GRAPH_NAME.eq("wrong-site")))
+                .as("@order is admitted on an enum value and nowhere else")
                 .isZero();
         });
     }
@@ -212,26 +216,27 @@ class EntryLegalityTest {
     void legalSpellingsAreAllTranscribed(@TempDir Path tmp) {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, corpus(tmp, "legal", """
-                type Query {
-                  byList: [Film!] @defaultOrder(fields: [{name: "title", direction: DESC}])
-                  byBareObject: [Film!] @defaultOrder(fields: {name: "title"})
-                  byIndex: [Film!] @defaultOrder(index: "film_title_idx")
-                  byPrimaryKey: [Film!] @defaultOrder(primaryKey: true)
-                }
+                type Query { films(order: FilmOrder): [Film!] }
                 type Film @table(name: "film") { title: String }
+                enum FilmOrder {
+                  BY_LIST @order(fields: [{name: "title", direction: DESC}])
+                  BY_BARE_OBJECT @order(fields: {name: "title"})
+                  BY_INDEX @order(index: "film_title_idx")
+                  BY_PRIMARY_KEY @order(primaryKey: true)
+                }
                 """));
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                 .from(GRAPHQL_SCHEMA_PROBLEM)
                 .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq("legal")).fetch())
                 .as("the corpus assembles, so anything missing below is this rule's doing")
                 .isEmpty();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_ENTRY.GRAPH_NAME.eq("legal")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_ENTRY,
+                GRAPHITRON_AST_ORDER_ENTRY.GRAPH_NAME.eq("legal")))
                 .as("all four applications are admitted, the bare object literal among them, the "
                     + "specification coercing a lone value into a one-element list")
                 .isEqualTo(4);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY.GRAPH_NAME.eq("legal")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_FIELD_ENTRY,
+                GRAPHITRON_AST_ORDER_FIELD_ENTRY.GRAPH_NAME.eq("legal")))
                 .as("and both spellings of the list contribute their element")
                 .isEqualTo(2);
         });
@@ -266,14 +271,6 @@ class EntryLegalityTest {
                                                             String name) {
         assertThat(applications(dsl, graph, EntryKind.ENUM_VALUE_DIRECTIVE, name))
             .as("the generic census holds the application, so an empty decode above is the rule "
-                + "rather than a corpus that never arrived")
-            .isPositive();
-    }
-
-    /** The application was written and reached capture, whatever became of its decode. */
-    private static void assertApplicationWasWritten(DSLContext dsl, String graph, String name) {
-        assertThat(applications(dsl, graph, EntryKind.FIELD_DIRECTIVE, name))
-            .as("the generic census holds the application, so an empty decode below is the rule "
                 + "rather than a corpus that never arrived")
             .isPositive();
     }

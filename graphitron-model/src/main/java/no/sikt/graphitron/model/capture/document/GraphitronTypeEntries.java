@@ -23,7 +23,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
@@ -58,9 +57,10 @@ import static org.jooq.impl.DSL.val;
  * argument being the handler list; it is there for the handlers to hang off. A handler is one row
  * of a supertype naming its kind, its index and the application holding it, and one row of that
  * kind's own relation where the kind has one, because the kind decides which of the input's six
- * fields mean anything: GENERIC matches by class identity and DATABASE by one of two SQL
- * discriminators, while VALIDATION carries nothing beyond its kind and so is the supertype row
- * alone. Every GENERIC and DATABASE element is a row of its kind's relation whatever it carries.
+ * fields mean anything: GENERIC matches by class identity and so has one. VALIDATION carries
+ * nothing beyond its kind, and DATABASE's fields are read by nothing and stand in the
+ * {@code graphql_ast_} relations, so each is the supertype row alone. Every GENERIC element is a
+ * row of its kind's relation whatever it carries.
  * {@code @defaultTenant} reaches this site too and gets no relation: it declares no argument, so its
  * applied-directive row is the whole fact.
  *
@@ -87,7 +87,6 @@ final class GraphitronTypeEntries {
         handlers(dsl, graph, touchedAt, listed);
         var handlers = elementsOf(errors, "handlers");
         genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC"));
-        databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
 
         var nodes = applied(applications, "node");
         nodes(dsl, graph, touchedAt, nodes);
@@ -120,7 +119,6 @@ final class GraphitronTypeEntries {
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
         GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
-        GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_HANDLER_ENTRY, GRAPHITRON_AST_ERROR_ENTRY,
         GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY,
         GRAPHITRON_AST_NODE_ENTRY,
@@ -265,31 +263,6 @@ final class GraphitronTypeEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.MATCHES, excluded(t.MATCHES))
-                .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
-    }
-
-    private static void databaseHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                         List<GraphitronAstEntries.Element> handlers) {
-        var t = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
-        var rows = handlers.stream().collect(Rows.toRowList(
-            handler -> val(graph, t.GRAPH_NAME),
-            handler -> GraphQLAstEntries.sourceName(handler.node()),
-            handler -> GraphQLAstEntries.sourceLine(handler.node()),
-            handler -> GraphQLAstEntries.sourceColumn(handler.node()),
-            handler -> val(touchedAt, t.TOUCHED_AT),
-            handler -> val(stringOf(inside(handler.node(), "code")), t.CODE),
-            handler -> val(stringOf(inside(handler.node(), "sqlState")), t.SQL_STATE),
-            handler -> val(stringOf(inside(handler.node(), "matches")), t.MATCHES),
-            handler -> val(stringOf(inside(handler.node(), "description")), t.DESCRIPTION)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CODE, t.SQL_STATE, t.MATCHES, t.DESCRIPTION)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CODE, excluded(t.CODE))
-                .set(t.SQL_STATE, excluded(t.SQL_STATE))
                 .set(t.MATCHES, excluded(t.MATCHES))
                 .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }

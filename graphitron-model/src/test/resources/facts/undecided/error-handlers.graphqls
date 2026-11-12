@@ -154,7 +154,7 @@ extend schema @assertEmpty(relation: "graphitron_ast_error_handler_entry", where
        AND v.position <> graphitron_ast_error_handler_entry.position)
   """)
 
-# The per-kind relations hang off the supertype. Every GENERIC element is a row, the one naming no
+# The GENERIC kind's relation hangs off the supertype. Every GENERIC element is a row, the one naming no
 # class included.
 extend schema @expectEquals(relation: "graphitron_ast_error_generic_handler_entry", rows: """
   class_name,                               matches
@@ -162,11 +162,6 @@ extend schema @expectEquals(relation: "graphitron_ast_error_generic_handler_entr
   java.lang.IllegalArgumentException,       boom
   ,                                         no class named
   java.lang.UnsupportedOperationException,
-  """)
-
-extend schema @expectEquals(relation: "graphitron_ast_error_database_handler_entry", rows: """
-  sql_state
-  23503
   """)
 
 # A VALIDATION handler is its supertype row and nothing more, there being no relation of its kind:
@@ -191,11 +186,4 @@ extend schema @assertEmpty(relation: "graphitron_ast_error_generic_handler_entry
     SELECT h.graph_name, h.source_name, h.source_line, h.source_column
       FROM graphitron_ast_error_handler_entry h
      WHERE h.handler = 'GENERIC')
-  """)
-
-extend schema @assertEmpty(relation: "graphitron_ast_error_database_handler_entry", where: """
-  (graph_name, source_name, source_line, source_column) NOT IN (
-    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
-      FROM graphitron_ast_error_handler_entry h
-     WHERE h.handler = 'DATABASE')
   """)

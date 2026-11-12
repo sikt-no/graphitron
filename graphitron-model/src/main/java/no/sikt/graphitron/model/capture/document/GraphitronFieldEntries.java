@@ -12,23 +12,16 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.integer;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.token;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static org.jooq.impl.DSL.excluded;
@@ -47,9 +40,11 @@ import static org.jooq.impl.DSL.val;
  * how the walk this replaces routed them, and it follows from the key: an entry references the AST
  * row it decodes, and those rows are in different relations.
  *
- * <p>Seventeen directive names reach this site and eight of them get a relation here.
- * {@code @splitQuery}, {@code @tenantFanOut} and {@code @globalData} declare no argument, and
- * {@code @multitableReference} is rejected before anything reads its one argument, so a row for
+ * <p>Seventeen directive names reach this site and five of them get a relation here.
+ * {@code @service}, {@code @externalField}, {@code @pivot} and {@code @defaultOrder} get none,
+ * nothing reading a decode of them: each application and its arguments stand in the
+ * {@code graphql_ast_} relations. {@code @splitQuery}, {@code @tenantFanOut} and
+ * {@code @globalData} declare no argument, and {@code @multitableReference} is rejected before anything reads its one argument, so a row for
  * any of the four would carry its key and nothing else, which is what the applied-directive row
  * already says. {@code @reference} and {@code @referenceFor} are the path family's, written for
  * every site at once by {@link GraphitronReferencePathEntries}, and {@code @field} and
@@ -68,16 +63,8 @@ final class GraphitronFieldEntries {
     static void write(DSLContext dsl, String graph, String source,
                       List<GraphQLAstEntries.Nested<Directive>> applications, LocalDateTime touchedAt) {
         conditions(dsl, graph, touchedAt, naming(applied(applications, "condition"), "condition"));
-        services(dsl, graph, touchedAt, naming(applied(applications, "service"), "service"));
-
-        externalFields(dsl, graph, touchedAt, naming(applied(applications, "externalField"), "reference"));
         connections(dsl, graph, touchedAt, applied(applications, "asConnection"));
         mutations(dsl, graph, touchedAt, token(applied(applications, "mutation"), "typeName"));
-        pivots(dsl, graph, touchedAt, wrote(wrote(applied(applications, "pivot"), "on"), "value"));
-
-        var defaultOrders = applied(applications, "defaultOrder");
-        defaultOrders(dsl, graph, touchedAt, defaultOrders);
-        defaultOrderFields(dsl, graph, touchedAt, defaultOrders);
 
         var routineApplications = wrote(applied(applications, "routine"), "name");
         routines(dsl, graph, touchedAt, routineApplications);
@@ -91,11 +78,8 @@ final class GraphitronFieldEntries {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_FIELD_CONDITION_ENTRY,
-        GRAPHITRON_AST_SERVICE_ENTRY, GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY,
         GRAPHITRON_AST_CONNECTION_ENTRY,
         GRAPHITRON_AST_MUTATION_ENTRY,
-        GRAPHITRON_AST_PIVOT_ENTRY, GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-        GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY,
         GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -121,52 +105,6 @@ final class GraphitronFieldEntries {
                 .set(t.METHOD, excluded(t.METHOD))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
                 .set(t.OVERRIDE, excluded(t.OVERRIDE)));
-    }
-
-    private static void services(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                 List<Directive> applications) {
-        var t = GRAPHITRON_AST_SERVICE_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(inside(application, "service", "className"), t.CLASS_NAME),
-            application -> val(inside(application, "service", "method"), t.METHOD),
-            application -> val(inside(application, "service", "argMapping"), t.ARGMAPPING)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.METHOD, excluded(t.METHOD))
-                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
-    }
-
-    private static void externalFields(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<Directive> applications) {
-        var t = GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(inside(application, "reference", "className"), t.CLASS_NAME),
-            application -> val(inside(application, "reference", "method"), t.METHOD),
-            application -> val(inside(application, "reference", "argMapping"), t.ARGMAPPING)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.METHOD, excluded(t.METHOD))
-                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
     }
 
     private static void connections(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -220,76 +158,6 @@ final class GraphitronFieldEntries {
                 .set(t.TABLE_REF, excluded(t.TABLE_REF))
                 .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
                 .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
-    }
-
-    private static void pivots(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                               List<Directive> applications) {
-        var t = GRAPHITRON_AST_PIVOT_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "on"), t.ON_COLUMN),
-            application -> val(string(application, "value"), t.VALUE_COLUMN),
-            application -> val(string(application, "vocabulary"), t.VOCABULARY_REF)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.ON_COLUMN, t.VALUE_COLUMN, t.VOCABULARY_REF)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.ON_COLUMN, excluded(t.ON_COLUMN))
-                .set(t.VALUE_COLUMN, excluded(t.VALUE_COLUMN))
-                .set(t.VOCABULARY_REF, excluded(t.VOCABULARY_REF)));
-    }
-
-    private static void defaultOrders(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                      List<Directive> applications) {
-        var t = GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "index"), t.INDEX_REF),
-            application -> val(bool(application, "primaryKey"), t.PRIMARY_KEY),
-            application -> val(token(application, "direction"), t.DIRECTION)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.INDEX_REF, excluded(t.INDEX_REF))
-                .set(t.PRIMARY_KEY, excluded(t.PRIMARY_KEY))
-                .set(t.DIRECTION, excluded(t.DIRECTION)));
-    }
-
-    private static void defaultOrderFields(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                           List<Directive> applications) {
-        var t = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
-        var rows = elementsOf(applications, "fields").stream().collect(Rows.toRowList(
-            element -> val(graph, t.GRAPH_NAME),
-            element -> GraphQLAstEntries.sourceName(element.node()),
-            element -> GraphQLAstEntries.sourceLine(element.node()),
-            element -> GraphQLAstEntries.sourceColumn(element.node()),
-            element -> val(touchedAt, t.TOUCHED_AT),
-            element -> val(stringOf(inside(element.node(), "name")), t.NAME_REF),
-            element -> val(stringOf(inside(element.node(), "collate")), t.COLLATE),
-            element -> val(GraphitronAstEntries.tokenOf(inside(element.node(), "direction")),
-                t.DIRECTION)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.NAME_REF, t.COLLATE, t.DIRECTION)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.NAME_REF, excluded(t.NAME_REF))
-                .set(t.COLLATE, excluded(t.COLLATE))
-                .set(t.DIRECTION, excluded(t.DIRECTION)));
     }
 
     private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt,

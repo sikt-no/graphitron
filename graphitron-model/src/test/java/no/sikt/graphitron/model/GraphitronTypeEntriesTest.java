@@ -28,7 +28,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
@@ -146,7 +145,7 @@ class GraphitronTypeEntriesTest {
 
     /**
      * A list argument, which is the one shape whose values need a key of their own, and three
-     * kinds of value, two of which carry fields and so have a relation of their own. The index is
+     * kinds of value, one of which has a relation of its own. The index is
      * the author's order inside one application and is shared across the kinds, so it decides
      * nothing about which document wins and everything about what the author wrote first.
      */
@@ -163,21 +162,16 @@ class GraphitronTypeEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var database = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
             var handler = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
             var generic = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
 
-            assertThat(dsl.select(writtenAt(database), database.CODE, database.SQL_STATE)
-                    .from(database).fetch())
-                .as("one discriminator written, the other absent, and no column for a class name")
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
-                .containsExactly(tuple(0, "23505", null));
-
             assertThat(dsl.select(writtenAt(handler)).from(handler)
-                    .where(handler.HANDLER.eq("VALIDATION"))
+                    .where(handler.HANDLER.in("DATABASE", "VALIDATION"))
+                    .orderBy(writtenAt(handler))
                     .fetch(writtenAt(handler)))
-                .as("the kind is the whole of a VALIDATION handler, so its supertype row is all of it")
-                .containsExactly(1);
+                .as("a DATABASE or VALIDATION handler has no relation of its own, so its supertype "
+                    + "row is all of it")
+                .containsExactly(0, 1);
 
             assertThat(dsl.select(writtenAt(generic), generic.CLASS_NAME, generic.DESCRIPTION)
                     .from(generic).fetch())
@@ -196,12 +190,12 @@ class GraphitronTypeEntriesTest {
     @DisplayName("a field written on a kind that rejects it stands in the verbatim argument row")
     void aRejectedFieldStandsVerbatim(@TempDir Path tmp) {
         write(tmp, "errors.graphqls",
-            "type Failed @error(handlers: [{handler: DATABASE, className: \"X\"}]) { m: String }\n");
+            "type Failed @error(handlers: [{handler: GENERIC, sqlState: \"X\"}]) { m: String }\n");
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY))
                 .as("the handler is a row of its own kind").isEqualTo(1);
             assertThat(dsl.select(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.VALUE_SDL)
                     .from(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY)
@@ -209,7 +203,7 @@ class GraphitronTypeEntriesTest {
                     .fetchOne(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.VALUE_SDL))
                 .as("and the field its kind rejects is still readable, this relation having no "
                     + "column for it")
-                .contains("className", "\"X\"");
+                .contains("sqlState", "\"X\"");
         });
     }
 

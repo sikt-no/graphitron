@@ -52,19 +52,3 @@ type Query {
 
     filmsByTitleDescending: [Film!]! @asConnection @defaultOrder(index: "idx_title", direction: DESC)
 }
-
-extend schema @expectEquals(relation: "graphitron_ast_default_order_entry", rows: """
-  index_ref, primary_key, direction
-  ,          TRUE,
-  ,          TRUE,
-  ,          ,
-  ,          ,
-  idx_title, ,            DESC
-  """)
-
-extend schema @expectEquals(relation: "graphitron_ast_default_order_field_entry", rows: """
-  name_ref,   collate
-  last_name,  case_insensitive
-  first_name, case_insensitive
-  name,
-  """)

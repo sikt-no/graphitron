@@ -1,6 +1,6 @@
-# What a field-site decode carries, as the editor's claim surface reads it: @service's reference
-# spread into its class and its method, and @mutation's statement as the literal the author spelled,
-# with or without the table beside it, and its failOnMissing opt-in as written, NULL where omitted.
+# What a field-site decode carries, as the editor's claim surface reads it: @mutation's statement as
+# the literal the author spelled, with or without the table beside it, and its failOnMissing opt-in
+# as written, NULL where omitted.
 
 type Film @table(name: "film") { title: String }
 
@@ -20,11 +20,6 @@ type DeletedFilmsPayload { deletedIds: [ID!] }
 
 input FilmInput { title: String }
 input FilmKeyInput { filmId: Int! @field(name: "film_id") }
-
-extend schema @expectEquals(relation: "graphitron_ast_service_entry", rows: """
-  class_name,                                                 method
-  no.sikt.graphitron.rewrite.test.services.FilmCarrierService, filmById
-  """)
 
 extend schema @expectEquals(relation: "graphitron_ast_mutation_entry", rows: """
   operation, table_ref, fail_on_missing

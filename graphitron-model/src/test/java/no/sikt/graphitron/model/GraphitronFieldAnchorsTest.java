@@ -25,11 +25,8 @@ import java.util.Arrays;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
-import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -41,75 +38,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * input value in the entry relations rather than a field, and its anchor is a union with a
  * parent-kind test rather than a select. That distinction is the reason this batch is these four.
  *
- * <p>What the cases are about is the same two things the type site's are, plus one the field site
- * adds. The choosing, which here has to reach through two declarations to find merge order. The
- * absence, where a join's polarity is the relation's own shape. And the ordering, which is the one
- * value the entry relation and the anchor have to agree about rather than a row one of them declines.
+ * <p>What the cases are about is the same two things the type site's are. The choosing, which here
+ * has to reach through two declarations to find merge order. And the absence, where a join's
+ * polarity is the relation's own shape.
  */
 class GraphitronFieldAnchorsTest {
 
     private static final String GRAPH = "field-anchors";
 
     /**
-     * The ordering. An element's position is the index the author wrote it at, so a reader sorting
-     * by it sorts the way the schema reads. A nameless element is not an element of a
-     * {@code FieldSort} list and its whole application is not transcribed, so no gap can open;
-     * {@code EntryLegalityTest} holds that case.
-     */
-    @Test
-    @DisplayName("the entry states the index the author wrote each order element at")
-    void theEntryKeepsTheWrittenPositions(@TempDir Path tmp) {
-        write(tmp, "corpus.graphqls", """
-            type Query {
-              films: [Film!]
-                @defaultOrder(fields: [
-                  {name: "title"},
-                  {name: "released", direction: DESC},
-                  {name: "rating", collate: "xdanish_ai"}
-                ])
-            }
-            type Film { title: String, released: String, rating: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
-            assertThat(dsl.select(writtenAt(e), e.NAME_REF).from(e).where(e.GRAPH_NAME.eq(GRAPH))
-                    .orderBy(writtenAt(e)).fetch().map(Record::intoList))
-                .as("the entry keeps every element where the author wrote it")
-                .containsExactly(List.of(0, "title"), List.of(1, "released"),
-                    List.of(2, "rating"));
-        });
-    }
-
-    /**
-     * The polarity at a site whose payload is the fact. Both of {@code @pivot}'s columns are NOT
-     * NULL, so an application naming neither asserts nothing and draws no row.
-     */
-    @Test
-    @DisplayName("a pivot naming neither column writes no row")
-    void aPivotNamingNeitherColumnWritesNoRow(@TempDir Path tmp) {
-        write(tmp, "corpus.graphqls", """
-            type Query {
-              spread: [Film!] @pivot(on: "category", value: "total")
-              empty: [Film!] @pivot
-            }
-            type Film { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_PIVOT_ENTRY;
-            assertThat(dsl.select(t.ON_COLUMN, t.VALUE_COLUMN).from(t)
-                    .where(t.GRAPH_NAME.eq(GRAPH)).fetch().map(Record::intoList))
-                .as("the application that named its columns is a row; the one that named none is "
-                    + "not, the grain having nothing to hold for it")
-                .containsExactly(List.of("category", "total"));
-        });
-    }
-
-    /**
-     * The other polarity, at a site where every column is optional because the directive deduces
+     * The polarity at a site where every column is optional because the directive deduces
      * what the author leaves out. A bare application is still a request for a connection, so the
      * row exists and says nothing, which is the difference between deducing a page size and not
      * having been asked for a connection at all.
