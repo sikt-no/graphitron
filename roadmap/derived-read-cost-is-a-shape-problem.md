@@ -684,6 +684,13 @@ static method needs no holder.
     Every reason closes before the flip, which keeps no fallback to the classified model per
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
+    The node-id reasons (`NODE_ID`, `AUTHORED_NODE_ID`, `NODE_ID_PARTICIPANT`) wait on E's decode
+    rows for `@condition` parameters: the emitter reads where an id lands off
+    `graphitron_occurrence_node_id_slot_parameter` and `graphitron_occurrence_node_id_slot`, how it
+    decodes off `graphitron_occurrence_node_id_shape`, which holds `@service` parameters only until
+    then, and a single column only through `graphitron_occurrence_node_id_slot_projection`, a whole id
+    going to the record or a tuple and never unwrapped to its sole column, so the condition
+    reference's arity-1 promise changes with E's commit (E, 2026-11-12).
     * **A list of input objects' element fields are refused by the store where they cannot be compared as rows** `open`.
       `LIST_ELEMENT_CONDITION`, `LIST_ELEMENT_NODE_ID` and `LIST_ELEMENT_NOT_ONE_VALUE` are the store's
       at the element field's declaration, and `LIST_CONDITION_BELOW_LIST` at a `@condition` binding
