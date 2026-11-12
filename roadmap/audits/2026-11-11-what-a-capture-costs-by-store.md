@@ -141,3 +141,61 @@ outside a harness. 1,108 captures were logged:
   `@{argLine}`, and the root pom declares an empty `argLine` property, yet the 2026-11-11 run saw no
   recording from those forks. The fix the step names is already in place, so the step needs
   re-diagnosing before it is done.
+
+## A2a, priced, 2026-11-12
+
+A spike, not committed, gave `CapturedStore` an opt-in route behind a system property:
+- each thread keeps one `LONG_LIVED` store per catalog and classpath;
+- a capture goes in under a graph name of its own, and the store is never cleared;
+- the store is replaced after 100 graphs;
+- the fixture's file is written under `target/`, so it outlives the case.
+
+Three classes whose reads are scoped to their graph were moved onto it:
+`EmittedRegistryAgreementTest`, `NodeIdDecodeDefectsTest` and `ArgmappingProjectionDefectsTest`.
+Together they carry about 350 s of the thread store's capture CPU.
+
+**Interleaved pairs, the same compiled code, the property switching the route.** The first pair is
+discarded. The script stopped at its time limit before pair 3's second run, so pair 3 has one arm.
+
+| | pair 1 | pair 2 | pair 3 |
+|---|---:|---:|---:|
+| cleared store, fork CPU | 530.5 s | 525.8 s | |
+| accumulating store, fork CPU | 121.2 s | 121.8 s | 123.3 s |
+
+**The three classes went from about 528 to about 122 CPU-seconds, 77% less.**
+`EmittedRegistryAgreementTest` went from 284 to 46 s of class time. All 25 tests passed on the
+accumulating route. The cleared arm failed two assertions about the source file's name, because that
+arm names the file after the unique graph name. The failures cut those two tests short and do not
+change the comparison.
+
+### How a store that never clears behaves as it grows
+
+One store took 300 captures of fact documents:
+
+| graphs already in the store | median capture CPU | retained heap above the empty store |
+|---|---:|---:|
+| 0 to 49 | 354 ms | 247 MB at 50 graphs |
+| 100 to 149 | 446 ms | 335 MB at 150 graphs |
+| 250 to 299 | 694 ms | 470 MB at 300 graphs |
+
+About 0.9 MB is retained per graph, and the capture cost roughly doubles over 300 graphs. Hence the
+spike's limit of 100 graphs per store: four threads then hold at most about 1.3 GB.
+
+### Which tests can move
+
+A survey of every class that borrows the thread's store, 97 classes in `graphitron`, the model and
+LSP:
+- **37 read only within their own graph;**
+- **12 more read only relations no capture changes** (meta, lint rules, runtime classes);
+- **31 read at least one graph-keyed relation without a graph filter;**
+- **the rest write, seed rows under fixed keys, or assert relations shared by the whole store.**
+
+The CPU sits mostly in the scoped classes. `EmittedRegistryAgreementTest` alone is 27% of the thread
+store's capture CPU, and most of the next ten classes by CPU are scoped as well.
+
+### What it found besides
+
+`GraphQLSourceCapture.reclaim` forgets a schema source whose file has vanished even when another
+graph in the store still names it, and the capture aborts on the foreign key. That is a production
+bug for any store holding several graphs, filed as R1177. The spike works around it by keeping its
+files.

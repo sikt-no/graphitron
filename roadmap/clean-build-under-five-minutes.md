@@ -121,20 +121,40 @@ today). This item adds only the order: classes ranked by the CPU their captures 
 profile, so the build gains early. A test that needs a store of its own keeps one, as R1160's "What
 keeps a store of its own" says.
 
-**A2a. The thread's store accumulates instead of clearing.** This is the harness change A1 points
-at, and it would come ahead of A2's class-by-class order:
-- each borrow captures under a graph name of its own;
-- the thread keeps one store per catalog and classpath, as the population's shards do;
-- the clear goes.
+**A2a. Scoped inline captures go into a store that accumulates instead of clearing.** This is the
+harness change A1 points at. It comes ahead of A2's class-by-class order and does not replace it:
+- each capture goes in under a graph name of its own;
+- each thread keeps one store per catalog and classpath, as the population's shards do, and replaces
+  it after about 100 graphs;
+- nothing is cleared.
 
-What it costs:
-- about 290 test references to `CapturedStore.GRAPH` read the fixture's name instead;
-- the tests that read without scoping to their graph, write, or change the schema keep a store of
-  their own, and they are not counted yet;
-- the heap of a thread store holding hundreds of graphs is priced before it lands.
+*Priced 2026-11-12 (the A1 audit, § "A2a, priced").* In a spike, three scoped classes went from about
+528 to 122 CPU-seconds in interleaved pairs, 77% less. A store retains about 0.9 MB per graph, and
+its capture cost doubles over 300 graphs, which sets the limit.
 
-The stores booted per capture (`ownStore*`, `BuiltStore`) are a separate 807 s. They move onto the
-accumulating store where their reason for a store of their own allows.
+Which tests move:
+- **Classes reading only their own graph move.** That is 37 of the 97 classes that borrow the thread
+  store, and 12 more that read only relations no capture changes. They carry most of the CPU:
+  `EmittedRegistryAgreementTest` alone is 27% of it.
+- **The rest keep the clearing store, or a store of their own.** That is 31 classes with an unscoped
+  read, and those that write or assert store-wide relations.
+
+The design fork, open for Alf and Filip. The architect's reading is that the route should be the
+`FactGraphs` population taking inline SDL into its own shards, read through its select-only
+connection, rather than a second accumulating store on `CapturedStore`:
+- a writer would then fail loudly on that connection;
+- one ballast graph per shard would make an unscoped read fail every run instead of depending on
+  test order;
+- A2 would later only swap the inline SDL for a document path.
+
+One cost the `FactGraphs` route has to answer: a shard has a single writing connection, so the four
+test threads would queue on it.
+
+The stores booted per capture (`ownStore*`, `BuiltStore`) are a separate 807 s. They follow where
+their reason for a store of their own allows.
+
+The spike also found R1177: `reclaim` fails a capture in a store where another graph still names a
+vanished schema file.
 
 **A3. Each scenario is captured once per build, not once per module.** The population is per JVM,
 so the model's tests, `generate-test-schemas`, `graphitron`, LSP, MCP and the plugin each capture the
