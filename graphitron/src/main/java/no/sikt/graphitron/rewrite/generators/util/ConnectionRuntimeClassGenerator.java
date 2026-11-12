@@ -291,6 +291,20 @@ public final class ConnectionRuntimeClassGenerator {
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           ConnectionKeyShape shape, CodeBlock tenantColumn) {
+        return generate(outputPackage, identity, shape, tenantColumn, false);
+    }
+
+    /**
+     * As {@link #generate(String, SessionIdentityRows, ConnectionKeyShape, CodeBlock)}, for a build
+     * that may vouch: where {@code vouches}, every public runtime constructor takes the
+     * {@code VoucherKeys} last and {@code SessionState.of} takes the caller first. A graph that vouches
+     * supplies session identity, which the store requires of a voucher marker.
+     */
+    public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
+                                          ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches) {
+        if (vouches && !identity.supplied()) {
+            throw new IllegalArgumentException("a graph that vouches supplies session identity per request");
+        }
         TypeName tenantKeyType = shape.tenantKey().orElse(null);
         if ((tenantKeyType == null) != (tenantColumn == null)) {
             throw new IllegalArgumentException("A multi-tenant runtime needs both the tenant key type and"
@@ -329,7 +343,8 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
-            batchSizeLimit, identity, tenantKey, multiTenant, tenantConnections));
+            batchSizeLimit, identity, tenantKey, multiTenant, tenantConnections,
+            vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException,
             keyType, connectionKey));
@@ -341,7 +356,7 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(batchSizeLimit(batchSizeLimit));
         if (identity.emitsHookImplementation()) {
             units.add(mountedSession(schemaPackage, tenantKey, multiTenant));
-            units.add(sessionState(schemaPackage, identity));
+            units.add(sessionState(schemaPackage, identity, vouches));
             units.add(sessionHookImpl(schemaPackage, identity, tenantKey, multiTenant));
             units.add(sessionMountException(sessionMountException));
         }
@@ -837,8 +852,14 @@ public final class ConnectionRuntimeClassGenerator {
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
                                     ClassName batchSizeLimit,
                                     SessionIdentityRows identity, TypeName tenantKey,
-                                    boolean multiTenant, ClassName tenantConnections) {
+                                    boolean multiTenant, ClassName tenantConnections, ClassName voucherKeys) {
         var payload = payloadParams(identity, runtime);
+        // In a build that vouches every public constructor takes the voucher keys last, so a runtime
+        // without them is a compile error; keysArg appends them to a delegation.
+        String keysArg = voucherKeys == null ? "" : ", voucherKeys";
+        java.util.function.UnaryOperator<String> delegating = call -> call.substring(0, call.length() - 1) + keysArg + ")";
+        java.util.function.UnaryOperator<MethodSpec.Builder> takesKeys = b -> voucherKeys == null ? b
+            : b.addParameter(voucherKeys, "voucherKeys");
         var source = runtime.nestedClass(SOURCE_CLASS_NAME);
 
         var defaultSourceField = FieldSpec.builder(source, "defaultSource", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -942,6 +963,10 @@ public final class ConnectionRuntimeClassGenerator {
                     "fanOutTimeout must be positive, got: ")
                 .endControlFlow();
         }
+        takesKeys.apply(canonicalBuilder);
+        if (voucherKeys != null) {
+            canonicalBuilder.addStatement("this.voucherKeys = $T.requireNonNull(voucherKeys, $S)", OBJECTS, "voucherKeys");
+        }
         canonicalBuilder.addStatement("this.fetcherErrorLog = null")
             .addStatement("this.fetcherErrorResponse = null")
             .addStatement("this.batchSizeLimit = null");
@@ -960,7 +985,8 @@ public final class ConnectionRuntimeClassGenerator {
         }
         copyBuilder.addParameter(fetcherErrorLog, "fetcherErrorLog")
             .addParameter(fetcherErrorResponse, "fetcherErrorResponse")
-            .addParameter(batchSizeLimit, "batchSizeLimit")
+            .addParameter(batchSizeLimit, "batchSizeLimit");
+        takesKeys.apply(copyBuilder)
             .addStatement("this.defaultSource = defaultSource")
             .addStatement("this.sourcesByTenant = sourcesByTenant");
         if (multiTenant) {
@@ -972,14 +998,15 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("this.fetcherErrorLog = fetcherErrorLog")
             .addStatement("this.fetcherErrorResponse = fetcherErrorResponse")
             .addStatement("this.batchSizeLimit = batchSizeLimit")
+            .addCode(voucherKeys == null ? CodeBlock.of("") : CodeBlock.of("this.voucherKeys = voucherKeys;\n"))
             .build();
 
         var withFetcherErrorLog = MethodSpec.methodBuilder("withFetcherErrorLog")
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorLog, "log")
-            .addStatement("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S),"
-                    + " fetcherErrorResponse, batchSizeLimit)",
+            .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S),"
+                    + " fetcherErrorResponse, batchSizeLimit)"),
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "log")
             .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
                 + "claims to {@code log} instead of Graphitron's own ERROR line, and every exception a\n"
@@ -994,8 +1021,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorResponse, "response")
-            .addStatement("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog,"
-                    + " $T.requireNonNull(response, $S), batchSizeLimit)",
+            .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog,"
+                    + " $T.requireNonNull(response, $S), batchSizeLimit)"),
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "response")
             .addJavadoc("A copy of this runtime that asks {@code response} for the reference of every fetcher\n"
                 + "exception, the {@code message:} of every error a handler caught and the top-level message\n"
@@ -1009,8 +1036,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(batchSizeLimit, "limit")
-            .addStatement("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog, fetcherErrorResponse,"
-                    + " $T.requireNonNull(limit, $S))",
+            .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog, fetcherErrorResponse,"
+                    + " $T.requireNonNull(limit, $S))"),
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "limit")
             .addJavadoc("A copy of this runtime that asks {@code limit} how many keys one batched query may\n"
                 + "carry: a batch over the answer runs as several queries of at most that many keys. Without\n"
@@ -1062,24 +1089,24 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
 
         var sourceOnlyDelegating = multiTenant
-            ? MethodSpec.constructorBuilder()
+            ? takesKeys.apply(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(source, "defaultSource")
-                .addParameter(sourceMapParamType, "sourcesByTenant")
-                .addStatement("this(defaultSource, sourcesByTenant,"
-                    + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)")
+                .addParameter(sourceMapParamType, "sourcesByTenant"))
+                .addStatement(delegating.apply("this(defaultSource, sourcesByTenant,"
+                    + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"))
                 .addJavadoc("Source-form constructor with the default fan-out configuration.\n")
                 .build()
             : null;
 
-        var constructor = MethodSpec.constructorBuilder()
+        var constructor = takesKeys.apply(MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "dataSource")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addStatement(multiTenant
+            .addParameter(SQL_DIALECT, "dialect"))
+            .addStatement(delegating.apply(multiTenant
                     ? "this(new $T(dataSource, dialect, null), $T.of(),"
                         + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"
-                    : "this(new $T(dataSource, dialect, null), $T.of())",
+                    : "this(new $T(dataSource, dialect, null), $T.of())"),
                 source, MAP)
             .addJavadoc("Builds the single-source runtime over one consumer-owned {@code DataSource} and\n"
                 + "dialect with default jOOQ {@code Settings} (no per-tenant routing). Delegating\n"
@@ -1088,15 +1115,15 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
             .build();
 
-        var settingsConstructor = MethodSpec.constructorBuilder()
+        var settingsConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "dataSource")
             .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings")
-            .addStatement(multiTenant
+            .addParameter(SETTINGS, "settings"))
+            .addStatement(delegating.apply(multiTenant
                     ? "this(new $T(dataSource, dialect, settings), $T.of(),"
                         + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"
-                    : "this(new $T(dataSource, dialect, settings), $T.of())",
+                    : "this(new $T(dataSource, dialect, settings), $T.of())"),
                 source, MAP)
             .addJavadoc("Builds the single-source runtime over one consumer-owned {@code DataSource},\n"
                 + "dialect and jOOQ {@code Settings} (no per-tenant routing), so a schema or render mapping\n"
@@ -1107,16 +1134,16 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n")
             .build();
 
-        var dataSourceMapConstructor = MethodSpec.constructorBuilder()
+        var dataSourceMapConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
             .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
-            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SQL_DIALECT, "dialect"))
             .addStatement(multiTenant
-                    ? CodeBlock.of("this(defaultDataSource, dataSourcesByTenant, dialect, DEFAULT_FAN_OUT_CONCURRENCY,"
-                        + " DEFAULT_FAN_OUT_TIMEOUT)")
-                    : CodeBlock.of("this(new $T(defaultDataSource, dialect, null),"
-                        + " wrapSources(dataSourcesByTenant, dialect))", source))
+                    ? CodeBlock.of(delegating.apply("this(defaultDataSource, dataSourcesByTenant, dialect, DEFAULT_FAN_OUT_CONCURRENCY,"
+                        + " DEFAULT_FAN_OUT_TIMEOUT)"))
+                    : CodeBlock.of(delegating.apply("this(new $T(defaultDataSource, dialect, null),"
+                        + " wrapSources(dataSourcesByTenant, dialect))"), source))
             .addJavadoc("Builds the tenant-routing runtime from bare {@code DataSource}s sharing one dialect\n"
                 + "and default jOOQ {@code Settings}. Delegating convenience over the {@link Source} form"
                 + (multiTenant ? ",\nwith the default fan-out configuration" : "") + ".\n"
@@ -1125,16 +1152,16 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param dialect the jOOQ {@code SQLDialect} shared by every source here; must not be {@code null}\n")
             .build();
 
-        var cappedConstructor = MethodSpec.constructorBuilder()
+        var cappedConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
             .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
             .addParameter(SQL_DIALECT, "dialect")
             .addParameter(int.class, "fanOutConcurrency")
-            .addParameter(DURATION, "fanOutTimeout")
-            .addStatement("this(new $T(defaultDataSource, dialect, null),"
+            .addParameter(DURATION, "fanOutTimeout"))
+            .addStatement(delegating.apply("this(new $T(defaultDataSource, dialect, null),"
                 + " wrapSources(dataSourcesByTenant, dialect),"
-                + " boundedFanOutPool(fanOutConcurrency), fanOutTimeout)", source)
+                + " boundedFanOutPool(fanOutConcurrency), fanOutTimeout)"), source)
             .addJavadoc("Builds the tenant-routing runtime with an explicit fan-out cap and deadline; the\n"
                 + "runtime owns a bounded pool of platform threads sized by the cap. To own threading\n"
                 + "yourself (e.g. virtual threads), use the {@code Executor}-form constructor instead.\n"
@@ -1145,15 +1172,15 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param fanOutTimeout the per-scatter deadline; must be positive\n")
             .build();
 
-        var executorFormConstructor = MethodSpec.constructorBuilder()
+        var executorFormConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
             .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
             .addParameter(SQL_DIALECT, "dialect")
             .addParameter(EXECUTOR, "fanOutExecutor")
-            .addParameter(DURATION, "fanOutTimeout")
-            .addStatement("this(new $T(defaultDataSource, dialect, null),"
-                + " wrapSources(dataSourcesByTenant, dialect), fanOutExecutor, fanOutTimeout)", source)
+            .addParameter(DURATION, "fanOutTimeout"))
+            .addStatement(delegating.apply("this(new $T(defaultDataSource, dialect, null),"
+                + " wrapSources(dataSourcesByTenant, dialect), fanOutExecutor, fanOutTimeout)"), source)
             .addJavadoc("Builds the tenant-routing runtime from bare {@code DataSource}s with an explicit\n"
                 + "scatter executor and deadline. Delegating convenience over the {@link Source} form.\n"
                 + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
@@ -1368,6 +1395,18 @@ public final class ConnectionRuntimeClassGenerator {
         builder.addField(fetcherErrorLogField)
             .addField(fetcherErrorResponseField)
             .addField(batchSizeLimitField);
+        if (voucherKeys != null) {
+            builder.addField(FieldSpec.builder(voucherKeys, "voucherKeys", Modifier.PRIVATE, Modifier.FINAL)
+                    .addJavadoc("The keys this subgraph signs and verifies vouchers with; every constructor takes\n"
+                        + "them, so a build that vouches has no runtime without them.\n")
+                    .build())
+                .addMethod(MethodSpec.methodBuilder("voucherKeys")
+                    .addModifiers(Modifier.PUBLIC)
+                    .returns(voucherKeys)
+                    .addStatement("return voucherKeys")
+                    .addJavadoc("The keys vouchers are signed and verified with.\n")
+                    .build());
+        }
         builder.addMethod(canonicalConstructor)
             .addMethod(copyConstructor);
         if (multiTenant) {
@@ -3719,7 +3758,7 @@ public final class ConnectionRuntimeClassGenerator {
      * lambda never faces overload ambiguity. The callbacks may throw anything; what the mount throws
      * is reported as the cause of a {@code SessionMountException}.
      */
-    private static TypeSpec sessionState(String schemaPackage, SessionIdentityRows identity) {
+    private static TypeSpec sessionState(String schemaPackage, SessionIdentityRows identity, boolean vouches) {
         var self = ClassName.get(schemaPackage, SESSION_STATE_CLASS_NAME);
         var mountedSession = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
         TypeName handleType = identity.handleType().orElse(null);
@@ -3755,23 +3794,35 @@ public final class ConnectionRuntimeClassGenerator {
 
         var mountField = FieldSpec.builder(mountType, "mount", Modifier.PRIVATE, Modifier.FINAL).build();
         var unmountField = FieldSpec.builder(unmountType, "unmount", Modifier.PRIVATE, Modifier.FINAL).build();
-        var constructor = MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PRIVATE)
+        var constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE);
+        var ofBuilder = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self);
+        if (vouches) {
+            constructorBuilder.addParameter(String.class, "caller").addStatement("this.caller = caller");
+            ofBuilder.addParameter(String.class, "caller");
+        }
+        var constructor = constructorBuilder
             .addParameter(mountType, "mount")
             .addParameter(unmountType, "unmount")
             .addStatement("this.mount = mount")
             .addStatement("this.unmount = unmount")
             .build();
-        var ofBoth = MethodSpec.methodBuilder("of")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(self)
+        var ofBoth = ofBuilder
             .addParameter(mountType, "mount")
             .addParameter(unmountType, "unmount")
-            .addStatement("return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
-                self, Objects.class, "mount", Objects.class, "unmount")
+            .addStatement(vouches
+                    ? "return new $T($T.requireNonNull(caller, $S), $T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))"
+                    : "return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
+                vouches
+                    ? new Object[] {self, Objects.class, "caller", Objects.class, "mount", Objects.class, "unmount"}
+                    : new Object[] {self, Objects.class, "mount", Objects.class, "unmount"})
             .addJavadoc("A session state that mounts at acquisition and unmounts at release. The unmount\n"
                 + "clears what the mount set; when the mount sets no database state, pass one that\n"
-                + "does nothing.\n")
+                + "does nothing."
+                + (vouches ? " The caller is who the request is for, as the vouchers this subgraph\n"
+                    + "issues or accepts are bound to it; both subgraphs must pass the same caller for the same\n"
+                    + "user, for example the token's subject." : "") + "\n")
             .build();
 
         var mountCall = MethodSpec.methodBuilder("mount")
@@ -3797,10 +3848,21 @@ public final class ConnectionRuntimeClassGenerator {
                 + "when the input is built rather than looked up from any ambient state.\n")
             .addType(mountInterface)
             .addType(unmountInterface)
+            .addFields(vouches
+                ? List.of(FieldSpec.builder(String.class, "caller", Modifier.PRIVATE, Modifier.FINAL).build())
+                : List.of())
             .addField(mountField)
             .addField(unmountField)
             .addMethod(constructor)
             .addMethod(ofBoth)
+            .addMethods(vouches
+                ? List.of(MethodSpec.methodBuilder("caller")
+                    .addModifiers(Modifier.PUBLIC)
+                    .returns(String.class)
+                    .addJavadoc("Who the request is for, which every voucher it issues or accepts is bound to.\n")
+                    .addStatement("return caller")
+                    .build())
+                : List.of())
             .addMethod(mountCall.build())
             .addMethod(unmountCall.build())
             .build();

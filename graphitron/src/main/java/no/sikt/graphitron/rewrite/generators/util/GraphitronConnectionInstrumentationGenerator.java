@@ -153,6 +153,16 @@ public final class GraphitronConnectionInstrumentationGenerator {
      * the {@code graphQLContext} and retained by the carrier for the life of the request.
      */
     public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionIdentityRows sessionHooks) {
+        return generate(outputPackage, tenantKeyType, sessionHooks, false);
+    }
+
+    /**
+     * As {@link #generate(String, TypeName, SessionIdentityRows)}, for a build that may vouch: where
+     * {@code vouches}, each operation also gets the issuers its voucher fields sign with, bound to the
+     * runtime's keys, the session state's caller and the operation's start.
+     */
+    public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionIdentityRows sessionHooks,
+                                          boolean vouches) {
         TypeName tenantKey = tenantKeyType == null ? null
             : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
@@ -168,14 +178,16 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var state = self.nestedClass("State");
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
         return List.of(instrumentation(self, runtime, tenantConnections, requestTenants, fetcherErrorLog,
-            fetcherErrorResponse, batchSizeLimit, commitPolicy, state, tenantKey, sessionHooks, errorRouter));
+            fetcherErrorResponse, batchSizeLimit, commitPolicy, state, tenantKey, sessionHooks, errorRouter,
+            vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)
+                .nestedClass(no.sikt.graphitron.emit.VoucherRuntime.ISSUERS) : null));
     }
 
     private static TypeSpec instrumentation(
             ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
             ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName batchSizeLimit,
             ClassName commitPolicy, ClassName state,
-            TypeName tenantKey, SessionIdentityRows sessionHooks, ClassName errorRouter) {
+            TypeName tenantKey, SessionIdentityRows sessionHooks, ClassName errorRouter, ClassName issuers) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -292,6 +304,13 @@ public final class GraphitronConnectionInstrumentationGenerator {
                         + "Graphitron.newOwnedExecutionInput(SessionState.of(...), ...) so graphitron can "
                         + "mount the request's identity on each connection it acquires.")
                 .endControlFlow();
+        }
+        if (issuers != null) {
+            beginExecuteOperationBuilder
+                .addComment("The operation's voucher issuers: one vouch id per scope, every voucher bound to the")
+                .addComment("request's caller and expiring a fixed time after the operation started.")
+                .addStatement("graphQLContext.put($T.class, new $T(runtime.voucherKeys(), $L.caller(), $T.now()))",
+                    issuers, issuers, ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT, java.time.Instant.class);
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
         if (tenantKey != null) {

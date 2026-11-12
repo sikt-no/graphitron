@@ -63,6 +63,8 @@ public final class VoucherRuntime {
     public static final String CODEC = "VoucherCodec";
     /** The key provider's simple name. */
     public static final String KEYS = "VoucherKeys";
+    /** The simple name of the codec's per-operation issuers, nested in the codec. */
+    public static final String ISSUERS = "Issuers";
     /** The rejection's simple name. */
     public static final String REJECTED = "VoucherRejectedException";
 
@@ -394,6 +396,43 @@ public final class VoucherRuntime {
             .addStatement("return new $T(keys, bytes.toByteArray())", issuerClass)
             .build();
 
+        var issuersClass = self.nestedClass(ISSUERS);
+        var issuers = TypeSpec.classBuilder(ISSUERS)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("The issuers of one operation: bound to the keys, the request's caller and the instant the\n"
+                + "operation started, it hands out one issuer per scope and lifetime, under a vouch id minted\n"
+                + "once for them, so every voucher of the operation under one scope shares id, caller and\n"
+                + "expiry. Safe to share between the operation's threads.\n")
+            .addField(keys, "keys", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(String.class, "caller", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(Instant.class, "started", Modifier.PRIVATE, Modifier.FINAL)
+            .addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(java.util.concurrent.ConcurrentMap.class),
+                    ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(Object.class)), issuerClass), "byScope", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", java.util.concurrent.ConcurrentHashMap.class).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addJavadoc("@param keys the keys vouchers are signed with\n"
+                    + "@param caller who the request is for\n"
+                    + "@param started when the operation started; each expiry counts from it\n")
+                .addParameter(keys, "keys")
+                .addParameter(String.class, "caller")
+                .addParameter(Instant.class, "started")
+                .addStatement("this.keys = $T.requireNonNull(keys, $S)", Objects.class, "keys")
+                .addStatement("this.caller = $T.requireNonNull(caller, $S)", Objects.class, "caller")
+                .addStatement("this.started = $T.requireNonNull(started, $S)", Objects.class, "started")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("issuer")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(issuerClass)
+                .addJavadoc("The operation's issuer for {@code scope}, its vouchers expiring {@code ttl} after the\n"
+                    + "operation started.\n")
+                .addParameter(String.class, "scope")
+                .addParameter(Duration.class, "ttl")
+                .addStatement("return byScope.computeIfAbsent($T.of(scope, ttl),"
+                    + " key -> $T.issuer(keys, $T.randomUUID(), scope, caller, started.plus(ttl)))", List.class, self, UUID.class)
+                .build())
+            .build();
+
         var verify = MethodSpec.methodBuilder("verify")
             .addModifiers(Modifier.PUBLIC)
             .returns(token)
@@ -640,6 +679,7 @@ public final class VoucherRuntime {
                 .initializer("$T.ofSeconds($L)", Duration.class, CLOCK_SKEW.toSeconds()).build())
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addType(issuer)
+            .addType(issuers)
             .addType(verifier)
             .addMethod(issuerFactory)
             .addMethod(verifierFactory)

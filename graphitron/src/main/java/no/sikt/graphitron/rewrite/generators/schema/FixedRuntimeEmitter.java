@@ -41,8 +41,11 @@ public final class FixedRuntimeEmitter {
     /** One rendered class and the address it lands at. */
     public record Unit(GlobalUnitKind kind, UnitRef ref, TypeSpec spec) {}
 
-    /** The fixed runtime classes of the run the store captured. */
-    public static List<Unit> render(StoreHandle store) {
+    /**
+     * The fixed runtime classes of the run the store captured, with the voucher runtime where
+     * {@code vouches}, the run's one reading of {@link no.sikt.graphitron.emit.VoucherRuntime#vouches}.
+     */
+    public static List<Unit> render(StoreHandle store, boolean vouches) {
         String outputPackage = store.dsl()
             .select(STORE_GRAPH_OUTPUT.OUTPUT_PACKAGE)
             .from(STORE_GRAPH_OUTPUT)
@@ -51,7 +54,7 @@ public final class FixedRuntimeEmitter {
             .orElseThrow(() -> new IllegalStateException("graph '" + store.graphName()
                 + "' has no output coordinates in the store; only a generating run writes classes"));
         var out = new ArrayList<>(render(outputPackage));
-        if (no.sikt.graphitron.emit.VoucherRuntime.vouches(store)) {
+        if (vouches) {
             out.addAll(renderVoucherRuntime(outputPackage));
         }
         var shapes = ConnectionsQuery.read(store);

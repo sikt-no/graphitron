@@ -78,6 +78,17 @@ public final class GraphitronFacadeGenerator {
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
                                           boolean federationLink, boolean usesOneOf,
                                           no.sikt.graphitron.emit.SessionIdentityRows identity) {
+        return generate(schema, outputPackage, federationLink, usesOneOf, identity, false);
+    }
+
+    /**
+     * As {@link #generate(GraphitronSchema, String, boolean, boolean, no.sikt.graphitron.emit.SessionIdentityRows)},
+     * for a build that may vouch: where {@code vouches}, every {@code runtime} overload takes the
+     * {@code VoucherKeys} last, so a runtime without them does not compile.
+     */
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
+                                          boolean federationLink, boolean usesOneOf,
+                                          no.sikt.graphitron.emit.SessionIdentityRows identity, boolean vouches) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
@@ -182,29 +193,44 @@ public final class GraphitronFacadeGenerator {
         var graphitronRuntime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         var dataSource = ClassName.get("javax.sql", "DataSource");
         var sqlDialect = ClassName.get("org.jooq", "SQLDialect");
-        var runtime = MethodSpec.methodBuilder("runtime")
+        var voucherKeys = ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS);
+        String keysArg = vouches ? ", voucherKeys" : "";
+        String keysParamDoc = vouches
+            ? "@param voucherKeys the keys this subgraph signs and verifies vouchers with; must not be {@code null}\n"
+            : "";
+        var runtimeBuilder = MethodSpec.methodBuilder("runtime")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphitronRuntime)
             .addParameter(dataSource, "dataSource")
-            .addParameter(sqlDialect, "dialect")
-            .addStatement("return new $T(dataSource, dialect)", graphitronRuntime)
-            .addJavadoc(runtimeJavadoc())
+            .addParameter(sqlDialect, "dialect");
+        if (vouches) {
+            runtimeBuilder.addParameter(voucherKeys, "voucherKeys");
+        }
+        var runtime = runtimeBuilder
+            .addStatement("return new $T(dataSource, dialect$L)", graphitronRuntime, keysArg)
+            .addJavadoc(runtimeJavadoc().replace("@return", keysParamDoc + "@return"))
             .build();
 
         var settings = ClassName.get("org.jooq.conf", "Settings");
-        var runtimeWithSettings = MethodSpec.methodBuilder("runtime")
+        var runtimeWithSettingsBuilder = MethodSpec.methodBuilder("runtime")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphitronRuntime)
             .addParameter(dataSource, "dataSource")
             .addParameter(sqlDialect, "dialect")
-            .addParameter(settings, "settings")
-            .addStatement("return new $T(dataSource, dialect, settings)", graphitronRuntime)
+            .addParameter(settings, "settings");
+        if (vouches) {
+            runtimeWithSettingsBuilder.addParameter(voucherKeys, "voucherKeys");
+        }
+        var runtimeWithSettings = runtimeWithSettingsBuilder
+            .addStatement("return new $T(dataSource, dialect, settings$L)", graphitronRuntime, keysArg)
             .addJavadoc("Builds the application-scoped runtime over a {@code DataSource}, dialect and jOOQ\n"
                 + "{@code Settings} (schema or render mapping), so they reach every context graphitron mints.\n"
-                + "Otherwise as {@link #runtime(javax.sql.DataSource, org.jooq.SQLDialect)}.\n"
+                + "Otherwise as {@link #runtime(javax.sql.DataSource, org.jooq.SQLDialect"
+                + (vouches ? ", " + voucherKeys.canonicalName() : "") + ")}.\n"
                 + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
                 + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
                 + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n"
+                + keysParamDoc
                 + "@return the application-scoped runtime, to be held for the app's lifetime\n")
             .build();
 

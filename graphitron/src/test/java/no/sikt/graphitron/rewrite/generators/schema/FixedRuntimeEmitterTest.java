@@ -50,7 +50,7 @@ class FixedRuntimeEmitterTest {
     @Test
     void aStoreWithNoOutputCoordinatesRefuses() {
         assertThatThrownBy(() -> TestSchemaHelper.withStoreOver("type Query { x: String }",
-                FixedRuntimeEmitter::render))
+                store -> FixedRuntimeEmitter.render(store, false)))
             .isInstanceOf(IllegalStateException.class)
             .hasMessageContaining("has no output coordinates in the store");
     }
