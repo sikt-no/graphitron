@@ -12287,7 +12287,7 @@ COMMENT ON VIEW graphitron_entry_defect_parameter_rule IS 'One call parameter a 
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_name IS 'the defect''s file';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_line IS 'the defect''s line, 1-based';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_column IS 'the defect''s column, 1-based';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.coordinate IS 'the occurrence making the call, at its nested coordinate';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.call IS 'which of its calls, as graphitron_occurrence_call spells it';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.position IS 'the parameter''s position in the call''s method';
