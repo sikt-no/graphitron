@@ -17,18 +17,19 @@ import static org.jooq.impl.DSL.val;
  * or unpacks, from the rule view beside it, under a {@code NODE_ID} row of
  * {@code graphitron_occurrence_binding}, marked and swept.
  *
- * <p>A step of {@link OccurrenceDepths}' per-depth loop, after the depth's needs and join paths, whose
- * landings the inferences read, and before its columns, which skip the occurrences it binds; the
- * binding claims, whose written node types it reads, are written before the loop. The sweep deletes the stale
- * {@code NODE_ID} bindings, the subtype rows under them going by the cascade, and then the stale
- * positions under a binding that still stands, which a node whose key lost a column leaves behind.
+ * <p>A step of {@link OccurrenceBindings}, after {@link OccurrenceDepths} has written the needs and
+ * join paths whose landings the inferences read, and before the columns, which skip the occurrences
+ * it binds; the binding claims, whose written node types it reads, are written before both. The sweep
+ * deletes the stale {@code NODE_ID} bindings, the subtype rows under them going by the cascade, and
+ * then the stale positions under a binding that still stands, which a node whose key lost a column
+ * leaves behind.
  */
 public final class OccurrenceNodeIds {
 
     private OccurrenceNodeIds() {}
 
-    /** States the node id bindings of the occurrences at {@code depth}. */
-    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+    /** States the node id bindings of the occurrences. */
+    public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var o = GRAPHITRON_OCCURRENCE;
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
@@ -40,7 +41,7 @@ public final class OccurrenceNodeIds {
                     val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
@@ -55,7 +56,7 @@ public final class OccurrenceNodeIds {
                     r.COLUMN_NAME, val(touchedAt, n.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(n.GRAPH_NAME, n.COORDINATE, n.BOUND, n.POSITION)
             .doUpdate()
             .set(n.BASIS, excluded(n.BASIS))
@@ -68,7 +69,7 @@ public final class OccurrenceNodeIds {
             .execute();
     }
 
-    /** Deletes the NODE_ID bindings no depth of this reading marked, the subtype rows under them by the cascade. */
+    /** Deletes the NODE_ID bindings this reading did not mark, the subtype rows under them by the cascade. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;

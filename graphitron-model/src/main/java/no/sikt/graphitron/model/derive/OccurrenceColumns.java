@@ -17,17 +17,17 @@ import static org.jooq.impl.DSL.val;
  * its path lands, from the rule view beside it, under a {@code COLUMN} row of
  * {@code graphitron_occurrence_binding}, marked and swept.
  *
- * <p>A step of {@link OccurrenceDepths}' per-depth loop, after the depth's needs and join paths, whose
- * landings it reads, and its node ids, whose occurrences read no column; the binding claims, whose
- * written names it reads, are written before the loop. The sweep deletes the stale {@code COLUMN} bindings, and the subtype rows
- * under them go by the cascade.
+ * <p>A step of {@link OccurrenceBindings}, after {@link OccurrenceDepths}' needs and join paths, whose
+ * landings it reads, and the node ids, whose occurrences read no column; the binding claims, whose
+ * written names it reads, are written before both. The sweep deletes the stale {@code COLUMN}
+ * bindings, and the subtype rows under them go by the cascade.
  */
 public final class OccurrenceColumns {
 
     private OccurrenceColumns() {}
 
-    /** States the column bindings of the occurrences at {@code depth}. */
-    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+    /** States the column bindings of the occurrences. */
+    public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var o = GRAPHITRON_OCCURRENCE;
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var c = GRAPHITRON_OCCURRENCE_COLUMN;
@@ -38,7 +38,7 @@ public final class OccurrenceColumns {
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("COLUMN"), val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
@@ -52,7 +52,7 @@ public final class OccurrenceColumns {
                     val(touchedAt, c.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(c.GRAPH_NAME, c.COORDINATE, c.BOUND)
             .doUpdate()
             .set(c.TABLE_SOURCE_NAME, excluded(c.TABLE_SOURCE_NAME))
@@ -64,7 +64,7 @@ public final class OccurrenceColumns {
             .execute();
     }
 
-    /** Deletes the COLUMN bindings no depth of this reading marked, the subtype rows under them by the cascade. */
+    /** Deletes the COLUMN bindings this reading did not mark, the subtype rows under them by the cascade. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         dsl.deleteFrom(b)

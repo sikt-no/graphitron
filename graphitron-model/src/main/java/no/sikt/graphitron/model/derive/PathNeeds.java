@@ -446,7 +446,7 @@ public final class PathNeeds {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER.as("tc");
         return exists(selectOne().from(c)
             .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.LANDING_COORDINATE.eq(o.COORDINATE),
-                c.TOUCHED_AT.eq(touchedAt), c.RECORD_TABLE.isNotNull()));
+                c.TOUCHED_AT.eq(touchedAt), c.CALL_KIND.eq("SERVICE"), c.RECORD_TABLE.isNotNull()));
     }
 
     /**

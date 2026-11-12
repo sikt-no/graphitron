@@ -588,7 +588,7 @@ public final class OccurrenceSources {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER.as("tc");
         return exists(selectOne().from(c)
             .where(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.LANDING_COORDINATE.eq(o.COORDINATE),
-                c.TOUCHED_AT.eq(touchedAt), c.RECORD_TABLE.isNotNull()));
+                c.TOUCHED_AT.eq(touchedAt), c.CALL_KIND.eq("SERVICE"), c.RECORD_TABLE.isNotNull()));
     }
 
     /**
@@ -602,7 +602,7 @@ public final class OccurrenceSources {
         return row(o, TABLE, c.RECORD_SOURCE_NAME, c.RECORD_SCHEMA, c.RECORD_TABLE, null)
             .from(o)
             .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.LANDING_COORDINATE.eq(o.COORDINATE),
-                c.TOUCHED_AT.eq(touchedAt), c.RECORD_TABLE.isNotNull())
+                c.TOUCHED_AT.eq(touchedAt), c.CALL_KIND.eq("SERVICE"), c.RECORD_TABLE.isNotNull())
             .where(at, o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"));
     }
 

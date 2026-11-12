@@ -14,11 +14,13 @@ import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
+import no.sikt.graphitron.model.derive.OccurrenceBindings;
 import no.sikt.graphitron.model.derive.OccurrenceBuilds;
 import no.sikt.graphitron.model.derive.OccurrenceDepthDefects;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
 import no.sikt.graphitron.model.derive.OccurrenceLists;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
+import no.sikt.graphitron.model.derive.OccurrenceProducers;
 import no.sikt.graphitron.model.derive.OccurrenceValues;
 import no.sikt.graphitron.model.derive.Outboxes;
 import no.sikt.graphitron.model.derive.PathClaims;
@@ -138,11 +140,18 @@ public final class GraphitronAssemblyCapture {
         // declared elements alone; before the depths, whose readers it serves.
         new AnchorStage("occurrence-lists", OccurrenceLists.class,
             OccurrenceLists::derive),
-        // Each occurrence's producer, its calls' pins and fills, source, needs, paths and the node id
-        // and column it binds, a depth at a time, off the occurrences, the landings and the claims above: one stage, each
-        // depth reading what the depth above it wrote.
+        // Each occurrence's producer, its service call's pin and fills and what it produces, for the
+        // whole graph: they read nothing the depths write, and the depths' sources read them.
+        new AnchorStage("occurrence-producers", OccurrenceProducers.class,
+            OccurrenceProducers::derive),
+        // Each occurrence's source, needs and paths, a depth at a time, off the producers, the
+        // landings and the claims above: each depth reading what the depth above it wrote.
         new AnchorStage("occurrence-depths", OccurrenceDepths.class,
             OccurrenceDepths::derive),
+        // What each occurrence binds where its path lands, the lifts, node ids, columns, tables and
+        // @condition calls, for the whole graph off the depths: nothing in the depths reads them.
+        new AnchorStage("occurrence-bindings", OccurrenceBindings.class,
+            OccurrenceBindings::derive),
         // The class each input object is built into and the member each field fills, the shape each
         // node id lands in, and the defects judging them, off the calls and parameters just pinned.
         new AnchorStage("occurrence-builds", OccurrenceBuilds.class,

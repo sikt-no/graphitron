@@ -10745,7 +10745,7 @@ SELECT o.graph_name, o.coordinate, p.kind,
   JOIN graphitron_producer p
     ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
  WHERE o.kind = 'FIELD' AND p.kind NOT IN ('COUNT', 'FACETS');
-COMMENT ON VIEW graphitron_occurrence_producer_rule IS 'One row the occurrence producer rule computes, in the shape graphitron_occurrence_producer stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_rule IS 'One row the occurrence producer rule computes, in the shape graphitron_occurrence_producer stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer.kind';
@@ -10988,7 +10988,7 @@ SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.param
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id m
                     WHERE m.graph_name = p.graph_name AND m.coordinate = p.landing_coordinate
                       AND m.bound = p.bound AND m.position <> p.position);
-COMMENT ON VIEW graphitron_argmapping_landing_key_column_rule IS 'One row the landing key column rule computes, in the shape graphitron_argmapping_landing_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_argmapping_landing_key_column, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_argmapping_landing_key_column_rule IS 'One row the landing key column rule computes, in the shape graphitron_argmapping_landing_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_argmapping_landing_key_column, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.graph_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.directive_name';
@@ -11527,7 +11527,7 @@ COMMENT ON COLUMN graphitron_occurrence_producer.touched_at IS 'the reading that
 
 -- A call's candidate methods, each of whose parameters the fills below are stated for, and the one
 -- the call pins: the fills decide the pin, so a call with several candidates takes the one every
--- position fills. Stored per depth before any fill, so no fill or pin rule reads a view for them.
+-- position fills. Stored before any fill, so no fill or pin rule reads a view for them.
 CREATE VIEW graphitron_occurrence_call_candidate_rule
   (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
    method_descriptor) AS
@@ -11540,7 +11540,7 @@ SELECT p.graph_name, p.coordinate, 'producer', 'SERVICE', s.method_source_name, 
   JOIN graphitron_producer_service s
     ON s.graph_name = f.graph_name AND s.type_name = f.type_name AND s.field_name = f.field_name
  WHERE p.kind = 'SERVICE';
-COMMENT ON VIEW graphitron_occurrence_call_candidate_rule IS 'One row the call candidate rule computes, in the shape graphitron_occurrence_call_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_call_candidate_rule IS 'One row the call candidate rule computes, in the shape graphitron_occurrence_call_candidate stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_call_candidate_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call';
@@ -11846,7 +11846,7 @@ CREATE VIEW graphitron_occurrence_call_rule (graph_name, coordinate, call, call_
 -- Each call's pinned method's call.
 SELECT graph_name, coordinate, call, call_kind
   FROM graphitron_occurrence_call_pin;
-COMMENT ON VIEW graphitron_occurrence_call_rule IS 'One row the call rule computes, in the shape graphitron_occurrence_call stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_call, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_call_rule IS 'One row the call rule computes, in the shape graphitron_occurrence_call stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_call_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_call_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call.call';
@@ -11885,7 +11885,7 @@ CREATE VIEW graphitron_occurrence_call_method_rule
 SELECT graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
        method_descriptor
   FROM graphitron_occurrence_call_pin;
-COMMENT ON VIEW graphitron_occurrence_call_method_rule IS 'One row the call method rule computes, in the shape graphitron_occurrence_call_method stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_method, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_call_method_rule IS 'One row the call method rule computes, in the shape graphitron_occurrence_call_method stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_method, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_method.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_method.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_call_method_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_method.call';
@@ -11937,7 +11937,7 @@ SELECT p.graph_name, p.coordinate, p.kind, c.call, c.call_kind, h.constructor_so
   LEFT JOIN graphitron_service_holder h
     ON h.graph_name = f.graph_name AND h.type_name = f.type_name AND h.field_name = f.field_name
  WHERE p.kind = 'SERVICE';
-COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_service_rule IS 'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_service, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_service_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_service.kind';
@@ -12063,7 +12063,7 @@ SELECT c.graph_name, c.coordinate, c.call, c.position, l.coordinate, l.directive
    AND ((c.call_kind = 'SERVICE' AND l.directive_name = 'service' AND l.owner = 'service')
         OR (c.call_kind = 'CONDITION' AND l.directive_name = 'condition' AND l.owner = 'condition'))
  WHERE c.fill = 'ARGUMENT';
-COMMENT ON VIEW graphitron_occurrence_call_parameter_pair_rule IS 'One row the fill pair rule computes, in the shape graphitron_occurrence_call_parameter_pair stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_call_parameter_pair_rule IS 'One row the fill pair rule computes, in the shape graphitron_occurrence_call_parameter_pair stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.call';
@@ -12631,7 +12631,7 @@ SELECT p.graph_name, p.coordinate, p.kind, r.routine_source_name, r.table_schema
   JOIN graphitron_producer_routine r
     ON r.graph_name = f.graph_name AND r.type_name = f.type_name AND r.field_name = f.field_name
  WHERE p.kind = 'ROUTINE';
-COMMENT ON VIEW graphitron_occurrence_producer_routine_rule IS 'One row the routine call rule computes, in the shape graphitron_occurrence_producer_routine stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_routine, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_routine_rule IS 'One row the routine call rule computes, in the shape graphitron_occurrence_producer_routine stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_routine, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_routine_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_routine.kind';
@@ -12784,7 +12784,7 @@ SELECT p.graph_name, p.coordinate, p.kind, w.matches, w.table_source_name, w.tab
   JOIN graphitron_producer_write w
     ON w.graph_name = f.graph_name AND w.type_name = f.type_name AND w.field_name = f.field_name
  WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE');
-COMMENT ON VIEW graphitron_occurrence_producer_write_rule IS 'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_write, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_write_rule IS 'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_write, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_write_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_write.kind';
@@ -13008,7 +13008,7 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row t
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.slot_descriptor IS 'the slot_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.slot_descriptor';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_candidate_rule.found_by IS 'the found_by of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_candidate.found_by';
 
--- How a child producer's keys are filled from its source, written at the end of each depth, per
+-- How a child producer's keys are filled from its source, written after the depths, per
 -- occurrence and with services in: a member handing over the key's records, a re-fetch of the
 -- source's own rows, a re-read of the target's rows matched out of a routine's result, a selection
 -- under a record handed over whose path leaves the record's table by its first key, and a service
@@ -13211,7 +13211,7 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
                       AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
                     WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate)));
 
-COMMENT ON VIEW graphitron_occurrence_producer_lift_rule IS 'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_lift_rule IS 'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_producer_lift, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.read IS 'the read of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.read';
@@ -13236,7 +13236,7 @@ SELECT c.graph_name, c.coordinate, l.read, c.slot_source_name, c.slot_class_name
                            OR c2.slot_class_name <> c.slot_class_name
                            OR c2.slot_method_name <> c.slot_method_name
                            OR c2.slot_descriptor <> c.slot_descriptor));
-COMMENT ON VIEW graphitron_occurrence_producer_lift_accessor_rule IS 'One row the lift accessor rule computes, in the shape graphitron_occurrence_producer_lift_accessor stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_accessor, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_lift_accessor_rule IS 'One row the lift accessor rule computes, in the shape graphitron_occurrence_producer_lift_accessor stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_producer_lift_accessor, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_accessor_rule.read IS 'the read of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift_accessor.read';
@@ -14467,7 +14467,7 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
 
--- The defects judging the facts occurrence-depths and occurrence-builds write, by the stage after them:
+-- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:
 -- a child producer's lift and the key it takes, and the column a field reads or writes.
 CREATE VIEW graphitron_occurrence_depth_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
@@ -16888,7 +16888,7 @@ SELECT r.graph_name, r.coordinate, r.shape, r.class_name, r.runtime_kind, r.tabl
                            FROM store_graph_source gs
                            JOIN code_class ca ON ca.source_name = gs.source_name AND ca.class_name = r.class_name
                           WHERE gs.graph_name = r.graph_name);
-COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk. For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_result, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_result, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.shape IS 'the shape of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.shape';
@@ -17010,7 +17010,7 @@ SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, source
                         WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                           AND d.directive_name = 'condition'))
   ) bound (graph_name, coordinate, source_name, schema_name, table_name);
-COMMENT ON VIEW graphitron_occurrence_binding_table_rule IS 'One row the table binding rule computes, in the shape graphitron_occurrence_binding_table stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_binding_table_rule IS 'One row the table binding rule computes, in the shape graphitron_occurrence_binding_table stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.bound';
@@ -17107,7 +17107,7 @@ SELECT f.graph_name, f.coordinate, 'condition:' || f.bound, 'CONDITION', f.metho
  WHERE NOT EXISTS (SELECT 1 FROM offered g
                     WHERE g.graph_name = f.graph_name AND g.coordinate = f.coordinate
                       AND g.bound = f.bound AND g.exact > f.exact);
-COMMENT ON VIEW graphitron_occurrence_condition_candidate_rule IS 'One row the condition candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_condition_candidate_rule IS 'One row the condition candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_candidate_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call';
@@ -17144,7 +17144,7 @@ SELECT b.graph_name, b.coordinate, b.bound, c.call, c.call_kind, w.override_writ
   JOIN graphitron_occurrence_call c
     ON c.graph_name = b.graph_name AND c.coordinate = b.coordinate AND c.call = 'condition:' || b.bound
    AND c.call_kind = 'CONDITION';
-COMMENT ON VIEW graphitron_occurrence_condition_rule IS 'One row the condition call rule computes, in the shape graphitron_occurrence_condition stores: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_condition, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_condition_rule IS 'One row the condition call rule computes, in the shape graphitron_occurrence_condition stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_condition, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_condition.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_condition.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_condition.bound';
@@ -17443,7 +17443,7 @@ UNION ALL
 SELECT graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
        'ARGUMENT', field_coordinate, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM by_field;
-COMMENT ON VIEW graphitron_occurrence_condition_parameter_rule IS 'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_occurrence_condition_parameter_rule IS 'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_condition_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call';
@@ -19175,13 +19175,15 @@ INSERT INTO meta_stage VALUES
   ('fetchers', 'graphitron', 29, 'no.sikt.graphitron.model.derive.Fetchers'),
   ('occurrence-participants', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
   ('occurrence-lists', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
-  ('occurrence-depths', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-builds', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 36, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 37, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 38, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-producers', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
+  ('occurrence-depths', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-builds', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 38, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 39, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 40, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -19288,25 +19290,30 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_join_path_step_primary_key'),
   ('occurrence-depths', 'graphitron_join_path_step_routine'),
   ('occurrence-depths', 'graphitron_join_path_stop'),
-  ('occurrence-depths', 'graphitron_occurrence_binding'),
-  ('occurrence-depths', 'graphitron_occurrence_column'),
-  ('occurrence-depths', 'graphitron_occurrence_node_id'),
-  ('occurrence-depths', 'graphitron_occurrence_binding_table'),
-  ('occurrence-depths', 'graphitron_occurrence_call'),
-  ('occurrence-depths', 'graphitron_occurrence_call_candidate'),
-  ('occurrence-depths', 'graphitron_occurrence_call_method'),
-  ('occurrence-depths', 'graphitron_occurrence_call_parameter_pair'),
-  ('occurrence-depths', 'graphitron_argmapping_landing_key_column'),
-  ('occurrence-depths', 'graphitron_occurrence_condition'),
-  ('occurrence-depths', 'graphitron_occurrence_call_parameter'),
-  ('occurrence-depths', 'graphitron_occurrence_producer'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_lift'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_lift_accessor'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding'),
+  ('occurrence-bindings', 'graphitron_occurrence_column'),
+  ('occurrence-bindings', 'graphitron_occurrence_node_id'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
+  ('occurrence-producers', 'graphitron_occurrence_call'),
+  ('occurrence-bindings', 'graphitron_occurrence_call'),
+  ('occurrence-producers', 'graphitron_occurrence_call_candidate'),
+  ('occurrence-bindings', 'graphitron_occurrence_call_candidate'),
+  ('occurrence-producers', 'graphitron_occurrence_call_method'),
+  ('occurrence-bindings', 'graphitron_occurrence_call_method'),
+  ('occurrence-producers', 'graphitron_occurrence_call_parameter_pair'),
+  ('occurrence-bindings', 'graphitron_occurrence_call_parameter_pair'),
+  ('occurrence-bindings', 'graphitron_argmapping_landing_key_column'),
+  ('occurrence-bindings', 'graphitron_occurrence_condition'),
+  ('occurrence-producers', 'graphitron_occurrence_call_parameter'),
+  ('occurrence-bindings', 'graphitron_occurrence_call_parameter'),
+  ('occurrence-producers', 'graphitron_occurrence_producer'),
+  ('occurrence-bindings', 'graphitron_occurrence_producer_lift'),
+  ('occurrence-bindings', 'graphitron_occurrence_producer_lift_accessor'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_result'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_routine'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_service'),
-  ('occurrence-depths', 'graphitron_occurrence_producer_write'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_result'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_routine'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_service'),
+  ('occurrence-producers', 'graphitron_occurrence_producer_write'),
   ('occurrence-depths', 'graphitron_occurrence_source'),
   ('occurrence-depths', 'graphitron_occurrence_source_object'),
   ('occurrence-depths', 'graphitron_occurrence_source_table'),
@@ -20408,10 +20415,10 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_producer_result', 'graph-occurrence', 'graphitron',
    'What a producer produces: one row per producer, its shape, the class its values are where one is named, and for records the table they are rows of.',
    'For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION of the page class graphitron generates.',
-   'The producer knows what it produces (Alf, 2026-11-03): stated per producing occurrence, it is what the type-keyed graphitron_result family said per type, which a type reached under two producers could only say twice. Read off what the producer runs, its target, the method a service declares and the routine its field ends on, never off the result relations it replaces, and written per depth beside the producer.'),
+   'The producer knows what it produces (Alf, 2026-11-03): stated per producing occurrence, it is what the type-keyed graphitron_result family said per type, which a type reached under two producers could only say twice. Read off what the producer runs, its target, the method a service declares and the routine its field ends on, never off the result relations it replaces, and written by occurrence-producers beside the producer.'),
   ('graphitron_occurrence_producer_result_rule', 'graph-occurrence', 'graphitron',
    'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_result, which is the name every reader spells.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_result, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_binding', 'graph-occurrence-binding', 'graphitron',
    'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place.',
@@ -20468,7 +20475,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_node_id_shape_rule', 'occurrence-node-id-shape', 'graphitron',
    'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class, in the shape graphitron_occurrence_node_id_shape stores.',
    'For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.',
-   'The rule the stored relation is written from, after the depth loop has written every node id binding and call parameter it reads.'),
+   'The rule the stored relation is written from, after occurrence-producers and occurrence-bindings have written every call parameter and node id binding it reads.'),
   ('graphitron_occurrence_node_id_rule', 'occurrence-node-id-key', 'graphitron',
    'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.',
@@ -20476,22 +20483,22 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_producer', 'graph-occurrence', 'graphitron',
    'An occurrence that executes something and produces a result, and what kind of thing it runs: one row per producing occurrence.',
    'For example Query.films with nothing written is a ROOT SELECT, and Customer.address under a record-backed parent a CHILD LOOKUP from the key the record carries.',
-   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written by occurrence-producers ahead of the source''s loop, whose sources read it.'),
   ('graphitron_occurrence_producer_rule', 'graph-occurrence', 'graphitron',
    'One row the occurrence producer rule computes, in the shape graphitron_occurrence_producer stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer, which is the name every reader spells.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call', 'graph-occurrence-call', 'graphitron',
    'One call an occurrence makes: one row per occurrence and call, of whatever kind.',
    'For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.',
-   'The supertype every call''s own relation hangs under, keyed the way graphitron_occurrence_binding is, so the parameter fills have one foreign key to whichever call they fill and a fill only some calls take is a check on the kind they carry. Written with the producers, per depth, before the call subtypes that reference it.'),
+   'The supertype every call''s own relation hangs under, keyed the way graphitron_occurrence_binding is, so the parameter fills have one foreign key to whichever call they fill and a fill only some calls take is a check on the kind they carry. Written with the producers, before the call subtypes that reference it, by the stage owning the call''s kind.'),
   ('graphitron_occurrence_producer_lift', 'graph-occurrence', 'graphitron',
    'How a child producer''s keys are filled from its source: one row per child producer that takes keys off its parent''s value, the key constraint whose values the source supplies, how they are read and how many per parent.',
    'For example FilmDetailsCarrier.language under a FilmRecord a service handed over is keyed on film''s primary key read off the record, and CreateFilmsPayload.films on film''s through the films() member.',
-   'Stated per occurrence rather than per declared field, since a field reached under two parents can be filled differently under each, and with a service''s key parameter in, so a selection''s batch key and a service''s parameter are read one way: the frame, a routine''s re-reads, the outbox and the key defects all read it. Written at the end of each depth inside occurrence-depths. Where the query restarts is a separate fact, stated when a reader asks for it.'),
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can be filled differently under each, and with a service''s key parameter in, so a selection''s batch key and a service''s parameter are read one way: the frame, a routine''s re-reads, the outbox and the key defects all read it. Written by occurrence-bindings once the depths have resolved every source. Where the query restarts is a separate fact, stated when a reader asks for it.'),
   ('graphitron_occurrence_producer_lift_rule', 'graph-occurrence', 'graphitron',
    'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift, which is the name every reader spells.',
+   'For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_producer_lift, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_lift_accessor', 'graph-occurrence', 'graphitron',
    'The member an ACCESSOR lift reads its keys through: one row per such lift.',
@@ -20499,7 +20506,7 @@ INSERT INTO meta_relation VALUES
    'A subtype of the lift, so only a lift read through a member names one, the member being its one candidate. Written with the lift.'),
   ('graphitron_occurrence_producer_lift_accessor_rule', 'graph-occurrence', 'graphitron',
    'One row the lift accessor rule computes, in the shape graphitron_occurrence_producer_lift_accessor stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_lift_accessor, which is the name every reader spells.',
+   'For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_producer_lift_accessor, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_lift_candidate', 'graph-occurrence-lift-candidate', 'graphitron',
    'A member of the class a child producer''s source is an instance of that could hand it its keys: one row per producer and member.',
@@ -20512,18 +20519,18 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_call_candidate', 'graph-occurrence-call-candidate', 'graphitron',
    'One method one call of one occurrence could be: one row per call and candidate method.',
    'For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.',
-   'The methods the fills are stated for before a call is pinned, so whether a parameter is fillable is decided once, by the fill rule, and the pin reads it. A service call has the one method its reference names; a condition has each overload of its name. Stored per depth inside occurrence-depths before any fill, so no fill or pin rule reads a view for its candidates.'),
+   'The methods the fills are stated for before a call is pinned, so whether a parameter is fillable is decided once, by the fill rule, and the pin reads it. A service call has the one method its reference names; a condition has each overload of its name. Stored before any fill, a service call''s by occurrence-producers and a condition''s by occurrence-bindings, so no fill or pin rule reads a view for its candidates.'),
   ('graphitron_occurrence_call_candidate_rule', 'graph-occurrence-call-candidate', 'graphitron',
    'One row the call candidate rule computes, in the shape graphitron_occurrence_call_candidate stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.',
+   'For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_method', 'graph-occurrence-call', 'graphitron',
    'The method one call of one occurrence makes: one row per call that pinned a method.',
    'For example Query.filmsByPath''s producer call makes FilmService#filmsByIds, its one candidate.',
-   'A fact of every call that makes a method, a @service producer''s or a @condition''s, stated once at the call''s grain rather than on each kind''s subtype, where two relations would carry one payload. Written per depth inside occurrence-depths after the call it names, from the pin.'),
+   'A fact of every call that makes a method, a @service producer''s or a @condition''s, stated once at the call''s grain rather than on each kind''s subtype, where two relations would carry one payload. Written after the call it names, from the pin: a service call''s by occurrence-producers, a condition''s by occurrence-bindings.'),
   ('graphitron_occurrence_call_method_rule', 'graph-occurrence-call', 'graphitron',
    'One row the call method rule computes, in the shape graphitron_occurrence_call_method stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_method, which is the name every reader spells.',
+   'For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_method, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_pin', 'graph-occurrence-call', 'graphitron',
    'The method one call of one occurrence makes: one row per call some candidate pins.',
@@ -20531,31 +20538,31 @@ INSERT INTO meta_relation VALUES
    'A call with one candidate pins it, so a parameter nothing fills is that method''s defect; a call with several pins the one every position of which a fill reaches. Read by the call and its subtypes'' rules, which store the pin.'),
   ('graphitron_occurrence_call_rule', 'graph-occurrence-call', 'graphitron',
    'One row the call rule computes, in the shape graphitron_occurrence_call stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_call, which is the name every reader spells.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_service', 'graph-occurrence', 'graphitron',
    'The call a SERVICE producer makes, its method in graphitron_occurrence_call_method, and, for an instance method, the constructor its object is made with; one row per service producer whose method resolved.',
    'For example Query.titleByFilmIdViaInstance calls SampleInstanceService.titleByFilmId on an object SampleInstanceService(DSLContext) makes.',
-   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written by occurrence-producers ahead of the source''s loop, whose sources read it.'),
   ('graphitron_occurrence_producer_service_rule', 'graph-occurrence', 'graphitron',
    'One row the service call rule computes, in the shape graphitron_occurrence_producer_service stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_service, which is the name every reader spells.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_service, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_routine', 'graph-occurrence', 'graphitron',
    'The routine a ROUTINE producer calls, its first @routine with no table before it; one row per routine producer whose routine resolved to one callable.',
    'For example Query.filmsForActor @routine(name: "films_for_actor") calls public.films_for_actor.',
-   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written by occurrence-producers ahead of the source''s loop, whose sources read it.'),
   ('graphitron_occurrence_producer_routine_rule', 'graph-occurrence', 'graphitron',
    'One row the routine call rule computes, in the shape graphitron_occurrence_producer_routine stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_routine, which is the name every reader spells.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_routine, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_producer_write', 'graph-occurrence', 'graphitron',
    'The statement a write producer runs: the table it mutates and, for an identifying write, how many rows one input may match; one row per write producer whose table resolved.',
    'For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from film, MANY a key.',
-   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written per depth inside the source''s loop, before that depth''s sources, which read it.'),
+   'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written by occurrence-producers ahead of the source''s loop, whose sources read it.'),
   ('graphitron_occurrence_producer_write_rule', 'graph-occurrence', 'graphitron',
    'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the source''s depth loop inserts this view''s rows for one graph and one depth into graphitron_occurrence_producer_write, which is the name every reader spells.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_write, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_source', 'graph-occurrence', 'graphitron',
    'What one occurrence''s values come from: one row per occurrence that has a source.',
@@ -20604,26 +20611,26 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_condition', 'graph-occurrence-binding', 'graphitron',
    'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method.',
    'For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.',
-   'A call subtype keyed into the binding rather than a view re-deriving the table, so a condition goes when the table it was applied to does; the overload is the one whose table parameter takes the bound table, its own class over any table. Written per depth inside occurrence-depths after that depth''s bindings, with its candidates, call, method and fills.'),
+   'A call subtype keyed into the binding rather than a view re-deriving the table, so a condition goes when the table it was applied to does; the overload is the one whose table parameter takes the bound table, its own class over any table. Written by occurrence-bindings after the bindings, with its candidates, call, method and fills.'),
   ('graphitron_occurrence_condition_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the condition call rule computes, in the shape graphitron_occurrence_condition stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_condition, which is the name every reader spells.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_condition, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_condition_candidate_rule', 'graph-occurrence-call-candidate', 'graphitron',
    'One row the condition candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_candidate, which is the name every reader spells.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.',
    'The condition''s own candidate rule beside the service''s, so neither kind''s rule branches on the other; the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_condition_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
    'One row the condition parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a @condition''s call: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter, which is the name every reader spells.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',
    'The condition''s own fill rule beside the service''s, its rules the manual''s @condition reference, so neither kind''s rule branches on the other; the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_binding_table', 'graph-occurrence-binding', 'graphitron',
    'The table an occurrence''s rows or value land on: one row per TABLE binding.',
    'For example Query.films binds public.film, its rows, and Query.films(filter:), an input object whose fields filter film, binds public.film where its need lands.',
-   'The table side of a binding beside COLUMN and NODE_ID, so every occurrence that filters or is filtered binds a table and a @condition call is keyed by the binding rather than by a view re-deriving the table. Written per depth inside occurrence-depths by a writer of its own after the node id and column bindings, reading stored rows only: the landing is the join path''s target where a path was walked, else the need''s.'),
+   'The table side of a binding beside COLUMN and NODE_ID, so every occurrence that filters or is filtered binds a table and a @condition call is keyed by the binding rather than by a view re-deriving the table. Written by occurrence-bindings by a writer of its own after the node id and column bindings, reading stored rows only: the landing is the join path''s target where a path was walked, else the need''s.'),
   ('graphitron_occurrence_binding_table_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the table binding rule computes, in the shape graphitron_occurrence_binding_table stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_binding_table, which are the names every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_built_class', 'occurrence-built-class', 'graphitron',
    'The class an input object occurrence is built into: one row per occurrence and class.',
@@ -21037,18 +21044,18 @@ INSERT INTO meta_relation VALUES
   ('graphitron_argmapping_landing_key_column', 'graph-argmapping-pair-call-node', 'graphitron',
    'The key column a written argMapping path projects out of the node id it lands on: one row per landing and node binding it projects from.',
    'For example filmId: pick.languageRef.language_id under Query.filmsByOptionalLanguage takes position 0 of the language node''s key, language_id.',
-   'A fact of the landing, not of the fills that take it: which column is decided by the written pair, the call occurrence and the node binding there, never by the method or by which of a condition''s per-table calls takes it. Keyed by the landing and the use-site node binding, with foreign keys to both, so a binding that changes takes it. Written per depth inside occurrence-depths at the landing''s depth, after its node ids.'),
+   'A fact of the landing, not of the fills that take it: which column is decided by the written pair, the call occurrence and the node binding there, never by the method or by which of a condition''s per-table calls takes it. Keyed by the landing and the use-site node binding, with foreign keys to both, so a binding that changes takes it. Written by occurrence-bindings after the node ids.'),
   ('graphitron_argmapping_landing_key_column_rule', 'graph-argmapping-pair-call-node', 'graphitron',
    'One row the landing key column rule computes, in the shape graphitron_argmapping_landing_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_argmapping_landing_key_column, which is the name every reader spells.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_argmapping_landing_key_column, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_call_parameter_pair', 'graph-occurrence-call-parameter', 'graphitron',
    'The written argMapping pair a fill came from: one row per fill a pair wrote.',
    'For example the filmId parameter of Query.filmsByOptionalLanguage''s condition takes the pair filmId: pick.languageRef.language_id, and a parameter its name or its type filled has no row.',
-   'The provenance of a fill, stated on the derived fact: whether a written pair answered decides whether the fill can project a node id''s key column, and a reader reaches the pair''s landing by keys rather than joining back on a nullable parameter name. Written per depth with the fills of each call kind.'),
+   'The provenance of a fill, stated on the derived fact: whether a written pair answered decides whether the fill can project a node id''s key column, and a reader reaches the pair''s landing by keys rather than joining back on a nullable parameter name. Written with the fills of each call kind, by the stage owning it.'),
   ('graphitron_occurrence_call_parameter_pair_rule', 'graph-occurrence-call-parameter', 'graphitron',
    'One row the fill pair rule computes, in the shape graphitron_occurrence_call_parameter_pair stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the depth loop writes this view''s rows for one graph and one depth into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.',
+   'For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_argmapping_landing', 'graph-argmapping-pair-call', 'graphitron',
    'Where one written argMapping entry''s argument path lands under one occurrence of its call: one row per entry and call occurrence whose path resolves.',
@@ -21169,7 +21176,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_depth_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.',
-   'The defects judging the facts occurrence-depths and occurrence-builds write, a child producer''s lift and the column a field reads or writes, by a stage of their own after them, so neither the depth loop nor the gatherer''s one rule over every arm carries them.'),
+   'The defects judging the facts occurrence-bindings and occurrence-builds write, a child producer''s lift and the column a field reads or writes, by a stage of their own after them, so neither the depth loop nor the gatherer''s one rule over every arm carries them.'),
   ('graphitron_outbox_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the outbox stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_entry_defect, an @outbox on a field that writes nothing giving one OUTBOX_NOT_A_WRITE row at the application.',

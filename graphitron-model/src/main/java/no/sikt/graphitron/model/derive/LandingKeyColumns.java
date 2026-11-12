@@ -12,19 +12,17 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * Writes {@code graphitron_argmapping_landing_key_column}: the key column each written argMapping path
- * projects out of the node id it lands on, from the rule view beside it, marked per depth and swept
- * after the last.
+ * projects out of the node id it lands on, from the rule view beside it, marked and swept.
  *
- * <p>A step of {@link OccurrenceDepths}' per-depth loop at the landing's depth, right after
- * {@link OccurrenceNodeIds} states that depth's node ids, which the rule reads; the landings themselves
- * are the argMapping stage's, written before the loop.
+ * <p>A step of {@link OccurrenceBindings}, right after {@link OccurrenceNodeIds} states the node ids,
+ * which the rule reads; the landings themselves are the argMapping stage's, written earlier.
  */
 public final class LandingKeyColumns {
 
     private LandingKeyColumns() {}
 
-    /** States the key columns projected by the landings at {@code depth}. */
-    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+    /** States the key columns projected by the landings. */
+    public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var o = GRAPHITRON_OCCURRENCE;
         var t = GRAPHITRON_ARGMAPPING_LANDING_KEY_COLUMN;
         var r = GRAPHITRON_ARGMAPPING_LANDING_KEY_COLUMN_RULE;
@@ -36,7 +34,7 @@ public final class LandingKeyColumns {
                     val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.LANDING_COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
                 t.CALL_COORDINATE, t.BOUND)
             .doUpdate()
@@ -46,7 +44,7 @@ public final class LandingKeyColumns {
             .execute();
     }
 
-    /** Deletes the key columns no depth of this reading marked. */
+    /** Deletes the key columns this reading did not mark. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var t = GRAPHITRON_ARGMAPPING_LANDING_KEY_COLUMN;
         dsl.deleteFrom(t)

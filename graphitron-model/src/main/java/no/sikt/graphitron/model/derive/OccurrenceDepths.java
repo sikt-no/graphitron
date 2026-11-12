@@ -8,21 +8,23 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static org.jooq.impl.DSL.max;
 
 /**
- * What each occurrence executes, where its values come from, the types it must reach and the path
- * to each, one depth at a time, then the sweep of every relation: one stage of the graphitron
- * gatherer's anchor phase, since each depth reads what the depth above it wrote.
+ * Where each occurrence's values come from, the types it must reach and the path to each, one depth
+ * at a time, then the sweep of every relation it writes: one stage of the graphitron gatherer's anchor
+ * phase, since each depth reads what the depth above it wrote. A child field or an argument under a
+ * field that writes a path starts where that path's join path lands, so a depth reads the join
+ * paths, sources and needs of the depth above.
  *
- * <p>Within a depth: the producers and the methods their calls pin; what fills each parameter of
- * those calls, whose pin the fills decide; what the producers produce, which reads the pinned
- * methods; the sources, which read the producers, its tables or its class;
- * the needs off those sources; the accessor paths meeting the needs that start on an object, where a
- * child's object source at the next depth begins; the paths no claim covers, an empty one where the need starts on its
- * landing and an inferred one over the one foreign key; and the claimed needs walked into their
- * steps, each to its written or inherited path or to a stop, {@link Steps} writing the defects of
- * the walk as it takes it, and the keys each child producer is filled with, {@link OccurrenceLifts}; then the node id, column and table each occurrence binds where its path lands; and last the
- * {@code @condition} calls, one per table an occurrence carrying one binds. A
- * child field or an argument under a field that writes a path starts
- * where that path's join path lands, so a depth reads the join paths of the depth above.
+ * <p>Only that recursion runs here. The producers, their service calls' fills and what they produce
+ * read nothing a depth writes, so {@link OccurrenceProducers} states them for the whole graph before
+ * this stage; what each occurrence binds once its path is known, the lifts, node ids, columns, tables
+ * and {@code @condition} calls, nothing here reads, so {@link OccurrenceBindings} states them after.
+ *
+ * <p>Within a depth: the sources, which read the producers and the parent's source, tables, accessor
+ * path or join path; the members that could hand each producer its keys; the needs off those sources;
+ * the accessor paths meeting the needs that start on an object, where a child's object source at the
+ * next depth begins; the paths no claim covers, an empty one where the need starts on its landing and
+ * an inferred one over the one foreign key; and the claimed needs walked into their steps, each to its
+ * written or inherited path or to a stop, {@link Steps} writing the defects of the walk as it takes it.
  */
 public final class OccurrenceDepths {
 
@@ -36,34 +38,18 @@ public final class OccurrenceDepths {
             .fetchOne(0, Integer.class);
         if (deepest != null) {
             for (int depth = 0; depth <= deepest; depth++) {
-                OccurrenceProducers.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceCallParameters.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceProducers.writeResults(dsl, graph, depth, touchedAt);
                 OccurrenceSources.writeDepth(dsl, graph, depth, touchedAt);
                 OccurrenceLifts.writeCandidates(dsl, graph, depth, touchedAt);
                 PathNeeds.writeDepth(dsl, graph, depth, touchedAt);
                 AccessorPaths.writeDepth(dsl, graph, depth, touchedAt);
                 Paths.writeDepth(dsl, graph, depth, touchedAt);
                 Steps.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceLifts.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceNodeIds.writeDepth(dsl, graph, depth, touchedAt);
-                LandingKeyColumns.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceColumns.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceTables.writeDepth(dsl, graph, depth, touchedAt);
-                OccurrenceConditions.writeDepth(dsl, graph, depth, touchedAt);
             }
         }
-        OccurrenceCallParameters.sweep(dsl, graph, touchedAt);
-        OccurrenceLifts.sweep(dsl, graph, touchedAt);
-        OccurrenceConditions.sweep(dsl, graph, touchedAt);
-        OccurrenceProducers.sweep(dsl, graph, touchedAt);
+        OccurrenceLifts.sweepCandidates(dsl, graph, touchedAt);
         OccurrenceSources.sweep(dsl, graph, touchedAt);
         PathNeeds.sweep(dsl, graph, touchedAt);
         Paths.sweep(dsl, graph, touchedAt);
         Steps.sweep(dsl, graph, touchedAt);
-        OccurrenceNodeIds.sweep(dsl, graph, touchedAt);
-        LandingKeyColumns.sweep(dsl, graph, touchedAt);
-        OccurrenceColumns.sweep(dsl, graph, touchedAt);
-        OccurrenceTables.sweep(dsl, graph, touchedAt);
     }
 }

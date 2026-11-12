@@ -15,10 +15,10 @@ import static org.jooq.impl.DSL.val;
 /**
  * Writes {@code graphitron_occurrence_binding_table}: the table each occurrence's rows or value land
  * on, from the rule view beside it, under a {@code TABLE} row of {@code graphitron_occurrence_binding},
- * marked per depth and swept after the last.
+ * marked and swept.
  *
- * <p>A step of {@link OccurrenceDepths}' per-depth loop, after the depth's join paths, whose targets
- * are the landings, and its node id and column bindings, which an argument or input field binding a
+ * <p>A step of {@link OccurrenceBindings}, after {@link OccurrenceDepths}' join paths, whose targets
+ * are the landings, and the node id and column bindings, which an argument or input field binding a
  * table must not have; it reads stored rows only, the producers' results and the participants
  * included, and adds no rule to {@link PathNeeds}.
  */
@@ -26,8 +26,8 @@ public final class OccurrenceTables {
 
     private OccurrenceTables() {}
 
-    /** States the table bindings of the occurrences at {@code depth}. */
-    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+    /** States the table bindings of the occurrences. */
+    public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var o = GRAPHITRON_OCCURRENCE;
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var t = GRAPHITRON_OCCURRENCE_BINDING_TABLE;
@@ -38,7 +38,7 @@ public final class OccurrenceTables {
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("TABLE"), val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
@@ -51,7 +51,7 @@ public final class OccurrenceTables {
                     r.TABLE_SCHEMA, r.TABLE_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(t.GRAPH_NAME, t.COORDINATE, t.BOUND)
             .doUpdate()
             .set(t.TABLE_SOURCE_NAME, excluded(t.TABLE_SOURCE_NAME))
@@ -61,7 +61,7 @@ public final class OccurrenceTables {
             .execute();
     }
 
-    /** Deletes the {@code TABLE} bindings no depth of this reading marked, their subtype rows by the cascade. */
+    /** Deletes the {@code TABLE} bindings this reading did not mark, their subtype rows by the cascade. */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         dsl.deleteFrom(b)

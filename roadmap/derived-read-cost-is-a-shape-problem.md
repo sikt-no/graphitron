@@ -393,6 +393,14 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     the per-depth rules and `graphitron_occurrence_producer_result_rule` read `graphitron_tabletype`
     and it in place of their type, member and `NOT EXISTS` combinations, priced by a quiet-machine
     A/B on `prepare_ms`.
+  * **The source arms that read no parent leave the depth loop** `open`, F's. The loop holds only
+    its recursion: `occurrence-producers` writes the producers and service calls ahead of it and
+    `occurrence-bindings` what each occurrence binds after it. Of the source rule's arms,
+    `declaringTable`, `rootRoutine`, `ownServiceRecord`, `argumentTarget`, `argumentMember`,
+    `argumentWrite` and `recordParameter` read no row the parent wrote, so they could be written once
+    for every depth, the loop adding only the arms that read the parent. Before that, how the arms
+    exclude one another is checked, and `graphitron_occurrence_source` would take two writing
+    stages, which the split by kind ruled on 2026-11-12 may or may not cover.
 * **Relations nobody reads go** `open`, F's.
   A census of every relation's readers, static over the main sources and at runtime over a full
   build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.
@@ -1319,11 +1327,12 @@ someone to profile.
     through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`);
     at the 2026-11-09 re-profile it is 4% of that JVM, and each of the path-need rule's two upserts is 12%.
   * **The TABLE binding's rule restricts to the graph and depth inside its view** `open`, unowned.
-    `OccurrenceTables` writes `graphitron_occurrence_binding_table` once per depth from
+    `OccurrenceTables` writes `graphitron_occurrence_binding_table` from
     `graphitron_occurrence_binding_table_rule`, a union of five SELECTs under a DISTINCT with no
-    graph or depth predicate inside it. The writer's filter on graph and depth is a join outside the
-    view, which H2 does not push through the DISTINCT into the union, so each depth evaluates the
-    whole rule over every graph's occurrences, and the view is inlined twice, once for the binding
+    graph predicate inside it. It ran once per depth until the depth loop kept only its recursion;
+    it now runs once, in `occurrence-bindings`, but the writer's filter on the graph is still outside
+    the view, which H2 does not push through the DISTINCT into the union, so it evaluates the whole
+    rule over every graph's occurrences, and the view is inlined twice, once for the binding
     supertype and once for the subtype. On 2026-11-11 `GraphCountGrowthGateTest` failed on it,
     writing the table in 13 ms alone and 120 ms as one of eight graphs, at load 5.8 inside the
     model suite. It passed twice after at load 2.2, but 107 ms over is growth, not the few
@@ -2236,8 +2245,8 @@ entry.
   join that goes when it does. An input field under an argument bound to a `TableRecord` parameter
   takes an ordinary table source off the record table its call parameter fill names. It is the successor of
   `graphitron_field_path_start`, which starts only fields that wrote a path, and of
-  `graphitron_field_source_table`. E's per-depth producer step runs in the source's loop before each
-  depth's sources, as agreed with E; the writer marks the place.
+  `graphitron_field_source_table`. The producers are written for the whole graph by
+  `occurrence-producers`, ahead of the source's loop, since nothing they read is written in it.
 * `graphitron_path_need`, anchoring, written by `PathNeeds` a depth at a time: one type an
   occurrence with a table source must reach. Keyed by (graph, coordinate, target type), as the claim
   is keyed by its element and target type, with a cascading foreign key to the occurrence. Its start
@@ -2575,8 +2584,8 @@ parameter named for a context key, and never looks inside a list.
 
 **Stated so far.** `graphitron_occurrence_producer`, one row per producing occurrence with its kind
 and `ROOT` or `CHILD` start, and its subtypes `_key_row` (a child's start off its parent's object),
-`_service` (the method and the constructor), `_routine` and `_write`, written per depth at the marked
-place in the source's loop and read today off the field-keyed producer relations through the
+`_service` (the method and the constructor), `_routine` and `_write`, written for the whole graph
+by `occurrence-producers` ahead of the source's loop and read today off the field-keyed producer relations through the
 occurrence's field: on the six stores every field producer but a connection's count and facets is a
 producer at each of its occurrences and nothing else is. `_result` states what each produces, its
 shape (`SINGLE_RECORD`, `RECORD_LIST`, `CONNECTION`, `OBJECT`, `SCALAR`), its class and, for records,
@@ -2594,8 +2603,8 @@ call's `$context` fills.
 
 **Open.**
 
-* Owners: the producer with its lift E's, written per depth inside the source's loop, before that
-  depth's sources, beside the key rows; the source F's; the calls and their parameters E's; the
+* Owners: the producer with its lift E's, the producer written ahead of the source's loop and the
+  lift after it; the source F's; the calls and their parameters E's; the
   connection's `totalCount` unowned, with the connection model.
 * Whether a `@condition` under `UPDATE` and `DELETE` applies to the rows they match, and whether the
   defect for a condition that decides nothing exists already or is new.

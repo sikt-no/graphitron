@@ -19,59 +19,57 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes {@code graphitron_occurrence_call_parameter}: what fills each parameter of each call, a depth
- * at a time inside {@link OccurrenceDepths}, from the rule view beside it for the method the call
- * pinned, marked and swept after the last depth. An {@code ARGUMENT} fill names the occurrence it
- * takes by its {@code landing_coordinate}, which is where a reader at an argument asks for its
- * parameter. An {@code ARGUMENT} fill whose parameter takes a table's generated jOOQ record, itself or as
- * its element type, carries that table: the occurrence taken lands there.
+ * Writes {@code graphitron_occurrence_call_parameter}: what fills each parameter of each call, from
+ * the rule view beside it for the method the call pinned, marked and swept. An {@code ARGUMENT} fill
+ * names the occurrence it takes by its {@code landing_coordinate}, which is where a reader at an
+ * argument asks for its parameter. An {@code ARGUMENT} fill whose parameter takes a table's generated
+ * jOOQ record, itself or as its element type, carries that table: the occurrence taken lands there.
  *
- * <p>Runs after the depth's producers, whose calls the fills decide the pin of, and before what they
- * produce and the depth's sources: a call's source is inferred from its producer starting as a
- * child, never read off the sources, so the fills of a depth's calls need nothing written after
- * them.
+ * <p>Two stages own the rows, by call kind. The service calls' are {@link OccurrenceProducers}', ahead
+ * of {@link OccurrenceDepths}, whose sources read a record a service takes; the condition calls' are
+ * {@link OccurrenceBindings}', after the depths, since a condition's call waits on the bindings. Each
+ * writes and sweeps its own kind.
  */
 public final class OccurrenceCallParameters {
 
     private OccurrenceCallParameters() {}
 
-    /**
-     * States what fills each parameter of the calls the occurrences at {@code depth} make, the method
-     * each pinned.
-     */
-    public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
-        write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
-        pairs(dsl, graph, depth, touchedAt);
+    /** States what fills each parameter of the service calls, the method each pinned. */
+    public static void writeServices(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
+        pairs(dsl, graph, touchedAt, "SERVICE");
     }
 
     /**
-     * States what fills each parameter of the {@code @condition} calls the occurrences at
-     * {@code depth} make, after the depth's bindings decide which tables they are applied to.
+     * States what fills each parameter of the {@code @condition} calls, after the bindings decide which
+     * tables they are applied to.
      */
-    public static void writeConditions(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
-        write(dsl, graph, depth, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
-        pairs(dsl, graph, depth, touchedAt);
+    public static void writeConditions(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
+        pairs(dsl, graph, touchedAt, "CONDITION");
     }
 
     /**
-     * The written pair each {@code ARGUMENT} fill of the calls at {@code depth} came from, read off the
-     * fills just written and the landings the argMapping stage wrote.
+     * The written pair each {@code ARGUMENT} fill of the calls of {@code callKind} came from, read off
+     * the fills just written and the landings the argMapping stage wrote.
      */
-    private static void pairs(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
+    private static void pairs(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
         var t = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
         var r = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR_RULE;
-        var o = GRAPHITRON_OCCURRENCE;
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION, t.PAIR_COORDINATE, t.DIRECTIVE_NAME,
                 t.ORDINAL, t.OWNER, t.PARAMETER_NAME, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.POSITION, r.PAIR_COORDINATE,
                     r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER, r.PARAMETER_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
-                .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .join(c).on(c.GRAPH_NAME.eq(r.GRAPH_NAME), c.COORDINATE.eq(r.COORDINATE), c.CALL.eq(r.CALL),
+                    c.POSITION.eq(r.POSITION))
+                .where(r.GRAPH_NAME.eq(graph), c.CALL_KIND.eq(callKind), c.TOUCHED_AT.eq(touchedAt)))
             .onConflict(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION)
             .doUpdate()
             .set(t.PAIR_COORDINATE, excluded(t.PAIR_COORDINATE))
@@ -83,9 +81,8 @@ public final class OccurrenceCallParameters {
             .execute();
     }
 
-    /** The fills {@code rule} states for the pinned methods of the calls at {@code depth}. */
-    private static void write(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt,
-                              Table<?> rule) {
+    /** The fills {@code rule} states for the pinned methods of the calls. */
+    private static void write(DSLContext dsl, String graph, LocalDateTime touchedAt, Table<?> rule) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var r = RuleColumns.of(rule);
         var made = GRAPHITRON_OCCURRENCE_CALL_METHOD;
@@ -103,7 +100,7 @@ public final class OccurrenceCallParameters {
                     st.TABLE_NAME, val(touchedAt, c.TOUCHED_AT), st.SOURCE_NAME, st.TABLE_SCHEMA,
                     st.TABLE_NAME)
                 .from(rule)
-                // The fills of the method the call pinned, of the calls at this depth.
+                // The fills of the method the call pinned.
                 .join(made).on(made.GRAPH_NAME.eq(r.GRAPH_NAME), made.COORDINATE.eq(r.COORDINATE),
                     made.CALL.eq(r.CALL), made.METHOD_DESCRIPTOR.eq(r.METHOD_DESCRIPTOR))
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
@@ -115,7 +112,7 @@ public final class OccurrenceCallParameters {
                 .leftJoin(st.join(gs).on(gs.SOURCE_NAME.eq(st.SOURCE_NAME)))
                     .on(st.RECORD_CLASS_FQN.eq(coalesce(mp.ELEMENT_CLASS, mp.ERASED_CLASS)),
                         st.RECORD_CLASS_FQN.ne(inline("org.jooq.Record")), gs.GRAPH_NAME.eq(r.GRAPH_NAME))
-                .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
+                .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.POSITION)
             .doUpdate()
             .set(c.CALL_KIND, excluded(c.CALL_KIND))
@@ -134,16 +131,20 @@ public final class OccurrenceCallParameters {
             .execute();
     }
 
-    /** Deletes the fills no depth of this reading marked. */
-    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    /** Deletes the fills of the calls of {@code callKind} this reading did not mark, their pairs first. */
+    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
         var pair = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         dsl.deleteFrom(pair)
             .where(pair.GRAPH_NAME.eq(graph))
             .and(pair.TOUCHED_AT.ne(touchedAt))
+            .andExists(selectOne().from(c)
+                .where(c.GRAPH_NAME.eq(pair.GRAPH_NAME), c.COORDINATE.eq(pair.COORDINATE), c.CALL.eq(pair.CALL),
+                    c.POSITION.eq(pair.POSITION), c.CALL_KIND.eq(callKind)))
             .execute();
-        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         dsl.deleteFrom(c)
             .where(c.GRAPH_NAME.eq(graph))
+            .and(c.CALL_KIND.eq(callKind))
             .and(c.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
