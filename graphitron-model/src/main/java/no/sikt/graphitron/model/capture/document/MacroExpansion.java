@@ -553,13 +553,13 @@ public final class MacroExpansion {
             .columns(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
                 GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.ORDINAL,
                 GRAPHITRON_FIELD.TYPE_SDL, GRAPHITRON_FIELD.NAMED_TYPE, GRAPHITRON_FIELD.NON_NULL,
-                GRAPHITRON_FIELD.IS_LIST, GRAPHITRON_FIELD.ITEM_NON_NULL,
+                GRAPHITRON_FIELD.LIST_DEPTH, GRAPHITRON_FIELD.ITEM_NON_NULL,
                 GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, GRAPHITRON_FIELD.DESCRIPTION,
                 GRAPHITRON_FIELD.BOUND_NAME)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
                     authored.ORDINAL, authored.TYPE_SDL, authored.NAMED_TYPE,
-                    authored.NON_NULL, authored.IS_LIST, authored.ITEM_NON_NULL,
+                    authored.NON_NULL, authored.LIST_DEPTH, authored.ITEM_NON_NULL,
                     authored.DEFAULT_VALUE_SDL, mintedDescription(authored.DESCRIPTION, authored.NOTE),
                     coalesce(bName, authored.FIELD_NAME))
                 .from(authored)
@@ -569,7 +569,7 @@ public final class MacroExpansion {
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
                         minted.ORDINAL, minted.TYPE_SDL, minted.NAMED_TYPE,
-                        minted.NON_NULL, minted.IS_LIST, minted.ITEM_NON_NULL,
+                        minted.NON_NULL, minted.LIST_DEPTH, minted.ITEM_NON_NULL,
                         minted.DEFAULT_VALUE_SDL, mintedDescription(minted.DESCRIPTION, minted.NOTE),
                         coalesce(bName, minted.FIELD_NAME))
                     .from(minted)
@@ -586,7 +586,7 @@ public final class MacroExpansion {
             .set(GRAPHITRON_FIELD.TYPE_SDL, excluded(GRAPHITRON_FIELD.TYPE_SDL))
             .set(GRAPHITRON_FIELD.NAMED_TYPE, excluded(GRAPHITRON_FIELD.NAMED_TYPE))
             .set(GRAPHITRON_FIELD.NON_NULL, excluded(GRAPHITRON_FIELD.NON_NULL))
-            .set(GRAPHITRON_FIELD.IS_LIST, excluded(GRAPHITRON_FIELD.IS_LIST))
+            .set(GRAPHITRON_FIELD.LIST_DEPTH, excluded(GRAPHITRON_FIELD.LIST_DEPTH))
             .set(GRAPHITRON_FIELD.ITEM_NON_NULL, excluded(GRAPHITRON_FIELD.ITEM_NON_NULL))
             .set(GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, excluded(GRAPHITRON_FIELD.DEFAULT_VALUE_SDL))
             .set(GRAPHITRON_FIELD.DESCRIPTION, excluded(GRAPHITRON_FIELD.DESCRIPTION))
@@ -638,13 +638,13 @@ public final class MacroExpansion {
                 GRAPHITRON_ARGUMENT.FIELD_NAME, GRAPHITRON_ARGUMENT.ARGUMENT_NAME,
                 GRAPHITRON_ARGUMENT.ORDINAL,
                 GRAPHITRON_ARGUMENT.TYPE_SDL, GRAPHITRON_ARGUMENT.NAMED_TYPE,
-                GRAPHITRON_ARGUMENT.NON_NULL, GRAPHITRON_ARGUMENT.IS_LIST,
+                GRAPHITRON_ARGUMENT.NON_NULL, GRAPHITRON_ARGUMENT.LIST_DEPTH,
                 GRAPHITRON_ARGUMENT.ITEM_NON_NULL, GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL,
                 GRAPHITRON_ARGUMENT.DESCRIPTION)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
                     authored.ARGUMENT_NAME, authored.ORDINAL,
-                    authored.TYPE_SDL, authored.NAMED_TYPE, authored.NON_NULL, authored.IS_LIST,
+                    authored.TYPE_SDL, authored.NAMED_TYPE, authored.NON_NULL, authored.LIST_DEPTH,
                     authored.ITEM_NON_NULL, authored.DEFAULT_VALUE_SDL,
                     mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
@@ -652,7 +652,7 @@ public final class MacroExpansion {
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
                         minted.ARGUMENT_NAME, minted.ORDINAL,
-                        minted.TYPE_SDL, minted.NAMED_TYPE, minted.NON_NULL, minted.IS_LIST,
+                        minted.TYPE_SDL, minted.NAMED_TYPE, minted.NON_NULL, minted.LIST_DEPTH,
                         minted.ITEM_NON_NULL, minted.DEFAULT_VALUE_SDL, minted.DESCRIPTION)
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
@@ -664,7 +664,7 @@ public final class MacroExpansion {
             .set(GRAPHITRON_ARGUMENT.TYPE_SDL, excluded(GRAPHITRON_ARGUMENT.TYPE_SDL))
             .set(GRAPHITRON_ARGUMENT.NAMED_TYPE, excluded(GRAPHITRON_ARGUMENT.NAMED_TYPE))
             .set(GRAPHITRON_ARGUMENT.NON_NULL, excluded(GRAPHITRON_ARGUMENT.NON_NULL))
-            .set(GRAPHITRON_ARGUMENT.IS_LIST, excluded(GRAPHITRON_ARGUMENT.IS_LIST))
+            .set(GRAPHITRON_ARGUMENT.LIST_DEPTH, excluded(GRAPHITRON_ARGUMENT.LIST_DEPTH))
             .set(GRAPHITRON_ARGUMENT.ITEM_NON_NULL, excluded(GRAPHITRON_ARGUMENT.ITEM_NON_NULL))
             .set(GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL,
                 excluded(GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL))

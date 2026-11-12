@@ -3434,7 +3434,8 @@ CREATE TABLE graphitron_field (
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
   non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
+  list_depth        INT     NOT NULL,
+  is_list           BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,
   description       VARCHAR,
@@ -3455,7 +3456,8 @@ COMMENT ON COLUMN graphitron_field.ordinal IS 'the field''s position within its 
 COMMENT ON COLUMN graphitron_field.type_sdl IS 'the type expression as the generator reads it: the authored literal on an ordinary field, and the macro''s rewrite where one happened';
 COMMENT ON COLUMN graphitron_field.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
 COMMENT ON COLUMN graphitron_field.non_null IS 'whether the outermost wrapper is non-null';
-COMMENT ON COLUMN graphitron_field.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_field.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists, as graphql_ states it for what the author wrote and the macro expansion for what it mints';
+COMMENT ON COLUMN graphitron_field.is_list IS 'whether the expression is a list. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphitron_field.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_field.default_value_sdl IS 'the default literal where the coordinate is an input field with one; display material, never a dimension';
 COMMENT ON COLUMN graphitron_field.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
@@ -3494,7 +3496,8 @@ CREATE TABLE graphitron_argument (
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
   non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
+  list_depth        INT     NOT NULL,
+  is_list           BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,
   description       VARCHAR,
@@ -3515,7 +3518,8 @@ COMMENT ON COLUMN graphitron_argument.ordinal IS 'the argument''s position withi
 COMMENT ON COLUMN graphitron_argument.type_sdl IS 'the type expression as the generator reads it';
 COMMENT ON COLUMN graphitron_argument.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
 COMMENT ON COLUMN graphitron_argument.non_null IS 'whether the outermost wrapper is non-null';
-COMMENT ON COLUMN graphitron_argument.is_list IS 'whether the expression is a list';
+COMMENT ON COLUMN graphitron_argument.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists, as graphql_ states it for what the author wrote and the macro expansion for what it mints';
+COMMENT ON COLUMN graphitron_argument.is_list IS 'whether the expression is a list. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphitron_argument.item_non_null IS 'whether a list''s item is non-null; NULL where the expression is not a list, which the CHECK holds';
 COMMENT ON COLUMN graphitron_argument.default_value_sdl IS 'the default literal where the argument has one, authored or written by the macro; display material, never a dimension';
 COMMENT ON COLUMN graphitron_argument.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it, or macro-written; display material, never a dimension';
@@ -4055,10 +4059,10 @@ COMMENT ON VIEW graphitron_type_minted IS 'One of the two sets graphitron_type i
 -- COMMENT ON COLUMN graphitron_type_minted.description IS 'the docstring the macro writes, which is a property of the arm rather than of the carrier; identical across the carriers that state one shared type, which is what lets the distinct collapse them';
 
 CREATE VIEW graphitron_field_authored (graph_name, type_name, field_name, coordinate, ordinal,
-                                       type_sdl, named_type, non_null, is_list, item_non_null,
+                                       type_sdl, named_type, non_null, list_depth, item_non_null,
                                        default_value_sdl, description, note) AS
 SELECT f.graph_name, f.type_name, f.field_name, f.type_name || '.' || f.field_name, f.ordinal,
-       f.type_sdl, f.named_type, f.non_null, f.is_list, f.item_non_null,
+       f.type_sdl, f.named_type, f.non_null, f.list_depth, f.item_non_null,
        f.default_value_sdl, f.description, s.description_note
   FROM graphql_field f
   LEFT JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
@@ -4079,94 +4083,94 @@ COMMENT ON VIEW graphitron_field_authored IS 'One of the two sets graphitron_fie
 -- COMMENT ON COLUMN graphitron_field_authored.type_sdl IS 'the type expression as written, wrappers included';
 -- COMMENT ON COLUMN graphitron_field_authored.named_type IS 'the name at the bottom of that expression';
 -- COMMENT ON COLUMN graphitron_field_authored.non_null IS 'whether the outermost wrapper is non-null';
--- COMMENT ON COLUMN graphitron_field_authored.is_list IS 'whether the expression is a list';
+-- COMMENT ON COLUMN graphitron_field_authored.list_depth IS 'how many list wrappers the expression has';
 -- COMMENT ON COLUMN graphitron_field_authored.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
 -- COMMENT ON COLUMN graphitron_field_authored.default_value_sdl IS 'the default as written, which an output field never has and an input field may; the one column the minted set cannot supply';
 -- COMMENT ON COLUMN graphitron_field_authored.description IS 'the docstring the author wrote, or nothing';
 
 CREATE VIEW graphitron_field_minted_candidate (graph_name, type_name, field_name, coordinate, ordinal,
-                                     type_sdl, named_type, non_null, is_list, item_non_null,
+                                     type_sdl, named_type, non_null, list_depth, item_non_null,
                                      default_value_sdl, description, rewrite) AS
 SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.type_name || '.' || m.field_name,
-       m.ordinal, m.type_sdl, m.named_type, m.non_null, m.is_list, m.item_non_null,
+       m.ordinal, m.type_sdl, m.named_type, m.non_null, m.list_depth, m.item_non_null,
        CAST(NULL AS VARCHAR), m.description, m.rewrite
   FROM (
         -- The connection's own machinery.
         SELECT graph_name, connection_name AS type_name, 'edges' AS field_name, 0 AS ordinal,
                '[' || edge_name || '!]!' AS type_sdl, edge_name AS named_type,
-               TRUE AS non_null, TRUE AS is_list, TRUE AS item_non_null,
+               TRUE AS non_null, 1 AS list_depth, TRUE AS item_non_null,
                'A list of edges.' AS description, FALSE AS rewrite
           FROM graphitron_connection_carrier
          UNION ALL
         SELECT graph_name, connection_name, 'nodes', 1,
-               '[' || item_sdl || ']!', element_type, TRUE, TRUE, item_non_null,
+               '[' || item_sdl || ']!', element_type, TRUE, 1, item_non_null,
                'A list of nodes.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         SELECT graph_name, connection_name, 'pageInfo', 2,
-               'PageInfo!', 'PageInfo', TRUE, FALSE, NULL,
+               'PageInfo!', 'PageInfo', TRUE, 0, NULL,
                'Information to aid in pagination.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         -- Nullable like the connection's other aggregate: a skipped count degrades to null rather
         -- than bubbling a failure through the connection.
         SELECT graph_name, connection_name, 'totalCount', 3,
-               'Int', 'Int', FALSE, FALSE, NULL,
+               'Int', 'Int', FALSE, 0, NULL,
                'Identifies the total count of items in the connection.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         -- The edge's.
         SELECT graph_name, edge_name, 'cursor', 0,
-               'String!', 'String', TRUE, FALSE, NULL,
+               'String!', 'String', TRUE, 0, NULL,
                'A cursor for use in pagination.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         SELECT graph_name, edge_name, 'node', 1,
-               item_sdl, element_type, item_non_null, FALSE, NULL,
+               item_sdl, element_type, item_non_null, 0, NULL,
                'The item at the end of the edge.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         -- The page info every carrier states whole, which is why the distinct above collapses them.
         SELECT graph_name, 'PageInfo', 'hasNextPage', 0,
-               'Boolean!', 'Boolean', TRUE, FALSE, NULL,
+               'Boolean!', 'Boolean', TRUE, 0, NULL,
                'When paginating forwards, are there more items?', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         SELECT graph_name, 'PageInfo', 'hasPreviousPage', 1,
-               'Boolean!', 'Boolean', TRUE, FALSE, NULL,
+               'Boolean!', 'Boolean', TRUE, 0, NULL,
                'When paginating backwards, are there more items?', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         SELECT graph_name, 'PageInfo', 'startCursor', 2,
-               'String', 'String', FALSE, FALSE, NULL,
+               'String', 'String', FALSE, 0, NULL,
                'When paginating backwards, the cursor to continue.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         SELECT graph_name, 'PageInfo', 'endCursor', 3,
-               'String', 'String', FALSE, FALSE, NULL,
+               'String', 'String', FALSE, 0, NULL,
                'When paginating forwards, the cursor to continue.', FALSE
           FROM graphitron_connection_carrier
          UNION ALL
         -- The facets the carrier surfaces: the connection's own field reaching the container,
         -- the container's field per facet, and each bucket's value and count.
         SELECT graph_name, connection_name, 'facets', 4,
-               facets_type_name, facets_type_name, FALSE, FALSE, NULL,
+               facets_type_name, facets_type_name, FALSE, 0, NULL,
                'Per-facet value counts for the items in the connection.', FALSE
           FROM graphitron_carrier_facet_mint
          UNION ALL
         SELECT graph_name, facets_type_name, facet_field_name, position,
-               '[' || value_type_name || '!]', value_type_name, FALSE, TRUE, TRUE,
+               '[' || value_type_name || '!]', value_type_name, FALSE, 1, TRUE,
                'Value counts for this facet, under the connection''s filter minus this facet''s own predicate.', FALSE
           FROM graphitron_carrier_facet_mint
          UNION ALL
         SELECT graph_name, value_type_name, 'value', 0,
                value_scalar || CASE WHEN value_nullable THEN '' ELSE '!' END, value_scalar,
-               NOT value_nullable, FALSE, NULL,
+               NOT value_nullable, 0, NULL,
                'The facet value; feed it back into the filter to select this bucket.', FALSE
           FROM graphitron_carrier_facet_mint
          UNION ALL
         SELECT graph_name, value_type_name, 'count', 1,
-               'Int!', 'Int', TRUE, FALSE, NULL,
+               'Int!', 'Int', TRUE, 0, NULL,
                'The number of items in this bucket.', FALSE
           FROM graphitron_carrier_facet_mint
          UNION ALL
@@ -4174,15 +4178,15 @@ SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.type_name || '.' || m
         -- the connection under the nullability its author wrote.
         SELECT graph_name, type_name, field_name, ordinal,
                connection_name || CASE WHEN non_null THEN '!' ELSE '' END,
-               connection_name, non_null, FALSE, NULL,
+               connection_name, non_null, 0, NULL,
                description, TRUE
           FROM graphitron_connection_carrier) m
 ;
 CREATE VIEW graphitron_field_minted (graph_name, type_name, field_name, coordinate, ordinal,
-                                     type_sdl, named_type, non_null, is_list, item_non_null,
+                                     type_sdl, named_type, non_null, list_depth, item_non_null,
                                      default_value_sdl, description, rewrite, note) AS
 SELECT m.graph_name, m.type_name, m.field_name, m.coordinate, m.ordinal, m.type_sdl,
-       m.named_type, m.non_null, m.is_list, m.item_non_null, m.default_value_sdl,
+       m.named_type, m.non_null, m.list_depth, m.item_non_null, m.default_value_sdl,
        m.description, m.rewrite, s.description_note
   FROM graphitron_field_minted_candidate m
   -- A rewritten carrier keeps its author's docstring, and takes its file's note as the field it
@@ -4210,7 +4214,7 @@ COMMENT ON VIEW graphitron_field_minted_candidate IS 'What the arms of the field
 -- COMMENT ON COLUMN graphitron_field_minted_candidate.type_sdl IS 'the same fact as graphitron_field_minted.type_sdl, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate.named_type IS 'the same fact as graphitron_field_minted.named_type, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate.non_null IS 'the same fact as graphitron_field_minted.non_null, before the conflict and stand-down filters have withheld anything';
--- COMMENT ON COLUMN graphitron_field_minted_candidate.is_list IS 'the same fact as graphitron_field_minted.is_list, before the conflict and stand-down filters have withheld anything';
+-- COMMENT ON COLUMN graphitron_field_minted_candidate.list_depth IS 'the same fact as graphitron_field_minted.list_depth, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate.item_non_null IS 'the same fact as graphitron_field_minted.item_non_null, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate.default_value_sdl IS 'the same fact as graphitron_field_minted.default_value_sdl, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate.description IS 'the same fact as graphitron_field_minted.description, before the conflict and stand-down filters have withheld anything';
@@ -4224,7 +4228,7 @@ COMMENT ON VIEW graphitron_field_minted IS 'One of the two sets graphitron_field
 -- COMMENT ON COLUMN graphitron_field_minted.type_sdl IS 'the type expression the expansion wrote, wrappers included; for a rewritten carrier this is the whole of what changed';
 -- COMMENT ON COLUMN graphitron_field_minted.named_type IS 'the name at the bottom of that expression';
 -- COMMENT ON COLUMN graphitron_field_minted.non_null IS 'whether the outermost wrapper is non-null, which a rewritten carrier keeps from its author';
--- COMMENT ON COLUMN graphitron_field_minted.is_list IS 'whether the expression is a list';
+-- COMMENT ON COLUMN graphitron_field_minted.list_depth IS 'how many list wrappers the expression has';
 -- COMMENT ON COLUMN graphitron_field_minted.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
 -- COMMENT ON COLUMN graphitron_field_minted.default_value_sdl IS 'always nothing, and stated here rather than carried: no macro writes a default onto an output field and every field minted or rewritten today is one, so the nullness is a property of this population rather than a column any arm declined to hold';
 -- COMMENT ON COLUMN graphitron_field_minted.rewrite IS 'whether this row restates a field the author wrote rather than adding one. The rewritten carrier is the only arm that does, and it is what tells the element arm which coordinates are already anchored by the transcription';
@@ -4248,11 +4252,11 @@ COMMENT ON VIEW graphitron_enum_value_authored IS 'The one set graphitron_enum_v
 
 CREATE VIEW graphitron_argument_authored (graph_name, type_name, field_name, argument_name,
                                           coordinate, ordinal, type_sdl, named_type, non_null,
-                                          is_list, item_non_null, default_value_sdl,
+                                          list_depth, item_non_null, default_value_sdl,
                                           description, note) AS
 SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
        a.type_name || '.' || a.field_name || '(' || a.argument_name || ':)', a.ordinal,
-       a.type_sdl, a.named_type, a.non_null, a.is_list, a.item_non_null, a.default_value_sdl,
+       a.type_sdl, a.named_type, a.non_null, a.list_depth, a.item_non_null, a.default_value_sdl,
        a.description, s.description_note
   FROM graphql_argument a
   LEFT JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
@@ -4271,18 +4275,18 @@ COMMENT ON VIEW graphitron_argument_authored IS 'One of the two sets graphitron_
 -- COMMENT ON COLUMN graphitron_argument_authored.type_sdl IS 'the type expression as written, wrappers included';
 -- COMMENT ON COLUMN graphitron_argument_authored.named_type IS 'the name at the bottom of that expression';
 -- COMMENT ON COLUMN graphitron_argument_authored.non_null IS 'whether the outermost wrapper is non-null';
--- COMMENT ON COLUMN graphitron_argument_authored.is_list IS 'whether the expression is a list';
+-- COMMENT ON COLUMN graphitron_argument_authored.list_depth IS 'how many list wrappers the expression has';
 -- COMMENT ON COLUMN graphitron_argument_authored.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
 -- COMMENT ON COLUMN graphitron_argument_authored.default_value_sdl IS 'the default as written, or nothing';
 -- COMMENT ON COLUMN graphitron_argument_authored.description IS 'the docstring the author wrote, or nothing';
 
 CREATE VIEW graphitron_argument_minted_candidate (graph_name, type_name, field_name, argument_name,
                                         coordinate, ordinal, type_sdl, named_type, non_null,
-                                        is_list, item_non_null, default_value_sdl,
+                                        list_depth, item_non_null, default_value_sdl,
                                         description) AS
 SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.argument_name,
        m.type_name || '.' || m.field_name || '(' || m.argument_name || ':)', m.ordinal,
-       m.type_sdl, m.named_type, m.non_null, m.is_list, m.item_non_null,
+       m.type_sdl, m.named_type, m.non_null, m.list_depth, m.item_non_null,
        m.default_value_sdl, m.description
   FROM (
         -- Pagination, on every carrier. The page size the application asked for, or the default
@@ -4293,7 +4297,7 @@ SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.argument_name,
         -- default passes through as written; graphitron_entry_defect judges it.
         SELECT c.graph_name, c.type_name, c.field_name, 'first' AS argument_name,
                c.argument_count AS ordinal, 'Int' AS type_sdl, 'Int' AS named_type,
-               FALSE AS non_null, FALSE AS is_list, CAST(NULL AS BOOLEAN) AS item_non_null,
+               FALSE AS non_null, 0 AS list_depth, CAST(NULL AS BOOLEAN) AS item_non_null,
                CAST(COALESCE(c.default_first_value,
                              CASE WHEN mx.max_page_size < 100 THEN mx.max_page_size ELSE 100 END)
                     AS VARCHAR) AS default_value_sdl,
@@ -4303,12 +4307,12 @@ SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.argument_name,
          UNION ALL
         SELECT graph_name, type_name, field_name, 'after',
                argument_count + 1, 'String', 'String',
-               FALSE, FALSE, NULL, NULL, NULL
+               FALSE, 0, NULL, NULL, NULL
           FROM graphitron_connection_carrier) m
 ;
 CREATE VIEW graphitron_argument_minted (graph_name, type_name, field_name, argument_name,
                                         coordinate, ordinal, type_sdl, named_type, non_null,
-                                        is_list, item_non_null, default_value_sdl,
+                                        list_depth, item_non_null, default_value_sdl,
                                         description) AS
 SELECT * FROM graphitron_argument_minted_candidate m
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
@@ -4326,7 +4330,7 @@ COMMENT ON VIEW graphitron_argument_minted_candidate IS 'What the arms of the ar
 -- COMMENT ON COLUMN graphitron_argument_minted_candidate.type_sdl IS 'the same fact as graphitron_argument_minted.type_sdl, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_argument_minted_candidate.named_type IS 'the same fact as graphitron_argument_minted.named_type, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_argument_minted_candidate.non_null IS 'the same fact as graphitron_argument_minted.non_null, before the conflict and stand-down filters have withheld anything';
--- COMMENT ON COLUMN graphitron_argument_minted_candidate.is_list IS 'the same fact as graphitron_argument_minted.is_list, before the conflict and stand-down filters have withheld anything';
+-- COMMENT ON COLUMN graphitron_argument_minted_candidate.list_depth IS 'the same fact as graphitron_argument_minted.list_depth, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_argument_minted_candidate.item_non_null IS 'the same fact as graphitron_argument_minted.item_non_null, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_argument_minted_candidate.default_value_sdl IS 'the same fact as graphitron_argument_minted.default_value_sdl, before the conflict and stand-down filters have withheld anything';
 -- COMMENT ON COLUMN graphitron_argument_minted_candidate.description IS 'the same fact as graphitron_argument_minted.description, before the conflict and stand-down filters have withheld anything';
@@ -4340,7 +4344,7 @@ COMMENT ON VIEW graphitron_argument_minted IS 'One of the two sets graphitron_ar
 -- COMMENT ON COLUMN graphitron_argument_minted.type_sdl IS 'the type expression the expansion wrote, wrappers included';
 -- COMMENT ON COLUMN graphitron_argument_minted.named_type IS 'the name at the bottom of that expression';
 -- COMMENT ON COLUMN graphitron_argument_minted.non_null IS 'whether the outermost wrapper is non-null';
--- COMMENT ON COLUMN graphitron_argument_minted.is_list IS 'whether the expression is a list';
+-- COMMENT ON COLUMN graphitron_argument_minted.list_depth IS 'how many list wrappers the expression has';
 -- COMMENT ON COLUMN graphitron_argument_minted.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
 -- COMMENT ON COLUMN graphitron_argument_minted.default_value_sdl IS 'the default the expansion wrote, which is where a page size comes from; carried rather than nulled, unlike the field set, because pagination arguments are exactly the place a macro does write one';
 -- COMMENT ON COLUMN graphitron_argument_minted.description IS 'the docstring the macro wrote';
