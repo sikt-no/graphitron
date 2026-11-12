@@ -126,3 +126,20 @@ extend schema @assertContains(relation: "code_scalar_constant", rows: """
   class_name,                      field_name,        input_type
   graphql.scalars.ExtendedScalars, GraphQLBigDecimal, java.math.BigDecimal
   """)
+
+# The class each scalar arrives as: a built-in's by graphql-java, BigDecimal's by the constant its
+# @scalarType names.
+extend schema @assertContains(relation: "graphitron_scalar_class", rows: """
+  type_name,  java_class
+  BigDecimal, java.math.BigDecimal
+  String,     java.lang.String
+  """)
+
+# The type each element a condition could bind takes, and the class it arrives as: an input object
+# none, the custom scalar inside it its @scalarType's.
+extend schema @assertContains(relation: "graphitron_occurrence_input_type", rows: """
+  coordinate,                                                type_name,       type_kind,    is_list, java_class
+  Query.filmsByRentalRateRange(filter.rentalRateRange:),     RentalRateRange, INPUT_OBJECT, FALSE,
+  Query.filmsByRentalRateRange(filter.rentalRateRange.fra:), BigDecimal,      SCALAR,       FALSE,   java.math.BigDecimal
+  Query.filmsByType(title:),                                 String,          SCALAR,       FALSE,   java.lang.String
+  """)

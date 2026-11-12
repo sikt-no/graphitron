@@ -19,6 +19,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG_RULE;
@@ -129,9 +131,10 @@ public final class MacroExpansion {
         sweep(dsl, graphName, touchedAt);
         // After the sweep, so the sets join only the coordinates this reading kept.
         federation(dsl, graphName, touchedAt);
-        // The members of each union and interface, then the connection shape, edges before the
-        // connections keyed into them.
+        // The members of each union and interface, the class each scalar arrives as, then the
+        // connection shape, edges before the connections keyed into them.
         store(dsl, graphName, touchedAt, GRAPHITRON_TYPE_MEMBER, GRAPHITRON_TYPE_MEMBER_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_SCALAR_CLASS, GRAPHITRON_SCALAR_CLASS_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_EDGE, GRAPHITRON_EDGE_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION, GRAPHITRON_CONNECTION_RULE);
     }

@@ -7807,6 +7807,102 @@ COMMENT ON VIEW graphitron_type_member_rule IS 'One row the type member rule com
 -- COMMENT ON COLUMN graphitron_type_member_rule.member_kind IS 'the member_kind of a row of this rule, which the stage writes into graphitron_type_member.member_kind';
 -- COMMENT ON COLUMN graphitron_type_member_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_member.position';
 
+CREATE TABLE graphitron_scalar_class (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  java_class VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  -- A scalar, held there by the supertype's own key; a type that stops being one takes its class.
+  FOREIGN KEY (graph_name, type_name, kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (kind = 'SCALAR')
+);
+COMMENT ON TABLE graphitron_scalar_class IS 'The Java class a scalar''s values arrive as: one row per scalar whose class is known. For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.';
+COMMENT ON COLUMN graphitron_scalar_class.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_scalar_class.type_name IS 'the scalar; with the graph, the grain';
+COMMENT ON COLUMN graphitron_scalar_class.kind IS 'SCALAR, pinned so the foreign key holds the row to a type of that kind';
+COMMENT ON COLUMN graphitron_scalar_class.java_class IS 'the fully-qualified class graphql-java delivers a value as, boxed: a built-in''s by graphql-java''s own coercing, any other''s by the constant its @scalarType names among the graph''s classpath entries. Whether a parameter of a primitive or another type accepts it is the reader''s question, not this column''s';
+COMMENT ON COLUMN graphitron_scalar_class.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+-- A reader holding a parameter's type asks whether any scalar arrives as it.
+CREATE INDEX graphitron_scalar_class_java_ix ON graphitron_scalar_class (graph_name, java_class);
+
+CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class) AS
+-- A scalar whose candidates disagree has no class: the constant is named in two entries that
+-- coerce differently, and nothing says which the generator is handed.
+SELECT graph_name, type_name, 'SCALAR', MIN(java_class)
+  FROM (SELECT t.graph_name, t.type_name, b.java_class
+          FROM graphitron_type t
+          JOIN (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
+                       ('Int', 'java.lang.Integer'), ('Float', 'java.lang.Double'),
+                       ('Boolean', 'java.lang.Boolean')) b (scalar, java_class)
+            ON b.scalar = t.type_name
+         WHERE t.kind = 'SCALAR'
+        UNION ALL
+        SELECT t.graph_name, t.type_name, k.input_type
+          FROM graphql_directive_application da
+          JOIN graphitron_ast_scalar_type_entry e
+            ON e.graph_name = da.graph_name AND e.source_name = da.source_name
+           AND e.source_line = da.source_line AND e.source_column = da.source_column
+          JOIN graphitron_type t
+            ON t.graph_name = da.graph_name AND t.type_name = da.coordinate AND t.kind = 'SCALAR'
+          JOIN store_graph_source g ON g.graph_name = da.graph_name
+          JOIN code_scalar_constant k
+            ON k.source_name = g.source_name AND k.class_name = e.scalar_ref_class_part
+           AND k.field_name = e.scalar_ref_field_part
+         WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL) c
+ GROUP BY graph_name, type_name
+HAVING COUNT(DISTINCT java_class) = 1;
+COMMENT ON VIEW graphitron_scalar_class_rule IS 'One row the scalar class rule computes, in the shape graphitron_scalar_class stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_scalar_class, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_scalar_class_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_scalar_class.graph_name';
+-- COMMENT ON COLUMN graphitron_scalar_class_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_scalar_class.type_name';
+-- COMMENT ON COLUMN graphitron_scalar_class_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_scalar_class.kind';
+-- COMMENT ON COLUMN graphitron_scalar_class_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_scalar_class.java_class';
+
+CREATE TABLE graphitron_occurrence_input_type (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  type_kind  VARCHAR   NOT NULL,
+  is_list    BOOLEAN   NOT NULL,
+  java_class VARCHAR,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- The type it takes, of the kind it is, by the supertype's own key.
+  FOREIGN KEY (graph_name, type_name, type_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (type_kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT'))
+);
+COMMENT ON TABLE graphitron_occurrence_input_type IS 'The type an argument or input field occurrence takes, and the Java class its values arrive as: one row per such occurrence. For example Query.films(filter:) takes the input object FilmFilter and has no class, and Query.films(filter.releaseYear:) takes Int, arriving as java.lang.Integer.';
+COMMENT ON COLUMN graphitron_occurrence_input_type.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_input_type.coordinate IS 'the argument or input field occurrence; with the graph, the grain';
+COMMENT ON COLUMN graphitron_occurrence_input_type.type_name IS 'the named type the declared element takes, its wrappers removed';
+COMMENT ON COLUMN graphitron_occurrence_input_type.type_kind IS 'SCALAR, ENUM or INPUT_OBJECT, the named type''s kind, pinned so the foreign key holds it to a type of that kind';
+COMMENT ON COLUMN graphitron_occurrence_input_type.is_list IS 'whether the declared element is a list';
+COMMENT ON COLUMN graphitron_occurrence_input_type.java_class IS 'the class one value of the named type arrives as, graphitron_scalar_class''s, NULL for an enum, an input object or a scalar whose class is not known; the list is is_list''s to say';
+COMMENT ON COLUMN graphitron_occurrence_input_type.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_occurrence_input_type_rule
+  (graph_name, coordinate, type_name, type_kind, is_list, java_class) AS
+SELECT e.graph_name, e.coordinate, t.type_name, t.kind, COALESCE(ga.is_list, gf.is_list), sc.java_class
+  FROM graphitron_occurrence e
+  LEFT JOIN graphitron_argument ga ON ga.graph_name = e.graph_name AND ga.coordinate = e.element_coordinate
+  LEFT JOIN graphitron_field gf ON gf.graph_name = e.graph_name AND gf.coordinate = e.element_coordinate
+  JOIN graphitron_type t ON t.graph_name = e.graph_name AND t.type_name = COALESCE(ga.named_type, gf.named_type)
+  LEFT JOIN graphitron_scalar_class sc ON sc.graph_name = t.graph_name AND sc.type_name = t.type_name
+ WHERE e.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND t.kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT');
+COMMENT ON VIEW graphitron_occurrence_input_type_rule IS 'One row the occurrence input type rule computes, in the shape graphitron_occurrence_input_type stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrences stage inserts this view''s rows for one graph into graphitron_occurrence_input_type, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_input_type.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_input_type.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_occurrence_input_type.type_name';
+-- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.type_kind IS 'the type_kind of a row of this rule, which the stage writes into graphitron_occurrence_input_type.type_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.is_list IS 'the is_list of a row of this rule, which the stage writes into graphitron_occurrence_input_type.is_list';
+-- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_occurrence_input_type.java_class';
+
 CREATE TABLE graphitron_edge (
   graph_name     VARCHAR   NOT NULL,
   type_name      VARCHAR   NOT NULL,
@@ -11542,9 +11638,9 @@ CREATE VIEW graphitron_occurrence_call_parameter_candidate
 -- the call no pair has taken and no parameter is named after, where the two agree on type: the
 -- same list-ness, and an element the argument's value can arrive as. An input object arrives as a
 -- class the input is built into, which nothing in the schema names, so any class outside the JDK
--- qualifies; an enum as a class or a String; a scalar as its Java type, a built-in's by graphql-java
--- and any other's by the constant its @scalarType names. A primitive erases to no class, so its
--- element is the declared type, int for int. Where one named parameter and one argument are all
+-- qualifies; an enum as a class or a String; a scalar as the class graphitron_scalar_class states.
+-- A primitive erases to no class, so its element is the declared type, int for int, which a
+-- built-in number or Boolean also fills. Where one named parameter and one argument are all
 -- that is left of the call, they pair whenever their list-ness agrees and type cannot tell them
 -- apart: an input object, or a scalar no Java type is known for.
 WITH open_parameter (graph_name, coordinate, call, method_descriptor, position, parameter_name, element,
@@ -11575,14 +11671,13 @@ WITH open_parameter (graph_name, coordinate, call, method_descriptor, position, 
                              AND s.call = 'producer' AND pp.start = 'CHILD'))
 ),
 open_argument (graph_name, call_coordinate, call, method_descriptor, coordinate, kind, named_type,
-               is_list) AS (
-  SELECT a.graph_name, a.parent_coordinate, s.call, s.method_descriptor, a.coordinate, t.kind, ga.named_type,
-         ga.is_list
+               is_list, java_class) AS (
+  SELECT a.graph_name, a.parent_coordinate, s.call, s.method_descriptor, a.coordinate, i.type_kind,
+         i.type_name, i.is_list, i.java_class
     FROM graphitron_occurrence a
     JOIN graphitron_occurrence_call_candidate s
       ON s.graph_name = a.graph_name AND s.coordinate = a.parent_coordinate AND s.call_kind = 'SERVICE'
-    JOIN graphitron_argument ga ON ga.graph_name = a.graph_name AND ga.coordinate = a.element_coordinate
-    JOIN graphitron_type t ON t.graph_name = ga.graph_name AND t.type_name = ga.named_type
+    JOIN graphitron_occurrence_input_type i ON i.graph_name = a.graph_name AND i.coordinate = a.coordinate
    WHERE a.kind = 'FIELD_ARGUMENT'
      AND NOT EXISTS (SELECT 1 FROM code_method_parameter p
                       WHERE p.source_name = s.method_source_name AND p.class_name = s.method_class_name
@@ -11605,41 +11700,14 @@ SELECT p.graph_name, p.coordinate, p.call, p.method_descriptor, p.position, p.pa
          WHEN 'INPUT_OBJECT' THEN POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'
          WHEN 'ENUM' THEN (POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%')
                           OR p.element = 'java.lang.String'
-         WHEN 'SCALAR' THEN EXISTS (
-           SELECT 1 FROM (VALUES ('ID', 'java.lang.String'), ('String', 'java.lang.String'),
-                                 ('Int', 'java.lang.Integer'), ('Int', 'int'),
-                                 ('Float', 'java.lang.Double'), ('Float', 'double'),
-                                 ('Boolean', 'java.lang.Boolean'), ('Boolean', 'boolean'))
-                         b (scalar, java_class)
-            WHERE b.scalar = a.named_type AND b.java_class = p.element)
-           OR EXISTS (SELECT 1 FROM graphql_directive_application da
-                        JOIN graphitron_ast_scalar_type_entry e
-                          ON e.graph_name = da.graph_name AND e.source_name = da.source_name
-                         AND e.source_line = da.source_line AND e.source_column = da.source_column
-                        JOIN code_scalar_constant k
-                          ON k.class_name = e.scalar_ref_class_part
-                         AND k.field_name = e.scalar_ref_field_part
-                       WHERE da.graph_name = a.graph_name AND da.coordinate = a.named_type
-                         AND da.directive_name = 'scalarType' AND da.ordinal = 0
-                         AND k.input_type = p.element)
+         WHEN 'SCALAR' THEN a.java_class = p.element
+           OR EXISTS (SELECT 1 FROM (VALUES ('Int', 'int'), ('Float', 'double'), ('Boolean', 'boolean'))
+                                    b (scalar, primitive)
+                       WHERE b.scalar = a.named_type AND b.primitive = p.element)
          ELSE FALSE END
         OR (p.parameter_name IS NOT NULL
             AND (a.kind = 'INPUT_OBJECT'
-                 OR (a.kind = 'SCALAR'
-                     AND a.named_type NOT IN ('ID', 'String', 'Int', 'Float', 'Boolean')
-                     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
-                                       JOIN graphitron_ast_scalar_type_entry e
-                                         ON e.graph_name = da.graph_name
-                                        AND e.source_name = da.source_name
-                                        AND e.source_line = da.source_line
-                                        AND e.source_column = da.source_column
-                                       JOIN code_scalar_constant k
-                                         ON k.class_name = e.scalar_ref_class_part
-                                        AND k.field_name = e.scalar_ref_field_part
-                                      WHERE da.graph_name = a.graph_name
-                                        AND da.coordinate = a.named_type
-                                        AND da.directive_name = 'scalarType'
-                                        AND da.ordinal = 0)))
+                 OR (a.kind = 'SCALAR' AND a.java_class IS NULL))
             AND NOT EXISTS (SELECT 1 FROM open_parameter p2
                              WHERE p2.graph_name = p.graph_name AND p2.coordinate = p.coordinate
                                AND p2.call = p.call AND p2.method_descriptor = p.method_descriptor
@@ -16880,40 +16948,17 @@ slot (graph_name, coordinate, slot_coordinate, name) AS (
     JOIN graphitron_occurrence o ON o.graph_name = c.graph_name AND o.coordinate = c.coordinate
    WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
 ),
--- The Java class a scalar arrives as: a built-in's by graphql-java, any other's by its @scalarType.
-scalar_class (graph_name, scalar, java_class) AS (
-  SELECT t.graph_name, t.type_name,
-         CASE t.type_name WHEN 'ID' THEN 'java.lang.String' WHEN 'String' THEN 'java.lang.String'
-                          WHEN 'Int' THEN 'java.lang.Integer' WHEN 'Float' THEN 'java.lang.Double'
-                          WHEN 'Boolean' THEN 'java.lang.Boolean' END
-    FROM graphitron_type t
-   WHERE t.kind = 'SCALAR' AND t.type_name IN ('ID', 'String', 'Int', 'Float', 'Boolean')
-  UNION
-  SELECT da.graph_name, da.coordinate, k.input_type
-    FROM graphql_directive_application da
-    JOIN graphitron_ast_scalar_type_entry e
-      ON e.graph_name = da.graph_name AND e.source_name = da.source_name
-     AND e.source_line = da.source_line AND e.source_column = da.source_column
-    JOIN code_scalar_constant k
-      ON k.class_name = e.scalar_ref_class_part AND k.field_name = e.scalar_ref_field_part
-   WHERE da.directive_name = 'scalarType' AND da.ordinal = 0 AND k.input_type IS NOT NULL
-),
--- An element's Java type, a List of its scalar's class for a list, none for an enum or an input
--- object, and whether it opens into an input object a search may enter, never through a list.
+-- An element's Java type, a List of its class for a list, none for an enum or an input object,
+-- and whether it opens into an input object a search may enter, never through a list.
 typed (graph_name, coordinate, name, parent_coordinate, java_type, kind, opens) AS (
   SELECT e.graph_name, e.coordinate, e.name, e.parent_coordinate,
-         CASE WHEN j.java_class IS NULL THEN NULL
-              WHEN COALESCE(ga.is_list, gf.is_list) = TRUE THEN 'java.util.List<' || j.java_class || '>'
-              ELSE j.java_class END,
-         t.kind,
-         CASE WHEN t.kind = 'INPUT_OBJECT' AND COALESCE(ga.is_list, gf.is_list) = FALSE THEN TRUE
-              ELSE FALSE END
+         CASE WHEN i.java_class IS NULL THEN NULL
+              WHEN i.is_list THEN 'java.util.List<' || i.java_class || '>'
+              ELSE i.java_class END,
+         i.type_kind,
+         i.type_kind = 'INPUT_OBJECT' AND NOT i.is_list
     FROM graphitron_occurrence e
-    LEFT JOIN graphitron_argument ga ON ga.graph_name = e.graph_name AND ga.coordinate = e.element_coordinate
-    LEFT JOIN graphitron_field gf ON gf.graph_name = e.graph_name AND gf.coordinate = e.element_coordinate
-    JOIN graphitron_type t ON t.graph_name = e.graph_name AND t.type_name = COALESCE(ga.named_type, gf.named_type)
-    LEFT JOIN scalar_class j ON j.graph_name = t.graph_name AND j.scalar = t.type_name
-   WHERE e.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+    JOIN graphitron_occurrence_input_type i ON i.graph_name = e.graph_name AND i.coordinate = e.coordinate
 ),
 -- Every input object reachable from an element without passing a list.
 reached (graph_name, slot_coordinate, coordinate) AS (
@@ -17005,7 +17050,7 @@ by_one (graph_name, coordinate, call, call_kind, method_descriptor, position, pa
       ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate AND e.call = p.call
      AND e.method_descriptor = p.method_descriptor
    WHERE e.kind IN ('INPUT_OBJECT', 'ENUM')
-     AND NOT EXISTS (SELECT 1 FROM scalar_class j
+     AND NOT EXISTS (SELECT 1 FROM graphitron_scalar_class j
                       WHERE j.graph_name = p.graph_name AND j.java_class = p.parameter_type)
      AND NOT EXISTS (SELECT 1 FROM nested n
                       WHERE n.graph_name = e.graph_name AND n.slot_coordinate = e.slot_coordinate
@@ -19111,6 +19156,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_minted_conflict'),
   ('macro-expansion', 'graphitron_type'),
   ('macro-expansion', 'graphitron_type_member'),
+  ('macro-expansion', 'graphitron_scalar_class'),
   ('macro-expansion', 'graphitron_edge'),
   ('macro-expansion', 'graphitron_connection'),
   ('federation-imports', 'graphitron_federation_link_import'),
@@ -19136,6 +19182,7 @@ INSERT INTO meta_stage_write VALUES
   ('path-elements', 'graphitron_path_element_table'),
   ('routine-results', 'graphitron_routine_result'),
   ('occurrences', 'graphitron_occurrence'),
+  ('occurrences', 'graphitron_occurrence_input_type'),
   ('argmapping-landings', 'graphitron_argmapping_landing'),
   ('argmapping-landings', 'graphitron_argmapping_step'),
   ('path-claims', 'graphitron_join_path_claim'),
@@ -21425,6 +21472,22 @@ INSERT INTO meta_relation VALUES
   ('graphitron_type_member_rule', 'type-member', 'graphitron',
    'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_scalar_class', 'expanded-type', 'graphitron',
+   'The Java class a scalar''s values arrive as: one row per scalar whose class is known.',
+   'For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.',
+   'A subtype of graphitron_type pinned to SCALAR. The built-in classes and the @scalarType resolution were spelled out in three rules, each re-deriving them on every evaluation and none scoping the constant to the graph''s classpath entries; stored here, by the gatherer that holds the document, the catalog of constants and the graph''s sources, the rules join one keyed table. The class graphql-java delivers is the fact: what a parameter of a primitive or another type accepts stays each reader''s rule, so no reader''s leniency becomes the fact. A scalar whose class is unknown, or whose constant two entries coerce differently, has no row.'),
+  ('graphitron_scalar_class_rule', 'expanded-type', 'graphitron',
+   'One row the scalar class rule computes, in the shape graphitron_scalar_class stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_scalar_class, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_occurrence_input_type', 'graph-occurrence', 'graphitron',
+   'The type an argument or input field occurrence takes, and the Java class its values arrive as: one row per such occurrence.',
+   'For example Query.films(filter:) takes the input object FilmFilter and has no class, and Query.films(filter.releaseYear:) takes Int, arriving as java.lang.Integer.',
+   'What a call''s parameter binding asks of every element it could bind: its type, the type''s kind, whether it is a list and the class it arrives as. The condition and producer parameter rules each derived it inline from the declared argument or field, the type and the scalar''s class, and read that derivation inside correlated subqueries, so it was evaluated once per probing row; on a large consumer schema that was most of a six-second rule evaluated once per occurrence depth. Written by the occurrences stage beside the occurrences it keys into, ahead of the depth loop that reads it. Whether a search may enter an input object, never through a list, is the reader''s predicate over two columns of the row.'),
+  ('graphitron_occurrence_input_type_rule', 'graph-occurrence', 'graphitron',
+   'One row the occurrence input type rule computes, in the shape graphitron_occurrence_input_type stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrences stage inserts this view''s rows for one graph into graphitron_occurrence_input_type, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_edge', 'expanded-type', 'graphitron',
    'An edge of a Relay connection and the item its node names: one row per edge type.',

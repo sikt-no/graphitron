@@ -13,16 +13,20 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_INPUT_TYPE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_START_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_STEP_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.val;
 
 /**
  * Fills {@code graphitron_occurrence}: every place a field or an argument is reached, at its nested
- * coordinate, marked and swept.
+ * coordinate, marked and swept; then {@code graphitron_occurrence_input_type}, the type each
+ * argument and input field occurrence takes.
  *
  * <p>{@code graphitron_occurrence_start_rule} names where chains start, and
  * {@code graphitron_occurrence_step_rule} one step down from an occurrence this reading wrote. This
@@ -49,6 +53,30 @@ public final class Occurrences {
         dsl.deleteFrom(GRAPHITRON_OCCURRENCE)
             .where(GRAPHITRON_OCCURRENCE.GRAPH_NAME.eq(graph))
             .and(GRAPHITRON_OCCURRENCE.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        inputTypes(dsl, graph, touchedAt);
+    }
+
+    /** The type each argument and input field occurrence this reading kept takes, marked and swept. */
+    private static void inputTypes(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_OCCURRENCE_INPUT_TYPE;
+        var r = GRAPHITRON_OCCURRENCE_INPUT_TYPE_RULE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.TYPE_NAME, t.TYPE_KIND, t.IS_LIST, t.JAVA_CLASS, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.TYPE_NAME, r.TYPE_KIND, r.IS_LIST, r.JAVA_CLASS,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onDuplicateKeyUpdate()
+            .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
+            .set(t.TYPE_KIND, excluded(t.TYPE_KIND))
+            .set(t.IS_LIST, excluded(t.IS_LIST))
+            .set(t.JAVA_CLASS, excluded(t.JAVA_CLASS))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph))
+            .and(t.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
 

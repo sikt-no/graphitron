@@ -371,6 +371,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
         registrations.put("graphitron_type_member", Arm.DERIVED);
         registrations.put("graphitron_type_member_rule", Arm.DERIVED);
+        registrations.put("graphitron_scalar_class", Arm.DERIVED);
+        registrations.put("graphitron_scalar_class_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_input_type", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_input_type_rule", Arm.DERIVED);
         registrations.put("graphitron_edge", Arm.DERIVED);
         registrations.put("graphitron_edge_rule", Arm.DERIVED);
         registrations.put("graphitron_connection", Arm.DERIVED);

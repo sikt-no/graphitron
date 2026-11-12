@@ -84,6 +84,8 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
         new Stage("graphitron_carrier_directive", "graphitron_carrier_directive_rule"),
         new Stage("graphitron_type_member", "graphitron_type_member_rule"),
+        new Stage("graphitron_scalar_class", "graphitron_scalar_class_rule"),
+        new Stage("graphitron_occurrence_input_type", "graphitron_occurrence_input_type_rule"),
         new Stage("graphitron_edge", "graphitron_edge_rule"),
         new Stage("graphitron_connection", "graphitron_connection_rule"),
         new Stage("graphitron_field_target", "graphitron_field_target_rule"),
