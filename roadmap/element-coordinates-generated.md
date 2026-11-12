@@ -1,7 +1,7 @@
 ---
 id: R1173
 title: "A column that renders other columns of its row is generated, so no writer spells it and no check holds it"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 6
 theme: model-cleanup
