@@ -231,9 +231,13 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   Connections specification states the shape: a connection has `edges` and `pageInfo` and may have
   more fields, an edge has `node` and `cursor` and may have more, and `PageInfo` has
   `hasPreviousPage`, `hasNextPage`, `startCursor` and `endCursor`; `nodes` and `totalCount` are
-  conventions graphitron adds and facets graphitron's own. The shape is a constant beside
-  `graphitron_runtime_class`, and a type-field relation says which position each field fills.
-  Today's test, `edges` to an OBJECT edge to `node`, is narrower than the specification although
+  conventions graphitron adds and facets graphitron's own. The shape is stated:
+  `graphitron_connection_position` is its vocabulary and `graphitron_field_position` the position
+  each field of a recognised connection, edge and page info fills, written at macro expansion;
+  the producer rule's `COUNT` and `FACETS` arms read the position. The connection and edge rules
+  keep their literal `edges` and `node`: read through the vocabulary the name is no constant to the
+  planner, which then probes `graphitron_field` by graph alone instead of seeking
+  `graphitron_field_name_ix` (measured on the sakila store's plan). What is left is recognition itself. Today's test, `edges` to an OBJECT edge to `node`, is narrower than the specification although
   `graphitron_connection`'s rationale calls it the specification's own; recognising
   the full shape changes what is recognised, so it goes with `asConnection.adoc` and Alf's ruling.
 * **An authored connection type that departs from the shape is a defect** `blocked`, on "A connection is recognised by the specification's shape".
@@ -249,11 +253,12 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   does not compose, a `@service` or an index-backed connection, a `totalCount` or facets raises a
   defect rather than generating nothing. No connection producer today is one: every page is built
   by graphitron's own statements, so this lands with the first that is not.
-* **The participant askers read the occurrence's source tables** `open`. Five field-keyed rules
+* **The participant askers read the occurrence's source tables** `open`. Four field-keyed rules
   ask whether, or across which tables, a union or interface target is read per table-bound
   participant: `graphitron_producer_rule`'s `landing`, the reader rule's polymorphic arm, the
-  `ORDERING_ACROSS_PARTICIPANTS` arm, `graphitron_field_scope_table`'s `PARTICIPANT_TABLE`, and
-  `graphitron_occurrence_producer_result_rule`'s polymorphic flag. Each joins
+  `ORDERING_ACROSS_PARTICIPANTS` arm and `graphitron_occurrence_producer_result_rule`'s polymorphic
+  flag (a fifth, `graphitron_field_scope_table`'s `PARTICIPANT_TABLE`, went with the scope-table
+  chain). Each joins
   `graphitron_tabletype` (resolved) or the written `@table` with the type's members; no relation of
   its own is owed, since that would restate stored facts at a grain that cannot hold a nested type
   bound per occurrence (Alf, 2026-11-12). Which tables an occurrence's statement reads is
@@ -1000,9 +1005,17 @@ classified records have no reader left and can go with the walk.
   type-level readers (the LSP's type hover and inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`)
   reading the results grouped by type.
   * **The other spellings of a connection read the stored shape** `open`. `graphitron_producer_rule`'s
-    `COUNT`, `FACETS` and page arms and `graphitron_occurrence_start_rule` still ask whether a type
-    is a connection or its edge over `graphitron_field_target`; each moves onto
-    `graphitron_connection` and `graphitron_edge` with its own row-for-row agreement against trunk. A read
+    page arm ("the rest of a connection reads the page", which reaches every field of a connection,
+    its edge, its page info and its facets type, positions or not) and
+    `graphitron_occurrence_start_rule` still ask whether a type is a connection or its edge over
+    `graphitron_field_target`; each moves onto `graphitron_connection`, `graphitron_edge` and the
+    types `graphitron_field_position`'s `PAGE_INFO` and `FACETS` fields name, with its own row-for-row
+    agreement against trunk. The `COUNT` and `FACETS` arms read `graphitron_field_position` already.
+    The minting, `graphitron_field_minted_candidate`, still spells the shape's eleven field names;
+    each mint arm can join the vocabulary for its field's name by position. And
+    `connection-positions.graphqls` asserts `graphitron_producer` rows, the field-keyed family that
+    is going: when it goes the assertion moves onto the occurrence producer rather than being
+    dropped. A read
     swap only: the field-keyed arms gain nothing, and they go with
     "The producer's readers read the occurrence producer, and the field-keyed family goes".
   * **The key defects read the fill's candidates alone** `open`. The service arm of

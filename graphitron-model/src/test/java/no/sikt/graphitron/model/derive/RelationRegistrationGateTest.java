@@ -374,6 +374,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_edge_rule", Arm.DERIVED);
         registrations.put("graphitron_connection", Arm.DERIVED);
         registrations.put("graphitron_connection_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_position", Arm.DERIVED);
+        registrations.put("graphitron_field_position_rule", Arm.DERIVED);
         registrations.put("graphitron_type_backing", Arm.DERIVED);
         registrations.put("graphitron_type_backing_rule", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
@@ -501,6 +503,7 @@ class RelationRegistrationGateTest {
         registrations.put("code_delivery_container", Arm.UNSHADOWED);
         registrations.put("code_tuple_class", Arm.UNSHADOWED);
         registrations.put("graphitron_runtime_class", Arm.UNSHADOWED);
+        registrations.put("graphitron_connection_position", Arm.UNSHADOWED);
         registrations.put("graphitron_runtime_member", Arm.UNSHADOWED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);

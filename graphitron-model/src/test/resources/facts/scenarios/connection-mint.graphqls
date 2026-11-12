@@ -35,3 +35,18 @@ extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
   Query,     films,      first,         0,       Int,      100
   Query,     films,      after,         1,       String,
   """)
+
+# The positions the minted shape's fields fill; the carrier on Query fills none.
+extend schema @expectEquals(relation: "graphitron_field_position", rows: """
+  type_name,                field_name,      position
+  QueryFilmsConnection,     edges,           EDGES
+  QueryFilmsConnection,     nodes,           NODES
+  QueryFilmsConnection,     pageInfo,        PAGE_INFO
+  QueryFilmsConnection,     totalCount,      TOTAL_COUNT
+  QueryFilmsConnectionEdge, cursor,          CURSOR
+  QueryFilmsConnectionEdge, node,            NODE
+  PageInfo,                 hasNextPage,     HAS_NEXT_PAGE
+  PageInfo,                 hasPreviousPage, HAS_PREVIOUS_PAGE
+  PageInfo,                 startCursor,     START_CURSOR
+  PageInfo,                 endCursor,       END_CURSOR
+  """)

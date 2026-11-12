@@ -1,0 +1,49 @@
+"Which position of the connection shape each field fills, for connections an author wrote out: two connections share one PageInfo, which fills each of its positions once, and a field an author adds to a connection or an edge fills none. The count each connection's totalCount runs is decided by the position, as the field's name decided it before."
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+
+type FilmsConnection {
+  edges: [FilmsEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int
+  "Added by the author: no position."
+  label: String
+}
+type FilmsEdge {
+  node: Film!
+  cursor: String!
+  "Added by the author: no position."
+  rank: Int
+}
+
+type ActorsConnection { edges: [ActorsEdge!]! pageInfo: PageInfo! }
+type ActorsEdge { node: Actor! cursor: String! }
+
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+
+type Query {
+  films: FilmsConnection @defaultOrder(primaryKey: true)
+  actors: ActorsConnection @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_field_position", rows: """
+  type_name,        field_name,      position
+  FilmsConnection,  edges,           EDGES
+  FilmsConnection,  pageInfo,        PAGE_INFO
+  FilmsConnection,  totalCount,      TOTAL_COUNT
+  FilmsEdge,        node,            NODE
+  FilmsEdge,        cursor,          CURSOR
+  ActorsConnection, edges,           EDGES
+  ActorsConnection, pageInfo,        PAGE_INFO
+  ActorsEdge,       node,            NODE
+  ActorsEdge,       cursor,          CURSOR
+  PageInfo,         hasNextPage,     HAS_NEXT_PAGE
+  PageInfo,         hasPreviousPage, HAS_PREVIOUS_PAGE
+  PageInfo,         startCursor,     START_CURSOR
+  PageInfo,         endCursor,       END_CURSOR
+  """)
+
+extend schema @expectEquals(relation: "graphitron_producer", where: "type_name IN ('FilmsConnection', 'FilmsEdge', 'ActorsConnection', 'ActorsEdge', 'PageInfo')", rows: """
+  type_name,       field_name, kind
+  FilmsConnection, totalCount, COUNT
+  """)

@@ -7735,6 +7735,31 @@ COMMENT ON VIEW graphitron_occurrence_input_type_rule IS 'One row the occurrence
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.is_list IS 'the is_list of a row of this rule, which the stage writes into graphitron_occurrence_input_type.is_list';
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_occurrence_input_type.java_class';
 
+CREATE TABLE graphitron_connection_position (
+  position   VARCHAR NOT NULL,
+  role       VARCHAR NOT NULL,
+  field_name VARCHAR NOT NULL,
+  PRIMARY KEY (position),
+  UNIQUE (role, field_name),
+  CHECK (role IN ('CONNECTION', 'EDGE', 'PAGE_INFO'))
+);
+COMMENT ON TABLE graphitron_connection_position IS 'One position of the connection shape: the field a connection, its edge or its page info fills it with. For example TOTAL_COUNT is a connection''s totalCount, NODE an edge''s node and END_CURSOR the page info''s endCursor.';
+COMMENT ON COLUMN graphitron_connection_position.position IS 'the position, the key a field filling it names';
+COMMENT ON COLUMN graphitron_connection_position.role IS 'the type of the shape the position is a field of: CONNECTION, EDGE or PAGE_INFO';
+COMMENT ON COLUMN graphitron_connection_position.field_name IS 'the name of the field that fills it, as the Relay Cursor Connections specification spells it (edges, pageInfo, node, cursor and the four page-info fields) or as graphitron adds it (nodes, totalCount, facets)';
+INSERT INTO graphitron_connection_position VALUES
+  ('EDGES', 'CONNECTION', 'edges'),
+  ('NODES', 'CONNECTION', 'nodes'),
+  ('PAGE_INFO', 'CONNECTION', 'pageInfo'),
+  ('TOTAL_COUNT', 'CONNECTION', 'totalCount'),
+  ('FACETS', 'CONNECTION', 'facets'),
+  ('NODE', 'EDGE', 'node'),
+  ('CURSOR', 'EDGE', 'cursor'),
+  ('HAS_NEXT_PAGE', 'PAGE_INFO', 'hasNextPage'),
+  ('HAS_PREVIOUS_PAGE', 'PAGE_INFO', 'hasPreviousPage'),
+  ('START_CURSOR', 'PAGE_INFO', 'startCursor'),
+  ('END_CURSOR', 'PAGE_INFO', 'endCursor');
+
 CREATE TABLE graphitron_edge (
   graph_name     VARCHAR   NOT NULL,
   type_name      VARCHAR   NOT NULL,
@@ -7810,6 +7835,51 @@ COMMENT ON VIEW graphitron_connection_rule IS 'One row the connection rule compu
 -- COMMENT ON COLUMN graphitron_connection_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_connection.type_name';
 -- COMMENT ON COLUMN graphitron_connection_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_connection.kind';
 -- COMMENT ON COLUMN graphitron_connection_rule.edge_type_name IS 'the edge_type_name of a row of this rule, which the stage writes into graphitron_connection.edge_type_name';
+
+CREATE TABLE graphitron_field_position (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  position   VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  -- A type fills a position once.
+  UNIQUE (graph_name, type_name, position),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (position) REFERENCES graphitron_connection_position (position)
+);
+COMMENT ON TABLE graphitron_field_position IS 'A field that fills a position of the connection shape: one row per field. For example FilmsConnection.totalCount fills TOTAL_COUNT, and PageInfo.endCursor fills END_CURSOR however many connections share PageInfo; a field filling no position has no row.';
+COMMENT ON COLUMN graphitron_field_position.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_position.type_name IS 'the connection, edge or page info type declaring the field';
+COMMENT ON COLUMN graphitron_field_position.field_name IS 'the field; with the graph and the type, the grain';
+COMMENT ON COLUMN graphitron_field_position.position IS 'the position it fills, a graphitron_connection_position row of the role its type plays';
+COMMENT ON COLUMN graphitron_field_position.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts, so a field that stopped filling a position leaves';
+
+CREATE VIEW graphitron_field_position_rule (graph_name, type_name, field_name, position) AS
+-- A connection's fields, its edge's fields, and the fields of the type its pageInfo field names.
+SELECT f.graph_name, f.type_name, f.field_name, p.position
+  FROM graphitron_connection c
+  JOIN graphitron_field f ON f.graph_name = c.graph_name AND f.type_name = c.type_name
+  JOIN graphitron_connection_position p ON p.role = 'CONNECTION' AND p.field_name = f.field_name
+UNION
+SELECT f.graph_name, f.type_name, f.field_name, p.position
+  FROM graphitron_edge e
+  JOIN graphitron_field f ON f.graph_name = e.graph_name AND f.type_name = e.type_name
+  JOIN graphitron_connection_position p ON p.role = 'EDGE' AND p.field_name = f.field_name
+UNION
+SELECT f.graph_name, f.type_name, f.field_name, p.position
+  FROM graphitron_connection c
+  JOIN graphitron_connection_position pp ON pp.position = 'PAGE_INFO'
+  JOIN graphitron_field pf
+    ON pf.graph_name = c.graph_name AND pf.type_name = c.type_name AND pf.field_name = pp.field_name
+  JOIN graphitron_field f ON f.graph_name = pf.graph_name AND f.type_name = pf.named_type
+  JOIN graphitron_connection_position p ON p.role = 'PAGE_INFO' AND p.field_name = f.field_name;
+COMMENT ON VIEW graphitron_field_position_rule IS 'One row the field position rule computes, in the shape graphitron_field_position stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_position, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_field_position_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_field_position_rule.type_name IS 'the connection, edge or page info type';
+-- COMMENT ON COLUMN graphitron_field_position_rule.field_name IS 'the field';
+-- COMMENT ON COLUMN graphitron_field_position_rule.position IS 'the position it fills';
 
 CREATE VIEW graphitron_field_target_rule
   (graph_name, type_name, field_name, target_type_name, wrapper_type_name) AS
@@ -9807,11 +9877,17 @@ SELECT graph_name, type_name, field_name, kind
                     THEN 'SELECT' END
              -- Any other root field runs only what is written on it.
              WHEN ro.operation IS NOT NULL THEN NULL
-             WHEN f.field_name = 'totalCount' AND EXISTS (
+             WHEN EXISTS (SELECT 1 FROM graphitron_field_position fp
+                           WHERE fp.graph_name = f.graph_name AND fp.type_name = f.type_name
+                             AND fp.field_name = f.field_name AND fp.position = 'TOTAL_COUNT')
+              AND EXISTS (
                     SELECT 1 FROM graphitron_field_target w
                      WHERE w.graph_name = f.graph_name AND w.wrapper_type_name = f.type_name)
                THEN 'COUNT'
-             WHEN f.field_name = 'facets' AND EXISTS (
+             WHEN EXISTS (SELECT 1 FROM graphitron_field_position fp
+                           WHERE fp.graph_name = f.graph_name AND fp.type_name = f.type_name
+                             AND fp.field_name = f.field_name AND fp.position = 'FACETS')
+              AND EXISTS (
                     SELECT 1 FROM graphitron_field_target w
                      WHERE w.graph_name = f.graph_name AND w.wrapper_type_name = f.type_name)
                THEN 'FACETS'
@@ -17912,6 +17988,10 @@ INSERT INTO meta_stated_relation VALUES
    'One kind of thing an element can claim, with the family it belongs to.',
    'For example SERVICE is a PRODUCER kind and NODE_ID a BINDING kind.',
    'The vocabulary every claim is in, declared once so a claim''s kind is a key and its family a join rather than a CHECK repeated per family. Which kinds exist and which question each answers is a property of this generator and not of anybody''s schema, graphitron_defect_type''s reason beside it.'),
+  ('graphitron_connection_position',
+   'One position of the connection shape: the field a connection, its edge or its page info fills it with.',
+   'For example TOTAL_COUNT is a connection''s totalCount, NODE an edge''s node and END_CURSOR the page info''s endCursor.',
+   'The shape is the Relay Cursor Connections specification''s, with the fields graphitron adds beside it (nodes, totalCount, facets), so no corpus a capture reads states it: it is a constant, and the rules asking which position a field fills read it rather than spelling the names. The connection and edge recognition rules keep their literal edges and node: a name read through this table is no constant to the planner, which then probes graphitron_field by graph alone instead of seeking the index graphitron_field carries on its graph and field name.'),
   ('graphitron_runtime_class',
    'One class graphitron generates into every consumer from a fixed template, by what it is for and its binary name below the output package.',
    'For example CONNECTION_RESULT is util.ConnectionResult, the page a connection''s producer produces.',
@@ -18678,6 +18758,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_scalar_class'),
   ('macro-expansion', 'graphitron_edge'),
   ('macro-expansion', 'graphitron_connection'),
+  ('macro-expansion', 'graphitron_field_position'),
   ('federation-imports', 'graphitron_federation_link_import'),
   ('federation-vocabulary', 'graphitron_directive'),
   ('federation-vocabulary', 'graphitron_directive_argument'),
@@ -20967,6 +21048,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_connection_rule', 'expanded-type', 'graphitron',
    'One row the connection rule computes, in the shape graphitron_connection stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_field_position', 'graph-field', 'graphitron',
+   'A field that fills a position of the connection shape: one row per field.',
+   'For example FilmsConnection.totalCount fills TOTAL_COUNT, and PageInfo.endCursor fills END_CURSOR however many connections share PageInfo; a field filling no position has no row.',
+   'Which position of the connection shape a field fills, stated once at the field''s grain so a rule asking whether a field is a connection''s totalCount, facets or page info joins a key instead of spelling the field''s name. A connection''s and its edge''s fields fill the CONNECTION and EDGE positions, and the fields of the type a connection''s pageInfo field names fill the PAGE_INFO ones; a type shared by several connections fills each position once. Recognition of the shape itself is graphitron_connection''s and graphitron_edge''s; this states only the positions a recognised type''s fields fill.'),
+  ('graphitron_field_position_rule', 'graph-field', 'graphitron',
+   'One row the field position rule computes, in the shape graphitron_field_position stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_field_position, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphql_element_field', 'element-field-site', 'graphql-ast',
    'The field a schema element sits on, for the element kinds whose coordinate names one: one row per field coordinate, output and input alike, and one per field-argument coordinate, carrying the parts the spelling is built from.',

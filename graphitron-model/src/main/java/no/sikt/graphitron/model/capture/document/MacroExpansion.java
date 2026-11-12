@@ -18,6 +18,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
@@ -141,6 +143,8 @@ public final class MacroExpansion {
         store(dsl, graphName, touchedAt, GRAPHITRON_SCALAR_CLASS, GRAPHITRON_SCALAR_CLASS_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_EDGE, GRAPHITRON_EDGE_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION, GRAPHITRON_CONNECTION_RULE);
+        // Then the positions their fields fill, which read both.
+        store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_POSITION, GRAPHITRON_FIELD_POSITION_RULE);
     }
 
     /**
@@ -320,7 +324,10 @@ public final class MacroExpansion {
             .select(dsl.select(selected)
                 .from(rule)
                 .where(rule.field("GRAPH_NAME", String.class).eq(graphName)))
-            .onDuplicateKeyUpdate()
+            // Matching on the primary key alone: a target with a unique key beside it would
+            // otherwise match on either, scanning every graph's rows.
+            .onConflict(key)
+            .doUpdate()
             .set(updates)
             .execute();
         dsl.deleteFrom(target)
