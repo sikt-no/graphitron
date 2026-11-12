@@ -120,7 +120,7 @@ Two distinct uses:
 
 `resolvable: false` is also legal on `@node` types via the synthesised path: `@node @key(fields: "id", resolvable: false)` declares the type as a reference-only entity even though `@node` would normally make it resolvable.
 
-A stub this subgraph only decodes ids of goes further: xref:../reference/directives/node.adoc#federation-stubs[`@node(resolvable: false)`] makes it a node for its id, so xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`] can name it, while it implements no `Node`, `Query.node` does not dispatch it, and no `@key(fields: "id")` is synthesised for it.
+A type this subgraph only decodes ids of goes further: xref:../reference/directives/node.adoc#federation-stubs[`@node(resolvable: false)`] makes it a node like any other, implementing `Node`, so xref:../reference/directives/nodeId.adoc[`@nodeId(typeName:)`] can name it, while `Query.node` answers its id with `null` and no `@key(fields: "id")` is synthesised for it.
 
 [[what-entities-answers]]
 == What `_entities` answers

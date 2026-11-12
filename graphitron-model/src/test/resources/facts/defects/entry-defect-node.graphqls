@@ -1,4 +1,5 @@
-# What a @node can be refused for. Without the Node interface it is refused at the @node, and its
+# What a @node can be refused for. Without the Node interface it is refused at the @node, a node this
+# subgraph does not resolve included, and its
 # id, being no node's identity, is read as a column film does not have. A pinned key naming a
 # column the table lacks is one defect per @node naming the first failing spelling as written,
 # and a key whose columns resolve, folded by generated name, draws nothing. Over a view with no
@@ -27,6 +28,12 @@ type FilmFolded implements Node @table(name: "film") @node(keyColumns: ["FILM_ID
   title: String
 }
 
+# A node this subgraph does not resolve is a node all the same, held to the interface like any other.
+type FilmUnresolved @table(name: "film") @node(typeId: "FU", resolvable: false) {
+  id: ID!
+  title: String
+}
+
 type FilmList implements Node @table(name: "film_list") @node {
   id: ID!
   title: String
@@ -39,6 +46,7 @@ type Film implements Node @table(name: "film") @node {
 
 type Query {
   withoutInterface: FilmWithoutInterface
+  unresolved: FilmUnresolved
   pinned: FilmPinned
   pinnedTwice: FilmPinnedTwice
   folded: FilmFolded
@@ -48,13 +56,14 @@ type Query {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "type_name = 'FilmWithoutInterface'", rows: """
   code,                        field_name, source_line
-  NODE_WITHOUT_NODE_INTERFACE, ,           10
+  NODE_WITHOUT_NODE_INTERFACE, ,           11
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_WITHOUT_NODE_INTERFACE', 'NODE_KEY_COLUMN_UNRESOLVED', 'NODE_WITHOUT_KEY')
   """, rows: """
   code,                        type_name,            detail
+  NODE_WITHOUT_NODE_INTERFACE, FilmUnresolved,
   NODE_WITHOUT_NODE_INTERFACE, FilmWithoutInterface,
   NODE_KEY_COLUMN_UNRESOLVED,  FilmPinned,           no_such_col
   NODE_KEY_COLUMN_UNRESOLVED,  FilmPinnedTwice,      zz_missing

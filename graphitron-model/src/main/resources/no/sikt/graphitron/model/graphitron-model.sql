@@ -5821,7 +5821,7 @@ COMMENT ON COLUMN graphitron_node.graph_name IS 'the owning graph''s partition, 
 COMMENT ON COLUMN graphitron_node.type_name IS 'the type that is a node. The foreign key is into graphitron_tabletype rather than into the type coordinate, and that is the relation''s central claim: @node only takes effect on a type that also carries @table, so a node is a table-bound type before it is anything else and one that is not table bound cannot be a row here. A @node written on a type with no binding is a @node application in graphql_directive_application and no row here, and the anti-join between the two is where an author is told so. Cascading on delete, the dependency being existential rather than merely referential: a type that stops resolving to a table stops being a node, and the two are rewritten in one pass by the same gatherer';
 COMMENT ON COLUMN graphitron_node.type_id IS 'the wire type id this node answers to, resolved rather than as written: what the author declared where they declared one, what the backing class publishes where they did not, and the type''s own name where neither says. Never null, the last of those three always answering, so a reader encoding an id needs no fallback of its own';
 COMMENT ON COLUMN graphitron_node.type_id_origin IS 'which of the three answered, in the order they are tried: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the backing class''s __NODE_TYPE_ID, TYPE_NAME from the type itself. Carried because a diagnostic that says an id collides has to say where each came from, and because the tiers are a precedence a reader must not re-derive. The key columns'' own origin is a separate column on a separate relation, the two axes being independent: an author may declare the id and leave the columns to the catalog, or the reverse';
-COMMENT ON COLUMN graphitron_node.resolvable IS 'whether this subgraph fetches the node by its id: false where the type''s first @node says resolvable: false, true otherwise, a node the backing class publishes included. A node that is not resolvable is a stub of an entity another subgraph owns: its id binds, encodes and decodes like any node''s and its type id counts towards the graph''s uniqueness, but Query.node and nodes do not dispatch it, it implements no Node interface and federation gets no key minted for it';
+COMMENT ON COLUMN graphitron_node.resolvable IS 'whether this subgraph fetches the node by its id: false where the type''s first @node says resolvable: false, true otherwise, a node the backing class publishes included. A node that is not resolvable is one another subgraph owns, and a node like any other: it implements Node, its id binds, encodes and decodes like any node''s and its type id counts towards the graph''s uniqueness. Only what fetches by id reads this: Query.node and nodes answer its id with null, and federation gets no key minted for it';
 
 CREATE VIEW graphitron_node_type (graph_name, type_name) AS
 SELECT graph_name, coordinate FROM graphql_directive_application WHERE directive_name = 'node'
@@ -15606,10 +15606,11 @@ SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
    AND st.table_type = 'FUNCTION'
 UNION ALL
 -- A @node on a type that does not implement Node. The interface is the contract @node publishes to
--- clients, so a type cannot be promoted to a node without it. Reported at the @node, which is where
--- an author decides between adding the interface and dropping the directive. A root operation type
--- is a root before it is anything else, and a stub, @node(resolvable: false), publishes no such
--- contract here: the subgraph owning the entity does.
+-- clients, so a type cannot be promoted to a node without it, a node this subgraph does not resolve
+-- included: resolvability is a fact of its own, and Query.node answers such a node's id with null.
+-- Reported at the @node, which is where an author decides between adding the interface and dropping
+-- the directive. A root operation type is a root before it is anything else. The interface also
+-- holds the type to an id field, so a node without one is a schema problem rather than a defect.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
   FROM graphql_directive_application n
@@ -15619,42 +15620,6 @@ SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
                       AND i.interface_name = 'Node')
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
                     WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_entry e
-                    WHERE e.graph_name = n.graph_name AND e.source_name = n.source_name
-                      AND e.source_line = n.source_line AND e.source_column = n.source_column
-                      AND e.resolvable = FALSE)
-UNION ALL
--- A stub that implements Node. The interface promises Query.node fetches the type by its id, and a
--- stub is the one node this subgraph does not fetch. Reported at the @node, where the author either
--- drops the interface or the resolvable: false.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_STUB_WITH_NODE_INTERFACE', CAST(NULL AS VARCHAR)
-  FROM graphql_directive_application n
-  JOIN graphitron_ast_node_entry e
-    ON e.graph_name = n.graph_name AND e.source_name = n.source_name
-   AND e.source_line = n.source_line AND e.source_column = n.source_column
- WHERE n.directive_name = 'node' AND n.ordinal = 0 AND e.resolvable = FALSE
-   AND EXISTS (SELECT 1 FROM graphql_implements_interface i
-                WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
-                  AND i.interface_name = 'Node')
-UNION ALL
--- A @node on a type that declares no id field. A node's id is its contract, a stub's included, so
--- a node without one has nothing to carry it. A type implementing Node is held to the field by the
--- interface already, its absence a schema problem, so only a type without the interface draws this:
--- a stub, or a type refused as NODE_WITHOUT_NODE_INTERFACE beside it. Reported at the @node, on the
--- terms above.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_ID_FIELD', CAST(NULL AS VARCHAR)
-  FROM graphql_directive_application n
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
-                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
-                      AND i.interface_name = 'Node')
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphql_field f
-                    WHERE f.graph_name = n.graph_name AND f.type_name = n.coordinate
-                      AND f.field_name = 'id')
 UNION ALL
 -- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
 -- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
@@ -20346,11 +20311,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_NOT_ID_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_NOT_ID_TYPE',
    'A @nodeId sits on a slot whose type is not ID, and every encode and decode is an ID''s, so the directive would bind the wire value undecoded: change the type to ID or remove the directive.', 'entry-defects'),
   ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',
-   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node: add implements Node, or write @node(resolvable: false) where another subgraph owns the entity.', 'entry-defects'),
-  ('NODE_STUB_WITH_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_STUB_WITH_NODE_INTERFACE',
-   'A type carries @node(resolvable: false) and implements the Relay Node interface, which promises that Query.node fetches it by its id, where a stub is a node this subgraph does not fetch: drop the interface, or the resolvable: false.', 'entry-defects'),
-  ('NODE_WITHOUT_ID_FIELD', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_ID_FIELD',
-   'A type carries @node and declares no id field. A node''s id is its contract, a federation stub''s included, so a node without one has nothing to carry it: declare id: ID!.', 'entry-defects'),
+   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, a node this subgraph does not resolve included, so the type cannot be promoted to a node: add implements Node.', 'entry-defects'),
   ('NODE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_TABLE',
    'A type carries @node and no @table. A node is a row of a table, its id encoding that row''s key, so a type bound to no table has nothing to be a node of.', 'entry-defects'),
   ('NODE_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_KEY_COLUMN_UNRESOLVED',

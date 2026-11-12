@@ -153,7 +153,7 @@ Every Graphitron-emitted nodeId is base64-url-encoded `"typeId:v1,v2,..."` (no p
 
 === Per-Node helpers
 
-For each node type the generator emits two static helpers named after the GraphQL type. A node type is a `@table` type carrying `@node`, or implementing `Node` over a table whose generated class publishes node metadata; a federation stub, `@node(resolvable: false)`, is one too, since its id encodes and decodes like any node's even though `Query.node` does not fetch it:
+For each node type the generator emits two static helpers named after the GraphQL type. A node type is a `@table` type carrying `@node`, or implementing `Node` over a table whose generated class publishes node metadata; a node this subgraph does not resolve, `@node(resolvable: false)`, is one too, since its id encodes and decodes like any node's even though `Query.node` answers it with `null`:
 
 * `encode<TypeName>(T1 v1, ..., TN vN)` -- bakes the typeId into the helper name so call sites pass typed key values directly. Returns `null` if any value is `null`.
 * `decode<TypeName>(String base64Id)` -- returns a jOOQ `RecordN<T1, ..., TN>` typed against the node's key columns, or `null` uniformly on malformed input, a typeId mismatch, the wrong number of key values, or a key value that is not a value of its column. Carrier consumers wrap that null through the matching `CallSiteExtraction.NodeIdDecodeKeys.*` arm.

@@ -3391,11 +3391,12 @@ input XlatChildFilter {
 
 # ===== @nodeId leaves decoding a @table-only type from catalog node metadata =====
 # Paired with `levelIntervals`, `updateLevelInterval` and the `study_level` tables in `init.sql`.
-# StudyLevel is a federation stub, an entity another subgraph owns: @node(resolvable: false) and no
-# `implements Node`, over a table whose catalog metadata publishes type id StudyLevel and key `code`.
+# StudyLevel is a node this subgraph does not resolve, an entity another subgraph owns:
+# @node(resolvable: false), implementing Node like any node, over a table whose catalog metadata
+# publishes type id StudyLevel and key `code`. Query.node answers its id with null.
 # It carries its id like any node, encoded from that key; `studyLevels` returns it.
 
-type StudyLevel @table(name: "study_level") @node(resolvable: false) {
+type StudyLevel implements Node @table(name: "study_level") @node(resolvable: false) {
     id: ID!
     code: String! @field(name: "code")
     name: String!
