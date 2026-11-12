@@ -1,7 +1,7 @@
 ---
 id: R920
 title: "a failed batch logs once, without its SQL, and a consumer can cap batch size"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: error-channel
