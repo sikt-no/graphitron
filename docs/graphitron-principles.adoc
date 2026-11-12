@@ -25,3 +25,9 @@ Graphitron generates the mechanical parts: data fetching, response formatting, q
 Complex systems fail in complex ways. Simple systems fail in understandable ways.
 
 Generated code should be readable without special tools. Fewer runtime dependencies mean fewer things to break, update, or watch go unmaintained. Explicit mappings in schema annotations mean future maintainers can understand the relationship between API and database without reverse-engineering magic. Problems caught at build time are far cheaper than problems caught in production.
+
+== Existing schemas keep working
+
+A schema is a long-lived contract, with the database underneath it and with the clients that call it. Applications built on an earlier Graphitron, and the clients built against them, should keep working when Graphitron is upgraded.
+
+We keep backwards compatibility with existing schemas unless we have very good reasons to break them. A break is a decision someone makes on purpose, never a side effect of other work, and an assumption that nobody depends on a behaviour is not on its own a very good reason.
