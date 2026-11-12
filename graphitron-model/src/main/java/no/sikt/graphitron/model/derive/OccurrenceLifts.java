@@ -43,12 +43,13 @@ public final class OccurrenceLifts {
             graph, null, touchedAt);
     }
 
-    /** Deletes the candidates no depth of this reading marked. */
-    public static void sweepCandidates(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    /** Deletes the candidates of the occurrences at {@code depth}, or of all where null, this reading did not mark. */
+    public static void sweepCandidates(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
         var t = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_CANDIDATE;
         dsl.deleteFrom(t)
             .where(t.GRAPH_NAME.eq(graph))
             .and(t.TOUCHED_AT.ne(touchedAt))
+            .and(atDepth(t.GRAPH_NAME, t.COORDINATE, depth))
             .execute();
     }
 

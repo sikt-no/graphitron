@@ -85,13 +85,14 @@ public final class Paths {
     }
 
     /** Deletes the paths of this stage's origins no depth of this reading marked. */
-    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    public static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
         // Only the origins written here: a written or inherited path is the steps' to sweep, and its
         // join path goes with it.
         dsl.deleteFrom(GRAPHITRON_PATH)
             .where(GRAPHITRON_PATH.GRAPH_NAME.eq(graph))
             .and(GRAPHITRON_PATH.ORIGIN.in(EMPTY, INFERRED))
             .and(GRAPHITRON_PATH.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(GRAPHITRON_PATH.GRAPH_NAME, GRAPHITRON_PATH.COORDINATE, depth))
             .execute();
     }
 

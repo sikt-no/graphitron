@@ -44,12 +44,21 @@ public final class OccurrenceDepths {
                 AccessorPaths.writeDepth(dsl, graph, depth, touchedAt);
                 Paths.writeDepth(dsl, graph, depth, touchedAt);
                 Steps.writeDepth(dsl, graph, depth, touchedAt);
+                // The depth is complete, so its rows this reading did not mark go now: the next depth
+                // reads only what this one stated.
+                sweep(dsl, graph, depth, touchedAt);
             }
         }
-        OccurrenceLifts.sweepCandidates(dsl, graph, touchedAt);
-        OccurrenceSources.sweep(dsl, graph, touchedAt);
-        PathNeeds.sweep(dsl, graph, touchedAt);
-        Paths.sweep(dsl, graph, touchedAt);
-        Steps.sweep(dsl, graph, touchedAt);
+        // Rows of an occurrence no depth reached; the cascade from the occurrences usually took them.
+        sweep(dsl, graph, null, touchedAt);
+    }
+
+    /** Sweeps the stage's relations for the occurrences at {@code depth}, or for all where it is null. */
+    private static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
+        OccurrenceLifts.sweepCandidates(dsl, graph, depth, touchedAt);
+        OccurrenceSources.sweep(dsl, graph, depth, touchedAt);
+        PathNeeds.sweep(dsl, graph, depth, touchedAt);
+        Paths.sweep(dsl, graph, depth, touchedAt);
+        Steps.sweep(dsl, graph, depth, touchedAt);
     }
 }

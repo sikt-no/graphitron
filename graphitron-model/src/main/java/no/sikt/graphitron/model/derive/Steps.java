@@ -1077,19 +1077,23 @@ public final class Steps {
      * inherited paths, whose join paths and claimed rows go with them; the inferred and empty paths
      * are {@link Paths}'s to sweep.
      */
-    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    public static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_JOIN_PATH_STEP_PARAMETER, GRAPHITRON_JOIN_PATH_STEP_COLUMN,
                 GRAPHITRON_JOIN_PATH_STEP_KEY, GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_PRIMARY_KEY, GRAPHITRON_JOIN_PATH_STEP_MATCHED_KEY,
                 GRAPHITRON_JOIN_PATH_STEP_METHOD, GRAPHITRON_JOIN_PATH_STEP_ROUTINE,
                 GRAPHITRON_JOIN_PATH_STEP, GRAPHITRON_JOIN_PATH_STOP, GRAPHITRON_JOIN_PATH_CLAIMED)) {
             dsl.deleteFrom(t).where(field(t, "GRAPH_NAME", String.class).eq(graph))
-                .and(field(t, "TOUCHED_AT", LocalDateTime.class).ne(touchedAt)).execute();
+                .and(field(t, "TOUCHED_AT", LocalDateTime.class).ne(touchedAt))
+                .and(OccurrenceProducers.atDepth(field(t, "GRAPH_NAME", String.class),
+                    field(t, "COORDINATE", String.class), depth))
+                .execute();
         }
         dsl.deleteFrom(GRAPHITRON_PATH)
             .where(GRAPHITRON_PATH.GRAPH_NAME.eq(graph))
             .and(GRAPHITRON_PATH.ORIGIN.in("WRITTEN", "INHERITED"))
             .and(GRAPHITRON_PATH.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(GRAPHITRON_PATH.GRAPH_NAME, GRAPHITRON_PATH.COORDINATE, depth))
             .execute();
     }
 

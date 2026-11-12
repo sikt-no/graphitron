@@ -90,19 +90,28 @@ public final class OccurrenceSources {
         write(dsl, graph, candidates(graph, touchedAt, depth).asTable("c"), touchedAt);
     }
 
-    /** Deletes the rows no depth of this reading marked, subtypes before the source they hang on. */
-    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        dsl.deleteFrom(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT)
-            .where(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.GRAPH_NAME.eq(graph))
-            .and(GRAPHITRON_OCCURRENCE_SOURCE_OBJECT.TOUCHED_AT.ne(touchedAt))
+    /**
+     * Deletes the rows of the occurrences at {@code depth}, or of every occurrence where it is null,
+     * this reading did not mark, subtypes before the source they hang on.
+     */
+    public static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
+        var b = GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
+        dsl.deleteFrom(b)
+            .where(b.GRAPH_NAME.eq(graph))
+            .and(b.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(b.GRAPH_NAME, b.COORDINATE, depth))
             .execute();
-        dsl.deleteFrom(GRAPHITRON_OCCURRENCE_SOURCE_TABLE)
-            .where(GRAPHITRON_OCCURRENCE_SOURCE_TABLE.GRAPH_NAME.eq(graph))
-            .and(GRAPHITRON_OCCURRENCE_SOURCE_TABLE.TOUCHED_AT.ne(touchedAt))
+        var t = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph))
+            .and(t.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(t.GRAPH_NAME, t.COORDINATE, depth))
             .execute();
-        dsl.deleteFrom(GRAPHITRON_OCCURRENCE_SOURCE)
-            .where(GRAPHITRON_OCCURRENCE_SOURCE.GRAPH_NAME.eq(graph))
-            .and(GRAPHITRON_OCCURRENCE_SOURCE.TOUCHED_AT.ne(touchedAt))
+        var s = GRAPHITRON_OCCURRENCE_SOURCE;
+        dsl.deleteFrom(s)
+            .where(s.GRAPH_NAME.eq(graph))
+            .and(s.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(s.GRAPH_NAME, s.COORDINATE, depth))
             .execute();
     }
 

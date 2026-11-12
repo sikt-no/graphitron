@@ -145,11 +145,12 @@ public final class PathNeeds {
     private static final String OBJECT = "OBJECT";
 
     /** Deletes the needs no depth of this reading marked. */
-    public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    public static void sweep(DSLContext dsl, String graph, Integer depth, LocalDateTime touchedAt) {
         var n = GRAPHITRON_PATH_NEED;
         dsl.deleteFrom(n)
             .where(n.GRAPH_NAME.eq(graph))
             .and(n.TOUCHED_AT.ne(touchedAt))
+            .and(OccurrenceProducers.atDepth(n.GRAPH_NAME, n.COORDINATE, depth))
             .execute();
     }
 
