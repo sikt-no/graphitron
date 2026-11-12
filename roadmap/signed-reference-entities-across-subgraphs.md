@@ -236,43 +236,54 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
   coordinate that is not a `graphitron_element` row (`graphitron_field`, `graphitron_directive_application`,
   `graphitron_occurrence` and `graphitron_claim` all reference it), and a second population axis, modelled
   but not emitted, is something nothing in the model has. So the decode decides what the declaration is,
-  in two stored relations of the `graphitron_` family, written by one new stage of the graphitron anchor
-  between `nodes` and `emitted` in `meta_stage` (named `vouchers`, class `derive.Vouchers`), after `nodes`
-  because its node-type refusal reads `graphitron_node`:
+  in two stored relations of the `graphitron_` family, written by two new stages of the graphitron anchor,
+  since the emitted population is written by `macro-expansion` right after the anchor, ahead of the table
+  types the components need: `voucher-members` (class `derive.VoucherMembers`), between `anchor` and
+  `macro-expansion`, writes the membership from the transcription and the issue entry alone; `vouchers`
+  (class `derive.Vouchers`), after `nodes` and before `federation-link`, writes the components, the claims
+  rows and the voucher stage's refusals, after `nodes` because its node-type refusal reads
+  `graphitron_node`:
   * the *membership*, one row per field declaration an `@issue` absorbs, keyed on its
     `graphql_field_element` row (`ON DELETE CASCADE`) and carrying the issuing field. It is decided by
-    structure alone, from the issue entry and the type's transcribed fields, so a component whose column
-    fails to resolve is still a member and still withheld: a resolution failure is a defect, never an `id`
-    published by A;
+    structure alone, from the issue entry and the type's transcribed fields, and independently of every
+    refusal: a component whose column fails to resolve, or an `@issue` refused for any reason, still
+    absorbs, so a resolution failure or a refusal is a defect, never an `id` published by A. A field
+    marked `@issue` or `@accept` is never a member, so two `@issue` fields on one type (refused below)
+    cannot absorb each other;
   * the *components*, one row per member whose column and scalar resolved, keyed on the member: the
     component's name, its column (the first `@field(name:)` read off the transcription, else the field
     name, joined to the column-name relation over the issuing type's `graphitron_tabletype` row) and its
     scalar. This is the issue emitter's input: which columns to select, how to serialize each value.
 
   `graphitron_element_authored`, `graphitron_field_authored` and `graphitron_argument_authored` each
-  anti-join the membership, the last two beside their existing `NOT EXISTS` against
-  `graphitron_connection_carrier`, and each `meta_relation` description gains the reason. The set states
+  anti-join the membership (the field set beside its existing `NOT EXISTS` against
+  `graphitron_connection_carrier`, the argument set on its field's membership), and each `meta_relation`
+  description gains the reason. The set states
   its own stand-down rule, as each element set does; it is a decision, not a provenance arm. The
-  transcription (`graphql_*`) keeps the declarations as written. Every relation the new stage reads is
-  upstream of it (`graphql_*`, `graphitron_ast_*`, `graphitron_tabletype`, `graphitron_node`, the
-  column-name relation), so the stage order is sound.
+  transcription (`graphql_*`) keeps the declarations as written. Every relation each stage reads is
+  upstream of it: `voucher-members` reads only `graphql_*` and `graphitron_ast_*`; `vouchers` also reads
+  `graphitron_tabletype`, `graphitron_node` and the column-name relation.
 * *The voucher binding.* The voucher field, on A and on B, is a scalar occurrence on a table-bound type,
   and today the column rule would seek a `voucher` column and raise `COLUMN_UNRESOLVED` on a valid schema.
   It binds by a kind of its own, `VOUCHER`, added to the kinds `graphitron_occurrence_binding` and
   `graphitron_binding_claim` allow, per the binding-kind ruling in
   `docs/architecture/explanation/fact-model.adoc`; no directive-name exclusion is added to the column
-  rule. The issue emitter and the entity dispatch find the voucher by that binding.
+  rule. Both are written in slice 4, the claim by `binding-claims` and the occurrence binding, `bound` the
+  type's qualified table as for `COLUMN`, by the stage writing the other scalar bindings, so the voucher
+  occurrence has its binding and the column rule never sees it. The issue emitter and the entity dispatch
+  find the voucher by that binding.
 * *Minted keys, stored.* A stored relation of minted keys, one row per key: its coordinate, field set,
   `resolvable` and role (`NODE`, `ISSUE`, `ACCEPT`). The federation entity rule writes its `NODE` rows;
-  each `@issue` writes an `ISSUE` row (`fields: "voucher"`, `resolvable: false`) and each `@accept` an
-  `ACCEPT` row (`fields: "voucher"`, `resolvable: true`). `graphitron_directive_application_minted` and
+  each `@issue` writes an `ISSUE` row (`resolvable: false`) and each `@accept` an `ACCEPT` row
+  (`resolvable: true`), each with the marked field's name, read off its capture entry, as its field set.
+  Like `NODE`, both are minted only in a graph with a federation link. `graphitron_directive_application_minted` and
   `graphitron_directive_application_arg_minted` both read it, so the argument set stops reading the
   application view and stops hardcoding `fields: "id"` and `resolvable: true`. `@inaccessible` on the
   marked field is one more arm of the minted application set. Existing fact documents for node keys stay
   row-identical. A stage of its own owns it, `minted-keys` (class `derive.MintedKeys`), after
   `federation-link` and `vouchers`, since its `NODE` rows read `graphitron_node` and the federation link
-  and its `ISSUE` and `ACCEPT` rows read the voucher stage and the accept entry, and before `emitted`,
-  which reads the minted applications.
+  and its `ISSUE` and `ACCEPT` rows read the issue and accept entries, and before `directive-applications`,
+  which writes the minted applications.
 * *Entity key alternatives, stated.* The one fact the store lacks is how each field of an authored `@key`
   binds at its entity's table; everything else an alternative carries is already stated. So one stored
   relation, `graphitron_key_field_binding`: one row per field of an authored `@key` on a table-bound
@@ -306,10 +317,13 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
   are not built on it. `EmittedRegistry`, which patches the transcribed registry additively and never
   removes, gains a removal arm that reads the membership relation, not a generic "no `graphitron_field`
   row" rule, which would turn a capture defect into a silent deletion; its javadoc's "absence is a
-  capture defect" paragraph says so. The served `_service.sdl` follows from it. The runtime wiring and
-  the classified walk, which build from graphql-java's view of the authored schema, read the registry
-  after that removal rather than skipping absorbed fields themselves, which would add a branch to the
-  classified walk being drained. `FactCapture.derive`, through `ClassificationDomainCapture`, reads the
+  capture defect" paragraph says so. The served `_service.sdl` follows from it. The runtime wiring is
+  handed the emitted schema, so it sees the removal. The classified walk is not: it builds from the
+  written composition (`AttributedRegistry`), and so would still be handed the absorbed fields. In slice 4
+  it never is, since the temporary refusal stops generation before the walk runs; slice 6, which removes
+  that refusal, routes the walk and the runtime wiring through the one membership-reading removal, applied
+  at the single point both are handed their registry, rather than a filter in each, which would be a
+  second removal site for one fact and a branch in the walk being drained. `FactCapture.derive`, through `ClassificationDomainCapture`, reads the
   written assembly, not the emitted one; absorbed scalar fields are harmless there, and a test pins that
   they classify without effect. No reader derives "is this absorbed" from the `@issue` entry on its own;
   each queries the membership. The LSP and MCP keep reading the authored transcription for the author's
@@ -318,8 +332,11 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
 * *Rejections.* Each is a `graphitron_entry_defect` code at the declaration's written position, owned by
   the stage whose relations it reads, so a refusal never reads a later stage's facts
   (`StageRosterGateTest`).
-  * Owned by the voucher stage, decided from the transcription and the capture entries: `@issue` on a type
-    with an authored `@key` (it would let a router reach B without the voucher); `@issue` on a type
+  * Owned by `minted-keys`, which already reads the federation link: either marker in a graph with no
+    federation link (ruled 2026-11-12: a voucher only makes sense where a router plans across subgraphs,
+    and the minted key it publishes needs the link).
+  * Owned by the voucher stage, decided from the transcription and the capture entries: two `@issue`
+    fields on one type, or two `@accept`; `@issue` on a type with an authored `@key` (it would let a router reach B without the voucher); `@issue` on a type
     `graphitron_node` holds, authored or inferred from the table's node metadata, since the minted node
     key would name an absorbed `id`; an `@issue` that absorbs nothing; an absorbed field that is a list or
     an object, or carries `@nodeId`, `@service`, `@routine`, `@reference` or another directive that gives
@@ -427,16 +444,21 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    deleted the builder behind an adapter left the walk's tenant tests with no entities.
 3. *Connection key.* `ConnectionKey` in every build that writes the slot, tenant part only. A refactor:
    single-tenant output unchanged, multi-tenant output differs only in the key's type.
-4. *A's facts and published shape.* `@issue` and its capture entry, the voucher stage (membership,
-   components, the claims rows, refusals), the `VOUCHER` binding, the three stand-downs, the `ISSUE` key and
-   `@inaccessible`, `EmittedRegistry`'s removal arm, A's served SDL and runtime schema. These land
-   together: without the removal arm the walk would be handed fields the store no longer holds. Until
+4. *A's facts and published shape.* `@issue` and its capture entry, the two voucher stages (membership;
+   components, the claims rows, refusals), the `VOUCHER` claim and occurrence binding, the three
+   stand-downs, the `ISSUE` key and `@inaccessible`, `EmittedRegistry`'s removal arm, A's served SDL, and
+   `@issue`'s reference page and glossary entry. In four commits, each green, since the temporary refusal
+   keeps every such graph from generating: the directive, entry, membership, stand-downs and refusal; the
+   voucher stage's components, claims and refusals; the `VOUCHER` binding; the minted key, `@inaccessible`
+   and the removal arm. A's fact documents go under `defects` while the refusal stands, since each stores
+   it; slice 6 moves them to `scenarios`. Until
    slice 6, a temporary defect refuses `@issue` at generate time so that a valid schema never reaches an
    emitter that does not exist; slice 6 removes it, and it is listed under Retired vocabulary.
 5. *Codec.* The generated codec, key provider, `Vouch` and `VoucherRejectedException`, emitted only when a
    marker entry exists; compilation-tier tests and execution tests of the emitted codec. May run beside
    slice 4.
-6. *Issuing.* The issue fetcher, `SessionState.of(caller, ...)` and the key parameter on
+6. *Issuing.* A's runtime schema, the walk and the runtime wiring reading the one membership-reading
+   removal; the issue fetcher, `SessionState.of(caller, ...)` and the key parameter on
    `Graphitron.runtime(...)`, gated on the issue entry; A-alone execution tests (tokens decode, one vouch
    id per operation and scope); the temporary refusal goes.
 7. *B's facts.* `@accept` and its capture entry, its claims rows, its refusals, the `ACCEPT` key and
@@ -670,6 +692,14 @@ a `Vouch` holding one entry per vouch, and a goal restated as two grants; all ar
 replaces the earlier routing by vouch id and the first client's two-field key (`id eierId`); the vouch id
 stays the audit handle and the consistency check.
 
+At slice 4's take-up a code check found the emitted population written by `macro-expansion` right after
+the anchor, so the voucher stage is two: membership before it, from structure alone, and the components,
+claims and refusals after `nodes`. The principles architect's consult added the `VOUCHER` occurrence
+binding to slice 4 rather than the claim alone, the two-`@issue` refusal and the marked fields' exclusion
+from membership, the minted key's field set read off the capture entry, and moved A's runtime schema to
+slice 6, the walk building from the written composition today. The user ruled (2026-11-12) that either
+marker without a federation link is refused.
+
 At slice 2's entity key step the principles architect was consulted twice and the user ruled
 (2026-11-10). A stored alternative per `@key`, with `DIRECT` and `NODE_ID` subtypes, restated rows other
 relations hold, so only the per-field binding is stored and the one reader composes the rest
@@ -693,7 +723,8 @@ column-bound `id` is a plain key, with the node key minted beside it.
 * The vouch id as the vouched connection's group key, and the first client's two-field accepting key
   (`id eierId`): replaced by the claims.
 * The vouch cap: replaced by the one-claims-per-operation limit.
-* The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8 remove.
+* The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8 remove,
+  `VOUCHER_ISSUE_NOT_GENERATED` among them, and the "refused for now" sentences of their reference pages.
 
 ## Other solutions we've considered
 
