@@ -51,7 +51,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-11-08 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-11 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-11 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
-| `R1173` | An element anchor's coordinate is a generated column, so no writer spells it and no check holds it to the key | Spec | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](element-coordinates-generated.md) |
+| `R1173` | A column that renders other columns of its row is generated, so no writer spells it and no check holds it | Spec | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](element-coordinates-generated.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -726,7 +726,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R898` [**The argMapping candidate tree stops one level above the key column**](candidate-tree-reaches-the-key-column.md) — Backlog, architecture, blocked by [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)
 - `R900` [**The argMapping relations spell their own subject three different ways**](argmapping-relation-names-standardise.md) — Backlog, cleanup
 - `R729` [**findColumn picks silently where two columns answer one spelled name**](findcolumn-picks-silently-on-a-colliding-table.md) — Backlog, cleanup
-- `R1173` [**An element anchor's coordinate is a generated column, so no writer spells it and no check holds it to the key**](element-coordinates-generated.md) — Spec, architecture
+- `R1173` [**A column that renders other columns of its row is generated, so no writer spells it and no check holds it**](element-coordinates-generated.md) — Spec, architecture
 - `R239` [**Lift ColumnBackedField.parentTable from emitter parameter to record component**](column-field-parent-table-record-component.md) — Backlog, architecture
 - `R974` [**Ordinals stop being shifted: the store keeps the number SQL gives it, and the fourteen subtractions go**](ordinals-follow-the-row-number.md) — Backlog, cleanup
 - `R280` [**Typed non-empty carrier for fetcher-registration bodies**](fetcher-bodies-nonempty-carrier.md) — Backlog, cleanup
