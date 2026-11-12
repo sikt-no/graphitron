@@ -35,6 +35,12 @@ directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
 # file. Each entry names a file as @withFacts wrote it, its as: or else its path, or the scenario's
 # own path for its own file, and the capture refuses a name the folder does not hold. It annotates
 # what the run reads and never says what that is: the files read are always the folder's.
+#
+# classpath names the classpath fixture the graph is read over instead of the classpath corpus, one
+# of those ClasspathFixtures declares, each a real compiled root Maven builds; an unknown name is
+# refused. Graphs share a store only when they share a classpath, as they share a catalog, so the
+# code_ rows a store holds, which no graph keys, are one classpath's. A scenario keeps the fixture
+# its first configuration names, never changing it between steps.
 directive @withConfiguration(
   jooqPackage: String,
   supergraph: String,
@@ -47,7 +53,8 @@ directive @withConfiguration(
   sessionState: Boolean,
   sessionHandle: String,
   maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String,
-  fileAnnotations: [FileAnnotation!]
+  fileAnnotations: [FileAnnotation!],
+  classpath: String
 ) repeatable on SCHEMA
 input FileAnnotation { file: String!, tag: String, note: String }
 

@@ -326,8 +326,9 @@ class FactExpectationTest {
      * somebody adds a select here. Types and their kind, fields and arguments at their type
      * expressions, the directives applied where (the author's, claim blocks aside, and the ones
      * expansion minted), the class standing for a type and the shape of result it holds, the defects
-     * and schema problems the reading found, and the configuration the graph is captured under: two
-     * documents stating one schema under two configurations are two examples.
+     * and schema problems the reading found, and the configuration the graph is captured under, its
+     * classpath's roots among it: two documents stating one schema under two configurations are two
+     * examples.
      */
     private static final String SHAPE = """
         SELECT graph_name, CONCAT_WS('|', 'type', coordinate, kind) FROM graphitron_type
@@ -364,6 +365,9 @@ class FactExpectationTest {
           FROM store_graph_lint_excluded_type
         UNION ALL SELECT graph_name, CONCAT_WS('|', 'annotated', ordinal, tag, description_note)
           FROM store_graph_schema_input WHERE tag IS NOT NULL OR description_note IS NOT NULL
+        UNION ALL SELECT g.graph_name, CONCAT_WS('|', 'classpath', g.source_name)
+          FROM store_graph_source g JOIN store_source s ON s.source_name = g.source_name
+          WHERE s.source_kind IN ('DIRECTORY', 'JAR')
         """;
 
     /** The facts {@link #SHAPE} states for each of {@code plain}'s graphs that {@code dsl}'s store holds. */

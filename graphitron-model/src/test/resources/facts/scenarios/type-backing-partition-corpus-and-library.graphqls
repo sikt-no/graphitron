@@ -1,0 +1,15 @@
+# The corpus and library-named on one classpath, in that order. Both declare a FilmBlurbHolder, and a
+# reading resolves a class name two entries declare in classpath order, so the corpus's holder backs
+# Holder and LibHolder alike and only its FilmBlurb is reached from either; the library's own service
+# and input still ground, being declared once.
+extend schema @withConfiguration(classpath: "corpus-and-library-named")
+extend schema @withFacts(docs: [{path: "shapes/type-backing-partition"}])
+
+extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
+  type_name,       class_name,                                               declared_via
+  Holder,          no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, PRODUCER
+  Blurb,           no.sikt.graphitron.rewrite.test.services.FilmBlurb,       ACCESSOR
+  LibHolder,       no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, PRODUCER
+  LibBlurb,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,       ACCESSOR
+  AssignmentInput, lib.Assignment,                                           PRODUCER
+  """)

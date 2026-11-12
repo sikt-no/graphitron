@@ -294,6 +294,18 @@
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <configuration>
+                    <!-- A pinned heap, not the JVM's share of the machine's memory. The shared fact
+                         population (FactGraphs) keeps every store open for the whole fork, about
+                         95 MB a store, and the population-wide checks warm all of them, so the live
+                         set sits near 3.3 GB; the default cap on a 16 GB machine leaves no headroom
+                         and the build would pass or fail on the machine it ran on. -->
+                    <argLine>@{argLine} -Xmx5g</argLine>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 </project>

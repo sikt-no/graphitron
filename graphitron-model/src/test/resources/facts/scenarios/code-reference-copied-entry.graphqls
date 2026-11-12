@@ -1,0 +1,10 @@
+# The code reference the sibling shape states, read over the service-copy classpath fixture, FilmService
+# copied into a root of its own: it resolves through that entry, the only one its classpath holds,
+# as it resolves through the corpus's own entry in a graph read over the corpus.
+extend schema @withConfiguration(classpath: "service-copy")
+extend schema @withFacts(docs: [{path: "shapes/code-reference-sibling"}])
+
+extend schema @expectEquals(relation: "graphitron_code_reference", where: "coordinate = 'Film.titleUppercase'", rows: """
+  method_class_name,                                    method_name
+  no.sikt.graphitron.rewrite.test.services.FilmService, titleUppercase
+  """)

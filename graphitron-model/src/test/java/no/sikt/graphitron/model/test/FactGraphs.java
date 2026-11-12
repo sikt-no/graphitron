@@ -47,7 +47,7 @@ import java.util.stream.Stream;
  * and reads that document's graph from here rather than capturing inline SDL for itself. A document
  * is named by its {@linkplain FactDocuments#path path}, and its graph is captured the first time any
  * class asks for it, by running its {@link Scenario} into {@link CapturedStore#captureFolder}, the one reading of a document, against
- * the catalog the document names and the classpath corpus every document is read over. A class
+ * the catalog the document names and the classpath corpus, or the classpath fixture it names. A class
  * declares the population as an extension and reads inside a transaction:
  *
  * <pre>{@code
@@ -66,10 +66,12 @@ import java.util.stream.Stream;
  *
  * <p><b>Shards.</b> A store has one writing connection, and a capture holds it for its whole
  * transaction, so one store for every graph would serialize every capture in a run. Graphs are
- * spread over {@value #SHARDS_PER_CATALOG} stores per catalog, a graph's store chosen by its name.
- * Graphs share a store only when they share a catalog: a relation keyed by no graph (the catalog
- * and classpath families) holds every row its store's captures wrote, so keeping the catalog one per
- * store keeps those rows the same in every store a graph can land in, whichever classes ran first.
+ * spread over {@value #SHARDS_PER_CATALOG} stores per catalog and classpath, a graph's store chosen by
+ * its name. Graphs share a store only when they share a catalog and a classpath, the
+ * {@linkplain ClasspathFixtures fixture} their document names or the corpus: a relation keyed by no
+ * graph (the catalog and classpath families) holds every row its store's captures wrote, so keeping
+ * one catalog and one classpath per store keeps those rows the same in every store a graph can land
+ * in, whichever classes ran first.
  * The count is a constant rather than read from {@code junit-platform.properties}, which a module
  * may or may not see.
  *
@@ -99,7 +101,7 @@ import java.util.stream.Stream;
  */
 public final class FactGraphs implements AutoCloseable {
 
-    /** How many stores each catalog's graphs are spread over. */
+    /** How many stores each catalog and classpath's graphs are spread over. */
     static final int SHARDS_PER_CATALOG = 4;
 
     /** The system property that, set to {@code false}, captures each inline schema into a fresh store. */
@@ -142,7 +144,7 @@ public final class FactGraphs implements AutoCloseable {
     private final Map<ShardKey, Shard> shards = new ConcurrentHashMap<>();
     private final Map<InlineKey, Pool> inline = new ConcurrentHashMap<>();
 
-    private record ShardKey(Optional<String> catalog, int index) {}
+    private record ShardKey(Optional<String> catalog, Optional<String> classpath, int index) {}
 
     private record InlineKey(Optional<String> catalog, List<ClasspathEntry> classpath) {}
 
@@ -219,7 +221,7 @@ public final class FactGraphs implements AutoCloseable {
 
     private Shard shardOf(String path, CorpusDocuments.Document document) {
         var key = new ShardKey(FactDocuments.catalogPackage(document, fixture),
-            Math.floorMod(path.hashCode(), SHARDS_PER_CATALOG));
+            FactDocuments.classpathFixture(document), Math.floorMod(path.hashCode(), SHARDS_PER_CATALOG));
         return shards.computeIfAbsent(key, ignored -> new Shard());
     }
 
@@ -328,6 +330,7 @@ public final class FactGraphs implements AutoCloseable {
             // the configuration its own file states, and each claim checked as it arrives.
             var scenario = Scenario.load(path);
             var keyed = FactDocuments.catalogPackage(document, fixture);
+            var keyedClasspath = FactDocuments.classpathFixture(document);
             var verification = new Verification(path);
             var built = new CapturedSchema[1];
             var dsl = store.dsl();
@@ -338,7 +341,8 @@ public final class FactGraphs implements AutoCloseable {
                         throw new IllegalArgumentException(path + " changes its catalog between steps;"
                             + " a scenario keeps the catalog its first configuration names");
                     }
-                    built[0] = CapturedStore.captureFolder(dsl, folder, path, catalog, classpath,
+                    built[0] = CapturedStore.captureFolder(dsl, folder, path, catalog,
+                        FactDocuments.classpath(path, keyedClasspath, stated, classpath),
                         FactDocuments.StatedConfiguration.of(texts),
                         FactDocuments.StatedConfiguration.fileAnnotations(texts), at, !first);
                 },

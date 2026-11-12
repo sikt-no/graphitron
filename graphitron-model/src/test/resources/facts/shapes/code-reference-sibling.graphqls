@@ -1,0 +1,11 @@
+# One code reference, at the same coordinate in every graph that pulls this in, naming a method the
+# classpath corpus declares and the service-copy classpath fixture declares again under a root of
+# its own.
+
+type Film @table(name: "film") {
+  filmId: ID @field(name: "FILM_ID")
+  titleUppercase: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+type Query { films: [Film!]! }

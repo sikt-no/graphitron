@@ -41,6 +41,12 @@ import java.util.List;
  * scenario stating only those generates as a build configured with them would, under the
  * annotations its last reading ran under.
  *
+ * <p>A scenario naming a classpath fixture ({@code @withConfiguration(classpath:)}) is skipped too,
+ * for a reason of its own: the code generated here is compiled and run on this module's test
+ * classpath, which holds the classpath corpus and none of a fixture's roots. Generating it over the
+ * fixture would read one classpath and compile against another, so the generated code would name
+ * classes, a fixture library's among them, that the compile cannot see or sees elsewhere.
+ *
  * <p>Test code, because it opens the store: the generator is handed one and never decides which, a
  * mojo or a test does ({@code FactTierBoundaryTest}). {@code graphitron}'s {@code pom.xml} compiles
  * this package ahead of the rest of the test sources, in {@code generate-test-sources}, and runs it
@@ -68,6 +74,8 @@ public final class GenerateTestSchemas {
         var directory = Files.createTempDirectory("graphitron-test-schemas");
         try {
             for (var scenario : FactDocuments.documents(FactDocuments.Claim.SCENARIO)) {
+                // A classpath fixture is run configuration too, and skipped for the reason the class
+                // comment gives: the generated code compiles against this module's test classpath.
                 if (FactDocuments.statesRunConfiguration(scenario)) {
                     continue;
                 }

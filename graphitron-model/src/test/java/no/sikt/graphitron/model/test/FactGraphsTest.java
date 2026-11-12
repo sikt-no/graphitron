@@ -12,6 +12,7 @@ import java.util.concurrent.Callable;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 
+import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -102,6 +103,46 @@ class FactGraphsTest {
                 .map(Seen::tables).findFirst())
             .as("a store holding a graph read with no catalog holds no catalog's tables")
             .contains(0);
+    }
+
+    /** Documents read over a classpath fixture, by the fixture each names. */
+    private static final java.util.Map<String, String> FIXTURE_CLASSPATH = java.util.Map.of(
+        "defects/type-backing-partition-library-named", "library-named",
+        "defects/type-backing-partition-library-nameless", "library-nameless",
+        "scenarios/type-backing-partition-corpus-and-library", "corpus-and-library-named",
+        "scenarios/code-reference-copied-entry", "service-copy");
+
+    @Test
+    @DisplayName("graphs of different classpaths never share a store, so a class read off a fixture is no row beside a corpus graph")
+    void storesAreKeyedByClasspath() {
+        var asked = new ArrayList<>(DEFAULT_CATALOG);
+        asked.addAll(FIXTURE_CLASSPATH.keySet());
+        FACTS.warm(asked);
+
+        var corpus = Set.copyOf(DEFAULT_CATALOG);
+        record Seen(Set<String> held, int libraryClasses) {}
+        var stores = FACTS.eachStore((dsl, held) -> new Seen(held,
+            dsl.fetchCount(CODE_CLASS, CODE_CLASS.CLASS_NAME.eq("lib.HolderService"))));
+
+        for (var store : stores) {
+            var classpaths = store.held().stream()
+                .map(graph -> corpus.contains(graph) ? "corpus" : FIXTURE_CLASSPATH.getOrDefault(graph, "other"))
+                .filter(kind -> !kind.equals("other"))
+                .distinct()
+                .toList();
+            assertThat(classpaths).as("classpaths sharing the store holding %s", store.held())
+                .hasSizeLessThanOrEqualTo(1);
+        }
+        assertThat(stores.stream().filter(store -> store.held().stream().anyMatch(corpus::contains))
+                .map(Seen::libraryClasses).toList())
+            .as("code_class, keyed by no graph, holds no class of the library in a store of corpus graphs")
+            .isNotEmpty()
+            .containsOnly(0);
+        assertThat(stores.stream()
+                .filter(store -> store.held().contains("defects/type-backing-partition-library-named"))
+                .map(Seen::libraryClasses).toList())
+            .as("while the store of a graph read over the library holds it")
+            .containsExactly(1);
     }
 
     @Test

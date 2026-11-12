@@ -237,10 +237,11 @@ public final class CapturedStore implements AutoCloseable {
     /**
      * A fact document run into a store of the caller's own, under {@code graphName}: the store
      * captures the scenario's readings as a build reads a folder, each step under the configuration
-     * the document states and its catalog read over {@code fixture}, against {@code classpath}. The
-     * document's claims are not checked here, {@code FactExpectationTest} checks them; this is for a
-     * test whose subject needs a store the shared population cannot give it, a store it writes,
-     * fails, times or fills with graphs it chooses, while its schema stays a document.
+     * the document states and its catalog read over {@code fixture}, against the classpath fixture it
+     * names or, where it names none, {@code classpath}. The document's claims are not checked here,
+     * {@code FactExpectationTest} checks them; this is for a test whose subject needs a store the
+     * shared population cannot give it, a store it writes, fails, times or fills with graphs it
+     * chooses, graphs of two classpaths among them, while its schema stays a document.
      */
     public static CapturedStore ownStoreOfDocument(Path directory, String path, String graphName,
                                                    CatalogInput fixture,
@@ -265,10 +266,12 @@ public final class CapturedStore implements AutoCloseable {
     private static CapturedSchema runDocument(DSLContext dsl, Path folder, String path, String graphName,
                                               CatalogInput fixture, List<ClasspathEntry> classpath) {
         var built = new CapturedSchema[1];
+        var keyed = FactDocuments.at(path).flatMap(FactDocuments::classpathFixture);
         Scenario.load(path).run(folder, (rendered, at, first, stated) -> {
                 var texts = stated.isEmpty() ? List.<String>of() : List.of(stated);
                 built[0] = captureFolder(dsl, rendered, graphName,
-                    FactDocuments.StatedConfiguration.catalog(texts, fixture), classpath,
+                    FactDocuments.StatedConfiguration.catalog(texts, fixture),
+                    FactDocuments.classpath(path, keyed, stated, classpath),
                     FactDocuments.StatedConfiguration.of(texts),
                     FactDocuments.StatedConfiguration.fileAnnotations(texts), at, !first);
             },

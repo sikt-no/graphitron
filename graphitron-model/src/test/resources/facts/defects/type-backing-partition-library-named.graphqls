@@ -1,0 +1,12 @@
+# The partition schema read over the classpath-fixture library compiled with -parameters alone:
+# LibHolder is grounded under the corpus's class name and hops to the library's Blurb, and the
+# parameter's name feeds AssignmentInput; the corpus half grounds nothing.
+extend schema @withConfiguration(classpath: "library-named")
+extend schema @withFacts(docs: [{path: "shapes/type-backing-partition"}])
+
+extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
+  type_name,       class_name,                                               declared_via
+  LibHolder,       no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, PRODUCER
+  LibBlurb,        lib.Blurb,                                                ACCESSOR
+  AssignmentInput, lib.Assignment,                                           PRODUCER
+  """)

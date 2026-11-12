@@ -239,6 +239,42 @@ public final class FactDocuments {
     }
 
     /**
+     * The classpath fixture a document's graph is read over: the one its first configuration names
+     * with {@code classpath:}, or none where it names none, the graph then read over the
+     * {@linkplain ClasspathCorpus corpus}. Graphs share a store only when they share this, as they
+     * share a catalog, so the {@code code_} rows a store holds, which no graph keys, are one
+     * classpath's. An unknown name is refused.
+     */
+    public static Optional<String> classpathFixture(CorpusDocuments.Document document) {
+        return StatedConfiguration.first(document.sdl())
+            .map(directive -> graphql.language.AstPrinter.printAst(graphql.language.SchemaExtensionDefinition
+                .newSchemaExtensionDefinition().directive(directive).build()))
+            .flatMap(text -> StatedConfiguration.classpathFixture(List.of(text)));
+    }
+
+    /**
+     * The classpath a reading of the scenario {@code path} runs over, under {@code configuration},
+     * the {@code extend schema @withConfiguration(...)} text a {@link Scenario} hands its capture:
+     * the entries of the fixture it names, or {@code fallback} where it names none. A scenario keeps
+     * the fixture its first configuration names, {@code first}, as it keeps its catalog: its graph's
+     * store was chosen by it, and the {@code code_} rows a reading over another classpath writes are
+     * keyed by no graph, so they would sit beside graphs that never read it. A reading naming
+     * another is refused.
+     */
+    public static List<ClasspathEntry> classpath(String path, Optional<String> first, String configuration,
+                                                 List<ClasspathEntry> fallback) {
+        var named = StatedConfiguration.classpathFixture(
+            configuration.isEmpty() ? List.of() : List.of(configuration));
+        if (!named.equals(first)) {
+            throw new IllegalArgumentException(path + " changes its classpath between steps, from "
+                + first.orElse("the corpus") + " to " + named.orElse("the corpus")
+                + "; a scenario keeps the classpath fixture its first configuration names, since"
+                + " its store is chosen by it");
+        }
+        return named.map(ClasspathFixtures::entries).orElse(fallback);
+    }
+
+    /**
      * The catalog a plain document's graph is captured against: the one its configuration names,
      * {@code fixture} where it names none, or none at all where it names {@code null}. Graphs share
      * a store only when they share this, so a relation keyed by no graph holds the same rows
@@ -266,6 +302,28 @@ public final class FactDocuments {
         private static final String DIRECTIVE = "withConfiguration";
 
         static final String FILE_ANNOTATIONS = "fileAnnotations";
+
+        static final String CLASSPATH = "classpath";
+
+        /**
+         * The classpath fixture the configuration names, or none where it names none. A name
+         * {@link ClasspathFixtures} does not hold is refused here, where it is read, rather than at
+         * the capture it would have misled.
+         */
+        static Optional<String> classpathFixture(List<String> texts) {
+            var named = application(texts)
+                .map(directive -> directive.getArgument(CLASSPATH))
+                .map(argument -> text(argument.getValue(), CLASSPATH));
+            named.ifPresent(name -> {
+                if (!ClasspathFixtures.names().contains(name)) {
+                    throw new IllegalArgumentException("@" + DIRECTIVE + "(" + CLASSPATH + ":) names '"
+                        + name + "', which is no classpath fixture; the fixtures are "
+                        + ClasspathFixtures.names() + ", and a document naming none is read over the"
+                        + " classpath corpus");
+                }
+            });
+            return named;
+        }
 
         /** Every configuration {@code text} states, at any step, in script order. */
         static List<Directive> all(String text) {

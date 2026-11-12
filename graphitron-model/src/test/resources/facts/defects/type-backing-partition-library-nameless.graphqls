@@ -1,0 +1,10 @@
+# The same library compiled without -parameters, its one difference from library-named: a parameter
+# compiled without its name feeds nothing, so AssignmentInput has no backing.
+extend schema @withConfiguration(classpath: "library-nameless")
+extend schema @withFacts(docs: [{path: "shapes/type-backing-partition"}])
+
+extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
+  type_name, class_name,                                               declared_via
+  LibHolder, no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, PRODUCER
+  LibBlurb,  lib.Blurb,                                                ACCESSOR
+  """)

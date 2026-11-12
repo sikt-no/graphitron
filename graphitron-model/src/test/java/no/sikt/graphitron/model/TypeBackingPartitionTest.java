@@ -1,192 +1,80 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.test.CatalogInput;
-
-import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
-import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
-import javax.tools.ToolProvider;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Which class backs a type, read by graphs whose classpaths differ.
+ * Which class backs a type, read by graphs whose classpaths differ, sharing one store.
  *
- * <p>Java rather than a fact document because a document cannot vary its classpath, and every case
- * here is about the classpath. The second classpath is a small library compiled by this test, twice:
- * once with {@code -parameters} and once without, which is the one difference between the
- * {@code named} and {@code nameless} graphs. It declares a {@code FilmBlurbHolder} under the service
- * corpus's own name and with other contents, so a graph reading both entries meets one class name
- * twice. Compiled here rather than kept as a module because both differences are a compiler's to
- * make, and capture reads the bytes it makes exactly as it reads the corpus's.
+ * <p>What each graph's classpath makes of the one schema, {@code shapes/type-backing-partition}, is
+ * claimed by the documents reading it over the corpus and over the classpath fixtures:
+ * {@code defects/type-backing-partition-corpus}, {@code -library-named}, {@code -library-nameless}
+ * and {@code scenarios/type-backing-partition-corpus-and-library}. The population reads each in a
+ * store of its classpath's own. What is left here is the partition: the corpus graph and the two
+ * library graphs captured into one store, in that order, each answering what it answers alone, so a
+ * graph is grounded and hops on its own classpath only.
  *
- * <p>Every graph reads one schema. Holder is produced by a service only the corpus declares and
- * LibHolder by one only the library declares, so in each graph the half its classpath lacks grounds
- * nothing. The rest of what the relation answers is in {@code facts/type-backing*.graphqls}.
+ * <p>The corpus-and-library graph is not among them. A reading resolves a class name two entries
+ * declare in classpath order, and an entry another graph has already read into the store is not read
+ * again, so beside a graph that read the corpus first its answer is not the one it gives alone.
  */
 class TypeBackingPartitionTest {
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     @TempDir
-    static Path tmp;
+    Path tmp;
 
-    private static CapturedStore captured;
+    /** Each graph of the shared store, by the document it reads. */
+    private static final Map<String, String> GRAPHS = graphs();
 
-    private static final String SERVICES = "no.sikt.graphitron.rewrite.test.services";
-    private static final String HOLDER = SERVICES + ".FilmBlurbHolder";
-    private static final String BLURB = SERVICES + ".FilmBlurb";
-
-    private static final String SDL = """
-        extend type Query {
-            holder(filmId: Int): Holder
-                @service(service: {className: "%1$s.FilmBlurbHolderService", method: "byId"})
-            libHolder(filmId: Int): LibHolder
-                @service(service: {className: "lib.HolderService", method: "byId"})
-            assign(in: AssignmentInput): String
-                @service(service: {className: "lib.HolderService", method: "assign"})
-        }
-
-        type Holder { blurb: Blurb }
-        type Blurb { description: String }
-        type LibHolder { blurb: LibBlurb }
-        type LibBlurb { description: String }
-        input AssignmentInput { note: String }
-        """.formatted(SERVICES);
-
-    /** The library: the holder under the corpus's name, what it holds, and a service for both. */
-    private static final Map<String, String> LIBRARY = Map.of(
-        SERVICES.replace('.', '/') + "/FilmBlurbHolder.java", """
-            package %s;
-            public record FilmBlurbHolder(lib.Blurb blurb) {}
-            """.formatted(SERVICES),
-        "lib/Blurb.java", """
-            package lib;
-            public record Blurb(String description) {}
-            """,
-        "lib/Assignment.java", """
-            package lib;
-            public record Assignment(String note) {}
-            """,
-        "lib/HolderService.java", """
-            package lib;
-            public final class HolderService {
-                private HolderService() {}
-                public static %s.FilmBlurbHolder byId(Integer filmId) {
-                    return new %s.FilmBlurbHolder(new Blurb(""));
-                }
-                public static String assign(Assignment in) {
-                    return in.note();
-                }
-            }
-            """.formatted(SERVICES, SERVICES));
-
-    @BeforeAll
-    static void captureFourGraphs() throws IOException {
-        var ctx = TestRunContext.of();
-        var jooq = CatalogInput.of(ctx);
-        var corpus = ClasspathCorpus.entries();
-        var named = library("named", true);
-        var nameless = library("nameless", false);
-        var both = new ArrayList<>(corpus);
-        both.addAll(named);
-
-        captured = CapturedStore.ofCatalogWith(tmp.resolve("store"), "own", SDL, jooq,
-            corpus);
-        captured.andCatalogGraphWith("named", SDL, jooq, named);
-        captured.andCatalogGraphWith("nameless", SDL, jooq, nameless);
-        captured.andCatalogGraphWith("both", SDL, jooq, both);
-    }
-
-    @AfterAll
-    static void closeTheStore() {
-        if (captured != null) {
-            captured.close();
-        }
+    private static Map<String, String> graphs() {
+        var graphs = new LinkedHashMap<String, String>();
+        graphs.put("own", "defects/type-backing-partition-corpus");
+        graphs.put("named", "defects/type-backing-partition-library-named");
+        graphs.put("nameless", "defects/type-backing-partition-library-nameless");
+        return graphs;
     }
 
     @Test
-    @DisplayName("a graph is grounded and hops on its own classpath only")
+    @DisplayName("a graph is grounded and hops on its own classpath only, beside graphs of other classpaths")
     void aGraphIsGroundedAndHopsOnItsOwnMembershipOnly() {
-        assertThat(backings("own")).containsExactlyInAnyOrder(
-            "Holder=" + HOLDER + " PRODUCER",
-            "Blurb=" + BLURB + " ACCESSOR");
-        assertThat(backings("named")).containsExactlyInAnyOrder(
-            "LibHolder=" + HOLDER + " PRODUCER",
-            "LibBlurb=lib.Blurb ACCESSOR",
-            "AssignmentInput=lib.Assignment PRODUCER");
+        var jooq = CatalogInput.of(TestRunContext.of());
+        var documents = List.copyOf(GRAPHS.entrySet());
+        try (var captured = CapturedStore.ownStoreOfDocument(tmp, documents.getFirst().getValue(),
+                documents.getFirst().getKey(), jooq, ClasspathCorpus.entries())) {
+            documents.stream().skip(1).forEach(graph ->
+                captured.andDocument(graph.getValue(), graph.getKey(), jooq, ClasspathCorpus.entries()));
+
+            GRAPHS.forEach((graph, document) -> assertThat(backings(captured.dsl(), graph))
+                .as("%s beside the others, against %s read alone", graph, document)
+                .containsExactlyInAnyOrderElementsOf(FACTS.read(document,
+                    alone -> backings(alone.handle().dsl(), alone.handle().graphName()))));
+        }
     }
 
-    @Test
-    @DisplayName("a parameter compiled without its name feeds nothing")
-    void aParameterWithNoNameFeedsNothing() {
-        assertThat(backings("nameless")).containsExactlyInAnyOrder(
-            "LibHolder=" + HOLDER + " PRODUCER",
-            "LibBlurb=lib.Blurb ACCESSOR");
-    }
-
-    @Test
-    @DisplayName("one class name on two entries is two classes, both backing the types they reach")
-    void oneClassNameOnTwoEntriesIsTwoClasses() {
-        assertThat(backings("both")).containsExactlyInAnyOrder(
-            "Holder=" + HOLDER + " PRODUCER",
-            "Blurb=" + BLURB + " ACCESSOR",
-            "Blurb=lib.Blurb ACCESSOR",
-            "LibHolder=" + HOLDER + " PRODUCER",
-            "LibBlurb=" + BLURB + " ACCESSOR",
-            "LibBlurb=lib.Blurb ACCESSOR",
-            "AssignmentInput=lib.Assignment PRODUCER");
-    }
-
-    private static List<String> backings(String graph) {
-        DSLContext dsl = captured.dsl();
+    private static List<String> backings(DSLContext dsl, String graph) {
         var b = GRAPHITRON_TYPE_BACKING;
         return dsl.select(b.TYPE_NAME, b.CLASS_NAME, b.DECLARED_VIA)
             .from(b)
             .where(b.GRAPH_NAME.eq(graph))
             .fetch(r -> r.value1() + "=" + r.value2() + " " + r.value3());
-    }
-
-    /** The library compiled under a root of its own, as the consumer's own code. */
-    private static List<ClasspathEntry> library(String name, boolean parameters) throws IOException {
-        Path sources = tmp.resolve(name + "-src");
-        Path classes = Files.createDirectories(tmp.resolve(name + "-classes"));
-        var files = new ArrayList<String>();
-        for (var source : LIBRARY.entrySet()) {
-            Path file = sources.resolve(source.getKey());
-            Files.createDirectories(file.getParent());
-            Files.writeString(file, source.getValue());
-            files.add(file.toString());
-        }
-        var args = new ArrayList<>(List.of("-d", classes.toString()));
-        if (parameters) {
-            args.add("-parameters");
-        }
-        args.addAll(files);
-        int status = ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            args.toArray(String[]::new));
-        if (status != 0) {
-            throw new IllegalStateException("the " + name + " library does not compile");
-        }
-        try (Stream<Path> written = Files.walk(classes)) {
-            assertThat(written.anyMatch(p -> p.toString().endsWith("HolderService.class")))
-                .as("the %s library compiled to %s", name, classes).isTrue();
-        }
-        return List.of(new ClasspathEntry(classes, ClasspathEntry.Origin.REACTOR,
-            "no.sikt:graphitron-test-" + name, null));
     }
 }

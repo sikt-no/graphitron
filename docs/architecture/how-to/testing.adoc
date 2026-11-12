@@ -109,7 +109,7 @@ A document is SDL plus its claims, each a directive on `extend schema` naming a 
 | `@assertEmpty(relation:)` | the relation holds no row in the graph
 |===
 
-Each takes an optional `where:`, SQL over the relation's own columns, narrowing what the claim ranges over. A relation that carries no graph is the store's, shared by every document, and takes only `@assertContains` and `@assertAbsent`. The document's scenario is stated with the same vocabulary: `@withFacts(docs:)` pulls in the building blocks under `shapes/` and `layouts/`, `@tick(ms:)` moves the clock so a later `@withFacts` is a second reading, and `@withConfiguration` sets the configuration the following captures run under, its `fileAnnotations` giving a file the folder holds the tag or description note a schema input entry configures, never adding one to what the capture reads. A claim is checked against the store as the step before it left it.
+Each takes an optional `where:`, SQL over the relation's own columns, narrowing what the claim ranges over. A relation that carries no graph is the store's, shared by every document, and takes only `@assertContains` and `@assertAbsent`. The document's scenario is stated with the same vocabulary: `@withFacts(docs:)` pulls in the building blocks under `shapes/` and `layouts/`, `@tick(ms:)` moves the clock so a later `@withFacts` is a second reading, and `@withConfiguration` sets the configuration the following captures run under, its `fileAnnotations` giving a file the folder holds the tag or description note a schema input entry configures, never adding one to what the capture reads, and its `classpath` naming a classpath fixture the graph is read over instead of the classpath corpus. A fixture is a named arrangement of roots in `ClasspathFixtures`, each root real Java that Maven compiles in `graphitron-sakila-service`; graphs share a store only when they share a classpath, and a scenario keeps the fixture its first configuration names. A claim is checked against the store as the step before it left it.
 
 A test reads a document through `FactGraphs.reader()`, registered as an extension, as `FACTS.read("scenarios/field-key-row", graph -> ...)`: the graph is captured once for the run, whoever asks first, and handed over through a connection that can only select. An expectation that is not a store row, or that a module adds without editing the document, goes in an assertion file under that module's `src/test/resources/fact-assertions/`, naming its document with `@factDocument(path:)`; it only adds to what the document states.
 
@@ -183,9 +183,9 @@ path is referenced by the manual and by assertion files, and a move updates them
 
 === Keep a store of your own only for a reason
 
-A test that writes, times or fails a store, or that captures a document under a configuration or a
-classpath its scenario does not state, captures into a store it owns. Everything else reads the
-shared population.
+A test that writes, times or fails a store, that captures a document under a configuration or a
+classpath its scenario does not state, or that puts graphs of two classpaths in one store, captures
+into a store it owns. Everything else reads the shared population.
 
 === What is not an example
 

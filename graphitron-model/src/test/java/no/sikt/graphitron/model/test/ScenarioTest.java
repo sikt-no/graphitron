@@ -365,6 +365,85 @@ class ScenarioTest {
         }
     }
 
+    private static final List<no.sikt.graphitron.model.config.ClasspathEntry> CORPUS = ClasspathCorpus.entries();
+
+    @Test
+    @DisplayName("classpath names a fixture its readings run over, and a scenario naming none runs over the classpath it is handed")
+    void classpathNamesAFixture() throws IOException {
+        var scenario = """
+            extend schema @withConfiguration(classpath: "library-named")
+            type Rating { stars: Int }
+            """;
+        var first = FactDocuments.classpathFixture(new CorpusDocuments.Document("s", scenario, null));
+        assertThat(first).contains("library-named");
+
+        var run = run("scenarios/s", Map.of("scenarios/s", scenario));
+        assertThat(run.captures()).singleElement().satisfies(capture ->
+            assertThat(FactDocuments.classpath("scenarios/s", first, capture.configuration(), CORPUS))
+                .isEqualTo(ClasspathFixtures.entries("library-named"))
+                .extracting(entry -> entry.coordinate())
+                .containsExactly("no.sikt:graphitron-test-library-named"));
+
+        var plain = run("scenarios/p", Map.of("scenarios/p", "type Rating { stars: Int }\n"));
+        assertThat(FactDocuments.classpath("scenarios/p", Optional.empty(),
+                plain.captures().getFirst().configuration(), CORPUS))
+            .isSameAs(CORPUS);
+    }
+
+    @Test
+    @DisplayName("a classpath naming no fixture is refused, naming the fixtures there are")
+    void classpathNamesAKnownFixture() {
+        assertThatThrownBy(() -> FactDocuments.classpathFixture(new CorpusDocuments.Document("s", """
+                extend schema @withConfiguration(classpath: "no-such-fixture")
+                type Rating { stars: Int }
+                """, null)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("'no-such-fixture', which is no classpath fixture")
+            .hasMessageContaining("library-named");
+    }
+
+    @Test
+    @DisplayName("classpath in a document pulled in is ignored, as the rest of its configuration is")
+    void classpathPulledInIsIgnored() throws IOException {
+        var run = run("scenarios/s", Map.of(
+            "scenarios/s", """
+                extend schema @withFacts(docs: [{path: "shapes/a"}])
+                type Rating { stars: Int }
+                """,
+            "shapes/a", """
+                extend schema @withConfiguration(classpath: "library-named")
+                type Film { title: String }
+                """));
+
+        assertThat(run.captures()).hasSize(2).allSatisfy(capture ->
+            assertThat(FactDocuments.classpath("scenarios/s", Optional.empty(), capture.configuration(), CORPUS))
+                .isSameAs(CORPUS));
+    }
+
+    @Test
+    @DisplayName("a scenario keeps the classpath fixture its first configuration names: a later step naming another is refused")
+    void classpathKeptBetweenSteps() {
+        var scenario = """
+            extend schema @withConfiguration(classpath: "library-named")
+            type Rating { stars: Int }
+            extend schema @tick(ms: 60000)
+            extend schema @withConfiguration(maxAllowedPageSize: 10)
+            extend schema @withFacts(docs: [{path: "shapes/a"}])
+            """;
+        var first = FactDocuments.classpathFixture(new CorpusDocuments.Document("s", scenario, null));
+        var readings = new ArrayList<String>();
+        assertThatThrownBy(() -> Scenario.load("scenarios/s", p -> Optional.ofNullable(Map.of(
+                "scenarios/s", scenario, "shapes/a", "type Film { title: String }\n").get(p)))
+            .run(folder, (dir, at, isFirst, configuration) -> {
+                    FactDocuments.classpath("scenarios/s", first, configuration, CORPUS);
+                    readings.add(configuration);
+                },
+                claim -> { }))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("scenarios/s changes its classpath between steps, from library-named to the corpus");
+        assertThat(readings).as("the first reading ran over the fixture").hasSize(1);
+    }
+
     private Run run(String path, Map<String, String> documents) throws IOException {
         var captures = new ArrayList<Capture>();
         var claims = new ArrayList<Scenario.Claim>();

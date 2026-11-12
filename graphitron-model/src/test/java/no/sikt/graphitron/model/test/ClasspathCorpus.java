@@ -20,6 +20,10 @@ import java.util.List;
  * extensions already and is where a shape a test needs and cannot find should be added. It is a
  * test dependency of this module, so a class it does not carry is a class to write there rather
  * than a row to seed here.
+ *
+ * <p>Every fact document is read over this corpus unless it names a {@linkplain ClasspathFixtures
+ * classpath fixture}, an arrangement of other roots for a case the corpus cannot state, such as one
+ * class name declared by two entries or a library compiled without parameter names.
  */
 public final class ClasspathCorpus {
 

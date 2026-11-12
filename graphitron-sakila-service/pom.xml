@@ -90,6 +90,70 @@
                             </includes>
                         </configuration>
                     </execution>
+                    <!-- Classpath fixtures: code a test reads as a classpath other than the corpus,
+                         so it never joins the corpus's own output. src/fixture/library is a small
+                         library declaring a class under a corpus class's name with other contents,
+                         compiled twice, with -parameters and without, which is the one difference
+                         between the two roots. Each compiles into a directory of its own and the
+                         package-classes execution below carries it in this module's output as one
+                         jar resource, which a classpath walk skips: the corpus is every classfile
+                         under the output, and a fixture's classfiles are not the corpus's. The
+                         fixture harness in graphitron-model's tests reads the resource and arranges
+                         the roots. -->
+                    <execution>
+                        <id>compile-library-named</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <parameters>true</parameters>
+                            <compileSourceRoots>
+                                <compileSourceRoot>${project.basedir}/src/fixture/library/java</compileSourceRoot>
+                            </compileSourceRoots>
+                            <outputDirectory>${project.build.directory}/fixture-classes/library-named</outputDirectory>
+                            <generatedSourcesDirectory>${project.build.directory}/generated-sources/fixture-library-named</generatedSourcesDirectory>
+                            <proc>none</proc>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>compile-library-nameless</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>compile</goal>
+                        </goals>
+                        <configuration>
+                            <parameters>false</parameters>
+                            <compileSourceRoots>
+                                <compileSourceRoot>${project.basedir}/src/fixture/library/java</compileSourceRoot>
+                            </compileSourceRoots>
+                            <outputDirectory>${project.build.directory}/fixture-classes/library-nameless</outputDirectory>
+                            <generatedSourcesDirectory>${project.build.directory}/generated-sources/fixture-library-nameless</generatedSourcesDirectory>
+                            <proc>none</proc>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>package-classpath-fixtures</id>
+                        <phase>process-classes</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <target>
+                                <jar destfile="${project.build.outputDirectory}/classpath-fixtures/library-named.jar"
+                                     basedir="${project.build.directory}/fixture-classes/library-named"/>
+                                <jar destfile="${project.build.outputDirectory}/classpath-fixtures/library-nameless.jar"
+                                     basedir="${project.build.directory}/fixture-classes/library-nameless"/>
+                            </target>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

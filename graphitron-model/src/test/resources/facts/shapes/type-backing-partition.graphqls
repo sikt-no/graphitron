@@ -1,0 +1,19 @@
+# One schema for graphs read over different classpaths. Holder is produced by a service only the
+# classpath corpus declares, LibHolder by one only the classpath-fixture library declares, and
+# AssignmentInput is fed by a library parameter only its name can match; so in each graph the half
+# its classpath lacks grounds nothing.
+
+type Query {
+  holder(filmId: Int): Holder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  libHolder(filmId: Int): LibHolder
+    @service(service: {className: "lib.HolderService", method: "byId"})
+  assign(in: AssignmentInput): String
+    @service(service: {className: "lib.HolderService", method: "assign"})
+}
+
+type Holder { blurb: Blurb }
+type Blurb { description: String }
+type LibHolder { blurb: LibBlurb }
+type LibBlurb { description: String }
+input AssignmentInput { note: String }

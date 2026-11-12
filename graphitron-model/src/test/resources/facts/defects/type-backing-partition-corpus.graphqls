@@ -1,0 +1,9 @@
+# The partition schema read over the classpath corpus alone: Holder is grounded and hops to Blurb,
+# and the library half grounds nothing, its service a class the reading never met.
+extend schema @withFacts(docs: [{path: "shapes/type-backing-partition"}])
+
+extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
+  type_name, class_name,                                               declared_via
+  Holder,    no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, PRODUCER
+  Blurb,     no.sikt.graphitron.rewrite.test.services.FilmBlurb,       ACCESSOR
+  """)
