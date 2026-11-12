@@ -29,10 +29,10 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-29 <sub>created 2026-08-27</sub> | [plan](corpus-directives-to-expect-equals.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R920` | a failed batch logs once, without its SQL, and a consumer can cap batch size | Spec | 2026-11-11 <sub>created 2026-09-04</sub> | [plan](batch-failure-logs-once-not-per-field.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1168` | An error handler that an earlier handler shadows is reported, as a warning or an error <sub>blocked by: [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)</sub> | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](shadowed-error-handler-is-reported.md) |
 | `R1167` | Error-channel dispatch routes every throw where Graphitron 9 routed it | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](error-dispatch-matches-graphitron-9.md) |
+| `R920` | a failed batch logs once, without its SQL, and a consumer can cap batch size | Ready | 2026-11-12 <sub>created 2026-09-04</sub> | [plan](batch-failure-logs-once-not-per-field.md) |
 | `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | In Progress | 2026-11-12 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -597,7 +597,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1171` [**A default @error member receives the throws Graphitron 9 handed to consumer code**](error-channel-default-member.md) — Backlog, dx, blocked by [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)
 - `R1168` [**An error handler that an earlier handler shadows is reported, as a warning or an error**](shadowed-error-handler-is-reported.md) — Ready, dx, blocked by [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)
 - `R1167` [**Error-channel dispatch routes every throw where Graphitron 9 routed it**](error-dispatch-matches-graphitron-9.md) — Ready, dx
-- `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Spec, bug
+- `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Ready, bug
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
 - `R1147` [**A claimed exception with no message nulls the whole errors list**](claimed-error-without-message-nulls-errors.md) — Backlog, bug
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture

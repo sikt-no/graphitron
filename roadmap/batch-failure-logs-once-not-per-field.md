@@ -1,13 +1,13 @@
 ---
 id: R920
 title: "a failed batch logs once, without its SQL, and a consumer can cap batch size"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: error-channel
 depends-on: []
 created: 2026-09-04
-last-updated: 2026-11-11
+last-updated: 2026-11-12
 ---
 
 # a failed batch logs once, without its SQL, and a consumer can cap batch size
@@ -544,3 +544,31 @@ It noted the lint rule sees only the sakila example's output; taken, the body no
 noted that `docs/manual/reference/runtime-api.adoc` states none of the `GraphitronRuntime` hooks,
 the two existing ones included, and that whether hooks belong on that page is unwritten; not
 acted on here, raised with the user as a question for Alf and Filip.
+
+### Round 2: Spec → Ready (session_01FY5Uvrd4MaxcxdSzZ52C47, 2026-11-12)
+
+Verdict: sign off. Both questions are answered.
+
+Question one. The goal reads on its own as three consumer-visible changes: a failure that reaches
+many fields is one log record and one reference that every field's error quotes; a database
+failure's default record is a one-line summary with the full exception at DEBUG; and a runtime
+hook bounds the keys in one batched query, unbounded by default. Each is reachable. The claims the
+body makes about java-dataloader 6.0.0 were run against the jar rather than read: each field's
+`thenApply` tail receives its own `CompletionException` whose cause is the one shared instance,
+for a thrown batch function and a failed future alike; with `setMaxBatchSize` the batch function
+is called once per chunk with that chunk's key contexts, for positional and mapped loaders; and a
+failed chunk fails only its own keys while later chunks run.
+
+Question two. The memo is a second map on the existing claim record, the hook sits where the two
+existing hooks sit and is published the way they are, the loader fragment follows
+`ErrorDispatchFragments`, and the compile-graph edges and both pins match the tree as it stands.
+Round 1's two findings are answered in the body.
+
+Non-blocking, for the implementer and the Done reviewer:
+
+* "Either can land first" has one exception: the cap's last test case (one record per failed
+  chunk) needs the first commit's database fixture and memo, so the log commit lands first or that
+  case moves with it.
+* No page under `docs/manual/reference/` states any `GraphitronRuntime` hook, and this item adds a
+  third and changes a default log line. The Done gate's reference check will ask where the rule is
+  written, so the question the handover left with Alf and Filip wants an answer before In Review.
