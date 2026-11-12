@@ -363,7 +363,6 @@ class FactExpectationTest {
         UNION ALL SELECT graph_name, CONCAT_WS('|', 'supergraph', supergraph_name)
           FROM store_graph_supergraph
         UNION ALL SELECT graph_name, CONCAT_WS('|', 'tenant', column_name) FROM store_graph_tenant_column
-        UNION ALL SELECT graph_name, CONCAT_WS('|', 'lint off', rule_id) FROM store_graph_lint_disabled_rule
         UNION ALL SELECT graph_name, CONCAT_WS('|', 'lint skips', type_pattern)
           FROM store_graph_lint_excluded_type
         UNION ALL SELECT graph_name, CONCAT_WS('|', 'annotated', ordinal, tag, description_note)

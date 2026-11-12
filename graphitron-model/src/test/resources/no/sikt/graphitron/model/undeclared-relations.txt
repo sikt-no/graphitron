@@ -32,7 +32,6 @@ rejection_validation_error
 rejection_validation_error_directive
 sql_table_record_supertype
 store_graph
-store_graph_lint_disabled_rule
 store_graph_lint_excluded_type
 store_graph_output
 store_graph_schema_extension

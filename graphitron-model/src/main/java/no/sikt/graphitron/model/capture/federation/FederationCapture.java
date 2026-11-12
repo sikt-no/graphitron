@@ -36,7 +36,6 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DEFINITION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
 import static no.sikt.graphitron.model.Tables.FEDERATION_WRITTEN_VERSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -135,10 +134,6 @@ public final class FederationCapture {
             .flatMap(d -> d.item().arguments().stream()
                 .map(argument -> new Placed<>(d.version(), d.definition(), argument)))
             .toList(), readAt);
-        writeLocations(dsl, definitions.stream()
-            .flatMap(d -> d.item().locations().stream()
-                .map(location -> new Placed<>(d.version(), d.definition(), location)))
-            .toList(), readAt);
         writeImports(dsl, definitions.stream().filter(d -> d.item().importable()).toList(), readAt);
         sweep(dsl, readAt);
         dsl.update(s)
@@ -219,22 +214,6 @@ public final class FederationCapture {
                 .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
     }
 
-    private static void writeLocations(DSLContext dsl, List<Placed<String>> locations,
-                                       LocalDateTime readAt) {
-        var l = FEDERATION_VERSION_DIRECTIVE_LOCATION;
-        var rows = locations.stream().collect(Rows.toRowList(
-            p -> val(SOURCE_NAME, l.SOURCE_NAME),
-            p -> val(p.version(), l.VERSION),
-            p -> val(p.definition().name(), l.NAME),
-            p -> val(p.item(), l.LOCATION),
-            p -> val(readAt, l.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(l, l.SOURCE_NAME, l.VERSION, l.NAME, l.LOCATION, l.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(l.TOUCHED_AT, excluded(l.TOUCHED_AT)));
-    }
-
     private static void writeImports(DSLContext dsl, List<Placed<Definition>> importable,
                                      LocalDateTime readAt) {
         var i = FEDERATION_VERSION_IMPORT;
@@ -262,8 +241,6 @@ public final class FederationCapture {
         dsl.deleteFrom(d).where(d.SOURCE_NAME.eq(SOURCE_NAME)).and(d.TOUCHED_AT.ne(readAt)).execute();
         var a = FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
         dsl.deleteFrom(a).where(a.SOURCE_NAME.eq(SOURCE_NAME)).and(a.TOUCHED_AT.ne(readAt)).execute();
-        var l = FEDERATION_VERSION_DIRECTIVE_LOCATION;
-        dsl.deleteFrom(l).where(l.SOURCE_NAME.eq(SOURCE_NAME)).and(l.TOUCHED_AT.ne(readAt)).execute();
         var i = FEDERATION_VERSION_IMPORT;
         dsl.deleteFrom(i).where(i.SOURCE_NAME.eq(SOURCE_NAME)).and(i.TOUCHED_AT.ne(readAt)).execute();
     }
@@ -281,7 +258,7 @@ public final class FederationCapture {
 
     /** One definition, under the specification's name and the one the library gives it unimported. */
     record Definition(String name, String kind, String unimportedName, Boolean repeatable,
-                      String description, List<Argument> arguments, List<String> locations,
+                      String description, List<Argument> arguments,
                       boolean importable) {}
 
     /** One argument of a directive, its type under the specification's names. */
@@ -333,7 +310,6 @@ public final class FederationCapture {
                 + ", a " + definition.getClass().getSimpleName() + ", which graphitron does not model");
         };
         var arguments = new ArrayList<Argument>();
-        var locations = new ArrayList<String>();
         Boolean repeatable = null;
         if (definition instanceof DirectiveDefinition directive) {
             repeatable = directive.isRepeatable();
@@ -341,11 +317,10 @@ public final class FederationCapture {
             for (var input : directive.getInputValueDefinitions()) {
                 arguments.add(argument(input, ordinal++));
             }
-            directive.getDirectiveLocations().forEach(location -> locations.add(location.getName()));
         }
         return new Definition(name, kind, spelled(unimported), repeatable,
             description(((DescribedNode<?>) definition).getDescription()),
-            List.copyOf(arguments), List.copyOf(locations), importable(version, name));
+            List.copyOf(arguments), importable(version, name));
     }
 
     private static Argument argument(InputValueDefinition input, int ordinal) {

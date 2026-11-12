@@ -83,7 +83,7 @@ class RelationRegistrationGateTest {
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
             "store_graph_max_allowed_page_size",
             "store_graph_outbox", "store_graph_outbox_role", "store_graph_outbox_payload_entry",
-            "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
+            "store_graph_lint_excluded_type",
             "store_graph_session_supplied", "store_graph_session_handle", "store_graph_dependency",
             "store_graph_module", "store_graph_module_entry",
             "store_graph_source",
@@ -96,8 +96,7 @@ class RelationRegistrationGateTest {
             // The federation_ family: what the library answers, pinned by the federation-versions
             // fact document. Nothing GraphitronSchema holds is federation's vocabulary.
             "federation_version", "federation_version_import", "federation_written_version",
-            "federation_version_definition", "federation_version_directive_argument",
-            "federation_version_directive_location")) {
+            "federation_version_definition", "federation_version_directive_argument")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         // The SDL node entries: one relation per node kind and site, read per document and keyed by the

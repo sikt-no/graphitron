@@ -1,7 +1,7 @@
 # Every parameter of the run's configuration lands as the run held it, one relation per parameter
 # grouped by what is present together and means one thing. The output coordinates are three columns
-# of one row because they travel together. The disabled lint rules are a set, so their rows carry no
-# position; the excluded types are a list, so the author's order is the row order. The session
+# of one row because they travel together. The excluded lint types are a list, so the author's
+# order is the row order. The session
 # methods are the authored strings, the reflected signature being a fact about the model rather
 # than the configuration.
 
@@ -11,7 +11,6 @@ extend schema @withConfiguration(
   outputPackage: "com.example.generated",
   outputJooqPackage: "com.example.jooq",
   outputDirectory: "/build/generated",
-  lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
   lintExcludedTypes: ["Legacy*", "*Internal"],
   sessionState: true,
   sessionHandle: "com.example.Identity",
@@ -37,12 +36,6 @@ extend schema @expectEquals(relation: "store_graph_tenant_column", rows: """
 extend schema @expectEquals(relation: "store_graph_max_allowed_page_size", rows: """
   max_page_size
   1000
-  """)
-
-extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
-  rule_id
-  no-typename-prefix
-  field-names-camel-case
   """)
 
 extend schema @expectEquals(relation: "store_graph_lint_excluded_type", rows: """

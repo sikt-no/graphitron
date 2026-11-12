@@ -4,7 +4,6 @@
 extend schema @withConfiguration(
   tenantColumn: "tenant_id",
   maxAllowedPageSize: 1000,
-  lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
   sessionState: true,
   sessionHandle: "com.example.Identity"
 )
@@ -31,7 +30,6 @@ extend schema @expectEquals(relation: "store_graph_session_handle", rows: """
 extend schema @tick(ms: 60000)
 
 extend schema @withConfiguration(
-  lintDisabledRules: ["field-names-camel-case"],
   sessionState: true
 )
 
@@ -49,11 +47,6 @@ extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
   1000000060
   """)
 
-extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
-  rule_id,                touched_at
-  field-names-camel-case, 1000000060
-  """)
-
 extend schema @tick(ms: 60000)
 
 extend schema @withFacts(docs: [
@@ -62,9 +55,4 @@ extend schema @withFacts(docs: [
 extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
   touched_at
   1000000120
-  """)
-
-extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """
-  rule_id,                touched_at
-  field-names-camel-case, 1000000120
   """)

@@ -24,7 +24,6 @@ import java.util.stream.IntStream;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY;
@@ -116,7 +115,6 @@ public final class StoreEntries {
         config.output().ifPresent(output -> output(dsl, graph, output, touchedAt));
         config.tenantColumn().ifPresent(column -> tenantColumn(dsl, graph, column, touchedAt));
         config.maxAllowedPageSize().ifPresent(max -> maxAllowedPageSize(dsl, graph, max, touchedAt));
-        lintDisabledRules(dsl, graph, config.lint(), touchedAt);
         lintExcludedTypes(dsl, graph, config.lint(), touchedAt);
         sessionState(dsl, graph, config.sessionState(), touchedAt);
         outbox(dsl, graph, config.outbox(), touchedAt);
@@ -136,7 +134,7 @@ public final class StoreEntries {
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
-        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED, STORE_GRAPH_SESSION_HANDLE,
+        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED, STORE_GRAPH_SESSION_HANDLE,
         STORE_GRAPH_OUTBOX, STORE_GRAPH_OUTBOX_ROLE, STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY,
         STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
@@ -366,27 +364,8 @@ public final class StoreEntries {
     }
 
     /**
-     * The rules the author silenced. Keyed by the rule id, there being no position to record: the
-     * configured value is a set, and an ordinal here would record the JVM's iteration order over it
-     * and call it a position.
-     */
-    private static void lintDisabledRules(DSLContext dsl, String graph, LintConfig lint,
-                                          LocalDateTime touchedAt) {
-        var t = STORE_GRAPH_LINT_DISABLED_RULE;
-        var rows = lint.disabledRuleIds().stream().collect(Rows.toRowList(
-            ruleId -> val(graph, t.GRAPH_NAME),
-            ruleId -> val(ruleId, t.RULE_ID),
-            ruleId -> val(touchedAt, t.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers -> dsl.insertInto(t, t.GRAPH_NAME, t.RULE_ID, t.TOUCHED_AT)
-            .values(markers)
-            .onDuplicateKeyUpdate()
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
-    }
-
-    /**
      * The type-name globs excluded from the lint engine, keyed by position: the configured value is
-     * a list and the order is the author's, which is the other half of why the two lint parameters
-     * are two relations rather than one.
+     * a list and the order is the author's.
      */
     private static void lintExcludedTypes(DSLContext dsl, String graph, LintConfig lint,
                                           LocalDateTime touchedAt) {

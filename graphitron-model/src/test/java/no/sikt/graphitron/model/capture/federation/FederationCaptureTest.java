@@ -13,7 +13,6 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DEFINITION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DIRECTIVE_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_DEFINITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
@@ -87,10 +86,6 @@ class FederationCaptureTest {
                     a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL, a.IS_LIST, a.TOUCHED_AT)
                 .values(source, "v2.10", "@dropped", "reason", 0, "String", "String", false, false, FIRST)
                 .execute();
-            var l = FEDERATION_VERSION_DIRECTIVE_LOCATION;
-            dsl.insertInto(l, l.SOURCE_NAME, l.VERSION, l.NAME, l.LOCATION, l.TOUCHED_AT)
-                .values(source, "v2.10", "@dropped", "OBJECT", FIRST)
-                .execute();
             var link = GRAPHITRON_FEDERATION_LINK;
             dsl.insertInto(link, link.GRAPH_NAME, link.ORIGIN, link.VERSION, link.TOUCHED_AT)
                 .values("g", "CONFIGURED", "v2.10", FIRST)
@@ -107,7 +102,6 @@ class FederationCaptureTest {
             assertThat(dsl.fetchExists(d, d.NAME.eq("@dropped")))
                 .as("a definition the library no longer declares goes").isFalse();
             assertThat(dsl.fetchExists(a, a.NAME.eq("@dropped"))).isFalse();
-            assertThat(dsl.fetchExists(l, l.NAME.eq("@dropped"))).isFalse();
             assertThat(dsl.select(g.NAME).from(g).fetch(g.NAME))
                 .as("a graph's definition goes with the library's, and one still declared stays")
                 .containsExactly("@key");

@@ -260,18 +260,6 @@ COMMENT ON COLUMN store_graph_outbox_payload_entry.key_name IS 'the JSON key the
 COMMENT ON COLUMN store_graph_outbox_payload_entry.bound_to IS 'the right side as written: a sigil with its path, or an argument path where the author wrote one, which no field has and so is a defect';
 COMMENT ON COLUMN store_graph_outbox_payload_entry.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row without a mark could never be swept';
 
-CREATE TABLE store_graph_lint_disabled_rule (
-  graph_name VARCHAR NOT NULL,
-  rule_id    VARCHAR NOT NULL,
-  touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, rule_id),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE store_graph_lint_disabled_rule IS 'The <lint><disabledRules> half, one row per silenced rule id. Decomposed rather than rendered: a rendered block would be a string a later reader has to re-parse, which is the shape the recipe''s source names exist to remove, and permitting a rendered form per parameter would reintroduce the untyped default door. The two <lint> halves are a genuine conjunction (LintConfig is a plain record of both) but they are not the same shape, which is why they are two relations rather than one discriminated one: this half is a Set and takes no ordinal, its sibling is a List and takes one, and forcing them together would need a nullable ordinal.';
-COMMENT ON COLUMN store_graph_lint_disabled_rule.graph_name IS 'the owning graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN store_graph_lint_disabled_rule.rule_id IS 'the disabled rule''s id as configured; the value is the key, there being no position to record. An ordinal here would record the JVM''s iteration order over a Set and call it a position';
-COMMENT ON COLUMN store_graph_lint_disabled_rule.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. Keyed by the rule id, so a rule the author re-enabled leaves a row this reading did not touch rather than a row it overwrote';
-
 CREATE TABLE store_graph_lint_excluded_type (
   graph_name   VARCHAR NOT NULL,
   ordinal      INT     NOT NULL,
@@ -7084,23 +7072,6 @@ COMMENT ON COLUMN federation_version_directive_argument.item_non_null IS 'whethe
 COMMENT ON COLUMN federation_version_directive_argument.default_value_sdl IS 'the default as the specification writes it, NULL where it declares none';
 COMMENT ON COLUMN federation_version_directive_argument.description IS 'the argument''s description, NULL where the specification writes none';
 COMMENT ON COLUMN federation_version_directive_argument.touched_at IS 'the reading of the library that last wrote this row, on federation_version_definition''s terms';
-
-CREATE TABLE federation_version_directive_location (
-  source_name VARCHAR   NOT NULL,
-  version     VARCHAR   NOT NULL,
-  name        VARCHAR   NOT NULL,
-  location    VARCHAR   NOT NULL,
-  touched_at  TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, version, name, location),
-  FOREIGN KEY (source_name, version, name)
-    REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
-);
-COMMENT ON TABLE federation_version_directive_location IS 'One location a federation version''s directive may be applied at. For example OBJECT and INTERFACE for @key under v2.10.';
-COMMENT ON COLUMN federation_version_directive_location.source_name IS 'the library, on federation_version''s terms';
-COMMENT ON COLUMN federation_version_directive_location.version IS 'the version';
-COMMENT ON COLUMN federation_version_directive_location.name IS 'the directive, with its at sign, anchored by federation_version_definition';
-COMMENT ON COLUMN federation_version_directive_location.location IS 'the location as the specification spells it';
-COMMENT ON COLUMN federation_version_directive_location.touched_at IS 'the reading of the library that last wrote this row, on federation_version_definition''s terms';
 
 CREATE TABLE federation_version_import (
   source_name VARCHAR   NOT NULL,
@@ -19584,9 +19555,6 @@ INSERT INTO meta_grain VALUES
   ('federation-version-directive-argument',
    'one argument one federation version''s directive declares',
    'source_name, version, name, argument_name', 'federation'),
-  ('federation-version-directive-location',
-   'one location one federation version''s directive may be applied at',
-   'source_name, version, name, location', 'federation'),
   ('federation-definition',
    'one federation definition one graph''s link brings in, under the name the graph sees it by',
    'graph_name, name', 'sdl'),
@@ -20628,10 +20596,6 @@ INSERT INTO meta_relation VALUES
    'One argument a federation version''s directive declares.',
    'For example fields: FieldSet! of @key under v2.10, its type named by the specification.',
    'On graphql_directive_argument''s terms, so the vocabulary graphitron derives reads the two the same way; its named type is the specification''s, the graph''s name for it being graphitron''s rule.'),
-  ('federation_version_directive_location', 'federation-version-directive-location', 'federation',
-   'One location a federation version''s directive may be applied at.',
-   'For example OBJECT and INTERFACE for @key under v2.10.',
-   'On graphql_directive_location''s terms, the specification''s half of where a directive may stand.'),
   ('federation_written_version', 'federation-written-version', 'federation',
    'The federation version a link graphitron adds names, under the library it is read against.',
    'For example v2.10, which a graph federated only through a configured tag links to.',

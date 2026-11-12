@@ -28,7 +28,6 @@ import java.util.Set;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
@@ -359,7 +358,7 @@ class StoreEntriesTest {
     private static final List<Table<?>> FAMILY = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
-        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED,
+        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED,
         STORE_GRAPH_SESSION_HANDLE, STORE_GRAPH_OUTBOX, STORE_GRAPH_OUTBOX_ROLE,
         STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY, STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE,
         STORE_GRAPH_MODULE_ENTRY);
