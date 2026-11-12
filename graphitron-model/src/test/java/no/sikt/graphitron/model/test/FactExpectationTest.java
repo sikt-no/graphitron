@@ -50,8 +50,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FactExpectationTest {
 
-    /** The undecided folder's size, lowered as documents leave it and never raised. */
-    private static final int UNDECIDED_CEILING = 38;
+    /**
+     * The undecided folder's size, lowered as documents leave it and never raised. Raised once, by
+     * ruling, for {@code write-payload-member}: the store states its sources and the emitter does not
+     * yet admit a union payload carrier.
+     */
+    private static final int UNDECIDED_CEILING = 39;
 
     /** Each scenario's claim, by its graph's name, which is its path. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();

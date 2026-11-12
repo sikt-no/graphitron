@@ -23,6 +23,7 @@ import no.sikt.graphitron.model.derive.OccurrenceLists;
 import no.sikt.graphitron.model.derive.OccurrenceOverrides;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceProducers;
+import no.sikt.graphitron.model.derive.OccurrenceSourceClaims;
 import no.sikt.graphitron.model.derive.OccurrenceValues;
 import no.sikt.graphitron.model.derive.Outboxes;
 import no.sikt.graphitron.model.derive.PathClaims;
@@ -150,6 +151,10 @@ public final class GraphitronAssemblyCapture {
         // whole graph: they read nothing the depths write, and the depths' sources read them.
         new AnchorStage("occurrence-producers", OccurrenceProducers.class,
             OccurrenceProducers::derive),
+        // What the source rules that read nothing a depth writes claim, for the whole graph, off the
+        // producers and the service calls' fills just written.
+        new AnchorStage("occurrence-source-claims", OccurrenceSourceClaims.class,
+            OccurrenceSourceClaims::derive),
         // Each occurrence's source, needs and paths, a depth at a time, off the producers, the
         // landings and the claims above: each depth reading what the depth above it wrote.
         new AnchorStage("occurrence-depths", OccurrenceDepths.class,

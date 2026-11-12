@@ -13441,7 +13441,18 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS',
 UNION ALL
 -- A selection under a record handed over whose path leaves the record's table by its first key, or
 -- whose target is a union or an interface: keyed on the record table's primary key, read off it.
-SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
+-- Under a write's payload the write says how many rows a parent holds, as for a re-fetch.
+SELECT p.graph_name, p.coordinate, 'COLUMNS',
+       CASE WHEN pw.coordinate IS NULL THEN 'ONE'
+            WHEN pw.matches = 'MANY'
+                 OR EXISTS (SELECT 1 FROM graphitron_occurrence po
+                              JOIN graphitron_field pf
+                                ON pf.graph_name = po.graph_name AND pf.coordinate = po.element_coordinate
+                              JOIN graphitron_argument a
+                                ON a.graph_name = pf.graph_name AND a.type_name = pf.type_name
+                               AND a.field_name = pf.field_name AND a.is_list
+                             WHERE po.graph_name = pw.graph_name AND po.coordinate = pw.coordinate)
+              THEN 'MANY' ELSE 'ONE' END,
        st.table_source_name, st.table_schema, st.table_name, k.constraint_name
   FROM graphitron_occurrence_producer p
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
@@ -13454,7 +13465,18 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
   LEFT JOIN sql_constraint k
     ON k.source_name = st.table_source_name AND k.table_schema = st.table_schema
    AND k.table_name = st.table_name AND k.constraint_type = 'PRIMARY KEY'
+  LEFT JOIN graphitron_occurrence_producer_write pw
+    ON pw.graph_name = o.graph_name AND pw.coordinate = o.parent_coordinate
  WHERE p.start = 'CHILD' AND p.kind IN ('SELECT', 'LOOKUP')
+   -- Not where every need's path is empty: that is the re-fetch above.
+   AND (NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                     WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate)
+        OR EXISTS (SELECT 1 FROM graphitron_path_need n
+                     LEFT JOIN graphitron_path pa
+                       ON pa.graph_name = n.graph_name AND pa.coordinate = n.coordinate
+                      AND pa.target_type = n.target_type
+                    WHERE n.graph_name = p.graph_name AND n.coordinate = p.coordinate
+                      AND (pa.origin IS NULL OR pa.origin <> 'EMPTY')))
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype dt
                     WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
    -- The parent handed the record over: a service, a write or a routine produced it, or an
@@ -18864,6 +18886,539 @@ COMMENT ON VIEW intent_argmapping_projection_defect IS 'Deprecated with the whol
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.column_java_type IS 'the projected column''s Java type as jOOQ binds it, fully qualified; the left operand of the comparison that rejected the pair. Non-NULL exactly on the KEY_COLUMN_TYPE_MISMATCH arm, that arm being the only one about a type, which is the stated absent bucket rather than a missing value on the other three. Carried rather than left to the consumer to resolve, so a message states the operands the join actually compared and cannot describe a different comparison than the one that fired';
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.param_java_type IS 'the consuming parameter''s Java type, fully qualified, from intent_argmapping_bound_parameter_type; the right operand, non-NULL exactly where the column beside it is';
 
+-- ==== Occurrence sources, claimed by rule =========================================
+-- What each rule claims an occurrence's values come from, one rule view per rule, and the source the
+-- claims that take effect state. The rules read no reading's mark: the depth loop sweeps each depth
+-- as it completes, and the stages before it sweep their own, so every stored row a rule reads is
+-- current.
+
+CREATE TABLE graphitron_occurrence_source_claim (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  rule       VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, rule),
+  -- What each subtype references, so a subtype row hangs only under a claim of its own kind.
+  UNIQUE (graph_name, coordinate, rule, kind),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind IN ('TABLE', 'OBJECT'))
+);
+COMMENT ON TABLE graphitron_occurrence_source_claim IS 'A rule''s claim on where one occurrence''s values come from: one row per occurrence and rule that claims it. For example a field under Query.films is claimed by nestedCopy, its parent''s film table, and an argument a service takes as a FilmRecord by recordParameter, beside what its field''s target claims.';
+COMMENT ON COLUMN graphitron_occurrence_source_claim.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_source_claim.coordinate IS 'the occurrence claimed, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_source_claim.rule IS 'the rule that claims it, each rule stating its claims in a rule view of its own; with the graph and the coordinate, the key, and the column the two writing stages split ownership by';
+COMMENT ON COLUMN graphitron_occurrence_source_claim.kind IS 'TABLE or OBJECT, what the rule claims; carried into each subtype''s key';
+COMMENT ON COLUMN graphitron_occurrence_source_claim.touched_at IS 'the reading that last wrote this row; the stage owning the rule sweeps what an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_source_claim_table (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  rule              VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, rule, table_source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name, coordinate, rule, kind)
+    REFERENCES graphitron_occurrence_source_claim (graph_name, coordinate, rule, kind) ON DELETE CASCADE,
+  CHECK (kind = 'TABLE')
+);
+COMMENT ON TABLE graphitron_occurrence_source_claim_table IS 'A table a rule claims one occurrence''s values are rows of: one row per occurrence, rule and table. For example nestedPath claims a field under a parent field that writes a path reads each table the parent''s join path reaches, a row per table.';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.coordinate IS 'the occurrence claimed';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.rule IS 'the rule that claims it';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.kind IS 'TABLE, pinned so the foreign key holds the row to a claim of that kind';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.table_source_name IS 'the codegen source the claimed table came from, the first of the three columns naming it';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.table_schema IS 'the claimed table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.table_name IS 'the claimed table''s own name';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_table.touched_at IS 'the reading that last wrote this row; swept with its claim';
+
+CREATE TABLE graphitron_occurrence_source_claim_object (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  rule       VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  class_name VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, rule),
+  FOREIGN KEY (graph_name, coordinate, rule, kind)
+    REFERENCES graphitron_occurrence_source_claim (graph_name, coordinate, rule, kind) ON DELETE CASCADE,
+  CHECK (kind = 'OBJECT')
+);
+COMMENT ON TABLE graphitron_occurrence_source_claim_object IS 'The class a rule claims one occurrence''s values are an instance of: one row per occurrence and rule. For example objectMember claims a field under an occurrence whose accessor path reaches FilmBlurbHolder reads an instance of it.';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_object.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_object.coordinate IS 'the occurrence claimed';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_object.rule IS 'the rule that claims it';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_object.kind IS 'OBJECT, pinned so the foreign key holds the row to a claim of that kind';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_object.class_name IS 'the binary name of the class the occurrence''s values are claimed to be an instance of';
+COMMENT ON COLUMN graphitron_occurrence_source_claim_object.touched_at IS 'the reading that last wrote this row; swept with its claim';
+
+CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'declaringTable', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_tabletype tt ON tt.graph_name = f.graph_name AND tt.type_name = f.type_name
+ WHERE o.kind = 'FIELD' AND o.depth = 0;
+COMMENT ON VIEW graphitron_occurrence_source_claim_declaring_table_rule IS 'One claim the declaringTable rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field where a chain starts, on a type bound to a table, reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_declaring_table_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_root_routine_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'rootRoutine', 'TABLE', st.source_name, st.table_schema, st.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_root_operation ro ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+  JOIN graphitron_producer_routine pr
+    ON pr.graph_name = f.graph_name AND pr.type_name = f.type_name AND pr.field_name = f.field_name
+  JOIN sql_table st
+    ON st.source_name = pr.routine_source_name AND st.table_schema = pr.table_schema
+   AND st.table_name = pr.routine_name AND st.table_type = 'FUNCTION'
+ WHERE o.kind = 'FIELD' AND o.depth = 0;
+COMMENT ON VIEW graphitron_occurrence_source_claim_root_routine_rule IS 'One claim the rootRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: a root field whose producer calls a routine reads the derived table its function returns. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_root_routine_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_own_service_record_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'ownServiceRecord', 'TABLE', r.table_source_name, r.table_schema, r.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_producer op ON op.graph_name = o.graph_name AND op.coordinate = o.coordinate
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = op.graph_name AND r.coordinate = op.coordinate
+ WHERE o.kind = 'FIELD' AND op.kind = 'SERVICE' AND op.start = 'CHILD' AND r.table_name IS NOT NULL;
+COMMENT ON VIEW graphitron_occurrence_source_claim_own_service_record_rule IS 'One claim the ownServiceRecord rule makes, in the shape graphitron_occurrence_source_claim_table stores: a child whose own service hands back a table''s records reads the table its producer''s result names. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_record_parameter_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'recordParameter', 'TABLE', c.record_source_name, c.record_schema, c.record_table
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_call_parameter c
+    ON c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
+   AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD');
+COMMENT ON VIEW graphitron_occurrence_source_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service call takes as a table''s jOOQ record reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_argument_target_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'argumentTarget', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place);
+COMMENT ON VIEW graphitron_occurrence_source_claim_argument_target_rule IS 'One claim the argumentTarget rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target is bound to a table, writing no path, reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_target_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_argument_member_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'argumentMember', 'TABLE', mt.table_source_name, mt.table_schema, mt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  JOIN graphitron_type_member pm ON pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name
+  JOIN graphitron_tabletype mt ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+ WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_argument_member_rule IS 'One claim the argumentMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose union or interface target binds no table reads each member''s table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_member_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_argument_write_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'argumentWrite', 'TABLE', pw.table_source_name, pw.table_schema, pw.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name AND pw.field_name = pf.field_name
+ WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type gt
+                     WHERE gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+                       AND gt.kind IN ('INTERFACE', 'UNION'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
+                     JOIN graphitron_tabletype mt
+                       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_argument_write_rule IS 'One claim the argumentWrite rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a write whose target binds no table reads the table the write mutates. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_write_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_record_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'record', 'TABLE', st.source_name, st.table_schema, st.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  LEFT JOIN graphitron_producer_service ps
+    ON ps.graph_name = pf.graph_name AND ps.type_name = pf.type_name AND ps.field_name = pf.field_name
+  LEFT JOIN code_method m
+    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
+   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
+  LEFT JOIN graphitron_code_reference xr
+    ON xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
+   AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
+  LEFT JOIN code_method xm
+    ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
+   AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
+  JOIN store_graph_source gs ON gs.graph_name = o.graph_name
+  JOIN sql_table st ON st.source_name = gs.source_name AND st.record_class_fqn = COALESCE(m.result_element_class, xm.result_first_argument_class)
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
+                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate AND po.kind = 'OBJECT')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_record_rule IS 'One claim the record rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field under a parent whose service or external field hands back a table''s record reads that table. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_object_rule (graph_name, coordinate, rule, kind, class_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'object', 'OBJECT', COALESCE(m.result_element_class, xm.result_first_argument_class)
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  LEFT JOIN graphitron_producer_service ps
+    ON ps.graph_name = pf.graph_name AND ps.type_name = pf.type_name AND ps.field_name = pf.field_name
+  LEFT JOIN code_method m
+    ON m.source_name = ps.method_source_name AND m.class_name = ps.method_class_name
+   AND m.method_name = ps.method_name AND m.descriptor = ps.method_descriptor
+  LEFT JOIN graphitron_code_reference xr
+    ON xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
+   AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
+  LEFT JOIN code_method xm
+    ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
+   AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND COALESCE(m.result_element_class, xm.result_first_argument_class) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source gs
+                     JOIN sql_table st ON st.source_name = gs.source_name
+                    WHERE gs.graph_name = o.graph_name AND st.record_class_fqn = COALESCE(m.result_element_class, xm.result_first_argument_class))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
+                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate AND po.kind = 'OBJECT')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_object_rule IS 'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class that is no table''s record reads an instance of it. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.class_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_object_member_rule (graph_name, coordinate, rule, kind, class_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'objectMember', 'OBJECT', pa.target_class_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_accessor_path pa ON pa.graph_name = p.graph_name AND pa.coordinate = p.coordinate
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source gs
+                     JOIN sql_table st ON st.source_name = gs.source_name
+                    WHERE gs.graph_name = o.graph_name AND st.record_class_fqn = pa.target_class_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_object_member_rule IS 'One claim the objectMember rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under an occurrence with an accessor path reads an instance of the class the path reaches. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_member_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.class_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_write_payload_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'writePayload', 'TABLE', tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphql_root_operation ro ON ro.graph_name = pf.graph_name AND ro.type_name = pf.type_name
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name AND pw.field_name = pf.field_name
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = cf.graph_name AND ft.type_name = cf.type_name AND ft.field_name = cf.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
+                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_write_payload_rule IS 'One claim the writePayload rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose target is bound to a table reads that table. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_write_payload_member_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'writePayloadMember', 'TABLE', pw.table_source_name, pw.table_schema, pw.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphql_root_operation ro ON ro.graph_name = pf.graph_name AND ro.type_name = pf.type_name
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name AND pw.field_name = pf.field_name
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = cf.graph_name AND ft.type_name = cf.type_name AND ft.field_name = cf.field_name
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND pw.table_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
+   AND EXISTS (SELECT 1 FROM graphitron_type_member pm
+                 JOIN graphitron_tabletype mt
+                   ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+                WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
+                     WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name);
+COMMENT ON VIEW graphitron_occurrence_source_claim_write_payload_member_rule IS 'One claim the writePayloadMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose union or interface target binds no table reads the write''s table, the rows the write produced. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_write_payload_member_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_nested_copy_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'nestedCopy', 'TABLE', pt.table_source_name, pt.table_schema, pt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_occurrence_source_table pt ON pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc
+                     WHERE pc.graph_name = pf.graph_name AND pc.coordinate = pf.coordinate
+                       AND pc.kind = 'SERVICE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference xr
+                     JOIN code_method xm
+                       ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
+                      AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
+                    WHERE xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
+                      AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
+                      AND xm.result_first_argument_class IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_target pw
+                     WHERE pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name
+                       AND pw.field_name = pf.field_name AND pw.wrapper_type_name IS NOT NULL);
+COMMENT ON VIEW graphitron_occurrence_source_claim_nested_copy_rule IS 'One claim the nestedCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent with a table source reads its parent''s tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_nested_path_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'nestedPath', 'TABLE', j.target_source_name, j.target_schema, j.target_table
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_join_path j ON j.graph_name = p.graph_name AND j.coordinate = p.coordinate
+  JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
+ WHERE o.kind = 'FIELD' AND p.kind = 'FIELD' AND EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc
+                     WHERE pc.graph_name = pf.graph_name AND pc.coordinate = pf.coordinate
+                       AND pc.kind = 'SERVICE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference xr
+                     JOIN code_method xm
+                       ON xm.source_name = xr.method_source_name AND xm.class_name = xr.method_class_name
+                      AND xm.method_name = xr.method_name AND xm.descriptor = xr.method_descriptor
+                    WHERE xr.graph_name = pf.graph_name AND xr.coordinate = pf.coordinate
+                      AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
+                      AND xm.result_first_argument_class IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                     WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
+                       AND ef.field_name = cf.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_target pw
+                     WHERE pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name
+                       AND pw.field_name = pf.field_name AND pw.wrapper_type_name IS NOT NULL);
+COMMENT ON VIEW graphitron_occurrence_source_claim_nested_path_rule IS 'One claim the nestedPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent field that writes a path reads each table the path reaches. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_nested_path_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_argument_copy_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'argumentCopy', 'TABLE', pt.table_source_name, pt.table_schema, pt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  JOIN graphitron_occurrence_source_table pt ON pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
+ WHERE o.kind = 'FIELD_ARGUMENT' AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
+                     JOIN graphitron_tabletype mt
+                       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write pw
+                    WHERE pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name
+                      AND pw.field_name = pf.field_name
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_type gt
+                     WHERE gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+                       AND gt.kind IN ('INTERFACE', 'UNION')));
+COMMENT ON VIEW graphitron_occurrence_source_claim_argument_copy_rule IS 'One claim the argumentCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target binds no table reads its field''s own tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_argument_path_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'argumentPath', 'TABLE', j.target_source_name, j.target_schema, j.target_table
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_join_path j ON j.graph_name = p.graph_name AND j.coordinate = p.coordinate
+ WHERE o.kind = 'FIELD_ARGUMENT' AND EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = pf.graph_name AND wpc.element_coordinate = pf.coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place);
+COMMENT ON VIEW graphitron_occurrence_source_claim_argument_path_rule IS 'One claim the argumentPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field that writes a path reads each table the field''s join path reaches. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_path_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_claim_input_field_copy_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'inputFieldCopy', 'TABLE', pt.table_source_name, pt.table_schema, pt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_occurrence_source_table pt ON pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
+ WHERE o.kind = 'INPUT_FIELD';
+COMMENT ON VIEW graphitron_occurrence_source_claim_input_field_copy_rule IS 'One claim the inputFieldCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an input field reads its parent argument''s or input field''s tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
+
+CREATE VIEW graphitron_occurrence_source_rule (graph_name, coordinate, kind) AS
+-- A claim holds unless the occurrence has a claim of a higher rank: a child's own service record over
+-- every other rule, a record a service call takes over every rule but that one.
+SELECT DISTINCT c.graph_name, c.coordinate, c.kind
+  FROM graphitron_occurrence_source_claim c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim w
+                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
+                      AND CASE w.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END < CASE c.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END);
+COMMENT ON VIEW graphitron_occurrence_source_rule IS 'One row the occurrence source rule computes, in the shape graphitron_occurrence_source stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source.kind';
+
+CREATE VIEW graphitron_occurrence_source_table_rule (graph_name, coordinate, table_source_name, table_schema, table_name, kind) AS
+-- A claim holds unless the occurrence has a claim of a higher rank: a child's own service record over
+-- every other rule, a record a service call takes over every rule but that one.
+SELECT DISTINCT c.graph_name, c.coordinate, c.table_source_name, c.table_schema, c.table_name, c.kind
+  FROM graphitron_occurrence_source_claim_table c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim w
+                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
+                      AND CASE w.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END < CASE c.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END);
+COMMENT ON VIEW graphitron_occurrence_source_table_rule IS 'One row the source table rule computes, in the shape graphitron_occurrence_source_table stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source_table, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_table.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_source_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_table.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_table.kind';
+
+CREATE VIEW graphitron_occurrence_source_object_rule (graph_name, coordinate, kind, class_name) AS
+-- A claim holds unless the occurrence has a claim of a higher rank: a child's own service record over
+-- every other rule, a record a service call takes over every rule but that one.
+SELECT DISTINCT c.graph_name, c.coordinate, c.kind, c.class_name
+  FROM graphitron_occurrence_source_claim_object c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim w
+                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
+                      AND CASE w.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END < CASE c.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END);
+COMMENT ON VIEW graphitron_occurrence_source_object_rule IS 'One row the source object rule computes, in the shape graphitron_occurrence_source_object stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source_object, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_object.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_object.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_object.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_object.class_name';
+
 -- ==== Diagnostics ==================================================================
 -- Violations as facts: six arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this section directly. The arms, and
@@ -19694,14 +20249,15 @@ INSERT INTO meta_stage VALUES
   ('occurrence-lists', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
   ('occurrence-overrides', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
   ('occurrence-producers', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
-  ('occurrence-depths', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-bindings', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-builds', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 39, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 40, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 41, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-source-claims', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
+  ('occurrence-depths', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-builds', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 40, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 41, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 42, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -19848,6 +20404,12 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-producers', 'graphitron_occurrence_producer_routine'),
   ('occurrence-producers', 'graphitron_occurrence_producer_service'),
   ('occurrence-producers', 'graphitron_occurrence_producer_write'),
+  ('occurrence-source-claims', 'graphitron_occurrence_source_claim'),
+  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table'),
+  ('occurrence-source-claims', 'graphitron_occurrence_source_claim_object'),
+  ('occurrence-depths', 'graphitron_occurrence_source_claim'),
+  ('occurrence-depths', 'graphitron_occurrence_source_claim_table'),
+  ('occurrence-depths', 'graphitron_occurrence_source_claim_object'),
   ('occurrence-depths', 'graphitron_occurrence_source'),
   ('occurrence-depths', 'graphitron_occurrence_source_object'),
   ('occurrence-depths', 'graphitron_occurrence_source_table'),
@@ -20115,6 +20677,12 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('source-claim',
+   'one rule''s claim on where one occurrence''s values come from, in one graph',
+   'graph_name, coordinate, rule', 'sdl'),
+  ('source-claim-table',
+   'one table one rule claims one occurrence''s values are rows of, in one graph',
+   'graph_name, coordinate, rule, table_source_name, table_schema, table_name', 'sdl'),
   ('type-declaration-site',
    'one site that declares or extends one type, in one graph',
    'graph_name, type_name, source_name, source_line, source_column', 'sdl'),
@@ -21177,6 +21745,98 @@ INSERT INTO meta_relation VALUES
    'One row the write call rule computes, in the shape graphitron_occurrence_producer_write stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_write, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_source_claim', 'source-claim', 'graphitron',
+   'A rule''s claim on where one occurrence''s values come from: one row per occurrence and rule that claims it.',
+   'For example a field under Query.films is claimed by nestedCopy, its parent''s film table, and an argument a service takes as a FilmRecord by recordParameter, beside what its field''s target claims.',
+   'The candidates the source writer evaluated as one union of arms, stored, one rule per arm: each arm is a rule view of its own that H2 plans alone, written once, and the source and its subtypes are written from the claims that took effect. Which takes effect is the source rule views'' to state, a higher-ranked claim on an occurrence overriding the rest, so no claim records a winner. Written by two stages split by the rule column: the rules that read nothing a depth writes ahead of the depth loop, the rest a depth at a time inside it.'),
+  ('graphitron_occurrence_source_claim_table', 'source-claim-table', 'graphitron',
+   'A table a rule claims one occurrence''s values are rows of: one row per occurrence, rule and table.',
+   'For example nestedPath claims a field under a parent field that writes a path reads each table the parent''s join path reaches, a row per table.',
+   'The table side of a claim beside graphitron_occurrence_source_claim_object, keyed by the table so a claim over several tables has a row per table, as graphitron_occurrence_source_table is beside its supertype.'),
+  ('graphitron_occurrence_source_claim_object', 'source-claim', 'graphitron',
+   'The class a rule claims one occurrence''s values are an instance of: one row per occurrence and rule.',
+   'For example objectMember claims a field under an occurrence whose accessor path reaches FilmBlurbHolder reads an instance of it.',
+   'The object side of a claim beside graphitron_occurrence_source_claim_table, one class per claim, as graphitron_occurrence_source_object is beside its supertype.'),
+  ('graphitron_occurrence_source_claim_declaring_table_rule', 'source-claim-table', 'graphitron',
+   'One claim the declaringTable rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field where a chain starts, on a type bound to a table, reads that table.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_root_routine_rule', 'source-claim-table', 'graphitron',
+   'One claim the rootRoutine rule makes, in the shape graphitron_occurrence_source_claim_table stores: a root field whose producer calls a routine reads the derived table its function returns.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_own_service_record_rule', 'source-claim-table', 'graphitron',
+   'One claim the ownServiceRecord rule makes, in the shape graphitron_occurrence_source_claim_table stores: a child whose own service hands back a table''s records reads the table its producer''s result names.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_record_parameter_rule', 'source-claim-table', 'graphitron',
+   'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service call takes as a table''s jOOQ record reads that table.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_argument_target_rule', 'source-claim-table', 'graphitron',
+   'One claim the argumentTarget rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target is bound to a table, writing no path, reads that table.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_argument_member_rule', 'source-claim-table', 'graphitron',
+   'One claim the argumentMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose union or interface target binds no table reads each member''s table.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_argument_write_rule', 'source-claim-table', 'graphitron',
+   'One claim the argumentWrite rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a write whose target binds no table reads the table the write mutates.',
+   'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_record_rule', 'source-claim-table', 'graphitron',
+   'One claim the record rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field under a parent whose service or external field hands back a table''s record reads that table.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_object_rule', 'source-claim', 'graphitron',
+   'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class that is no table''s record reads an instance of it.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_object_member_rule', 'source-claim', 'graphitron',
+   'One claim the objectMember rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under an occurrence with an accessor path reads an instance of the class the path reaches.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_write_payload_rule', 'source-claim-table', 'graphitron',
+   'One claim the writePayload rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose target is bound to a table reads that table.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_write_payload_member_rule', 'source-claim-table', 'graphitron',
+   'One claim the writePayloadMember rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a root write''s payload whose union or interface target binds no table reads the write''s table, the rows the write produced.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_nested_copy_rule', 'source-claim-table', 'graphitron',
+   'One claim the nestedCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent with a table source reads its parent''s tables.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_nested_path_rule', 'source-claim-table', 'graphitron',
+   'One claim the nestedPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: a field of a plain type under a parent field that writes a path reads each table the path reaches.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_argument_copy_rule', 'source-claim-table', 'graphitron',
+   'One claim the argumentCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target binds no table reads its field''s own tables.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_argument_path_rule', 'source-claim-table', 'graphitron',
+   'One claim the argumentPath rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field that writes a path reads each table the field''s join path reaches.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_claim_input_field_copy_rule', 'source-claim-table', 'graphitron',
+   'One claim the inputFieldCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an input field reads its parent argument''s or input field''s tables.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
+   'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_occurrence_source_rule', 'graph-occurrence', 'graphitron',
+   'One row the occurrence source rule computes, in the shape graphitron_occurrence_source stores: the claims that took effect.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source, which is the name every reader spells.',
+   'Which claim takes effect, stated once over the stored claims: a claim on an occurrence holds unless one of a higher rank claims it too, ownServiceRecord over every other rule and recordParameter over the rest, as a child''s own service record and a record a service call takes override what the occurrence would otherwise read. The rank is a function of the rule and so no column of the claim.'),
+  ('graphitron_occurrence_source_table_rule', 'occurrence-source-table', 'graphitron',
+   'One row the source table rule computes, in the shape graphitron_occurrence_source_table stores: the claims that took effect.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source_table, which is the name every reader spells.',
+   'Which claim takes effect, stated once over the stored claims: a claim on an occurrence holds unless one of a higher rank claims it too, ownServiceRecord over every other rule and recordParameter over the rest, as a child''s own service record and a record a service call takes override what the occurrence would otherwise read. The rank is a function of the rule and so no column of the claim.'),
+  ('graphitron_occurrence_source_object_rule', 'graph-occurrence', 'graphitron',
+   'One row the source object rule computes, in the shape graphitron_occurrence_source_object stores: the claims that took effect.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source_object, which is the name every reader spells.',
+   'Which claim takes effect, stated once over the stored claims: a claim on an occurrence holds unless one of a higher rank claims it too, ownServiceRecord over every other rule and recordParameter over the rest, as a child''s own service record and a record a service call takes override what the occurrence would otherwise read. The rank is a function of the rule and so no column of the claim.'),
   ('graphitron_occurrence_source', 'graph-occurrence', 'graphitron',
    'What one occurrence''s values come from: one row per occurrence that has a source.',
    'For example Film.title''s values are rows of film, of kind TABLE, and Query.filmBlurbHolder.blurb''s are read off an instance of FilmBlurbHolder, of kind OBJECT.',

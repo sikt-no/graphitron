@@ -47,8 +47,15 @@ public class StageAnswerAgreementTest {
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
 
-    /** One stage: the table it writes and the view stating the rule it inserts from. */
-    public record Stage(String target, String ruleView) {}
+    /**
+     * One stage: the table it writes and the view stating the rule it inserts from, and where several
+     * rules write one table, the value of its {@code rule} column that is this rule's rows.
+     */
+    public record Stage(String target, String ruleView, String rule) {
+        public Stage(String target, String ruleView) {
+            this(target, ruleView, null);
+        }
+    }
 
     /**
      * The defect table several stages write, each from a rule view of its own, beside the walk,
@@ -93,6 +100,43 @@ public class StageAnswerAgreementTest {
         new Stage("graphitron_occurrence_list_element", "graphitron_occurrence_list_element_rule"),
         new Stage("graphitron_occurrence_overridden", "graphitron_occurrence_overridden_rule"),
         new Stage("graphitron_occurrence_list_element_defect", "graphitron_occurrence_list_element_defect_rule"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_root_routine_rule", "rootRoutine"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_root_routine_rule", "rootRoutine"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_own_service_record_rule", "ownServiceRecord"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_own_service_record_rule", "ownServiceRecord"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_record_parameter_rule", "recordParameter"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_record_parameter_rule", "recordParameter"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_target_rule", "argumentTarget"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_target_rule", "argumentTarget"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_member_rule", "argumentMember"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_member_rule", "argumentMember"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_write_rule", "argumentWrite"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_write_rule", "argumentWrite"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_record_rule", "record"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_record_rule", "record"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_object_rule", "object"),
+        new Stage("graphitron_occurrence_source_claim_object", "graphitron_occurrence_source_claim_object_rule", "object"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_object_member_rule", "objectMember"),
+        new Stage("graphitron_occurrence_source_claim_object", "graphitron_occurrence_source_claim_object_member_rule", "objectMember"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_write_payload_rule", "writePayload"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_write_payload_rule", "writePayload"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_write_payload_member_rule", "writePayloadMember"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_write_payload_member_rule", "writePayloadMember"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_nested_copy_rule", "nestedCopy"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_nested_copy_rule", "nestedCopy"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_nested_path_rule", "nestedPath"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_nested_path_rule", "nestedPath"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_copy_rule", "argumentCopy"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_copy_rule", "argumentCopy"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_path_rule", "argumentPath"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_path_rule", "argumentPath"),
+        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_input_field_copy_rule", "inputFieldCopy"),
+        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_input_field_copy_rule", "inputFieldCopy"),
+        new Stage("graphitron_occurrence_source", "graphitron_occurrence_source_rule"),
+        new Stage("graphitron_occurrence_source_table", "graphitron_occurrence_source_table_rule"),
+        new Stage("graphitron_occurrence_source_object", "graphitron_occurrence_source_object_rule"),
         new Stage(DEFECTS, "graphitron_entity_key_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_build_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_depth_entry_defect_rule"),
@@ -196,8 +240,14 @@ public class StageAnswerAgreementTest {
      * rule's, so it is no part of whether the two agree.
      */
     private static List<String> difference(DSLContext dsl, String graph, Stage stage, boolean tableSide) {
-        var columns = columns(dsl, stage.ruleView());
-        var held = select(columns).from(table(name(stage.target().toUpperCase()))).where(inGraph(graph));
+        // The columns both carry: a supertype holding several rules' rows carries the rule's key and
+        // not its payload, which the subtype beside it compares.
+        var targetColumns = columns(dsl, stage.target()).stream().map(org.jooq.Field::getName).toList();
+        var columns = columns(dsl, stage.ruleView()).stream()
+            .filter(column -> targetColumns.contains(column.getName())).toList();
+        var held = select(columns).from(table(name(stage.target().toUpperCase()))).where(inGraph(graph))
+            .and(stage.rule() == null ? org.jooq.impl.DSL.noCondition()
+                : field(name("RULE"), String.class).eq(stage.rule()));
         var computed = select(columns).from(table(name(stage.ruleView().toUpperCase())))
             .where(inGraph(graph));
         return (tableSide ? dsl.selectFrom(held.except(computed)) : dsl.selectFrom(computed.except(held)))

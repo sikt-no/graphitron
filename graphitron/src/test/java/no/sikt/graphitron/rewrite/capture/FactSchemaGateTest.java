@@ -891,7 +891,7 @@ class FactSchemaGateTest {
      * <p>The stages are the anchor phase's that fill one table from one rule view, as
      * {@code StageAnswerAgreementTest} lists them for the one-graph half of the same equality; the
      * defect table, which several rules fill, is that test's to compare. The comparison is over the
-     * rule's columns, a stage's table carrying the reading's mark beside them.
+     * columns rule and table both carry, a stage's table carrying the reading's mark beside them.
      *
      * <p>It holds by construction, the table being filled from the rule and nothing else writing it, but a construction argument is exactly the kind that outlives the
      * edit which breaks it: a stage scoped to the wrong partition, a delete clearing more or less than
@@ -918,7 +918,7 @@ class FactSchemaGateTest {
                 .toList();
             assertThat(stages).as("stages inserting from a rule view").isNotEmpty();
             var siblingBefore = stages.stream()
-                .map(stage -> materializedRows(dsl, stage.target(), stage.ruleView(), "sibling"))
+                .map(stage -> materializedRows(dsl, stage.target(), stage, "sibling"))
                 .toList();
             assertThat(siblingBefore.stream().filter(rows -> !rows.isEmpty()).count())
                 .as("stages the fixture populates in the sibling graph; with none, the scoping"
@@ -928,13 +928,14 @@ class FactSchemaGateTest {
             captureStageFixture(dsl, "own", ownDir);
 
             for (int i = 0; i < stages.size(); i++) {
-                String target = stages.get(i).target();
-                String rule = stages.get(i).ruleView();
-                assertThat(materializedRows(dsl, target, rule, "own"))
+                var stage = stages.get(i);
+                String target = stage.target();
+                String rule = stage.ruleView();
+                assertThat(materializedRows(dsl, target, stage, "own"))
                     .as("%s should hold exactly what %s computes for the capturing graph",
                         target, rule)
-                    .isEqualTo(materializedRows(dsl, rule, rule, "own"));
-                assertThat(materializedRows(dsl, target, rule, "sibling"))
+                    .isEqualTo(materializedRows(dsl, rule, stage, "own"));
+                assertThat(materializedRows(dsl, target, stage, "sibling"))
                     .as("capturing 'own' must leave the sibling's partition of %s alone", target)
                     .isEqualTo(siblingBefore.get(i));
             }
@@ -960,18 +961,17 @@ class FactSchemaGateTest {
     }
 
     /**
-     * A relation's rows for one graph, sorted, as strings. Content rather than order: a target is a
-     * bag its view fills, and neither side promises an order.
+     * A relation's rows for one graph, sorted, as strings, over the columns the stage's rule view and
+     * table both carry. Content rather than order: a target is a bag its view fills, and neither side
+     * promises an order. A table several rules write is read as this rule's rows, by its
+     * {@code rule} column, and a supertype among them carries the rule's key and not its payload.
      */
     private static List<String> materializedRows(DSLContext dsl, String relationName,
-                                                 String columnsOf, String graphName) {
+                                                 StageAnswerAgreementTest.Stage stage, String graphName) {
         var relation = table(name(relationName.toUpperCase(Locale.ROOT)));
-        var columns = dsl.select(field(name("COLUMN_NAME"), String.class))
-            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("TABLE_NAME"), String.class).eq(columnsOf.toUpperCase(Locale.ROOT)))
-            .orderBy(field(name("ORDINAL_POSITION")))
-            .fetch(0, String.class).stream()
+        var targetColumns = columnNames(dsl, stage.target());
+        var columns = columnNames(dsl, stage.ruleView()).stream()
+            .filter(targetColumns::contains)
             .map(column -> field(name(column)))
             .toList();
         var graph = field(name("GRAPH_NAME"), String.class);
@@ -980,11 +980,23 @@ class FactSchemaGateTest {
             .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
             .and(field(name("TABLE_NAME"), String.class).eq(relationName.toUpperCase(Locale.ROOT)))
             .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME")));
+        var scope = stage.rule() == null || !relationName.equals(stage.target())
+            ? org.jooq.impl.DSL.noCondition()
+            : field(name("RULE"), String.class).eq(stage.rule());
         var query = dsl.select(columns).from(relation);
         var rows = partitioned
-            ? query.where(graph.eq(graphName)).fetch(Record::toString)
-            : query.fetch(Record::toString);
+            ? query.where(graph.eq(graphName)).and(scope).fetch(Record::toString)
+            : query.where(scope).fetch(Record::toString);
         return rows.stream().sorted().toList();
+    }
+
+    private static List<String> columnNames(DSLContext dsl, String relationName) {
+        return dsl.select(field(name("COLUMN_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("TABLE_NAME"), String.class).eq(relationName.toUpperCase(Locale.ROOT)))
+            .orderBy(field(name("ORDINAL_POSITION")))
+            .fetch(0, String.class);
     }
 
     /**

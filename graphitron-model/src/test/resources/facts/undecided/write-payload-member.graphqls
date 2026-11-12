@@ -1,0 +1,36 @@
+# A field of a root write's payload whose target, a union, binds no table of its own reads the write's
+# table, the rows the write produced, and reaches each member from there: it is a producer lifted
+# from the keys the write returned, keyed on the write table's primary key.
+# Undecided until the emitter reads the store: the generator refuses a union payload carrier today.
+
+type Film @table(name: "film") { title: String }
+type Inventory @table(name: "inventory") { storeId: Int @field(name: "store_id") }
+union FilmOrInventory = Film | Inventory
+
+input FilmInput @table(name: "film") { title: String }
+
+type AddFilmOutcome { touched: FilmOrInventory }
+
+type Query { films: [Film!]! }
+
+type Mutation {
+  addFilm(input: FilmInput): AddFilmOutcome @mutation(typeName: INSERT, table: "film")
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate = 'Mutation.addFilm.touched'", rows: """
+  coordinate,               table_name
+  Mutation.addFilm.touched, film
+  """)
+
+extend schema @assertContains(relation: "graphitron_occurrence_source_claim", rows: """
+  coordinate,               rule
+  Mutation.addFilm.touched, writePayloadMember
+  """)
+
+# One need per member, each starting on the written film rows.
+extend schema @assertContains(relation: "graphitron_path_need_table", rows: """
+  coordinate,               target_type, start_table, landing_table
+  Mutation.addFilm.touched, Film,        film,        film
+  Mutation.addFilm.touched, Inventory,   film,        inventory
+  """)

@@ -477,14 +477,21 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     the per-depth rules and `graphitron_occurrence_producer_result_rule` read `graphitron_tabletype`
     and it in place of their type, member and `NOT EXISTS` combinations, priced by a quiet-machine
     A/B on `prepare_ms`.
-  * **The source arms that read no parent leave the depth loop** `open`, F's. The loop holds only
-    its recursion: `occurrence-producers` writes the producers and service calls ahead of it and
-    `occurrence-bindings` what each occurrence binds after it. Of the source rule's arms,
-    `declaringTable`, `rootRoutine`, `ownServiceRecord`, `argumentTarget`, `argumentMember`,
-    `argumentWrite` and `recordParameter` read no row the parent wrote, so they could be written once
-    for every depth, the loop adding only the arms that read the parent. Before that, how the arms
-    exclude one another is checked, and `graphitron_occurrence_source` would take two writing
-    stages, which the split by kind ruled on 2026-11-12 may or may not cover.
+  * **A claim states only what its rule finds, and one rank decides between rules** `open`, F's.
+    The rules filling `graphitron_occurrence_source_claim` and `graphitron_path_need_claim` still
+    exclude one another: `argumentCopy` restates the conditions of three sibling rules, and the
+    nested rules restate those of `record` and `object`, while the winner views copy one rank
+    `CASE` three times. A constant relation keyed by rule, carrying its kind, owning stage and rank,
+    takes a foreign key from each claim's rule; each rule view states only its own condition, the
+    winner view reads the rank, two claims of equal rank that disagree store a defect at the
+    occurrence, and the stored source and need carry the rule that answered. This also removes
+    the exclusion joins the per-depth rules pay for. Whether `graphitron_field_handed_class`
+    restates what `graphitron_occurrence_producer_result` already holds for the parent's producer
+    is checked first.
+  * **A target's binding shape is stated once** `open`, F's. "The field writes a path" and "the
+    target binds no table and no member binds one" are spelled again in about ten claim rules;
+    stored once at field grain, in `occurrence-source-claims`, the rules become key joins, priced
+    by a quiet-machine A/B on the depth stage.
 * **Relations nobody reads go** `open`, F's.
   A census of every relation's readers, static over the main sources and at runtime over a full
   build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.
@@ -1370,6 +1377,13 @@ output package they are written to are settled.
 * **The undecided fact documents are sorted** `open`. Each document under `undecided` becomes a
   scenario or states the defect it trips over, and the folder is gone; the ones the walk refuses with
   nothing stored wait on "Each rule the walk enforces is a located defect".
+  * **A write payload's union carrier generates, and its document is a scenario again** `open`.
+    `undecided/write-payload-member.graphqls` states the sources the store gives a field of a root
+    write's payload typed as a union of tables, each member reached from the written rows; the
+    generator refuses that carrier today ("not a recognized DML payload data-field shape"), so the
+    document went to `undecided` by ruling (Alf, 2026-11-13), the folder's ceiling raised once for
+    it. When the DML write family of `TypeFetcherGenerator` reads the store, the carrier generates
+    from those sources, the document moves back to `scenarios` and the ceiling comes down.
 
 ### A dev round costs what its reads' shapes ask `open`
 
