@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -540,11 +541,14 @@ public final class BuildQuery {
                 .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
                     new Column(r.value5(), Optional.ofNullable(r.value6()))));
 
-            // How each node id lands in each class it is handed to, by the occurrence and the class.
+            // How each node id lands in each class it is handed to, by the occurrence and the class its
+            // slot meets.
             var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+            var sl = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
             var shapes = new HashMap<String, String>();
-            store.dsl().select(d.COORDINATE, d.LANDING_CLASS, d.DECODE_SHAPE)
+            store.dsl().select(d.COORDINATE, sl.LANDING_CLASS, d.DECODE_SHAPE)
                 .from(d)
+                .join(sl).on(sl.GRAPH_NAME.eq(d.GRAPH_NAME), sl.COORDINATE.eq(d.COORDINATE), sl.SLOT.eq(d.SLOT))
                 .where(d.GRAPH_NAME.eq(store.graphName()))
                 .forEach(r -> shapes.put(r.value1() + "|" + r.value2(), r.value3()));
             return new Catalog(tables, columns, shapes, NodeIdDecodeQuery.read(store));

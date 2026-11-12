@@ -111,10 +111,10 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", ro
 # How each decode that resolves lands: the node's own record, its one column's value, or a jOOQ
 # tuple typed by the key columns in key order.
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
-  coordinate,                        landing_class,                                     decode_shape
-  Query.film(id:),                   java.lang.Integer,                                 KEY_VALUE
-  Query.filmActorRecord(in:),        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord, OWN_RECORD
-  Query.filmByTuple(key:),           org.jooq.Record1,                                  RECORD_N
-  Query.pairByTuple(key:),           org.jooq.Record2,                                  RECORD_N
-  Query.pairsByRows(keys:),          org.jooq.Row2,                                     ROW_N
+  coordinate,                 bound,             decode_shape
+  Query.film(id:),            public.film,       KEY_VALUE
+  Query.filmActorRecord(in:), public.film_actor, OWN_RECORD
+  Query.filmByTuple(key:),    public.film,       RECORD_N
+  Query.pairByTuple(key:),    public.film_actor, RECORD_N
+  Query.pairsByRows(keys:),   public.film_actor, ROW_N
   """)

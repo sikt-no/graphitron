@@ -20,18 +20,18 @@ public final class OccurrenceNodeIdShapes {
 
     private OccurrenceNodeIdShapes() {}
 
-    /** States the shapes of every node id the graph hands to a parameter. */
+    /** States the shape of every node id at every slot it fits. */
     public static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
         var r = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE_RULE;
         dsl.insertInto(d)
-            .columns(d.GRAPH_NAME, d.COORDINATE, d.BOUND, d.LANDING_CLASS, d.DECODE_SHAPE, d.TOUCHED_AT)
+            .columns(d.GRAPH_NAME, d.COORDINATE, d.SLOT, d.BOUND, d.DECODE_SHAPE, d.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.LANDING_CLASS, r.DECODE_SHAPE,
+                .select(r.GRAPH_NAME, r.COORDINATE, r.SLOT, r.BOUND, r.DECODE_SHAPE,
                     val(touchedAt, d.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(d.GRAPH_NAME, d.COORDINATE, d.BOUND, d.LANDING_CLASS)
+            .onConflict(d.GRAPH_NAME, d.COORDINATE, d.SLOT, d.BOUND)
             .doUpdate()
             .set(d.DECODE_SHAPE, excluded(d.DECODE_SHAPE))
             .set(d.TOUCHED_AT, excluded(d.TOUCHED_AT))
