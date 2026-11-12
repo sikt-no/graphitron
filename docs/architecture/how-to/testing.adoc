@@ -365,6 +365,13 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `graphitron-lsp`'s `StoreFixture` is the same shape. Both move onto `FactGraphs` as their modules migrate, keeping a store of their own only where the row above does.
 |===
 
+A test whose schema is still inline SDL, and that reads only its own graph, captures it into the population too, not into a store of its own and not into a store a harness clears between tests (Alf, 2026-11-12).
+The inline graph goes in under a name of its own, into a store the population keeps for the test's thread, catalog and classpath, and the test reads it back through the same select-only connection as a document's graph.
+The reason is cost: a capture into a store that already holds other graphs, with its statement cache intact, costs a fraction of one into an empty or freshly cleared store.
+That store also holds one ballast graph from its first capture, so a read that forgets to filter on its graph sees the ballast's rows and fails on every run instead of depending on which tests ran before it.
+A test that writes still fails on that connection and keeps a store of its own.
+Turning the inline SDL into a fact document later changes only what the test hands the population.
+
 Where a build fixture goes is decided by the same question, one level up.
 A client's fixture that runs a real build spans two tiers, so it lives above both rather than inside the client: `graphitron-maven-plugin` holds `StoreBackedBuild` and `BuiltStoreFixture`, and the tests that read them, because the dev mojo is what wires the generator to the two clients and that wiring is what those tests are about.
 The clients publish test-jars so a relocated test keeps its own module's fixture vocabulary instead of a second copy that drifts, and neither client depends on `graphitron` at any scope; `StoreClientBoundaryTest` in each of them fails the build if one reacquires the edge, in main sources or in tests.
