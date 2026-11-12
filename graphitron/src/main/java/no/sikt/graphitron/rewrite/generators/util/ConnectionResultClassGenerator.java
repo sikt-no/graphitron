@@ -21,16 +21,16 @@ import java.util.List;
  * Connection-level resolvers ({@code edges}, {@code nodes}, {@code pageInfo},
  * {@code totalCount}).
  *
- * <p>Carries a nullable {@code TotalCount} slot the lazy {@code totalCount} resolver calls.
+ * <p>Carries a nullable {@code TotalCount} slot the lazy {@code totalCount} resolver calls; the
+ * empty page a batched fetcher answers for a parent whose key cannot match counts 0.
  * Root fetchers bind {@code Scoped} over the page query's own {@code (table, condition)}, which
  * the carrier also keeps as the facet source; batched producers
  * ({@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter#buildScatterConnectionByIdxHelper(String, boolean)}
  * and the nested connection over a union or interface in
  * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}) bind a slot of one
- * shared {@code BatchCounts}, so a batch of N parents issues one grouped count rather than N. The
- * validator-unreachable empty-participants defensive path in
- * {@code MultiTablePolymorphicEmitter.buildRootConnectionFetcher} binds nothing, and the resolver
- * returns {@code null} there.
+ * shared {@code BatchCounts}, so a batch of N parents issues one grouped count rather than N. Every
+ * page a producer builds carries a count; a union or interface connection with no table-bound
+ * participant is refused before generation ({@code FIELD_WITHOUT_FETCHER}).
  *
  * <p>Generated as a source file rather than shipped as a library dependency so that consuming
  * projects have no runtime dependency on Graphitron itself.
@@ -88,13 +88,12 @@ public class ConnectionResultClassGenerator {
         var backwardField = FieldSpec.builder(boolean.class, "backward", Modifier.PRIVATE, Modifier.FINAL).build();
         var orderByColumnsField = FieldSpec.builder(listOfField, "orderByColumns", Modifier.PRIVATE, Modifier.FINAL).build();
         // table and condition are nullable: batched producers bind a BatchCounts slot through the
-        // TotalCount constructor and leave both null, as does the polymorphic root connection
-        // fetcher's validator-unreachable empty-participants defensive path. Root fetchers bind the
+        // TotalCount constructor and leave both null, as does the empty page. Root fetchers bind the
         // page query's own pair, which the facets resolver reads as its source.
         var tableField = FieldSpec.builder(tableWildcard, "table", Modifier.PRIVATE, Modifier.FINAL).build();
         var conditionField = FieldSpec.builder(CONDITION, "condition", Modifier.PRIVATE, Modifier.FINAL).build();
         // The count slot: Scoped over a non-null (table, condition) pair, a BatchCounts slot, or
-        // null on the empty-participants path, where the totalCount resolver returns null.
+        // the empty page's zero.
         var totalCountRef = ClassName.get(outputPackage + ".util", CLASS_NAME, TOTAL_COUNT_CLASS_NAME);
         var scopedRef = ClassName.get(outputPackage + ".util", CLASS_NAME, SCOPED_CLASS_NAME);
         var totalCountField = FieldSpec.builder(totalCountRef, "totalCount", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -444,6 +443,7 @@ public class ConnectionResultClassGenerator {
             .addMethod(pageWithSourceConstructor)
             .addMethod(pageWithCountConstructor)
             .addMethod(pageWithFacetsConstructor)
+            .addMethod(emptyPage(outputPackage, multiTenant))
             .addMethod(getResult)
             .addMethod(getPageSize)
             .addMethod(getAfterCursor)
@@ -462,6 +462,26 @@ public class ConnectionResultClassGenerator {
             .build();
 
         return List.of(spec);
+    }
+
+    /**
+     * The page a batched fetcher answers for a parent whose key cannot match: no rows, so its
+     * {@code totalCount} is 0 without a statement, as any parent whose query found nothing counts.
+     * Facets never reach a batched child, so it carries no facet plan.
+     */
+    private static MethodSpec emptyPage(String outputPackage, boolean multiTenant) {
+        var self = ClassName.get(outputPackage + ".util", CLASS_NAME);
+        var builder = MethodSpec.methodBuilder("empty")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(int.class, "pageSize");
+        if (multiTenant) {
+            builder.addParameter(DSL_CONTEXT, "dsl");
+        }
+        return builder
+            .addStatement("return new $T($T.of(), pageSize, null, null, false, $T.of(), null, null,"
+                + " counted -> 0, null, null, null" + (multiTenant ? ", dsl)" : ")"), self, LIST, LIST)
+            .build();
     }
 
     private static TypeSpec totalCountInterface(ClassName totalCountRef) {

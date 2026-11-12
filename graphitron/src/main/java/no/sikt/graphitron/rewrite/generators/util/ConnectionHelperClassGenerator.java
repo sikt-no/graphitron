@@ -605,9 +605,8 @@ public class ConnectionHelperClassGenerator {
         // Lazy on selection: graphql-java only invokes the registered resolver when the client
         // selects totalCount, so the count SQL is skipped on every query that does not ask for
         // it. The carrier's count slot decides the statement: Scoped on a root connection, one
-        // grouped count shared by the batch on a batched one. Returns null when the slot is
-        // absent; the only producer of such a carrier is the validator-unreachable
-        // empty-participants defensive path in MultiTablePolymorphicEmitter.buildRootConnectionFetcher.
+        // grouped count shared by the batch on a batched one, zero on the empty page. Returns null
+        // only when the slot is absent, which no producer builds.
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         // Multi-tenant: read the DSLContext the owning fetcher bound on the carrier (see the

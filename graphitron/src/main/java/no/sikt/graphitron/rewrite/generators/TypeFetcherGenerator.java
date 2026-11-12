@@ -7167,19 +7167,20 @@ public class TypeFetcherGenerator {
     /**
      * The completed future a batched fetcher answers when its key cannot match: the field's empty
      * value, read off the launcher row's result shape. {@code null} for a single record, an empty
-     * list for a record list, and an empty page for a connection. The empty page carries no count
-     * source, so its {@code totalCount} reads {@code null}, like any carrier the count query does
-     * not cover.
+     * list for a record list, and an empty page for a connection, whose {@code totalCount} is 0: the
+     * parent's result set is provably empty, as it is for a parent whose query found nothing.
      */
     private static CodeBlock emptyBatchedResult(no.sikt.graphitron.command.LauncherCommand row,
                                                 TypeName resultValueType) {
         CodeBlock empty = switch (row.result()) {
             case no.sikt.graphitron.command.ResultShape.SingleRecord ignored -> null;
             case no.sikt.graphitron.command.ResultShape.RecordList ignored -> CodeBlock.of("$T.of()", LIST);
+            // Only a tenant-routed parent reaches here, its tenant read off the parent row, so the
+            // page takes the routed context the batched form would (null: no row names a tenant).
             case no.sikt.graphitron.command.ResultShape.Connection conn -> CodeBlock.of(
-                "new $T($T.of(), $L, null, null, false, $T.of(), null, null, null)",
+                "$T.empty($L, null)",
                 ClassName.get(conn.carrier().packageName(), conn.carrier().simpleName()),
-                LIST, conn.defaultPageSize(), LIST);
+                conn.defaultPageSize());
             case no.sikt.graphitron.command.ResultShape.LoaderDelegated ignored ->
                 throw new IllegalStateException(
                     "Graphitron generator bug (batched fetcher): a table-batched launcher row"
