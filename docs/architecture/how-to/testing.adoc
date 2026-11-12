@@ -366,7 +366,7 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 |===
 
 A test whose schema is still inline SDL, and that reads only its own graph, captures it into the population too, not into a store of its own and not into a store a harness clears between tests (Alf, 2026-11-12).
-The inline graph goes in under a name of its own, into a store the population keeps for the test's thread, catalog and classpath, and the test reads it back through the same select-only connection as a document's graph.
+The inline graph goes in under a name of its own, into a store the population lends it from a pool kept per catalog and classpath, and the test reads it back through the same select-only connection as a document's graph.
 The reason is cost: a capture into a store that already holds other graphs, with its statement cache intact, costs a fraction of one into an empty or freshly cleared store.
 That store also holds one ballast graph from its first capture, so a read that forgets to filter on its graph sees the ballast's rows and fails on every run instead of depending on which tests ran before it.
 A test that writes still fails on that connection and keeps a store of its own.
