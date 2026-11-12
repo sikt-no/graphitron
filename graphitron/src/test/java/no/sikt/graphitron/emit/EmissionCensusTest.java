@@ -86,6 +86,37 @@ class EmissionCensusTest {
 
 
     @Test
+    void theCensusOfTheExampleSchemasConnections() {
+        var shapes = ConnectionsQuery.read(handle());
+        var runtime = new ConnectionsEmitter.Runtime(
+            ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.PageInfoClassGenerator.CLASS_NAME),
+            ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.CLASS_NAME));
+        var units = new java.util.HashMap<String, TypeSpec>();
+        for (TypeSpec spec : ConnectionsEmitter.emit(shapes, "census", runtime)) {
+            units.put("census.util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.PageInfoClassGenerator.generate()) {
+            units.put("census.util." + spec.name(), spec);
+        }
+        // The facets records the connections name, as empty records: what a record holds is the
+        // facets generator's, and what the connections need is its name.
+        var facets = shapes.connections().stream()
+            .map(ConnectionsQuery.Connection::facetsTypeName).filter(java.util.Objects::nonNull)
+            .map(name -> new no.sikt.graphitron.command.GlobalCommand.FacetsRecord(name, List.of()))
+            .toList();
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.generate(
+                new no.sikt.graphitron.command.GlobalCommand.Facets(
+                    new no.sikt.graphitron.command.UnitRef("census.util", "Facets"), List.of(), facets),
+                "census")) {
+            units.put("census.util." + spec.name(), spec);
+        }
+        EmittedCodeHarness.compileStrictly(units).close();
+        assertThat(shapes.connections()).as("the example's connection types").hasSize(35);
+        assertThat(shapes.edges()).as("the example's edge types").hasSize(35);
+        assertThat(facets).as("the example's faceted connections").hasSize(3);
+    }
+
+    @Test
     void theCensusOfTheExampleSchemasConditions() throws Exception {
         var rows = ConditionQuery.read(handle());
         var decodes = NodeIdDecodeQuery.read(handle());

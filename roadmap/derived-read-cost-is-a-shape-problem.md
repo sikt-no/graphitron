@@ -278,8 +278,8 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   * One class per connection type and one per edge type, not generic: graphql-java registers a
     fetcher per type and field, so what differs per producer (table, condition, ordering, the
     tenant's `DSLContext`, how a hit's `node` is fetched) is supplied by the producer as closures
-    over the values it already bound, never as a type parameter or an argument bag. The element is
-    the table's record class where the element names one table, else `Record`.
+    over the values it already bound, never as a type parameter or an argument bag. A page's
+    elements are jOOQ `Record`s, as the generated code holds them (Alf, 2026-11-12).
   * A cursor is computed from the element and the ordering, a keyset position, never from the
     element's index in the page. Cursor encoding and decoding, whose bytes the manual promises, and
     the batch-count memo stay as one small generated utility.
@@ -329,12 +329,23 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     occurrence's source tables".
     "A connection is recognised by the specification's shape" states the positions before the
     classes.
-  * **Each connection type and edge type has a generated class** `blocked`, on "A connection is recognised by the specification's shape".
-    An emitter writes the classes from the store while the producers still return
-    `ConnectionResult`. Pinned by the sakila compile and the emission census.
-  * **The producers return the connection type's class** `blocked`, on "Each connection type and edge type has a generated class".
-    The five construction sites change, and the per-type fetchers and `ConnectionHelper`'s resolvers
-    go. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
+  * The classes are written: `ConnectionsQuery` reads each connection and edge type and the
+    positions its fields fill, and `ConnectionsEmitter` writes `Connections`, a class per connection
+    type and per edge type with a member for each position its type fills. A connection is built
+    from its elements, whether a next or a previous page exists, the cursor function and, where its
+    type fills them, a count and a facets function of the request; an edge from its element and the
+    cursor function, since one edge type serves every connection paging through it. The page info
+    and facets classes are named by the caller. No unit emits them yet, so no consumer sees them
+    before the producers return them; `ConnectionsEmitterTest` compiles and drives them over
+    `scenarios/connection-positions`, and the emission census compiles the sakila example's.
+  * **The producers return the connection type's class** `open`.
+    One change, since a connection type may have several producers: a global `util.Connections`
+    unit rendered from the store (no plan-layer row; one global unit for now, Alf 2026-11-12, at
+    the cost of coarser dev-loop recompiles), the five construction sites building the
+    closures (`Scoped` and `BatchCounts` becoming how a producer makes its count function, moved
+    with the cursor codec into the small utility), the registrations reading each position's member,
+    and the per-type fetchers and `ConnectionHelper`'s resolvers going. A `feat!` with a
+    `BREAKING-CHANGE:` footer, since `runtime-api.adoc` documents `ConnectionHelper.totalCount(env)`. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
     batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
     `runtime-api.adoc`, `runtime-extension-points.adoc` and `code-generation-triggers.adoc` change.
   * **The runtime connection vocabulary goes** `blocked`, on "The producers return the connection type's class".
