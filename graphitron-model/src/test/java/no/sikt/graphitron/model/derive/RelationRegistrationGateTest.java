@@ -370,6 +370,17 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_handed_class_rule", Arm.DERIVED);
         registrations.put("graphitron_field_handed_record", Arm.DERIVED);
         registrations.put("graphitron_field_handed_record_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_field_table_bound_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_field_member_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_field_unbound_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_argument_copy_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_record_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_argument_table_bound_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_argument_member_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_argument_unbound_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_claim_input_field_copy_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_need_table_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_table", Arm.DERIVED);
         registrations.put("graphitron_occurrence_source_claim_object", Arm.DERIVED);

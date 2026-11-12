@@ -19475,6 +19475,285 @@ COMMENT ON VIEW graphitron_occurrence_source_object_rule IS 'One row the source 
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_object.kind';
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_object.class_name';
 
+-- ==== Path needs, claimed by rule =================================================
+
+CREATE TABLE graphitron_path_need_claim (
+  graph_name          VARCHAR   NOT NULL,
+  coordinate          VARCHAR   NOT NULL,
+  target_type         VARCHAR   NOT NULL,
+  rule                VARCHAR   NOT NULL,
+  start_source_name   VARCHAR   NOT NULL,
+  start_schema        VARCHAR   NOT NULL,
+  start_table         VARCHAR   NOT NULL,
+  landing_source_name VARCHAR,
+  landing_schema      VARCHAR,
+  landing_table       VARCHAR,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, target_type, rule),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_need_claim IS 'A rule''s claim that one occurrence must reach one type, with where it starts and lands: one row per occurrence, type and rule. For example a field under Query.films whose target is bound to the language table is claimed by fieldTableBound, starting on film and landing on language.';
+COMMENT ON COLUMN graphitron_path_need_claim.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_path_need_claim.coordinate IS 'the occurrence that must reach the type';
+COMMENT ON COLUMN graphitron_path_need_claim.target_type IS 'the type it must reach';
+COMMENT ON COLUMN graphitron_path_need_claim.rule IS 'the rule that claims it, each rule stating its claims in a rule view of its own; with the graph, the occurrence and the type, the key';
+COMMENT ON COLUMN graphitron_path_need_claim.start_source_name IS 'the codegen source of the table the need starts on';
+COMMENT ON COLUMN graphitron_path_need_claim.start_schema IS 'the start table''s schema';
+COMMENT ON COLUMN graphitron_path_need_claim.start_table IS 'the start table''s own name';
+COMMENT ON COLUMN graphitron_path_need_claim.landing_source_name IS 'the codegen source of the table the need lands on, NULL where a written path decides where it lands';
+COMMENT ON COLUMN graphitron_path_need_claim.landing_schema IS 'the landing table''s schema';
+COMMENT ON COLUMN graphitron_path_need_claim.landing_table IS 'the landing table''s own name';
+COMMENT ON COLUMN graphitron_path_need_claim.touched_at IS 'the reading that last wrote this row; the depth loop sweeps what an older reading wrote';
+
+CREATE VIEW graphitron_path_need_claim_field_table_bound_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, ft.target_type_name, 'fieldTableBound', st.table_source_name, st.table_schema, st.table_name, tt.table_source_name, tt.table_schema, tt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_source_table st ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type gt ON gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE o.kind = 'FIELD' AND gt.kind <> 'INTERFACE';
+COMMENT ON VIEW graphitron_path_need_claim_field_table_bound_rule IS 'One claim the fieldTableBound rule makes, in the shape graphitron_path_need_claim stores: a field whose target has a table of its own and is no interface reaches it, landing there. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_table_bound_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_field_member_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, pm.member_type_name, 'fieldMember', st.table_source_name, st.table_schema, st.table_name, mt.table_source_name, mt.table_schema, mt.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_source_table st ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type gt ON gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+   AND gt.kind IN ('INTERFACE', 'UNION')
+  JOIN graphitron_type_member pm ON pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name
+  JOIN graphitron_tabletype mt ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+ WHERE o.kind = 'FIELD';
+COMMENT ON VIEW graphitron_path_need_claim_field_member_rule IS 'One claim the fieldMember rule makes, in the shape graphitron_path_need_claim stores: a field whose target is an interface or a union reaches each member with a table, landing on its table. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_member_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_field_unbound_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, ft.target_type_name, 'fieldUnbound', st.table_source_name, st.table_schema, st.table_name, CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = o.graph_name AND wpc.element_coordinate = o.element_coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place) THEN NULL ELSE st.table_source_name END, CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = o.graph_name AND wpc.element_coordinate = o.element_coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place) THEN NULL ELSE st.table_schema END, CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_claim wpc
+                 WHERE wpc.graph_name = o.graph_name AND wpc.element_coordinate = o.element_coordinate
+                   AND wpc.claim_kind = 'FIELD' AND wpc.last_place >= wpc.first_place) THEN NULL ELSE st.table_name END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_source_table st ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
+                     JOIN graphitron_tabletype mt
+                       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name);
+COMMENT ON VIEW graphitron_path_need_claim_field_unbound_rule IS 'One claim the fieldUnbound rule makes, in the shape graphitron_path_need_claim stores: a field whose target binds no table reaches its own type, landing on its start or, writing a path, on no table yet. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_field_unbound_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_argument_copy_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, pn.target_type, 'argumentCopy', CASE WHEN pn.landing_table IS NULL THEN j.target_source_name ELSE pn.landing_source_name END, CASE WHEN pn.landing_table IS NULL THEN j.target_schema ELSE pn.landing_schema END, CASE WHEN pn.landing_table IS NULL THEN j.target_table ELSE pn.landing_table END, CASE WHEN cl.element_coordinate IS NULL THEN CASE WHEN pn.landing_table IS NULL THEN j.target_source_name ELSE pn.landing_source_name END END, CASE WHEN cl.element_coordinate IS NULL THEN CASE WHEN pn.landing_table IS NULL THEN j.target_schema ELSE pn.landing_schema END END, CASE WHEN cl.element_coordinate IS NULL THEN CASE WHEN pn.landing_table IS NULL THEN j.target_table ELSE pn.landing_table END END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_path_need_table pn ON pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate
+  LEFT JOIN graphitron_join_path j
+    ON j.graph_name = pn.graph_name AND j.coordinate = pn.coordinate AND j.target_type = pn.target_type
+  LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = pn.target_type)
+ WHERE o.kind = 'FIELD_ARGUMENT'
+   AND CASE WHEN pn.landing_table IS NULL THEN j.target_table ELSE pn.landing_table END IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st0
+                 WHERE st0.graph_name = o.graph_name AND st0.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_path_need_claim_argument_copy_rule IS 'One claim the argumentCopy rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with needs reaches each type its field reaches, starting where the field lands for it. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_copy_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_record_parameter_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, COALESCE(ra.named_type, rf.named_type), 'recordParameter', st.table_source_name, st.table_schema, st.table_name, CASE WHEN cl.element_coordinate IS NULL THEN st.table_source_name END, CASE WHEN cl.element_coordinate IS NULL THEN st.table_schema END, CASE WHEN cl.element_coordinate IS NULL THEN st.table_name END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_source_table st ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN graphitron_occurrence_call_parameter c
+    ON c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
+   AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL
+  LEFT JOIN graphitron_argument ra ON ra.graph_name = o.graph_name AND ra.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field rf ON rf.graph_name = o.graph_name AND rf.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = COALESCE(ra.named_type, rf.named_type))
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND COALESCE(ra.named_type, rf.named_type) IS NOT NULL;
+COMMENT ON VIEW graphitron_path_need_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_path_need_claim stores: an argument or input field a service call takes as a table''s record reaches its own input type, on the record''s table. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_argument_table_bound_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, ft.target_type_name, 'argumentTableBound', tt.table_source_name, tt.table_schema, tt.table_name, CASE WHEN cl.element_coordinate IS NULL THEN tt.table_source_name END, CASE WHEN cl.element_coordinate IS NULL THEN tt.table_schema END, CASE WHEN cl.element_coordinate IS NULL THEN tt.table_name END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  JOIN graphitron_type gt ON gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+  LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = ft.target_type_name)
+ WHERE o.kind = 'FIELD_ARGUMENT' AND gt.kind <> 'INTERFACE'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn0
+                     WHERE pn0.graph_name = p.graph_name AND pn0.coordinate = p.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st0
+                 WHERE st0.graph_name = o.graph_name AND st0.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_path_need_claim_argument_table_bound_rule IS 'One claim the argumentTableBound rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with no needs whose target has a table of its own reaches it, starting and landing there. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_table_bound_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_argument_member_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, pm.member_type_name, 'argumentMember', COALESCE(it.table_source_name, mt.table_source_name), COALESCE(it.table_schema, mt.table_schema), COALESCE(it.table_name, mt.table_name), CASE WHEN cl.element_coordinate IS NULL THEN mt.table_source_name END, CASE WHEN cl.element_coordinate IS NULL THEN mt.table_schema END, CASE WHEN cl.element_coordinate IS NULL THEN mt.table_name END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  JOIN graphitron_type gt ON gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+   AND gt.kind IN ('INTERFACE', 'UNION')
+  JOIN graphitron_type_member pm ON pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name
+  JOIN graphitron_tabletype mt ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+  LEFT JOIN graphitron_tabletype it ON it.graph_name = ft.graph_name AND it.type_name = ft.target_type_name
+  LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = pm.member_type_name)
+ WHERE o.kind = 'FIELD_ARGUMENT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn0
+                     WHERE pn0.graph_name = p.graph_name AND pn0.coordinate = p.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st0
+                 WHERE st0.graph_name = o.graph_name AND st0.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_path_need_claim_argument_member_rule IS 'One claim the argumentMember rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with no needs whose target is an interface or a union reaches each member with a table. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_member_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_argument_unbound_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, ft.target_type_name, 'argumentUnbound', st.table_source_name, st.table_schema, st.table_name, CASE WHEN cl.element_coordinate IS NULL THEN st.table_source_name END, CASE WHEN cl.element_coordinate IS NULL THEN st.table_schema END, CASE WHEN cl.element_coordinate IS NULL THEN st.table_name END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_source_table st ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_field pf ON pf.graph_name = p.graph_name AND pf.coordinate = p.element_coordinate
+  JOIN graphitron_field_target ft ON ft.graph_name = pf.graph_name AND ft.type_name = pf.type_name AND ft.field_name = pf.field_name
+  LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = ft.target_type_name)
+ WHERE o.kind = 'FIELD_ARGUMENT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn0
+                     WHERE pn0.graph_name = p.graph_name AND pn0.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
+                     JOIN graphitron_tabletype mt
+                       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
+                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name);
+COMMENT ON VIEW graphitron_path_need_claim_argument_unbound_rule IS 'One claim the argumentUnbound rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with no needs whose target binds no table reaches it, on its own source table. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_argument_unbound_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_claim_input_field_copy_rule (graph_name, coordinate, target_type, rule, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+SELECT DISTINCT o.graph_name, o.coordinate, pn.target_type, 'inputFieldCopy', pn.start_source_name, pn.start_schema, pn.start_table, CASE WHEN cl.element_coordinate IS NOT NULL THEN NULL WHEN pn.landing_table IS NULL THEN pn.start_source_name ELSE pn.landing_source_name END, CASE WHEN cl.element_coordinate IS NOT NULL THEN NULL WHEN pn.landing_table IS NULL THEN pn.start_schema ELSE pn.landing_schema END, CASE WHEN cl.element_coordinate IS NOT NULL THEN NULL WHEN pn.landing_table IS NULL THEN pn.start_table ELSE pn.landing_table END
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  JOIN graphitron_path_need_table pn ON pn.graph_name = p.graph_name AND pn.coordinate = p.coordinate
+  LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = pn.target_type)
+ WHERE o.kind = 'INPUT_FIELD'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st0
+                 WHERE st0.graph_name = o.graph_name AND st0.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_path_need_claim_input_field_copy_rule IS 'One claim the inputFieldCopy rule makes, in the shape graphitron_path_need_claim stores: an input field reaches what its parent reaches, from where it starts, landing where its parent lands. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_claim.rule';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_claim.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
+
+CREATE VIEW graphitron_path_need_table_rule (graph_name, coordinate, target_type, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
+-- A claim holds unless its occurrence has a claim of a higher rank: a record a service call takes over
+-- every other rule.
+SELECT DISTINCT c.graph_name, c.coordinate, c.target_type, c.start_source_name, c.start_schema, c.start_table,
+       c.landing_source_name, c.landing_schema, c.landing_table
+  FROM graphitron_path_need_claim c
+ WHERE c.rule = 'recordParameter'
+    OR NOT EXISTS (SELECT 1 FROM graphitron_path_need_claim w
+                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
+                      AND w.rule = 'recordParameter');
+COMMENT ON VIEW graphitron_path_need_table_rule IS 'One row the path need table rule computes, in the shape graphitron_path_need_table stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_table, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_table.graph_name';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_table.coordinate';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_table.target_type';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.start_source_name IS 'the start_source_name of a row of this rule, which the stage writes into graphitron_path_need_table.start_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.start_schema IS 'the start_schema of a row of this rule, which the stage writes into graphitron_path_need_table.start_schema';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.start_table IS 'the start_table of a row of this rule, which the stage writes into graphitron_path_need_table.start_table';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_table.landing_source_name';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_table.landing_schema';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_table.landing_table';
+
 -- ==== Diagnostics ==================================================================
 -- Violations as facts: six arms behind one prefix-less union view (diagnostic, at the
 -- section's tail), and nothing reads a base relation of this section directly. The arms, and
@@ -20474,6 +20753,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_accessor_path'),
   ('occurrence-depths', 'graphitron_accessor_path_step'),
   ('occurrence-depths', 'graphitron_path'),
+  ('occurrence-depths', 'graphitron_path_need_claim'),
   ('occurrence-depths', 'graphitron_path_need'),
   ('occurrence-depths', 'graphitron_path_need_object'),
   ('occurrence-depths', 'graphitron_path_need_table'),
@@ -20735,6 +21015,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('path-need-claim',
+   'one rule''s claim that one occurrence must reach one type, in one graph',
+   'graph_name, coordinate, target_type, rule', 'sdl'),
   ('field-record-table',
    'one table whose record is the class one field hands back, in one graph',
    'graph_name, type_name, field_name, table_source_name, table_schema, table_name', 'sdl'),
@@ -21926,6 +22209,50 @@ INSERT INTO meta_relation VALUES
    'The class an occurrence''s values are an instance of: one row per occurrence whose source is an object.',
    'For example Query.filmBlurbHolder.blurb is read off the FilmBlurbHolder its parent''s service hands back.',
    'A value a producer hands back with a class but no table record and no fill is rows of no table, so its occurrences read it as an object, the start of an accessor path. The class is the parent field''s own producer''s result and nothing else, so a source never guesses among the classes a type may be backed by.'),
+  ('graphitron_path_need_claim', 'path-need-claim', 'graphitron',
+   'A rule''s claim that one occurrence must reach one type, with where it starts and lands: one row per occurrence, type and rule.',
+   'For example a field under Query.films whose target is bound to the language table is claimed by fieldTableBound, starting on film and landing on language.',
+   'The candidates the need writer evaluated as one union of arms, stored, one rule view per arm, so each is a statement H2 plans alone; the union was the costliest statement in the depth loop to plan. Which claim takes effect is the need rule view''s to state, a record a service call takes over every other rule on its occurrence. Written a depth at a time by the depth loop, every rule reading the occurrence''s own source at that depth.'),
+  ('graphitron_path_need_claim_field_table_bound_rule', 'path-need-claim', 'graphitron',
+   'One claim the fieldTableBound rule makes, in the shape graphitron_path_need_claim stores: a field whose target has a table of its own and is no interface reaches it, landing there.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_field_member_rule', 'path-need-claim', 'graphitron',
+   'One claim the fieldMember rule makes, in the shape graphitron_path_need_claim stores: a field whose target is an interface or a union reaches each member with a table, landing on its table.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_field_unbound_rule', 'path-need-claim', 'graphitron',
+   'One claim the fieldUnbound rule makes, in the shape graphitron_path_need_claim stores: a field whose target binds no table reaches its own type, landing on its start or, writing a path, on no table yet.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_argument_copy_rule', 'path-need-claim', 'graphitron',
+   'One claim the argumentCopy rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with needs reaches each type its field reaches, starting where the field lands for it.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_record_parameter_rule', 'path-need-claim', 'graphitron',
+   'One claim the recordParameter rule makes, in the shape graphitron_path_need_claim stores: an argument or input field a service call takes as a table''s record reaches its own input type, on the record''s table.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_argument_table_bound_rule', 'path-need-claim', 'graphitron',
+   'One claim the argumentTableBound rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with no needs whose target has a table of its own reaches it, starting and landing there.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_argument_member_rule', 'path-need-claim', 'graphitron',
+   'One claim the argumentMember rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with no needs whose target is an interface or a union reaches each member with a table.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_argument_unbound_rule', 'path-need-claim', 'graphitron',
+   'One claim the argumentUnbound rule makes, in the shape graphitron_path_need_claim stores: an argument of a field with no needs whose target binds no table reaches it, on its own source table.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_claim_input_field_copy_rule', 'path-need-claim', 'graphitron',
+   'One claim the inputFieldCopy rule makes, in the shape graphitron_path_need_claim stores: an input field reaches what its parent reaches, from where it starts, landing where its parent lands.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
+   'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
+  ('graphitron_path_need_table_rule', 'path-need', 'graphitron',
+   'One row the path need table rule computes, in the shape graphitron_path_need_table stores: the claims that took effect.',
+   'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_table, which is the name every reader spells.',
+   'Which claim takes effect, stated once over the stored claims: a claim holds unless its occurrence has a recordParameter claim and it is not one, as a record a service call takes overrides what the occurrence would otherwise reach. The rank is a function of the rule and so no column of the claim.'),
   ('graphitron_path_need', 'path-need', 'graphitron',
    'One type an occurrence must reach from its source: one row per occurrence and target type, with whether the path toward it starts on a table or on an object.',
    'For example Query.search(languageId:), an argument of a field returning a union of Film and Language, needs Film and Language, each from a table.',
