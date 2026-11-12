@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-11
+last-updated: 2026-11-12
 ---
 
 # A clean build runs in under five minutes
@@ -194,10 +194,26 @@ two big forks already run at their 6 GB heap ceiling with 22% of `graphitron`'s 
 pool and heap are raised together, after A2, and priced. Raising them before Track A only queues
 more work for the same heap.
 
-**B6. Let the forks be recorded.** The LSP, MCP and plugin modules' `<argLine>` drops a flag passed
-on the command line, so their forks cannot be profiled. They already lead with `@{argLine}`, which
-was this step's first fix, so the cause is still to be found. This is small, and it makes their next
-measurement possible.
+**B6. Let the forks be recorded.** Done 2026-11-12, with no change to the build.
+- *The cause.* LSP, MCP and the plugin hard-set `<argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>`,
+  and a module that hard-sets its argument line makes surefire ignore `-DargLine`. The `@{argLine}`
+  in front is evaluated late against the project's properties, where a command-line `-D` is not, so
+  it expands to the root pom's empty `<argLine/>`. `graphitron` and the model set none, and honour it.
+  Measured from the "Forking command line" in `mvn -X test` with `-DargLine=-Dgraphitron.b6marker=cli`:
+  the marker reached none of the three forks, and the module's own flag did.
+- *The route that works everywhere.* The `java` launcher reads `JDK_JAVA_OPTIONS` in every JVM it
+  starts, so `JDK_JAVA_OPTIONS='-XX:StartFlightRecording=filename=<dir>/jfr-%p.jfr,settings=default,dumponexit=true'`
+  in front of `mvn` writes one recording per process, `%p` expanding on JDK 25: the Maven JVM, each
+  surefire fork, and what the build execs, which includes the `generate-test-schemas` JVM and MCP's
+  docs index builder. Tell them apart by `jdk.JVMInformation.javaArguments`; the Maven JVM's file is
+  the one with the Maven events. Pass the flag this way instead of through `MAVEN_OPTS`, or the Maven
+  JVM is recorded twice. Checked on LSP, MCP and the plugin: each wrote a fork recording with samples.
+- *Not done, on purpose.* Making `-DargLine` reach those three modules. A root-owned argument line
+  with a new property, which the architect consultation raised as the structural fix, would change
+  `-DargLine` for the two modules that honour it and rewrite `CoverageAgentWiringCheck`, for a
+  profiling convenience. File it separately if a uniform knob is wanted.
+- *Owed.* The `build-profile` skill still describes `MAVEN_OPTS` only. Adding the route above belongs
+  with the next change that carries a full build, since the skill is outside `roadmap/`.
 
 ### Track C: smaller statements (R876)
 

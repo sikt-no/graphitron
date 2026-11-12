@@ -37,7 +37,11 @@ this document no longer holds, or never did:
    (`PathNeeds.write`, `OccurrenceSources.write` and the occurrence stages), which the item's Track C
    already does. What survives is the shape of the finding: the cost follows the views a statement
    reads, not its own text.
-4. **The CPU budget has grown.** 7,192 CPU-seconds here against 9,711 on the workstation at a later
+4. **Why three forks wrote no recording, and the route that records all of them.** The three modules
+   that hard-set a surefire `<argLine>` ignore `-DargLine`, which is how the forks here were recorded;
+   `JDK_JAVA_OPTIONS` reaches every JVM the build starts. The item's B6 has the measurement and the
+   command, and the "Reproducing" notes below describe the route that did not work for those modules.
+5. **The CPU budget has grown.** 7,192 CPU-seconds here against 9,711 on the workstation at a later
    trunk; the floor argument (even perfect use of the threads leaves more than the target allows)
    stands, and the later figure makes it stronger.
 
