@@ -41,7 +41,21 @@ input OccupantFilter {
   occupantId: ID @nodeId(typeName: "AddressOccupant")
 }
 
+# A container id inside an input a @service takes, the bean's member being a record supertype every
+# member's record has, single and as a list.
+input OccupantRecordAssignmentInput {
+  occupant: ID! @nodeId(typeName: "AddressOccupant")
+}
+input OccupantRecordListAssignmentInput {
+  occupants: [ID!] @nodeId(typeName: "AddressOccupant")
+}
+
 type Query {
+  # The container ids inside a @service's input, decoded at the bean's member.
+  assignOccupantRecord(in: OccupantRecordAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecord"})
+  assignOccupantRecordList(in: OccupantRecordListAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecordList"})
   # A slot typed as a record supertype every member's record has.
   occupant(occupant: ID @nodeId(typeName: "AddressOccupant")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
@@ -109,6 +123,12 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_member", rows: ""
   NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, Customer
   NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, FilmListing
   NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, Staff
+  """)
+
+# A container id inside a @service's input reaches a slot, and its members' records are the member's
+# type: no verdict.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
+  coordinate LIKE 'OccupantRecord%' AND code LIKE 'NODE_ID_%'
   """)
 
 # The disjointness: no container draws a single node's key verdict.
