@@ -50,11 +50,11 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_key_column", rows
   Query.filmsByNope(id:),                 public.film,       0
   """)
 
-# A pair projecting one key column lands the id on its parameter, the column it takes being the pair's
-# landing key column.
-extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot_parameter", rows: """
-  coordinate,                       position
-  Query.languagesByPrimitive(ref:), 1
+# A pair projecting one key column lands the id on its parameter, and states which column the
+# parameter takes.
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot_projection", rows: """
+  coordinate,                       position, bound,           key_position
+  Query.languagesByPrimitive(ref:), 1,        public.language, 0
   """)
 
 # The parameter whose type is not the column's.

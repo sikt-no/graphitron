@@ -465,6 +465,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_node_id_slot", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_parameter", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_node_id_slot_projection", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_node_id_slot_projection_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_member", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_member_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_record", Arm.DERIVED);

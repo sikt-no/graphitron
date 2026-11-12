@@ -12447,6 +12447,35 @@ COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.parent_coordinate IS
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.kind IS 'always RECORD, pinned so the foreign key holds the row to a slot of that kind';
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record.touched_at IS 'the reading that last wrote this row';
 
+-- The key column a written argMapping pair projects out of a node id into the parameter it fills:
+-- what the parameter receives of the id where it is not the whole key. A fact of the landing, read
+-- by the decode shape and the key column defect alike.
+CREATE TABLE graphitron_occurrence_node_id_slot_projection (
+  graph_name      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  position        INT       NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  bound           VARCHAR   NOT NULL,
+  key_position    INT       NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, call_coordinate, call, position, bound),
+  FOREIGN KEY (graph_name, call_coordinate, call, position)
+    REFERENCES graphitron_occurrence_node_id_slot_parameter (graph_name, call_coordinate, call, position)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound, key_position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot_projection IS 'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table. For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.call_coordinate IS 'the occurrence making the call; with call and position, the parameter';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.call IS 'which of its calls';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.position IS 'the parameter''s position';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.coordinate IS 'the node id occurrence projected out of';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.bound IS 'the node table whose key column it takes, as on graphitron_occurrence_node_id';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.key_position IS 'that column''s position in the node''s key';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The rule each subtype is written from, its supertype row with it.
 CREATE VIEW graphitron_occurrence_node_id_slot_parameter_rule
   (graph_name, coordinate, call_coordinate, call, position, slot, list_depth, erased_class,
@@ -12498,6 +12527,20 @@ SELECT o.graph_name, o.coordinate, bc.class_name, bc.coordinate, f.list_depth, b
   JOIN graphitron_occurrence_built_class bc
     ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.record_table IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_record_rule IS 'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_record stores. For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.';
+
+CREATE VIEW graphitron_occurrence_node_id_slot_projection_rule
+  (graph_name, call_coordinate, call, position, coordinate, bound, key_position) AS
+SELECT sp.graph_name, sp.call_coordinate, sp.call, sp.position, sp.coordinate, kc.bound, kc.position
+  FROM graphitron_occurrence_node_id_slot_parameter sp
+  JOIN graphitron_occurrence_call_parameter_pair pp
+    ON pp.graph_name = sp.graph_name AND pp.coordinate = sp.call_coordinate AND pp.call = sp.call
+   AND pp.position = sp.position
+  JOIN graphitron_argmapping_landing_key_column kc
+    ON kc.graph_name = pp.graph_name AND kc.coordinate = pp.pair_coordinate
+   AND kc.directive_name = pp.directive_name AND kc.ordinal = pp.ordinal AND kc.owner = pp.owner
+   AND kc.parameter_name = pp.parameter_name AND kc.call_coordinate = pp.coordinate
+   AND kc.landing_coordinate = sp.coordinate;
+COMMENT ON VIEW graphitron_occurrence_node_id_slot_projection_rule IS 'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table, in the shape graphitron_occurrence_node_id_slot_projection stores. For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.';
 
 -- Which shape each node id binding lands in at a root argument's parameter, judged once: the node
 -- table's own record, a supertype of it for an id of several node types, a jOOQ tuple typed by the
@@ -19591,6 +19634,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_member'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_parameter'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_projection'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record'),
   ('occurrence-depth-defects', 'graphitron_entry_defect'),
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect'),
@@ -20103,6 +20147,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-node-id-slot-record',
    'one record a node id''s parent is built into, in one graph',
    'graph_name, coordinate, class_name', 'sdl'),
+  ('occurrence-node-id-slot-projection',
+   'one node table''s key column a pair projects into one parameter, in one graph',
+   'graph_name, call_coordinate, call, position, bound', 'sdl'),
   ('occurrence-node-id-shape',
    'one class one occurrence''s node id at one node table lands in, in one graph',
    'graph_name, coordinate, bound, landing_class', 'sdl'),
@@ -20836,6 +20883,14 @@ INSERT INTO meta_relation VALUES
    'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_record stores.',
    'For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.',
    'The rule graphitron_occurrence_node_id_slot_record and its supertype row are written from, one plain read of the rows the place already is, after the depth loop and the build have written them.'),
+  ('graphitron_occurrence_node_id_slot_projection', 'occurrence-node-id-slot-projection', 'graphitron',
+   'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table.',
+   'For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.',
+   'What a parameter receives of the id where it is not the whole key, a fact of the landing rather than of the shape (Alf, 2026-11-12): the decode shape and the key column defect both read it, where each would otherwise join the pair to its landing''s key column again.'),
+  ('graphitron_occurrence_node_id_slot_projection_rule', 'occurrence-node-id-slot-projection', 'graphitron',
+   'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table, in the shape graphitron_occurrence_node_id_slot_projection stores.',
+   'For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.',
+   'The rule graphitron_occurrence_node_id_slot_projection is written from, after the parameter slots it hangs under.'),
   ('graphitron_occurrence_node_id_shape', 'occurrence-node-id-shape', 'graphitron',
    'How a node id at an occurrence lands in a class it is handed to, where it fits: one row per node id binding and landing class.',
    'For example Query.filmsByNodeIdService(ids:) lands each decoded id in java.lang.Integer as the key''s one column value, KEY_VALUE.',
