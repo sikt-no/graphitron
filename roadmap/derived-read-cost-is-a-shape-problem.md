@@ -692,22 +692,6 @@ static method needs no holder.
     then, and a single column only through `graphitron_occurrence_node_id_slot_projection`, a whole id
     going to the record or a tuple and never unwrapped to its sole column, so the condition
     reference's arity-1 promise changes with E's commit (E, 2026-11-12).
-    * **A list of input objects' element fields are refused by the store where they cannot be compared as rows** `open`.
-      `LIST_ELEMENT_CONDITION`, `LIST_ELEMENT_NODE_ID` and `LIST_ELEMENT_NOT_ONE_VALUE` are the store's
-      at the element field's declaration, and `LIST_CONDITION_BELOW_LIST` at a `@condition` binding
-      below a list, each grouped from `graphitron_occurrence_list_element_defect`, the rule each
-      occurrence breaks. Left: an element field whose value no row cell takes, written by a stage after
-      `occurrence-values`, whose value binding it reads; element fields reaching their columns by
-      different paths, one defect at the list field, skipped under an override, each element occurrence
-      and its path a row beneath it, so no field is blamed for coming second, a step being its
-      position, the table it reaches and the column pairs of `graphitron_join_path_step_column`
-      (principles review, 2026-11-12). Each is pinned by a `defects/`
-      document with near misses, and the glossary's "An element field a list-of-input filter cannot
-      compare" names it. The walk's cap of 22 element fields, an artefact of jOOQ's typed rows, is not
-      carried into the store: it goes after the flip as a relaxed refusal of its own.
-      `ConditionEmitter`'s refusal of these shapes then becomes an invariant a defected graph never
-      reaches, and the flip waits on this node, since until it lands the shapes left are refused by the
-      walk alone (principles review, 2026-11-12).
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move
@@ -719,6 +703,28 @@ static method needs no holder.
   list is cast where a scalar one is converted by `valueOf`, untested beyond `G`, and a top-level enum
   list argument on an enum column emits glue that does not compile. Each gets a test
   first, then a fix or a stated breaking change, after the flip, which keeps them as they are.
+* **A list of input objects compares what the old emitter could not** `blocked`, on "The filter conditions are emitted from the store", off the critical path.
+  The list-of-input filter's refusals that guarded the old emitter's single row, rather than a rule an
+  author meets, are lifted once the flip has moved every caller onto `ConditionEmitter`, each a
+  capability with an execution test first and its glossary entry and reference page changed with it.
+  `LIST_ELEMENT_NOT_ONE_VALUE`, a list inside an element, stays: one cell holds one value (Alf,
+  2026-11-12).
+  * **Element fields reaching their columns by different paths are compared per path** `blocked`, on
+    a path's identity. An element's fields are grouped by the path they reach, each group compared as
+    one row inside its own `EXISTS`, the field's own table being the empty path, so a group sharing a
+    path still matches one reached row as `filmsByCastNames` does while a name over
+    `film_language_id_fkey` beside one over `film_original_language_id_fkey` filters both. The walk
+    refuses this today and the store does not; which fields share a path waits on the path being a
+    fact of its own, a join path keyed to an identity two needs riding the same steps share, rather
+    than a comparison of step sets in a rule view (Alf, 2026-11-12).
+  * **A node id in a list element is its key columns** `blocked`. The decoded key sits in the row as
+    that many cells, by the node type's record or tuple as a whole id lands everywhere else, and
+    `LIST_ELEMENT_NODE_ID` goes.
+  * **A `@condition` in a list element is called per element** `blocked`. Each element's call is
+    ANDed into its conjunction, the partial form, and `LIST_ELEMENT_CONDITION` goes; whether such a
+    condition reads anything but its own field's value is decided with it.
+  * **A list element compares any number of fields** `blocked`. The walk's cap of 22, jOOQ's typed
+    `Row1` to `Row22`, is not the store-fed emitter's, which writes a `RowN`; the cap's refusal goes.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
