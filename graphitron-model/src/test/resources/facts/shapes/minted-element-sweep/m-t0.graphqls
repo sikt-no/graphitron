@@ -1,0 +1,7 @@
+# The first reading: one @asConnection carrier over a table-backed object, which mints the
+# connection, its edge and the page info. The second drops the application, the third makes Film an
+# interface.
+
+type Film @table(name: "film") { title: String }
+
+type Query { films: [Film!]! @asConnection }

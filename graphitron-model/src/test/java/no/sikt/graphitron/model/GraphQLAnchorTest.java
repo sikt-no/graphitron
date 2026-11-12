@@ -44,7 +44,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -628,28 +627,6 @@ class GraphQLAnchorTest {
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
                 .containsExactlyInAnyOrder(tuple("name", 0, null), tuple("schema", 1, "\"public\""));
         });
-    }
-
-    @Test
-    @DisplayName("a schema redeclaring a built-in directive captures, as graphitron:dev runs it")
-    void aRedeclaredBuiltInCapturesThroughModelCapture(@TempDir Path directory) {
-        // The field report's path: the whole capture over a fresh store, which threw from the
-        // anchors before the authored declaration and the specified one stopped colliding.
-        CapturedStore.withCapturedStore(directory, """
-            directive @oneOf on INPUT_OBJECT
-            type Query { films(filter: FilmOneOfFilter): String }
-            input FilmOneOfFilter @oneOf { filmId: Int title: String }
-            """, dsl -> {
-                assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
-                    .as("graphql-java builds the schema, so there is nothing to refuse")
-                    .isZero();
-                assertThat(dsl.select(GRAPHQL_DIRECTIVE.SOURCE_LINE).from(GRAPHQL_DIRECTIVE)
-                        .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                        .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.eq("oneOf"))
-                        .fetch(GRAPHQL_DIRECTIVE.SOURCE_LINE))
-                    .as("and the store's @oneOf is the fixture's declaration")
-                    .containsExactly(1);
-            });
     }
 
     @Test

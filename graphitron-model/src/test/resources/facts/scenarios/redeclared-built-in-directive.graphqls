@@ -5,6 +5,17 @@ extend schema @withFacts(docs: [
   {path: "layouts/anchor"},
   {path: "shapes/redeclared-built-in-directive/a-t0", as: "redeclared-built-in-directive.a"}])
 
+# graphql-java builds the schema over the redeclarations, so the reading refuses nothing, and @oneOf
+# is the authored declaration, written at line 5 of the redeclaring file.
+extend schema @assertEmpty(relation: "graphql_schema_problem")
+
+extend schema @assertContains(relation: "graphql_directive", where: """
+  source_name LIKE '%/redeclared-built-in-directive.a.graphqls'
+  """, rows: """
+  directive_name, source_line
+  oneOf,          5
+  """)
+
 extend schema @assertAbsent(relation: "graphql_directive", rows: """
   directive_name, source_name
   oneOf,          specification.graphqls

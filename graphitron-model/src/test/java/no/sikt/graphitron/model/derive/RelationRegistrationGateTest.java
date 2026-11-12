@@ -1,32 +1,13 @@
 package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.Public;
-import no.sikt.graphitron.model.test.AgreementCorpus;
-import no.sikt.graphitron.model.test.CapturedStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static org.jooq.impl.DSL.val;
-import static org.jooq.impl.DSL.when;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -58,7 +39,7 @@ class RelationRegistrationGateTest {
         for (String relation : List.of(
             // The element anchors ride their attribute siblings' arm: one walk claims a
             // coordinate and writes both rows, so the containment claim below transfers, and
-            // coordinatesAgreeWithTheirAttributeRelations makes the transfer a fact. The supertype
+            // CapturedGraphInvariantsTest's anchor pairing makes the transfer a fact. The supertype
             // rides the same arm one level up, written by the same claim as the anchor under it.
             "graphql_element",
             "graphql_type_element", "graphql_field_element",
@@ -629,99 +610,5 @@ class RelationRegistrationGateTest {
             .as("registrations for relations the DDL no longer declares")
             .allSatisfy(relation -> assertThat(Public.PUBLIC.getTables().stream()
                 .anyMatch(t -> t.getName().equalsIgnoreCase(relation))).isTrue());
-    }
-    /**
-     * The split the element family introduced, stated as the invariant it rests on: an anchor
-     * exists exactly where its attribute sibling has a row, in both directions. The equality is
-     * what lets the containment arm above cover four relations with one claim, and it is the thing
-     * a producer can break without any constraint noticing: a foreign key stops an attribute row
-     * with no anchor, and nothing at all stops an anchor with no attributes. Both directions of
-     * every pair, so a coordinate the walk claims and then declines to describe is caught here
-     * rather than read downstream as a type or field with no properties.
-     *
-     * <p>Written as one query per pair rather than a join over the DDL, because the pairing is a
-     * modelling decision and a reader should be able to see which relations it names.
-     */
-    @Test
-    @DisplayName("every coordinate anchor pairs with its attribute relation, both ways")
-    void coordinatesAgreeWithTheirAttributeRelations(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, AgreementCorpus.SDL)) {
-            var dsl = store.dsl();
-            assertThat(dsl.select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME).from(GRAPHQL_TYPE_ELEMENT).fetch())
-                .as("type anchors against type attributes")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE).fetch());
-            assertThat(dsl.select(GRAPHQL_FIELD_ELEMENT.TYPE_NAME, GRAPHQL_FIELD_ELEMENT.FIELD_NAME)
-                .from(GRAPHQL_FIELD_ELEMENT).fetch())
-                .as("field anchors against field attributes")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME).from(GRAPHQL_FIELD).fetch());
-            assertThat(dsl.select(GRAPHQL_ARGUMENT_ELEMENT.TYPE_NAME,
-                    GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME, GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME)
-                .from(GRAPHQL_ARGUMENT_ELEMENT).fetch())
-                .as("argument anchors against argument attributes")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_ARGUMENT.TYPE_NAME, GRAPHQL_ARGUMENT.FIELD_NAME,
-                        GRAPHQL_ARGUMENT.ARGUMENT_NAME).from(GRAPHQL_ARGUMENT).fetch());
-            assertThat(dsl.select(GRAPHQL_ENUM_VALUE_ELEMENT.TYPE_NAME,
-                    GRAPHQL_ENUM_VALUE_ELEMENT.VALUE_NAME).from(GRAPHQL_ENUM_VALUE_ELEMENT).fetch())
-                .as("enum value anchors against enum value attributes")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_ENUM_VALUE.TYPE_NAME, GRAPHQL_ENUM_VALUE.VALUE_NAME)
-                        .from(GRAPHQL_ENUM_VALUE).fetch());
-            assertThat(dsl.select(GRAPHQL_DIRECTIVE_ELEMENT.DIRECTIVE_NAME)
-                .from(GRAPHQL_DIRECTIVE_ELEMENT).fetch())
-                .as("directive anchors against directive attributes")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE).fetch());
-            assertThat(dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT.DIRECTIVE_NAME,
-                    GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT.ARGUMENT_NAME)
-                .from(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT).fetch())
-                .as("directive argument anchors against directive argument attributes")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
-                        GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME)
-                        .from(GRAPHQL_DIRECTIVE_ARGUMENT).fetch());
-            // The supertype against the six it generalises. This direction is the one no
-            // constraint reaches: a foreign key refuses an anchor with no supertype row and
-            // nothing refuses a supertype row no anchor claimed, so the equality is stated here.
-            // The field arm restates the rule the stored kind rests on rather than repeating the
-            // literal: a field and an input field share a coordinate form and an anchor relation,
-            // and the declaring type's kind is the only thing that tells them apart. Writing the
-            // join here is what makes the kind falsifiable, where a literal would agree with
-            // whatever capture happened to write.
-            assertThat(dsl.select(GRAPHQL_ELEMENT.COORDINATE, GRAPHQL_ELEMENT.ELEMENT_KIND)
-                .from(GRAPHQL_ELEMENT).fetch())
-                .as("the element supertype against the union of the six anchors")
-                .containsExactlyInAnyOrderElementsOf(
-                    dsl.select(GRAPHQL_TYPE_ELEMENT.COORDINATE, val("NAMED_TYPE"))
-                        .from(GRAPHQL_TYPE_ELEMENT)
-                    .unionAll(dsl.select(GRAPHQL_FIELD_ELEMENT.COORDINATE,
-                            when(GRAPHQL_TYPE.KIND.eq("INPUT_OBJECT"), val("INPUT_FIELD"))
-                                .otherwise(val("FIELD")))
-                        .from(GRAPHQL_FIELD_ELEMENT)
-                        .join(GRAPHQL_TYPE)
-                        .on(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME))
-                        .and(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD_ELEMENT.TYPE_NAME)))
-                    .unionAll(dsl.select(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE, val("FIELD_ARGUMENT"))
-                        .from(GRAPHQL_ARGUMENT_ELEMENT))
-                    .unionAll(dsl.select(GRAPHQL_ENUM_VALUE_ELEMENT.COORDINATE, val("ENUM_VALUE"))
-                        .from(GRAPHQL_ENUM_VALUE_ELEMENT))
-                    .unionAll(dsl.select(GRAPHQL_DIRECTIVE_ELEMENT.COORDINATE, val("DIRECTIVE"))
-                        .from(GRAPHQL_DIRECTIVE_ELEMENT))
-                    .unionAll(dsl.select(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT.COORDINATE,
-                            val("DIRECTIVE_ARGUMENT"))
-                        .from(GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT))
-                    .fetch());
-            // The equality above is only as strong as the kinds the fixture reaches. Without an
-            // input object in it the field arm's two branches collapse to one and the split it
-            // states cannot fail, which is the shape of vacuous assertion this family has already
-            // shipped once.
-            assertThat(dsl.select(GRAPHQL_ELEMENT.ELEMENT_KIND).from(GRAPHQL_ELEMENT)
-                .fetchSet(GRAPHQL_ELEMENT.ELEMENT_KIND))
-                .as("the fixture has to reach every kind, or the equality above is partly vacuous")
-                .contains("NAMED_TYPE", "FIELD", "INPUT_FIELD", "ENUM_VALUE", "FIELD_ARGUMENT",
-                    "DIRECTIVE", "DIRECTIVE_ARGUMENT");
-        }
     }
 }

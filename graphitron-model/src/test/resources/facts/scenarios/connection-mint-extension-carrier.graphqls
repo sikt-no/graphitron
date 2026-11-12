@@ -29,6 +29,13 @@ extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
   PageInfo
   """)
 
+# Both carriers state the whole of the page info, and the schema emits one element of it: the anchor
+# is one row per coordinate, however many applications contribute.
+extend schema @expectEquals(relation: "graphitron_element", where: "coordinate = 'PageInfo'", rows: """
+  coordinate, element_kind
+  PageInfo,   NAMED_TYPE
+  """)
+
 # Each carrier retyped to its own connection, keeping the outer non-null its author wrote or did not.
 extend schema @expectEquals(relation: "graphitron_field_minted", where: "type_name = 'Query'", rows: """
   field_name, type_sdl

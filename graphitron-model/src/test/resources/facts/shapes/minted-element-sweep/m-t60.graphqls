@@ -1,0 +1,5 @@
+# The second reading: the carrier is a plain list, so nothing asks for the expansion.
+
+type Film @table(name: "film") { title: String }
+
+type Query { films: [Film!]! }

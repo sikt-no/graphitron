@@ -1,0 +1,5 @@
+# The third reading: the author made Film an interface over the same table.
+
+interface Film @table(name: "film") { title: String }
+
+type Query { films: [Film!]! }

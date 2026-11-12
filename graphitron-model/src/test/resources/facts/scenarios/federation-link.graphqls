@@ -46,10 +46,9 @@ extend schema @assertAbsent(relation: "graphitron_ast_federation_link_entry", ro
   v2.10
   """)
 
-extend schema @assertAbsent(relation: "graphitron_federation_link", rows: """
-  origin
-  AUTHORED
-  """)
+# No link and no configured tag: the graph is not federated at all, by an authored link or a
+# configured one.
+extend schema @assertEmpty(relation: "graphitron_federation_link")
 
 extend schema @assertAbsent(relation: "graphitron_federation_link_import", rows: """
   name

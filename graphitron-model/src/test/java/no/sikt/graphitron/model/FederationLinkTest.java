@@ -55,12 +55,4 @@ class FederationLinkTest {
                 .containsExactly("AUTHORED " + FederationSpec.URL.substring(FederationSpec.SPEC_PREFIX.length()));
         }
     }
-
-    @Test
-    @DisplayName("a graph with neither is not federated")
-    void neither(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, SDL)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_FEDERATION_LINK)).isZero();
-        }
-    }
 }
