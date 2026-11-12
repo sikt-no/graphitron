@@ -141,15 +141,18 @@ Which tests move:
 
 *Decided 2026-11-12 (Alf): the route is the `FactGraphs` population.* The ruling is in
 `docs/architecture/how-to/testing.adoc`.
-- `FactGraphs.Reader.readInline` takes inline SDL into a store kept per thread, catalog and
+- `FactGraphs.Reader.readInline` takes inline SDL into a store lent from a pool kept per catalog and
   classpath, seeded with a ballast graph, and reads it through the select-only connection.
   `EmittedRegistryAgreementTest`, `NodeIdDecodeDefectsTest` and `ArgmappingProjectionDefectsTest`
   read there, and in interleaved pairs they cost 78% less CPU (the A1 audit, § "The `FactGraphs`
   route, priced").
 - `InlineCaptures` counts `readInline`, so a moved site stays inline until its SDL becomes a
   document.
-- **What remains:** move the other scoped classes. Possibly key the stores by a small pool instead
-  of by thread, since what the key buys is that two captures never queue on one writing connection.
+- The stores are a pool, not one per thread (Alf, 2026-11-12). A capture borrows a store no
+  other capture holds, so concurrent captures never queue on one writing connection, whichever
+  threads the engine uses.
+- **What remains:** move the other scoped classes, about 35 that read only their own graph and 12
+  that read only relations no capture changes.
 
 The stores booted per capture (`ownStore*`, `BuiltStore`) are a separate 807 s. They follow where
 their reason for a store of their own allows.
