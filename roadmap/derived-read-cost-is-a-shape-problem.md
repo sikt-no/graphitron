@@ -92,8 +92,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
   "`graphitron_routine_entry` is gone".
 * `graphitron_path_element_*` beside the join path's steps. Ends at "Nothing resolves a path but the walk".
-* Argument and input-field paths from `graphitron_field_scope_table` beside the path relations. Ends at
-  "The readers read the paths, and the old path relations go".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
 * The walk's `@condition` shape refusals beside `CONDITION_OVERLOAD_SHAPE_DISAGREES`. Ends at "The walk's condition shape refusals go".
@@ -218,9 +216,7 @@ it is declared on to the type it returns, one path per pair of tables from its t
 argument's path is anchored at the argument; an input field's exists only per occurrence under an
 output field; both start on a step of their field's path, the one an author named with `as:`, or at
 its landing. The rules are stated in "User documentation (first-client check): paths" below, the
-relations in "Path model (draft)", and `scenarios/path-rules` asserts both. Today
-`graphitron_field_scope_table`, `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table`
-derive part of this at read time, keyed by field alone; the `intent_argmapping_` relations go with "The argMapping readers read the landing, and the candidate and match go". R1099, the
+relations in "Path model (draft)", and `scenarios/path-rules` asserts both. The `intent_argmapping_` relations go with "The argMapping readers read the landing, and the candidate and match go". R1099, the
 author-facing navigation over output fields and its `$source`, `$path.<as>` and `$target`, builds on
 this branch rather than modelling inputs again. Taken up on 2026-10-31. The relations it has
 retired, the argument step targets, `graphitron_field_path` with its methods and the field reference
@@ -396,11 +392,21 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
   build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.
   Each is checked by hand before it goes, its readers in the DDL included (a subtype's foreign key,
   a view or rule view naming it), since the census holds false leads.
+  Gone 2026-11-12, each rechecked on trunk first: `intent_poly_member`; the defect details
+  `graphitron_entry_defect_method` and `graphitron_entry_defect_parameter`, the parameter rule view
+  answering the defect rule itself; and the scope-table chain, `graphitron_field_scope_table`,
+  `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table` with their rule
+  views, `intent_field_navigated_type` and their three `DerivationStratum` steps, which leaves
+  `ClassificationDomainCapture` the stratum's only step.
   * **Capture written twice and read by neither copy goes** `open`, F's. The `graphitron_ast_*`
     entries and the decode copies beside them that the audit's second group lists, a family at a
-    time, each family's fact shown to reach its readers another way or its reader named.
+    time, each family's fact shown to reach its readers another way or its reader named. The
+    `@service`, `@externalField`, `@pivot`, `@defaultOrder` and DATABASE handler decodes went
+    (2026-11-12), their applications standing in the `graphql_ast_` entries.
   * **Each relation written ahead of its reader names it** `open`. The audit's third group, among
-    them `graphitron_occurrence_source_object` and `graphitron_entry_defect_method`: the owner names the reader in the graph, or the relation goes.
+    them `graphitron_occurrence_source_object`: the owner names the reader in the graph, or the
+    relation goes. `graphitron_entry_defect_method` went (2026-11-12), and `graphitron_occurrence_parameter`
+    went with E's PARAMETER deletion.
     `graphitron_fetcher` is read: `graphitron_producer` and `graphitron_reader` key into it as its
     subtypes and `graphitron_entry_defect_rule` reads it, a reach a census of Java readers does not
     see; it goes with them under "The producer's readers read the occurrence producer, and the field-keyed family goes".
@@ -415,7 +421,10 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     `graphitron_occurrence_source_object` is F's, the source being F's.
   * **Settings and catalog facts nothing reads go** `open`, F's. The audit's fourth group, among
     them the `store_graph_` settings and `sql_table_record_supertype`, each checked against the
-    generator's configuration first.
+    generator's configuration first. `store_graph_lint_disabled_rule` and
+    `federation_version_directive_location` went (2026-11-12), the generator reading its lint
+    settings off its configuration; `store_graph_supergraph` stays, the `<supergraph>` parameter's
+    only copy and named as its reader by R643's peer surface.
 * **A path is keyed per pair of tables** `blocked`, on "A walked landing judges `PATH_LANDING_UNKNOWN`".
   Landed but for its child.
   * **A walked landing judges `PATH_LANDING_UNKNOWN`** `open`, F's.
@@ -455,9 +464,7 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
   polymorphic id at a parameter bound through `argMapping`, which only the store may check, and the
   participant set's single-table message at the argument site, which has no test.
 * **The node-id rules read the path model, and a `@referenceFor` route's landing is checked** `open`.
-  The landing and participant arms read the walk from the using field's target, and
-  `graphitron_argument_scope_table`, `graphitron_field_scope_table` and
-  `graphitron_input_field_resolving_table` go. Neither side
+  The landing and participant arms read the walk from the using field's target. Neither side
   checks where a `@referenceFor` route lands today; it becomes a landing arm here.
   `NodeIdDecodeCoverage` stays, comparing the census with the walk's ledger, until the walk goes.
 
@@ -2038,9 +2045,9 @@ where it rebuilds them per edge today.
    `graphitron_field_target_column` and the `graphitron_node_id_decode_*` family go, the editor's
    column scope moves off `intent_field_column_table` onto it, and `graphitron_field_target_table`
    dissolves into declared facts.
-4. As their readers move to path ends, `graphitron_field_scope_table`,
-   `graphitron_argument_scope_table` and `graphitron_input_field_resolving_table` go, each in the
-   commit that moves its last reader, and `intent_input_occurrence_path` with them.
+4. `graphitron_field_scope_table`, `graphitron_argument_scope_table` and
+   `graphitron_input_field_resolving_table` went on 2026-11-12 with no reader left to move, and
+   `intent_input_occurrence_path` before them.
 5. E: `graphitron_field_source_table` and a field's source are the occurrence's source and come off
    E's graph into step 2 (both landed).
    "A child producer's lift agrees with the classifier's key lift" stays E's, keyed on the occurrence;
@@ -2700,6 +2707,26 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 
 For the retirement sweep at the Done gate. Determined by diffing the schema's relation names across
 the item's life. Already swept once, with seven survivors found and fixed.
+
+**Relations nobody read** (2026-11-12). `intent_poly_member`; `store_graph_lint_disabled_rule`;
+`federation_version_directive_location` and its grain `federation-version-directive-location`;
+`graphitron_ast_service_entry`, `graphitron_ast_external_field_entry`, `graphitron_ast_pivot_entry`,
+`graphitron_ast_default_order_entry`, `graphitron_ast_default_order_field_entry` and
+`graphitron_ast_error_database_handler_entry`; `graphitron_entry_defect_method` with its grain
+`entry-defect-method` and its writer `ConditionShapeDefectMethods`, and
+`graphitron_entry_defect_parameter` with its writer `EntryDefectParameters`, the rule view
+`graphitron_entry_defect_parameter_rule` staying; `graphitron_field_scope_table`,
+`graphitron_argument_scope_table` and `graphitron_input_field_resolving_table`, each with its `_rule`
+view, its grain (`field-scope-table`, `argument-scope-table`, `input-field-resolving-table`) and its
+`DerivationStratum` step and writer (`FieldScopeTables`, `ArgumentScopeTables`,
+`InputFieldResolvingTables`), and `intent_field_navigated_type`. With the steps that read one another gone, the derivation
+gatherer's analysing cadence went too: `DerivationStratum.analysingCadenceApplies`,
+`DerivationStratum.runAnalysing`, `StageProgress.Event.PassStarted.analysing` and its
+`, committing and analysing each` line, and `StagePrerequisiteStatisticsTest`, which held it. The fact documents
+`undecided/field-scope-table`, `undecided/field-participant-scope` and
+`defects/input-field-resolving-table-consuming-field` went with what they claimed;
+`scenarios/default-order` stays, the manual's `@defaultOrder` and `@asConnection` examples rendering
+from it.
 
 **The field-keyed key row dissolved into the fill** (2026-11-11). `graphitron_field_key_row`,
 `graphitron_field_key_row_accessor`, `graphitron_field_key_row_rule`, the `field-key-rows` stage and
