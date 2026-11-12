@@ -5,6 +5,8 @@ import org.jooq.DSLContext;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM_CONTAINER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM_CONTAINER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
 import static org.jooq.impl.DSL.excluded;
@@ -66,6 +68,23 @@ public final class BindingClaims {
             .doUpdate()
             .set(b.NAMED, excluded(b.NAMED))
             .set(b.TARGET_NAME, excluded(b.TARGET_NAME))
+            .execute();
+        // A node id claim naming an interface or union that is no node, after the claims it details.
+        var k = GRAPHITRON_BINDING_CLAIM_CONTAINER;
+        var kr = GRAPHITRON_BINDING_CLAIM_CONTAINER_RULE;
+        dsl.insertInto(k)
+            .columns(k.GRAPH_NAME, k.COORDINATE, k.KIND, k.CLAIMER, k.TOUCHED_AT)
+            .select(dsl
+                .select(kr.GRAPH_NAME, kr.COORDINATE, kr.KIND, kr.CLAIMER, val(touchedAt, k.TOUCHED_AT))
+                .from(kr)
+                .where(kr.GRAPH_NAME.eq(graph)))
+            .onConflict(k.GRAPH_NAME, k.COORDINATE, k.KIND, k.CLAIMER)
+            .doUpdate()
+            .set(k.TOUCHED_AT, excluded(k.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(k)
+            .where(k.GRAPH_NAME.eq(graph))
+            .and(k.TOUCHED_AT.ne(touchedAt))
             .execute();
         // The subtype goes with its claim.
         dsl.deleteFrom(c)

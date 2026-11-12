@@ -5838,6 +5838,39 @@ COMMENT ON COLUMN graphitron_node.type_id IS 'the wire type id this node answers
 COMMENT ON COLUMN graphitron_node.type_id_origin IS 'which of the three answered, in the order they are tried: SDL_DECLARED from @node(typeId:), JOOQ_METADATA from the backing class''s __NODE_TYPE_ID, TYPE_NAME from the type itself. Carried because a diagnostic that says an id collides has to say where each came from, and because the tiers are a precedence a reader must not re-derive. The key columns'' own origin is a separate column on a separate relation, the two axes being independent: an author may declare the id and leave the columns to the catalog, or the reverse';
 COMMENT ON COLUMN graphitron_node.resolvable IS 'whether this subgraph fetches the node by its id: false where the type''s first @node says resolvable: false, true otherwise, a node the backing class publishes included. A node that is not resolvable is one another subgraph owns, and a node like any other: it implements Node, its id binds, encodes and decodes like any node''s and its type id counts towards the graph''s uniqueness. Only what fetches by id reads this: Query.node and nodes answer its id with null, and federation gets no key minted for it';
 
+-- A @nodeId whose typeName: names an interface or union that is no node itself: an id of several
+-- node types, decoded per member. Stated once at the claim, which names the type, so the decode
+-- shape and the container defects ask one relation rather than each joining the type and the node
+-- again.
+CREATE TABLE graphitron_binding_claim_container (
+  graph_name     VARCHAR   NOT NULL,
+  coordinate     VARCHAR   NOT NULL,
+  kind           VARCHAR   NOT NULL,
+  claimer        VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, kind, claimer),
+  FOREIGN KEY (graph_name, coordinate, kind, claimer)
+    REFERENCES graphitron_binding_claim (graph_name, coordinate, kind, claimer) ON DELETE CASCADE,
+  CHECK (kind = 'NODE_ID')
+);
+COMMENT ON TABLE graphitron_binding_claim_container IS 'A @nodeId naming an interface or union that is no node type itself: one row per NODE_ID binding claim naming one, the claim naming the type. For example an argument carrying @nodeId(typeName: "AddressOccupant"), a union of Customer and Staff, has a row, and one naming Film has none.';
+COMMENT ON COLUMN graphitron_binding_claim_container.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_binding_claim_container.coordinate IS 'the declared element claiming, an argument or an input field';
+COMMENT ON COLUMN graphitron_binding_claim_container.kind IS 'always NODE_ID, pinned so the foreign key holds the row to a node id claim';
+COMMENT ON COLUMN graphitron_binding_claim_container.claimer IS 'the element itself';
+COMMENT ON COLUMN graphitron_binding_claim_container.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_binding_claim_container_rule
+  (graph_name, coordinate, kind, claimer) AS
+SELECT cl.graph_name, cl.coordinate, cl.kind, cl.claimer
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_type t
+    ON t.graph_name = cl.graph_name AND t.type_name = cl.named AND t.kind IN ('INTERFACE', 'UNION')
+ WHERE cl.kind = 'NODE_ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                    WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named);
+COMMENT ON VIEW graphitron_binding_claim_container_rule IS 'A @nodeId naming an interface or union that is no node type itself: one row per NODE_ID binding claim naming one, the claim naming the type, in the shape graphitron_binding_claim_container stores. For example an argument carrying @nodeId(typeName: "AddressOccupant"), a union of Customer and Staff, has a row, and one naming Film has none.';
+
 CREATE VIEW graphitron_node_type (graph_name, type_name) AS
 SELECT graph_name, coordinate FROM graphql_directive_application WHERE directive_name = 'node'
  UNION
@@ -11214,9 +11247,11 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.posi
        'EXPLICIT_TYPE_NAME', m.member_type_name, k.table_source_name, k.table_schema,
        k.table_name, k.column_name
   FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim_container kc
+    ON kc.graph_name = o.graph_name AND kc.coordinate = o.element_coordinate
   JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-   AND cl.kind = 'NODE_ID'
+    ON cl.graph_name = kc.graph_name AND cl.coordinate = kc.coordinate AND cl.kind = kc.kind
+   AND cl.claimer = kc.claimer
   JOIN graphql_poly_member m
     ON m.graph_name = cl.graph_name AND m.container_name = cl.named
   JOIN graphitron_tabletype bt
@@ -11225,9 +11260,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.posi
     ON n.graph_name = m.graph_name AND n.type_name = m.member_type_name
   JOIN graphitron_node_keycolumn k
     ON k.graph_name = n.graph_name AND k.type_name = n.type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_node c
-                    WHERE c.graph_name = cl.graph_name AND c.type_name = cl.named)
-   AND NOT EXISTS (SELECT 1 FROM graphql_poly_member m2
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_poly_member m2
                      JOIN graphitron_tabletype bt2
                        ON bt2.graph_name = m2.graph_name AND bt2.type_name = m2.member_type_name
                      JOIN graphitron_node n2
@@ -12598,12 +12631,8 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
                CASE WHEN pj.bound IS NOT NULL
                     THEN CASE WHEN s.landing_class = pc.binding_type THEN 'KEY_VALUE' END
                     WHEN s.landing_class = NULLIF(t.record_class_fqn, 'org.jooq.Record') THEN 'OWN_RECORD'
-                    WHEN EXISTS (SELECT 1 FROM graphitron_binding_claim cl
-                                   JOIN graphitron_type ct
-                                     ON ct.graph_name = cl.graph_name AND ct.type_name = cl.named
-                                    AND ct.kind IN ('INTERFACE', 'UNION')
-                                  WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-                                    AND cl.kind = 'NODE_ID')
+                    WHEN EXISTS (SELECT 1 FROM graphitron_binding_claim_container kc
+                                  WHERE kc.graph_name = o.graph_name AND kc.coordinate = o.element_coordinate)
                      AND EXISTS (SELECT 1 FROM sql_table_record_supertype st
                                   WHERE st.source_name = t.source_name AND st.table_schema = t.table_schema
                                     AND st.table_name = t.table_name AND st.supertype_name = s.landing_class)
@@ -12777,10 +12806,11 @@ WITH container_slot (graph_name, element_coordinate, site, container_name, landi
   SELECT DISTINCT s.graph_name, o.element_coordinate, o.kind, cl.named, s.landing_class, s.slot_shape
     FROM graphitron_occurrence_node_id_slot s
     JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN graphitron_binding_claim_container k
+      ON k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate
     JOIN graphitron_binding_claim cl
-      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
-    JOIN graphitron_type t
-      ON t.graph_name = cl.graph_name AND t.type_name = cl.named AND t.kind IN ('INTERFACE', 'UNION')
+      ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
+     AND cl.claimer = k.claimer
     LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
       ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
     LEFT JOIN graphitron_occurrence_call_parameter cp
@@ -12792,8 +12822,6 @@ WITH container_slot (graph_name, element_coordinate, site, container_name, landi
                           WHERE rp.graph_name = o.graph_name AND rp.fill = 'ARGUMENT'
                             AND rp.landing_coordinate = o.argument_coordinate
                             AND rp.call_kind = 'SERVICE'))
-     AND NOT EXISTS (SELECT 1 FROM graphitron_node n
-                      WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype ct
                       WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
 ),
@@ -15257,15 +15285,13 @@ claim_conflict (graph_name, coordinate, code) AS (
 container_id (graph_name, element_coordinate, container_name, field_element) AS (
   SELECT DISTINCT o.graph_name, o.element_coordinate, cl.named, fo.element_coordinate
     FROM graphitron_occurrence o
+    JOIN graphitron_binding_claim_container k
+      ON k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate
     JOIN graphitron_binding_claim cl
-      ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-     AND cl.kind = 'NODE_ID'
-    JOIN graphitron_type t
-      ON t.graph_name = cl.graph_name AND t.type_name = cl.named AND t.kind IN ('INTERFACE', 'UNION')
+      ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
+     AND cl.claimer = k.claimer
     JOIN graphitron_occurrence fo
       ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_node nd
-                      WHERE nd.graph_name = cl.graph_name AND nd.type_name = cl.named)
 ),
 -- A node id's places under a @service: a parameter of its call, or a member or record its input
 -- object is built into where the root argument goes to one; the parameter is the call's, or the
@@ -19668,6 +19694,7 @@ INSERT INTO meta_stage_write VALUES
   ('field-targets', 'graphitron_field_target'),
   ('producer-claims', 'graphitron_claim'),
   ('binding-claims', 'graphitron_binding_claim'),
+  ('binding-claims', 'graphitron_binding_claim_container'),
   ('binding-claims', 'graphitron_claim'),
   ('type-claims', 'graphitron_claim'),
   ('spelled-tables', 'graphitron_spelled_table'),
@@ -22340,6 +22367,14 @@ INSERT INTO meta_relation VALUES
    'What one binding claim names: one row per binding claim in graphitron_claim.',
    'For example a field carrying @field(name: "title") has a COLUMN row naming title, and an input field carrying @nodeId(typeName: "Film") @field(name: "film") a NODE_ID row naming Film with film as its target.',
    'The binding family''s subtype of graphitron_claim, keyed by the claim and cascading from it, so the binding rules read what a claim names without the supertype. A @field(name:) beside a @nodeId is that claim''s target and no claim of its own: under a table it contradicts the node''s key and under a class it names the member the decoded value goes to, which is the occurrence''s reader to judge.'),
+  ('graphitron_binding_claim_container', 'claim', 'graphitron',
+   'A @nodeId naming an interface or union that is no node type itself: one row per NODE_ID binding claim naming one, the claim naming the type.',
+   'For example an argument carrying @nodeId(typeName: "AddressOccupant"), a union of Customer and Staff, has a row, and one naming Film has none.',
+   'Whether an id is of one node type or of several is asked by the decode shape, the container defects and the member rule, each of which joined the claim, the type and the node again and spelled it slightly differently; stated once here, at the claim it details, cascading with it.'),
+  ('graphitron_binding_claim_container_rule', 'claim', 'graphitron',
+   'A @nodeId naming an interface or union that is no node type itself: one row per NODE_ID binding claim naming one, the claim naming the type, in the shape graphitron_binding_claim_container stores.',
+   'For example an argument carrying @nodeId(typeName: "AddressOccupant"), a union of Customer and Staff, has a row, and one naming Film has none.',
+   'The rule graphitron_binding_claim_container is written from, after the claims it details and the nodes it rules out.'),
   ('graphitron_binding_claim_rule', 'claim', 'graphitron',
    'One binding claim the rule computes, with what it names: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_claim and graphitron_binding_claim, at the priority and under the stage BindingClaims claims.',

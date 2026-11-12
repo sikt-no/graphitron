@@ -136,6 +136,19 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
   """)
 
+# Which claims name a container, an interface or union that is no node itself: at an argument and at
+# an input field alike, and not where the same element shape names a node type.
+extend schema @assertContains(relation: "graphitron_binding_claim_container", rows: """
+  coordinate
+  Query.occupant(occupant:)
+  OccupantRecordAssignmentInput.occupant
+  """)
+extend schema @assertAbsent(relation: "graphitron_binding_claim_container", rows: """
+  coordinate
+  Query.mediaItems(film:)
+  OccupantFilter.customerId
+  """)
+
 # A container's slot is one, the parameter the argument is named for, and inside a @service's input
 # the member of the bean its input object is built into.
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", where: """
