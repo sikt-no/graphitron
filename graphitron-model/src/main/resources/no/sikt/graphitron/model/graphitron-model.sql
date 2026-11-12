@@ -303,9 +303,11 @@ CREATE TABLE store_graph_dependency (
   kind        VARCHAR NOT NULL,
   origin      VARCHAR NOT NULL,
   coordinate  VARCHAR,
+  position    INT NOT NULL,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (position >= 0),
   CHECK (kind IN ('DIRECTORY', 'RELEASE', 'SNAPSHOT')),
   CHECK (origin IN ('PROJECT', 'REACTOR', 'SIBLING', 'DECLARED', 'TRANSITIVE')),
   CHECK (origin <> 'PROJECT' OR coordinate IS NULL)
@@ -316,7 +318,10 @@ COMMENT ON COLUMN store_graph_dependency.source_name IS 'the entry''s path, spel
 COMMENT ON COLUMN store_graph_dependency.kind IS 'whether the entry''s bytes can change under its name: DIRECTORY for a class directory the build writes, RELEASE for a jar released under its coordinate and version, SNAPSHOT for a jar that can be replaced under them. A producer that resolved nothing has no release to vouch for, so a jar it hands over is a SNAPSHOT';
 COMMENT ON COLUMN store_graph_dependency.origin IS 'how this entry reached the compile classpath, as the build decided it: PROJECT for the module''s own build output, REACTOR for another module of the same build this module declares a dependency on, SIBLING for a reactor module''s output this module declares no dependency on, DECLARED for a coordinate the pom names that the build does not produce, TRANSITIVE for one a declared dependency dragged in. REACTOR and DECLARED are one fact apart and the distinction is the point of both: declaring a dependency is what makes naming it legitimate, which the two share, while being the build''s own code is what a reader scoping to the consumer wants, which only the first has. Collapsed, a reader could not tell a module of its own build from a third-party jar. The column a reader scopes by when it wants the reactor rather than the world, and the axis a ranking over classpath contents sorts on, a consumer''s own exception outranking a transport library''s; recorded rather than re-derived because nothing downstream of the plugin can recover it from a path';
 COMMENT ON COLUMN store_graph_dependency.coordinate IS 'the entry''s groupId:artifactId, or the module name for a reactor sibling found by convention; NULL for the project''s own output, which is what the origin beside it already says. Here for the same reason the refusals carry it: "declare a dependency on module X" needs a name no target/classes path supplies';
+COMMENT ON COLUMN store_graph_dependency.position IS 'where the entry stands on the classpath, 0-based in the order the build handed it over, an entry listed twice standing where it was first listed. What a class name two of the graph''s entries declare resolves by: the declaring entry with the lowest position is the copy a classloader would load, so it is the one the graph''s derivations read. Stored rather than taken from the classpath at resolve time, the classpath being gone by then and the store holding every entry''s rows whatever order any graph reads them in';
 COMMENT ON COLUMN store_graph_dependency.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the entries the build no longer declares, which an upsert cannot find because there is no incoming row to match';
+CREATE INDEX store_graph_dependency_position_ix ON store_graph_dependency (graph_name, position);
+COMMENT ON INDEX store_graph_dependency_position_ix IS 'Serves resolving a class name to the graph''s first entry declaring it: graphitron_type_backing_rule asks, per slot, which of the graph''s entries stand ahead of the one the slot was read off, which is a range on the position within one graph. The primary key leads with the graph and then the entry, so it reads the graph''s whole classpath for every slot instead.';
 
 CREATE TABLE store_graph_module (
   graph_name        VARCHAR NOT NULL,
@@ -17849,7 +17854,17 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
                        JOIN code_read_slot sl
                          ON sl.source_name = g.source_name AND sl.class_name = m.result_element_class
                         AND sl.slot_name = df.bound_name
-                      WHERE g.graph_name = s.graph_name)
+                      WHERE g.graph_name = s.graph_name
+                        -- The class the graph resolves the name to, which is its first entry
+                        -- declaring it, as hop states.
+                        AND NOT EXISTS (SELECT 1 FROM store_graph_dependency here
+                                         JOIN store_graph_dependency ahead
+                                           ON ahead.graph_name = here.graph_name AND ahead.position < here.position
+                                         JOIN store_graph_source ag
+                                           ON ag.graph_name = ahead.graph_name AND ag.source_name = ahead.source_name
+                                         JOIN code_class ac
+                                           ON ac.source_name = ahead.source_name AND ac.class_name = sl.class_name
+                                        WHERE here.graph_name = g.graph_name AND here.source_name = g.source_name))
   UNION
   SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s
@@ -17902,6 +17917,16 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN code_read_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
    WHERE sl.element_class IS NOT NULL
+     -- A class name two of the graph's entries declare is the copy on the first of them, as a
+     -- classloader would load it: a slot read off a later entry's copy is no edge.
+     AND NOT EXISTS (SELECT 1 FROM store_graph_dependency here
+                      JOIN store_graph_dependency ahead
+                        ON ahead.graph_name = here.graph_name AND ahead.position < here.position
+                      JOIN store_graph_source ag
+                        ON ag.graph_name = ahead.graph_name AND ag.source_name = ahead.source_name
+                      JOIN code_class ac
+                        ON ac.source_name = ahead.source_name AND ac.class_name = sl.class_name
+                     WHERE here.graph_name = g.graph_name AND here.source_name = g.source_name)
      -- Read off the stored applications rather than the reference sites: H2 evaluates a view
      -- again for every hop row, and on a consumer schema that was most of the rule's time.
      AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application x
@@ -17923,6 +17948,14 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN code_write_slot sl
       ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
    WHERE sl.element_class IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM store_graph_dependency here
+                      JOIN store_graph_dependency ahead
+                        ON ahead.graph_name = here.graph_name AND ahead.position < here.position
+                      JOIN store_graph_source ag
+                        ON ag.graph_name = ahead.graph_name AND ag.source_name = ahead.source_name
+                      JOIN code_class ac
+                        ON ac.source_name = ahead.source_name AND ac.class_name = sl.class_name
+                     WHERE here.graph_name = g.graph_name AND here.source_name = g.source_name)
 ),
 -- The closure from the seeds over the hops. H2 has no CYCLE clause and its UNION does not discard
 -- a row an earlier step produced, so a cyclic type graph would recurse forever: the path of pairs

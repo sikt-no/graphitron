@@ -17,6 +17,7 @@ import org.jooq.Rows;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -293,13 +294,16 @@ public final class StoreEntries {
     }
 
     /**
-     * The classpath's entries, as the producer resolved them. Keyed by the entry, so an entry a
-     * producer lists twice is one row, the first saying what it is.
+     * The classpath's entries, as the producer resolved them, each at its position. Keyed by the
+     * entry, so an entry a producer lists twice is one row, the first saying what it is and where
+     * it stands. Positions count the rows written, so they run without gaps.
      */
     private static void dependencies(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
                                      LocalDateTime touchedAt) {
         var byName = new LinkedHashMap<String, ClasspathEntry>();
         classpath.forEach(entry -> byName.putIfAbsent(entry.path().toString(), entry));
+        var position = new HashMap<String, Integer>();
+        byName.keySet().forEach(name -> position.put(name, position.size()));
         var t = STORE_GRAPH_DEPENDENCY;
         var rows = byName.entrySet().stream().collect(Rows.toRowList(
             e -> val(graph, t.GRAPH_NAME),
@@ -307,15 +311,17 @@ public final class StoreEntries {
             e -> val(e.getValue().kind().name(), t.KIND),
             e -> val(e.getValue().origin().name(), t.ORIGIN),
             e -> val(e.getValue().coordinate(), t.COORDINATE),
+            e -> val(position.get(e.getKey()), t.POSITION),
             e -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.KIND, t.ORIGIN, t.COORDINATE,
-                    t.TOUCHED_AT)
+                    t.POSITION, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.KIND, excluded(t.KIND))
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.COORDINATE, excluded(t.COORDINATE))
+                .set(t.POSITION, excluded(t.POSITION))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 

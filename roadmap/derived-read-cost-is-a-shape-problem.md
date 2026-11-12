@@ -179,12 +179,19 @@ census it replaced is gone.
   for it may depend on the source alone; of two entries declaring one class name, the first in the
   graph's classpath wins, an order the store captures. Absorbs R1182: today a graph's backings change with what was captured before it, and a
   graph read after another can be given a wrong backing.
-  * **An entry is read alone** `open`. `ClassfileCensus.read` keeps a class name once across the
-    entries it reads together, so a reading of corpus and library drops the library's copy, and the
-    store-wide stamp skip in `ClasspathSourceCapture.held` hands that pass's rows to every later
-    graph; `nestedSlots` collects names from the whole store. Each entry is read with `readEntry`,
-    which copy a graph sees being the derivations' question: the first declaring entry by a position
-    captured on the graph's entries.
+  * **An entry is read alone** `done`. Each entry is read with `readEntry`, so the store holds
+    every copy of a class name; `store_graph_dependency.position` captures the graph's classpath
+    order, and `graphitron_type_backing_rule`'s slot hops and pass-through test take the first
+    declaring entry. Nested slots are read for the names an entry's own methods carry, so a nested
+    class one entry names and only another declares is not read: open for Alf's call.
+  * **A graph's visible class is one relation, read by every rule that resolves a name** `open`. The
+    first-declaring-entry predicate is written inline three times in the type-backing rule, and
+    about 25 rules joining `code_` rows through `store_graph_source` do not apply it yet
+    (`graphitron_occurrence_built_class_rule`, the condition candidates, the producer lift and
+    result rules, `graphitron_path_element_method_rule`, `graphitron_scalar_class_rule`,
+    `graphitron_session_handle_member`, the outbox targets, among others); nor does code reference
+    resolution, which draws no row when the classpath offers two candidates. One relation of
+    (graph, class name, entry), anchored, replaces the predicate everywhere.
   * **A catalog source is read alone** `open`. Not yet checked: whether the jOOQ catalog reading
     writes anything for a source that depends on the sources read beside it, or skips a source
     store-wide as the classpath reading does.

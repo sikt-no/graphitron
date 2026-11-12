@@ -15,7 +15,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -113,8 +112,10 @@ public final class ClassfileCensus {
      * Reads the given entries, in classpath order, skipping anything that is neither a directory
      * nor a jar.
      *
-     * <p>A class name is kept once: the first entry to declare it wins, which is the copy a
-     * classloader would resolve, so this census and the loader agree on which copy is the one.
+     * <p>Each entry is read alone, through {@link #readEntry}: a class name two entries declare is
+     * two classes here, one under each entry. What the store holds for an entry is shared by every
+     * graph whose classpath carries it, so it has to be what that entry declares whatever was read
+     * beside it; which copy a given classpath resolves is a question its readers ask of these rows.
      *
      * <p>Each entry keeps the classification its producer gave it. How an entry reached the
      * classpath cannot be recovered from its path, so a reader that wants the reactor rather than
@@ -128,7 +129,6 @@ public final class ClassfileCensus {
     public static Census read(List<ClasspathEntry> entries, String headerOnlyPackage) {
         var read = new ArrayList<EntryAt>();
         var classes = new ArrayList<ClassAt>();
-        var seen = new LinkedHashSet<String>();
         for (ClasspathEntry classified : entries) {
             Path entry = classified.path();
             String source = entry.toString();
@@ -138,21 +138,16 @@ public final class ClassfileCensus {
             }
             read.add(new EntryAt(source, directory ? "DIRECTORY" : "JAR",
                 classified.origin().name(), classified.coordinate()));
-            for (ClassAt at : readEntry(entry, source, headerOnlyPackage)) {
-                if (seen.add(at.className())) {
-                    classes.add(at);
-                }
-            }
+            classes.addAll(readEntry(entry, source, headerOnlyPackage));
         }
         return new Census(List.copyOf(read), List.copyOf(classes));
     }
 
     /**
-     * One entry's classes in walk order, <em>not</em> deduplicated against any other entry, and
-     * with no entry row: what a caller holding one entry's result across rounds re-reads when that
-     * entry's bytes move. Deduplicating here would make that impossible, a class dropped from the
-     * first entry having to surface from the second, so an entry cannot be recomputed alone once it
-     * has been folded against its neighbours.
+     * One entry's classes in walk order, with no entry row: what {@link #read} reads each entry
+     * with, and what a caller holding one entry's result across rounds re-reads when that entry's
+     * bytes move. Nothing here is folded against another entry, so an entry can be recomputed
+     * alone.
      *
      * <p>A path that is neither a directory nor a readable jar yields nothing, which is the normal
      * state before a first compile rather than an error.

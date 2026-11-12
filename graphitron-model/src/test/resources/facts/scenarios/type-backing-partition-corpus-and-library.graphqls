@@ -1,7 +1,8 @@
-# The corpus and library-named on one classpath, in that order. Both declare a FilmBlurbHolder, and a
-# reading resolves a class name two entries declare in classpath order, so the corpus's holder backs
-# Holder and LibHolder alike and only its FilmBlurb is reached from either; the library's own service
-# and input still ground, being declared once.
+# The corpus and library-named on one classpath, in that order. Both declare a FilmBlurbHolder, and
+# the store holds both, each entry being read alone; the graph resolves a class name two of its
+# entries declare to the first of them, as a classloader would, so the corpus's holder backs Holder
+# and LibHolder alike and only its FilmBlurb is reached from either. The library's own service and
+# input still ground, being declared once.
 extend schema @withConfiguration(classpath: "corpus-and-library-named")
 extend schema @withFacts(docs: [{path: "shapes/type-backing-partition"}])
 

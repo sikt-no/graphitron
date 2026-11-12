@@ -214,28 +214,38 @@ public final class CodeCapture {
      * The census leaves a nested class out by its name, its methods being reachable through the
      * class declaring it; its slots are not, and a value a service hands back may be one, so a
      * parent holding it reads its keys off them like any other class's.
+     *
+     * <p>Per entry, and only the entries this reading opened: an entry's nested classes are the
+     * ones its own methods name, read out of that entry and recorded under it. What the store holds
+     * for an entry is shared by every graph whose classpath carries it, so it cannot depend on which
+     * other entries were read beside it, nor on what some other graph's methods happen to name. A
+     * nested class one entry names and another declares is therefore read only where the declaring
+     * entry's own methods name it too, and an entry left unopened keeps the rows its own reading
+     * wrote.
      */
     private static void nestedSlots(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                     LocalDateTime touchedAt) {
-        var m = CODE_METHOD;
-        var p = CODE_METHOD_PARAMETER;
-        var named = new java.util.TreeSet<String>();
-        named.addAll(dsl.selectDistinct(m.RESULT_ELEMENT_CLASS).from(m)
-            .where(m.RESULT_ELEMENT_CLASS.contains("$")).fetch(m.RESULT_ELEMENT_CLASS));
-        named.addAll(dsl.selectDistinct(m.RESULT_ERASED_CLASS).from(m)
-            .where(m.RESULT_ERASED_CLASS.contains("$")).fetch(m.RESULT_ERASED_CLASS));
-        named.addAll(dsl.selectDistinct(p.ELEMENT_CLASS).from(p)
-            .where(p.ELEMENT_CLASS.contains("$")).fetch(p.ELEMENT_CLASS));
-        if (named.isEmpty()) {
+        var read = reading.read();
+        if (read.isEmpty()) {
             return;
         }
-        var entries = reading.sources().stream()
-            .filter(source -> !(source instanceof ClasspathSourceCapture.ClasspathSource.Skipped))
-            .map(source -> java.nio.file.Path.of(source.sourceName()))
-            .toList();
-        for (String className : named) {
-            readWhole(dsl, entries, className, touchedAt);
-        }
+        var m = CODE_METHOD;
+        var p = CODE_METHOD_PARAMETER;
+        var named = new java.util.TreeMap<String, java.util.TreeSet<String>>();
+        dsl.select(m.SOURCE_NAME, m.RESULT_ELEMENT_CLASS).from(m)
+            .where(m.SOURCE_NAME.in(read)).and(m.RESULT_ELEMENT_CLASS.contains("$"))
+            .union(dsl.select(m.SOURCE_NAME, m.RESULT_ERASED_CLASS).from(m)
+                .where(m.SOURCE_NAME.in(read)).and(m.RESULT_ERASED_CLASS.contains("$")))
+            .union(dsl.select(p.SOURCE_NAME, p.ELEMENT_CLASS).from(p)
+                .where(p.SOURCE_NAME.in(read)).and(p.ELEMENT_CLASS.contains("$")))
+            .forEach(row -> named.computeIfAbsent(row.value1(), ignored -> new java.util.TreeSet<>())
+                .add(row.value2()));
+        named.forEach((source, classNames) -> {
+            var entry = List.of(java.nio.file.Path.of(source));
+            for (String className : classNames) {
+                readWhole(dsl, entry, className, touchedAt);
+            }
+        });
     }
 
     /**
@@ -642,10 +652,7 @@ public final class CodeCapture {
                               Map<String, Container> containers, LocalDateTime touchedAt) {
         record Slot(String source, String className, String declaringClass,
                     ClassfileCensus.MethodAt at, String slotName, String origin) {}
-        var byName = new java.util.LinkedHashMap<String, ClassfileCensus.ClassAt>();
-        for (ClassfileCensus.ClassAt at : classes) {
-            byName.putIfAbsent(at.className(), at);
-        }
+        var byName = byName(classes);
         var found = new ArrayList<Slot>();
         for (ClassfileCensus.ClassAt at : classes) {
             if ("RECORD".equals(at.kind())) {
@@ -710,6 +717,36 @@ public final class CodeCapture {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
+    /**
+     * The classes read, by name, each name's copies in classpath order. One name on two entries is
+     * two classes, so a name keeps every copy rather than the first.
+     */
+    private static Map<String, List<ClassfileCensus.ClassAt>> byName(
+        List<ClassfileCensus.ClassAt> classes) {
+        var byName = new java.util.LinkedHashMap<String, List<ClassfileCensus.ClassAt>>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            byName.computeIfAbsent(at.className(), ignored -> new ArrayList<>()).add(at);
+        }
+        return byName;
+    }
+
+    /**
+     * The copy of {@code className} a class on {@code source} reaches: its own entry's where that
+     * entry declares one, so what an entry offers is read off the entry, and otherwise the first
+     * copy read; null where none was.
+     */
+    private static ClassfileCensus.ClassAt copyOf(
+        Map<String, List<ClassfileCensus.ClassAt>> byName, String className, String source) {
+        var copies = byName.get(className);
+        if (copies == null) {
+            return null;
+        }
+        return copies.stream()
+            .filter(copy -> copy.source().equals(source))
+            .findFirst()
+            .orElse(copies.getFirst());
+    }
+
     /** One method a class offers, and the class it is written on. */
     private record Offered(ClassfileCensus.MethodAt at, String declaringClass) {}
 
@@ -728,7 +765,7 @@ public final class CodeCapture {
      * overriding is, and the nearest class wins because that is the method the call reaches.
      */
     private static List<Offered> offeredBy(
-        ClassfileCensus.ClassAt at, Map<String, ClassfileCensus.ClassAt> byName,
+        ClassfileCensus.ClassAt at, Map<String, List<ClassfileCensus.ClassAt>> byName,
         java.util.function.Function<ClassfileCensus.MethodAt, String> shape) {
         var offered = new ArrayList<Offered>();
         var overridden = new java.util.HashSet<String>();
@@ -741,9 +778,10 @@ public final class CodeCapture {
                     offered.add(new Offered(method, walking.className()));
                 }
             }
+            String source = walking.source();
             walking = walking.supertypes().stream()
                 .filter(supertype -> "EXTENDS".equals(supertype.declaredVia()))
-                .map(supertype -> byName.get(supertype.name()))
+                .map(supertype -> copyOf(byName, supertype.name(), source))
                 .filter(java.util.Objects::nonNull)
                 .findFirst()
                 .orElse(null);
@@ -792,16 +830,14 @@ public final class CodeCapture {
      */
     private static void construction(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                                      Map<String, Container> containers, LocalDateTime touchedAt) {
-        var byName = new java.util.LinkedHashMap<String, ClassfileCensus.ClassAt>();
-        for (ClassfileCensus.ClassAt at : classes) {
-            byName.putIfAbsent(at.className(), at);
-        }
-        var queue = new java.util.ArrayDeque<String>();
-        var reached = new java.util.LinkedHashSet<String>();
+        var byName = byName(classes);
+        var queue = new java.util.ArrayDeque<ClassfileCensus.ClassAt>();
+        var reached = java.util.Collections.newSetFromMap(
+            new java.util.IdentityHashMap<ClassfileCensus.ClassAt, Boolean>());
         for (ClassfileCensus.ClassAt at : classes) {
             for (ClassfileCensus.MethodAt method : at.methods()) {
                 for (ClassfileCensus.ParameterAt parameter : method.parameters()) {
-                    delivered(parameter.typeRefs(), containers, byName, reached, queue);
+                    delivered(parameter.typeRefs(), at.source(), containers, byName, reached, queue);
                 }
             }
         }
@@ -809,7 +845,9 @@ public final class CodeCapture {
         record Made(ClassfileCensus.ClassAt at, ClassfileCensus.MethodAt constructor, String shape) {}
         var made = new ArrayList<Made>();
         while (!queue.isEmpty()) {
-            ClassfileCensus.ClassAt at = byName.get(queue.poll());
+            // A copy and not a name: one name on two entries is two classes, and a position reaches
+            // the one on its own entry where that entry declares it.
+            ClassfileCensus.ClassAt at = queue.poll();
             boolean positional = "RECORD".equals(at.kind());
             ClassfileCensus.MethodAt constructor = positional
                 ? canonicalConstructor(at) : noArgumentConstructor(at);
@@ -821,12 +859,13 @@ public final class CodeCapture {
             // reached this class by.
             if (positional) {
                 for (ClassfileCensus.ParameterAt parameter : constructor.parameters()) {
-                    delivered(parameter.typeRefs(), containers, byName, reached, queue);
+                    delivered(parameter.typeRefs(), at.source(), containers, byName, reached,
+                        queue);
                 }
             } else {
                 for (ClassfileCensus.MethodAt setter : settersOf(at, byName)) {
-                    delivered(setter.parameters().getFirst().typeRefs(), containers, byName,
-                        reached, queue);
+                    delivered(setter.parameters().getFirst().typeRefs(), at.source(),
+                        containers, byName, reached, queue);
                 }
             }
         }
@@ -921,17 +960,15 @@ public final class CodeCapture {
     }
 
     /** Queues what a declared type delivers, where that is a class this reading read. */
-    private static void delivered(List<ClassfileCensus.TypeRefAt> refs,
+    private static void delivered(List<ClassfileCensus.TypeRefAt> refs, String source,
                                   Map<String, Container> containers,
-                                  Map<String, ClassfileCensus.ClassAt> byName,
-                                  java.util.Set<String> reached,
-                                  java.util.Deque<String> queue) {
+                                  Map<String, List<ClassfileCensus.ClassAt>> byName,
+                                  java.util.Set<ClassfileCensus.ClassAt> reached,
+                                  java.util.Deque<ClassfileCensus.ClassAt> queue) {
         Delivery delivery = deliveryOf(refs, containers);
-        if (delivery == null || !byName.containsKey(delivery.elementClass())) {
-            return;
-        }
-        if (reached.add(delivery.elementClass())) {
-            queue.add(delivery.elementClass());
+        var copy = delivery == null ? null : copyOf(byName, delivery.elementClass(), source);
+        if (copy != null && reached.add(copy)) {
+            queue.add(copy);
         }
     }
 
@@ -991,7 +1028,7 @@ public final class CodeCapture {
      * wins because that is the method the call actually reaches.
      */
     private static List<ClassfileCensus.MethodAt> settersOf(
-        ClassfileCensus.ClassAt at, Map<String, ClassfileCensus.ClassAt> byName) {
+        ClassfileCensus.ClassAt at, Map<String, List<ClassfileCensus.ClassAt>> byName) {
         return offeredBy(at, byName, CodeCapture::setterProperty).stream()
             .map(Offered::at)
             .toList();
