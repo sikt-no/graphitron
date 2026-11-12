@@ -1,13 +1,13 @@
 ---
 id: R1168
 title: "An error handler that an earlier handler shadows is reported, as a warning or an error"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: error-channel
 depends-on: [error-dispatch-matches-graphitron-9]
 created: 2026-11-11
-last-updated: 2026-11-11
+last-updated: 2026-11-12
 ---
 
 # An error handler that an earlier handler shadows is reported, as a warning or an error
@@ -222,3 +222,18 @@ What satisfies this: the plan says how a warning-severity defect reaches the bui
   *Response.* The read keeps ranking. The dispatch index is a fact of the handler in its type and of no container, so the relation does not carry it; the rows of a type's own container are that type's dispatch-capable handlers, ranked by declared index in the read. The sequence bullet says so and says what the declared index is.
 
 **Also revised, beyond the round.** R1167's spec changed after this round was written: dispatch walks one order, `DATABASE` handlers for a jOOQ error only and then `GENERIC`, and it records a first Graphitron 9 consumer. "The rule", the glossary's *claims* and the paragraph on the other kind are restated against that order; the conclusion that neither kind shadows the other holds, on a different argument. The consumer's schemas are why a pair within one type is now reported once, under the type, and they are recorded under decision 2 as evidence that postdates Filip's ruling on the default. R1171's default member is named out of scope.
+
+### Round 3: Spec → Ready (session_01FY5UvumNW334YGNLzzsEAf, 2026-11-12)
+
+Verdict: sign off. Both gate questions are answered, and round 2's finding is resolved in the body.
+
+The goal reads on its own: an author who declares a handler that an earlier handler of the same kind makes unreachable is told so by the build, which names the earlier handler; the build stops by default, and a consumer who lists `ERROR_HANDLER_SHADOWED` under `<reportAsWarnings>` gets a warning that still prints in the build log, the editor and the MCP tool. It is reachable: the rule is sound against R1167's order as that spec stands at `a61cff94`, the store's verdict runs before classification so the default stops the build with rule 8 gone, a demoted graph falls through to the classifier and generates, and the two severity readers the body names (`EntryDefectVerdict.rows` and the `diagnostic` view's entry arm) are the only ones in the tree. The plan extends shapes the tree has: one defect code owned by a stage with a detail relation, derived tables written in the anchoring phase with a mark and a sweep, a source that is no classpath entry on `FederationCapture`'s terms, a pinned column carrying a foreign key as `graphitron_result_class.shape` does, and a warning route that mirrors the error side and stays out of `ReportFacts.write`.
+
+**Notes, not blocking.**
+
+- The Demotion paragraph puts one reading to Filip: that a foreign key from a `store` gatherer's relation into the stated `graphitron_defect_type` is no downstream read. No gate in the tree refuses it (`MetaDeclarationGateTest` judges views, not keys) and `store_graph_write_stage` is the same shape, so the plan can be handed over on it. If he rules otherwise, where the list is checked moves and the item reopens for that paragraph; if he confirms it, the sentence is owed to the page that owns the rule, per `workflow.adoc`.
+- "As every existing row pairs the two" is not so: 119 of the 124 codes pair `X` with `GRAPHITRON_X`, and the five that do not are this family's own (`ERRORS_FIELD_MIXED_MEMBERS` and its siblings carry `graphitron.error-channel.*`). The chosen `lsp_code` follows the majority; the implementer should know the neighbours differ.
+- Decision 2 says the first consumer "builds once it demotes the code". Identical criteria have never reached the generator, rule 8 having refused them, and the store-backed build test runs the goal's schema, which is the subtype case that generates today. One identical-criteria schema generated and compiled under demotion would pin that claim (question one).
+- A pair across two member types is one detail row per union that orders them, so two types that sit together in many unions give one shadowed handler many rows. The build's message is assembled from those rows and wants a bound on how many containers it names.
+- The `diagnostic` view's entry arm reads `t.severity` twice, the second time to decide whether the stale-module hint is appended; both reads take the graph's severity.
+- R1167 went to Ready on trunk while this round was written (`a61cff94`), its order unchanged. The pickup check at the head of "The rule" stands until it lands.
