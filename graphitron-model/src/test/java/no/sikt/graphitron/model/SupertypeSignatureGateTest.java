@@ -282,11 +282,6 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
         "graphql_poly_member|graphql_implements_interface,graphql_union_member",
-        // The union the poly split leaves behind, spelled once here rather than at each reader.
-        // Over the two base relations and not over graphql_poly_member, which says the same thing:
-        // that view is for readers outside this store, and going through it would put a second view
-        // body in every detection component that asks this question.
-        "intent_poly_member|graphql_implements_interface,graphql_union_member",
         // The rule graphitron_type_member is stored from: the supertype the poly split owes, written
         // as a table at the expanded schema's grain, so its readers stop reconstructing it.
         "graphitron_type_member_rule|graphql_implements_interface,graphql_union_member",

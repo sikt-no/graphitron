@@ -98,7 +98,7 @@ class DetectionReadReachGateTest {
             "graphql_poly_member"));
 
         // graphql_poly_member is the participants of a field's target, read beside the stored target
-        // and binding. It is the union intent_poly_member was over the same two tables, and the
+        // and binding. It is the union of the two captured member tables, and the
         // reference-for application that reaches it answers no slower than it did through the
         // participant view on the sakila and sis stores.
         REACH.put("ReferenceForParticipantDefects", Set.of("graphql_poly_member"));

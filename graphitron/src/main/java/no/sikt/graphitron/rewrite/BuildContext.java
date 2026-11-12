@@ -4127,7 +4127,7 @@ class BuildContext {
     /**
      * The object types a polymorphic container resolves to, in the order the schema lists them: an
      * interface's implementations, or a union's members. The same two populations
-     * {@code intent_poly_member} unions in the store, read here off the live schema.
+     * {@code graphql_poly_member} holds in the store, read here off the live schema.
      */
     private List<GraphQLObjectType> polyMembers(GraphQLType rawGqlType) {
         if (rawGqlType instanceof GraphQLInterfaceType iface) {

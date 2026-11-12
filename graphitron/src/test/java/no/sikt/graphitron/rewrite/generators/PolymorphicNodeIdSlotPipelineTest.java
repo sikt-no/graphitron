@@ -180,7 +180,7 @@ class PolymorphicNodeIdSlotPipelineTest {
 
     /**
      * An interface container resolves the same way a union does: the candidate set is the schema's
-     * own implementation list, which is the population {@code intent_poly_member} unions.
+     * own implementation list, which is the population {@code graphql_poly_member} holds.
      */
     @Test
     void anInterfaceContainerResolvesItsImplementations() {
