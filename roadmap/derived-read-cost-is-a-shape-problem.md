@@ -318,7 +318,9 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     participant, which the polymorphic emitter answered with an empty page and no count, is
     refused as `FIELD_WITHOUT_FETCHER` wherever graphitron would fetch it (Alf, 2026-11-12): the
     reader rule no longer reads it as `NESTED` and the producer rule no longer splits it, and its
-    defensive branches are generator invariants. The page a tenant-routed batched fetcher answers
+    defensive branches stay for the one shape the store still lets through: an interface carrying
+    `@table` itself with no participant at all, which lands on its table and answers empty with no
+    count. Whether that is refused too is Alf's call. The page a tenant-routed batched fetcher answers
     for a parent whose key cannot match counts 0 (Alf, 2026-11-12). `FIELD_WITHOUT_FETCHER` is
     stated in `diagnostics-glossary.adoc` under "Named structural errors" (Alf, 2026-11-12).
     "A type a statement lands on" is spelled by `graphitron_producer_rule`'s `landing`, the reader
