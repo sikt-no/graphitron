@@ -2820,6 +2820,15 @@ type Film implements Node & Searchable @table(name: "film") @node {
         className: "no.sikt.graphitron.rewrite.test.services.DurabilityErrorService",
         method: "synthesize"
     })
+    # Database-failure fixture: a @service-backed leaf whose one statement always fails in the
+    # database, casting a bound marker text to json (PostgreSQL SQL state 22P02). The driver's
+    # message names the failure on its first line and quotes the marker on a later one, so the
+    # field is how the tests see what the default log line for a failed batch carries and what
+    # it leaves out.
+    databaseError: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.DatabaseErrorService",
+        method: "castMarkerToJson"
+    })
     # Shared-value-type producer: a batched child @service whose per-key element is the
     # SharedTranslations class TranslationSummary.translations reads as a record component.
     sharedTranslations: SharedTranslations @service(service: {

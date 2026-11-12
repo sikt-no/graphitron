@@ -176,10 +176,7 @@ When no handler matches, the router first walks the exception's cause chain for 
 
 [source,java]
 ----
-String reference = newReference(thrown, env);
-if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env))) {
-    LOGGER.error("Unmatched exception in fetcher; correlation id = {}", reference, thrown);
-}
+String reference = reportUnmatched(thrown, env, "Unmatched exception in fetcher");
 String message = answer(configured(env, FetcherErrorResponse.class),
     response -> response.unmatchedMessage(thrown, reference, env), () -> "reference = " + reference);
 return DataFetcherResult.<P>newResult()
@@ -190,7 +187,9 @@ return DataFetcherResult.<P>newResult()
     .build();
 ----
 
-`newReference` and `unmatchedMessage` are a <<fetcher-error-response,`FetcherErrorResponse`>>'s when you configure one, and its defaults otherwise: a random UUID, and "An error occurred. Reference: <reference>.". Two consequences:
+`reportUnmatched` mints the reference and logs the exception, once per request however many fields the exception failed: a batched child query that fails under 400 parents produces 400 field errors, one log record, and one reference that all 400 errors quote. Two batches that fail separately are two records with two references. (A `@service` of yours that rethrows one cached exception wrapped in a `CompletionException` for two batches reads as one failure.)
+
+The reference and `unmatchedMessage` are a <<fetcher-error-response,`FetcherErrorResponse`>>'s when you configure one, and its defaults otherwise: a random UUID, and "An error occurred. Reference: <reference>.". Two consequences:
 
 * *Untyped exceptions don't leak details to clients.* The user-facing message is "An error occurred. Reference: <UUID>."; the original message stays in the server log. This is the fallback behaviour, intentional: only exceptions you've explicitly opted into via `@error` flow as data.
 * *The correlation ID joins the log line and the client response.* Operations can grep the logs for the UUID a customer reports back, see the original stack, and decide whether to add a handler. This is the shape any new error category goes through before earning a typed channel slot.
@@ -200,7 +199,19 @@ Add a typed channel slot when an untyped fallthrough turns out to be a regular, 
 [[fetcher-error-log]]
 === Choosing how unmatched exceptions are logged
 
-By default the redact path logs the whole exception at ERROR through the `ErrorRouter` logger, message and cause chain included. An exception message can carry row data: Oracle's unique-constraint message spells out the conflicting column values, for instance. To decide yourself what reaches your logs, give the runtime a `FetcherErrorLog`:
+By default the redact path logs through the `ErrorRouter` logger, and what it logs depends on where the exception came from.
+
+When the exception comes from the database driver (a `java.sql.SQLException` is on its cause chain), the ERROR record is one line: the path of the field that failed, the exception class, the driver exception's class, its SQL state and vendor code, and the first line of the driver's message, shortened to 240 characters:
+
+----
+Unmatched exception in fetcher; correlation id = 1c0e...; path = /films[0]/actors; org.jooq.exception.DataAccessException: org.postgresql.util.PSQLException [57014/0] ERROR: canceling statement due to statement timeout
+----
+
+The SQL statement is not in it; for a batched query that statement grows with the batch. Nor are the driver's detail lines, where PostgreSQL and Oracle name the values involved. A driver can still put a value in its first line, so configure a `FetcherErrorLog` if nothing from the database may reach your log. The full exception, statement included, is logged at DEBUG under the same reference.
+
+Any other exception is logged at ERROR with its stack trace, message and cause chain included. An exception message can carry row data.
+
+To decide yourself what reaches your logs, give the runtime a `FetcherErrorLog`:
 
 [source,java]
 ----
@@ -211,15 +222,15 @@ var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
 var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 ----
 
-`FetcherErrorLog` is generated into your schema package next to `GraphitronRuntime`. Graphitron calls it once per unmatched exception, in place of its own log line, with the exception, the reference the client receives, and the field's `DataFetchingEnvironment` (its path, field definition and arguments). The client's response does not change: it is still "An error occurred. Reference: <reference>." Graphitron then logs nothing about the exception, so the reference is the only thing that joins a client's report to your log line; log it.
+`FetcherErrorLog` is generated into your schema package next to `GraphitronRuntime`. Graphitron calls it in place of its own log line, once per unmatched exception per request in the same way, with the full exception as the first failing field caught it, the reference the client receives, and that field's `DataFetchingEnvironment` (its path, field definition and arguments). To write the same one-line summary yourself, call `ErrorRouter.describe(thrown, env)`, which is empty for an exception that did not come from the driver. The client's response does not change: it is still "An error occurred. Reference: <reference>." Graphitron then logs nothing about the exception, so the reference is the only thing that joins a client's report to your log line; log it.
 
 Levels, sanitising and rate limiting are yours to build inside the callback. A common shape logs the exception class chain plus `SQLException.getSQLState()` and `getErrorCode()` and never `getMessage()`, picks WARN for exceptions that mean the client sent bad data, and rate-limits stack traces for connection failures so an outage does not flood the log.
 
 If your log throws, the client still gets the redacted error, and Graphitron logs one ERROR line naming your log's class, the class of what it threw and the reference, without either exception's message or stack trace. Only JVM-fatal errors (`VirtualMachineError`, such as `OutOfMemoryError`) propagate.
 
-The escape-hatch engine (`Graphitron.newGraphQL()`) has no runtime, so `withFetcherErrorLog` cannot reach it. There, put the log into each request's context under its class: `Graphitron.newExecutionInput(dsl, ...).graphQLContext(b -> b.put(FetcherErrorLog.class, log))`. A request built without that entry gets the default line, exception message included; nothing warns you, so build every request through one helper of your own.
+The escape-hatch engine (`Graphitron.newGraphQL()`) has no runtime, so `withFetcherErrorLog` cannot reach it. There, put the log into each request's context under its class: `Graphitron.newExecutionInput(dsl, ...).graphQLContext(b -> b.put(FetcherErrorLog.class, log))`. A request built without that entry gets the default line; nothing warns you, so build every request through one helper of your own.
 
-In a `<tenantColumn>` build, a field fanned out across tenants that fails or times out for one tenant reaches `tenantFailed(tenantKey, cause, reference, env)`, where a timeout arrives as a `java.util.concurrent.TimeoutException`. Its default calls `unmatched(cause, reference, env)`; override it to log the tenant too.
+In a `<tenantColumn>` build, a field fanned out across tenants that fails or times out for one tenant reaches `tenantFailed(tenantKey, cause, reference, env)`, where a timeout arrives as a `java.util.concurrent.TimeoutException`. Its default calls `unmatched(cause, reference, env)`; override it to log the tenant too. Each failed tenant is its own failure with its own reference, so this is the one place `unmatched` is called more than once for a field. Without a `FetcherErrorLog`, a tenant's database failure is logged as the same one-line summary at ERROR, with the exception at DEBUG.
 
 [[caught-errors]]
 === Logging the errors a handler caught

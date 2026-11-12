@@ -2332,7 +2332,11 @@ public final class ConnectionRuntimeClassGenerator {
      * Logs one failure under a reference from {@code ErrorRouter.newReference} and returns its
      * in-band marker. A configured {@code FetcherErrorLog} takes the failure through its
      * {@code tenantFailed} (a timeout as a synthesized {@code TimeoutException}, so the consumer's
-     * damping sees outages too); without one, the default line for the arm is written.
+     * damping sees outages too); without one, the default line for the arm is written. A failed
+     * tenant's default line is {@code ErrorRouter.describe}'s summary at ERROR with the cause at
+     * DEBUG when the cause is a database failure, the cause at ERROR otherwise, as the router's
+     * own default line is. Each tenant's failure is its own exception, so each keeps its own
+     * reference and its own record.
      */
     private static MethodSpec logFanOutFailure(ClassName self, ClassName errorRouter, boolean mounts) {
         var outcome = self.nestedClass("Outcome");
@@ -2355,8 +2359,18 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("String reference = $T.newReference(failed.cause(), env)", errorRouter)
             .beginControlFlow("if (!$T.toConfiguredLog(env, reference,"
                 + " log -> log.tenantFailed(failed.key(), failed.cause(), reference, env)))", errorRouter)
+            .addStatement("$T summary = $T.$L(failed.cause(), env)",
+                ParameterizedTypeName.get(OPTIONAL, ClassName.get(String.class)), errorRouter,
+                ErrorRouterClassGenerator.DESCRIBE)
+            .beginControlFlow("if (summary.isPresent())")
+            .addStatement("LOGGER.error($S, failed.key(), reference, summary.get())",
+                "Tenant fan-out failed for tenant {}; correlation id = {}; {}")
+            .addStatement("LOGGER.debug($S, failed.key(), reference, failed.cause())",
+                "Tenant fan-out failed for tenant {}; correlation id = {}")
+            .nextControlFlow("else")
             .addStatement("LOGGER.error($S, failed.key(), reference, failed.cause())",
                 "Tenant fan-out failed for tenant {}; correlation id = {}")
+            .endControlFlow()
             .endControlFlow()
             .addStatement("return new FanOutFailure(reference, FanOutFailure.FAILED)")
             .endControlFlow()
@@ -2447,12 +2461,20 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(Throwable.class, "thrown")
             .addParameter(String.class, "reference")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addJavadoc("Called once per fetcher exception no {@code @error} mapping claims, in place of\n"
-                + "Graphitron's own log line. Graphitron logs nothing else about the exception, so the\n"
-                + "reference is the only thing that joins a client's report to this log line.\n"
-                + "@param thrown the exception the fetcher threw, message and cause chain intact\n"
-                + "@param reference the text the client received after {@code \"Reference:\"}\n"
-                + "@param env the failing field's environment (its path, field definition and arguments)\n")
+            .addJavadoc("Called once for each failure no {@code @error} mapping claims in a request, however\n"
+                + "many fields it failed, in place of Graphitron's own log line: a batched query that\n"
+                + "fails under 400 parents is 400 field errors quoting one reference, and one call here.\n"
+                + "Graphitron logs nothing else about the exception, so the reference is the only thing\n"
+                + "that joins a client's report to this log line."
+                + (tenantKey == null ? "\n" : " The one exception is {@link #tenantFailed},\n"
+                    + "whose default calls this once per failed tenant.\n")
+                + "@param thrown the exception as the first field it failed caught it, message and cause\n"
+                + "chain intact; a batch's failure arrives inside that field's own\n"
+                + "{@link java.util.concurrent.CompletionException}\n"
+                + "@param reference the text the client received after {@code \"Reference:\"}, in every\n"
+                + "field error the failure produced\n"
+                + "@param env the environment of the first field that failed with it (its path, field\n"
+                + "definition and arguments)\n")
             .build();
         var matched = MethodSpec.methodBuilder("matched")
             .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
@@ -2477,13 +2499,19 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addAnnotation(FunctionalInterface.class)
             .addJavadoc("Decides how a fetcher exception is logged. By default Graphitron logs an exception no\n"
-                + "{@code @error} mapping claims at ERROR through the {@code ErrorRouter} logger, message and\n"
-                + "cause chain included (an exception message can carry row data), and logs nothing about\n"
-                + "one a handler caught. Give the runtime one of these\n"
+                + "{@code @error} mapping claims once per request at ERROR through the {@code ErrorRouter}\n"
+                + "logger, and logs nothing about one a handler caught. A database failure's default line\n"
+                + "is a one-line summary ({@code ErrorRouter.describe}: the field's path, the exception and\n"
+                + "driver classes, the SQL state, the vendor code and the first line of the driver's\n"
+                + "message), with the full exception, SQL statement included, at DEBUG under the same\n"
+                + "reference; any other exception's default line carries its message and cause chain. An\n"
+                + "exception message can carry row data, the first line of a driver's message included.\n"
+                + "Give the runtime one of these\n"
                 + "({@code GraphitronRuntime.withFetcherErrorLog}) to decide yourself what reaches your logs:\n"
                 + "levels, sanitising and rate limiting are yours to build here. {@link #unmatched} is the\n"
-                + "one abstract method, so a lambda is a complete log; {@link #matched} is called once per\n"
-                + "caught exception per request. The client's response does not change either way.\n"
+                + "one abstract method, so a lambda is a complete log; it and {@link #matched} are each\n"
+                + "called once per exception per request, however many fields the exception failed. The\n"
+                + "client's response does not change either way.\n"
                 + "\n"
                 + "<p>The reference each method receives is minted by\n"
                 + "{@code FetcherErrorResponse.reference}, so a runtime with a log and no response gets the\n"
@@ -2532,13 +2560,16 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addStatement("return $T.randomUUID().toString()", UUID_CLASS)
             .addJavadoc("Mints the text that joins a client's report to your log line, once per exception and\n"
-                + "request. The same reference reaches the {@code FetcherErrorLog}, {@code matchedMessage}\n"
+                + "request: an exception that fails many fields, as a failed batch does, is asked for once\n"
+                + "and every one of its field errors quotes the answer. (Two fields that fail with it at\n"
+                + "the same moment can each ask; one answer stands and the other is discarded.)\n"
+                + "The same reference reaches the {@code FetcherErrorLog}, {@code matchedMessage}\n"
                 + "and {@code unmatchedMessage}. The default is a random UUID; a trace id lets an operator\n"
                 + "go straight from a support ticket to the trace. A fetcher may run on a thread that does not carry the\n"
                 + "request's tracing context, so read the trace id from the request's {@code GraphQLContext}.\n"
                 + "@param thrown the exception the reference is for: a caught error's source, or the\n"
-                + "exception no handler caught\n"
-                + "@param env the failing field's environment\n"
+                + "exception no handler caught, as the first field it failed caught it\n"
+                + "@param env the environment of the first field that failed with it\n"
                 + "@return the reference; {@code null} falls back to the default\n")
             .build();
         var matchedMessage = MethodSpec.methodBuilder("matchedMessage")

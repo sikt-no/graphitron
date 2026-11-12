@@ -138,6 +138,44 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
+    void describe_signature_isPublic_andAnswersAnOptionalSummary() {
+        // Public because a consumer's FetcherErrorLog and the tenant fan-out's default line call it.
+        var describe = method(generate(), "describe");
+        assertThat(describe.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(describe.returnType().toString()).isEqualTo("java.util.Optional<java.lang.String>");
+        assertThat(describe.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "java.lang.Throwable",
+            "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void theUnmatchedReport_andTheFailureItKeysOn_arePrivate() {
+        // Both unmatched dispositions report through one helper, which is the router's own business.
+        var router = generate();
+        var report = method(router, "reportUnmatched");
+        assertThat(report.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+        assertThat(report.returnType().toString()).isEqualTo("java.lang.String");
+        assertThat(report.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "java.lang.Throwable",
+            "graphql.schema.DataFetchingEnvironment",
+            "java.lang.String");
+        var failureOf = method(router, "failureOf");
+        assertThat(failureOf.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+        assertThat(failureOf.returnType().toString()).isEqualTo("java.lang.Throwable");
+    }
+
+    @Test
+    void theClaimRecord_keepsUnmatchedReferencesApartFromClaimedOnes() {
+        // recordClaim reads a claimed source's reference as "matched was already called", so an
+        // unmatched failure's reference lives in a map of its own, behind accessors of its own.
+        var claims = nested(generate(), "Claims");
+        assertThat(claims.fieldSpecs()).extracting(f -> f.name())
+            .containsExactly("roots", "references", "unmatchedReferences");
+        assertThat(claims.methodSpecs()).extracting(MethodSpec::name)
+            .contains("referenceOf", "assignReference", "unmatchedReferenceOf", "assignUnmatchedReference");
+    }
+
+    @Test
     void clientMessage_signature_takesTheSourceTheDefaultAndTheEnvironment() {
         var clientMessage = method(generate(), "clientMessage");
         assertThat(clientMessage.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);

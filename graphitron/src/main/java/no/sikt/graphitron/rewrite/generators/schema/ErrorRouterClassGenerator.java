@@ -28,6 +28,7 @@ import java.util.function.Supplier;
  * {@code clientMessage} and the client-error message of {@code surfaceClientErrorOrRedact} and
  * {@code clientErrorAt} for
  * {@code FetcherErrorResponse}, all contained by one private helper),
+ * {@code describe}, the one-line summary a database failure is logged as,
  * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
@@ -60,6 +61,27 @@ public final class ErrorRouterClassGenerator {
     /** The private helper spelling {@code DatabaseMapping}'s message walk. */
     private static final String MESSAGE_ON_PATH = "messageOnPathContains";
 
+    /** The private helper stripping the async wrappers off a throw; its result keys the unmatched memo. */
+    private static final String FAILURE_OF = "failureOf";
+
+    /** The private helper both unmatched dispositions report through, once per failure per request. */
+    private static final String REPORT_UNMATCHED = "reportUnmatched";
+
+    /** The public one-line summary of a database failure, shared with the tenant fan-out's default line. */
+    public static final String DESCRIBE = "describe";
+
+    /** How many links of a cause chain a walk follows, so a cyclic chain terminates. */
+    private static final int MAX_CAUSE_DEPTH = 32;
+
+    /** Where {@code describe} cuts the driver's first line. */
+    private static final int SUMMARY_LINE_BOUND = 240;
+
+    /** The default line's prefix for a fetcher's unmatched exception. */
+    private static final String UNMATCHED_IN_FETCHER = "Unmatched exception in fetcher";
+
+    /** The default line's prefix for a mutation field whose transaction failed to settle. */
+    private static final String FAILED_TO_SETTLE = "Mutation field failed to settle its transaction";
+
     private static final ClassName THROWABLE                  = ClassName.get(Throwable.class);
     private static final ClassName SQL_EXCEPTION              = ClassName.get("java.sql", "SQLException");
     private static final ClassName DATA_FETCHING_ENVIRONMENT  = ClassName.get("graphql.schema", "DataFetchingEnvironment");
@@ -75,6 +97,9 @@ public final class ErrorRouterClassGenerator {
     private static final ClassName CONSUMER_CN                = ClassName.get(Consumer.class);
     private static final ClassName FUNCTION_CN                = ClassName.get(Function.class);
     private static final ClassName SUPPLIER_CN                = ClassName.get(Supplier.class);
+    private static final ClassName OPTIONAL_CN                = ClassName.get(java.util.Optional.class);
+    private static final ClassName COMPLETION_EXCEPTION       = ClassName.get(java.util.concurrent.CompletionException.class);
+    private static final ClassName EXECUTION_EXCEPTION        = ClassName.get(java.util.concurrent.ExecutionException.class);
 
     private ErrorRouterClassGenerator() {}
 
@@ -153,7 +178,9 @@ public final class ErrorRouterClassGenerator {
                 + "throw to the configured {@code FetcherErrorLog} (else logs it at ERROR), and returns\n"
                 + "a {@link $T} with {@code data=null} plus a single redacted error whose message\n"
                 + "is {@code FetcherErrorResponse.unmatchedMessage}'s, by default one carrying only the\n"
-                + "reference. Generic on {@code P},\n"
+                + "reference. A failure is minted and logged once per request: when it fails many fields,\n"
+                + "as a failed batch does, the first field mints and logs, and every later field answers\n"
+                + "with that same reference and logs nothing. Generic on {@code P},\n"
                 + "the field's data type; the call site infers {@code P} from its target type so\n"
                 + "the catch arm fits the fetcher's declared return type without a witness.\n"
                 + "\n"
@@ -210,6 +237,9 @@ public final class ErrorRouterClassGenerator {
             .addType(buildOutboxEmitException())
             .addMethod(buildIsOutboxFailureMethod())
             .addMethod(redact)
+            .addMethod(buildReportUnmatchedMethod())
+            .addMethod(buildFailureOfMethod())
+            .addMethod(buildDescribeMethod())
             .addMethod(toConfiguredLog)
             .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
             .addMethod(buildClientMessageMethod(fetcherErrorResponse))
@@ -456,12 +486,17 @@ public final class ErrorRouterClassGenerator {
 
     /**
      * The private per-request claim record: per claimed source, the outermost throws it was
-     * wrapped in when a fetcher claimed it (its chain roots), and the reference minted for it. It
+     * wrapped in when a fetcher claimed it (its chain roots), and the reference minted for it; and
+     * per unmatched failure, the reference its first field minted. It
      * is the one per-request holder keyed on throwable identity in the error channel. Lives in the
      * request's {@code GraphQLContext} under its own class, the way {@code toConfiguredLog} finds
-     * {@code FetcherErrorLog}. Both maps and the root sets are identity-keyed, because an author's
+     * {@code FetcherErrorLog}. The maps and the root sets are identity-keyed, because an author's
      * exception may override {@code equals}; each update holds one lock, and a reference is set
      * once, so the outcome does not depend on the order concurrent fetchers complete in.
+     *
+     * <p>The unmatched references are a map of their own: {@code recordClaim} reads a claimed
+     * source's reference as "{@code matched} was already called", so an unmatched mint stored
+     * there would suppress a later {@code matched} for the same throwable.
      */
     private static TypeSpec buildClaimsHolder() {
         var setOfThrowable = ParameterizedTypeName.get(ClassName.get(java.util.Set.class), THROWABLE);
@@ -471,12 +506,16 @@ public final class ErrorRouterClassGenerator {
         return TypeSpec.classBuilder(CLAIMS)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("Per claimed source, the exceptions it was wrapped in when it was claimed (its chain\n"
-                + "roots) and the reference minted for it. Stored in the request's {@code GraphQLContext}\n"
-                + "under this class. Identity-keyed throughout, and safe for concurrent fetchers.\n")
+                + "roots) and the reference minted for it; per unmatched failure, the reference its first\n"
+                + "field minted. Stored in the request's {@code GraphQLContext} under this class.\n"
+                + "Identity-keyed throughout, and safe for concurrent fetchers.\n")
             .addField(FieldSpec.builder(rootsType, "roots", Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("new $T<>()", java.util.IdentityHashMap.class)
                 .build())
             .addField(FieldSpec.builder(referencesType, "references", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", java.util.IdentityHashMap.class)
+                .build())
+            .addField(FieldSpec.builder(referencesType, "unmatchedReferences", Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("new $T<>()", java.util.IdentityHashMap.class)
                 .build())
             .addMethod(MethodSpec.methodBuilder("addRoot")
@@ -506,6 +545,20 @@ public final class ErrorRouterClassGenerator {
                 .addParameter(THROWABLE, "source")
                 .addParameter(STRING_CN, "reference")
                 .addStatement("return references.putIfAbsent(source, reference) == null")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("unmatchedReferenceOf")
+                .addModifiers(Modifier.SYNCHRONIZED)
+                .returns(STRING_CN)
+                .addParameter(THROWABLE, "failure")
+                .addStatement("return unmatchedReferences.get(failure)")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("assignUnmatchedReference")
+                .addModifiers(Modifier.SYNCHRONIZED)
+                .returns(boolean.class)
+                .addJavadoc("Sets {@code failure}'s reference unless it has one; whether this call set it.\n")
+                .addParameter(THROWABLE, "failure")
+                .addParameter(STRING_CN, "reference")
+                .addStatement("return unmatchedReferences.putIfAbsent(failure, reference) == null")
                 .build())
             .build();
     }
@@ -751,8 +804,8 @@ public final class ErrorRouterClassGenerator {
 
     /**
      * {@code static boolean toConfiguredLog(env, reference, call)}: the {@code FetcherErrorLog}
-     * contract (look the log up, call it through {@code contained}), shared by {@code redact},
-     * {@code recordClaim} and the tenant fan-out's failure logging. A {@code false} return means
+     * contract (look the log up, call it through {@code contained}), shared by
+     * {@code reportUnmatched}, {@code recordClaim} and the tenant fan-out's failure logging. A {@code false} return means
      * no log is configured and the caller writes its own default line, if any. Only JVM-fatal
      * errors escape, since anything else escaping {@code redact} would reach graphql-java's
      * default handler, which puts its message in the response.
@@ -797,6 +850,8 @@ public final class ErrorRouterClassGenerator {
             .addJavadoc("The reference the client is given for {@code thrown}: the configured\n"
                 + "{@link $T#reference}'s, else its default (a random UUID). Every reference the\n"
                 + "client sees comes from here, and the same one reaches the {@code FetcherErrorLog}.\n"
+                + "{@link #redact} and {@link #settleFailure} call it once per failure per request, with\n"
+                + "the throw as the first failing field caught it.\n"
                 + "A failure of the configured method is contained to one ERROR line naming the field's\n"
                 + "path, and the default stands.\n"
                 + "@param thrown the exception the reference is for\n"
@@ -950,18 +1005,15 @@ public final class ErrorRouterClassGenerator {
                 + "aborted, or a timed-out tenant. Mints a reference, hands {@code thrown} to the configured\n"
                 + "{@code FetcherErrorLog.unmatched} (else logs it at ERROR) and answers\n"
                 + "{@code FetcherErrorResponse.unmatchedMessage}'s text at the field's path, exactly as\n"
-                + "{@link #redact} does for a fetcher. The owned-connection instrumentation calls it once\n"
+                + "{@link #redact} does for a fetcher, sharing one reference and one log record between\n"
+                + "every field the same failure fails. The owned-connection instrumentation calls it once\n"
                 + "per failed field and puts the error in the result.\n"
                 + "@param thrown the settle failure\n"
                 + "@param env the top-level field's environment, captured when its fetch began, or\n"
                 + "{@code null}\n"
                 + "@param path the field's result path, where the error is placed\n"
                 + "@return the error to add at the field's path\n")
-            .addStatement("$T reference = newReference(thrown, env)", STRING_CN)
-            .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
-            .addStatement("LOGGER.error(\"Mutation field failed to settle its transaction; correlation id = {}\","
-                + " reference, thrown)")
-            .endControlFlow()
+            .addStatement("$T reference = $L(thrown, env, $S)", STRING_CN, REPORT_UNMATCHED, FAILED_TO_SETTLE)
             .beginControlFlow("if (thrown instanceof $T)", tenantConnectionsClass(outputPackage).nestedClass("NestedScopeFailedException"))
             .addComment("A transaction a consumer's code opened inside the field failed: graphitron's own fixed")
             .addComment("message, so it states the cause the same way in every deployment. It carries no")
@@ -978,7 +1030,155 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    /** {@code pathOf(env)}: the field's path for a failure line that has no reference to name yet. */
+    /**
+     * {@code failureOf(thrown)}: {@code thrown} without its leading async wrappers. A batch's one
+     * exception reaches each awaiting field inside a {@code CompletionException} of that field's
+     * own, so the wrapper cannot key a per-request memo; what it wraps can.
+     */
+    private static MethodSpec buildFailureOfMethod() {
+        return MethodSpec.methodBuilder(FAILURE_OF)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(THROWABLE)
+            .addParameter(THROWABLE, "thrown")
+            .addJavadoc("{@code thrown} with every leading {@link $T} and {@link $T} that has a cause\n"
+                + "stripped: the failure itself, which is one instance however many fields a batch hands\n"
+                + "it to, each inside a wrapper of its own.\n", COMPLETION_EXCEPTION, EXECUTION_EXCEPTION)
+            .addStatement("$T failure = thrown", THROWABLE)
+            .beginControlFlow("for (int depth = 0; depth < $L && failure.getCause() != null"
+                + " && (failure instanceof $T || failure instanceof $T); depth++)",
+                MAX_CAUSE_DEPTH, COMPLETION_EXCEPTION, EXECUTION_EXCEPTION)
+            .addStatement("failure = failure.getCause()")
+            .endControlFlow()
+            .addStatement("return failure")
+            .build();
+    }
+
+    /**
+     * {@code reportUnmatched(thrown, env, what)}: the reference an unmatched failure answers with,
+     * minted and logged by the first field it fails in a request and shared by the rest. Both
+     * unmatched dispositions ({@code redact}, {@code settleFailure}) go through it, {@code what}
+     * being the prefix of their default line. The call that sets the reference is the call that
+     * logs, so a lost race costs one discarded mint and never a second record; minting stays
+     * outside the record's lock, so no consumer code runs under it. Without an environment or a
+     * context there is no request to remember in, and every call mints and logs.
+     */
+    private static MethodSpec buildReportUnmatchedMethod() {
+        var claims = ClassName.get("", CLAIMS);
+        var optionalString = ParameterizedTypeName.get(OPTIONAL_CN, STRING_CN);
+        return MethodSpec.methodBuilder(REPORT_UNMATCHED)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(STRING_CN)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(STRING_CN, "what")
+            .addJavadoc("The reference the client is given for an unmatched {@code thrown}, logging the\n"
+                + "failure when this call is the first to see it in the request. The failure is\n"
+                + "{@link #$L}'s: one batch's exception fails many fields and is one failure. The first\n"
+                + "field mints the reference ({@link #newReference}) and hands {@code thrown}, as it\n"
+                + "caught it, to the configured {@code FetcherErrorLog.unmatched}, else writes the\n"
+                + "default line; every later field gets that reference and logs nothing. The default\n"
+                + "line for a database failure is {@link #$L}'s summary at ERROR, with the exception\n"
+                + "itself at DEBUG under the same reference; any other exception is logged at ERROR with\n"
+                + "its stack trace. With a null {@code env} or context nothing is remembered.\n"
+                + "@param thrown the exception as the field caught it\n"
+                + "@param env the failing field's environment, or {@code null}\n"
+                + "@param what the default line's prefix, naming the disposition\n"
+                + "@return the failure's reference, never {@code null}\n", FAILURE_OF, DESCRIBE)
+            .addStatement("$T failure = $L(thrown)", THROWABLE, FAILURE_OF)
+            .addStatement("$T context = env == null ? null : env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .addStatement("$T record = context == null ? null"
+                + " : context.<$T>computeIfAbsent($T.class, k -> new $T())", claims, claims, claims, claims)
+            .beginControlFlow("if (record != null)")
+            .addStatement("$T shared = record.unmatchedReferenceOf(failure)", STRING_CN)
+            .beginControlFlow("if (shared != null)")
+            .addStatement("return shared")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("$T reference = newReference(thrown, env)", STRING_CN)
+            .beginControlFlow("if (record != null && !record.assignUnmatchedReference(failure, reference))")
+            .addComment("Another field set it first: that field logs, and its reference stands.")
+            .addStatement("return record.unmatchedReferenceOf(failure)")
+            .endControlFlow()
+            .beginControlFlow("if (toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
+            .addStatement("return reference")
+            .endControlFlow()
+            .addStatement("$T summary = $L(thrown, env)", optionalString, DESCRIBE)
+            .beginControlFlow("if (summary.isPresent())")
+            .addStatement("LOGGER.error(what + $S, reference, summary.get())", "; correlation id = {}; {}")
+            .addStatement("LOGGER.debug(what + $S, reference, thrown)", "; correlation id = {}")
+            .nextControlFlow("else")
+            .addStatement("LOGGER.error(what + $S, reference, thrown)", "; correlation id = {}")
+            .endControlFlow()
+            .addStatement("return reference")
+            .build();
+    }
+
+    /**
+     * {@code describe(thrown, env)}: the one-line summary a database failure's default log line
+     * carries in place of the exception. Public, so a consumer's {@code FetcherErrorLog} can write
+     * the same line and the tenant fan-out's default line can share it; the path is composed here
+     * rather than by each caller, so the line has one spelling and {@code pathOf} stays private.
+     */
+    private static MethodSpec buildDescribeMethod() {
+        return MethodSpec.methodBuilder(DESCRIBE)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(OPTIONAL_CN, STRING_CN))
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("A one-line summary of a database failure, or empty when {@code thrown}'s cause chain\n"
+                + "holds no {@link $T}. The line reads\n"
+                + "{@code path = <path>; <failure class>: <driver class> [<SQL state>/<vendor code>] <first line>}:\n"
+                + "the failing field's path ({@code unknown} without an environment), the class of the\n"
+                + "exception once its {@code CompletionException} and {@code ExecutionException} wrappers\n"
+                + "are stripped, the class of the first {@code SQLException} on the chain, its SQL state\n"
+                + "and vendor code, and the first non-blank line of its message, cut at $L characters.\n"
+                + "\n"
+                + "<p>The summary leaves out what makes a database failure's own message unfit for a log\n"
+                + "line: the SQL statement jOOQ's {@code DataAccessException} renders into its message,\n"
+                + "which grows with a batch, and the driver's later lines, where PostgreSQL\n"
+                + "({@code Detail:}, {@code Where:}) and Oracle name the values involved. It is a\n"
+                + "reduction, not a guarantee: a driver can put a value in its first line.\n"
+                + "\n"
+                + "<p>Graphitron's default log line for an unmatched database failure is this summary at\n"
+                + "ERROR, with the exception itself at DEBUG. A {@code FetcherErrorLog} receives the\n"
+                + "exception and can call this to write the same line.\n"
+                + "@param thrown the exception a fetcher caught\n"
+                + "@param env the failing field's environment, or {@code null}\n"
+                + "@return the summary, or empty when no {@code SQLException} is on the chain\n",
+                SQL_EXCEPTION, SUMMARY_LINE_BOUND)
+            .addStatement("$T failure = $L(thrown)", THROWABLE, FAILURE_OF)
+            .addStatement("$T driver = null", SQL_EXCEPTION)
+            .addStatement("int depth = 0")
+            .beginControlFlow("for ($T t = failure; t != null && depth < $L; t = t.getCause(), depth++)",
+                THROWABLE, MAX_CAUSE_DEPTH)
+            .beginControlFlow("if (t instanceof $T sqlEx)", SQL_EXCEPTION)
+            .addStatement("driver = sqlEx")
+            .addStatement("break")
+            .endControlFlow()
+            .endControlFlow()
+            .beginControlFlow("if (driver == null)")
+            .addStatement("return $T.empty()", OPTIONAL_CN)
+            .endControlFlow()
+            .addStatement("$T line = $S", STRING_CN, "")
+            .addStatement("$T message = driver.getMessage()", STRING_CN)
+            .beginControlFlow("if (message != null)")
+            .beginControlFlow("for ($T candidate : message.split($S))", STRING_CN, "\\R")
+            .beginControlFlow("if (!candidate.isBlank())")
+            .addStatement("line = candidate.strip()")
+            .addStatement("break")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .beginControlFlow("if (line.length() > $L)", SUMMARY_LINE_BOUND)
+            .addStatement("line = line.substring(0, $L) + $S", SUMMARY_LINE_BOUND, "...")
+            .endControlFlow()
+            .addStatement("return $T.of($S + pathOf(env) + $S + failure.getClass().getName() + $S"
+                + " + driver.getClass().getName() + $S + driver.getSQLState() + $S + driver.getErrorCode()"
+                + " + $S + line)", OPTIONAL_CN, "path = ", "; ", ": ", " [", "/", "] ")
+            .build();
+    }
+
+    /** {@code pathOf(env)}: the field's path, for a failure line with no reference to name yet and for {@code describe}. */
     private static MethodSpec buildPathOfMethod() {
         return MethodSpec.methodBuilder("pathOf")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -993,10 +1193,7 @@ public final class ErrorRouterClassGenerator {
 
     private static CodeBlock redactBody(ClassName fetcherErrorResponse) {
         return CodeBlock.builder()
-            .addStatement("$T reference = newReference(thrown, env)", STRING_CN)
-            .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
-            .addStatement("LOGGER.error(\"Unmatched exception in fetcher; correlation id = {}\", reference, thrown)")
-            .endControlFlow()
+            .addStatement("$T reference = $L(thrown, env, $S)", STRING_CN, REPORT_UNMATCHED, UNMATCHED_IN_FETCHER)
             .addStatement("$T message = answer(configured(env, $T.class),"
                 + " response -> response.unmatchedMessage(thrown, reference, env), () -> $S + reference)",
                 STRING_CN, fetcherErrorResponse, "reference = ")
