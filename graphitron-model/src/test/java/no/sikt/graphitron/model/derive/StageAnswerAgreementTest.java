@@ -7,7 +7,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -42,14 +41,14 @@ import static org.jooq.impl.DSL.table;
  * a comparison between two empty relations passes while asserting nothing, and one over a single
  * arm passes while asserting a fraction of the rule.
  */
-class StageAnswerAgreementTest {
+public class StageAnswerAgreementTest {
 
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
 
     /** One stage: the table it writes and the view stating the rule it inserts from. */
-    private record Stage(String target, String ruleView) {}
+    public record Stage(String target, String ruleView) {}
 
     /**
      * The defect table several stages write, each from a rule view of its own, beside the walk,
@@ -59,7 +58,7 @@ class StageAnswerAgreementTest {
      * also states the route codes the walk's stage owns, at the declaration of a field whose need no
      * claim covers.
      */
-    private static final String DEFECTS = "graphitron_entry_defect";
+    public static final String DEFECTS = "graphitron_entry_defect";
 
     /**
      * The defect rule views and the stages that run them, read from the writer's own list so a stage
@@ -70,9 +69,10 @@ class StageAnswerAgreementTest {
             rule -> rule.view().getName().toLowerCase(java.util.Locale.ROOT), EntryDefects.Rule::stage));
 
     /**
-     * The stage-written tables and their rules, in stage order.
+     * The stage-written tables and their rules, in stage order. Public because the scoping half of
+     * the same equality, across two graphs in one store, is checked in the generator's module.
      */
-    private static final List<Stage> STAGES = List.of(
+    public static final List<Stage> STAGES = List.of(
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
@@ -88,27 +88,11 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_path_element_primary_key", "graphitron_path_element_primary_key_rule"),
         new Stage("graphitron_path_element_table", "graphitron_path_element_table_rule"),
         new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
-        new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
-        new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
-        new Stage("graphitron_input_field_resolving_table",
-            "graphitron_input_field_resolving_table_rule"),
         new Stage(DEFECTS, "graphitron_entity_key_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_build_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_depth_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_outbox_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_entry_defect_rule"));
-
-    /**
-     * The bases each scope stage branches on, every one of which some graph must reach: an
-     * agreement over one basis asserts one rung of a rule whose whole shape is which rung answers
-     * where. The argument-site fan-out reaches the participant arm only through a field returning a
-     * multi-table container that declares an argument.
-     */
-    private static final Map<String, Set<String>> BASES = Map.of(
-        "graphitron_field_scope_table",
-        Set.of("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE", "PARTICIPANT_TABLE"),
-        "graphitron_argument_scope_table",
-        Set.of("NAMED_TYPE_TABLE", "REREAD_TABLE", "MUTATION_TABLE", "PARTICIPANT_TABLE"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
@@ -159,16 +143,15 @@ class StageAnswerAgreementTest {
     }
 
     /**
-     * Every stage's table holds rows somewhere, and every scope stage reaches every basis, so no
-     * agreement above is between two empty relations or over one arm. The floor every conversion
+     * Every stage's table holds rows somewhere, so no agreement above is between two empty
+     * relations. The floor every conversion
      * owes and the one a new stage cannot land without meeting: a stage no document reaches wants
      * a document that reaches it.
      */
     @Test
-    @DisplayName("every stage-written table holds rows, and every scope basis is reached")
+    @DisplayName("every stage-written table holds rows")
     void noStageIsComparedOverAnEmptyRelation() {
         var populated = new HashSet<String>();
-        var bases = new HashMap<String, Set<String>>();
         eachReading((graphs, dsl) -> {
             for (var stage : STAGES) {
                 for (var graph : graphs) {
@@ -180,17 +163,10 @@ class StageAnswerAgreementTest {
                     }
                 }
             }
-            BASES.keySet().forEach(target -> bases.computeIfAbsent(target, t -> new HashSet<>())
-                .addAll(dsl.selectDistinct(field(name("BASIS"), String.class))
-                    .from(table(name(target.toUpperCase())))
-                    .fetch(0, String.class)));
         });
         assertThat(STAGES.stream().map(Stage::ruleView).filter(t -> !populated.contains(t)).toList())
             .as("stage rules no fact document reaches; add a document that reaches one")
             .isEmpty();
-        BASES.forEach((target, expected) -> assertThat(bases.get(target))
-            .as("the bases of " + target + " the fact documents reach")
-            .containsAll(expected));
     }
 
     /**

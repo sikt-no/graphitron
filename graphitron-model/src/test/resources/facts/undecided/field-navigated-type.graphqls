@@ -1,7 +1,4 @@
-# Which type a field's own SQL reads the facts of, as against the type its signature names. The two
-# differ where a wrapper stands between the field and what it delivers: a connection navigates as
-# the element it paginates, whether the author wrote it out or @asConnection built it, and every
-# other field as its own named type, a union included, which is navigated as rather than through.
+# Which types are connections, whether the author wrote one out or @asConnection built it.
 # A type is a connection by its shape: a field named edges whose element object declares a field
 # named node. Half the shape, a node reached some other way, or an interface edge, is no connection.
 
@@ -52,14 +49,4 @@ extend schema @assertAbsent(relation: "graphitron_connection", rows: """
   CursorOnlyConnection
   NodeOnly
   InterfaceEdgeConnection
-  """)
-
-extend schema @assertContains(relation: "intent_field_navigated_type", rows: """
-  type_name, field_name,      basis,              navigated_type_name
-  Film,      title,           NAMED_TYPE,         String
-  Query,     film,            NAMED_TYPE,         Film
-  Query,     filmsConnection, CONNECTION_ELEMENT, Film
-  Query,     films,           CONNECTION_ELEMENT, Film
-  Query,     documents,       NAMED_TYPE,         Document
-  Query,     cursorOnly,      NAMED_TYPE,         CursorOnlyConnection
   """)

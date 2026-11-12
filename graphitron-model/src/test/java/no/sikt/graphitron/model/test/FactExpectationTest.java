@@ -19,6 +19,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -50,7 +51,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class FactExpectationTest {
 
     /** The undecided folder's size, lowered as documents leave it and never raised. */
-    private static final int UNDECIDED_CEILING = 40;
+    private static final int UNDECIDED_CEILING = 38;
 
     /** Each scenario's claim, by its graph's name, which is its path. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
@@ -62,7 +63,7 @@ class FactExpectationTest {
     private static final List<String> divergences = new ArrayList<>();
     private static final List<String> unstated = new ArrayList<>();
     private static final List<String> misplaced = new ArrayList<>();
-    private static final List<String> unnavigated = new ArrayList<>();
+    private static final List<String> untargeted = new ArrayList<>();
     private static final List<String> wholeStore = new ArrayList<>();
     private static final List<String> refusedAssertions = new ArrayList<>();
 
@@ -153,7 +154,7 @@ class FactExpectationTest {
 
     /** What one store says about the blocks its graphs declare, gathered for the cases below. */
     private record Examined(List<Block> blocks, List<String> divergences, List<String> unstated,
-                            List<String> misplaced, List<String> unnavigated, int fields,
+                            List<String> misplaced, List<String> untargeted, int fields,
                             List<String> wholeStore) {
 
         void addTo() {
@@ -161,7 +162,7 @@ class FactExpectationTest {
             FactExpectationTest.divergences.addAll(divergences);
             FactExpectationTest.unstated.addAll(unstated);
             FactExpectationTest.misplaced.addAll(misplaced);
-            FactExpectationTest.unnavigated.addAll(unnavigated);
+            FactExpectationTest.untargeted.addAll(untargeted);
             FactExpectationTest.fields += fields;
             FactExpectationTest.wholeStore.addAll(wholeStore);
         }
@@ -174,7 +175,7 @@ class FactExpectationTest {
     private static Examined examine(DSLContext dsl, java.util.Set<String> held, List<Block> own,
                                     List<String> divergences) {
         return new Examined(own, divergences, CorpusExpectations.unstatedProblems(dsl, own),
-            misplaced(dsl, held), unnavigated(dsl), dsl.fetchCount(GRAPHITRON_FIELD),
+            misplaced(dsl, held), untargeted(dsl), dsl.fetchCount(GRAPHITRON_FIELD),
             wholeStore(dsl, own));
     }
 
@@ -221,25 +222,21 @@ class FactExpectationTest {
     }
 
     /**
-     * Navigation is total and single-valued over every field the examples capture: each field
-     * navigates as exactly one type, which is what lets a reader join the relation rather than
-     * left-join it. Counted against the emitted fields rather than the written ones, a minted field
-     * navigating like any other.
+     * A field's target is total over the fields the examples capture: every emitted field, a minted
+     * one included, has the one target row its key allows, which is what lets a reader join
+     * {@code graphitron_field_target} rather than left-join it. The key makes two rows impossible,
+     * so what this finds is a field with none.
      */
-    private static List<String> unnavigated(DSLContext dsl) {
+    private static List<String> untargeted(DSLContext dsl) {
         var f = GRAPHITRON_FIELD;
-        var nav = no.sikt.graphitron.model.Tables.INTENT_FIELD_NAVIGATED_TYPE;
-        var count = dsl.selectCount().from(nav)
-            .where(nav.GRAPH_NAME.eq(f.GRAPH_NAME), nav.TYPE_NAME.eq(f.TYPE_NAME),
-                nav.FIELD_NAME.eq(f.FIELD_NAME))
-            .<Integer>asField("navigations");
-        return dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME, count)
+        var t = GRAPHITRON_FIELD_TARGET;
+        return dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME)
             .from(f)
+            .whereNotExists(org.jooq.impl.DSL.selectOne().from(t)
+                .where(t.GRAPH_NAME.eq(f.GRAPH_NAME), t.TYPE_NAME.eq(f.TYPE_NAME),
+                    t.FIELD_NAME.eq(f.FIELD_NAME)))
             .fetch()
-            .stream()
-            .filter(r -> r.value4() != 1)
-            .map(r -> r.value1() + " " + r.value2() + "." + r.value3() + " navigates " + r.value4())
-            .toList();
+            .map(r -> r.value1() + " " + r.value2() + "." + r.value3() + " has no target");
     }
 
     /**
@@ -482,9 +479,9 @@ class FactExpectationTest {
     }
 
     @Test
-    @DisplayName("every field navigates as exactly one type")
-    void everyFieldNavigatesAsExactlyOneType() {
-        assertThat(unnavigated).as("fields navigating as no type or as several").isEmpty();
+    @DisplayName("every field has exactly one target")
+    void everyFieldHasExactlyOneTarget() {
+        assertThat(untargeted).as("fields with no target type").isEmpty();
         assertThat(fields).as("a store with no fields passes by having none").isPositive();
     }
 

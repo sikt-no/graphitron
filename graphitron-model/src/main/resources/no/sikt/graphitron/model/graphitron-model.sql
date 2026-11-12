@@ -7616,7 +7616,7 @@ COMMENT ON COLUMN graphitron_code_reference.method_descriptor IS 'the resolved m
 COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that derived this row ran. Swept per graph after the reading upserts, so a reference that stopped resolving leaves and the rest stay; a reference the author removed goes through the cascade on its written form';
 
 CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
-COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_argument_scope_table_rule, graphitron_path_element_routine_rule) all join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
+COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_path_element_routine_rule) both join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
 
 CREATE TABLE graphitron_type_member (
   graph_name       VARCHAR   NOT NULL,
@@ -8062,19 +8062,6 @@ COMMENT ON VIEW graphitron_entry_defect_site IS 'One located defect with the ele
 -- COMMENT ON COLUMN graphitron_entry_defect_site.coordinate IS 'the element the position is about, as graphql_ast_element_entry spells it: a type, a field, an argument or an input field, or $schema for the schema block';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.type_name IS 'the type owning that element, or the element itself where it is a type';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.field_name IS 'the field that element is or belongs to, NULL where it is a type';
-
-CREATE VIEW intent_field_navigated_type
-  (graph_name, type_name, field_name, basis, navigated_type_name) AS
-SELECT graph_name, type_name, field_name,
-       CASE WHEN wrapper_type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
-       target_type_name
-  FROM graphitron_field_target;
-COMMENT ON VIEW intent_field_navigated_type IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Total over graphql_field: every field navigates as something, so a consumer joins this rather than left-joining it, and the fallback rung is what makes that true. Two rungs, and the relation is a projection of graphitron_field_target, which is where they are computed and where the rules are stated, the rung read off whether a connection was unwrapped. The connection''s element where the field''s named type is a connection, and the named type itself otherwise. A third rung is retired and worth naming because its absence is a result rather than a simplification: it read the expression the author wrote wherever a macro had rewritten the field, and measured over a consumer-size schema every row it answered is the row the two rungs below it answer, a synthesised connection''s edges.node being the element the authored expression named. It was also the only rung needing something no relation held, and therefore the only reason this rule had to be computed where the parse was. This relation is the correction of a resolution that had five spellings. The COALESCE over the synthesis record was written out at five sites, and all five read the same way: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it. The second half of that sentence is a silence and not a rule. A field returning an author-declared connection type resolved to a type binding no table, so it had no scope table, so its arguments had no scope, so a filter argument on it resolved no column and the condition membership fold could not see it, all from a rule that claims to navigate connections and only navigated the ones with a synthesis row. All the sites read this relation now and are correct at both halves: graphitron_field_scope_table and its participant rows. The rule to hold this relation to is not a count, which has been wrong twice by construction and is what an unguarded inventory does: every site that needs a field''s navigated type reads this relation, and the next spelling it exists to prevent is the one nobody has written yet. One thing a new reader owes itself, learned at the last site to arrive: join what this relation projects, and join it directly. A reader that takes the navigated type from here and then joins a binding onto some other relation''s echo of that name hands the planner a cheaper driver than this one, and a view is seekable on the coordinate it is keyed by rather than on a name it projects, so the relation lands on the probed side and is evaluated once per driving row. That is a property of every projection in this store and not of this arm, which is why it is stated here rather than only there. The basis column says which rung answered, so a test can pin the rule rather than only the answer. What this relation does not do is resolve anything: it names a type, and whether that type binds a table, holds polymorphic members or declares columns is each consumer''s own join. Nor does it look through a polymorphic container; a field returning a union navigates as the union, and the members are graphql_poly_member''s answer read from that name.';
--- COMMENT ON COLUMN intent_field_navigated_type.graph_name IS 'the owning graph''s partition, carried from graphql_field; the leading key dimension that keeps one workspace''s graphs apart';
--- COMMENT ON COLUMN intent_field_navigated_type.type_name IS 'the type owning the field';
--- COMMENT ON COLUMN intent_field_navigated_type.field_name IS 'the field whose navigation this row states; with the two columns above, the grain, and one row per field of the graph';
--- COMMENT ON COLUMN intent_field_navigated_type.basis IS 'which rung answered, in a closed vocabulary of two: CONNECTION_ELEMENT from the structural edges.node shape of a connection type, NAMED_TYPE from the field''s own named type. A third rung read the pre-expansion type expression a macro had rewritten, and went when the expansion stopped overwriting it: the field''s own row carries what the author wrote, so the expression is a column rather than a rung. Provenance and a pinnable rule both; a reader that means one of them filters on it and owns having chosen';
--- COMMENT ON COLUMN intent_field_navigated_type.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_tabletype, graphql_poly_member or graphql_type on it according to what it actually needs to know';
 
 -- Where an occurrence chain starts: a field of an object type that is a root, is table-bound or is
 -- targeted by no output field, a connection type being targeted by the field that returns it, and a
@@ -17435,160 +17422,6 @@ COMMENT ON VIEW intent_type_backing_conflict IS 'Deprecated with the whole inten
 -- COMMENT ON COLUMN intent_type_backing_conflict.candidates IS 'how many distinct classes back the type, always two or more here; distinct, so a class both arms name counts once, and the arity a rejection stands on, on graphitron_spelled_table.candidates'' terms';
 
 
-CREATE TABLE graphitron_field_scope_table (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  basis             VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, table_source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-
-CREATE INDEX ix_field_scope_table_coordinate ON graphitron_field_scope_table
-  (graph_name, type_name, field_name);
-COMMENT ON INDEX ix_field_scope_table_coordinate IS 'Serves the coordinate probe every correlating reader makes, of which a condition-membership view since retired was the one that forced the measurement: it held a set of contributing coordinates and asked this relation for each one''s table. Measured against a store captured from the example schema, that reader was 6167 milliseconds with this relation a view, 342 with it this table, and 91045 with the table carrying no index at all. The index is therefore part of storing the rule rather than a tuning of it: without it the target is fifteen times worse than the view it replaced, an inlined view being evaluable restricted where a table can only be scanned.';
-
-CREATE VIEW graphitron_field_scope_table_rule
-  (graph_name, type_name, field_name, basis,
-   table_source_name, table_schema, table_name) AS
-SELECT graph_name, type_name, field_name, basis,
-       table_source_name, table_schema, table_name
-  FROM (SELECT arms.graph_name, arms.type_name, arms.field_name,
-               arms.basis, arms.table_source_name, arms.table_schema, arms.table_name,
-               DENSE_RANK() OVER (
-                 PARTITION BY arms.graph_name, arms.type_name, arms.field_name
-                 ORDER BY arms.precedence) AS rung
-          FROM (SELECT nv.graph_name, nv.type_name, nv.field_name,
-                       'NAMED_TYPE_TABLE' AS basis, bt.table_source_name, bt.table_schema,
-                       bt.table_name, 0 AS precedence
-                  FROM intent_field_navigated_type nv
-                  JOIN graphitron_tabletype bt
-                    ON bt.graph_name = nv.graph_name
-                   AND bt.type_name = nv.navigated_type_name
-                UNION ALL
-                -- An insert or update returning a type whose fields re-read the written rows by
-                -- key, on the one table they agree on, however many there are.
-                SELECT p.graph_name, p.type_name, p.field_name,
-                       'REREAD_TABLE', MIN(bt.table_source_name), MIN(bt.table_schema),
-                       MIN(bt.table_name), 1
-                  FROM graphitron_producer p
-                  JOIN graphitron_field_target pt
-                    ON pt.graph_name = p.graph_name AND pt.type_name = p.type_name
-                   AND pt.field_name = p.field_name
-                  JOIN graphitron_field df
-                    ON df.graph_name = pt.graph_name AND df.type_name = pt.target_type_name
-                  JOIN graphitron_producer rr
-                    ON rr.graph_name = df.graph_name AND rr.type_name = df.type_name
-                   AND rr.field_name = df.field_name AND rr.kind = 'LOOKUP'
-                  JOIN graphitron_tabletype bt
-                    ON bt.graph_name = df.graph_name AND bt.type_name = df.named_type
-                 WHERE p.kind IN ('INSERT', 'UPDATE')
-                 GROUP BY p.graph_name, p.type_name, p.field_name
-                HAVING COUNT(DISTINCT bt.table_source_name || '.' || bt.table_schema || '.'
-                             || bt.table_name) = 1
-                UNION ALL
-                SELECT m.graph_name, fe.type_name, fe.field_name,
-                       'MUTATION_TABLE', sp.table_source_name, sp.table_schema,
-                       sp.table_name, 2
-                  FROM graphql_directive_application m
-                  JOIN graphql_field_element fe
-                    ON fe.graph_name = m.graph_name AND fe.coordinate = m.coordinate
-                  JOIN graphitron_ast_mutation_entry me
-                    ON me.graph_name = m.graph_name AND me.source_name = m.source_name
-                   AND me.source_line = m.source_line AND me.source_column = m.source_column
-                  JOIN graphitron_spelled_table sp
-                    ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
-                   AND sp.candidates = 1
-                 WHERE m.directive_name = 'mutation' AND m.ordinal = 0) arms) picked
- WHERE rung = 1
- UNION ALL
--- A target with no table of its own is read once per table-bound participant. A @mutation(table:)
--- field is answered by its table above instead.
-SELECT DISTINCT ft.graph_name, ft.type_name, ft.field_name, 'PARTICIPANT_TABLE',
-       bt.table_source_name, bt.table_schema, bt.table_name
-  FROM graphitron_field_target ft
-  JOIN graphql_poly_member m
-    ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-  JOIN graphitron_tabletype bt
-    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
-                    WHERE cb.graph_name = ft.graph_name AND cb.type_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application mu
-                    JOIN graphitron_ast_mutation_entry me
-                      ON me.graph_name = mu.graph_name AND me.source_name = mu.source_name
-                     AND me.source_line = mu.source_line AND me.source_column = mu.source_column
-                    JOIN graphitron_spelled_table sp
-                      ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
-                     AND sp.candidates = 1
-                    WHERE mu.graph_name = ft.graph_name
-                      AND mu.coordinate = ft.type_name || '.' || ft.field_name
-                      AND mu.directive_name = 'mutation' AND mu.ordinal = 0);
-COMMENT ON VIEW graphitron_field_scope_table_rule IS 'One row the field-site scope rule computes, in the shape graphitron_field_scope_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_scope_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.graph_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.type_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.field_name IS 'the field_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.field_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.basis IS 'the basis of a row of this rule, which the stage inserts into graphitron_field_scope_table.basis, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.table_source_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage inserts into graphitron_field_scope_table.table_schema, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_field_scope_table_rule.table_name IS 'the table_name of a row of this rule, which the stage inserts into graphitron_field_scope_table.table_name, whose comment carries what the value means';
-COMMENT ON TABLE graphitron_field_scope_table IS 'Which table a field''s own generated SQL binds against: the table the field selects from, the table a predicate built at this coordinate correlates on, and the table a @nodeId or @reference path written here departs from, one row per table where several answer. For example Mutation.deleteFilm over @mutation(typeName: DELETE, table: "film") draws one row naming film, and a field returning a multi-table container draws one row per branch table it is rooted in.';
-COMMENT ON COLUMN graphitron_field_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_field on the upper rung and the participant arm and from the @mutation application on the two mutation rungs';
-COMMENT ON COLUMN graphitron_field_scope_table.type_name IS 'the type owning the field';
-COMMENT ON COLUMN graphitron_field_scope_table.field_name IS 'the field whose scope this row states; with the two columns above and the table below, the grain';
-COMMENT ON COLUMN graphitron_field_scope_table.basis IS 'which rule answered, in a closed vocabulary of four: NAMED_TYPE_TABLE from the field''s named type''s own binding, REREAD_TABLE from the one table the fields of the type an insert or update returns re-read the written rows on, where that type binds nothing itself, MUTATION_TABLE from the @mutation(table:) spelling where neither of those answers, PARTICIPANT_TABLE from one branch of a named type that is a polymorphic container binding no table of its own. The first three are ranked rungs and the fourth is disjoint from all of them; which of them a row carries is therefore not only provenance but the fork a consumer takes, PARTICIPANT_TABLE being exactly where the coordinate is several statements rather than one. What lets a test pin which rule fired rather than only that a table came out; a reader wanting one of them filters on it and owns having chosen';
-COMMENT ON COLUMN graphitron_field_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN graphitron_field_scope_table.table_schema IS 'the scope table''s SQL schema';
-COMMENT ON COLUMN graphitron_field_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
-
-CREATE VIEW graphitron_argument_scope_table_rule
-  (graph_name, type_name, field_name, argument_name, basis,
-   table_source_name, table_schema, table_name) AS
-SELECT a.graph_name, a.type_name, a.field_name, a.argument_name, ft.basis,
-       ft.table_source_name, ft.table_schema, ft.table_name
-  FROM graphql_argument a
-  JOIN graphitron_field_scope_table ft
-    ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name
-   AND ft.field_name = a.field_name;
-COMMENT ON VIEW graphitron_argument_scope_table_rule IS 'One row the argument-site scope rule computes, in the shape graphitron_argument_scope_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argument_scope_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_argument_scope_table.graph_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_argument_scope_table.type_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.field_name IS 'the field_name of a row of this rule, which the stage inserts into graphitron_argument_scope_table.field_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.argument_name IS 'the argument_name of a row of this rule, which the stage inserts into graphitron_argument_scope_table.argument_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.basis IS 'the basis of a row of this rule, which the stage inserts into graphitron_argument_scope_table.basis, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage inserts into graphitron_argument_scope_table.table_source_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage inserts into graphitron_argument_scope_table.table_schema, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_argument_scope_table_rule.table_name IS 'the table_name of a row of this rule, which the stage inserts into graphitron_argument_scope_table.table_name, whose comment carries what the value means';
-
-CREATE TABLE graphitron_argument_scope_table (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  argument_name     VARCHAR NOT NULL,
-  basis             VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, argument_name,
-               table_source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-COMMENT ON TABLE graphitron_argument_scope_table IS 'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path written at it departs from, one row per table where several answer. For example Query.films(title:) on a field rooted in film draws one row naming film, and an argument of a field returning a multi-table container draws one row per branch table that field is rooted in.';
-COMMENT ON COLUMN graphitron_argument_scope_table.graph_name IS 'the owning graph''s partition, carried from graphql_argument, which is the relation the fan-out drives from';
-COMMENT ON COLUMN graphitron_argument_scope_table.type_name IS 'the type owning the field the argument sits on';
-COMMENT ON COLUMN graphitron_argument_scope_table.field_name IS 'the field the argument sits on';
-COMMENT ON COLUMN graphitron_argument_scope_table.argument_name IS 'the argument whose scope this row states; part of the grain with the table below, so two arguments of one field each get their own row and neither reader has to know they agree, and one argument of a multi-table polymorphic root gets one row per branch it binds against';
-COMMENT ON COLUMN graphitron_argument_scope_table.basis IS 'which rule answered, carried unchanged from graphitron_field_scope_table, whose comment says what the four values mean. Every argument of one field carries the same value, and every branch of one argument does too, the rule being the field''s and not the argument''s or the branch''s; a reader wanting one of them filters on it and owns having chosen';
-COMMENT ON COLUMN graphitron_argument_scope_table.table_source_name IS 'the scope table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN graphitron_argument_scope_table.table_schema IS 'the scope table''s SQL schema';
-COMMENT ON COLUMN graphitron_argument_scope_table.table_name IS 'the scope table''s SQL name; with the two columns above this is sql_table''s full key, so the table''s own columns and constraints are one join away';
-
-CREATE INDEX ix_argument_scope_table_coordinate ON graphitron_argument_scope_table
-  (graph_name, type_name, field_name, argument_name);
-COMMENT ON INDEX ix_argument_scope_table_coordinate IS 'Serves the argument coordinate its reader joins on: graphitron_input_field_resolving_table_rule, reaching the declared argument an input field is handed its table under. Not UNIQUE, because it is a prefix of the grain rather than the whole of it: a coordinate carries one row per table its field''s statement is rooted in, one where a single table answers and one per branch under a polymorphic root. What separates those rows is the table, not basis, which is a function of the coordinate and the table both here and on the relation this fans out; an earlier version of this note said basis was the discriminator and named a pair of values that belong to another relation''s vocabulary rather than to this one.';
-
 CREATE TABLE intent_type_domain (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
@@ -17603,52 +17436,6 @@ CREATE TABLE intent_type_domain (
 COMMENT ON TABLE intent_type_domain IS 'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds. For example a graph whose Query.films returns Film draws a row for Query and one for Film, and a type nothing reachable names draws none.';
 COMMENT ON COLUMN intent_type_domain.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN intent_type_domain.type_name IS 'a member of the graph''s classification domain; lands only on captured types, which is what makes the type FK structural';
-
-CREATE TABLE graphitron_input_field_resolving_table (
-  graph_name        VARCHAR NOT NULL,
-  type_name         VARCHAR NOT NULL,
-  field_name        VARCHAR NOT NULL,
-  table_source_name VARCHAR NOT NULL,
-  table_schema      VARCHAR NOT NULL,
-  table_name        VARCHAR NOT NULL,
-  -- The grain as columns, which the rule's own SELECT DISTINCT is over: the input field and the
-  -- table it is handed, one row per table it is reached under.
-  PRIMARY KEY (graph_name, type_name, field_name,
-               table_source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
-);
-
-CREATE VIEW graphitron_input_field_resolving_table_rule
-  (graph_name, type_name, field_name,
-   table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, f.type_name, f.field_name,
-       sc.table_source_name, sc.table_schema, sc.table_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  -- The declared argument the input field is reached under, whose scope table it is handed.
-  JOIN graphitron_occurrence ao
-    ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
-  JOIN graphitron_argument ra
-    ON ra.graph_name = ao.graph_name AND ra.coordinate = ao.element_coordinate
-  JOIN graphitron_argument_scope_table sc
-    ON sc.graph_name = ra.graph_name AND sc.type_name = ra.type_name
-   AND sc.field_name = ra.field_name AND sc.argument_name = ra.argument_name
- WHERE o.kind = 'INPUT_FIELD';
-COMMENT ON VIEW graphitron_input_field_resolving_table_rule IS 'One row the input-field resolving-table rule computes, in the shape graphitron_input_field_resolving_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_input_field_resolving_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
--- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.graph_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.type_name IS 'the type_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.type_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.field_name IS 'the field_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.field_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.table_source_name, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.table_schema, whose comment carries what the value means';
--- COMMENT ON COLUMN graphitron_input_field_resolving_table_rule.table_name IS 'the table_name of a row of this rule, which the stage inserts into graphitron_input_field_resolving_table.table_name, whose comment carries what the value means';
-COMMENT ON TABLE graphitron_input_field_resolving_table IS 'Which table an input field is classified against, the field and the table together being the grain: a field resolves against a table it is handed rather than one it owns, so one input field reached under two arguments selecting from different tables is two rows. For example a FilmFilter input reached from one argument rooted in film and another rooted in actor draws two rows for each of its fields, one per resolving table.';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.graph_name IS 'the owning graph''s partition, carried from the occurrence';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.type_name IS 'the input object type the field is declared on, the occurrence''s element''s type; with the column beside it, graphql_field''s key for an input coordinate';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.field_name IS 'the input field''s name within its container';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.table_source_name IS 'the resolving table''s catalog partition, the first column of the sql_table key this row names';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.table_schema IS 'the resolving table''s SQL schema';
-COMMENT ON COLUMN graphitron_input_field_resolving_table.table_name IS 'the resolving table''s SQL name; with the two columns above this is sql_table''s full key, and with the two coordinate columns it is this relation''s grain';
 
 CREATE VIEW intent_argmapping_bound_parameter_type
   (graph_name, source_name, source_line, source_column, position, param_name, java_type,
@@ -19480,22 +19267,10 @@ INSERT INTO meta_grain VALUES
   ('result-class',
    'one class whose instance one type holds, in one graph',
    'graph_name, type_name, class_name', 'classpath'),
-  ('field-scope-table',
-   'one table one field''s own generated SQL binds against, in one graph',
-   'graph_name, type_name, field_name, table_source_name, table_schema, table_name',
-   'catalog'),
   ('type-backing',
    'one class standing for one type of one graph, as one population answers',
    'graph_name, type_name, class_name, declared_via',
    'classpath'),
-  ('argument-scope-table',
-   'one table one argument''s column-shaped content binds against, in one graph',
-   'graph_name, type_name, field_name, argument_name, table_source_name, table_schema, table_name',
-   'catalog'),
-  ('input-field-resolving-table',
-   'one table one input field is classified against, in one graph',
-   'graph_name, type_name, field_name, table_source_name, table_schema, table_name',
-   'catalog'),
   ('graph-schema-problem',
    'one problem raised while creating one graph''s schema, at its place in the order its own stage raised them',
    'graph_name, stage, ordinal', 'sdl'),
@@ -20719,7 +20494,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_scope_table_rule''s terms and for its reasons. Stored at all because the read that matters is interactive: the editor asks for one file''s diagnostics, and the chain arms of this rule once reached a relation whose two recursive walks ran over every chain in the graph. A per-file predicate cannot push into a recursion behind a view boundary, so as a view the whole walk ran on every keystroke''s worth of diagnostics, and the LSP''s scan-count gate is what caught it. What the gate measured is not the argument, and the measurement is recorded where measurements live rather than here, because a ceiling moves and a rationale that cites one goes stale the day it does. The argument is that the walk already runs once per capture, Steps storing every step it takes and every place it stops, so a chain defect is read off that record and computing it again per read is a second evaluation of a rule the capture has already performed. The write arms are cheap and are stored with the rest rather than split out, one relation being the name every consumer already spells and the split buying a second relation to keep in agreement with this one.'),
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_target_rule''s terms and for its reasons. Stored at all because the read that matters is interactive: the editor asks for one file''s diagnostics, and the chain arms of this rule once reached a relation whose two recursive walks ran over every chain in the graph. A per-file predicate cannot push into a recursion behind a view boundary, so as a view the whole walk ran on every keystroke''s worth of diagnostics, and the LSP''s scan-count gate is what caught it. What the gate measured is not the argument, and the measurement is recorded where measurements live rather than here, because a ceiling moves and a rationale that cites one goes stale the day it does. The argument is that the walk already runs once per capture, Steps storing every step it takes and every place it stops, so a chain defect is read off that record and computing it again per read is a second evaluation of a rule the capture has already performed. The write arms are cheap and are stored with the rest rather than split out, one relation being the name every consumer already spells and the split buying a second relation to keep in agreement with this one.'),
   ('graphitron_entry_defect', 'graphitron-entry-defect', 'graphitron',
    'A defect a schema has, one row per defect at the written position an author edits to fix it under the code that names the rule: the supertype, which a gatherer is encouraged to extend with subtype and other detail relations where a defect has more to say than its code and detail.',
    'For example an @orderBy on a @routine mutation field draws one row at the @orderBy''s line, reading READ_SURFACE_ON_WRITE; a detail relation such as graphitron_argmapping_pair_defect is keyed by this key, with a foreign key to it ON DELETE CASCADE, so a swept defect takes its details with it.',
@@ -21426,30 +21201,6 @@ INSERT INTO meta_relation VALUES
    'One row the field target rule computes, in the shape graphitron_field_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
-  ('graphitron_field_scope_table', 'field-scope-table', 'graphitron',
-   'Which table a field''s own generated SQL binds against: the table the field selects from, the table a predicate built at this coordinate correlates on, and the table a @nodeId or @reference path written here departs from, one row per table where several answer.',
-   'For example Mutation.deleteFilm over @mutation(typeName: DELETE, table: "film") draws one row naming film, and a field returning a multi-table container draws one row per branch table it is rooted in.',
-   'The field-grain correction of a rule that used to live at an argument''s. The coordinate and the table together are the grain: a field returning a multi-table container is several statements, one per branch, each rooted in its own table. Three ranked rungs and one arm disjoint from all of them. The navigated type''s own binding is the ordinary case, read through intent_field_navigated_type so a connection field navigates as its element type. Below it the write payload''s data channel, where an INSERT or UPDATE returns a carrier wrapping the written row, read off the write''s target where it holds one field beside any errors field and that field is a LOOKUP producer. Below that a @mutation(table:) spelling, for where the return names no table at all. The rungs are a precedence rather than a union, by DENSE_RANK and not ROW_NUMBER, so an ambiguity stays visible as rows. Beside them and outside that window sits the participant rows, the distinct tables of the target''s table-bound members under PARTICIPANT_TABLE: they contend with neither rung, the target binding no table at all. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
-  ('graphitron_field_scope_table_rule', 'field-scope-table', 'graphitron',
-   'One row the field-site scope rule computes, in the shape graphitron_field_scope_table stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_field_scope_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
-   'The rule, kept in the catalog rather than moved into the stage that runs it. The stage is INSERT INTO graphitron_field_scope_table SELECT * FROM this view WHERE graph_name = ?, so the rule is stated once in one language and what the stage adds is who evaluates it and when. Keeping it a stored view is what leaves ViewReferences, the declared-view ownership gate and the stage-order gate a read set to parse, and what keeps the EXCEPT oracle between rule and table runnable for as long as both exist rather than for the one commit that converts. It was a registered rule until then, refilled into the canonical name by the register on the same cadence, and the registration''s own hazard is why the index beside the target is not a tuning of the conversion but part of it: an inlined view is evaluable restricted where a table can only be scanned, so an unindexed target was fifteen times worse than this rule. The stage pays one evaluation per capture where the register paid one too; what goes is the row that scheduled it.'),
-  ('graphitron_argument_scope_table', 'argument-scope-table', 'graphitron',
-   'Which table an argument''s column-shaped content binds against: the table a predicate built from this argument correlates on, and the table a @nodeId or @reference path written at it departs from, one row per table where several answer.',
-   'For example Query.films(title:) on a field rooted in film draws one row naming film, and an argument of a field returning a multi-table container draws one row per branch table that field is rooted in.',
-   'The field''s scope fanned out over the field''s arguments and nothing else: the rule is graphitron_field_scope_table''s, where the ranked rungs, the disjoint participant arm and every demand any of them makes are documented, and this relation adds only the argument key. The argument and the table together are the grain, because the relation it fans out is keyed that way: a field whose named type is a multi-table polymorphic container is rooted in one table per branch, so each of its arguments binds against each of those tables and each pair is a predicate the generator emits. One row per argument is therefore the ordinary case and not the rule, and a reader that assumed it would silently take one branch of a coordinate that has several. It exists as its own relation because that key is what four readers join on and because a predicate is emitted per argument, not because an argument''s scope is a different question from its field''s. It was once spelled the other way round, the whole rule stated here and evaluated once per argument, and the fold over the condition membership is what found that: a @condition on a field with no arguments has a table to filter and no argument to carry it. Nothing here says the argument''s content is column-shaped, and which arguments carry such content is each consumer''s own question. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
-  ('graphitron_argument_scope_table_rule', 'argument-scope-table', 'graphitron',
-   'One row the argument-site scope rule computes, in the shape graphitron_argument_scope_table stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_argument_scope_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
-   'The rule, kept in the catalog rather than moved into the stage that runs it. The stage is INSERT INTO graphitron_argument_scope_table SELECT * FROM this view WHERE graph_name = ?, so the rule is stated once in one language and what the stage adds is who evaluates it and when. Keeping it a stored view is what leaves ViewReferences, the declared-view ownership gate and the stage-order gate a read set to parse, and what keeps the EXCEPT oracle between rule and table runnable for as long as both exist rather than for the one commit that converts. It was a registered rule until then, refilled into the canonical name by the register on the same cadence: five namings across four view bodies, one of them joining on a coalesced coordinate no plan prunes, so the rule was evaluated once per driving row there. The stage pays one evaluation per capture where the register paid one too; what goes is the row that scheduled it.'),
-  ('graphitron_input_field_resolving_table', 'input-field-resolving-table', 'graphitron',
-   'Which table an input field is classified against, the field and the table together being the grain: a field resolves against a table it is handed rather than one it owns, so one input field reached under two arguments selecting from different tables is two rows.',
-   'For example a FilmFilter input reached from one argument rooted in film and another rooted in actor draws two rows for each of its fields, one per resolving table.',
-   'The input-field classifier takes a resolving table from its caller and never re-roots it: the nesting arm carries the same table down into a nested input object, and a @table application on an input object is captured and ignored, so every field in the tree under one argument shares that argument''s table. The table itself is the consuming field''s, read from graphitron_argument_scope_table because the classifier is handed the field''s own target table at both entry points, the read surface''s argument expansion and the write surface''s payload resolution. Where that field returns a multi-table polymorphic container the answer is one table per branch, so the field is classified once per branch and this relation carries a row for each. Deliberately not the argument''s column scope, which is a different question one rung down: an argument-site @reference moves where the argument''s own name resolves and not where its input type''s fields resolve. The domain is graphitron_occurrence''s INPUT_FIELD rows, which already hold every input field any argument reaches and already stop where the classification walk stops, so this relation adds a table to that reach; the DISTINCT collapses the several occurrences of one input field under one table back to the one classification the build performs, and it is what makes the six columns a key. Written once per capture by a stage of the graphitron gatherer, from the rule view beside it, where the register used to refill it on the same cadence.'),
-  ('graphitron_input_field_resolving_table_rule', 'input-field-resolving-table', 'graphitron',
-   'One row the input-field resolving-table rule computes, in the shape graphitron_input_field_resolving_table stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example a capture inserts this view''s rows for one graph into graphitron_input_field_resolving_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
-   'The rule, kept in the catalog rather than moved into the stage that runs it. The stage is INSERT INTO graphitron_input_field_resolving_table SELECT * FROM this view WHERE graph_name = ?, so the rule is stated once in one language and what the stage adds is who evaluates it and when. Keeping it a stored view is what leaves ViewReferences, the declared-view ownership gate and the stage-order gate a read set to parse, and what keeps the EXCEPT oracle between rule and table runnable for as long as both exist rather than for the one commit that converts. It was a registered rule until then, refilled into the canonical name by the register on the same cadence. The stage pays one evaluation per capture where the register paid one too; what goes is the row that scheduled it.'),
   ('intent_type_domain', 'graph-type', 'sdl',
    'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds.',
    'For example a graph whose Query.films returns Film draws a row for Query and one for Film, and a type nothing reachable names draws none.',
@@ -21461,7 +21212,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_type_backing_rule', 'type-backing', 'graphitron',
    'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_scope_table_rule''s terms. Recursive over a cyclic graph, which H2 cannot detect a cycle in: the path of type and class pairs a step has visited rides along as an array, and a step never lands on a pair already on it. On a consumer schema of 2345 types the closure walks 136 paths, at most four deep, to 130 backings. Stored by its step because H2 evaluates a recursive view again for every row joined to it.'),
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_target_rule''s terms. Recursive over a cyclic graph, which H2 cannot detect a cycle in: the path of type and class pairs a step has visited rides along as an array, and a step never lands on a pair already on it. On a consumer schema of 2345 types the closure walks 136 paths, at most four deep, to 130 backings. Stored by its step because H2 evaluates a recursive view again for every row joined to it.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on.',
    'For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.',

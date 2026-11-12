@@ -24,8 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class DerivationStratumCeilingGateTest {
 
-    /** Relations {@link DerivationStratum#steps} writes on 2026-11-08, over 4 steps. */
-    private static final int WRITTEN_CEILING = 4;
+    /** Relations {@link DerivationStratum#steps} writes on 2026-11-12, over 1 step. */
+    private static final int WRITTEN_CEILING = 1;
 
     /** {@code meta_relation} rows owned by {@code derivation} on 2026-11-01. */
     private static final int OWNED_CEILING = 3;

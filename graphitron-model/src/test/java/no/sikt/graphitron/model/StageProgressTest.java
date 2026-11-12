@@ -92,30 +92,6 @@ class StageProgressTest {
     }
 
     @Test
-    @DisplayName("the analysing cadence commits each step, so a failure keeps what came before it")
-    void theAnalysingCadenceCommitsStepByStep() {
-        withScratch(dsl -> {
-            var steps = List.of(fills("first", "scratch_a"),
-                new Step("failing", Set.of("scratch_b"), (d, g) -> {
-                    throw new IllegalStateException("refused");
-                }));
-
-            assertThatThrownBy(() -> DerivationStratum.runAnalysing(dsl, GRAPH, steps,
-                StageProgress.none())).hasMessage("refused");
-            assertThat(dsl.fetchCount(dsl.selectFrom("SCRATCH_A")))
-                .as("the first step committed on its own, which is the cadence's whole contract")
-                .isEqualTo(2);
-
-            dsl.execute("DELETE FROM SCRATCH_A");
-            assertThatThrownBy(() -> dsl.transaction(tx -> DerivationStratum.runInOne(tx.dsl(),
-                GRAPH, steps, StageProgress.none()))).hasMessage("refused");
-            assertThat(dsl.fetchCount(dsl.selectFrom("SCRATCH_A")))
-                .as("the one-transaction cadence rolls the whole stratum back, which is its own")
-                .isZero();
-        });
-    }
-
-    @Test
     @DisplayName("the line rendering splits the two tiers and names before it times")
     void theLinesNameBeforeTheyTime() {
         var pass = new ArrayList<String>();

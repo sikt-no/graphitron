@@ -3,7 +3,6 @@ package no.sikt.graphitron.model.derive;
 import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.GraphQLSchema;
 import org.jooq.DSLContext;
-import org.jooq.exception.DataAccessException;
 
 import java.util.List;
 import java.util.Locale;
@@ -30,16 +29,7 @@ import static org.jooq.impl.DSL.table;
  * The write sets below are the other half of that check, declared because a producer's reads are
  * jOOQ code no stored definition exposes.
  *
- * <p><b>Two cadences, chosen by the store's state rather than by the caller.</b> On a store any stage
- * table holds a row in, the stages run inside one transaction, so no reader ever observes an
- * emptied partition; H2's {@code ANALYZE} commits, so nothing inside can be analysed, and the
- * statistics the steps plan against are the ones the capture stated before it began. On a store no
- * stage table holds a row in, every table the stages write is empty when the capture's statistics
- * are taken, so a step reading an earlier step's table would plan against a relation the planner has
- * been told is empty; the steps then commit one at a time and each analyses what it wrote before the
- * next plans. Committing between two steps there empties nothing anybody committed, every partition
- * being empty to begin with, which is the whole safety argument and the reason the choice is keyed to
- * the store rather than offered.
+ * <p>The steps run inside one transaction, so no reader ever observes an emptied partition.
  */
 public final class DerivationStratum {
 
@@ -65,38 +55,21 @@ public final class DerivationStratum {
     /**
      * The steps in the order they run.
      *
-     * <p>The stages whose rules reach no producer's table run first, then the producers, then every
-     * stage whose rule reaches a table a producer writes, in the order their rules read each other.
-     * The one producer at the tail renders a view over the field-site scope table, so it runs once
-     * that table is written.
-     *
      * @param schema the corpus as it assembled, for the one producer that reads an executable schema
      *               rather than rows; null where the assembly was rejected, which it states
      */
     public static List<Step> steps(GraphQLSchema schema) {
         return List.of(
             new Step("ClassificationDomainCapture", Set.of("intent_type_domain"),
-                (dsl, graph) -> ClassificationDomainCapture.derive(dsl, graph, schema)),
-            step("FieldScopeTables", "graphitron_field_scope_table", FieldScopeTables::derive),
-            step("ArgumentScopeTables", "graphitron_argument_scope_table",
-                ArgumentScopeTables::derive),
-            step("InputFieldResolvingTables", "graphitron_input_field_resolving_table",
-                InputFieldResolvingTables::derive));
+                (dsl, graph) -> ClassificationDomainCapture.derive(dsl, graph, schema)));
     }
 
-    /**
-     * Runs the stages for one graph on the cadence the store's state calls for, reporting to
-     * {@code progress}.
-     */
+    /** Runs the stages for one graph inside one transaction, reporting to {@code progress}. */
     public static void run(DSLContext dsl, String graphName, GraphQLSchema schema,
                            StageProgress progress) {
         List<Step> steps = steps(schema);
         Progress.started(dsl, graphName, GATHERER);
-        if (analysingCadenceApplies(dsl, steps)) {
-            runAnalysing(dsl, graphName, steps, progress);
-        } else {
-            dsl.transaction(tx -> runInOne(tx.dsl(), graphName, steps, progress));
-        }
+        dsl.transaction(tx -> runInOne(tx.dsl(), graphName, steps, progress));
         Progress.completed(dsl, graphName, GATHERER);
     }
 
@@ -104,53 +77,15 @@ public final class DerivationStratum {
     private static final String GATHERER = "derivation";
 
     /**
-     * Whether no table the stages write holds a row, which is the store the analysing cadence is
-     * for. Asked of the tables themselves rather than inferred from the anchor row a capture has
-     * already written by the time this runs.
-     */
-    public static boolean analysingCadenceApplies(DSLContext dsl, List<Step> steps) {
-        return steps.stream()
-            .flatMap(step -> step.writes().stream())
-            .noneMatch(written -> dsl.fetchExists(table(relation(written))));
-    }
-
-    /**
-     * Every step on the caller's {@link DSLContext}, which is how a warm capture keeps the stages
-     * inside one transaction: no reader observes an emptied partition.
+     * Every step on the caller's {@link DSLContext}, which is how a capture keeps the stages inside
+     * one transaction: no reader observes an emptied partition.
      */
     public static void runInOne(DSLContext dsl, String graphName, List<Step> steps,
                                 StageProgress progress) {
-        progress.observe(new StageProgress.Event.PassStarted(steps.size(), graphName, false));
+        progress.observe(new StageProgress.Event.PassStarted(steps.size(), graphName));
         long startedAt = System.nanoTime();
         for (int position = 0; position < steps.size(); position++) {
             runOne(dsl, graphName, steps, position, progress);
-        }
-        progress.observe(new StageProgress.Event.PassFinished(System.nanoTime() - startedAt));
-    }
-
-    /**
-     * Each step in a committed transaction of its own, the tables it wrote analysed before the next
-     * step plans. The cadence for a store no stage table holds a row in, and only for that store; the
-     * class states why.
-     */
-    public static void runAnalysing(DSLContext dsl, String graphName, List<Step> steps,
-                                    StageProgress progress) {
-        progress.observe(new StageProgress.Event.PassStarted(steps.size(), graphName, true));
-        long startedAt = System.nanoTime();
-        for (int position = 0; position < steps.size(); position++) {
-            int at = position;
-            dsl.transaction(tx -> {
-                // The anchor row, held for the step's own transaction so a second writer of one
-                // graph waits for the step in flight instead of interleaving its delete with this
-                // one's insert.
-                tx.dsl().select(field(name("GRAPH_NAME")))
-                    .from(table(name("STORE_GRAPH")))
-                    .where(field(name("GRAPH_NAME"), String.class).eq(graphName))
-                    .forUpdate()
-                    .fetch();
-                runOne(tx.dsl(), graphName, steps, at, progress);
-            });
-            steps.get(position).writes().forEach(written -> analyse(dsl, written));
         }
         progress.observe(new StageProgress.Event.PassFinished(System.nanoTime() - startedAt));
     }
@@ -171,22 +106,6 @@ public final class DerivationStratum {
                 .fetchOne(0, int.class))
             .sum();
         progress.observe(new StageProgress.Event.StageFinished(step, nanos, rows));
-    }
-
-    /**
-     * One table's statistics, best effort: a refusal leaves the next step planning against whatever
-     * the table already carried, which is a slower plan and never a wrong answer.
-     */
-    private static void analyse(DSLContext dsl, String relationName) {
-        try {
-            dsl.execute("ANALYZE TABLE " + dsl.render(table(relation(relationName))));
-        } catch (DataAccessException refused) {
-            // Deliberately swallowed, per the javadoc above.
-        }
-    }
-
-    private static Step step(String name, String writes, Body body) {
-        return new Step(name, Set.of(writes), body);
     }
 
     /** Relation names are declared lower case; H2's catalog holds the folded spelling. */

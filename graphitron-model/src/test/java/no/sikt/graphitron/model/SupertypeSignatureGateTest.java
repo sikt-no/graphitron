@@ -164,15 +164,6 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
-        // Which table a site's own content binds against, under the two keys the question is asked
-        // by: the field's coordinate and the argument's. The payload is the same because the
-        // argument-site relation is the field-site one fanned out over the field's arguments and
-        // adds nothing else, and the keys differ because a predicate is emitted per argument. No
-        // supertype is owed here either: a relation over both would carry an argument name that is
-        // null on half its rows, and neither reader could key into it. They became visible together
-        // the way the pair above did, when a conversion took both out of the register and made them
-        // tables this gate's scan reaches.
-        Set.of("graphitron_argument_scope_table", "graphitron_field_scope_table"),
         // An occurrence's source and its binding, whose payload is their kind alone: what each kind
         // takes is its subtype's, so a binding and a source are two supertypes of the occurrence, not
         // one fact under two keys.

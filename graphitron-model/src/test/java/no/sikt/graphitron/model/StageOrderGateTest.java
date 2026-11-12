@@ -89,13 +89,7 @@ class StageOrderGateTest {
      */
     private static final List<Step> STRATUM = List.of(
         new Step("ClassificationDomainCapture", null,
-            Set.of("intent_type_domain")),
-        new Step("FieldScopeTables", "graphitron_field_scope_table_rule",
-            Set.of("graphitron_field_scope_table")),
-        new Step("ArgumentScopeTables", "graphitron_argument_scope_table_rule",
-            Set.of("graphitron_argument_scope_table")),
-        new Step("InputFieldResolvingTables", "graphitron_input_field_resolving_table_rule",
-            Set.of("graphitron_input_field_resolving_table")));
+            Set.of("intent_type_domain")));
 
     /**
      * The roster is the stages, name for name and write set for write set, in order. Without this
@@ -139,27 +133,28 @@ class StageOrderGateTest {
     }
 
     /**
-     * The gate firing, shown rather than argued. The real {@code DerivationStratum}, with a deep
-     * stage moved to the front: the input-field resolving-table rule reads the argument scope
-     * table, which a stage writes, so ahead of it it would read the previous capture's rows, and the
-     * check above names it. A real ordering rather than a fixture, so the case keeps meaning
-     * something as stages are added: it fails the day the resolving table stops reading anything a
-     * stage writes, which is a change to the rule this gate would want a reader to notice.
+     * The gate firing, shown rather than argued, over a synthetic roster now that the stratum has
+     * one step. A stage inserting from the field target rule, and a step declaring it writes a
+     * relation that rule reaches: placed after the stage, that step is caught, and placed before it
+     * the same two steps pass. A real rule rather than a fixture, so the case keeps meaning something
+     * as the rule changes: it fails the day the rule reaches no stored relation at all.
      */
     @Test
     @DisplayName("a stage placed ahead of the step that writes what it reads is caught")
     void aStageAheadOfItsPrerequisiteIsCaught() {
         withStore(dsl -> {
-            var steps = new ArrayList<>(resolved(dsl));
-            var deepest = steps.stream()
-                .filter(step -> step.writes().contains("graphitron_input_field_resolving_table"))
-                .findFirst().orElseThrow();
-            steps.remove(deepest);
-            steps.addFirst(deepest);
+            var reader = new Step("FieldTargets", "graphitron_field_target_rule",
+                Set.of("graphitron_field_target"));
+            var reached = readSetOf(dsl, reader);
+            assertThat(reached).as("the rule reaches a stored relation to write ahead of it").isNotEmpty();
+            var writer = new Step("Prerequisite", null, Set.of(reached.iterator().next()));
 
-            assertThat(tooEarly(dsl, steps))
-                .as("the gate says nothing about a stage reading rows a later stage writes")
+            assertThat(tooEarly(dsl, List.of(reader, writer)))
+                .as("the gate says nothing about a stage reading rows a later step writes")
                 .isNotEmpty();
+            assertThat(tooEarly(dsl, List.of(writer, reader)))
+                .as("and the same two steps in order pass")
+                .isEmpty();
         });
     }
 

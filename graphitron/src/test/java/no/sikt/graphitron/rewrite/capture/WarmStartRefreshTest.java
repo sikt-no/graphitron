@@ -249,14 +249,9 @@ class WarmStartRefreshTest {
     }
 
     /**
-     * The recovery the analysing cadence leans on, and the one shape of stopped run this
-     * family did not already cover. A capture into a store none of whose stage tables holds a row
-     * commits its facts and then runs the derivation gatherer's stages one committed step at a time, because
-     * on such a store every stage table is empty and a step inside one transaction cannot be given
-     * statistics on the tables an earlier step wrote; {@code DerivationStratum} carries that
-     * argument and {@code DerivationStratum.analysingCadenceApplies} is where the condition is asked.
-     * The cost is that this is the one capture that can stop having left the facts complete and a
-     * stage table stale, and what makes that acceptable is the round below.
+     * The one shape of stopped run this family did not already cover. A capture commits its facts
+     * before the derivation gatherer's stages run, so a capture can stop having left the facts
+     * complete and a stage table stale, and what makes that acceptable is the round below.
      *
      * <p>The stopped state is constructed rather than reached, the stop being a kill inside a
      * transaction sequence with no seam to inject one at. Both halves are set: a stage table

@@ -43,10 +43,8 @@ public interface StageProgress {
          *
          * @param stages how many steps it will run, in order
          * @param graph the graph whose partitions they rewrite
-         * @param analysing whether each step commits and analyses what it wrote before the next,
-         *     which is the cadence a store none of whose stage tables holds a row takes
          */
-        record PassStarted(int stages, String graph, boolean analysing) implements Event {}
+        record PassStarted(int stages, String graph) implements Event {}
 
         /**
          * One step is about to issue its first statement.
@@ -61,8 +59,7 @@ public interface StageProgress {
          * One step's statements have returned.
          *
          * @param step the step, as announced
-         * @param nanos how long its statements took, the analysis that follows on the analysing
-         *     cadence excluded
+         * @param nanos how long its statements took
          * @param rows how many rows the tables it writes hold for the graph afterwards
          */
         record StageFinished(DerivationStratum.Step step, long nanos, int rows) implements Event {}
@@ -98,8 +95,7 @@ public interface StageProgress {
             switch (event) {
                 case Event.PassStarted started -> pass.accept("graphitron: deriving "
                     + started.stages() + (started.stages() == 1 ? " stage" : " stages")
-                    + " for graph '" + started.graph() + "'"
-                    + (started.analysing() ? ", committing and analysing each" : ""));
+                    + " for graph '" + started.graph() + "'");
                 case Event.StageStarted started -> {
                     announced.set(started);
                     stage.accept("graphitron: " + place(started) + " stage "

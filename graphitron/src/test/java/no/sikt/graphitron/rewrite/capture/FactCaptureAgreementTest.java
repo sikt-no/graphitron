@@ -109,11 +109,7 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       the relation that named why a route was absent is gone, having reached no surface in the
  *       time it existed, so a silence at that hop is now unexplained rather than explained to
  *       nobody;
- *       the fact document {@code argument-scope-table-rungs.graphqls} binds
- *       {@code graphitron_argument_scope_table}, which table an argument's column-shaped content binds
- *       against, one case per rung plus the cases where the rungs compete, the precedence being the
- *       claim rather than the table that came out;
- *       the {@code node-id-instruction} fact documents bind
+ * *       the {@code node-id-instruction} fact documents bind
  *       {@code graphitron_occurrence_node_id}, which occurrences carry a node id and which node
  *       type and key columns each binds, with one case per basis because the basis is the claim: a
  *       coordinate answered by the wrong rule resolves the wrong node type wherever several rules

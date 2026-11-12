@@ -275,10 +275,7 @@ any instrument being turned on. Two lines per pass, on a capture and on a
 
 A console showing the first line and not the second is inside its stages. That
 alone is worth having, because the phases either side of it print nothing that
-would distinguish them. On a store none of whose stage tables holds a row yet, the
-first line ends `, committing and analysing each`: that capture commits each stage
-on its own and analyses what it wrote before the next one plans, which is the
-cadence xref:../explanation/fact-model.adoc[the fact model] explains.
+would distinguish them.
 
 To name the stage, re-run with `-X` and grep for the per-stage lines, which the
 same pass prints at debug:
@@ -290,8 +287,8 @@ mvn generate-sources -X | grep 'graphitron: *[0-9]*/'
 
 [source,text]
 ----
-[DEBUG] graphitron: 3/4 stage ArgumentScopeTables
-[DEBUG] graphitron: 3/4 done in 3.1 s, 812 rows
+[DEBUG] graphitron: 1/1 stage ClassificationDomainCapture
+[DEBUG] graphitron: 1/1 done in 3.1 s, 812 rows
 ----
 
 The name is printed before the stage's statements are issued and the duration

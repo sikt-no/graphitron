@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
-import no.sikt.graphitron.model.derive.ArgumentScopeTables;
 import no.sikt.graphitron.model.capture.document.MacroExpansion;
 import no.sikt.graphitron.model.derive.ColumnSpellings;
 import no.sikt.graphitron.model.derive.MintedKeys;
@@ -10,8 +9,6 @@ import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.TableTypes;
-import no.sikt.graphitron.model.derive.FieldScopeTables;
-import no.sikt.graphitron.model.derive.InputFieldResolvingTables;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import org.jooq.DSLContext;
 
@@ -150,12 +147,6 @@ public final class SeededStore {
             // rule computed on read, and a harness that seeds the catalog by hand gets nothing
             // from a stage nobody ran.
             SpelledTables.derive(dsl, graph);
-            // The derivation gatherer's stages, after the gatherer's own above because that is
-            // where each one's rule reads from, in the order DerivationStratum runs them. The
-            // hand-written producers are not among them: a seeded case writes their tables itself.
-            FieldScopeTables.derive(dsl, graph);
-            ArgumentScopeTables.derive(dsl, graph);
-            InputFieldResolvingTables.derive(dsl, graph);
         }
     }
 

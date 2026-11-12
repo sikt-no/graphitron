@@ -189,12 +189,12 @@ class DetectionReadReachGateTest {
                 .isEmpty();
             // A stage-written table is a table too, so a reader meeting one evaluates no body.
             assertThat(ViewReferences.viewsEvaluatedBy(dsl,
-                List.of("graphitron_field_scope_table"))).isEmpty();
+                List.of("graphitron_field_target"))).isEmpty();
             // The source view behind that same target is a view, so a reader naming it evaluates
             // the rule the target holds the rows of. That difference is the whole subject.
             assertThat(ViewReferences.viewsEvaluatedBy(dsl,
-                List.of("graphitron_field_scope_table_rule")))
-                .contains("graphitron_field_scope_table_rule");
+                List.of("graphitron_field_target_rule")))
+                .contains("graphitron_field_target_rule");
             // A name the catalog does not hold is ignored on the same footing as a table.
             assertThat(ViewReferences.viewsEvaluatedBy(dsl,
                 List.of("intent_no_such_relation"))).isEmpty();

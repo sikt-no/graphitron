@@ -1,4 +1,4 @@
-# A field's scope, the table its path lands on and the connection shapes it navigates follow the
+# The table a field's path lands on and the connection shapes it navigates follow the
 # table its type binds: Language binds language here, and in its twin field-scope-binding-actor the
 # same coordinates bind actor. Everything else is the same in both, so a store holding the two
 # graphs shows whether a rule answers a coordinate from the other graph's binding. Two keys join film
@@ -12,14 +12,6 @@ type Language @table(name: "language") { name: String }
 type LanguageConnection { edges: [LanguageEdge] }
 type LanguageEdge { node: Language }
 type Query { films: [Film], languageConnection: LanguageConnection }
-
-extend schema @expectEquals(relation: "graphitron_field_scope_table", rows: """
-  type_name,    field_name,         basis,            table_name
-  Film,         languages,          NAMED_TYPE_TABLE, language
-  LanguageEdge, node,               NAMED_TYPE_TABLE, language
-  Query,        films,              NAMED_TYPE_TABLE, film
-  Query,        languageConnection, NAMED_TYPE_TABLE, language
-  """)
 
 extend schema @expectEquals(relation: "graphitron_path_need_table", where: "coordinate = 'Film.languages'", rows: """
   start_table, landing_table

@@ -221,9 +221,6 @@ class CapturedGraphInvariantsTest {
      * into the owner's window.
      */
     private static final Map<String, String> TIMED_ELSEWHERE = Map.of(
-        "GRAPHITRON_ARGUMENT_SCOPE_TABLE under derivation", "declared the graphitron gatherer's",
-        "GRAPHITRON_FIELD_SCOPE_TABLE under derivation", "declared the graphitron gatherer's",
-        "GRAPHITRON_INPUT_FIELD_RESOLVING_TABLE under derivation", "declared the graphitron gatherer's",
         "INTENT_TYPE_DOMAIN under derivation", "declared the sdl gatherer's",
         "GRAPHQL_SCHEMA_PROBLEM under graphql-source", "declared the graphql-assembly gatherer's;"
             + " the source reading writes what would not parse",
