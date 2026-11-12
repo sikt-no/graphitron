@@ -153,7 +153,7 @@ class FactGraphsTest {
     }
 
     @Test
-    @DisplayName("one thread's inline schemas over one catalog and classpath share one store")
+    @DisplayName("inline schemas captured one after another over one catalog and classpath share one store")
     void inlineSchemasShareTheThreadsStore() {
         long before = FactGraphs.boots();
         FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);

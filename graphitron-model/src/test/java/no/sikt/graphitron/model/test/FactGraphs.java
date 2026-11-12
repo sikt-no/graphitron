@@ -81,10 +81,13 @@ import java.util.stream.Stream;
  *
  * <p><b>Inline schemas.</b> A test whose schema is still inline SDL, and that reads only its own
  * graph, hands the SDL to {@link Reader#readInline} rather than capturing it into a store of its
- * own. The graph goes in under a name of its own, into a store kept for the asking thread, the
- * catalog and the classpath: per thread, because a store has one writing connection and the test
- * threads would otherwise queue on it, and per catalog and classpath for the reason documents are
- * sharded by catalog. Such a store is never cleared, which is the point: a capture into a store
+ * own. The graph goes in under a name of its own, into a store borrowed from a pool kept per
+ * catalog and classpath, per catalog and classpath for the reason documents are sharded by catalog.
+ * A pool rather than one store, because a store has one writing connection and concurrent tests
+ * would otherwise queue on it: a capture borrows a store no other capture holds, keeps it for its
+ * capture and its read, and gives it back, so the pool grows to the run's concurrency and no
+ * further, whichever threads the engine runs tests on. Such a store is never cleared, which is the
+ * point: a capture into a store
  * that already holds graphs and has kept its statement cache costs a fraction of one into an empty
  * store. Each holds a {@linkplain #BALLAST ballast graph} from its first capture, so a read that
  * forgets to filter on its graph meets rows that are not its own on every run, whatever ran before
@@ -137,11 +140,38 @@ public final class FactGraphs implements AutoCloseable {
     private final List<ClasspathEntry> classpath;
     private final Path directory;
     private final Map<ShardKey, Shard> shards = new ConcurrentHashMap<>();
-    private final Map<InlineKey, Shard> inline = new ConcurrentHashMap<>();
+    private final Map<InlineKey, Pool> inline = new ConcurrentHashMap<>();
 
     private record ShardKey(Optional<String> catalog, int index) {}
 
-    private record InlineKey(long thread, Optional<String> catalog, List<ClasspathEntry> classpath) {}
+    private record InlineKey(Optional<String> catalog, List<ClasspathEntry> classpath) {}
+
+    /**
+     * One catalog and classpath's inline stores: those lent out and those free. The most recently
+     * returned is lent first, so sequential captures keep landing in one store, and a new store is
+     * booted only when every existing one is lent.
+     */
+    private final class Pool {
+        private final java.util.ArrayDeque<Shard> free = new java.util.ArrayDeque<>();
+        private final List<Shard> all = new ArrayList<>();
+
+        synchronized Shard borrow() {
+            var shard = free.pollFirst();
+            if (shard == null) {
+                shard = new Shard();
+                all.add(shard);
+            }
+            return shard;
+        }
+
+        synchronized void giveBack(Shard shard) {
+            free.addFirst(shard);
+        }
+
+        synchronized void close() {
+            all.forEach(Shard::close);
+        }
+    }
 
     private FactGraphs() {
         var plain = new LinkedHashMap<String, CorpusDocuments.Document>();
@@ -227,14 +257,14 @@ public final class FactGraphs implements AutoCloseable {
     @Override
     public void close() {
         shards.values().forEach(Shard::close);
-        inline.values().forEach(Shard::close);
+        inline.values().forEach(Pool::close);
     }
 
-    /** The inline store for this thread, {@code catalog} and {@code classpath}. */
-    private Shard inlineShardOf(CatalogInput catalog, List<ClasspathEntry> classpath) {
-        var key = new InlineKey(Thread.currentThread().threadId(),
-            Optional.ofNullable(catalog).map(CatalogInput::jooqPackage), List.copyOf(classpath));
-        return inline.computeIfAbsent(key, ignored -> new Shard());
+    /** The pool of inline stores for {@code catalog} and {@code classpath}. */
+    private Pool inlinePoolOf(CatalogInput catalog, List<ClasspathEntry> classpath) {
+        var key = new InlineKey(Optional.ofNullable(catalog).map(CatalogInput::jooqPackage),
+            List.copyOf(classpath));
+        return inline.computeIfAbsent(key, ignored -> new Pool());
     }
 
     /** Where an inline graph's file is written: kept for the run, since its store outlives the test. */
@@ -421,9 +451,9 @@ public final class FactGraphs implements AutoCloseable {
         }
 
         /**
-         * Captures {@code sdl} into this thread's inline store for {@code catalog} and
-         * {@code classpath}, under a graph name of its own, and runs {@code body} over it in one read
-         * transaction. The schema file is named {@code stem}{@code .graphqls}. A null
+         * Captures {@code sdl} into an inline store for {@code catalog} and {@code classpath} that no
+         * other capture holds, under a graph name of its own, and runs {@code body} over it in one
+         * read transaction. The schema file is named {@code stem}{@code .graphqls}. A null
          * {@code catalog} is a run that declared no catalog.
          */
         public <T> T readInline(String stem, String sdl, CatalogInput catalog,
@@ -442,12 +472,17 @@ public final class FactGraphs implements AutoCloseable {
                     }
                 }
             }
-            var shard = population.inlineShardOf(catalog, classpath);
-            var schema = shard.ensureInline(graphName, folder, stem, sdl, catalog, classpath,
-                population.inlineDirectory(BALLAST + "-" + INLINE.incrementAndGet()));
-            var registry = registryOf(folder, stem);
-            return answer(readerOf(shard).read(dsl -> body.apply(
-                new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
+            var pool = population.inlinePoolOf(catalog, classpath);
+            var shard = pool.borrow();
+            try {
+                var schema = shard.ensureInline(graphName, folder, stem, sdl, catalog, classpath,
+                    population.inlineDirectory(BALLAST + "-" + INLINE.incrementAndGet()));
+                var registry = registryOf(folder, stem);
+                return answer(readerOf(shard).read(dsl -> body.apply(
+                    new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
+            } finally {
+                pool.giveBack(shard);
+            }
         }
 
         /** {@link #readInline(String, String, CatalogInput, List, Function)} with no classpath. */
