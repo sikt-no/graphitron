@@ -29,6 +29,5 @@ column-bound inputs). Four fetch-form extensions were left as typed `Deferred` l
   `Deferred` covers this today).
 * **`TableInterfaceType` parents** (the `InterfaceField` seam).
 
-Also parked here: Connection pagination over a *catalog-terminus* chain containing a routine
-node (typed `Deferred` with empty planSlug in R435; adopt it here or leave it unfiled until
-someone asks).
+Connection pagination is not parked here any more: a root chain paginates on either terminus
+kind, and the child position is R1169 (`routine-child-connection`).
