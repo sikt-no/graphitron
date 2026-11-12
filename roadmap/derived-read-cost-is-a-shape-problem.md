@@ -634,15 +634,25 @@ static method needs no holder.
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
     * **A list of input objects' element fields are refused by the store where they cannot be compared as rows** `open`.
-      The walk's refusals of a list-of-input filter become store defects in a stage of their own after
-      the depths, read off `graphitron_occurrence_list_element`: an element field that is a list or
-      under a second list, carries `@nodeId` or `@condition`, or binds no column, each at the element
-      field's written position; and element fields reaching their columns by different paths, at the
-      list field with each disagreeing field a detail row. Each is pinned by a `defects/` document with
-      `filmsByLanguagePairs`' nullable element field and nested nullable input as near misses, and the
-      glossary's "An element field a list-of-input filter cannot compare" names the codes.
-      `ConditionEmitter`'s refusal of those shapes then becomes an invariant a defected graph never
-      reaches, and the flip waits on this node, since until it lands they are refused by the walk alone.
+      The walk's list-of-input refusals become store codes, one per rule the author fixes, each at the
+      element field's declaration with every occurrence it fails at a row of one detail rule view keyed
+      by the defect and the occurrence, a view since nothing but the fact documents reads it: a `@condition` on an element field, an override on the list
+      included; a `@nodeId` on one; one read under a second list, off `graphitron_occurrence_list_element`'s
+      two rows; and one whose value no row cell takes. Element fields reaching their columns by
+      different paths are one defect at the list field, skipped under an override, each element
+      occurrence and its path a detail row, so no field is blamed for coming second. A list field's
+      own `@condition` binding a parameter below the list is a condition's code, not a `PARAMETER_`
+      one, since a `@service` fill lifts through a list. An unbound element field is already
+      `COLUMN_UNRESOLVED`. Each code is written by the last stage whose facts it reads,
+      `occurrence-depth-defects` for those reading only the depths' and a stage after
+      `occurrence-values` for one reading the value binding, and pinned by a `defects/` document with
+      `filmsByLanguagePairs`' nullable element field and nested nullable input as near misses; the
+      glossary's "An element field a list-of-input filter cannot compare" names the codes and drops the
+      consuming field's count. The walk's cap of 22 element fields, an artefact of jOOQ's typed rows,
+      is not carried into the store: it goes after the flip as a relaxed refusal of its own.
+      `ConditionEmitter`'s refusal of these shapes then becomes an invariant a defected graph never
+      reaches, and the flip waits on this node, since until it lands they are refused by the walk alone
+      (principles review, 2026-11-12).
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move
