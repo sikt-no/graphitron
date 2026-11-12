@@ -113,34 +113,42 @@ class StageAnswerAgreementTest {
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
     void everyStageAgreesWithTheRuleItInsertsFrom() {
         var disagreements = new ArrayList<String>();
-        eachReading((reading, dsl) -> {
+        eachReading((graphs, dsl) -> {
             for (Stage stage : STAGES) {
                 if (stage.target().equals(DEFECTS)) {
                     continue;
                 }
-                difference(dsl, stage, true).forEach(row ->
-                    disagreements.add(stage.target() + " holds a row " + stage.ruleView()
-                        + " does not compute (" + reading + "): " + row));
-                difference(dsl, stage, false).forEach(row ->
-                    disagreements.add(stage.ruleView() + " computes a row " + stage.target()
-                        + " does not hold (" + reading + "): " + row));
+                for (var graph : graphs) {
+                    difference(dsl, graph, stage, true).forEach(row ->
+                        disagreements.add(stage.target() + " holds a row " + stage.ruleView()
+                            + " does not compute (" + graph + "): " + row));
+                }
+                for (var graph : graphs) {
+                    difference(dsl, graph, stage, false).forEach(row ->
+                        disagreements.add(stage.ruleView() + " computes a row " + stage.target()
+                            + " does not hold (" + graph + "): " + row));
+                }
             }
             for (var rule : DEFECT_RULES.keySet()) {
-                dsl.selectFrom(defectRule(dsl, rule).except(defectTable(dsl))).fetch().forEach(row ->
-                    disagreements.add(rule + " computes a row " + DEFECTS + " does not hold ("
-                        + reading + "): " + row));
+                for (var graph : graphs) {
+                    dsl.selectFrom(defectRule(dsl, graph, rule).except(defectTable(dsl, graph)))
+                        .fetch().forEach(row -> disagreements.add(rule + " computes a row " + DEFECTS
+                            + " does not hold (" + graph + "): " + row));
+                }
             }
-            var computed = DEFECT_RULES.keySet().stream()
-                .<org.jooq.Select<org.jooq.Record>>map(rule -> defectRule(dsl, rule))
-                .reduce((left, right) -> left.union(right)).orElseThrow();
-            dsl.selectFrom(defectTable(dsl)
-                    .where(field(name("CODE"), String.class).in(
-                        select(field(name("CODE"), String.class))
-                            .from(table(name("GRAPHITRON_DEFECT_TYPE")))
-                            .where(field(name("OWNER_STAGE"), String.class).in(DEFECT_RULES.values()))))
-                    .except(computed))
-                .fetch().forEach(row -> disagreements.add(DEFECTS + " holds a row of a code the rules'"
-                    + " stages own that no rule computes (" + reading + "): " + row));
+            for (var graph : graphs) {
+                var computed = DEFECT_RULES.keySet().stream()
+                    .<org.jooq.Select<org.jooq.Record>>map(rule -> defectRule(dsl, graph, rule))
+                    .reduce((left, right) -> left.union(right)).orElseThrow();
+                dsl.selectFrom(defectTable(dsl, graph)
+                        .and(field(name("CODE"), String.class).in(
+                            select(field(name("CODE"), String.class))
+                                .from(table(name("GRAPHITRON_DEFECT_TYPE")))
+                                .where(field(name("OWNER_STAGE"), String.class).in(DEFECT_RULES.values()))))
+                        .except(computed))
+                    .fetch().forEach(row -> disagreements.add(DEFECTS + " holds a row of a code the"
+                        + " rules' stages own that no rule computes (" + graph + "): " + row));
+            }
         });
         assertThat(disagreements)
             .as("a table's row its rule does not compute is a previous capture's row the stage did"
@@ -160,12 +168,17 @@ class StageAnswerAgreementTest {
     void noStageIsComparedOverAnEmptyRelation() {
         var populated = new HashSet<String>();
         var bases = new HashMap<String, Set<String>>();
-        eachReading((reading, dsl) -> {
-            STAGES.forEach(stage -> {
-                if (dsl.fetchCount(table(name(stage.ruleView().toUpperCase()))) > 0) {
-                    populated.add(stage.ruleView());
+        eachReading((graphs, dsl) -> {
+            for (var stage : STAGES) {
+                for (var graph : graphs) {
+                    if (populated.contains(stage.ruleView())) {
+                        break;
+                    }
+                    if (dsl.fetchExists(table(name(stage.ruleView().toUpperCase())), inGraph(graph))) {
+                        populated.add(stage.ruleView());
+                    }
                 }
-            });
+            }
             BASES.keySet().forEach(target -> bases.computeIfAbsent(target, t -> new HashSet<>())
                 .addAll(dsl.selectDistinct(field(name("BASIS"), String.class))
                     .from(table(name(target.toUpperCase())))
@@ -180,18 +193,21 @@ class StageAnswerAgreementTest {
     }
 
     /**
-     * Runs {@code body} over each store of the population, every document captured first, and over
-     * the configured-tag reading no document can state.
+     * Runs {@code body} over each store of the population with the graphs it holds, every document
+     * captured first, and over the configured-tag reading no document can state. A comparison runs
+     * per graph, as a stage does: a rule view evaluated over a whole store at once holds every
+     * graph's intermediate rows on the heap. Graphs are the inner loop so one statement's text
+     * repeats with only the graph bound, and the session's plan cache keeps it planned.
      */
-    private void eachReading(java.util.function.BiConsumer<String, DSLContext> body) {
+    private void eachReading(java.util.function.BiConsumer<Set<String>, DSLContext> body) {
         FACTS.warm(FACTS.paths());
         FACTS.eachStore((dsl, graphs) -> {
-            body.accept("a store of the fact documents holding " + graphs.size() + " graphs", dsl);
+            body.accept(graphs, dsl);
             return null;
         });
         try (var store = CapturedStore.tagged(tmp.resolve("configured-tag"), federationSdl(),
                 "catalog")) {
-            body.accept("the configured-tag reading", store.dsl());
+            body.accept(Set.of(CapturedStore.GRAPH), store.dsl());
         }
     }
 
@@ -201,34 +217,44 @@ class StageAnswerAgreementTest {
      * reading's instant beside what the rule states, and the instant is the writer's, not the
      * rule's, so it is no part of whether the two agree.
      */
-    private static List<String> difference(DSLContext dsl, Stage stage, boolean tableSide) {
+    private static List<String> difference(DSLContext dsl, String graph, Stage stage, boolean tableSide) {
         var columns = columns(dsl, stage.ruleView());
-        var held = select(columns).from(table(name(stage.target().toUpperCase())));
-        var computed = select(columns).from(table(name(stage.ruleView().toUpperCase())));
+        var held = select(columns).from(table(name(stage.target().toUpperCase()))).where(inGraph(graph));
+        var computed = select(columns).from(table(name(stage.ruleView().toUpperCase())))
+            .where(inGraph(graph));
         return (tableSide ? dsl.selectFrom(held.except(computed)) : dsl.selectFrom(computed.except(held)))
             .fetch().stream()
             .map(Object::toString)
             .toList();
     }
 
-    private static org.jooq.SelectJoinStep<org.jooq.Record> defectRule(DSLContext dsl, String rule) {
-        return select(columns(dsl, rule)).from(table(name(rule.toUpperCase())));
+    private static org.jooq.SelectConditionStep<org.jooq.Record> defectRule(DSLContext dsl, String graph,
+                                                                            String rule) {
+        return select(columns(dsl, rule)).from(table(name(rule.toUpperCase()))).where(inGraph(graph));
     }
 
-    private static org.jooq.SelectJoinStep<org.jooq.Record> defectTable(DSLContext dsl) {
+    private static org.jooq.SelectConditionStep<org.jooq.Record> defectTable(DSLContext dsl, String graph) {
         return select(columns(dsl, "graphitron_entry_defect_rule"))
-            .from(table(name(DEFECTS.toUpperCase())));
+            .from(table(name(DEFECTS.toUpperCase())))
+            .where(inGraph(graph));
+    }
+
+    private static org.jooq.Condition inGraph(String graph) {
+        return field(name("GRAPH_NAME"), String.class).eq(graph);
     }
 
     /** The rule's own columns, in its order: what a comparison with its table is over. */
+    private static final Map<String, List<org.jooq.Field<Object>>> COLUMNS =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
     private static List<org.jooq.Field<Object>> columns(DSLContext dsl, String rule) {
-        return dsl.select(field(name("COLUMN_NAME"), String.class))
+        return COLUMNS.computeIfAbsent(rule, ignored -> dsl.select(field(name("COLUMN_NAME"), String.class))
             .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
             .where(field(name("TABLE_NAME"), String.class).eq(rule.toUpperCase()))
             .orderBy(field(name("ORDINAL_POSITION")))
             .fetch(0, String.class).stream()
             .map(column -> field(name(column)))
-            .toList();
+            .toList());
     }
 
     /**
