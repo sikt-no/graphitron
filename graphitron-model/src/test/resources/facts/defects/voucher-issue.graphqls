@@ -61,3 +61,24 @@ extend schema @expectEquals(relation: "graphitron_voucher_claim", rows: """
   position, type_name, field_name
   0,        FilmRef,   title
   """)
+
+# The voucher field binds by a kind of its own: its value is the voucher, never a column it failed to
+# find, so the column rule stands down for it.
+extend schema @expectEquals(relation: "graphitron_binding_claim", where: """
+  kind = 'VOUCHER'
+  """, rows: """
+  coordinate,      kind
+  FilmRef.voucher, VOUCHER
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: """
+  kind = 'VOUCHER'
+  """, rows: """
+  kind,    bound
+  VOUCHER, public.film
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,              detail
+  COLUMN_UNRESOLVED, FilmRef.voucher
+  """)

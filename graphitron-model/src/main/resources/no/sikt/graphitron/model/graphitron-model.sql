@@ -5103,16 +5103,17 @@ CREATE TABLE graphitron_binding_claim (
   -- The claim it details, whose sweep takes this row with it.
   FOREIGN KEY (graph_name, coordinate, kind, claimer)
     REFERENCES graphitron_claim (graph_name, coordinate, kind, claimer) ON DELETE CASCADE,
-  CHECK (kind IN ('COLUMN', 'NODE_ID', 'EXPRESSION')),
-  -- An expression names nothing here; its method is the binding's.
-  CHECK (kind <> 'EXPRESSION' OR named IS NULL),
+  CHECK (kind IN ('COLUMN', 'NODE_ID', 'EXPRESSION', 'VOUCHER')),
+  -- An expression names nothing here; its method is the binding's. Nor does a voucher, which its
+  -- marker's own relations state.
+  CHECK (kind NOT IN ('EXPRESSION', 'VOUCHER') OR named IS NULL),
   -- Only a node id has somewhere else to put its decoded value.
   CHECK (kind = 'NODE_ID' OR target_name IS NULL)
 );
 COMMENT ON TABLE graphitron_binding_claim IS 'What one binding claim names: one row per binding claim in graphitron_claim. For example a field carrying @field(name: "title") has a COLUMN row naming title, and an input field carrying @nodeId(typeName: "Film") @field(name: "film") a NODE_ID row naming Film with film as its target.';
 COMMENT ON COLUMN graphitron_binding_claim.graph_name IS 'the owning graph''s partition, carried from the claim';
 COMMENT ON COLUMN graphitron_binding_claim.coordinate IS 'the declared element claiming, as graphitron_element spells it: Film.title, FilmInput.title or Query.films(title:)';
-COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_binding kind claimed: COLUMN from @field(name:), NODE_ID from @nodeId, EXPRESSION from @externalField';
+COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_binding kind claimed: COLUMN from @field(name:), NODE_ID from @nodeId, EXPRESSION from @externalField, VOUCHER from @issue';
 COMMENT ON COLUMN graphitron_binding_claim.claimer IS 'the element whose fact implies the claim, the element itself for every claim written today; with the three columns before it, graphitron_claim''s key';
 COMMENT ON COLUMN graphitron_binding_claim.named IS 'what the claim names, as written: the column for COLUMN, the node type for NODE_ID. Null for a bare @nodeId, whose node type the binding infers, and for EXPRESSION';
 COMMENT ON COLUMN graphitron_binding_claim.target_name IS 'where a NODE_ID claim''s decoded value goes, as a @field(name:) beside the @nodeId writes it: the member of the class an occurrence binds into. Whether a target is meaningful depends on the occurrence''s source, so the claim states it and the reader judges it; null where no @field is written and on every other kind';
@@ -5168,6 +5169,15 @@ SELECT e.graph_name, e.coordinate, 'EXPRESSION', CAST(NULL AS VARCHAR), CAST(NUL
   JOIN graphitron_directive_application da
     ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
    AND da.directive_name = 'externalField' AND da.ordinal = 0
+ WHERE e.element_kind = 'FIELD'
+UNION ALL
+-- @issue, the voucher field: its value is the voucher Graphitron computes, never a column.
+SELECT e.graph_name, e.coordinate, 'VOUCHER', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       da.source_name, da.source_line, da.source_column
+  FROM graphitron_element e
+  JOIN graphitron_directive_application da
+    ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
+   AND da.directive_name = 'issue' AND da.ordinal = 0
  WHERE e.element_kind = 'FIELD'
 )
 SELECT graph_name, coordinate, kind, coordinate, named, target_name, source_name, source_line,
@@ -10767,13 +10777,14 @@ CREATE TABLE graphitron_occurrence_binding (
   UNIQUE (graph_name, coordinate, bound, kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'EXPRESSION', 'RESULT_EXPRESSION'))
+  CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'EXPRESSION', 'RESULT_EXPRESSION',
+                  'VOUCHER'))
 );
 COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.';
 COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
-COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs';
+COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs; VOUCHER, the voucher an @issue field carries, computed from its members'' columns and bound at the issuing table, with no subtype';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The member each occurrence with an object source reads, off its accessor path.
@@ -11426,6 +11437,26 @@ COMMENT ON COLUMN graphitron_occurrence_column.column_name IS 'the column, as th
 COMMENT ON COLUMN graphitron_occurrence_column.matched_by IS 'which name the spelling met, folded by case: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no SQL name on the table does';
 COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- A voucher occurrence binds the voucher at the table its path lands on, the issuing type's own: its
+-- value is the voucher Graphitron computes from the members' columns, never a column it failed to
+-- find, so the column rule stands down for it and this rule binds it.
+CREATE VIEW graphitron_occurrence_voucher_rule (graph_name, coordinate, bound) AS
+SELECT DISTINCT o.graph_name, o.coordinate,
+       COALESCE(jp.target_schema, n.landing_schema) || '.' || COALESCE(jp.target_table, n.landing_table)
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim x
+    ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'VOUCHER'
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate
+   AND jp.target_type = n.target_type
+ WHERE COALESCE(jp.target_table, n.landing_table) IS NOT NULL;
+COMMENT ON VIEW graphitron_occurrence_voucher_rule IS 'One row the occurrence voucher rule computes, in the shape graphitron_occurrence_binding stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding as VOUCHER bindings, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.coordinate IS 'the voucher occurrence';
+-- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.bound IS 'the table it lands on, schema-qualified'
+
 -- A scalar or enum occurrence that reads or binds a column, on each table its path lands on: the
 -- @field(name:) where one is claimed and the element's own name otherwise, folded by case, the SQL
 -- name before the generated one, and exactly one column answering. An occurrence claiming a node id
@@ -11466,7 +11497,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_nam
    AND c.spelling_upper = UPPER(COALESCE(cl.named, o.name)) AND c.reach = 1
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+                      AND x.kind IN ('NODE_ID', 'EXPRESSION', 'VOUCHER'))
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                       AND d.directive_name IN ('service', 'routine', 'pivot'))
@@ -14666,7 +14697,7 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
    AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+                      AND x.kind IN ('NODE_ID', 'EXPRESSION', 'VOUCHER'))
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                       AND d.directive_name IN ('service', 'routine', 'pivot'))
@@ -14721,7 +14752,7 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
    AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'EXPRESSION'))
+                      AND x.kind IN ('NODE_ID', 'EXPRESSION', 'VOUCHER'))
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
                       AND d.directive_name IN ('service', 'routine', 'pivot'))
@@ -20186,6 +20217,7 @@ INSERT INTO graphitron_claim_kind VALUES
   ('COLUMN',     'BINDING'),
   ('NODE_ID',    'BINDING'),
   ('EXPRESSION', 'BINDING'),
+  ('VOUCHER',    'BINDING'),
   ('TABLE_TYPE', 'TYPE'),
   ('ERROR_TYPE', 'TYPE');
 
@@ -20529,6 +20561,10 @@ INSERT INTO meta_relation VALUES
    'A parameter of a call a node id''s key column of another type fills: one row per occurrence, call and parameter.',
    'For example Query.languagesByPrimitive''s condition taking languageId in an int, a type the language_id column its pair projects is not, is one row, its detail naming both types.',
    'The members of the one NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT a @service or @condition reference carries, joinable rather than folded into the defect''s detail. Apart from graphitron_occurrence_call_parameter_defect because entry-defects reports it, and occurrence-depth-defects the fills no or two fills reach.'),
+  ('graphitron_occurrence_voucher_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the occurrence voucher rule computes, in the shape graphitron_occurrence_binding stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding as VOUCHER bindings, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it. A binding of its own kind rather than a directive-name exclusion in the column rule, per the binding-kind ruling in fact-model.adoc.'),
   ('graphitron_occurrence_column_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.',
