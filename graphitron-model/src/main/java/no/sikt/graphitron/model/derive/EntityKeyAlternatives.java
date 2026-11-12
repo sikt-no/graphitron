@@ -31,10 +31,9 @@ public final class EntityKeyAlternatives {
         dsl.deleteFrom(k).where(k.GRAPH_NAME.eq(graphName)).execute();
         dsl.insertInto(k)
             .columns(k.GRAPH_NAME, k.TYPE_NAME, k.DIRECTIVE_NAME, k.ORDINAL, k.POSITION, k.FIELD_NAME,
-                k.COORDINATE, k.BOUND, k.KIND, k.TABLE_SOURCE_NAME, k.TABLE_SCHEMA, k.TABLE_NAME)
+                k.KIND, k.TABLE_SOURCE_NAME, k.TABLE_SCHEMA, k.TABLE_NAME)
             .select(dsl.select(r.GRAPH_NAME, r.TYPE_NAME, r.DIRECTIVE_NAME, r.ORDINAL, r.POSITION,
-                    r.FIELD_NAME, r.COORDINATE, r.BOUND, r.KIND, r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA,
-                    r.TABLE_NAME)
+                    r.FIELD_NAME, r.KIND, r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA, r.TABLE_NAME)
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graphName)))
             .execute();

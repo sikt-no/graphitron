@@ -44,8 +44,8 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column"
 
 # The fills a written pair made state it; the one taken by name states none.
 extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair",
-    where: "call_coordinate LIKE 'Query.films%'", rows: """
-  coordinate,          call,                  position, parameter_name, call_coordinate
-  Query.filmsByNamed,  condition:public.film, 1,        filmId,         Query.filmsByNamed
-  Query.filmsByPicked, condition:public.film, 1,        filmId,         Query.filmsByPicked
+    where: "coordinate LIKE 'Query.films%'", rows: """
+  coordinate,          call,                  position, parameter_name
+  Query.filmsByNamed,  condition:public.film, 1,        filmId
+  Query.filmsByPicked, condition:public.film, 1,        filmId
   """)

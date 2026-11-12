@@ -425,35 +425,6 @@ class GraphQLAstEntriesTest {
     }
 
     /**
-     * The depth and the list flag say one thing between them, and the constraint is what keeps them
-     * saying it. Written as an update over a row the writer produced rather than as a hand-made
-     * insert, because the invariant this guards is a future writer setting one and forgetting the
-     * other, not a shape the parser can hand over.
-     */
-    @Test
-    @DisplayName("a list flag that disagrees with the depth beside it is refused")
-    void theListFlagAndTheDepthCannotDisagree(@TempDir Path tmp) {
-        Path file = write(tmp, "shapes.graphqls", "type Shapes { list: [String] }\n");
-
-        withSeededStore(GRAPH, dsl -> {
-            read(dsl, file);
-            var t = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-
-            assertThatThrownBy(() -> dsl.update(t).set(t.LIST_DEPTH, 0)
-                    .where(t.NAME.eq("list")).execute())
-                .as("a list at depth zero is not a type expression any document can write")
-                .isInstanceOf(org.jooq.exception.DataAccessException.class);
-
-            // The item flag is cleared in the same statement, or the older constraint beside this
-            // one would refuse the row first and the case would pass without exercising the new.
-            assertThatThrownBy(() -> dsl.update(t).set(t.IS_LIST, false)
-                    .setNull(t.ITEM_NON_NULL).where(t.NAME.eq("list")).execute())
-                .as("and neither is a depth of one that is not a list")
-                .isInstanceOf(org.jooq.exception.DataAccessException.class);
-        });
-    }
-
-    /**
      * The twin, doing what it was split off the key to do: a file deleted from the registry leaves
      * this graph's reading of it standing and flagged.
      *

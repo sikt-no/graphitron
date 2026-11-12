@@ -458,21 +458,19 @@ public final class MacroExpansion {
         var minted = GRAPHITRON_TYPE_MINTED;
         dsl.insertInto(GRAPHITRON_TYPE)
             .columns(GRAPHITRON_TYPE.GRAPH_NAME, GRAPHITRON_TYPE.TYPE_NAME,
-                GRAPHITRON_TYPE.COORDINATE, GRAPHITRON_TYPE.KIND, GRAPHITRON_TYPE.ORIGIN,
-                GRAPHITRON_TYPE.DESCRIPTION)
+                GRAPHITRON_TYPE.KIND, GRAPHITRON_TYPE.ORIGIN, GRAPHITRON_TYPE.DESCRIPTION)
             .select(dsl
-                .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.COORDINATE,
+                .select(authored.GRAPH_NAME, authored.TYPE_NAME,
                     authored.KIND, inline("AUTHORED"), mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
-                    .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.COORDINATE,
+                    .select(minted.GRAPH_NAME, minted.TYPE_NAME,
                         minted.KIND, inline("MINTED"), minted.DESCRIPTION)
                     .from(minted)
                     .where(minted.GRAPH_NAME.eq(graphName))))
             .onConflict(GRAPHITRON_TYPE.GRAPH_NAME, GRAPHITRON_TYPE.TYPE_NAME)
             .doUpdate()
-            .set(GRAPHITRON_TYPE.COORDINATE, excluded(GRAPHITRON_TYPE.COORDINATE))
             .set(GRAPHITRON_TYPE.ORIGIN, excluded(GRAPHITRON_TYPE.ORIGIN))
             .set(GRAPHITRON_TYPE.DESCRIPTION, excluded(GRAPHITRON_TYPE.DESCRIPTION))
             .execute();
@@ -546,14 +544,14 @@ public final class MacroExpansion {
         var bName = b.field(be.NAME_REF);
         dsl.insertInto(GRAPHITRON_FIELD)
             .columns(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
-                GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.COORDINATE, GRAPHITRON_FIELD.ORDINAL,
+                GRAPHITRON_FIELD.FIELD_NAME, GRAPHITRON_FIELD.ORDINAL,
                 GRAPHITRON_FIELD.TYPE_SDL, GRAPHITRON_FIELD.NAMED_TYPE, GRAPHITRON_FIELD.NON_NULL,
                 GRAPHITRON_FIELD.IS_LIST, GRAPHITRON_FIELD.ITEM_NON_NULL,
                 GRAPHITRON_FIELD.DEFAULT_VALUE_SDL, GRAPHITRON_FIELD.DESCRIPTION,
                 GRAPHITRON_FIELD.BOUND_NAME)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
-                    authored.COORDINATE, authored.ORDINAL, authored.TYPE_SDL, authored.NAMED_TYPE,
+                    authored.ORDINAL, authored.TYPE_SDL, authored.NAMED_TYPE,
                     authored.NON_NULL, authored.IS_LIST, authored.ITEM_NON_NULL,
                     authored.DEFAULT_VALUE_SDL, mintedDescription(authored.DESCRIPTION, authored.NOTE),
                     coalesce(bName, authored.FIELD_NAME))
@@ -563,7 +561,7 @@ public final class MacroExpansion {
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
-                        minted.COORDINATE, minted.ORDINAL, minted.TYPE_SDL, minted.NAMED_TYPE,
+                        minted.ORDINAL, minted.TYPE_SDL, minted.NAMED_TYPE,
                         minted.NON_NULL, minted.IS_LIST, minted.ITEM_NON_NULL,
                         minted.DEFAULT_VALUE_SDL, mintedDescription(minted.DESCRIPTION, minted.NOTE),
                         coalesce(bName, minted.FIELD_NAME))
@@ -572,12 +570,11 @@ public final class MacroExpansion {
                         bType.eq(minted.TYPE_NAME), bField.eq(minted.FIELD_NAME))
                     .where(minted.GRAPH_NAME.eq(graphName))))
             // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
-            // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that
-            // the coordinate spells the key keeps the coordinate arm from ever matching alone.
+            // renders H2's MERGE ON as key-or-coordinate, which no index serves. The coordinate is
+            // generated from the key, so the coordinate arm can never match alone.
             .onConflict(GRAPHITRON_FIELD.GRAPH_NAME, GRAPHITRON_FIELD.TYPE_NAME,
                 GRAPHITRON_FIELD.FIELD_NAME)
             .doUpdate()
-            .set(GRAPHITRON_FIELD.COORDINATE, excluded(GRAPHITRON_FIELD.COORDINATE))
             .set(GRAPHITRON_FIELD.ORDINAL, excluded(GRAPHITRON_FIELD.ORDINAL))
             .set(GRAPHITRON_FIELD.TYPE_SDL, excluded(GRAPHITRON_FIELD.TYPE_SDL))
             .set(GRAPHITRON_FIELD.NAMED_TYPE, excluded(GRAPHITRON_FIELD.NAMED_TYPE))
@@ -612,15 +609,14 @@ public final class MacroExpansion {
         var authored = GRAPHITRON_ENUM_VALUE_AUTHORED;
         var t = GRAPHITRON_ENUM_VALUE;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.COORDINATE, t.ORDINAL, t.DESCRIPTION)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.ORDINAL, t.DESCRIPTION)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.VALUE_NAME,
-                    authored.COORDINATE, authored.ORDINAL, mintedDescription(authored.DESCRIPTION, authored.NOTE))
+                    authored.ORDINAL, mintedDescription(authored.DESCRIPTION, authored.NOTE))
                 .from(authored)
                 .where(authored.GRAPH_NAME.eq(graphName)))
             .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.ORDINAL, excluded(t.ORDINAL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .execute();
@@ -633,14 +629,14 @@ public final class MacroExpansion {
         dsl.insertInto(GRAPHITRON_ARGUMENT)
             .columns(GRAPHITRON_ARGUMENT.GRAPH_NAME, GRAPHITRON_ARGUMENT.TYPE_NAME,
                 GRAPHITRON_ARGUMENT.FIELD_NAME, GRAPHITRON_ARGUMENT.ARGUMENT_NAME,
-                GRAPHITRON_ARGUMENT.COORDINATE, GRAPHITRON_ARGUMENT.ORDINAL,
+                GRAPHITRON_ARGUMENT.ORDINAL,
                 GRAPHITRON_ARGUMENT.TYPE_SDL, GRAPHITRON_ARGUMENT.NAMED_TYPE,
                 GRAPHITRON_ARGUMENT.NON_NULL, GRAPHITRON_ARGUMENT.IS_LIST,
                 GRAPHITRON_ARGUMENT.ITEM_NON_NULL, GRAPHITRON_ARGUMENT.DEFAULT_VALUE_SDL,
                 GRAPHITRON_ARGUMENT.DESCRIPTION)
             .select(dsl
                 .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.FIELD_NAME,
-                    authored.ARGUMENT_NAME, authored.COORDINATE, authored.ORDINAL,
+                    authored.ARGUMENT_NAME, authored.ORDINAL,
                     authored.TYPE_SDL, authored.NAMED_TYPE, authored.NON_NULL, authored.IS_LIST,
                     authored.ITEM_NON_NULL, authored.DEFAULT_VALUE_SDL,
                     mintedDescription(authored.DESCRIPTION, authored.NOTE))
@@ -648,7 +644,7 @@ public final class MacroExpansion {
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(minted.GRAPH_NAME, minted.TYPE_NAME, minted.FIELD_NAME,
-                        minted.ARGUMENT_NAME, minted.COORDINATE, minted.ORDINAL,
+                        minted.ARGUMENT_NAME, minted.ORDINAL,
                         minted.TYPE_SDL, minted.NAMED_TYPE, minted.NON_NULL, minted.IS_LIST,
                         minted.ITEM_NON_NULL, minted.DEFAULT_VALUE_SDL, minted.DESCRIPTION)
                     .from(minted)
@@ -657,7 +653,6 @@ public final class MacroExpansion {
             .onConflict(GRAPHITRON_ARGUMENT.GRAPH_NAME, GRAPHITRON_ARGUMENT.TYPE_NAME,
                 GRAPHITRON_ARGUMENT.FIELD_NAME, GRAPHITRON_ARGUMENT.ARGUMENT_NAME)
             .doUpdate()
-            .set(GRAPHITRON_ARGUMENT.COORDINATE, excluded(GRAPHITRON_ARGUMENT.COORDINATE))
             .set(GRAPHITRON_ARGUMENT.ORDINAL, excluded(GRAPHITRON_ARGUMENT.ORDINAL))
             .set(GRAPHITRON_ARGUMENT.TYPE_SDL, excluded(GRAPHITRON_ARGUMENT.TYPE_SDL))
             .set(GRAPHITRON_ARGUMENT.NAMED_TYPE, excluded(GRAPHITRON_ARGUMENT.NAMED_TYPE))

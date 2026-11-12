@@ -337,27 +337,24 @@ public final class GraphQLAstCapture {
         var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_FIELD_ELEMENT;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.TOUCHED_AT)
             .select(dsl
-                .select(val(graph, t.GRAPH_NAME), f.TYPE_NAME, f.NAME, ef.COORDINATE,
-                    val(touchedAt, t.TOUCHED_AT))
+                .select(val(graph, t.GRAPH_NAME), f.TYPE_NAME, f.NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(f).join(ef).on(ef.GRAPH_NAME.eq(f.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(f.SOURCE_NAME), ef.SOURCE_LINE.eq(f.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(f.SOURCE_COLUMN))
                 .where(f.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE))
                 .union(dsl
-                    .select(val(graph, t.GRAPH_NAME), i.TYPE_NAME, i.NAME, ef.COORDINATE,
-                        val(touchedAt, t.TOUCHED_AT))
+                    .select(val(graph, t.GRAPH_NAME), i.TYPE_NAME, i.NAME, val(touchedAt, t.TOUCHED_AT))
                     .from(i).join(ef).on(ef.GRAPH_NAME.eq(i.GRAPH_NAME),
                         ef.SOURCE_NAME.eq(i.SOURCE_NAME), ef.SOURCE_LINE.eq(i.SOURCE_LINE),
                         ef.SOURCE_COLUMN.eq(i.SOURCE_COLUMN))
                     .where(i.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE))))
             // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
-            // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that
-            // the coordinate spells the key keeps the coordinate arm from ever matching alone.
+            // renders H2's MERGE ON as key-or-coordinate, which no index serves. The coordinate is
+            // generated from the key, so the coordinate arm can never match alone.
             .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
@@ -368,18 +365,16 @@ public final class GraphQLAstCapture {
         var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_TYPE_ELEMENT;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, ef.COORDINATE,
-                    val(touchedAt, t.TOUCHED_AT))
+                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
                 .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            // The primary key named; the coordinate the unique key holds spells the same names.
+            // The primary key named; the coordinate the unique key holds is generated from it.
             .onConflict(t.GRAPH_NAME, t.TYPE_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
@@ -390,18 +385,16 @@ public final class GraphQLAstCapture {
         var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_ENUM_VALUE_ELEMENT;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), e.TYPE_NAME, e.NAME, ef.COORDINATE,
-                    val(touchedAt, t.TOUCHED_AT))
+                .selectDistinct(val(graph, t.GRAPH_NAME), e.TYPE_NAME, e.NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(e).join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(e.SOURCE_NAME), ef.SOURCE_LINE.eq(e.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
                 .where(e.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            // The primary key named; the coordinate the unique key holds spells the same names.
+            // The primary key named; the coordinate the unique key holds is generated from it.
             .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
@@ -416,18 +409,16 @@ public final class GraphQLAstCapture {
         var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_DIRECTIVE_ELEMENT;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, ef.COORDINATE,
-                    val(touchedAt, t.TOUCHED_AT))
+                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
                 .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            // The primary key named; the coordinate the unique key holds spells the same names.
+            // The primary key named; the coordinate the unique key holds is generated from it.
             .onConflict(t.GRAPH_NAME, t.DIRECTIVE_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
@@ -444,10 +435,9 @@ public final class GraphQLAstCapture {
         var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, a.NAME, ef.COORDINATE,
-                    val(touchedAt, t.TOUCHED_AT))
+                .selectDistinct(val(graph, t.GRAPH_NAME), d.NAME, a.NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(a)
                 .join(d).on(d.GRAPH_NAME.eq(a.GRAPH_NAME), d.SOURCE_NAME.eq(a.SOURCE_NAME),
                     d.SOURCE_LINE.eq(a.PARENT_LINE), d.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
@@ -455,10 +445,9 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
                 .where(a.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            // The primary key named; the coordinate the unique key holds spells the same names.
+            // The primary key named; the coordinate the unique key holds is generated from it.
             .onConflict(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
@@ -469,19 +458,17 @@ public final class GraphQLAstCapture {
         var ef = GRAPHQL_AST_ELEMENT_ENTRY;
         var t = GRAPHQL_ARGUMENT_ELEMENT;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.COORDINATE,
-                t.TOUCHED_AT)
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.TOUCHED_AT)
             .select(dsl
                 .selectDistinct(val(graph, t.GRAPH_NAME), a.TYPE_NAME, a.FIELD_NAME, a.NAME,
-                    ef.COORDINATE, val(touchedAt, t.TOUCHED_AT))
+                    val(touchedAt, t.TOUCHED_AT))
                 .from(a).join(ef).on(ef.GRAPH_NAME.eq(a.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
                 .where(a.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            // The primary key named; the coordinate the unique key holds spells the same names.
+            // The primary key named; the coordinate the unique key holds is generated from it.
             .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME)
             .doUpdate()
-            .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }
@@ -500,7 +487,6 @@ public final class GraphQLAstCapture {
     private static final Field<String> TYPE_SDL = field(name("type_sdl"), String.class);
     private static final Field<String> NAMED_TYPE = field(name("named_type"), String.class);
     private static final Field<Boolean> NON_NULL = field(name("non_null"), Boolean.class);
-    private static final Field<Boolean> IS_LIST = field(name("is_list"), Boolean.class);
     private static final Field<Boolean> ITEM_NON_NULL = field(name("item_non_null"), Boolean.class);
     private static final Field<Integer> LIST_DEPTH = field(name("list_depth"), Integer.class);
     private static final Field<String> DEFAULT_VALUE_SDL = field(name("default_value_sdl"), String.class);
@@ -636,7 +622,7 @@ public final class GraphQLAstCapture {
             .select(f.TYPE_NAME.as(TYPE_NAME), f.NAME.as(FIELD_NAME),
                 f.PARENT_LINE.as(DECLARATION_LINE), f.PARENT_COLUMN.as(DECLARATION_COLUMN),
                 f.TYPE_SDL.as(TYPE_SDL), f.NAMED_TYPE.as(NAMED_TYPE), f.NON_NULL.as(NON_NULL),
-                f.IS_LIST.as(IS_LIST), f.ITEM_NON_NULL.as(ITEM_NON_NULL), f.LIST_DEPTH.as(LIST_DEPTH),
+                f.ITEM_NON_NULL.as(ITEM_NON_NULL), f.LIST_DEPTH.as(LIST_DEPTH),
                 castNull(t.DEFAULT_VALUE_SDL).as(DEFAULT_VALUE_SDL), f.DESCRIPTION.as(DESCRIPTION),
                 f.SOURCE_NAME.as(SITE_NAME), f.SOURCE_LINE.as(SITE_LINE),
                 f.SOURCE_COLUMN.as(SITE_COLUMN), m.MERGE_ORDINAL.as(MERGE_ORDINAL))
@@ -649,7 +635,7 @@ public final class GraphQLAstCapture {
             .where(f.GRAPH_NAME.eq(graph)).and(typeInScope(graph, f.TYPE_NAME))
             .unionAll(dsl
                 .select(i.TYPE_NAME, i.NAME, i.PARENT_LINE, i.PARENT_COLUMN, i.TYPE_SDL,
-                    i.NAMED_TYPE, i.NON_NULL, i.IS_LIST, i.ITEM_NON_NULL, i.LIST_DEPTH, i.DEFAULT_VALUE_SDL,
+                    i.NAMED_TYPE, i.NON_NULL, i.ITEM_NON_NULL, i.LIST_DEPTH, i.DEFAULT_VALUE_SDL,
                     i.DESCRIPTION, i.SOURCE_NAME, i.SOURCE_LINE, i.SOURCE_COLUMN, m.MERGE_ORDINAL)
                 .from(i)
                 .join(m).on(m.GRAPH_NAME.eq(graph))
@@ -672,7 +658,7 @@ public final class GraphQLAstCapture {
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST,
+                t.DECLARATION_COLUMN, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL,
                 t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE,
                 t.SOURCE_COLUMN, t.TOUCHED_AT,
                 t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF,
@@ -682,7 +668,7 @@ public final class GraphQLAstCapture {
                 .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME), ranked.field(FIELD_NAME),
                     ranked.field(ORDINAL), ranked.field(DECLARATION_LINE),
                     ranked.field(DECLARATION_COLUMN), ranked.field(TYPE_SDL),
-                    ranked.field(NAMED_TYPE), ranked.field(NON_NULL), ranked.field(IS_LIST),
+                    ranked.field(NAMED_TYPE), ranked.field(NON_NULL),
                     ranked.field(ITEM_NON_NULL), ranked.field(LIST_DEPTH), ranked.field(DEFAULT_VALUE_SDL),
                     ranked.field(DESCRIPTION), ranked.field(SITE_NAME), ranked.field(SITE_LINE),
                     ranked.field(SITE_COLUMN), val(touchedAt, t.TOUCHED_AT),
@@ -698,7 +684,6 @@ public final class GraphQLAstCapture {
             .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
             .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
             .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
             .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
@@ -794,7 +779,7 @@ public final class GraphQLAstCapture {
         var t = GRAPHQL_ARGUMENT;
         var ranked = dsl
             .select(a.TYPE_NAME, a.FIELD_NAME, a.NAME, a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL,
-                a.IS_LIST, a.ITEM_NON_NULL, a.LIST_DEPTH, a.DEFAULT_VALUE_SDL, a.DESCRIPTION, a.SOURCE_NAME,
+                a.ITEM_NON_NULL, a.LIST_DEPTH, a.DEFAULT_VALUE_SDL, a.DESCRIPTION, a.SOURCE_NAME,
                 a.SOURCE_LINE, a.SOURCE_COLUMN,
                 rowNumber().over(partitionBy(a.TYPE_NAME, a.FIELD_NAME, a.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK),
@@ -815,7 +800,7 @@ public final class GraphQLAstCapture {
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.ORDINAL,
-                t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.ITEM_NON_NULL, t.LIST_DEPTH,
                 t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                 t.TOUCHED_AT,
                 t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
@@ -823,7 +808,7 @@ public final class GraphQLAstCapture {
                 .select(val(graph, t.GRAPH_NAME), ranked.field(a.TYPE_NAME),
                     ranked.field(a.FIELD_NAME), ranked.field(a.NAME), ranked.field(ORDINAL),
                     ranked.field(a.TYPE_SDL), ranked.field(a.NAMED_TYPE), ranked.field(a.NON_NULL),
-                    ranked.field(a.IS_LIST), ranked.field(a.ITEM_NON_NULL),
+                    ranked.field(a.ITEM_NON_NULL),
                     ranked.field(a.LIST_DEPTH),
                     ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
                     ranked.field(a.SOURCE_NAME), ranked.field(a.SOURCE_LINE),
@@ -836,7 +821,6 @@ public final class GraphQLAstCapture {
             .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
             .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
             .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
             .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
@@ -1078,7 +1062,7 @@ public final class GraphQLAstCapture {
         var t = GRAPHQL_DIRECTIVE_ARGUMENT;
         var ranked = dsl
             .select(w.DIRECTIVE_NAME, a.NAME.as(ARGUMENT_NAME), a.TYPE_SDL, a.NAMED_TYPE,
-                a.NON_NULL, a.IS_LIST, a.ITEM_NON_NULL, a.LIST_DEPTH, a.DEFAULT_VALUE_SDL, a.DESCRIPTION,
+                a.NON_NULL, a.ITEM_NON_NULL, a.LIST_DEPTH, a.DEFAULT_VALUE_SDL, a.DESCRIPTION,
                 a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN,
                 rowNumber().over(partitionBy(w.DIRECTIVE_NAME, a.NAME).orderBy(
                     a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK),
@@ -1093,14 +1077,14 @@ public final class GraphQLAstCapture {
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.ORDINAL, t.TYPE_SDL,
-                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                t.NAMED_TYPE, t.NON_NULL, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                 t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
                 t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(w.DIRECTIVE_NAME),
                     ranked.field(ARGUMENT_NAME), ranked.field(ORDINAL),
                     ranked.field(a.TYPE_SDL), ranked.field(a.NAMED_TYPE), ranked.field(a.NON_NULL),
-                    ranked.field(a.IS_LIST), ranked.field(a.ITEM_NON_NULL),
+                    ranked.field(a.ITEM_NON_NULL),
                     ranked.field(a.LIST_DEPTH), ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
                     ranked.field(a.SOURCE_NAME), ranked.field(a.SOURCE_LINE),
                     ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT),
@@ -1112,7 +1096,6 @@ public final class GraphQLAstCapture {
             .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
             .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
             .set(t.NON_NULL, excluded(t.NON_NULL))
-            .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
             .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.catalog.GeneratedColumns;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
@@ -113,7 +114,8 @@ public final class OccurrenceProducers {
 
     /**
      * Upserts {@code target}'s rows at {@code depth} from {@code rule}, whose columns are the
-     * target's own but for the instant, matched by name.
+     * target's own but for the instant, matched by name. A column the database generates is left
+     * out, the store being what says which those are ({@link GeneratedColumns}).
      */
     private static void refresh(DSLContext dsl, Table<?> target, Table<?> rule, String graph, int depth,
                                 LocalDateTime touchedAt) {
@@ -128,8 +130,9 @@ public final class OccurrenceProducers {
         var selected = new java.util.ArrayList<Field<?>>();
         var updates = new java.util.LinkedHashMap<Field<?>, Field<?>>();
         Field<LocalDateTime> touched = target.field("TOUCHED_AT", LocalDateTime.class);
+        var generated = GeneratedColumns.of(dsl, target);
         for (Field<?> column : target.fields()) {
-            if (column.getName().equals(touched.getName())) {
+            if (column.getName().equals(touched.getName()) || generated.contains(column)) {
                 continue;
             }
             columns.add(column);

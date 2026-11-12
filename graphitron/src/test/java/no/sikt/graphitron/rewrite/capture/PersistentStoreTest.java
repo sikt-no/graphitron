@@ -251,9 +251,8 @@ class PersistentStoreTest {
                     + "(graph_name, coordinate, element_kind, touched_at) "
                     + "VALUES ('" + args[1] + "', 'HolderWritten', 'NAMED_TYPE', CURRENT_TIMESTAMP)");
                 store.dsl().execute("INSERT INTO graphql_type_element "
-                    + "(graph_name, type_name, coordinate, touched_at) "
-                    + "VALUES ('" + args[1] + "', 'HolderWritten', 'HolderWritten', "
-                    + "CURRENT_TIMESTAMP)");
+                    + "(graph_name, type_name, touched_at) "
+                    + "VALUES ('" + args[1] + "', 'HolderWritten', CURRENT_TIMESTAMP)");
                 System.out.println("HELD");
                 System.out.flush();
                 int ignored = System.in.read();

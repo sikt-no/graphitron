@@ -140,8 +140,8 @@ final class FederationVocabulary {
                     .where(e.GRAPH_NAME.eq(f.GRAPH_NAME)).and(e.COORDINATE.eq(f.COORDINATE)))))
             .execute();
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.COORDINATE, t.KIND, t.ORIGIN, t.DESCRIPTION)
-            .select(dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.COORDINATE, f.KIND, inline("FEDERATION"),
+            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.KIND, t.ORIGIN, t.DESCRIPTION)
+            .select(dsl.select(f.GRAPH_NAME, f.TYPE_NAME, f.KIND, inline("FEDERATION"),
                     f.DESCRIPTION)
                 .from(f)
                 .where(f.GRAPH_NAME.eq(graph))

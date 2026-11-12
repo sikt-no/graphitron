@@ -485,42 +485,35 @@ COMMENT ON COLUMN graphql_element.touched_at IS 'when the reading that derived t
 CREATE TABLE graphql_type_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
-  coordinate VARCHAR NOT NULL,
+  coordinate VARCHAR GENERATED ALWAYS AS (type_name) NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
-  -- may carry the check.
-  CHECK (coordinate = type_name)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the anchor every type-keyed fact hangs off, carrying the key and nothing else. For example type Film { title: String } in one file and extend type Film { year: Int } in another are one row, Film.';
 COMMENT ON COLUMN graphql_type_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_element.type_name IS 'the GraphQL type name as some declaration site spells it; the coordinate every other SDL fact hangs off';
-COMMENT ON COLUMN graphql_type_element.coordinate IS 'this row as graphql_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Written by the same call that writes the supertype row and from the same string, so the two cannot disagree, and the foreign key on it is what makes a coordinate with no anchor impossible';
+COMMENT ON COLUMN graphql_type_element.coordinate IS 'this row as graphql_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Generated from type_name, so nothing writes it, and the foreign key on it is what makes a coordinate with no anchor impossible and what holds capture''s spelling of the supertype row to this one';
 COMMENT ON COLUMN graphql_type_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_field_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
-  coordinate VARCHAR NOT NULL,
+  coordinate VARCHAR GENERATED ALWAYS AS (type_name || '.' || field_name) NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  -- The coordinate is the key spelled out, which is what lets an upsert key on the key alone.
-  -- A CHECK on a capture table is safe here where it is not on an author-reachable invariant:
-  -- the writer computes both from the same strings in the same call, so no SDL can fail it.
-  CHECK (coordinate = type_name || '.' || field_name)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_field_element IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web. For example title: String on type Film is the row (Film, title, Film.title).';
 COMMENT ON COLUMN graphql_field_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_field_element.type_name IS 'the owning type, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_field_element.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphql_field_element.coordinate IS 'this row as graphql_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_field_element.coordinate IS 'this row as graphql_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphql_type_element.coordinate''s terms. Generated from the key columns beside it, so nothing writes it; the foreign key into the supertype is what holds capture''s spelling of the supertype row to this one';
 COMMENT ON COLUMN graphql_field_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_argument_element (
@@ -528,85 +521,73 @@ CREATE TABLE graphql_argument_element (
   type_name     VARCHAR NOT NULL,
   field_name    VARCHAR NOT NULL,
   argument_name VARCHAR NOT NULL,
-  coordinate    VARCHAR NOT NULL,
+  coordinate    VARCHAR GENERATED ALWAYS AS (type_name || '.' || field_name || '(' || argument_name || ':)') NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
-  -- may carry the check.
-  CHECK (coordinate = type_name || '.' || field_name || '(' || argument_name || ':)')
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_argument_element IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations. For example films(rating: String) on Query is the row (Query, films, rating, Query.films(rating:)).';
 COMMENT ON COLUMN graphql_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_argument_element.type_name IS 'owning type of the field the argument sits on';
 COMMENT ON COLUMN graphql_argument_element.field_name IS 'the field the argument sits on, anchored by graphql_field_element';
 COMMENT ON COLUMN graphql_argument_element.argument_name IS 'the argument name within the owning field';
-COMMENT ON COLUMN graphql_argument_element.coordinate IS 'this row as graphql_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it; the join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_argument_element.coordinate IS 'this row as graphql_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it; the join down from the supertype, on graphql_type_element.coordinate''s terms. Generated from the key columns beside it, so nothing writes it; the foreign key into the supertype is what holds capture''s spelling of the supertype row to this one';
 COMMENT ON COLUMN graphql_argument_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_enum_value_element (
   graph_name VARCHAR NOT NULL,
   type_name  VARCHAR NOT NULL,
   value_name VARCHAR NOT NULL,
-  coordinate VARCHAR NOT NULL,
+  coordinate VARCHAR GENERATED ALWAYS AS (type_name || '.' || value_name) NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
-  -- may carry the check.
-  CHECK (coordinate = type_name || '.' || value_name)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations. For example the G of enum Rating { G PG } is the row (Rating, G, Rating.G).';
 COMMENT ON COLUMN graphql_enum_value_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_enum_value_element.type_name IS 'the owning ENUM type, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_enum_value_element.value_name IS 'the enum value name within the owning enum type';
-COMMENT ON COLUMN graphql_enum_value_element.coordinate IS 'this row as graphql_element spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_element.element_kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_enum_value_element.coordinate IS 'this row as graphql_element spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_element.element_kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_element.coordinate''s terms. Generated from the key columns beside it, so nothing writes it; the foreign key into the supertype is what holds capture''s spelling of the supertype row to this one';
 COMMENT ON COLUMN graphql_enum_value_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_directive_element (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
-  coordinate     VARCHAR NOT NULL,
+  coordinate     VARCHAR GENERATED ALWAYS AS ('@' || directive_name) NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
-  -- may carry the check.
-  CHECK (coordinate = '@' || directive_name)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_directive_element IS 'A directive coordinate exists in this graph: the decomposition of the coordinate graphql_element holds for a directive definition, which is the at sign and this name. For example directive @paged on FIELD_DEFINITION is the row (paged, @paged).';
 COMMENT ON COLUMN graphql_directive_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_directive_element.directive_name IS 'the directive''s name without the at sign, which is the key a reader holding a directive arrives with. graphql_directive carries what the definition says about itself; this carries only the coordinate, for the reason graphql_type_element is separate from graphql_type';
-COMMENT ON COLUMN graphql_directive_element.coordinate IS 'the coordinate the specification spells for this directive, which is the at sign and the name. One row of graphql_element, and the foreign key says so: a directive is an element of the corpus in the same sense a type is, and this is the relation that decomposes its coordinate into the part a reader joins by';
+COMMENT ON COLUMN graphql_directive_element.coordinate IS 'the coordinate the specification spells for this directive, which is the at sign and the name. One row of graphql_element, and the foreign key says so: a directive is an element of the corpus in the same sense a type is, and this is the relation that decomposes its coordinate into the part a reader joins by. Generated from the key columns beside it, so nothing writes it; the foreign key into the supertype is what holds capture''s spelling of the supertype row to this one';
 COMMENT ON COLUMN graphql_directive_element.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this graph''s rows carrying an older instant, which are the directives the corpus stopped declaring';
 
 CREATE TABLE graphql_directive_argument_element (
   graph_name     VARCHAR NOT NULL,
   directive_name VARCHAR NOT NULL,
   argument_name  VARCHAR NOT NULL,
-  coordinate     VARCHAR NOT NULL,
+  coordinate     VARCHAR GENERATED ALWAYS AS ('@' || directive_name || '(' || argument_name || ':)') NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name, argument_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, directive_name)
     REFERENCES graphql_directive_element (graph_name, directive_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
-  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
-  -- may carry the check.
-  CHECK (coordinate = '@' || directive_name || '(' || argument_name || ':)')
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_directive_argument_element IS 'A directive argument coordinate exists on a directive: the decomposition of the coordinate graphql_element holds for a formal argument of a directive definition. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName, @paged(pagedName:)).';
 COMMENT ON COLUMN graphql_directive_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_directive_argument_element.directive_name IS 'the directive the argument is declared on, keyed into graphql_directive_element, which is what makes an argument row unable to outlive the directive it belongs to';
 COMMENT ON COLUMN graphql_directive_argument_element.argument_name IS 'the argument''s own name, the second half of the key a reader holding a directive argument arrives with';
-COMMENT ON COLUMN graphql_directive_argument_element.coordinate IS 'the coordinate the specification spells for this argument, which is the directive''s coordinate with the argument name and a colon in parentheses. Unique on its own, the two keys being two spellings of one thing, which is what lets a reader holding the coordinate join back to the parts instead of taking the string apart by hand';
+COMMENT ON COLUMN graphql_directive_argument_element.coordinate IS 'the coordinate the specification spells for this argument, which is the directive''s coordinate with the argument name and a colon in parentheses. Unique on its own, the two keys being two spellings of one thing, which is what lets a reader holding the coordinate join back to the parts instead of taking the string apart by hand. Generated from the key columns beside it, so nothing writes it; the foreign key into the supertype is what holds capture''s spelling of the supertype row to this one';
 COMMENT ON COLUMN graphql_directive_argument_element.touched_at IS 'when the reading that produced this row ran, swept on the same terms as the directive above it';
 
 CREATE VIEW graphql_element_field
@@ -889,7 +870,7 @@ CREATE TABLE graphql_ast_field_definition_entry (
   type_sdl       VARCHAR NOT NULL,
   named_type     VARCHAR NOT NULL,
   non_null       BOOLEAN NOT NULL,
-  is_list        BOOLEAN NOT NULL,
+  is_list        BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null  BOOLEAN,
   list_depth     INT     NOT NULL,
   description    VARCHAR,
@@ -900,8 +881,7 @@ CREATE TABLE graphql_ast_field_definition_entry (
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0))
+  CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_ast_field_definition_entry IS 'A FieldDefinition as one document wrote it: this position in this file declares a field of this name on the declaration it was written inside. For example the title: String inside type Film { title: String } is one row, naming the position that type declaration was written at.';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -914,7 +894,7 @@ COMMENT ON COLUMN graphql_ast_field_definition_entry.name IS 'the name written h
 COMMENT ON COLUMN graphql_ast_field_definition_entry.type_sdl IS 'the type expression exactly as written, wrappers and all, so nothing about what the author typed is lost to the four columns beside it';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
-COMMENT ON COLUMN graphql_ast_field_definition_entry.is_list IS 'whether the expression is a list at its outermost non-null';
+COMMENT ON COLUMN graphql_ast_field_definition_entry.is_list IS 'whether the expression is a list at its outermost non-null. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
@@ -1072,7 +1052,7 @@ CREATE TABLE graphql_ast_field_argument_entry (
   type_sdl           VARCHAR NOT NULL,
   named_type         VARCHAR NOT NULL,
   non_null           BOOLEAN NOT NULL,
-  is_list            BOOLEAN NOT NULL,
+  is_list            BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null      BOOLEAN,
   list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
@@ -1084,8 +1064,7 @@ CREATE TABLE graphql_ast_field_argument_entry (
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0))
+  CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_ast_field_argument_entry IS 'An argument of a field, as one document wrote it: this position in this file declares an argument of this name on the field it was written inside. For example the lang: Lang = NB inside title(lang: Lang = NB): String.';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1098,7 +1077,7 @@ COMMENT ON COLUMN graphql_ast_field_argument_entry.name IS 'the name written her
 COMMENT ON COLUMN graphql_ast_field_argument_entry.type_sdl IS 'the type expression exactly as written, wrappers and all, so nothing about what the author typed is lost to the four columns beside it';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
-COMMENT ON COLUMN graphql_ast_field_argument_entry.is_list IS 'whether the expression is a list at its outermost non-null';
+COMMENT ON COLUMN graphql_ast_field_argument_entry.is_list IS 'whether the expression is a list at its outermost non-null. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
@@ -1118,7 +1097,7 @@ CREATE TABLE graphql_ast_input_field_entry (
   type_sdl           VARCHAR NOT NULL,
   named_type         VARCHAR NOT NULL,
   non_null           BOOLEAN NOT NULL,
-  is_list            BOOLEAN NOT NULL,
+  is_list            BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null      BOOLEAN,
   list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
@@ -1130,8 +1109,7 @@ CREATE TABLE graphql_ast_input_field_entry (
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0))
+  CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_ast_input_field_entry IS 'A field of an input object, as one document wrote it: this position in this file declares an input field of this name on the declaration it was written inside. For example the q: String inside input Filter { q: String }.';
 COMMENT ON COLUMN graphql_ast_input_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1144,7 +1122,7 @@ COMMENT ON COLUMN graphql_ast_input_field_entry.name IS 'the name written here, 
 COMMENT ON COLUMN graphql_ast_input_field_entry.type_sdl IS 'the type expression exactly as written, wrappers and all, so nothing about what the author typed is lost to the four columns beside it';
 COMMENT ON COLUMN graphql_ast_input_field_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_input_field_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
-COMMENT ON COLUMN graphql_ast_input_field_entry.is_list IS 'whether the expression is a list at its outermost non-null';
+COMMENT ON COLUMN graphql_ast_input_field_entry.is_list IS 'whether the expression is a list at its outermost non-null. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_ast_input_field_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
 COMMENT ON COLUMN graphql_ast_input_field_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_input_field_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
@@ -1162,7 +1140,7 @@ CREATE TABLE graphql_ast_directive_argument_entry (
   type_sdl           VARCHAR NOT NULL,
   named_type         VARCHAR NOT NULL,
   non_null           BOOLEAN NOT NULL,
-  is_list            BOOLEAN NOT NULL,
+  is_list            BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null      BOOLEAN,
   list_depth         INT     NOT NULL,
   default_value_sdl  VARCHAR,
@@ -1174,8 +1152,7 @@ CREATE TABLE graphql_ast_directive_argument_entry (
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0))
+  CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphql_ast_directive_argument_entry IS 'An argument a directive definition declares, as one document wrote it: this position in this file declares an argument of this name on the definition it was written inside. For example the fields: String! inside directive @key(fields: String!) on OBJECT.';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1188,7 +1165,7 @@ COMMENT ON COLUMN graphql_ast_directive_argument_entry.name IS 'the name written
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.type_sdl IS 'the type expression exactly as written, wrappers and all, so nothing about what the author typed is lost to the four columns beside it';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.named_type IS 'the type name at the bottom of the expression, the wrappers stripped. Unwrapped here because it is the graphql-java Type node read down its own spine, which is three lines in Java and a parser in SQL; nothing about the corpus is consulted, so this stays a transcription';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.non_null IS 'whether the outermost wrapper is a non-null, which for a list is about the list and not its items';
-COMMENT ON COLUMN graphql_ast_directive_argument_entry.is_list IS 'whether the expression is a list at its outermost non-null';
+COMMENT ON COLUMN graphql_ast_directive_argument_entry.is_list IS 'whether the expression is a list at its outermost non-null. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.item_non_null IS 'whether the outermost list''s items are non-null, NULL when the expression is not a list at all. At list_depth 1 that is the named type''s own nullability; deeper, it is the nullability of the list one level in';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Here so the four columns beside it are complete rather than nearly: they describe a type expression exactly when this is 0 or 1, and a reader that needs to tell those cases from a deeper one asks this column instead of parsing type_sdl. Recording the depth rather than refusing the document, because a transcription records what the author wrote; that graphitron''s own wrapper algebra stops at one list is a fact about the generator and belongs in a detection over this column';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.default_value_sdl IS 'the default value exactly as written, or NULL where none was';
@@ -1278,7 +1255,7 @@ CREATE TABLE graphql_field (
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
   non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
+  is_list           BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null     BOOLEAN,
   list_depth        INT     NOT NULL,
   default_value_sdl VARCHAR,
@@ -1310,7 +1287,6 @@ CREATE TABLE graphql_field (
   CHECK (declaration_line_ref IS NULL OR declaration_line_ref = declaration_line),
   CHECK (declaration_column_ref IS NULL OR declaration_column_ref = declaration_column),
   CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0)),
   FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE SET NULL,
@@ -1329,7 +1305,7 @@ COMMENT ON COLUMN graphql_field.declaration_column IS 'the site key''s fourth pa
 COMMENT ON COLUMN graphql_field.type_sdl IS 'the rendered type expression, e.g. ''[Film!]!''; authoritative for wrapping fidelity';
 COMMENT ON COLUMN graphql_field.named_type IS 'the named type the expression bottoms out in; author-spelled, no FK, integrity is a detection';
 COMMENT ON COLUMN graphql_field.non_null IS 'outermost non-null wrapper present';
-COMMENT ON COLUMN graphql_field.is_list IS 'a list wrapper is present';
+COMMENT ON COLUMN graphql_field.is_list IS 'a list wrapper is present. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_field.item_non_null IS 'item-level non-null when is_list; NULL otherwise';
 COMMENT ON COLUMN graphql_field.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Carried from the entry rather than left behind by the anchoring, because the four columns beside it describe a type expression exactly when this is 0 or 1 and a reader that must tell those from a deeper one has nothing else to ask. A reader without it parses type_sdl, which is what the macro expansion did to find the carriers it may expand';
 COMMENT ON COLUMN graphql_field.default_value_sdl IS 'rendered default value; input-object fields only';
@@ -1358,7 +1334,7 @@ CREATE TABLE graphql_argument (
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
   non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
+  is_list           BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null     BOOLEAN,
   list_depth        INT     NOT NULL,
   default_value_sdl VARCHAR,
@@ -1376,7 +1352,6 @@ CREATE TABLE graphql_argument (
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0)),
   FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE SET NULL,
@@ -1394,7 +1369,7 @@ COMMENT ON COLUMN graphql_argument.ordinal IS 'declaration order within the fiel
 COMMENT ON COLUMN graphql_argument.type_sdl IS 'rendered type expression, as on graphql_field';
 COMMENT ON COLUMN graphql_argument.named_type IS 'the named type the expression bottoms out in; author-spelled, no FK';
 COMMENT ON COLUMN graphql_argument.non_null IS 'outermost non-null wrapper present';
-COMMENT ON COLUMN graphql_argument.is_list IS 'a list wrapper is present';
+COMMENT ON COLUMN graphql_argument.is_list IS 'a list wrapper is present. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_argument.item_non_null IS 'item-level non-null when is_list; NULL otherwise';
 COMMENT ON COLUMN graphql_argument.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Carried from the entry rather than left behind by the anchoring, because the four columns beside it describe a type expression exactly when this is 0 or 1 and a reader that must tell those from a deeper one has nothing else to ask. A reader without it parses type_sdl, which is what the macro expansion did to find the carriers it may expand';
 COMMENT ON COLUMN graphql_argument.default_value_sdl IS 'rendered default value, when declared';
@@ -1705,7 +1680,7 @@ CREATE TABLE graphql_directive_argument (
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
   non_null          BOOLEAN NOT NULL,
-  is_list           BOOLEAN NOT NULL,
+  is_list           BOOLEAN GENERATED ALWAYS AS (list_depth > 0) NOT NULL,
   item_non_null     BOOLEAN,
   list_depth        INT     NOT NULL,
   default_value_sdl VARCHAR,
@@ -1723,7 +1698,6 @@ CREATE TABLE graphql_directive_argument (
   FOREIGN KEY (graph_name, directive_name, argument_name)
     REFERENCES graphql_directive_argument_element (graph_name, directive_name, argument_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0)),
   FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE SET NULL,
@@ -1740,7 +1714,7 @@ COMMENT ON COLUMN graphql_directive_argument.ordinal IS 'declaration order in th
 COMMENT ON COLUMN graphql_directive_argument.type_sdl IS 'rendered argument type, e.g. ''[ReferenceElement!]!''';
 COMMENT ON COLUMN graphql_directive_argument.named_type IS 'the named type the expression bottoms out in; author-spelled, no FK';
 COMMENT ON COLUMN graphql_directive_argument.non_null IS 'outermost non-null wrapper present';
-COMMENT ON COLUMN graphql_directive_argument.is_list IS 'a list wrapper is present';
+COMMENT ON COLUMN graphql_directive_argument.is_list IS 'a list wrapper is present. Generated from list_depth, so nothing writes it';
 COMMENT ON COLUMN graphql_directive_argument.item_non_null IS 'item-level non-null when is_list; NULL otherwise';
 COMMENT ON COLUMN graphql_directive_argument.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Carried from the entry rather than left behind by the anchoring, because the four columns beside it describe a type expression exactly when this is 0 or 1 and a reader that must tell those from a deeper one has nothing else to ask';
 COMMENT ON COLUMN graphql_directive_argument.default_value_sdl IS 'rendered default; the value an application inherits when it omits the argument';
@@ -3375,7 +3349,7 @@ COMMENT ON COLUMN graphitron_element.touched_at IS 'the reading that last wrote 
 CREATE TABLE graphitron_type (
   graph_name  VARCHAR NOT NULL,
   type_name   VARCHAR NOT NULL,
-  coordinate  VARCHAR NOT NULL,
+  coordinate  VARCHAR GENERATED ALWAYS AS (type_name) NOT NULL,
   kind        VARCHAR NOT NULL,
   origin      VARCHAR NOT NULL,
   description VARCHAR,
@@ -3390,7 +3364,7 @@ CREATE TABLE graphitron_type (
 COMMENT ON TABLE graphitron_type IS 'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph. For example a Connection type the connection macro minted sits here beside the type whose field carried the macro. Total from federation-vocabulary on, the stage adding the last population, so a consumer from there joins this rather than left-joining it.';
 COMMENT ON COLUMN graphitron_type.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites or minting sites contributed to it';
-COMMENT ON COLUMN graphitron_type.coordinate IS 'this row as graphitron_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader holding a coordinate reaches the parts here rather than splitting the spelling';
+COMMENT ON COLUMN graphitron_type.coordinate IS 'this row as graphitron_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader holding a coordinate reaches the parts here rather than splitting the spelling. Generated from the key columns beside it, so nothing writes it; the foreign key into graphitron_element is what holds that relation''s spelling to this one';
 COMMENT ON COLUMN graphitron_type.kind IS 'the type''s kind in graphql_type''s vocabulary, carried across rather than restated so a reader joins one column whichever arm supplied its row';
 COMMENT ON COLUMN graphitron_type.origin IS 'which population answered: AUTHORED, a type a document declares; MINTED, one a macro adds; FEDERATION, a scalar or enum of the federation vocabulary the graph imports. Each population is written and swept by the stage that owns it, macro-expansion the first two and federation-vocabulary the third';
 COMMENT ON COLUMN graphitron_type.description IS 'the docstring the generator emits: authored on an authored type, with its file''s configured note appended, which mints it, and written by the macro on a minted one; display material, never a dimension';
@@ -3399,7 +3373,7 @@ CREATE TABLE graphitron_field (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
   field_name        VARCHAR NOT NULL,
-  coordinate        VARCHAR NOT NULL,
+  coordinate        VARCHAR GENERATED ALWAYS AS (type_name || '.' || field_name) NOT NULL,
   ordinal           INT     NOT NULL,
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
@@ -3414,15 +3388,13 @@ CREATE TABLE graphitron_field (
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
-  CHECK (is_list OR item_non_null IS NULL),
-  -- The coordinate is the key spelled out, which is what lets MacroExpansion upsert on the key.
-  CHECK (coordinate = type_name || '.' || field_name)
+  CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphitron_field IS 'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries. For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.';
 COMMENT ON COLUMN graphitron_field.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
 COMMENT ON COLUMN graphitron_field.type_name IS 'the type owning the field, anchored by graphitron_type';
 COMMENT ON COLUMN graphitron_field.field_name IS 'the field''s name within the owning type; with the two columns above, the grain';
-COMMENT ON COLUMN graphitron_field.coordinate IS 'this row as graphitron_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphitron_type.coordinate''s terms';
+COMMENT ON COLUMN graphitron_field.coordinate IS 'this row as graphitron_element spells it, Type.field in the specification''s grammar; the join down from the supertype, on graphitron_type.coordinate''s terms. Generated from the key columns beside it, so nothing writes it; the foreign key into graphitron_element is what holds that relation''s spelling to this one';
 COMMENT ON COLUMN graphitron_field.ordinal IS 'the field''s position within its type, merge-ordered across declaration sites exactly as graphql_field numbers it, and the order the macro wrote them in on a minted type';
 COMMENT ON COLUMN graphitron_field.type_sdl IS 'the type expression as the generator reads it: the authored literal on an ordinary field, and the macro''s rewrite where one happened';
 COMMENT ON COLUMN graphitron_field.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
@@ -3440,21 +3412,19 @@ CREATE TABLE graphitron_enum_value (
   graph_name  VARCHAR NOT NULL,
   type_name   VARCHAR NOT NULL,
   value_name  VARCHAR NOT NULL,
-  coordinate  VARCHAR NOT NULL,
+  coordinate  VARCHAR GENERATED ALWAYS AS (type_name || '.' || value_name) NOT NULL,
   ordinal     INT     NOT NULL,
   description VARCHAR,
   PRIMARY KEY (graph_name, type_name, value_name),
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
-  -- The coordinate is the key spelled out, as on graphitron_field.
-  CHECK (coordinate = type_name || '.' || value_name)
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate)
 );
 COMMENT ON TABLE graphitron_enum_value IS 'Every enum value the generator emits: one row per enum value coordinate. For example enum Rating { G PG } is the rows Rating.G and Rating.PG. Authored only, the macros minting no enum.';
 COMMENT ON COLUMN graphitron_enum_value.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_enum_value.type_name IS 'the enum the value belongs to, anchored by graphitron_type';
 COMMENT ON COLUMN graphitron_enum_value.value_name IS 'the value''s name within its enum; with the two columns above, the grain';
-COMMENT ON COLUMN graphitron_enum_value.coordinate IS 'this row as graphitron_element spells it, Type.VALUE';
+COMMENT ON COLUMN graphitron_enum_value.coordinate IS 'this row as graphitron_element spells it, Type.VALUE. Generated from the key columns beside it, so nothing writes it; the foreign key into graphitron_element is what holds that relation''s spelling to this one';
 COMMENT ON COLUMN graphitron_enum_value.ordinal IS 'the value''s position in the effective enum, as graphql_enum_value numbers it';
 COMMENT ON COLUMN graphitron_enum_value.description IS 'the docstring the generator emits: authored, with its file''s configured note appended, which mints it; display material, never a dimension';
 
@@ -3463,7 +3433,7 @@ CREATE TABLE graphitron_argument (
   type_name         VARCHAR NOT NULL,
   field_name        VARCHAR NOT NULL,
   argument_name     VARCHAR NOT NULL,
-  coordinate        VARCHAR NOT NULL,
+  coordinate        VARCHAR GENERATED ALWAYS AS (type_name || '.' || field_name || '(' || argument_name || ':)') NOT NULL,
   ordinal           INT     NOT NULL,
   type_sdl          VARCHAR NOT NULL,
   named_type        VARCHAR NOT NULL,
@@ -3477,16 +3447,14 @@ CREATE TABLE graphitron_argument (
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphitron_field (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_element (graph_name, coordinate),
-  CHECK (is_list OR item_non_null IS NULL),
-  -- The coordinate is the key spelled out, as on graphitron_field.
-  CHECK (coordinate = type_name || '.' || field_name || '(' || argument_name || ':)')
+  CHECK (is_list OR item_non_null IS NULL)
 );
 COMMENT ON TABLE graphitron_argument IS 'Every field argument the generator works with, the author''s and the ones macro expansion minted: one row per argument coordinate, carrying the wrapping columns graphql_argument carries. For example the first and after arguments a connection carrier gets when its author wrote no pagination argument sit here, where graphql_argument holds only what the document declares and therefore holds no row for them.';
 COMMENT ON COLUMN graphitron_argument.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row';
 COMMENT ON COLUMN graphitron_argument.type_name IS 'owning type of the field the argument sits on';
 COMMENT ON COLUMN graphitron_argument.field_name IS 'the field the argument sits on, anchored by graphitron_field';
 COMMENT ON COLUMN graphitron_argument.argument_name IS 'the argument''s name within the owning field; with the three columns above, the grain';
-COMMENT ON COLUMN graphitron_argument.coordinate IS 'this row as graphitron_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it';
+COMMENT ON COLUMN graphitron_argument.coordinate IS 'this row as graphitron_element spells it, Type.field(argument:) in the specification''s grammar, the trailing colon included because the specification writes it. Generated from the key columns beside it, so nothing writes it; the foreign key into graphitron_element is what holds that relation''s spelling to this one';
 COMMENT ON COLUMN graphitron_argument.ordinal IS 'the argument''s position within its field, declaration order on an authored one and the order the macro appended on a minted one, which is after every authored argument';
 COMMENT ON COLUMN graphitron_argument.type_sdl IS 'the type expression as the generator reads it';
 COMMENT ON COLUMN graphitron_argument.named_type IS 'that expression''s named type with its list and non-null wrappers stripped, which is the column readers actually join on';
@@ -10680,7 +10648,7 @@ CREATE TABLE graphitron_occurrence_binding_member (
   bound             VARCHAR   NOT NULL,
   kind              VARCHAR   NOT NULL,
   parent_coordinate VARCHAR   NOT NULL,
-  class_name        VARCHAR   NOT NULL,
+  class_name        VARCHAR GENERATED ALWAYS AS (SUBSTRING(bound, 1, POSITION('#', bound) - 1)) NOT NULL,
   slot_source_name  VARCHAR   NOT NULL,
   slot_method_name  VARCHAR   NOT NULL,
   slot_descriptor   VARCHAR   NOT NULL,
@@ -10696,7 +10664,8 @@ CREATE TABLE graphitron_occurrence_binding_member (
   FOREIGN KEY (slot_source_name, class_name, slot_method_name, slot_descriptor, slot_position)
     REFERENCES code_write_slot (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE,
   CHECK (kind = 'MEMBER'),
-  CHECK (bound = class_name || '#' || SUBSTRING(bound, POSITION('#', bound) + 1))
+  -- The member a bound names follows its class and a '#', which class_name is generated from.
+  CHECK (POSITION('#', bound) > 0)
 );
 COMMENT ON TABLE graphitron_occurrence_binding_member IS 'The member of the class an input object is built into that an input field fills: one row per MEMBER binding. For example Mutation.assignFilmRecordList(in:).films fills FilmRecordListAssignment#films, the record component at position 0 of its canonical constructor.';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.graph_name IS 'the owning graph''s partition, carried from the binding';
@@ -10704,7 +10673,7 @@ COMMENT ON COLUMN graphitron_occurrence_binding_member.coordinate IS 'the input 
 COMMENT ON COLUMN graphitron_occurrence_binding_member.bound IS 'the place bound, the class and the member filled, Class#member; with the two columns before it, the binding''s key';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.kind IS 'always MEMBER, pinned so the foreign key holds the row to a binding of that kind';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.parent_coordinate IS 'the occurrence whose built class the member is of: the input field''s parent, or for a field under a grouping the grouping, which is built into the enclosing class';
-COMMENT ON COLUMN graphitron_occurrence_binding_member.class_name IS 'the class the member is of, the parent''s built class, shared by both foreign keys so the member is one of that class''s';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.class_name IS 'the class the member is of, the parent''s built class, shared by both foreign keys so the member is one of that class''s. Generated as the part of bound before its #, so nothing writes it';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_source_name IS 'the classpath entry of the member''s code_write_slot row, the entry the parent''s built class is read from';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_method_name IS 'the call that fills the member, the constructor or the setter, as on code_write_slot';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_descriptor IS 'that call''s descriptor';
@@ -11858,9 +11827,9 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.touched_at IS 'the readin
 -- inferred has none.
 CREATE VIEW graphitron_occurrence_call_parameter_pair_rule
   (graph_name, coordinate, call, position, pair_coordinate, directive_name, ordinal, owner,
-   parameter_name, call_coordinate) AS
+   parameter_name) AS
 SELECT c.graph_name, c.coordinate, c.call, c.position, l.coordinate, l.directive_name, l.ordinal,
-       l.owner, l.parameter_name, l.call_coordinate
+       l.owner, l.parameter_name
   FROM graphitron_occurrence_call_parameter c
   JOIN graphitron_argmapping_landing l
     ON l.graph_name = c.graph_name AND l.call_coordinate = c.coordinate
@@ -11878,7 +11847,6 @@ COMMENT ON VIEW graphitron_occurrence_call_parameter_pair_rule IS 'One row the f
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.ordinal';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.owner IS 'the owner of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.owner';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.parameter_name';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.call_coordinate';
 
 CREATE TABLE graphitron_occurrence_call_parameter_pair (
   graph_name      VARCHAR   NOT NULL,
@@ -11890,7 +11858,6 @@ CREATE TABLE graphitron_occurrence_call_parameter_pair (
   ordinal         INT       NOT NULL,
   owner           VARCHAR   NOT NULL,
   parameter_name  VARCHAR   NOT NULL,
-  call_coordinate VARCHAR   NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, call, position),
   -- The fill it is the provenance of.
@@ -11898,23 +11865,21 @@ CREATE TABLE graphitron_occurrence_call_parameter_pair (
     REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position)
     ON DELETE CASCADE,
   -- The pair's landing under the call, so the two cannot drift.
-  FOREIGN KEY (graph_name, pair_coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+  FOREIGN KEY (graph_name, pair_coordinate, directive_name, ordinal, owner, parameter_name, coordinate)
     REFERENCES graphitron_argmapping_landing
       (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
-    ON DELETE CASCADE,
-  CHECK (call_coordinate = coordinate)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter_pair IS 'The written argMapping pair a fill came from: one row per fill a pair wrote. For example the filmId parameter of Query.filmsByOptionalLanguage''s condition takes the pair filmId: pick.languageRef.language_id, and a parameter its name or its type filled has no row.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.coordinate IS 'the occurrence making the call; with call and position, the fill';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.call IS 'which of its calls';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.position IS 'the parameter''s position, completing the key';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.pair_coordinate IS 'the element the pair''s mapping is written on; with the four columns after it and call_coordinate, the pair''s landing';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.pair_coordinate IS 'the element the pair''s mapping is written on; with the four columns after it and the row''s own coordinate, which is the call occurrence the landing is resolved under, the pair''s landing';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.directive_name IS 'the mapping''s directive, the one that wrote the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.ordinal IS 'its application''s ordinal';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.owner IS 'what the mapping is written under in its application';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.parameter_name IS 'the parameter the pair binds';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.call_coordinate IS 'the call occurrence the landing is resolved under, the fill''s own';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_call_parameter_defect
@@ -12002,7 +11967,7 @@ SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position
   JOIN graphitron_argmapping_landing_key_column kc
     ON kc.graph_name = pp.graph_name AND kc.coordinate = pp.pair_coordinate
    AND kc.directive_name = pp.directive_name AND kc.ordinal = pp.ordinal AND kc.owner = pp.owner
-   AND kc.parameter_name = pp.parameter_name AND kc.call_coordinate = pp.call_coordinate
+   AND kc.parameter_name = pp.parameter_name AND kc.call_coordinate = pp.coordinate
   JOIN graphitron_occurrence_node_id n
     ON n.graph_name = kc.graph_name AND n.coordinate = kc.landing_coordinate AND n.bound = kc.bound
    AND n.position = kc.position
@@ -13461,8 +13426,8 @@ CREATE TABLE graphitron_key_field_binding (
   ordinal           INT     NOT NULL,
   position          INT     NOT NULL,
   field_name        VARCHAR NOT NULL,
-  coordinate        VARCHAR NOT NULL,
-  bound             VARCHAR NOT NULL,
+  coordinate        VARCHAR GENERATED ALWAYS AS (type_name || '.' || field_name) NOT NULL,
+  bound             VARCHAR GENERATED ALWAYS AS (table_schema || '.' || table_name) NOT NULL,
   kind              VARCHAR NOT NULL,
   table_source_name VARCHAR NOT NULL,
   table_schema      VARCHAR NOT NULL,
@@ -13478,8 +13443,6 @@ CREATE TABLE graphitron_key_field_binding (
     ON DELETE CASCADE,
   CHECK (directive_name = 'key'),
   CHECK (position >= 0),
-  CHECK (coordinate = type_name || '.' || field_name),
-  CHECK (bound = table_schema || '.' || table_name),
   CHECK (kind IN ('COLUMN', 'NODE_ID')),
   -- The node id binds only as a key's sole field; the rule writes the "sole" half, which spans rows.
   CHECK (kind <> 'NODE_ID' OR position = 0)
@@ -13491,8 +13454,8 @@ COMMENT ON COLUMN graphitron_key_field_binding.directive_name IS 'always key; ca
 COMMENT ON COLUMN graphitron_key_field_binding.ordinal IS 'the key''s place among the type''s @key applications, the application''s own ordinal';
 COMMENT ON COLUMN graphitron_key_field_binding.position IS 'the field''s place in the key''s field set as it is written, numbered from zero; 0 for the synthesised key''s one field';
 COMMENT ON COLUMN graphitron_key_field_binding.field_name IS 'the field the key selects, a top-level field of the type';
-COMMENT ON COLUMN graphitron_key_field_binding.coordinate IS 'the field''s coordinate, type and field joined by a dot, as its occurrence binding spells it';
-COMMENT ON COLUMN graphitron_key_field_binding.bound IS 'the type''s own table, schema-qualified, as the binding spells it';
+COMMENT ON COLUMN graphitron_key_field_binding.coordinate IS 'the field''s coordinate, type and field joined by a dot, as its occurrence binding spells it. Generated from type_name and field_name, so nothing writes it';
+COMMENT ON COLUMN graphitron_key_field_binding.bound IS 'the type''s own table, schema-qualified, as the binding spells it. Generated from table_schema and table_name, so nothing writes it';
 COMMENT ON COLUMN graphitron_key_field_binding.kind IS 'how the field binds there: COLUMN, a column of the table whose value the representation carries; NODE_ID, the node''s own id, the key''s only field, decoded into the node''s key columns';
 COMMENT ON COLUMN graphitron_key_field_binding.table_source_name IS 'the catalog source of the type''s table';
 COMMENT ON COLUMN graphitron_key_field_binding.table_schema IS 'the schema of the type''s table';
@@ -16656,7 +16619,7 @@ CREATE TABLE graphitron_occurrence_condition (
   graph_name       VARCHAR   NOT NULL,
   coordinate       VARCHAR   NOT NULL,
   bound            VARCHAR   NOT NULL,
-  call             VARCHAR   NOT NULL,
+  call             VARCHAR GENERATED ALWAYS AS ('condition:' || bound) NOT NULL,
   call_kind        VARCHAR   NOT NULL,
   override_written BOOLEAN   NOT NULL,
   touched_at       TIMESTAMP NOT NULL,
@@ -16668,15 +16631,13 @@ CREATE TABLE graphitron_occurrence_condition (
   -- The call it is, a call subtype.
   FOREIGN KEY (graph_name, coordinate, call, call_kind)
     REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
-  CHECK (call_kind = 'CONDITION'),
-  -- The call spelled from the bound table; a reader joins on bound, never parsing call.
-  CHECK (call = 'condition:' || bound)
+  CHECK (call_kind = 'CONDITION')
 );
 COMMENT ON TABLE graphitron_occurrence_condition IS 'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method. For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.';
 COMMENT ON COLUMN graphitron_occurrence_condition.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_condition.coordinate IS 'the occurrence carrying the @condition, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_condition.bound IS 'the table it is applied to, as the occurrence''s binding spells it; completing the key';
-COMMENT ON COLUMN graphitron_occurrence_condition.call IS 'the call it is, condition: and the bound table';
+COMMENT ON COLUMN graphitron_occurrence_condition.call IS 'the call it is, condition: and the bound table. Generated from bound, so nothing writes it, and a reader joins on bound rather than parsing it';
 COMMENT ON COLUMN graphitron_occurrence_condition.call_kind IS 'always CONDITION, pinned so the foreign key holds the row to a call of that kind';
 COMMENT ON COLUMN graphitron_occurrence_condition.override_written IS 'whether the @condition was written with override: true, false where override: was not written; carried for the transition and retired with the rule that decides what a condition consumes';
 COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';

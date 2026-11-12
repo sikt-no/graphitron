@@ -66,10 +66,9 @@ public final class OccurrenceCallParameters {
         var o = GRAPHITRON_OCCURRENCE;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION, t.PAIR_COORDINATE, t.DIRECTIVE_NAME,
-                t.ORDINAL, t.OWNER, t.PARAMETER_NAME, t.CALL_COORDINATE, t.TOUCHED_AT)
+                t.ORDINAL, t.OWNER, t.PARAMETER_NAME, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.POSITION, r.PAIR_COORDINATE,
-                    r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER, r.PARAMETER_NAME, r.CALL_COORDINATE,
-                    val(touchedAt, t.TOUCHED_AT))
+                    r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER, r.PARAMETER_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
@@ -80,7 +79,6 @@ public final class OccurrenceCallParameters {
             .set(t.ORDINAL, excluded(t.ORDINAL))
             .set(t.OWNER, excluded(t.OWNER))
             .set(t.PARAMETER_NAME, excluded(t.PARAMETER_NAME))
-            .set(t.CALL_COORDINATE, excluded(t.CALL_COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

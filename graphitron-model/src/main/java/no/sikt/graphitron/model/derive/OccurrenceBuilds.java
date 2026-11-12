@@ -104,11 +104,11 @@ public final class OccurrenceBuilds {
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
             .execute();
         dsl.insertInto(m)
-            .columns(m.GRAPH_NAME, m.COORDINATE, m.BOUND, m.KIND, m.PARENT_COORDINATE, m.CLASS_NAME,
+            .columns(m.GRAPH_NAME, m.COORDINATE, m.BOUND, m.KIND, m.PARENT_COORDINATE,
                 m.SLOT_SOURCE_NAME, m.SLOT_METHOD_NAME, m.SLOT_DESCRIPTOR, m.SLOT_POSITION, m.TOUCHED_AT)
             .select(dsl
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("MEMBER"), r.PARENT_COORDINATE,
-                    r.CLASS_NAME, r.SLOT_SOURCE_NAME, r.SLOT_METHOD_NAME, r.SLOT_DESCRIPTOR, r.SLOT_POSITION,
+                    r.SLOT_SOURCE_NAME, r.SLOT_METHOD_NAME, r.SLOT_DESCRIPTOR, r.SLOT_POSITION,
                     val(touchedAt, m.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
@@ -116,7 +116,6 @@ public final class OccurrenceBuilds {
             .onConflict(m.GRAPH_NAME, m.COORDINATE, m.BOUND)
             .doUpdate()
             .set(m.PARENT_COORDINATE, excluded(m.PARENT_COORDINATE))
-            .set(m.CLASS_NAME, excluded(m.CLASS_NAME))
             .set(m.SLOT_SOURCE_NAME, excluded(m.SLOT_SOURCE_NAME))
             .set(m.SLOT_METHOD_NAME, excluded(m.SLOT_METHOD_NAME))
             .set(m.SLOT_DESCRIPTOR, excluded(m.SLOT_DESCRIPTOR))

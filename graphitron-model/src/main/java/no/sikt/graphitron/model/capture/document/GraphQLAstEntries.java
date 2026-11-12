@@ -392,13 +392,12 @@ public final class GraphQLAstEntries {
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
-            nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
-                    t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                    t.NAMED_TYPE, t.NON_NULL, t.ITEM_NON_NULL, t.LIST_DEPTH,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -409,7 +408,6 @@ public final class GraphQLAstEntries {
                 .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
                 .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
                 .set(t.NON_NULL, excluded(t.NON_NULL))
-                .set(t.IS_LIST, excluded(t.IS_LIST))
                 .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
                 .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
                 .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
@@ -437,7 +435,6 @@ public final class GraphQLAstEntries {
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
-            nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
@@ -445,7 +442,7 @@ public final class GraphQLAstEntries {
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
                     t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                    t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                    t.NON_NULL, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -457,7 +454,6 @@ public final class GraphQLAstEntries {
                 .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
                 .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
                 .set(t.NON_NULL, excluded(t.NON_NULL))
-                .set(t.IS_LIST, excluded(t.IS_LIST))
                 .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
                 .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
                 .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
@@ -483,14 +479,13 @@ public final class GraphQLAstEntries {
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
-            nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
-                    t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
+                    t.NAMED_TYPE, t.NON_NULL, t.ITEM_NON_NULL, t.LIST_DEPTH,
                     t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
                 .values(markers)
@@ -502,7 +497,6 @@ public final class GraphQLAstEntries {
                 .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
                 .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
                 .set(t.NON_NULL, excluded(t.NON_NULL))
-                .set(t.IS_LIST, excluded(t.IS_LIST))
                 .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
                 .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
                 .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
@@ -529,14 +523,13 @@ public final class GraphQLAstEntries {
             nested -> val(printAstCompact(nested.node().getType()), t.TYPE_SDL),
             nested -> val(namedType(nested.node().getType()), t.NAMED_TYPE),
             nested -> val(nonNull(nested.node().getType()), t.NON_NULL),
-            nested -> val(isList(nested.node().getType()), t.IS_LIST),
             nested -> val(itemNonNull(nested.node().getType()), t.ITEM_NON_NULL),
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
-                    t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
+                    t.NON_NULL, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
@@ -546,7 +539,6 @@ public final class GraphQLAstEntries {
                 .set(t.TYPE_SDL, excluded(t.TYPE_SDL))
                 .set(t.NAMED_TYPE, excluded(t.NAMED_TYPE))
                 .set(t.NON_NULL, excluded(t.NON_NULL))
-                .set(t.IS_LIST, excluded(t.IS_LIST))
                 .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
                 .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
                 .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
@@ -1357,19 +1349,15 @@ public final class GraphQLAstEntries {
         return type instanceof NonNullType;
     }
 
-    private static boolean isList(Type<?> type) {
-        return unwrapped(type) instanceof ListType;
-    }
-
     private static Boolean itemNonNull(Type<?> type) {
         return unwrapped(type) instanceof ListType list ? list.getType() instanceof NonNullType : null;
     }
 
     /**
      * How many list wrappers the expression has, which is what tells {@code [Film]} from
-     * {@code [[Film]]}. The three above cannot: they read one level and a nested list reads as a
-     * list of something nullable, true of the outer list and silent about the inner one. Without
-     * this a reader wanting the difference has to parse {@code type_sdl}, in SQL.
+     * {@code [[Film]]}; {@code is_list} is generated from it. The two above cannot: they read one
+     * level, so they describe the outer list and are silent about the inner one. Without this a
+     * reader wanting the difference has to parse {@code type_sdl}, in SQL.
      */
     private static int listDepth(Type<?> type) {
         return unwrapped(type) instanceof ListType list ? 1 + listDepth(list.getType()) : 0;

@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InlineCaptureGateTest {
 
     /** Inline capture call sites at the ceiling's last lowering. */
-    private static final int CEILING = 34;
+    private static final int CEILING = 25;
 
     /**
      * Where the arms are defined rather than called, and {@code FactGraphsTest}, whose subject is the

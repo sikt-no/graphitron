@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.catalog.GeneratedColumns;
 import org.assertj.core.api.ThrowableAssert.ThrowingCallable;
 import org.jooq.exception.IntegrityConstraintViolationException;
 import org.junit.jupiter.api.DisplayName;
@@ -53,7 +54,10 @@ class DirectiveAnchorKeyTest {
                     t.ARGUMENT_NAME.eq("size")).fetchOne();
             assertThat(row).isNotNull();
             row.setArgumentName("unanchored");
-            assertRefused(() -> dsl.insertInto(t).set(row.intoMap()).execute());
+            // The row as written, without what the store generates from it, which no insert names.
+            var written = row.intoMap();
+            GeneratedColumns.of(dsl, t).forEach(field -> written.remove(field.getName()));
+            assertRefused(() -> dsl.insertInto(t).set(written).execute());
         });
     }
 
