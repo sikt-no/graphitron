@@ -26,6 +26,8 @@ import java.util.logging.Logger;
  * <p>The logger's level is the JVM's. A class that reads {@code DEBUG} lines
  * ({@link #captureWithDebug()}) raises it and puts back what it found, and is annotated
  * {@code @ResourceLock(ErrorRouterLog.LEVEL_LOCK)} so no two such classes are in flight at once.
+ * While it does, every other class's {@link #capture()} sees {@code DEBUG} records too, so a test
+ * that did not raise the level counts with {@link #errorsMentioning}, never across levels.
  */
 final class ErrorRouterLog implements AutoCloseable {
 

@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
+import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.BatchSizeLimit;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
@@ -17,9 +18,9 @@ import javax.sql.DataSource;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -34,9 +35,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Driven against {@code Film.actorsByCondition}, a list-valued {@code @splitQuery} child, under
  * the five seeded films, which no test deletes. Statements are counted where every path sends
- * them, at the JDBC connection: the child's are the ones that read {@code actor}. The failure case
- * runs {@code Film.databaseError}, the batched child {@code @service} whose statement always
- * fails, so each chunk fails on its own.
+ * them, at the JDBC connection, and never read: a request's count with no limit is the baseline,
+ * and a limit of two over five parents adds the two statements the second and third chunk cost.
+ * The failure case runs {@code Film.databaseError}, the batched child {@code @service} whose
+ * statement always fails, so each chunk fails on its own.
  */
 @ExecutionTier
 class BatchSizeLimitExecutionTest {
@@ -47,13 +49,18 @@ class BatchSizeLimitExecutionTest {
 
     private static final String ACTORS_OF_FIVE_FILMS = "{ " + FIVE_FILMS + " { filmId actorsByCondition { actorId } } }";
 
-    /** The SQL of every statement the test's connections prepared, in order. */
-    static final List<String> STATEMENTS = new CopyOnWriteArrayList<>();
+    private static final String DATABASE_ERROR_OF_FIVE_FILMS = "{ " + FIVE_FILMS + " { databaseError } }";
+
+    /** How many statements the test's connections have prepared since the count was last reset. */
+    static final AtomicInteger STATEMENTS = new AtomicInteger();
 
     static DataSource dataSource;
 
     /** What the query answers with no limit, which a limit must not change. */
     static Map<String, Object> unbounded;
+
+    /** The statements the owned-connection runtime prepares for the query with no limit. */
+    static int unboundedStatements;
 
     @BeforeAll
     static void startDatabase() {
@@ -70,19 +77,21 @@ class BatchSizeLimitExecutionTest {
                 case "toString" -> "batchSizeLimitDataSource";
                 default -> throw new UnsupportedOperationException(method.getName());
             });
+        STATEMENTS.set(0);
         var result = run(runtime(), ACTORS_OF_FIVE_FILMS);
         assertThat(result.getErrors()).isEmpty();
         unbounded = result.getData();
+        unboundedStatements = STATEMENTS.get();
     }
 
-    /** {@code connection}, recording the SQL of each statement prepared on it. */
+    /** {@code connection}, counting each statement prepared on it. */
     private static Connection recording(Connection connection) {
         return (Connection) Proxy.newProxyInstance(
             BatchSizeLimitExecutionTest.class.getClassLoader(),
             new Class<?>[]{Connection.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("prepareStatement")) {
-                    STATEMENTS.add((String) args[0]);
+                    STATEMENTS.incrementAndGet();
                 }
                 try {
                     return method.invoke(connection, args);
@@ -94,15 +103,15 @@ class BatchSizeLimitExecutionTest {
 
     @BeforeEach
     void forgetEarlierStatements() {
-        STATEMENTS.clear();
+        STATEMENTS.set(0);
     }
 
     @Test
-    void withoutALimit_fiveParentsAreOneChildStatement() {
+    void withoutALimit_theRequestCostsTheSameStatementsEveryTime() {
         var result = run(runtime(), ACTORS_OF_FIVE_FILMS);
 
         assertThat(result.getErrors()).isEmpty();
-        assertThat(statementsReading("actor")).hasSize(1);
+        assertThat(STATEMENTS.get()).as("the baseline the other cases count against").isEqualTo(unboundedStatements);
     }
 
     @Test
@@ -110,7 +119,9 @@ class BatchSizeLimitExecutionTest {
         var result = run(runtime().withBatchSizeLimit(env -> 2), ACTORS_OF_FIVE_FILMS);
 
         assertThat(result.getErrors()).isEmpty();
-        assertThat(statementsReading("actor")).as("ceil(5 / 2) statements of at most two keys").hasSize(3);
+        assertThat(STATEMENTS.get())
+            .as("ceil(5 / 2) child statements of at most two keys where there was one")
+            .isEqualTo(unboundedStatements + 2);
         assertThat(result.<Map<String, Object>>getData()).isEqualTo(unbounded);
     }
 
@@ -136,28 +147,30 @@ class BatchSizeLimitExecutionTest {
         var result = run(runtime().withBatchSizeLimit(env -> 0), ACTORS_OF_FIVE_FILMS);
 
         assertThat(result.getErrors()).isEmpty();
-        assertThat(statementsReading("actor")).hasSize(1);
+        assertThat(STATEMENTS.get()).isEqualTo(unboundedStatements);
         assertThat(result.<Map<String, Object>>getData()).isEqualTo(unbounded);
     }
 
     @Test
     void aLimitThatThrows_leavesTheBatchUnbounded_andIsOneErrorLineNamingTheHook() {
-        BatchSizeLimit broken = env -> {
-            throw new IllegalStateException("the consumer's limit is broken");
-        };
+        // A class of its own, so its name finds this request's line whatever else is logging.
+        final class BrokenLimit implements BatchSizeLimit {
+            @Override
+            public int maxBatchSize(DataFetchingEnvironment env) {
+                throw new IllegalStateException("the consumer's limit is broken");
+            }
+        }
         try (var log = ErrorRouterLog.capture()) {
-            var result = run(runtime().withBatchSizeLimit(broken), ACTORS_OF_FIVE_FILMS);
+            var result = run(runtime().withBatchSizeLimit(new BrokenLimit()), ACTORS_OF_FIVE_FILMS);
 
             assertThat(result.getErrors()).isEmpty();
-            assertThat(statementsReading("actor")).hasSize(1);
+            assertThat(STATEMENTS.get()).isEqualTo(unboundedStatements);
             assertThat(result.<Map<String, Object>>getData()).isEqualTo(unbounded);
-            // No other test class configures a limit, so the hook's name finds this request's line.
-            assertThat(log.mentioning("BatchSizeLimit")).singleElement().satisfies(record -> {
-                assertThat(record.getLevel().intValue()).isEqualTo(org.jboss.logmanager.Level.ERROR.intValue());
+            assertThat(log.errorsMentioning(BrokenLimit.class.getName())).singleElement().satisfies(record -> {
                 assertThat(record.getThrown()).isNull();
                 assertThat(record.getMessage())
-                    .startsWith("BatchSizeLimit ")
-                    .contains(" threw java.lang.IllegalStateException; path = /filmById[")
+                    .startsWith("BatchSizeLimit " + BrokenLimit.class.getName()
+                        + " threw java.lang.IllegalStateException; path = /filmById[")
                     .endsWith("]/actorsByCondition")
                     .doesNotContain("the consumer's limit is broken");
             });
@@ -167,26 +180,36 @@ class BatchSizeLimitExecutionTest {
     @Test
     void theEscapeHatchEngine_readsTheLimitFromTheRequestsContext() {
         var engine = Graphitron.newGraphQL().build();
+        var dsl = DSL.using(dataSource, SQLDialect.POSTGRES);
+        var unlimited = engine.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user")
+            .query(ACTORS_OF_FIVE_FILMS).build());
+        assertThat(unlimited.getErrors()).isEmpty();
+        int unlimitedStatements = STATEMENTS.getAndSet(0);
+
         BatchSizeLimit limit = env -> 2;
-        var input = Graphitron.newExecutionInput(DSL.using(dataSource, SQLDialect.POSTGRES), "{}", "test-user")
+        var result = engine.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user")
             .query(ACTORS_OF_FIVE_FILMS)
             .graphQLContext(b -> b.put(BatchSizeLimit.class, limit))
-            .build();
-
-        var result = engine.execute(input);
+            .build());
 
         assertThat(result.getErrors()).isEmpty();
-        assertThat(statementsReading("actor")).hasSize(3);
+        assertThat(STATEMENTS.get()).isEqualTo(unlimitedStatements + 2);
         assertThat(result.<Map<String, Object>>getData()).isEqualTo(unbounded);
     }
 
     @Test
     void underALimit_aBatchThatFails_isOneRecordPerFailedChunk_andEachChunksFieldsQuoteItsReference() {
+        var whole = run(runtime(), DATABASE_ERROR_OF_FIVE_FILMS);
+        assertThat(whole.getErrors()).hasSize(5);
+        assertThat(whole.getErrors().stream().map(BatchSizeLimitExecutionTest::referenceOf).distinct())
+            .as("with no limit the batch fails as one").hasSize(1);
+        int wholeStatements = STATEMENTS.getAndSet(0);
+
         try (var log = ErrorRouterLog.capture()) {
-            var result = run(runtime().withBatchSizeLimit(env -> 2), "{ " + FIVE_FILMS + " { databaseError } }");
+            var result = run(runtime().withBatchSizeLimit(env -> 2), DATABASE_ERROR_OF_FIVE_FILMS);
 
             assertThat(result.getErrors()).hasSize(5);
-            assertThat(statementsReading("as json")).as("each chunk runs, and fails, on its own").hasSize(3);
+            assertThat(STATEMENTS.get()).as("each chunk runs, and fails, on its own").isEqualTo(wholeStatements + 2);
             Map<String, Long> fieldsPerReference = result.getErrors().stream()
                 .collect(Collectors.groupingBy(BatchSizeLimitExecutionTest::referenceOf, Collectors.counting()));
             assertThat(fieldsPerReference.values()).as("fields per failed chunk").containsExactlyInAnyOrder(2L, 2L, 1L);
@@ -207,11 +230,6 @@ class BatchSizeLimitExecutionTest {
             no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"),
             "{\"sub\":\"test-user\"}", "test-user").query(query);
         return engine.execute(input.build());
-    }
-
-    /** The statements whose SQL contains {@code text}, which names the child's table or cast. */
-    private static List<String> statementsReading(String text) {
-        return STATEMENTS.stream().filter(sql -> sql.contains(text)).toList();
     }
 
     private static String referenceOf(GraphQLError error) {

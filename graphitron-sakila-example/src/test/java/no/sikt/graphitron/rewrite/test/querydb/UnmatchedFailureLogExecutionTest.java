@@ -69,7 +69,6 @@ class UnmatchedFailureLogExecutionTest {
             assertThat(result.getErrors()).extracting(error -> error.getPath().get(2)).containsOnly("durabilityError");
             String reference = theOneReference(result.getErrors());
 
-            assertThat(log.mentioning(reference)).as("every record about the failure").hasSize(1);
             assertThat(log.errorsMentioning(reference)).singleElement().satisfies(record -> {
                 assertThat(record.getMessage()).startsWith("Unmatched exception in fetcher; correlation id = ");
                 // The plain exception keeps its stack trace: the record carries the throwable as the
@@ -118,7 +117,7 @@ class UnmatchedFailureLogExecutionTest {
                 assertThat(call.thrown()).hasRootCauseMessage("durability-test fixture: synthetic mid-traversal error");
                 assertThat(call.path()).matches("/filmById\\[[0-2]]/durabilityError");
             });
-            assertThat(log.mentioning(reference)).as("the configured log replaces Graphitron's line").isEmpty();
+            assertThat(log.errorsMentioning(reference)).as("the configured log replaces Graphitron's line").isEmpty();
         }
     }
 

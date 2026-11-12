@@ -129,7 +129,7 @@ class UnifiedEmissionPinsTest {
         // A loader built anywhere else would be built without the request's options, and so
         // without the consumer's batch size limit: naming DataLoaderFactory is the tell, in
         // generators/ or in any other package that emits.
-        Pattern factoryName = Pattern.compile("\"DataLoaderFactory\"|\\.new(Mapped)?DataLoader\\(");
+        Pattern factoryName = Pattern.compile("\\bDataLoaderFactory\\b|\\.new(Mapped)?DataLoader\\(");
         var namers = new java.util.TreeSet<String>();
         try (var stream = Files.walk(MAIN_SOURCES)) {
             stream.filter(p -> p.getFileName().toString().endsWith(".java"))

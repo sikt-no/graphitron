@@ -142,9 +142,10 @@ public final class DataLoaderFetcherEmitter {
             boolean keyFirst) {
 
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, loaderValueType);
-        CodeBlock construction = registration.container() == LoaderRegistration.Container.MAPPED_SET
-            ? LoaderConstruction.mapped(batchLoaderLambda, "env", errorRouter)
-            : LoaderConstruction.positional(batchLoaderLambda, "env", errorRouter);
+        CodeBlock construction = switch (registration.container()) {
+            case MAPPED_SET -> LoaderConstruction.mapped(batchLoaderLambda, "env", errorRouter);
+            case POSITIONAL_LIST -> LoaderConstruction.positional(batchLoaderLambda, "env", errorRouter);
+        };
 
         // The key extraction runs synchronously, before the async .exceptionally tail exists, so
         // a throw out of it (e.g. a jOOQ into(...)/accessor failure) would escape

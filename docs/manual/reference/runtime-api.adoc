@@ -185,7 +185,7 @@ Three interfaces are emitted unconditionally into `<outputPackage>.schema`, next
 | `FetcherErrorLog`
 | `withFetcherErrorLog(log)`
 | How an exception no `@error` handler claims is logged (`unmatched`), and whether one a handler caught is logged (`matched`). In a `<tenantColumn>` build, `tenantFailed` receives a tenant that failed in a fanned-out field.
-| An unclaimed exception is logged once per request at ERROR, however many fields it failed: a one-line summary when it came from the database driver (the full exception at DEBUG), its stack trace otherwise. A caught exception is not logged.
+| An unclaimed exception is logged once per request at ERROR, however many fields it failed: a one-line summary when it came from the database driver (the full exception at DEBUG), its stack trace otherwise. A tenant that fails in a fanned-out field is logged the same way, once per failed tenant. A caught exception is not logged.
 
 | `FetcherErrorResponse`
 | `withFetcherErrorResponse(response)`
