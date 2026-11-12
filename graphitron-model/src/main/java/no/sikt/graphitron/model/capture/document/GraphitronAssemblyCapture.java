@@ -181,7 +181,7 @@ public final class GraphitronAssemblyCapture {
         new AnchorStage("entry-defects", EntryDefects.class, (dsl, graph, readAt) -> {
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
             EntryDefectClaims.derive(dsl, graph, readAt);
-            EntryDefectMembers.derive(dsl, graph, readAt);
+            EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.GRAPHITRON);
             EntryDefectKeyColumns.derive(dsl, graph, readAt);
             EntryDefectTables.derive(dsl, graph, readAt);
             ArgMappingPairDefects.derive(dsl, graph);

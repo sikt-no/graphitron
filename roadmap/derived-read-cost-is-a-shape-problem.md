@@ -804,13 +804,6 @@ static method needs no holder.
       resolution from `sql_column_spelling`; reading what `graphitron_occurrence_column` leaves
       unbound, as `BuildQuery` does, they judge the binding the emitter writes. `COLUMN_AMBIGUOUS` on
       a record has no pinning case yet.
-    * **The node-id slot defects leave the gatherer's last rule with the call-parameter defects**
-      `open`, E's, off the critical path. The slot arm, `NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT` among its
-      codes, judges the decode shapes `occurrence-builds` writes, but stays in
-      `graphitron_entry_defect_rule`: `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT` is also
-      `graphitron_occurrence_call_parameter_defect`'s, and a code has one owning stage. Moving the
-      call-parameter defects to the stage that writes the call parameters takes the slot arm with
-      them.
     * **A shared input built into several classes names which in its defect** `open`, off the
       critical path. A build defect's detail is the least class or member where an input is built
       into several, so which class and occurrence failed is lost; a detail relation, as the

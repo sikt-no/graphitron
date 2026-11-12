@@ -74,7 +74,10 @@ stage whose facts it judges, and an existing one leaves with its family. `occurr
 `occurrence-depth-defects`, `outbox` and `entity-key-alternatives` write their own; the
 `entry-defects` stage, `EntryDefects` itself as the graphitron anchor phase's last step, owns every
 graphitron code no earlier stage writes yet, from `graphitron_entry_defect_rule`. A stage takes its
-codes by writing them and moving their `owner_stage`.
+codes by writing them and moving their `owner_stage`, and the members a per-member defect names go
+with it: `occurrence-builds` writes the node-id slot and container defects with the members a
+polymorphic id's names, from `graphitron_occurrence_build_entry_defect_member_rule`, and
+`entry-defects` the `@discriminate`'s, from `graphitron_entry_defect_member_rule`.
 
 `DefectOwnerGateTest` holds this together: every code names a stage of a gatherer, a stage owns
 exactly the codes it writes, every stage's rule view emits only that stage's codes and its gatherer
