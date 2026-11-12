@@ -12308,48 +12308,6 @@ COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE, codes of graphitron_defect_type';
 
--- A parameter a written pair hands one key column of a node id, of a type that column is not. Kept
--- apart from graphitron_occurrence_call_parameter_defect because the two are reported by different
--- stages: the fills no or two fills reach by occurrence-depth-defects, this one by entry-defects.
-CREATE VIEW graphitron_occurrence_call_parameter_key_column_defect
-  (graph_name, coordinate, call, call_kind, position, parameter_name, detail) AS
-SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
-       'key column ' || c.column_name || ' is ' || c.binding_type || ', and the parameter it binds to is declared '
-         || p.parameter_type || ': Declare it ' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '')
-  FROM graphitron_occurrence_call_parameter cp
-  JOIN graphitron_occurrence_call_parameter_pair pp
-    ON pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate AND pp.call = cp.call
-   AND pp.position = cp.position
-  JOIN graphitron_argmapping_landing_key_column kc
-    ON kc.graph_name = pp.graph_name AND kc.coordinate = pp.pair_coordinate
-   AND kc.directive_name = pp.directive_name AND kc.ordinal = pp.ordinal AND kc.owner = pp.owner
-   AND kc.parameter_name = pp.parameter_name AND kc.call_coordinate = pp.coordinate
-  JOIN graphitron_occurrence_node_id n
-    ON n.graph_name = kc.graph_name AND n.coordinate = kc.landing_coordinate AND n.bound = kc.bound
-   AND n.position = kc.position
-  JOIN sql_column c
-    ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
-   AND c.table_name = n.table_name AND c.column_name = n.column_name
-  JOIN graphitron_occurrence_call_method m
-    ON m.graph_name = cp.graph_name AND m.coordinate = cp.coordinate AND m.call = cp.call
-  JOIN code_method_parameter p
-    ON p.source_name = m.method_source_name AND p.class_name = m.method_class_name
-   AND p.method_name = m.method_name AND p.descriptor = m.method_descriptor AND p.position = cp.position
-  JOIN graphitron_occurrence lo ON lo.graph_name = kc.graph_name AND lo.coordinate = kc.landing_coordinate
-  LEFT JOIN graphitron_argument la ON la.graph_name = lo.graph_name AND la.coordinate = lo.element_coordinate
-  LEFT JOIN graphitron_field lf ON lf.graph_name = lo.graph_name AND lf.coordinate = lo.element_coordinate
- WHERE p.parameter_type <> CASE WHEN COALESCE(la.is_list, lf.is_list) = TRUE
-                                THEN 'java.util.List<' || c.binding_type || '>'
-                                ELSE c.binding_type END;
-COMMENT ON VIEW graphitron_occurrence_call_parameter_key_column_defect IS 'A parameter of a call a node id''s key column of another type fills: one row per occurrence, call and parameter. For example Query.languagesByPrimitive''s condition taking languageId in an int, a type the language_id column its pair projects is not, is one row, its detail naming both types.';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.coordinate IS 'the occurrence making the call';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.call IS 'which of its calls, as graphitron_occurrence_call spells it';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.call_kind IS 'SERVICE or CONDITION, which directive wrote the call and so where the defect is reported';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.position IS 'the parameter''s position';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.parameter_name IS 'the parameter''s name, what a message names';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_key_column_defect.detail IS 'the key column, its type and the parameter''s declared type, what the message adds';
-
 -- Where a call's parameter defect is reported, and what it is about: the reference the directive
 -- that wrote the call names its method by, a @service's or a @condition's, with the occurrence, the
 -- call and the parameter under it, so one written directive whose parameter is unfilled in several
@@ -12622,8 +12580,9 @@ COMMENT ON VIEW graphitron_occurrence_node_id_slot_projection_rule IS 'The key c
 -- key columns in key order, or the one key column's value. A landing nothing fits has no row.
 CREATE VIEW graphitron_occurrence_node_id_shape_rule
   (graph_name, coordinate, slot, bound, decode_shape) AS
--- Each parameter a @service hands an argument's id to, against each node table the id binds. One
--- key column a pair projects is that column's value. The whole key lands only on its own record, a
+-- Each parameter a @service hands an argument's id to, and each a pair projects a key column into
+-- under any call, against each node table the id binds. One key column a pair projects is that
+-- column's value. The whole key lands only on its own record, a
 -- record supertype for an id of several node types, or a jOOQ tuple whose degree is the key's and
 -- whose type arguments are its columns' types in key order.
 SELECT graph_name, coordinate, slot, bound, decode_shape
@@ -12678,8 +12637,8 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
             ON pc.source_name = kp.table_source_name AND pc.table_schema = kp.table_schema
            AND pc.table_name = kp.table_name AND pc.column_name = kp.column_name
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
-         WHERE o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE' AND s.landing_class IS NOT NULL
-           AND s.slot_shape <> 'MISMATCH') shaped
+         WHERE s.landing_class IS NOT NULL AND s.slot_shape <> 'MISMATCH'
+           AND (pj.bound IS NOT NULL OR o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE')) shaped
  WHERE decode_shape IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id lands at a place it is handed to, where it fits: one row per slot and node table, in the shape graphitron_occurrence_node_id_shape stores. For example Query.filmByTuple(key:) lands on a Record1<Integer> parameter as a tuple of the key''s one column, RECORD_N, and a pair projecting film_id into an Integer parameter lands as that column''s value, KEY_VALUE.';
 
@@ -14859,18 +14818,39 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                          WHERE n2.graph_name = m2.graph_name AND n2.coordinate = m2.coordinate))
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
--- A @service's or a @condition's method whose parameter a node id's key column of another type
--- fills, under some occurrence of the call, at the reference: once per reference, the parameters
--- being graphitron_occurrence_call_parameter_key_column_defect's under it.
-SELECT d.graph_name, site.source_name, site.source_line, site.source_column,
-       'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', MIN(d.detail)
-  FROM graphitron_occurrence_call_parameter_key_column_defect d
-  JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
+-- A @service's or a @condition's method whose parameter a pair projects a node id's key column into,
+-- where no decode shape fits: the parameter is not of the column's type, or not a List of it for a
+-- list of ids. Under some occurrence of the call, at the reference: once per reference, the
+-- parameters being graphitron_occurrence_node_id_slot_projection's under it.
+SELECT pj.graph_name, site.source_name, site.source_line, site.source_column,
+       'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
+       MIN('key column ' || c.column_name || ' is ' || c.binding_type
+           || ', and the parameter it binds to is declared ' || s.declared_type || ': Declare it '
+           || REGEXP_REPLACE(c.binding_type, '^.*[.]', ''))
+  FROM graphitron_occurrence_node_id_slot_projection pj
+  JOIN graphitron_occurrence_node_id_slot_parameter sp
+    ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
+   AND sp.position = pj.position
+  JOIN graphitron_occurrence_node_id_slot s
+    ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+   AND cp.position = sp.position
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = pj.graph_name AND n.coordinate = pj.coordinate AND n.bound = pj.bound
+   AND n.position = pj.key_position
+  JOIN sql_column c
+    ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
+   AND c.table_name = n.table_name AND c.column_name = n.column_name
+  JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
   JOIN graphitron_code_reference_site site
     ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
-   AND ((d.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
-        OR (d.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
- GROUP BY d.graph_name, site.source_name, site.source_line, site.source_column
+   AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
+        OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                    WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
+                      AND d.slot = s.slot AND d.bound = pj.bound)
+ GROUP BY pj.graph_name, site.source_name, site.source_line, site.source_column
 UNION ALL
 -- A single node's decoded id handed whole to a @service parameter that cannot take it, at the
 -- @nodeId: a parameter whose shape is not the argument's, or a landing no decode shape fits, which
@@ -20989,10 +20969,6 @@ INSERT INTO meta_relation VALUES
    'A parameter of a call that no fill or two fills reach: one row per occurrence, call, parameter and code.',
    'For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED, whether a @service or a @condition names it.',
    'The members of the one entry defect a @service reference carries per code, joinable rather than folded into the defect''s detail.'),
-  ('graphitron_occurrence_call_parameter_key_column_defect', 'graph-occurrence-call-parameter-defect', 'graphitron',
-   'A parameter of a call a node id''s key column of another type fills: one row per occurrence, call and parameter.',
-   'For example Query.languagesByPrimitive''s condition taking languageId in an int, a type the language_id column its pair projects is not, is one row, its detail naming both types.',
-   'The members of the one NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT a @service or @condition reference carries, joinable rather than folded into the defect''s detail. Apart from graphitron_occurrence_call_parameter_defect because entry-defects reports it, and occurrence-depth-defects the fills no or two fills reach.'),
   ('graphitron_occurrence_voucher_rule', 'graph-occurrence-binding', 'graphitron',
    'One row the occurrence voucher rule computes, in the shape graphitron_occurrence_binding stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding as VOUCHER bindings, which is the name every reader spells.',

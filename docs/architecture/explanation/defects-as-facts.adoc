@@ -113,10 +113,10 @@ column, several columns and none named, a name matching none, or a node id namin
 union, is the written `argMapping` pair's, reported where the pair is written whichever directive
 wrote it. A parameter whose type is not the column's is the call's: `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`,
 one rule whether the parameter takes the whole decoded key or one projected column (Alf, 2026-11-10).
-Its parameters are `graphitron_occurrence_call_parameter_key_column_defect`'s rows, apart from the
-three parameter codes because a different stage reports it: those three go to `occurrence-depth-defects`,
-straight after the depth loop that settles every fill, and this one stays in `entry-defects` until it is
-one rule over the node-id slots and their decode shapes.
+The three parameter codes go to `occurrence-depth-defects`, straight after the depth loop that
+settles every fill. This one is `occurrence-builds'`, one rule over the node-id slots and their decode
+shapes: a key column a pair projects into a parameter where no decode shape fits, its parameters
+`graphitron_occurrence_node_id_slot_projection`'s rows.
 
 Three rulings narrow that rule (Alf, 2026-11-12). A whole decoded key lands only on a record or a
 tuple: the node's own record, a record supertype for an id of several node types, or a `RecordN` or
