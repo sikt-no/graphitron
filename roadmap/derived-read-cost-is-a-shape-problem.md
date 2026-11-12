@@ -627,9 +627,6 @@ static method needs no holder.
     Every reason closes before the flip, which keeps no fallback to the classified model per
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
-    * **A lookup's key writes no filter at any depth** `open`. An input field under a `@lookupKey`
-      argument is the key, read off the occurrence's stored `argument_coordinate` rather than its own
-      element, so `filmActorsByKey` leaves `THROUGH_LIST` for `NOTHING`.
     * **A filter read through a list of input objects is emitted from the store** `open`.
       `graphitron_occurrence_list_element(graph, coordinate, list_coordinate)`, one row per input-field
       occurrence and each list occurrence above it it is read once per element of, written by a stage

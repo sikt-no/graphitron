@@ -223,10 +223,14 @@ public final class ConditionQuery {
         var landingSchema = coalesce(jp.TARGET_SCHEMA, pn.LANDING_SCHEMA);
         var landingTable = coalesce(jp.TARGET_TABLE, pn.LANDING_TABLE);
         var nodeId = field(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE))));
+        // A term is a lookup's key where the argument it is read from carries @lookupKey: the argument
+        // itself, or every input field under it.
+        var ao = GRAPHITRON_OCCURRENCE.as("ao");
         var terms = multiset(
             select(o.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeId,
-                field(exists(selectOne().from(d).where(d.GRAPH_NAME.eq(o.GRAPH_NAME),
-                    d.COORDINATE.eq(o.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey")))),
+                field(exists(selectOne().from(ao).join(d).on(d.GRAPH_NAME.eq(ao.GRAPH_NAME),
+                        d.COORDINATE.eq(ao.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey"))
+                    .where(ao.GRAPH_NAME.eq(o.GRAPH_NAME), ao.COORDINATE.eq(o.ARGUMENT_COORDINATE)))),
                 p.ORIGIN, oc.TABLE_NAME, pn.TARGET_TYPE, lt.RECORD_CLASS_FQN)
                 .from(o)
                 .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))

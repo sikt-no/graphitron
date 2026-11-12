@@ -193,12 +193,12 @@ class EmissionCensusTest {
                 "Film.filmDetails.actorsByLookup actor", "Film.info.castByKey actor",
                 "Film.inlineBundle.actorsByKey actor", "Film.inlineBundle.actorsByKeyViaJunctionCondition actor",
                 "Query.categoryById category", "Query.customerById customer", "Query.filmActorByNodeId film_actor",
-                "Query.filmById film", "Query.filmDetailsBatch.actorsByLookup actor",
+                "Query.filmActorsByKey film_actor", "Query.filmById film", "Query.filmDetailsBatch.actorsByLookup actor",
                 "Query.filmsByNodeIdArgWithLookupKey film", "Query.inventoryById inventory",
                 "Query.languageByKey language", "Query.languageBySingleKey language",
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
-            .containsEntry("THROUGH_LIST", List.of("Query.customersByAddresses customer", "Query.filmActorsByKey film_actor",
+            .containsEntry("THROUGH_LIST", List.of("Query.customersByAddresses customer",
                 "Query.filmActorsByPairList film_actor", "Query.filmActorsByPairs film_actor",
                 "Query.filmsByCastNames film", "Query.filmsByLanguagePairs film",
                 "Query.filmsByOptionalLanguages film", "Query.filmsByOriginalLanguages film"))
