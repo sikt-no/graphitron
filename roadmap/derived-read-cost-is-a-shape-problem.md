@@ -252,6 +252,17 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
   does not compose, a `@service` or an index-backed connection, a `totalCount` or facets raises a
   defect rather than generating nothing. No connection producer today is one: every page is built
   by graphitron's own statements, so this lands with the first that is not.
+* **A type a statement lands on is stored** `open`. `graphitron_type_landing`, one row per type a
+  statement graphitron runs lands on, `via` `SELF` (bound by a resolved or written `@table`) or
+  `PARTICIPANT` (a union or interface with a bound member), and `graphitron_type_landing_table`, one
+  row per landing type and table it lands on through which type; a written `@table` that resolves
+  nowhere lands with no table row, its own defect. Written by a graphitron stage after the table
+  types and type members, marked and swept, a rule view beside each (Alf, 2026-11-12: stored; the
+  model is a proposal awaiting his reading). Its readers move one at a time with a row-for-row
+  agreement: `graphitron_producer_rule`'s `landing` and the reader rule's arm first, then the entry
+  defect arm and `graphitron_occurrence_producer_result_rule`, then the field scope's
+  `PARTICIPANT_TABLE`. F's "A polymorphic type's members are stored" migrates the same readers off
+  `graphql_poly_member`, so F is told before the first move.
 * **A connection's producer returns the connection, and its fields read it** `open`.
   A connection's producer returns an instance of a class graphitron generates for the connection
   type, holding the page and closures over how the result set was produced, and each field of the
@@ -308,14 +319,12 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     refused as `FIELD_WITHOUT_FETCHER` wherever graphitron would fetch it (Alf, 2026-11-12): the
     reader rule no longer reads it as `NESTED` and the producer rule no longer splits it, and its
     defensive branches are generator invariants. The page a tenant-routed batched fetcher answers
-    for a parent whose key cannot match counts 0 (Alf, 2026-11-12). Open for Alf and Filip: which
-    reference page states `FIELD_WITHOUT_FETCHER`; `asConnection.adoc`, `splitQuery.adoc` and
-    `polymorphic-types.adoc` state the case, and a glossary entry under "Named structural errors"
-    is the candidate. "A type a statement lands on" is now spelled twice, by
-    `graphitron_producer_rule`'s `landing` and the reader rule's polymorphic arm (which reads
-    `graphitron_type_member`, the producer rule still `graphql_poly_member`): a type-grain fact to
-    store once, now or inside F's "A polymorphic type's members are stored", Alf's and Filip's call,
-    with F told.
+    for a parent whose key cannot match counts 0 (Alf, 2026-11-12). `FIELD_WITHOUT_FETCHER` is
+    stated in `diagnostics-glossary.adoc` under "Named structural errors" (Alf, 2026-11-12).
+    "A type a statement lands on" is spelled by `graphitron_producer_rule`'s `landing`, the reader
+    rule's polymorphic arm, an `graphitron_entry_defect_rule` arm and
+    `graphitron_occurrence_producer_result_rule`; it is stored (Alf, 2026-11-12), see "A type a
+    statement lands on is stored".
     "A connection is recognised by the specification's shape" states the positions before the
     classes.
   * **Each connection type and edge type has a generated class** `blocked`, on "A connection is recognised by the specification's shape".
