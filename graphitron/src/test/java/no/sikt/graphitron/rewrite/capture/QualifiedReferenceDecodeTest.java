@@ -15,7 +15,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -155,9 +155,9 @@ class QualifiedReferenceDecodeTest {
     void aRoutineAndAMutationPartitionByTheSameRule(@TempDir Path tmp) {
         try (var store = CapturedStore.of(tmp, FIXTURE)) {
             assertThat(halves(store.dsl()
-                .select(GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAMESPACE_PART,
-                        GRAPHITRON_ROUTINE_ENTRY.ROUTINE_REF_NAME_PART)
-                .from(GRAPHITRON_ROUTINE_ENTRY).fetchOne()))
+                .select(GRAPHITRON_AST_ROUTINE_ENTRY.ROUTINE_REF_NAMESPACE_PART,
+                        GRAPHITRON_AST_ROUTINE_ENTRY.ROUTINE_REF_NAME_PART)
+                .from(GRAPHITRON_AST_ROUTINE_ENTRY).fetchOne()))
                 .containsExactly("public", "films_for_actor");
             assertThat(halves(store.dsl()
                 .select(GRAPHITRON_AST_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART,

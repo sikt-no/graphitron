@@ -60,7 +60,6 @@ class RelationRegistrationGateTest {
             // keyed one fact five ways; both producers now write the coordinate instead.
             "graphql_directive_application", "graphql_directive_application_arg",
             "graphitron_field_reference_entry",
-            "graphitron_routine_entry",
             // The spelling rides the arm of the sites that spell it, written in the same walk as
             // the per-site row it sits beside, so a coordinate the walk claims contributes to it.
             "graphitron_spelled_reference_entry",

@@ -3,7 +3,7 @@ package no.sikt.graphitron.emit;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.tables.GraphitronFieldTarget;
 import no.sikt.graphitron.model.tables.GraphitronOccurrenceProducerRoutine;
-import no.sikt.graphitron.model.tables.GraphitronRoutineEntry;
+import no.sikt.graphitron.model.tables.GraphitronProducerRoutine;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Records;
@@ -34,8 +34,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -48,7 +48,6 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
@@ -455,8 +454,8 @@ public final class RoutineWriteQuery {
      * <p>The producer's routine, its result, the call surface the generated model publishes, the
      * routine's result table and its constants class are inner joins: an occurrence missing one
      * states no call to render. The lift table is a left join because only a records result has one.
-     * The arguments are read from the first {@code @routine} application, which is the one the
-     * producer calls.
+     * The arguments are read from the {@code @routine} application the producer calls, as
+     * {@code graphitron_producer_routine} records it.
      */
     private static List<Occurrence> occurrences(StoreHandle store) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -466,8 +465,7 @@ public final class RoutineWriteQuery {
         var ft = GRAPHITRON_FIELD_TARGET;
         var pr = GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
         var res = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
-        var re = GRAPHITRON_ROUTINE_ENTRY;
-        var re2 = GRAPHITRON_ROUTINE_ENTRY.as("first_routine");
+        var called = GRAPHITRON_PRODUCER_ROUTINE;
         var sr = SQL_ROUTINE;
         var rt = SQL_TABLE.as("routine_result");
         var rs = SQL_SCHEMA.as("routine_schema");
@@ -489,7 +487,7 @@ public final class RoutineWriteQuery {
                 b.KIND.eq("NODE_ID"))
             .where(child.GRAPH_NAME.eq(p.GRAPH_NAME), child.PARENT_COORDINATE.eq(p.COORDINATE),
                 child.KIND.eq("FIELD"))));
-        var arguments = arguments(re, pr);
+        var arguments = arguments(called, pr);
         var hops = hops(p.GRAPH_NAME, f.FIELD_NAME, ft, p.COORDINATE);
         var reReads = reReads(p.GRAPH_NAME, p.COORDINATE, pr);
         return store.dsl()
@@ -508,10 +506,8 @@ public final class RoutineWriteQuery {
                 ft.FIELD_NAME.eq(f.FIELD_NAME))
             .join(pr).on(pr.GRAPH_NAME.eq(p.GRAPH_NAME), pr.COORDINATE.eq(p.COORDINATE))
             .join(res).on(res.GRAPH_NAME.eq(p.GRAPH_NAME), res.COORDINATE.eq(p.COORDINATE))
-            .join(re).on(re.GRAPH_NAME.eq(f.GRAPH_NAME), re.TYPE_NAME.eq(f.TYPE_NAME),
-                re.FIELD_NAME.eq(f.FIELD_NAME),
-                re.ORDINAL.eq(select(min(re2.ORDINAL)).from(re2).where(re2.GRAPH_NAME.eq(re.GRAPH_NAME),
-                    re2.TYPE_NAME.eq(re.TYPE_NAME), re2.FIELD_NAME.eq(re.FIELD_NAME))))
+            .join(called).on(called.GRAPH_NAME.eq(f.GRAPH_NAME), called.TYPE_NAME.eq(f.TYPE_NAME),
+                called.FIELD_NAME.eq(f.FIELD_NAME))
             .join(sr).on(sr.SOURCE_NAME.eq(pr.ROUTINE_SOURCE_NAME),
                 sr.TABLE_SCHEMA.eq(pr.TABLE_SCHEMA), sr.ROUTINE_NAME.eq(pr.ROUTINE_NAME),
                 sr.ROUTINES_CLASS_FQN.isNotNull())
@@ -542,24 +538,25 @@ public final class RoutineWriteQuery {
      * did not spell. A parameter naming no argument either way is a validator rejection before this
      * runs.
      */
-    private static Field<List<Argument>> arguments(GraphitronRoutineEntry re,
+    private static Field<List<Argument>> arguments(GraphitronProducerRoutine called,
             GraphitronOccurrenceProducerRoutine pr) {
         var p = SQL_ROUTINE_PARAMETER;
         var m = GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
         var ms = GRAPHITRON_ARGMAPPING_SITE;
-        // A @routine mapping sits on a field, so the site's coordinate is that field's own.
-        var mc = GRAPHQL_FIELD_ELEMENT;
+        // The called application, found at its position; its mapping is the site written on it.
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
         return multiset(
             select(p.JOOQ_NAME, p.BINDING_TYPE,
                 coalesce(
                     field(select(m.BOUND_TO)
-                        .from(m)
-                        .join(ms).on(ms.GRAPH_NAME.eq(m.GRAPH_NAME), ms.SOURCE_NAME.eq(m.SOURCE_NAME),
-                            ms.SOURCE_LINE.eq(m.SOURCE_LINE), ms.SOURCE_COLUMN.eq(m.SOURCE_COLUMN))
-                        .join(mc).on(mc.GRAPH_NAME.eq(ms.GRAPH_NAME), mc.COORDINATE.eq(ms.COORDINATE))
-                        .where(m.GRAPH_NAME.eq(re.GRAPH_NAME), ms.DIRECTIVE_NAME.eq("routine"),
-                            mc.TYPE_NAME.eq(re.TYPE_NAME),
-                            mc.FIELD_NAME.eq(re.FIELD_NAME), ms.ORDINAL.eq(re.ORDINAL),
+                        .from(a)
+                        .join(ms).on(ms.GRAPH_NAME.eq(a.GRAPH_NAME), ms.COORDINATE.eq(a.COORDINATE),
+                            ms.DIRECTIVE_NAME.eq(a.DIRECTIVE_NAME), ms.ORDINAL.eq(a.ORDINAL))
+                        .join(m).on(m.GRAPH_NAME.eq(ms.GRAPH_NAME), m.SOURCE_NAME.eq(ms.SOURCE_NAME),
+                            m.SOURCE_LINE.eq(ms.SOURCE_LINE), m.SOURCE_COLUMN.eq(ms.SOURCE_COLUMN))
+                        .where(a.GRAPH_NAME.eq(called.GRAPH_NAME), a.SOURCE_NAME.eq(called.SOURCE_NAME),
+                            a.SOURCE_LINE.eq(called.SOURCE_LINE), a.SOURCE_COLUMN.eq(called.SOURCE_COLUMN),
+                            a.DIRECTIVE_NAME.eq("routine"),
                             m.PARAM_NAME.eq(p.JOOQ_NAME))
                         .orderBy(m.POSITION)
                         .limit(1)),

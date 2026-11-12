@@ -1,19 +1,13 @@
 package no.sikt.graphitron.model.capture.document;
 
-import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
-import org.jooq.Field;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
@@ -26,11 +20,7 @@ import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.condition;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.name;
-import static org.jooq.impl.DSL.partitionBy;
-import static org.jooq.impl.DSL.rowNumber;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -48,12 +38,6 @@ import static org.jooq.impl.DSL.val;
  * should not have to know which of the two marked it, and these relations are what save it from
  * knowing: told apart by which relation a row is in rather than by a column, because no site
  * admits both.
- *
- * <h2>The field site, where the key is an ordinal</h2>
- *
- * <p>The relations below the deprecation ones are keyed by the field a repeatable directive was
- * written on and its place among that field's applications, where the entry stating the same fact
- * is keyed by the position it was written at.
  *
  * <p>The three deprecation relations differ in how far the resolution reaches. The
  * directive-argument one is the one thing the {@code graphql_} anchors deliberately do not offer:
@@ -85,15 +69,13 @@ public final class GraphitronAnchor {
         deprecatedDirectives(dsl, graph, touchedAt);
         deprecatedDirectiveArguments(dsl, graph, touchedAt);
         deprecatedInputFields(dsl, graph, touchedAt);
-        routines(dsl, graph, touchedAt);
         // Last, and children before parents within it, for the reason every delete here has that
         // order: a sweep that took a parent first would meet its own child's foreign key.
         sweep(dsl, graph, touchedAt);
     }
 
     /** What the sweep deletes from, children before parents, listed rather than found by prefix. */
-    private static final List<Table<?>> TABLES_TO_SWEEP =
-        List.of(GRAPHITRON_DEPRECATED, GRAPHITRON_ROUTINE_ENTRY);
+    private static final List<Table<?>> TABLES_TO_SWEEP = List.of(GRAPHITRON_DEPRECATED);
 
     /**
      * A directive whose description carries the token. Read off {@code graphql_directive} rather
@@ -217,125 +199,4 @@ public final class GraphitronAnchor {
                 .execute();
         }
     }
-
-    // ------------------------------------------------------------------ the field site's decode
-
-    /**
-     * The type a numbered application was written on, carried up out of the numbering below. Named
-     * apart from the entry relations' own columns so a join above the numbering is unambiguous.
-     */
-    private static final Field<String> TYPE_NAME = field(name("type_name"), String.class);
-
-    /** The file the application is in. */
-    private static final Field<String> SITE_NAME = field(name("site_name"), String.class);
-
-    /** Where the application itself was written, which is the entry relations' key. */
-    private static final Field<Integer> SITE_LINE = field(name("site_line"), Integer.class);
-
-    private static final Field<Integer> SITE_COLUMN = field(name("site_column"), Integer.class);
-
-    /**
-     * Every {@code @routine} application at its coordinate, numbered in written order.
-     *
-     * <p>Shared by the anchor and the pair child below it rather than spelled twice, because the
-     * ordinal is the key both of them land on and a second spelling is how the two would come to
-     * disagree about which application a pair belongs to.
-     */
-    private static Table<?> routineApplications(DSLContext dsl, String graph) {
-        return applicationsOf(dsl, graph, "routine");
-    }
-
-    /**
-     * Every application of the repeatable field directive {@code directive} at its coordinate,
-     * numbered in written order: the numbering {@link #routineApplications} is, for any directive
-     * whose anchor is keyed by the ordinal.
-     */
-    private static Table<?> applicationsOf(DSLContext dsl, String graph, String directive) {
-        var fd = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-        var ix = GRAPHQL_AST_ENTRY;
-        var ee = GRAPHQL_AST_ELEMENT_ENTRY;
-        var ef = GRAPHQL_ELEMENT_FIELD;
-        return dsl
-            .select(ef.TYPE_NAME.as(TYPE_NAME), ef.FIELD_NAME.as(FIELD_NAME),
-                fd.SOURCE_NAME.as(SITE_NAME), fd.SOURCE_LINE.as(SITE_LINE),
-                fd.SOURCE_COLUMN.as(SITE_COLUMN),
-                rowNumber().over(partitionBy(ef.TYPE_NAME, ef.FIELD_NAME)
-                    .orderBy(fd.SOURCE_LINE.asc(), fd.SOURCE_COLUMN.asc()))
-                    .minus(inline(1)).as(WRITTEN_AT))
-            .from(fd)
-            .join(ix).on(ix.GRAPH_NAME.eq(fd.GRAPH_NAME), ix.SOURCE_NAME.eq(fd.SOURCE_NAME),
-                ix.SOURCE_LINE.eq(fd.SOURCE_LINE), ix.SOURCE_COLUMN.eq(fd.SOURCE_COLUMN))
-            // The coordinate comes off the enclosing element's own entry rather than off a
-            // column on the index, which the supertype split moved: the index states the position
-            // and the element entry beside it states what is written there.
-            .join(ee).on(ee.GRAPH_NAME.eq(ix.GRAPH_NAME), ee.SOURCE_NAME.eq(ix.SOURCE_NAME),
-                ee.SOURCE_LINE.eq(ix.PARENT_LINE), ee.SOURCE_COLUMN.eq(ix.PARENT_COLUMN))
-            .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
-            .where(fd.GRAPH_NAME.eq(graph))
-            .and(fd.NAME.eq(directive))
-            .and(ix.ENTRY_KIND.eq(EntryKind.FIELD_DIRECTIVE))
-            .and(ef.ARGUMENT_NAME.isNull())
-            .asTable("applications");
-    }
-
-    /**
-     * Every {@code @routine} a field carries, numbered in the order they were written.
-     *
-     * <p>Not {@link #claimedOnField}, and the difference is the point rather than a preference. That
-     * helper ranks to pick one application per coordinate; this relation is keyed by the ordinal, so
-     * every application is a row and the rank <em>is</em> the ordinal. A numbering has to be right
-     * at every value where a choice only has to be right at one.
-     *
-     * <p>What it does not need is that helper's declaration join, which is there to order
-     * applications by the merge order of the declaration each was written in. A field coordinate is
-     * declared once, two declarations of one field being a duplicate-field error rather than an
-     * order to settle, so all of a field's applications sit in one definition in one file and their
-     * written positions already order them. The coordinate comes off the entry relations' own index
-     * instead.
-     *
-     * <p>Numbered over the applications and joined to the decode afterwards, which is what keeps the
-     * ordinals agreeing with the walk this replaces: {@code routine_ref} is NOT NULL, so an
-     * application naming nothing writes no row in either the decode or this relation, and it consumed its ordinal all
-     * the same. Ranking after the join would close that gap and renumber every application behind
-     * it.
-     */
-    private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var e = GRAPHITRON_AST_ROUTINE_ENTRY;
-        var t = GRAPHITRON_ROUTINE_ENTRY;
-        var applications = routineApplications(dsl, graph);
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.SOURCE_NAME,
-                t.SOURCE_LINE, t.SOURCE_COLUMN, t.ROUTINE_REF, t.ROUTINE_REF_NAMESPACE_PART,
-                t.ROUTINE_REF_NAME_PART, t.ARGMAPPING, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), applications.field(TYPE_NAME),
-                    applications.field(FIELD_NAME), applications.field(WRITTEN_AT),
-                    applications.field(SITE_NAME), applications.field(SITE_LINE),
-                    applications.field(SITE_COLUMN), e.ROUTINE_REF,
-                    e.ROUTINE_REF_NAMESPACE_PART, e.ROUTINE_REF_NAME_PART, e.ARGMAPPING,
-                    val(touchedAt, t.TOUCHED_AT))
-                .from(applications)
-                .join(e).on(e.GRAPH_NAME.eq(graph),
-                    e.SOURCE_NAME.eq(applications.field(SITE_NAME)),
-                    e.SOURCE_LINE.eq(applications.field(SITE_LINE)),
-                    e.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN))))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.ROUTINE_REF, excluded(t.ROUTINE_REF))
-            .set(t.ROUTINE_REF_NAMESPACE_PART, excluded(t.ROUTINE_REF_NAMESPACE_PART))
-            .set(t.ROUTINE_REF_NAME_PART, excluded(t.ROUTINE_REF_NAME_PART))
-            .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    // ------------------------------------------------------------------ the field site's decode
-
-    /** The field a claimed application was written on, beside {@link #TYPE_NAME}. */
-    private static final Field<String> FIELD_NAME = field(name("field_name"), String.class);
-
-    /** The position a list element was written at, carried up out of the ranking. */
-    private static final Field<Integer> WRITTEN_AT = field(name("written_at"), Integer.class);
 }

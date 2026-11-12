@@ -195,7 +195,7 @@ public final class SeededStore {
                WHERE a.directive_name = 'mutation' AND a.ordinal = 0 AND e.table_ref IS NOT NULL
               UNION
               SELECT graph_name, routine_ref, routine_ref_namespace_part, routine_ref_name_part
-                FROM graphitron_routine_entry) spellings
+                FROM graphitron_ast_routine_entry) spellings
             """);
         dsl.execute("DELETE FROM graphitron_connection");
         dsl.execute("DELETE FROM graphitron_edge");

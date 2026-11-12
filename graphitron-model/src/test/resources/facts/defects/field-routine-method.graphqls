@@ -16,7 +16,7 @@ type Query {
 extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_routine_entry WHERE field_name = 'films')
+      FROM graphql_directive_application WHERE directive_name = 'routine' AND coordinate = 'Query.films')
   """, rows: """
   table_schema, routine_name
   public,       films_for_actor
@@ -25,7 +25,7 @@ extend schema @expectEquals(relation: "graphitron_path_element_routine", where: 
 extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_routine_entry WHERE field_name = 'chained' AND ordinal = 0)
+      FROM graphql_directive_application WHERE directive_name = 'routine' AND coordinate = 'Query.chained' AND ordinal = 0)
   """, rows: """
   table_schema, routine_name
   public,       films_for_actor
@@ -34,7 +34,7 @@ extend schema @expectEquals(relation: "graphitron_path_element_routine", where: 
 extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_routine_entry WHERE field_name = 'chained' AND ordinal = 1)
+      FROM graphql_directive_application WHERE directive_name = 'routine' AND coordinate = 'Query.chained' AND ordinal = 1)
   """, rows: """
   table_schema, routine_name
   public,       rent_film
@@ -43,7 +43,7 @@ extend schema @expectEquals(relation: "graphitron_path_element_routine", where: 
 extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_routine_entry WHERE field_name = 'ambiguous')
+      FROM graphql_directive_application WHERE directive_name = 'routine' AND coordinate = 'Query.ambiguous')
   """, rows: """
   table_schema,  routine_name
   multischema_a, ms_ping
@@ -53,7 +53,7 @@ extend schema @expectEquals(relation: "graphitron_path_element_routine", where: 
 extend schema @expectEquals(relation: "graphitron_path_element_routine", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_routine_entry WHERE field_name = 'qualified')
+      FROM graphql_directive_application WHERE directive_name = 'routine' AND coordinate = 'Query.qualified')
   """, rows: """
   table_schema,  routine_name
   multischema_b, ms_ping
@@ -62,7 +62,7 @@ extend schema @expectEquals(relation: "graphitron_path_element_routine", where: 
 extend schema @assertEmpty(relation: "graphitron_path_element_routine", where: """
   (graph_name, source_name, source_line, source_column) IN (
     SELECT graph_name, source_name, source_line, source_column
-      FROM graphitron_routine_entry WHERE field_name IN ('missing', 'notCallable'))
+      FROM graphql_directive_application WHERE directive_name = 'routine' AND coordinate IN ('Query.missing', 'Query.notCallable'))
   """)
 
 # The two absences, told apart by the spelling: film names a catalog object, no_such_routine none.

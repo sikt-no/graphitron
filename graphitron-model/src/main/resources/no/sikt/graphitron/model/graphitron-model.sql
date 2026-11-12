@@ -3303,41 +3303,6 @@ COMMENT ON COLUMN graphitron_field_reference_entry.source_name IS 'the SDL file 
 COMMENT ON COLUMN graphitron_field_reference_entry.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_field_reference_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 
-CREATE TABLE graphitron_routine_entry (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
-  routine_ref    VARCHAR NOT NULL,
-  routine_ref_namespace_part VARCHAR,
-  routine_ref_name_part      VARCHAR,
-  argmapping    VARCHAR,
-  touched_at    TIMESTAMP NOT NULL,
-  routine_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_namespace_part)),
-  routine_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_name_part)),
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal),
-  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_routine_entry IS '@routine on a field: one row per application (repeatable). The table chain interleaves these with graphitron_field_reference_entry rows in written order.';
-COMMENT ON COLUMN graphitron_routine_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_routine_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_routine_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_routine_entry.ordinal IS 'capture-assigned position in document order';
-COMMENT ON COLUMN graphitron_routine_entry.source_name IS 'the SDL file the row was captured from';
-COMMENT ON COLUMN graphitron_routine_entry.source_line IS 'source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_routine_entry.source_column IS 'source column, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_routine_entry.routine_ref IS 'the routine name as written (may carry a schema qualifier)';
-COMMENT ON COLUMN graphitron_routine_entry.routine_ref_namespace_part IS 'left of routine_ref''s first period, NULL when no period appeared and the empty string when one appeared with nothing before it; for a routine name this namespace is the SQL schema in every dialect jOOQ models as one. Written by capture, because splitting on a period is a decode and decodes happen there';
-COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part IS 'right of routine_ref''s first period, or the whole value when none; the empty string when a period was written with nothing after it, which joins nothing and is meant to';
-COMMENT ON COLUMN graphitron_routine_entry.routine_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name, a routine result being a catalog table. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name, a routine result being a catalog table. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-COMMENT ON COLUMN graphitron_routine_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
-COMMENT ON COLUMN graphitron_routine_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
-
 -- @experimental_constructType has no relation, and unlike every other name in this section it
 -- is not a graphitron directive: its declaration in directives.graphqls is a bug (the census
 -- found no consumer anywhere; the declaration's only effect is that emission strips
@@ -4386,7 +4351,7 @@ CREATE TABLE graphitron_spelled_reference_entry (
 );
 CREATE INDEX graphitron_spelled_reference_entry_name_ix
   ON graphitron_spelled_reference_entry (graph_name, name_part_upper);
-COMMENT ON TABLE graphitron_spelled_reference_entry IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms graphitron_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator: the shared question has no per-site answer. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_routine_entry spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry relations instead of a registry. Nothing has been written to replace it yet.';
+COMMENT ON TABLE graphitron_spelled_reference_entry IS 'Every table or routine name this graph authors anywhere, once per distinct spelling: the fact underneath @table(name:), a @reference path element''s table, its argument-site and @referenceFor siblings, @mutation''s delete target and @routine(name:). Seven relations carry a spelling of this shape and none of them is the spelling; each is a site that wrote one, keyed by where it was written. Keyed by the spelling itself and by nothing else, on the terms graphitron_spelled_table already argues: the resolution does not vary by site, so a spelling written at five coordinates is one fact and one row here, and a reader asking what a name resolves to never has to say which directive wrote it. That is why this relation carries no site discriminator: the shared question has no per-site answer. Arrives already split, capture writing the namespace half and the name half beside the value, so a reader matches on stored folded columns rather than on a fold computed per candidate row. The namespace half is null on an unqualified spelling, which matches on its name half alone. Written by capture at the moment each site is read, deduplicated there rather than by a reader: the same spelling authored twice is one row, and the primary key is what says so. graphitron_ast_routine_entry spells its own site''s column routine_ref where the other six spell theirs table_ref; the two are the same fact and this relation is where that is settled, a name having only one spelling once there is a relation to hold it. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry relations instead of a registry. Nothing has been written to replace it yet.';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.spelling IS 'the name exactly as the author wrote it, qualifier and all; with the graph the whole key, one row per distinct spelling however many sites wrote it';
 COMMENT ON COLUMN graphitron_spelled_reference_entry.namespace_part IS 'the qualifier half of the spelling as written, null on an unqualified name; a null here is the author having written no qualifier and never a qualifier withheld';
@@ -15203,16 +15168,26 @@ COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the oc
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
-WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
-    FROM graphitron_routine_entry r
+-- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
+WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, fe.type_name, fe.field_name, r.coordinate, r.source_name, r.source_line,
+         r.source_column
+    FROM graphql_directive_application r
+    JOIN graphitron_ast_routine_entry re
+      ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+     AND re.source_line = r.source_line AND re.source_column = r.source_column
+    JOIN graphql_field_element fe
+      ON fe.graph_name = r.graph_name AND fe.coordinate = r.coordinate
     JOIN graphql_root_operation ro
-      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
+      ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
      AND ro.operation = 'MUTATION'
-   WHERE r.source_name IS NOT NULL
-     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
-                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
-                         AND r2.field_name = r.field_name)
+   WHERE r.directive_name = 'routine'
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphql_directive_application r2
+                        JOIN graphitron_ast_routine_entry re2
+                          ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
+                         AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
+                       WHERE r2.graph_name = r.graph_name AND r2.coordinate = r.coordinate
+                         AND r2.directive_name = 'routine')
 ),
 -- A root field's first @reference with no @routine written before it. A @routine establishes the
 -- table-bound producer a @reference must be part of, and a root field has no source row, so a path
@@ -15229,9 +15204,13 @@ root_reference (graph_name, type_name, field_name, source_name, source_line, sou
      AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
                         WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
                           AND f2.field_name = fr.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
-                      WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
-                        AND r.field_name = fr.field_name AND r.source_name = fr.source_name
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application r
+                       JOIN graphitron_ast_routine_entry re
+                         ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+                        AND re.source_line = r.source_line AND re.source_column = r.source_column
+                      WHERE r.graph_name = fr.graph_name
+                        AND r.coordinate = fr.type_name || '.' || fr.field_name
+                        AND r.directive_name = 'routine' AND r.source_name = fr.source_name
                         AND (r.source_line < fr.source_line
                              OR (r.source_line = fr.source_line
                                  AND r.source_column < fr.source_column)))
@@ -15311,9 +15290,12 @@ service_slot (graph_name, element_coordinate, parameter_name, slot_shape) AS (
 SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
        'MULTIPLE_ROUTINE_NODES', NULL
   FROM head h
- WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
-             WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
-               AND r2.field_name = h.field_name)
+ WHERE 1 < (SELECT COUNT(*) FROM graphql_directive_application r2
+               JOIN graphitron_ast_routine_entry re2
+                 ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
+                AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
+             WHERE r2.graph_name = h.graph_name AND r2.coordinate = h.coordinate
+               AND r2.directive_name = 'routine')
 UNION ALL
 -- A paginated return on a write. Stated for every write and not only for the chain shape:
 -- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
@@ -16223,9 +16205,14 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
                                 ON ae.graph_name = lk.graph_name AND ae.coordinate = lk.coordinate
                              WHERE lk.graph_name = o.graph_name AND lk.directive_name = 'lookupKey'
                                AND ae.type_name = o.type_name AND ae.field_name = o.field_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry re
-                             WHERE re.graph_name = o.graph_name AND re.type_name = o.type_name
-                               AND re.field_name = o.field_name))
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application ra
+                              JOIN graphitron_ast_routine_entry re
+                                ON re.graph_name = ra.graph_name AND re.source_name = ra.source_name
+                               AND re.source_line = ra.source_line
+                               AND re.source_column = ra.source_column
+                             WHERE ra.graph_name = o.graph_name
+                               AND ra.coordinate = o.type_name || '.' || o.field_name
+                               AND ra.directive_name = 'routine'))
 UNION ALL
 -- A connection carrier whose resolved first default is larger than the build's maximum page size,
 -- so the schema advertises a default no request can receive. Reported where the author wrote the
@@ -18421,14 +18408,12 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
     JOIN graphitron_argmapping_site s
       ON s.graph_name = p.graph_name AND s.source_name = p.source_name
      AND s.source_line = p.source_line AND s.source_column = p.source_column
-    JOIN graphql_field_element apc
-      ON apc.graph_name = s.graph_name AND apc.coordinate = s.coordinate
-    JOIN graphitron_routine_entry re
-      ON re.graph_name = s.graph_name AND re.type_name = apc.type_name
-     AND re.field_name = apc.field_name AND re.ordinal = s.ordinal
+    JOIN graphql_directive_application ra
+      ON ra.graph_name = s.graph_name AND ra.coordinate = s.coordinate
+     AND ra.directive_name = s.directive_name AND ra.ordinal = s.ordinal
     JOIN graphitron_path_element_routine rm
-      ON rm.graph_name = re.graph_name AND rm.source_name = re.source_name
-     AND rm.source_line = re.source_line AND rm.source_column = re.source_column
+      ON rm.graph_name = ra.graph_name AND rm.source_name = ra.source_name
+     AND rm.source_line = ra.source_line AND rm.source_column = ra.source_column
     JOIN sql_routine_parameter rp
       ON rp.source_name = rm.routine_source_name AND rp.table_schema = rm.table_schema
      AND rp.routine_name = rm.routine_name AND rp.jooq_name = p.param_name
@@ -19640,7 +19625,6 @@ COMMENT ON COLUMN meta_stage_write.relation_name IS 'the base table written, low
 -- scaled fixture.
 INSERT INTO meta_stage_write VALUES
   ('anchor', 'graphitron_deprecated'),
-  ('anchor', 'graphitron_routine_entry'),
   ('code-references', 'graphitron_code_reference'),
   ('argmapping-sites', 'graphitron_argmapping_site'),
   ('argmapping-pairs', 'graphitron_argmapping_pair'),

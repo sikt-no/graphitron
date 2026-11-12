@@ -29,8 +29,8 @@ import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
@@ -655,7 +655,7 @@ public final class DeclarationFacts {
                     field(selectCount().from(rp).where(rp.SOURCE_NAME.eq(sr.SOURCE_NAME),
                         rp.TABLE_SCHEMA.eq(sr.TABLE_SCHEMA), rp.ROUTINE_NAME.eq(sr.ROUTINE_NAME)))),
                 store, coord)
-            .orderBy(GRAPHITRON_ROUTINE_ENTRY.ORDINAL, sr.TABLE_SCHEMA, sr.ROUTINE_NAME))
+            .orderBy(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL, sr.TABLE_SCHEMA, sr.ROUTINE_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(RoutineMethod::new)));
     }
 
@@ -799,21 +799,27 @@ public final class DeclarationFacts {
 
     /**
      * The generated calls the coordinate's {@code @routine} applications name: each application at
-     * its written place, the routine that place resolves to, and that routine's catalog row.
+     * its written place, the routine that place resolves to, and that routine's catalog row. The
+     * resolution hangs on the application's position, so an application naming nothing resolves
+     * nothing.
      */
     private static <R extends Record> SelectConditionStep<R> routineCalls(
             SelectSelectStep<R> select, StoreHandle store, Coord coord) {
-        var r = GRAPHITRON_ROUTINE_ENTRY;
+        var a = GRAPHQL_DIRECTIVE_APPLICATION;
         var pe = GRAPHITRON_PATH_ELEMENT_ROUTINE;
         var sr = SQL_ROUTINE;
-        return select.from(r)
-            .join(pe).on(pe.GRAPH_NAME.eq(r.GRAPH_NAME), pe.SOURCE_NAME.eq(r.SOURCE_NAME),
-                pe.SOURCE_LINE.eq(r.SOURCE_LINE), pe.SOURCE_COLUMN.eq(r.SOURCE_COLUMN))
+        return select.from(a)
+            .join(pe).on(pe.GRAPH_NAME.eq(a.GRAPH_NAME), pe.SOURCE_NAME.eq(a.SOURCE_NAME),
+                pe.SOURCE_LINE.eq(a.SOURCE_LINE), pe.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .join(sr).on(sr.SOURCE_NAME.eq(pe.ROUTINE_SOURCE_NAME),
                 sr.TABLE_SCHEMA.eq(pe.TABLE_SCHEMA), sr.ROUTINE_NAME.eq(pe.ROUTINE_NAME))
-            .where(coordinate(r.GRAPH_NAME.eq(store.graphName()), r.TYPE_NAME.eq(coord.typeName()),
-                r.FIELD_NAME.eq(coord.memberName())));
+            .where(a.GRAPH_NAME.eq(store.graphName()),
+                a.COORDINATE.eq(coord.typeName() + "." + coord.memberName()),
+                a.DIRECTIVE_NAME.eq(ROUTINE_DIRECTIVE));
     }
+
+    /** The directive whose applications name a field's routine calls. */
+    private static final String ROUTINE_DIRECTIVE = "routine";
 
     private static String text(String value) {
         return value == null ? "" : value;

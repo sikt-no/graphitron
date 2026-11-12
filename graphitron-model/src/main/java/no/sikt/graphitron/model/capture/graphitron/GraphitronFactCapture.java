@@ -32,7 +32,6 @@ import java.util.function.Consumer;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.val;
@@ -177,11 +176,9 @@ public final class GraphitronFactCapture {
                 spelling(string(directive, "table"));
             }
             case "routine" -> {
-                // The relation is derived now, by GraphitronAnchor over the entry relations: the
-                // application at its coordinate. The claim stays, reading each application once,
-                // and the spelling stays for @table's reason, its relation being keyed by the value
-                // across the sites that write one.
-                if (!sink.claim(GRAPHITRON_ROUTINE_ENTRY, type, field, ordinal)) return;
+                // What is left is the spelling, for @table's reason, its relation being keyed by
+                // the value across the sites that write one. The claim reads each application once.
+                if (!sink.claim(GRAPHITRON_SPELLED_REFERENCE_ENTRY, "ROUTINE", type, field, ordinal)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
                 spelling(name);

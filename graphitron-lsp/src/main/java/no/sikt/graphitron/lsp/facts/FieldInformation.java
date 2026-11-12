@@ -31,7 +31,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
@@ -255,10 +256,14 @@ public final class FieldInformation {
             .convertFrom(rows -> rows.map(Records.mapping(Method::new)))
             .as("info_methods");
 
-        var re = GRAPHITRON_ROUTINE_ENTRY;
-        routines = multiset(select(re.ROUTINE_REF).from(re)
-            .where(re.GRAPH_NAME.eq(graph), re.TYPE_NAME.eq(typeName), re.FIELD_NAME.eq(fieldName))
-            .orderBy(re.ORDINAL))
+        // Each @routine the author wrote that names one, in written order.
+        var ra = GRAPHQL_DIRECTIVE_APPLICATION;
+        var re = GRAPHITRON_AST_ROUTINE_ENTRY;
+        routines = multiset(select(re.ROUTINE_REF).from(ra)
+            .join(re).on(re.GRAPH_NAME.eq(ra.GRAPH_NAME), re.SOURCE_NAME.eq(ra.SOURCE_NAME),
+                re.SOURCE_LINE.eq(ra.SOURCE_LINE), re.SOURCE_COLUMN.eq(ra.SOURCE_COLUMN))
+            .where(ra.GRAPH_NAME.eq(graph), ra.COORDINATE.eq(coordinate), ra.DIRECTIVE_NAME.eq("routine"))
+            .orderBy(ra.ORDINAL))
             .convertFrom(rows -> rows.map(Record1::value1))
             .as("info_routines");
 
