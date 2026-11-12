@@ -33,8 +33,11 @@ Each refusal below is reported at the `@key` that breaks it.
 | `KEY_SELECTS_NOTHING`
 | A key's `fields:` must select at least one field.
 
+| `KEY_FIELD_MISSING`
+| Every field a key selects is a field its type declares, whatever the type is bound to, a key with `resolvable: false` included. A name the type does not declare is refused, naming it.
+
 | `KEY_FIELD_NOT_A_COLUMN`
-| Every field a key selects reads a column of the entity's own table. A name the type does not declare, a nested selection, a field read through a `@reference` path, a computed field, or a `@nodeId` carrying another node's ID is refused, naming the field. The one exception is a key whose only field is the node's own `id`. A compound key including the node's own `id` is refused, since an encoded ID is not a column value.
+| Every field a key selects reads a column of the entity's own table. A nested selection, a field read through a `@reference` path, a computed field, or a `@nodeId` carrying another node's ID is refused, naming the field. The one exception is a key whose only field is the node's own `id`. A compound key including the node's own `id` is refused, since an encoded ID is not a column value.
 |===
 
 xref:index.adoc[← Reference index]

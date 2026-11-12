@@ -1440,10 +1440,6 @@ disagree with the build about which types are nodes.
 * **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
-* **A `@key` names only fields its type declares** `open`. On a table-bound type
-  `KEY_FIELD_NOT_A_COLUMN` refuses a `@key(fields: "id")` with no `id`; a `@key` on a type with no
-  table naming an undeclared field draws nothing. Whether the rule is `id`'s alone or every field's,
-  splitting "not declared" from "declared but not a column", is Alf and Filip's to say.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
   squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
   already does.

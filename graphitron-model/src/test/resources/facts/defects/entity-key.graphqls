@@ -10,6 +10,12 @@ type Stub @key(fields: "stubId", resolvable: false) {
   stubId: Int
 }
 
+# A key selects fields of its type, whatever the type is bound to: one naming a field the type does
+# not declare is refused, a key another subgraph resolves included; Stub above is its near miss.
+type Course @key(fields: "id", resolvable: false) {
+  code: Int
+}
+
 # One resolvable key among stubs is enough to need a table, and that key alone is refused.
 type Mixed @key(fields: "a", resolvable: false) @key(fields: "b") {
   a: Int
@@ -79,6 +85,7 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["
 type Query {
   plains: [Plain!]!
   stubs: [Stub!]!
+  courses: [Course!]!
   mixed: [Mixed!]!
   contents: [Content!]!
   films: [Film!]!
@@ -89,14 +96,16 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
-  code IN ('KEY_TYPE_NOT_TABLE_BOUND', 'KEY_ON_INTERFACE', 'KEY_SELECTS_NOTHING', 'KEY_FIELD_NOT_A_COLUMN')
+  code IN ('KEY_TYPE_NOT_TABLE_BOUND', 'KEY_ON_INTERFACE', 'KEY_SELECTS_NOTHING', 'KEY_FIELD_NOT_A_COLUMN',
+           'KEY_FIELD_MISSING')
   """, rows: """
   code,                     type_name, detail
   KEY_FIELD_NOT_A_COLUMN,   Film,      language
   KEY_FIELD_NOT_A_COLUMN,   Film,      languageName
-  KEY_FIELD_NOT_A_COLUMN,   Film,      titel
   KEY_FIELD_NOT_A_COLUMN,   Payment,   rentalId
   KEY_FIELD_NOT_A_COLUMN,   Staff,     id
+  KEY_FIELD_MISSING,        Course,    id
+  KEY_FIELD_MISSING,        Film,      titel
   KEY_ON_INTERFACE,         Content,   Content
   KEY_SELECTS_NOTHING,      Film,      Film
   KEY_TYPE_NOT_TABLE_BOUND, Mixed,     Mixed

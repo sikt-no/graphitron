@@ -51,7 +51,7 @@ type FilmActor @table(name: "film_actor") @key(fields: "filmId actorId") {
 
 The dispatcher emits a multi-column VALUES join: each representation must carry both `filmId` and `actorId`, and the SELECT WHERE clause is `(film_id, actor_id) IN ((?, ?), (?, ?), ...)`. The arity of the VALUES-derived table matches the key's column count.
 
-The fields named in `fields:` must each read a column of the type's own table. A field the type does not declare, a nested selection, a field read through a `@reference` path, an `@externalField` or computed scalar, or an `@nodeId` field carrying another node's encoded id can't participate in a key: each is refused with `KEY_FIELD_NOT_A_COLUMN` at the `@key`, naming the field. A `fields:` that selects nothing is `KEY_SELECTS_NOTHING`.
+The fields named in `fields:` must each be a field the type declares, on any type, or the key is refused with `KEY_FIELD_MISSING`. On a table-bound type each must also read a column of the type's own table. A nested selection, a field read through a `@reference` path, an `@externalField` or computed scalar, or an `@nodeId` field carrying another node's encoded id can't participate in a key: each is refused with `KEY_FIELD_NOT_A_COLUMN` at the `@key`, naming the field. A `fields:` that selects nothing is `KEY_SELECTS_NOTHING`.
 
 == Multiple `@key` alternatives
 

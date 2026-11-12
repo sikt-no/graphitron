@@ -25,7 +25,7 @@ These pages are where Graphitron's rules are stated: what an author may write, w
 
 == Federation
 
-* xref:federation.adoc[Federation reference]: what a federation `@key` may select in a Graphitron subgraph, how its entities are resolved and when the node key is synthesised, and the four codes a key is refused with (`KEY_TYPE_NOT_TABLE_BOUND`, `KEY_ON_INTERFACE`, `KEY_SELECTS_NOTHING`, `KEY_FIELD_NOT_A_COLUMN`).
+* xref:federation.adoc[Federation reference]: what a federation `@key` may select in a Graphitron subgraph, how its entities are resolved and when the node key is synthesised, and the five codes a key is refused with (`KEY_TYPE_NOT_TABLE_BOUND`, `KEY_ON_INTERFACE`, `KEY_SELECTS_NOTHING`, `KEY_FIELD_MISSING`, `KEY_FIELD_NOT_A_COLUMN`).
 
 == Deprecations
 

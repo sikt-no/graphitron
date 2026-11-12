@@ -13815,10 +13815,29 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_SELECTS
                       AND p.source_line = k.source_line AND p.source_column = k.source_column
                       AND p.position = 0)
 UNION ALL
--- One row per selection that binds nothing at the entity's table, which graphitron_key_field_binding
--- states: a nested selection, a name the type does not declare, or a field binding anything but a
--- column there, the node's own id alone excepted. The detail is the selection's first segment, the
--- name the author wrote.
+-- One row per @key, on any type whatever it is bound to, a selection of which names a field the type
+-- does not declare: the fields a key selects are fields of its type. The detail is the first such
+-- name as written.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_MISSING',
+       MIN(g.segment_name)
+  FROM graphql_directive_application d
+  JOIN graphitron_ast_federation_key_selection_entry p
+    ON p.graph_name = d.graph_name AND p.source_name = d.source_name
+   AND p.source_line = d.source_line AND p.source_column = d.source_column
+  JOIN graphitron_ast_federation_key_segment_entry g
+    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
+   AND g.source_line = p.source_line AND g.source_column = p.source_column
+   AND g.position = p.position AND g.segment_position = 0
+ WHERE d.directive_name = 'key'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field f
+                    WHERE f.graph_name = d.graph_name AND f.type_name = d.coordinate
+                      AND f.field_name = g.segment_name)
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
+UNION ALL
+-- One row per selection of a declared field that binds nothing at the entity's table, which
+-- graphitron_key_field_binding states: a nested selection, or a field binding anything but a column
+-- there, the node's own id alone excepted. A name the type does not declare is KEY_FIELD_MISSING
+-- above. The detail is the selection's first segment, the name the author wrote.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_NOT_A_COLUMN',
        MIN(g.segment_name)
   FROM graphql_directive_application d
@@ -13836,6 +13855,9 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_N
                     WHERE k.graph_name = d.graph_name AND k.type_name = d.coordinate
                       AND k.directive_name = d.directive_name AND k.ordinal = d.ordinal
                       AND k.position = p.position)
+   AND EXISTS (SELECT 1 FROM graphitron_field f
+                WHERE f.graph_name = d.graph_name AND f.type_name = d.coordinate
+                  AND f.field_name = g.segment_name)
  GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column;
 COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
@@ -20289,8 +20311,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A federation @key is on a table-bound interface, and an entity is resolved by one table: declare the key on each implementing type instead.', 'entity-key-alternatives'),
   ('KEY_SELECTS_NOTHING', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_SELECTS_NOTHING',
    'A federation @key''s fields: selects no field, so nothing identifies the entity: name the fields of its key.', 'entity-key-alternatives'),
+  ('KEY_FIELD_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_MISSING',
+   'A federation @key selects a field its type does not declare. The fields a key selects are fields of its type, whatever the type is bound to: declare the field, or name one the type has.', 'entity-key-alternatives'),
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
-   'A federation @key selects a field that is not a column of the entity''s own table, a nested selection, a name the type does not declare, or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.', 'entity-key-alternatives'),
+   'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.', 'entity-key-alternatives'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
    'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, so there is nothing to select or write: the name is misspelt, or the column lives on another table.', 'occurrence-depth-defects'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
