@@ -187,8 +187,8 @@ census it replaced is gone.
     the entry each of a graph's class names resolves to; the type-backing rule, code reference
     resolution, the path-element method, scalar class, session handle, occurrence condition, built
     class and producer result rules, and the entry-defect arms that count candidates read it.
-    Whether a graph-keyed relation belongs in the `code_` family or in `graphitron_` is Alf's and
-    Filip's to rule; `FactSchemaGateTest` admits it by name meanwhile.
+    It stays in `code_` though keyed by graph (Alf, 2026-11-12); `FactSchemaGateTest` admits it by
+    name.
   * **The editor and the MCP resolve a class name as the generator does** `open`. The LSP's
     `ClasspathClasses`, `ClassNameCompletions`, `Hovers`, `DiagnosticFacts`, `ClassMemberSlots`,
     `ClasspathMethods`, `ExternalFieldLifters`, `DeclarationFacts`, `ScalarTypeCompletions`,
