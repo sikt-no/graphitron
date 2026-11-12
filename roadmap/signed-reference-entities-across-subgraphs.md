@@ -144,11 +144,10 @@ voucher only ever adds access. This is federation only:
 6. *Release.* At operation end every vouched connection is unmounted and released with the rest of the
    carrier's entries.
 
-An operation takes one vouched connection per distinct connection part, up to a fixed cap; vouchers for
-one owner, a list of results or several parents' lists, are one connection. A connection part beyond the
-cap fails its entities with an error that names the limit, not `null`, so the limit is not mistaken for a
-denial. The constant lives in one place so it can become configuration later. (Open: the cap's value; the
-earlier design capped vouched connections at one per operation.)
+An operation takes one vouched connection, for one owner (ruled 2026-11-12); vouchers for that owner, a
+list of results or several parents' lists, are that connection. An operation whose vouchers name more than
+one connection part fails with an error that names the limit, not `null`, so the limit is not mistaken for
+a denial. The limit lives in one place so it can be raised later.
 
 One connection per connection part means every entity of the group reads through a connection mounted
 for one owner, so a subtree is scoped to its entities by the graph it was reached through, and to the
@@ -181,7 +180,7 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
 | Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. The scalar occurrence binds by kind (`graphitron_occurrence_binding`: `COLUMN`, `NODE_ID`, `EXPRESSION` and others); `graphitron_occurrence_column_rule` seeks a column for every scalar occurrence it does not exclude, and a field with no column is `COLUMN_UNRESOLVED`. | The voucher field, on A and on B, binds by a kind of its own (`VOUCHER`), so the column rule never seeks a `voucher` column. On A its value comes from the codec, one signature per returned row that selects it, carrying the values of the absorbed fields. |
 | Which column a name answers to | The match (SQL name unique on the table, else the jOOQ name unique and no SQL name answers) is spelled inline three times: in `graphitron_occurrence_column_rule` and in the `COLUMN_UNRESOLVED` and ambiguous-column defect arms, each per occurrence and reading element-keyed claims. | One catalog-side relation, `sql_column_spelling`: one row per column a folded name reaches on its table, carrying which name matched and the reach (`docs/architecture/explanation/fact-model.adoc`, the column-name ruling). The occurrence rule and the defect arms become joins onto it, and the voucher components read it before any element exists. |
 | Per-subtree routing value | `TenantHandDown` is the one writer of the `localContext` slot, which carries the tenant key; `LocalContextOwnershipGuardTest` keeps every other writer out; the carrier's `handDown(row, tenantKey)` stamps entity and node dispatch. A single-tenant build writes nothing there (`TenantHandDown.none()`). | Every build that writes the slot, multi-tenant or accepting, carries a generated `ConnectionKey` in it (the tenant part only in multi-tenant builds, the connection part only with `@accept`). The hand-down, the guard's owner list, the loader naming and `handDown` take it, with no "has accept" branch at any of them. A single-tenant build with no `@accept` still writes nothing. |
-| One connection per routing key | `TenantConnections` keys its entries by `Optional<tenantKey>`, mints lazily, one mount per entry, unmounts and resets at release; its entry resolution is the one enforcer of the request tenant set. | Key the entries by `ConnectionKey`, so vouchers sharing a connection part share an entry; the cap on distinct connection parts; the tenant part of a vouched key goes through the same enforcer, so a voucher never adds a tenant. |
+| One connection per routing key | `TenantConnections` keys its entries by `Optional<tenantKey>`, mints lazily, one mount per entry, unmounts and resets at release; its entry resolution is the one enforcer of the request tenant set. | Key the entries by `ConnectionKey`, so vouchers sharing a connection part share an entry; one connection part per operation, a second failing with the limit error; the tenant part of a vouched key goes through the same enforcer, so a voucher never adds a tenant. |
 | Telling the mount what the connection is for | `MountedSession` carries `configuration()` and, in multi-tenant builds only, `tenant()`. | `vouch()`, returning `Optional<Vouch>` (the connection part, typed, and the vouch id, scope, expiry and covered lookup keys), declared only in a build with an `@accept` field, the way `tenant()` is declared only in multi-tenant builds. |
 | Entity with a non-column key field | Every `@key` field must resolve to a column-backed field, except the node-id alternative, which decodes to the key's columns. `EntityResolutionBuilder` re-derives the alternatives (`KeyAlternative.Direct`, `KeyAlternative.NodeId`) from the classified model on every build. | How each field of an authored `@key` binds, stated as `graphitron_key_field_binding`; the alternatives composed from it, `graphitron_minted_key` and `graphitron_node` by one emitted query, so `EntityResolutionBuilder` and its re-derivation go. An `@accept` field is an alternative there: the whole minted key, excluded from the SELECT and projection, decoded to the columns of B's authored key like a node id. |
 | A field the author writes that the schema does not carry | None: the emitted population, `graphitron_element`, is the authored elements plus the minted ones (`graphitron_element_authored`, `graphitron_element_minted_*`), and nothing is ever taken out of it. The part sets `graphitron_field_authored` and `graphitron_argument_authored` select from the transcription directly. | The absorbed declarations of an issuing type, decoded as voucher components rather than fields: a stored membership relation, decided by structure alone, that `graphitron_element_authored` and both part sets anti-join, the first subtraction from that population, and the component's column and scalar resolved beside it. `EmittedRegistry`, which only adds, gains a removal arm reading the membership, so the served SDL and runtime schema lose them too. |
@@ -194,7 +193,8 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
   of the type. `@accept(scope:, key:, connection:)` on a field of a table-bound, resolvable type (B): `key:` is the
   field set of the authored `@key` whose columns the voucher's lookup part decodes to, and may be omitted
   when the type has exactly one authored resolvable key; `connection:` is the field set of the voucher's
-  connection part, fields of B's type parsed by their scalars as key fields are, and may be omitted for a
+  connection part, fields of B's type parsed by their scalars as key fields are (each must be a field of
+  the type, and may be `@inaccessible` so the owner is not published to clients), and may be omitted for a
   voucher with no connection part, which routes on the request's own connection key. The connection part
   is the rows' owner, not the requesting caller, which is checked separately against `SessionState`. Graphitron defines both in `directives.graphqls`, as it does `@node`;
   consumers do not write the definitions.
@@ -470,8 +470,8 @@ read simply once the spellings are chosen, the design is wrong.
   fixture): each returned row gets its own token and all share one vouch id; a valid voucher exposes the
   entity and a three-level nested read under a policy that otherwise hides the rows; a list of results,
   or several parents' lists, for one owner takes one connection and the mount sees the owner and every key
-  once; vouchers from two operations for the same owner share the connection; connection parts beyond the
-  cap fail their entities with the limit error; a field outside the entities' subtrees cannot read the
+  once; vouchers of two vouches (two scopes, or two issuing operations on A) for the same owner, presented in one operation on B, share the connection; connection parts beyond the
+  limit fail with the limit error: an operation mixing two owners' vouchers fails; a field outside the entities' subtrees cannot read the
   covered rows; every verification failure above, and a mount that throws on a vouched connection, fails
   the request and the policy hides the rows; in a multi-tenant fixture a voucher does not reach a tenant
   outside the request tenant set; a mutation payload issues vouchers on commit and none from a field that
@@ -627,9 +627,9 @@ case the owner's id number), not the requesting caller, whose check stays; it is
 `ConnectionKey` the vouched connection is acquired and mounted under, and vouchers sharing it share the
 connection, across vouches. The lookup part decodes onto the authored key as before. This replaces the
 earlier routing by vouch id and the first client's two-field key (`id eierId`); the vouch id stays the
-audit handle and the consistency check. Open: the cap on distinct connection parts per operation, and
-whether a connection field must be a field of B's accepting type (the reading written here) or may be
-typed otherwise.
+audit handle and the consistency check. Settled the same day: one owner per operation, an operation
+mixing owners failing with the limit error; and each connection field is a field of B's accepting type,
+which may be `@inaccessible`.
 
 At slice 2's entity key step the principles architect was consulted twice and the user ruled
 (2026-11-10). A stored alternative per `@key`, with `DIRECT` and `NODE_ID` subtypes, restated rows other
