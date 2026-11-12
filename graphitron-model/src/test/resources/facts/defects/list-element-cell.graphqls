@@ -1,0 +1,76 @@
+# An input field of a list of input objects a filter compares is one cell of the row its element is,
+# so it must be one value bound to a column. FilmCellInput breaks each rule once: filmId is a node id
+# (LIST_ELEMENT_NODE_ID), lengths is itself a list (LIST_ELEMENT_NOT_ONE_VALUE) and titlePrefix carries
+# @condition (LIST_ELEMENT_CONDITION). Each defect sits at the input field's declaration, once,
+# though the type is read through two list filters, filmsByCells and filmsByCellFilter; the store
+# states the rule broken at each occurrence.
+#
+# The near misses draw nothing: FilmLanguageInput's element fields may be left out, one through a
+# nullable nested input, and are still one value each; FilmPlainInput carries the same node id and
+# list outside any list, where they are a filter's ordinary terms.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") {
+    id: ID!
+    title: String
+}
+
+input FilmCellInput {
+    filmId: ID @nodeId(typeName: "Film")
+    lengths: [Int!] @field(name: "length")
+    titlePrefix: String @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmTitlePrefixCondition"})
+}
+
+input FilmCellFilter {
+    cells: [FilmCellInput]
+}
+
+input FilmOriginalLanguageIdInput {
+    id: Int! @field(name: "original_language_id")
+}
+
+input FilmLanguageInput {
+    languageId: Int @field(name: "language_id")
+    original: FilmOriginalLanguageIdInput
+}
+
+input FilmPlainInput {
+    filmId: ID @nodeId(typeName: "Film")
+    lengths: [Int!] @field(name: "length")
+}
+
+type Query {
+    filmsByCells(cells: [FilmCellInput]): [Film!]!
+    filmsByCellFilter(filter: FilmCellFilter): [Film!]!
+    filmsByLanguages(languages: [FilmLanguageInput]): [Film!]!
+    filmsByPlain(filter: FilmPlainInput): [Film!]!
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                       coordinate
+  LIST_ELEMENT_CONDITION,     FilmCellInput.titlePrefix
+  LIST_ELEMENT_NODE_ID,       FilmCellInput.filmId
+  LIST_ELEMENT_NOT_ONE_VALUE, FilmCellInput.lengths
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  coordinate
+  FilmLanguageInput.languageId
+  FilmLanguageInput.original
+  FilmOriginalLanguageIdInput.id
+  FilmPlainInput.filmId
+  FilmPlainInput.lengths
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_list_element_defect", rows: """
+  code,                       coordinate
+  LIST_ELEMENT_CONDITION,     Query.filmsByCellFilter(filter.cells.titlePrefix:)
+  LIST_ELEMENT_CONDITION,     Query.filmsByCells(cells.titlePrefix:)
+  LIST_ELEMENT_NODE_ID,       Query.filmsByCellFilter(filter.cells.filmId:)
+  LIST_ELEMENT_NODE_ID,       Query.filmsByCells(cells.filmId:)
+  LIST_ELEMENT_NOT_ONE_VALUE, Query.filmsByCellFilter(filter.cells.lengths:)
+  LIST_ELEMENT_NOT_ONE_VALUE, Query.filmsByCells(cells.lengths:)
+  """)
