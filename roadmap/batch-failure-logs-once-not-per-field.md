@@ -1,7 +1,7 @@
 ---
 id: R920
 title: "a failed batch logs once, without its SQL, and a consumer can cap batch size"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: error-channel
@@ -171,6 +171,12 @@ The forks the Backlog body left open, settled here so the implementation has one
 * **The cap is runtime configuration only, with no build-time default.** Consumer configuration
   lives on `GraphitronRuntime`; a Mojo parameter would be a second place to set the same number,
   and nothing about a batch size is known at build time that the runtime does not know better.
+* **The hooks are stated on the runtime API reference page.** `docs/manual/reference/runtime-api.adoc`
+  gains "Consumer hooks on `GraphitronRuntime`", stating all three hooks, the two that predate
+  this item included, since no reference page stated any. The Reference check wants a generated
+  surface written on a reference page, and that page's scope is what is emitted unconditionally;
+  a table of one hook out of three would be a partial inventory. This is the implementer's
+  reading of the question Round 2 left open, not a ruling: it is Alf's and Filip's to redirect.
 
 ## Implementation
 
@@ -354,9 +360,12 @@ Both read simply, so the design stands.
 ## Tests
 
 All new tests live in `graphitron-sakila-example`; all but one are execution tier. Log capture is a small test
-helper built on logback's `ListAppender` (logback-classic is already on that module's test
-classpath), attached to the generated `ErrorRouter` logger for the test's duration and able to
-lower its level to DEBUG; it is the assertion that actually pins the goal.
+helper, `ErrorRouterLog`, attached to the generated `ErrorRouter` logger for the test's duration
+and able to lower its level to DEBUG; it is the assertion that actually pins the goal. It is a
+`java.util.logging` handler on the JBoss logger, not a logback appender: that module's slf4j binds
+to the JBoss LogManager Quarkus brings, as `NodeIdFoldWarningTest` records. Other test classes
+fail fields concurrently, so a test reads back only the records naming the reference its own
+response quotes.
 
 * **One record, one reference, many errors.** `{ films { durabilityError } }` over the seeded films:
   `Film.durabilityError` is an existing batched child `@service` (`DurabilityErrorService.synthesize`)
@@ -386,13 +395,17 @@ lower its level to DEBUG; it is the assertion that actually pins the goal.
   statement and nothing of the second line, and stops at the bound; a null environment gives
   `path = unknown`; a chain without a `SQLException` gives an empty `Optional`; a cyclic cause
   chain terminates.
-* **The cap.** A test using a jOOQ `ExecuteListener` counting statements, as
-  `BatchCountsExecutionTest` does, over an existing list-valued `@splitQuery` child under `n`
-  parents: with `withBatchSizeLimit(env -> k)` and `n > k`, `ceil(n / k)` child statements, and the
-  response equal to the unbounded one; without a limit, one child statement. A limit that throws
-  leaves the response equal to the unbounded one and logs one ERROR line naming `BatchSizeLimit`.
-  The escape-hatch engine honours a limit put into the request context. One case with the database
-  fixture under a cap pins that a failure is one record per failed chunk.
+* **The cap.** `BatchSizeLimitExecutionTest` counts the statements a request prepares, at the JDBC
+  connection, over `Film.actorsByCondition` (a list-valued `@splitQuery` child) under the five
+  seeded films: the count with no limit is the baseline, and `withBatchSizeLimit(env -> 2)` costs
+  two statements more (`ceil(5 / 2)` child statements where there was one), with the response equal
+  to the unbounded one. The count is taken at the connection because the owned-connection runtime
+  builds its own `DSLContext` and takes no jOOQ listener, and statements are counted, never read. A
+  limit below 1 changes nothing. The limit is asked once per loader. A limit that throws leaves the
+  response and the count equal to the unbounded ones and logs one ERROR line naming
+  `BatchSizeLimit` and the limit's class. The escape-hatch engine honours a limit put into the
+  request context. One case with the database fixture under a cap pins that a failure is one record
+  per failed chunk, each chunk's fields quoting its own reference.
 * **Unchanged.** `GraphQLOverHttpConformanceTest.redactionShapeMatchesFetcherPath` and
   `computedRedactionMatchesFetcherPath`, `FetcherErrorResponseExecutionTest`, and
   `TenantFanOutExecutionTest`'s tenant-failure cases pass unchanged. The generator unit tests pin
@@ -442,6 +455,59 @@ Amended 2026-09-28 after a second 9.x consumer's production trace (the evidence 
 showed that the amplification also costs wall-clock, that the SQL in the record is a size and privacy
 problem of its own, and that the size of the batch was what made the statement slow. The SQL summary
 and the batch cap were added to the goal then.
+
+## Implementation notes
+
+Implemented as planned, in four commits: the log commit (`fix(R920)`), the cap commit
+(`feat(R920)`), the reference page (`docs(R920)`), and a test-tightening commit (`test(R920)`)
+taken from the architect consult below. What a reviewer would otherwise have to work out:
+
+- **The database fixture** is `Film.databaseError` (`DatabaseErrorService.castMarkerToJson`). jOOQ
+  raises its `DataException` subclass for a class-22 SQL state, so the summary the test pins reads
+  `org.jooq.exception.DataException: org.postgresql.util.PSQLException [22P02/0] ERROR: invalid input syntax for type json`.
+  The new field is one more emitted service, so `EmissionCensusTest`'s count moved from 124 to 125.
+- **The lint rule is stricter than "not one-argument".**
+  `GeneratedSourcesLintTest.emittedLoadersAreBuiltWithTheRequestsOptions` requires every
+  `newDataLoader(` / `newMappedDataLoader(` call to end in `ErrorRouter.loaderOptions(<env>)`, and
+  fails on a tree with fewer than ten constructions.
+- **The generator-side pin moved with the constants.**
+  `UnifiedEmissionPinsTest.dataLoaderFactory_registrationHomes` counted `$T.newDataLoader(` emission
+  sites, which no longer exist under `generators/`; it now counts `LoaderConstruction` calls (the
+  same three homes, the same counts). A second case,
+  `dataLoaderFactory_isNamedByTheConstructionFragmentAlone`, holds what the deleted constants were
+  for: no main source but `LoaderConstruction` names `DataLoaderFactory`, `emit/` included.
+- **Signatures.** `DataLoaderFetcherEmitter.build` and `buildKeyFirst` take the router as a trailing
+  `ClassName`. The emitted method's name is `LoaderConstruction.LOADER_OPTIONS_METHOD`, which the
+  router generator reads, so the call and its target cannot drift; `render` may not import
+  `rewrite`, so the name could not live the other way round. `FrameEmitterTest`'s stub
+  `ErrorRouter` gained `loaderOptions`.
+- **Both walks are bounded by depth alone.** `failureOf` and `describe` follow at most 32 links, which
+  is also what ends a cyclic chain; `ErrorRouterDescribeTest.aCyclicCauseChain_terminates` covers
+  both, the second with a cycle made of `CompletionException`s only.
+- **Where the drafts landed.** `docs/manual/how-to/error-channel.adoc` (the unmatched section and
+  "Choosing how unmatched exceptions are logged") and `docs/manual/explanation/batching-model.adoc`
+  ("Bounding a batch"). The loader construction shown in `docs/manual/how-to/split-vs-inline.adoc`
+  and `docs/architecture/explanation/dispatch-axes.adoc` was brought up to date.
+- **What the builds covered.** The four commits together passed the full verification build (13
+  modules, 8,350 tests). The plan's "each passes the verification build on its own" was not
+  established for the log commit alone: by itself it ran the reactor through `graphitron` (4,805
+  tests, the census count its one failure, since fixed in that commit) and its own example tests
+  by name, and the cap commit was only ever built on top of it.
+
+_Architect consult before this handover._ The `principles-architect` read the built tree and found
+it the change the spec approved, with no structural finding. Taken, in the `test(R920)` commit:
+the cap's test picked out its statements by their SQL text, against "counting statements is
+allowed, reading them is not", and now counts against the unbounded request; the fetcher emitter
+chose the fragment's entry point with `==` on `Container`, now an exhaustive `switch`; the
+factory-name pin matched only the quoted simple name, now any spelling; the throwing limit is a
+named class so its log line is found by that name; the reference table's log default names the
+per-tenant case; and this body's Tests and Decisions say what was built. Left alone, with the
+architect's agreement that neither belongs in this item: the "summary at ERROR, exception at DEBUG"
+branch is spelled in `reportUnmatched` and again in `logFanOutFailure`, as the spec asked ("the
+same way"), and wants one static on the router if a third default line appears; and the hook
+names `FetcherErrorLog`, `FetcherErrorResponse` and `BatchSizeLimit` are string literals in
+`EmitPlan` and `PlanCompileGraph`, the pattern the first two set, where a `GeneratedUnits` method
+per hook would be the one spelling.
 
 ## Reviewer findings
 
