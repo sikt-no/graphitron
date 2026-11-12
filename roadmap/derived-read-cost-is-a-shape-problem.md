@@ -89,8 +89,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
 
 * `graphitron_ast_*_entry` and the coordinate-keyed `graphitron_*_entry`, both every capture. Ends
   at "No `graphitron_*_entry` survives, an entry being the transcription's alone".
-* `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
-  "`graphitron_routine_entry` is gone".
 * `graphitron_path_element_*` beside the join path's steps. Ends at "Nothing resolves a path but the walk".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
@@ -835,7 +833,7 @@ static method needs no holder.
   `graphitron_occurrence_call_parameter`, widened from service calls to any producer's call, and its
   call is emitted from the store as a service call's is. A child `@routine`, split or not, is never a
   producer but a join step of the path; under `@splitQuery` the producer is the split's derived source
-  lookup. Then `graphitron_routine_entry` and the routine decode go.
+  lookup. Then the routine decode, which writes only the spelling, goes.
   * **A child `@routine` is a lateral step of the path** `open`, F's. The step and its parameters
     are stated, `graphitron_join_path_step_parameter`; what is left is the editor, whose `argMapping`
     completion at a path routine offers the field's arguments and not yet the standing table's columns.
@@ -932,21 +930,18 @@ store keeps one shape of each fact. That means no coordinate-keyed entries, no s
 pass and no stratum that clears and recomputes.
 
 * **No `graphitron_*_entry` survives, an entry being the transcription's alone** `blocked`, on the
-  two below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
+  one below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
   the others goes. A reader moves onto the `graphitron_ast_` entry joined to
   `graphql_directive_application` by the application's position, ordinal zero standing for the one
   application a coordinate-keyed copy kept, as the `@error` hover and the `@orderBy` and
   `@lookupKey` readers now read.
-  * **`graphitron_routine_entry` is gone** `open`. `@routine` is what is left: `GraphitronAnchor`
-    copies `graphitron_ast_routine_entry` onto it, the registry decode writes its spelling, and its
-    readers (`RoutineWriteQuery`, the language server's declaration and field facts, four sites of
-    `graphitron_entry_defect_rule` and `intent_argmapping_bound_parameter_type`) wait on the call and
-    its parameters being stated per occurrence and emitted from the store, as `@service`'s are.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
     twin gets one, its readers move, and the old one goes. Left: `graphitron_spelled_reference_entry`,
     a spelling being a column of several `graphitron_ast_` entries and no relation of its own, and
-    the decode's `graphitron_field_reference_entry`, whose twin is `graphitron_ast_reference_entry`;
-    both wait on `@routine`, whose decode writes a spelling and whose readers read the field reference.
+    the decode's `graphitron_field_reference_entry`, whose twin is `graphitron_ast_reference_entry`.
+    The registry decode still writes both, `@routine`'s spelling among them, and
+    `graphitron_entry_defect_rule`'s root `@reference` rule reads the field reference beside the
+    field's `@routine` applications.
 * **The supertype roster becomes shrink-only** `open`. The roster of duplicated entries is a
   ratchet that can only lose rows.
 * **`GraphitronAssemblyCapture` is gone, its steps the anchor's own lines** `blocked`, on the child
@@ -3152,6 +3147,14 @@ which carry the application and the index each element was written at.
 the field's first application in `graphql_directive_application` to `graphql_field_element` and to
 the `graphitron_ast_` entry at its position; the `@mutation` spelling claim is keyed on
 `graphitron_spelled_reference_entry`.
+
+**The `@routine` copy** (2026-11-12). `graphitron_routine_entry`, `GraphitronAnchor`'s `routines`,
+`routineApplications` and `applicationsOf`, and `FactWrites.graphitronRoutine`. Its readers
+(`graphitron_entry_defect_rule`, `intent_argmapping_bound_parameter_type`, the language server's
+declaration and field facts) read the field's `@routine` applications in
+`graphql_directive_application`, joined to `graphitron_ast_routine_entry` at the position where the
+name is wanted; `RoutineWriteQuery` reads the mapping on the application `graphitron_producer_routine`
+records. The `@routine` spelling claim is keyed on `graphitron_spelled_reference_entry`.
 
 **The anchor's type-site copies** (2026-11-07). `graphitron_table_entry` and
 `graphitron_scalar_type_entry`, with the grain `graph-scalar`, `GraphitronAnchor`'s `claimed`, and
