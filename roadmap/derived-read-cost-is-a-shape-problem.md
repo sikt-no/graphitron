@@ -124,7 +124,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The vocabulary listed twice, by the editor from `graphitron_directive` and by MCP from
   `graphql_directive`. Ends at "The MCP lists the composed vocabulary".
 * `SeededStore` and capture, both building test stores. Ends at "`SeededStore` is deleted".
-* A stub's own `id`, encoded by the walk's arm in `FieldBuilder` beside `graphitron_occurrence_node_id`. Ends at "An output field's node id is encoded from the store".
 
 ### Every rule has an owner, and the register has no subject `open`
 
@@ -1496,6 +1495,12 @@ disagree with the build about which types are nodes.
 * **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
+* **A node that is not resolvable reads as one where it changes behaviour** `open`. With such a node
+  a `NodeType`, four shapes no fixture has yet change: a list of them over a table with no primary
+  key takes its node key as row identity, an `id` argument on a field returning one decodes as its
+  node id, a table under a resolvable node and a non-resolvable one is ambiguous for a bare-`ID`
+  mutation return, and a tenant-keyed one's decode routes rather than declining. Each is pinned by a
+  fact document, or refused as a store defect where it should be.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
   squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
   already does.
@@ -2784,6 +2789,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   the node's record.
 
 ## Retired vocabulary
+
+**A node that is not resolvable is a node** (2026-11-12). The walk's stub classification is gone:
+`NodeDeclaration.isStub` is `isResolvable`, a fact beside nodehood, `BuildContext.TargetKeys.OfStub`
+and `BuildContext.stubDecode` went with the walk's second derivation of such a node's key, and
+`NodeType` carries `resolvable`. The codes `NODE_STUB_WITH_NODE_INTERFACE` and
+`NODE_WITHOUT_ID_FIELD` are gone, every `@node` implementing `Node`.
 
 For the retirement sweep at the Done gate. Determined by diffing the schema's relation names across
 the item's life. Already swept once, with seven survivors found and fixed.
