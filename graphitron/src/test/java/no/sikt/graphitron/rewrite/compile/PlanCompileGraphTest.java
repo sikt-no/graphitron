@@ -191,7 +191,7 @@ class PlanCompileGraphTest {
     void everyFetcherBlanketsTheFrozenScaffolding() {
         assertThat(refs(UNITS.fetchers("Query"))).contains(
             PKG + ".util.LightFetcher",
-            PKG + ".util.ConnectionResult",
+            PKG + ".util.ConnectionHelper",
             PKG + ".schema.Outcome",
             PKG + ".schema.GraphitronContext");
     }

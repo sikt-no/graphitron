@@ -819,7 +819,8 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
-                                f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage)
+                                f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage,
+                                connectionClassAt(ctx, f))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -834,7 +835,8 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
-                                f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage)
+                                f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage,
+                                connectionClassAt(ctx, f))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -920,7 +922,8 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(),
-                                List.of(), registry, conn.defaultPageSize(), java.util.Optional.empty(), outputPackage)
+                                List.of(), registry, conn.defaultPageSize(), java.util.Optional.empty(), outputPackage,
+                                connectionClassAt(ctx, f))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -935,7 +938,8 @@ public class TypeFetcherGenerator {
                     if (f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(),
-                                List.of(), registry, conn.defaultPageSize(), java.util.Optional.empty(), outputPackage)
+                                List.of(), registry, conn.defaultPageSize(), java.util.Optional.empty(), outputPackage,
+                                connectionClassAt(ctx, f))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -958,7 +962,7 @@ public class TypeFetcherGenerator {
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), ErrorArmAnswer.of(f.returnType().wrapper()), parentSource,
-                                outputPackage)
+                                outputPackage, connectionClassAt(ctx, f))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -976,7 +980,7 @@ public class TypeFetcherGenerator {
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), ErrorArmAnswer.of(f.returnType().wrapper()), parentSource,
-                                outputPackage)
+                                outputPackage, connectionClassAt(ctx, f))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -1212,19 +1216,15 @@ public class TypeFetcherGenerator {
             builder.addMethod(SplitRowsMethodEmitter.buildScatterSingleByIdxHelper());
         }
 
-        // Connection-cardinality sibling: scatterConnectionByIdx returns List<ConnectionResult>.
-        // Each per-parent bucket wraps the over-fetch slice with the shared PageRequest from the
-        // windowed rows-method invocation.
+        // Connection-cardinality sibling: scatterConnectionByIdx hands each per-parent bucket and
+        // its count slot to the rows method's builder of the field's connection class.
         boolean hasConnectionSplitField = fields.stream().anyMatch(f ->
             f instanceof ChildField.BatchedTableField btf
                 && btf.returnType().wrapper() instanceof FieldWrapper.Connection
             || f instanceof ChildField.BatchedTableInterfaceField btif
                 && btif.returnType().wrapper() instanceof FieldWrapper.Connection);
         if (hasConnectionSplitField) {
-            // The run's carrier fact, the same one the rows method's scatter call site reads, so the
-            // helper's signature and its call agree on every class, nested ones included.
-            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage,
-                launchers.carrierDsl() == no.sikt.graphitron.command.CarrierDsl.ROUTED));
+            builder.addMethod(SplitRowsMethodEmitter.buildScatterConnectionByIdxHelper(outputPackage));
         }
 
         // emptyScatter is needed whenever @lookupKey input can be empty at request time, which
@@ -7061,7 +7061,8 @@ public class TypeFetcherGenerator {
         TypeName resultValueType = fanned
             ? ParameterizedTypeName.get(LIST, ClassName.get(Object.class))
             : row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn
-                ? ClassName.get(conn.carrier().packageName(), conn.carrier().simpleName())
+                ? no.sikt.graphitron.render.ConnectionConstruction.classOf(
+                    ClassName.get(conn.helper().packageName(), conn.helper().simpleName()), conn.connection())
                 : isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = sourceKey.keyElementType();
@@ -7167,6 +7168,16 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * The connection class a polymorphic connection field builds, read off the classified schema
+     * the way the launcher producer reads it for every other connection producer.
+     */
+    private static no.sikt.graphitron.command.ConnectionClass connectionClassAt(TypeFetcherEmissionContext ctx,
+            GraphitronField field) {
+        return no.sikt.graphitron.plan.LauncherCommands.connectionClassAt(ctx.graphitronSchema(),
+            field.parentTypeName(), field.name());
+    }
+
+    /**
      * The completed future a batched fetcher answers when its key cannot match: the field's empty
      * value, read off the launcher row's result shape. {@code null} for a single record, an empty
      * list for a record list, and an empty page for a connection, whose {@code totalCount} is 0: the
@@ -7177,12 +7188,11 @@ public class TypeFetcherGenerator {
         CodeBlock empty = switch (row.result()) {
             case no.sikt.graphitron.command.ResultShape.SingleRecord ignored -> null;
             case no.sikt.graphitron.command.ResultShape.RecordList ignored -> CodeBlock.of("$T.of()", LIST);
-            // Only a tenant-routed parent reaches here, its tenant read off the parent row, so the
-            // page takes the routed context the batched form would (null: no row names a tenant).
-            case no.sikt.graphitron.command.ResultShape.Connection conn -> CodeBlock.of(
-                "$T.empty($L, null)",
-                ClassName.get(conn.carrier().packageName(), conn.carrier().simpleName()),
-                conn.defaultPageSize());
+            // Only a tenant-routed parent reaches here, its tenant read off the parent row; the empty
+            // page counts 0 without a statement, so it needs no context.
+            case no.sikt.graphitron.command.ResultShape.Connection conn ->
+                no.sikt.graphitron.render.ConnectionConstruction.empty(
+                    ClassName.get(conn.helper().packageName(), conn.helper().simpleName()), conn.connection());
             case no.sikt.graphitron.command.ResultShape.LoaderDelegated ignored ->
                 throw new IllegalStateException(
                     "Graphitron generator bug (batched fetcher): a table-batched launcher row"

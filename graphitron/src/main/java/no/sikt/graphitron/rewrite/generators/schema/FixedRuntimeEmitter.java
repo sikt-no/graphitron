@@ -2,7 +2,10 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
+import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.TypeSpec;
+import no.sikt.graphitron.emit.ConnectionsEmitter;
+import no.sikt.graphitron.emit.ConnectionsQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
@@ -19,6 +22,11 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
  * exception, the error router and the outcome carrier. What they say depends on nothing but the package they are written under, so
  * there is nothing to plan: this reads the package off {@code store_graph_output} and renders. A graph
  * that vouches adds the voucher runtime ({@link no.sikt.graphitron.emit.VoucherRuntime}), whose gate is the store's.
+ *
+ * <p>Beside them it writes the one runtime class rendered from the store's facts rather than from
+ * the package alone, {@code Connections}, the connection and edge classes every connection
+ * producer builds, read by {@link ConnectionsQuery}; it is written exactly when the graph has a
+ * connection type, and needs no plan either.
  *
  * <p>The units it returns are the record of what was written, which the incremental compile graph
  * reads in place of a planned entry per class.
@@ -42,11 +50,22 @@ public final class FixedRuntimeEmitter {
             .fetchOptional(STORE_GRAPH_OUTPUT.OUTPUT_PACKAGE)
             .orElseThrow(() -> new IllegalStateException("graph '" + store.graphName()
                 + "' has no output coordinates in the store; only a generating run writes classes"));
-        var units = new ArrayList<>(render(outputPackage));
+        var out = new ArrayList<>(render(outputPackage));
         if (no.sikt.graphitron.emit.VoucherRuntime.vouches(store)) {
-            units.addAll(renderVoucherRuntime(outputPackage));
+            out.addAll(renderVoucherRuntime(outputPackage));
         }
-        return List.copyOf(units);
+        var shapes = ConnectionsQuery.read(store);
+        if (!shapes.connections().isEmpty()) {
+            var units = new GeneratedUnits(outputPackage);
+            add(out, GlobalUnitKind.CONNECTIONS, units.connections(),
+                ConnectionsEmitter.emit(shapes, outputPackage, new ConnectionsEmitter.Runtime(
+                    className(units.pageInfo()), className(units.facets()), className(units.errorRouter()))));
+        }
+        return List.copyOf(out);
+    }
+
+    private static ClassName className(UnitRef ref) {
+        return ClassName.get(ref.packageName(), ref.simpleName());
     }
 
     /** The voucher runtime written under {@code outputPackage}, in a graph that vouches. */

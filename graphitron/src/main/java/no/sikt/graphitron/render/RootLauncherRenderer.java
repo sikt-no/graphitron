@@ -31,10 +31,11 @@ import javax.lang.model.element.Modifier;
  * fetcher chains composed: the table local, the condition (the row's glue call, or the neutral
  * condition from an absent WHERE slot), the ordering per {@link Ordering} arm, the projection
  * unit's {@code $project} select list, and the {@link ResultShape}'s terminal: {@code fetch()},
- * {@code fetchOne()}, or the connection arm's seek/limit page query wrapped in the generated
- * carrier (whose lazy resolvers read the same {@code (table, condition, page)} the query ran
- * under; on a {@link CarrierDsl#ROUTED} run the routed {@code dsl} rides the carrier too). Every
- * generated class name comes off a ref the producer minted; this renderer derives none.
+ * {@code fetchOne()}, or the connection arm's seek/limit page query handed to the generated
+ * connection class the field's type names (whose count and facets closures read the same
+ * {@code (table, condition)} the query ran under; on a {@link CarrierDsl#ROUTED} run they
+ * capture the routed {@code dsl}). Every generated class name comes off a ref or a name the
+ * producer put on the row; this renderer derives none.
  *
  * <p>Renders into the coordinate's fetchers class next to its entry point (the launcher hosts on
  * the class its {@code UnitMethodRef} owner names), so this renderer yields a {@code MethodSpec}
@@ -231,7 +232,7 @@ public final class RootLauncherRenderer {
      * The launcher's rendered payload, a derived view over {@code (invocation, tenancy,
      * result)}: the fanned strategy returns the scatter's marker-bearing transport ({@code List<Object>},
      * entailed by the strategy, collapsed by the entry point), everything else the shape's own
-     * type (the connection arm's is its carrier ref). Read by this renderer and the entry-point
+     * type (the connection arm's is its connection class). Read by this renderer and the entry-point
      * emitter, so the two ends cannot disagree.
      */
     public static TypeName valueTypeOf(LauncherCommand row) {
@@ -256,7 +257,8 @@ public final class RootLauncherRenderer {
                             ? ParameterizedTypeName.get(LIST, RECORD)
                             : RESULT_OF_RECORD;
                     case ResultShape.SingleRecord ignored2 -> RECORD;
-                    case ResultShape.Connection connection -> className(connection.carrier());
+                    case ResultShape.Connection connection ->
+                        ConnectionConstruction.classOf(className(connection.helper()), connection.connection());
                     case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
                         "the LoaderDelegated result belongs to the service arms, whose value type"
                         + " derives in ServiceRowsFragments; the command constructor rejects the pair");
@@ -381,14 +383,14 @@ public final class RootLauncherRenderer {
     /**
      * The connection arm: the two-view ordering block, the four fixed pagination argument reads
      * (names fixed by the slot; the classifier rejects custom names), the page request, the
-     * seek/limit page query, and the carrier construction over the same
-     * {@code (result, page, table, condition)} the query ran under. A faceted plan additionally
-     * binds the base fragment, the per-facet condition map, and the per-facet runtime specs
-     * (source, typed group column, count key) through the carrier's facet-carrying constructor.
+     * seek/limit page query, and the connection class built over the page, its count closure
+     * counting the same {@code (table, condition)} the query ran under. A faceted plan
+     * additionally binds the base fragment, the per-facet condition map, and the per-facet runtime
+     * specs (source, typed group column, count key), which the facets closure buckets over.
      *
      * <p>Two locals, not one, because a source whose FROM is composite has a different answer to
      * "what does the statement read from" than to "what do the columns hang off". {@code
-     * fromLocal} is the FROM, and it is also what the carrier hands its lazy resolvers, so
+     * fromLocal} is the FROM, and it is also what the count and facets closures read, so
      * {@code totalCount} and the facet aggregates count the same rows the page paged;
      * {@code aliasLocal} is the projected node, which the select list, the ordering and the
      * condition all resolve against. An anchor-sourced connection passes the same local twice
@@ -419,17 +421,30 @@ public final class RootLauncherRenderer {
             .add(".limit(page.limit())\n")
             .add(".fetch();\n")
             .unindent();
-        String dslTail = carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "";
-        if (connection.facets() == null) {
-            code.addStatement("return new $T(result, page, $L, condition$L)",
-                className(connection.carrier()), fromLocal, dslTail);
-        } else {
+        CodeBlock facetsOf = null;
+        if (connection.facets() != null) {
             code.add(facetBindings(connection, fromLocal, aliasLocal));
-            code.addStatement(
-                "return new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs$L)",
-                className(connection.carrier()), fromLocal, dslTail);
+            facetsOf = ConnectionConstruction.facetsOf(helperClass, connection.connection(),
+                connection.facets().facets().stream().map(FacetPlan.Entry::spec).toList(),
+                carrierDsl == CarrierDsl.ROUTED);
         }
+        code.addStatement("$T pageCondition = condition", CONDITION);
+        code.addStatement("return $L", ConnectionConstruction.build(helperClass, connection.connection(),
+            "result", scopedCount(helperClass, fromLocal, carrierDsl), facetsOf));
         return code.build();
+    }
+
+    /**
+     * A root connection's count closure: one {@code count(*)} over the page query's own FROM and
+     * condition, on the context the closure resolves when the count is read. The condition is
+     * read through a {@code pageCondition} local the caller declares, since a source's assembly
+     * may have reassigned {@code condition} and a closure captures only a final local.
+     */
+    private static CodeBlock scopedCount(ClassName helperClass, String fromLocal, CarrierDsl carrierDsl) {
+        return ConnectionConstruction.countOf(CodeBlock.of("new $T($L, pageCondition).count($L)",
+            helperClass.nestedClass("Scoped"), fromLocal,
+            ConnectionConstruction.closureDsl(helperClass, carrierDsl == CarrierDsl.ROUTED,
+                ConnectionConstruction.COUNT_ENV)));
     }
 
     /**
@@ -442,7 +457,7 @@ public final class RootLauncherRenderer {
      * <p>Why the resulting statement may be paginated at all: after the two halves it contains
      * the base table, the joined-detail LEFT JOINs (proven 1:0..1 at build time, see
      * {@link DiscriminatedTableFragments#joinedStep}) and select-list subselects (row-neutral by
-     * construction), so one row is one entity and {@code .limit()} slices entities. The carrier's
+     * construction), so one row is one entity and {@code .limit()} slices entities. The connection's
      * {@code totalCount} counts the base under the same condition, which by then carries the
      * discriminator restriction the projection half ANDed in, so the count agrees with the page.
      */
@@ -471,11 +486,11 @@ public final class RootLauncherRenderer {
             .add(".limit(page.limit())\n")
             .add(".fetch();\n")
             .unindent();
-        String dslTail = carrierDsl == CarrierDsl.ROUTED ? ", dsl" : "";
-        // No facet fork: an interface-element carrier is rejected at the SDL boundary, so the
+        // No facet plan: an interface-element carrier is rejected at the SDL boundary, so the
         // producer never lands a plan on this coordinate.
-        code.addStatement("return new $T(result, page, $L, condition$L)",
-            className(connection.carrier()), tableLocal, dslTail);
+        code.addStatement("$T pageCondition = condition", CONDITION);
+        code.addStatement("return $L", ConnectionConstruction.build(helperClass, connection.connection(),
+            "result", scopedCount(helperClass, tableLocal, carrierDsl), null));
         return code.build();
     }
 
@@ -662,7 +677,7 @@ public final class RootLauncherRenderer {
         String terminal = chain.hops().isEmpty() ? startLocal : chain.hops().getLast().alias();
 
         // The joins compose a table expression rather than riding the select's join chain, so
-        // one local is the FROM, the seek's source and the connection carrier's count source.
+        // one local is the FROM, the seek's source and the connection's count source.
         // A hop-less chain needs no second local: the routine call is already that table.
         String fromLocal = startLocal;
         var hopFilters = new java.util.ArrayList<CodeBlock>();

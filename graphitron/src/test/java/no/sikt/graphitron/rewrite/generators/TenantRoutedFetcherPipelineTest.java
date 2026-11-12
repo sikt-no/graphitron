@@ -467,22 +467,22 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     /**
-     * The nested class reads the run's one carrier-routing fact, the same one the rows method's
-     * scatter call site reads, so the connection helper's signature and its call agree on a
-     * nesting type's class too, and its lazy {@code totalCount} runs on the routed source.
+     * The nested class reads the run's one carrier-routing fact, so a nesting type's rows method
+     * builds its connections with a count closure over the routed source it paged on, as a class
+     * of a {@code @table} type does in the same build.
      */
     @Test
     void aNestingTypesClassRoutesItsCarriersExactlyAsTheRunDoes() {
         var routed = multiTenant(FILM_STOCK);
         assertThat(nestedLaunchers(routed, "FilmStock").carrierDsl())
             .isEqualTo(no.sikt.graphitron.command.CarrierDsl.ROUTED);
-        var scatter = TypeFetcherRenderTestSupport.generate(routed, DEFAULT_OUTPUT_PACKAGE).stream()
+        var rows = TypeFetcherRenderTestSupport.generate(routed, DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> "FilmStockFetchers".equals(t.name()))
             .findFirst().orElseThrow()
             .methodSpecs().stream()
-            .filter(m -> "scatterConnectionByIdx".equals(m.name()))
+            .filter(m -> "rowsInventoriesConnection".equals(m.name()))
             .findFirst().orElseThrow();
-        assertThat(scatter.parameters()).anyMatch(p -> "dsl".equals(p.name()));
+        assertThat(rows.code().toString()).contains("countEnv -> pageCount.count(dsl)");
 
         var single = TestSchemaHelper.buildSchema(FILM_STOCK);
         assertThat(nestedLaunchers(single, "FilmStock").carrierDsl())

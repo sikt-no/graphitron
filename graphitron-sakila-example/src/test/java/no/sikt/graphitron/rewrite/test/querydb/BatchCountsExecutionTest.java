@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.util.ConnectionHelper;
-import no.sikt.graphitron.generated.util.ConnectionResult;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -80,20 +79,5 @@ class BatchCountsExecutionTest {
         assertThat(first).isInstanceOf(org.jooq.exception.DataAccessException.class);
         assertThat(second).as("the kept failure, not a fresh one").isSameAs(first);
         assertThat(QUERY_COUNT.get()).as("the failing statement ran once").isEqualTo(1);
-    }
-
-    @Test
-    void anEmptyPageCountsZeroWithoutAStatement() {
-        // The page a batched fetcher answers for a parent whose key cannot match: its result set is
-        // provably empty, so its totalCount is 0, as for a parent whose query found nothing.
-        QUERY_COUNT.set(0);
-        var page = ConnectionResult.empty(10);
-        var tenantPage = no.sikt.graphitron.generated.multitenant.util.ConnectionResult.empty(10, null);
-
-        assertThat(page.trimmedResult()).isEmpty();
-        assertThat(page.totalCount().count(dsl)).isZero();
-        assertThat(tenantPage.trimmedResult()).isEmpty();
-        assertThat(tenantPage.totalCount().count(dsl)).isZero();
-        assertThat(QUERY_COUNT.get()).isZero();
     }
 }

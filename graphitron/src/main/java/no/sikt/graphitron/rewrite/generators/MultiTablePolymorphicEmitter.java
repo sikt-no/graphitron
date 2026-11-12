@@ -643,7 +643,7 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Root connection-fetcher entry point. Emits the public main fetcher plus one private
      * {@code select<Participant>For<Field>} helper per table-bound participant. The main
-     * fetcher returns a {@code DataFetcherResult<ConnectionResult>}; stage 1 wraps the
+     * fetcher returns a {@code DataFetcherResult} of the field's connection class; stage 1 wraps the
      * UNION-ALL of per-branch projections in a derived table {@code pages} so cursor decode +
      * seek + LIMIT N+1 apply uniformly across the union; stage 2 reuses the VALUES-JOIN
      * dispatch and projects the key columns as {@code __pk0__..__pkN__} on each typed Record so
@@ -668,7 +668,8 @@ public final class MultiTablePolymorphicEmitter {
             CompositeDecodeHelperRegistry registry,
             int defaultPageSize,
             Optional<PolymorphicOrdering> ordering,
-            String outputPackage) {
+            String outputPackage,
+            no.sikt.graphitron.command.ConnectionClass connection) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
@@ -676,7 +677,8 @@ public final class MultiTablePolymorphicEmitter {
         var slots = ordering.map(PolymorphicOrdering::slots).orElse(List.of());
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildRootConnectionFetcher(ctx, parentTypeName, fieldName, tableBoundParticipants,
-            participantFilters, nodeIdArgDispatches, registry, defaultPageSize, ordering, outputPackage));
+            participantFilters, nodeIdArgDispatches, registry, defaultPageSize, ordering, outputPackage,
+            connection));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, true, slots,
                 outputPackage));
@@ -713,17 +715,19 @@ public final class MultiTablePolymorphicEmitter {
             GraphitronType.ResultType parentResultType,
             ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
-            String outputPackage) {
+            String outputPackage,
+            no.sikt.graphitron.command.ConnectionClass connection) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildBatchedConnectionFetcher(ctx, batchKey, rowsMethodName,
-            parentKeyLift, parentKeyOwnerTable, parentResultType, answer, parentSource, outputPackage));
+            parentKeyLift, parentKeyOwnerTable, parentResultType, answer, parentSource, outputPackage,
+            connection));
         methods.add(buildBatchedConnectionRowsMethod(ctx, batchKey.name(), rowsMethodName,
             tableBoundParticipants, participantJoinPaths, defaultPageSize, batchKey.sourceKey(),
-            parentKeyOwnerTable, outputPackage));
+            parentKeyOwnerTable, outputPackage, connection));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(batchKey.name(), participant, true, List.of(),
                 outputPackage));
@@ -1046,7 +1050,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Root connection main fetcher. Mirrors {@link #buildMainFetcher} for the
-     * list path but returns {@code DataFetcherResult<ConnectionResult>}: stage 1 wraps the
+     * list path but returns a {@code DataFetcherResult} of the field's connection class: stage 1 wraps the
      * per-branch UNION ALL in a derived table {@code pages} and applies
      * {@code .orderBy/.seek/.limit} from a {@code ConnectionHelper.PageRequest} so cursor
      * decoding and page-size + 1 over-fetch happen against the union as a whole; stage 2
@@ -1054,11 +1058,10 @@ public final class MultiTablePolymorphicEmitter {
      * (for the schema-class TypeResolver) and the {@code __pk0__..__pkN__} key columns (for
      * {@code ConnectionHelper.encodeCursor}).
      *
-     * <p>{@code ConnectionResult} is constructed with {@code (table, condition) =
-     * (pagesTable, DSL.noCondition())} so the same UNION-ALL derived table backs both the page
-     * query and {@code ConnectionHelper.totalCount}'s {@code SELECT count(*)}; the count
-     * resolver remains lazy on selection (graphql-java only invokes it when the client picks
-     * the field). A field with no table-bound participant is refused before generation
+     * <p>The connection's count closure counts {@code (pagesTable, DSL.noCondition())}, so the
+     * same UNION-ALL derived table backs both the page query and the count's
+     * {@code SELECT count(*)}; the count stays lazy on selection (it runs only when the client
+     * picks the field). A field with no table-bound participant is refused before generation
      * ({@code FIELD_WITHOUT_FETCHER}).
      *
      * <p>The order and the cursor columns come from the field's lowered ordering. The one caller
@@ -1072,16 +1075,16 @@ public final class MultiTablePolymorphicEmitter {
             String fieldName, List<ParticipantRef.TableBound> participants,
             Map<String, List<WhereFilter>> participantFilters,
             List<NodeIdArgDispatch> nodeIdArgDispatches, CompositeDecodeHelperRegistry registry,
-            int defaultPageSize, Optional<PolymorphicOrdering> ordering, String outputPackage) {
+            int defaultPageSize, Optional<PolymorphicOrdering> ordering, String outputPackage,
+            no.sikt.graphitron.command.ConnectionClass connection) {
 
-        var connectionResultClass = ClassName.get(outputPackage + ".util",
-            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
         var connectionHelperClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
         var pageRequestClass = ClassName.get(outputPackage + ".util",
             "ConnectionHelper", "PageRequest");
 
-        TypeName valueType = connectionResultClass;
+        TypeName valueType = no.sikt.graphitron.render.ConnectionConstruction.classOf(connectionHelperClass,
+            connection);
 
         var builder = MethodSpec.methodBuilder(fieldName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -1184,19 +1187,24 @@ public final class MultiTablePolymorphicEmitter {
         }
 
         // Merge: walk result[] in stage-1 order; each non-null entry is a typed Record carrying
-        // __typename and the key columns. ConnectionResult.trimmedResult() trims to pageSize.
+        // __typename and the key columns. The connection is built over the page trimmed to pageSize.
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         builder.addStatement("$T payload = new $T<>(stage1.size())", listOfRecord, ARRAY_LIST);
         builder.beginControlFlow("for (Object o : result)");
         builder.addStatement("if (o instanceof $T r) payload.add(r)", RECORD);
         builder.endControlFlow();
 
-        // Bind the same UNION-ALL derived table {@code pagesTable} onto ConnectionResult so
-        // ConnectionHelper.totalCount can issue {@code SELECT count(*) FROM (UNION ALL) AS pages}
-        // lazily on selection.
-        builder.addStatement("$T cr = new $T(payload, page, $L, $T.noCondition()"
-            + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + ")",
-            valueType, connectionResultClass, CONNECTION_PAGES_LOCAL, DSL);
+        // The count closure counts the same UNION-ALL derived table {@code pagesTable}, issuing
+        // {@code SELECT count(*) FROM (UNION ALL) AS pages} lazily on selection.
+        var count = no.sikt.graphitron.render.ConnectionConstruction.countOf(CodeBlock.of(
+            "new $T($L, $T.noCondition()).count($L)",
+            connectionHelperClass.nestedClass(
+                no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.SCOPED_CLASS_NAME),
+            CONNECTION_PAGES_LOCAL, DSL,
+            no.sikt.graphitron.render.ConnectionConstruction.closureDsl(connectionHelperClass,
+                TenantDslEmitter.isMultiTenant(ctx), no.sikt.graphitron.render.ConnectionConstruction.COUNT_ENV)));
+        builder.addStatement("$T cr = $L", valueType, no.sikt.graphitron.render.ConnectionConstruction.build(
+            connectionHelperClass, connection, "payload", count, null));
         builder.addCode(returnSyncSuccess(valueType, "cr", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
@@ -1212,9 +1220,9 @@ public final class MultiTablePolymorphicEmitter {
      * decoding and page-size + 1 over-fetch happen uniformly across the union.
      *
      * <p>Materialising the derived table as a local lets the connection fetcher pass the
-     * <em>same</em> {@code Table<?>} reference into {@code ConnectionResult} so
-     * {@code ConnectionHelper.totalCount} can issue {@code SELECT count(*) FROM pagesTable}
-     * lazily on selection. The carrier condition is {@code DSL.noCondition()}; root
+     * <em>same</em> {@code Table<?>} reference into the connection's count closure, so
+     * {@code totalCount} issues {@code SELECT count(*) FROM pagesTable} lazily on selection.
+     * The count's condition is {@code DSL.noCondition()}; root
      * connections have no parent restriction.
      *
      * <p>The outer select reads the {@code key<I>} fields {@link #declareKeyFields} declared, so
@@ -1657,12 +1665,14 @@ public final class MultiTablePolymorphicEmitter {
             GraphitronType.ResultType parentResultType,
             ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
-            String outputPackage) {
+            String outputPackage,
+            no.sikt.graphitron.command.ConnectionClass connection) {
 
         String fieldName = batchKey.name();
-        var connectionResultClass = ClassName.get(outputPackage + ".util",
-            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
-        TypeName valueType = connectionResultClass;
+        TypeName valueType = no.sikt.graphitron.render.ConnectionConstruction.classOf(
+            ClassName.get(outputPackage + ".util",
+                no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME),
+            connection);
 
         TypeName keyType = batchKey.sourceKey().keyElementType();
         TypeName loaderType = ParameterizedTypeName.get(DATA_LOADER, keyType, valueType);
@@ -1718,7 +1728,7 @@ public final class MultiTablePolymorphicEmitter {
      * parent's {@link no.sikt.graphitron.rewrite.model.SourceKey} and delegates to a
      * {@code rows<Field>(List<RowN<…>>, env)} batch loader returning {@code List<List<Record>>}
      * (one bucket per parent in the batch). Same async-tail shape as the connection arm; only the
-     * value type differs ({@code List<Record>} per parent vs. {@code ConnectionResult}).
+     * value type differs ({@code List<Record>} per parent vs. the connection class).
      *
      * <p>The load site reads the leaf's {@link BatchKeyField#loaderRegistration()} dispatch,
      * the classify-time decision {@link GeneratorUtils#buildRecordParentKeyExtraction}'s
@@ -1800,7 +1810,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Batched child-connection rows method: issues ONE SQL statement covering every parent in the
-     * DataLoader batch, scatters typed Records into a {@code List<ConnectionResult>} indexed
+     * DataLoader batch, scatters typed Records into a list of the field's connection class indexed
      * 1:1 with the {@code keys} list.
      *
      * <p>Stage-1 shape:
@@ -1827,7 +1837,7 @@ public final class MultiTablePolymorphicEmitter {
      * <p>Stage-2 dispatch (per typename) writes typed Records to {@code result[outerIdx]}; a
      * parallel {@code int[] parentIdxByOuter} populated from each stage-1 row's {@code __idx__}
      * scatters the typed Records into per-parent {@code List<Record>} buckets. Each
-     * per-parent {@code ConnectionResult} binds slot {@code i} of one
+     * per-parent connection's count closure binds slot {@code i} of one
      * {@code ConnectionHelper.BatchCounts} over the SAME {@code pagesTable} reference, so the
      * first {@code totalCount} to resolve runs
      * {@code SELECT __idx__, count(*) FROM pagesTable GROUP BY __idx__} once for the batch and
@@ -1848,10 +1858,8 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             int defaultPageSize, SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
-            String outputPackage) {
+            String outputPackage, no.sikt.graphitron.command.ConnectionClass connection) {
 
-        var connectionResult = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionResult();
-        var connectionResultClass = ClassName.get(connectionResult.packageName(), connectionResult.simpleName());
         var connectionHelperClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
         var batchCountsClass = connectionHelperClass.nestedClass(
@@ -1867,7 +1875,8 @@ public final class MultiTablePolymorphicEmitter {
         int parentKeyArity = parentPkCols.size();
         TypeName keyType = parentSourceKey.keyElementType();
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
-        TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
+        TypeName listOfConnection = ParameterizedTypeName.get(LIST,
+            no.sikt.graphitron.render.ConnectionConstruction.classOf(connectionHelperClass, connection));
 
         var b = CodeBlock.builder();
 
@@ -2000,21 +2009,26 @@ public final class MultiTablePolymorphicEmitter {
         b.endControlFlow();
         b.endControlFlow();
 
-        // Build per-parent ConnectionResults — one BatchCounts over pagesTable for the batch, slot i
-        // on parent i, so COUNT(*) GROUP BY __idx__ runs once however many parents select it.
+        // Build per-parent connections: one BatchCounts over pagesTable for the batch, slot i on
+        // parent i, so COUNT(*) GROUP BY __idx__ runs once however many parents select it.
         b.addStatement("$T counts = new $T($L, idxField, keys.size())",
             batchCountsClass, batchCountsClass, CONNECTION_PAGES_LOCAL);
-        b.addStatement("$T out = new $T<>(keys.size())", listOfConnectionResult, ARRAY_LIST);
+        b.addStatement("$T out = new $T<>(keys.size())", listOfConnection, ARRAY_LIST);
         b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        b.addStatement("out.add(new $T(buckets.get(i), page, counts.slot(i)"
-            + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + "))",
-            connectionResultClass);
+        b.addStatement("$T pageRows = buckets.get(i)", listOfRecord);
+        b.addStatement("$T pageCount = counts.slot(i)", connectionHelperClass.nestedClass(
+            no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.TOTAL_COUNT_CLASS_NAME));
+        var count = no.sikt.graphitron.render.ConnectionConstruction.countOf(CodeBlock.of("pageCount.count($L)",
+            no.sikt.graphitron.render.ConnectionConstruction.closureDsl(connectionHelperClass,
+                TenantDslEmitter.isMultiTenant(ctx), no.sikt.graphitron.render.ConnectionConstruction.COUNT_ENV)));
+        b.addStatement("out.add($L)", no.sikt.graphitron.render.ConnectionConstruction.build(
+            connectionHelperClass, connection, "pageRows", count, null));
         b.endControlFlow();
         b.addStatement("return out");
 
         return MethodSpec.methodBuilder(rowsMethodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfConnectionResult)
+            .returns(listOfConnection)
             .addParameter(keysListType, "keys")
             .addParameter(ENV, "env")
             .addCode(b.build())

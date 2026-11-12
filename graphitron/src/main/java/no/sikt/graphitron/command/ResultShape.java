@@ -57,27 +57,28 @@ public sealed interface ResultShape {
     record RecordList(Ordering ordering) implements ResultShape {}
 
     /**
-     * The connection shape: the seek/limit page query, wrapped in the generated carrier the lazy
-     * resolvers (cursor encode, {@code totalCount}) read. {@link #ordering} is total here
+     * The connection shape: the seek/limit page query, its rows handed to the generated
+     * connection class the field's type names, with the closures that class reads lazily
+     * (cursor encode, {@code totalCount}, facets). {@link #ordering} is total here
      * (pagination requires ordering, validator-enforced) and serves both views the page request
      * needs, the sort fields and the cursor columns; {@link #defaultPageSize} is the one
      * build-time pagination fact the composition consumes (the four argument names are fixed by
-     * the slot, so the model never holds them). {@link #helper} and {@link #carrier} are the
-     * generated connection runtime's units ({@code ConnectionHelper}, {@code ConnectionResult}),
-     * copied off the naming vocabulary by the producer so the launcher's edges to them are data,
-     * the same handshake shape the WHERE slot uses against the condition relation.
+     * the slot, so the model never holds them). {@link #helper} is the generated connection
+     * runtime's unit ({@code ConnectionHelper}), copied off the naming vocabulary by the producer
+     * so the launcher's edge to it is data, the same handshake shape the WHERE slot uses against
+     * the condition relation. {@link #connection} is the class the producer builds.
      *
      * <p>{@link #facets} is the faceted carrier's plan (the base and per-facet fragment refs
-     * plus decode specs and groupings), absent exactly when the coordinate carries no facets; the carrier
-     * construction forks on that absence, matching the runtime's two constructor shapes.
+     * plus decode specs and groupings), absent exactly when the coordinate carries no facets; the
+     * facets closure forks on that absence.
      */
-    record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, UnitRef carrier,
+    record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, ConnectionClass connection,
             FacetPlan facets)
             implements ResultShape {
         public Connection {
             Objects.requireNonNull(ordering, "a connection composition is ordered by construction");
             Objects.requireNonNull(helper, "helper");
-            Objects.requireNonNull(carrier, "carrier");
+            Objects.requireNonNull(connection, "connection");
         }
     }
 }

@@ -76,16 +76,16 @@ class TypeUnitMembershipTest {
         // The nested membership reads the schema's reach fold, gated on owning a fetcher.
         assertThat(schema.nestingReach().reachedTypeNames()).contains("FilmDetails");
 
-        // The connection pair: one row per synthesised carrier, its two refs in named roles.
-        assertThat(relation.connectionFetchers()).singleElement().satisfies(pair -> {
-            var ct = (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
-                schema.type(pair.typeName());
-            assertThat(pair.connection().simpleName()).isEqualTo(ct.name() + "Fetchers");
-            assertThat(pair.edge().simpleName()).isEqualTo(ct.edgeTypeName() + "Fetchers");
-        });
-        // The family's write set is the plain refs plus both refs of every pair.
-        assertThat(relation.fetchersUnits())
-            .hasSize(relation.fetchers().size() + 2 * relation.connectionFetchers().size());
+        // A connection and its edge host no fetchers: the store-rendered connection classes
+        // resolve their fields.
+        var connection = (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
+            schema.types().values().stream()
+                .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
+                .findFirst().orElseThrow();
+        assertThat(relation.fetchers()).extracting(TypeUnitCommand.FetchersUnit::typeName)
+            .doesNotContain(connection.name(), connection.edgeTypeName());
+        // The family's write set is the plain refs.
+        assertThat(relation.fetchersUnits()).hasSize(relation.fetchers().size());
     }
 
     @Test
@@ -127,8 +127,8 @@ class TypeUnitMembershipTest {
         assertThat(byName).doesNotContainKey("String"); // scalars register off constants, no row
 
         // The registersFetchers flag: hosting classifications with a classified coordinate and
-        // the reach-fold owner are true; connection and edge carriers are unconditionally true;
-        // PageInfo registers its specification fields on the shared generated class; enums,
+        // the reach-fold owner are true; connection and edge carriers are false, the store-rendered
+        // connection classes registering their fields; PageInfo registers its specification fields on the shared generated class; enums,
         // inputs and plain interfaces carry no registration body.
         var connection = schemaShapes.stream()
             .filter(row -> schema.type(row.typeName())
@@ -141,8 +141,8 @@ class TypeUnitMembershipTest {
         assertThat(byName.get("Query").registersFetchers()).isTrue();
         assertThat(byName.get("Film").registersFetchers()).isTrue();
         assertThat(byName.get("FilmDetails").registersFetchers()).isTrue();
-        assertThat(connection.registersFetchers()).isTrue();
-        assertThat(edge.registersFetchers()).isTrue();
+        assertThat(connection.registersFetchers()).isFalse();
+        assertThat(edge.registersFetchers()).isFalse();
         assertThat(byName.get("PageInfo").registersFetchers()).isTrue();
         assertThat(byName.get("Rating").registersFetchers()).isFalse();
         assertThat(byName.get("FilmFilter").registersFetchers()).isFalse();

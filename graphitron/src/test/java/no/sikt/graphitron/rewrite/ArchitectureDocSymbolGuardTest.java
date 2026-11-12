@@ -137,7 +137,6 @@ class ArchitectureDocSymbolGuardTest {
         Map<String, String> exempt = new LinkedHashMap<>();
 
         // emitted: written into a consumer's sources by a generator, never declared here.
-        exempt.put("ConnectionResult", "emitted: per-app runtime class");
         exempt.put("Graphitron", "emitted: per-app entry-point class carrying newExecutionInput");
         exempt.put("GraphitronContext", "emitted: per-app context interface");
         exempt.put("GraphitronContextImpl", "emitted: the consumer's own implementation of it");

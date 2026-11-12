@@ -529,9 +529,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_reachable_input", Arm.DERIVED);
         registrations.put("code_delivery_container", Arm.UNSHADOWED);
         registrations.put("code_tuple_class", Arm.UNSHADOWED);
-        registrations.put("graphitron_runtime_class", Arm.UNSHADOWED);
         registrations.put("graphitron_connection_position", Arm.UNSHADOWED);
-        registrations.put("graphitron_runtime_member", Arm.UNSHADOWED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);

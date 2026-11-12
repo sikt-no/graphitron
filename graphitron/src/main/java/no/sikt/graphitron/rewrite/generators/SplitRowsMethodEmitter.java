@@ -211,56 +211,44 @@ public final class SplitRowsMethodEmitter {
 
     /**
      * Connection-cardinality sibling of {@link #buildScatterByIdxHelper}. Buckets the flat
-     * windowed result by {@code __idx__}, wrapping each per-parent sublist in a
-     * {@code ConnectionResult} that shares the batch's
-     * {@code PageRequest} (page size, cursors, backward flag, orderByColumns). Emitted once
-     * per fetcher class that has any connection-returning Split* field.
+     * windowed result by {@code __idx__} and hands each parent's bucket, with that parent's slot of
+     * one {@code ConnectionHelper.BatchCounts} over the batch's count source, to the
+     * {@code connection} function the rows method passes, which builds the connection class its
+     * field's type names over the batch's shared {@code PageRequest}. Generic in that class, so
+     * one helper serves every connection field of a fetchers class whatever type each returns.
+     * Emitted once per fetcher class that has any connection-returning Split* field.
      *
-     * <p>The PageRequest's {@code extraFields()} are the order-by columns (cursor-encoding
-     * seed); the shared {@code PageRequest} is what lets every per-parent
-     * {@code ConnectionResult} answer {@code hasNextPage()} correctly: the over-fetch-by-1
-     * lives per-partition in the windowed CTE, so each parent's bucket is 0..(pageSize+1).
+     * <p>Each parent's bucket is 0..(pageSize+1) rows, the over-fetch-by-1 living per partition
+     * in the windowed CTE, so the connection function trims it and reads the page flags off it.
      *
      * <p>{@code countSource} is the shared cursor-independent count derived table emitted by
-     * the rows method. The helper wraps it in one {@code ConnectionHelper.BatchCounts} for the
-     * batch and binds slot {@code i} on parent {@code i}'s carrier, so the generated
-     * {@code ConnectionHelper.totalCount} runs one {@code count(*)} grouped by {@code __idx__}
-     * for the whole batch on first selection (same shape as the polymorphic batched path over
-     * its shared {@code pages} table).
+     * the rows method. The one {@code BatchCounts} runs one {@code count(*)} grouped by
+     * {@code __idx__} for the whole batch the first time any parent's {@code totalCount} is read
+     * (same shape as the polymorphic batched path over its shared {@code pages} table).
      */
     public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage) {
-        return buildScatterConnectionByIdxHelper(outputPackage, false);
-    }
-
-    /**
-     * Canonical form carrying the tenancy bit: in a multi-tenant build the helper takes the rows
-     * method's routed {@code DSLContext} and binds it onto each per-parent carrier, so the lazy
-     * resolvers aggregate against the source the page rows came from.
-     */
-    public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage, boolean multiTenant) {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
-        var connectionResult = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionResult();
-        ClassName connectionResultClass = ClassName.get(connectionResult.packageName(), connectionResult.simpleName());
         var connectionHelper = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionHelper();
-        ClassName batchCountsClass = ClassName.get(connectionHelper.packageName(), connectionHelper.simpleName(),
+        ClassName helperClass = ClassName.get(connectionHelper.packageName(), connectionHelper.simpleName());
+        ClassName batchCountsClass = helperClass.nestedClass(
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.BATCH_COUNTS_CLASS_NAME);
-        ClassName pageRequestClass = ClassName.get(
-            outputPackage + ".util", "ConnectionHelper", "PageRequest");
+        ClassName totalCountClass = helperClass.nestedClass(
+            no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.TOTAL_COUNT_CLASS_NAME);
         TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName listOfListOfRecord = ParameterizedTypeName.get(LIST, listOfRecord);
-        TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
-        var helper = MethodSpec.methodBuilder("scatterConnectionByIdx")
+        var connection = com.palantir.javapoet.TypeVariableName.get("C");
+        TypeName listOfConnection = ParameterizedTypeName.get(LIST, connection);
+        TypeName build = ParameterizedTypeName.get(ClassName.get("java.util.function", "BiFunction"),
+            listOfRecord, totalCountClass, connection);
+        return MethodSpec.methodBuilder("scatterConnectionByIdx")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(listOfConnectionResult)
+            .addTypeVariable(connection)
+            .returns(listOfConnection)
             .addParameter(resultRecord, "flat")
             .addParameter(int.class, "keyCount")
-            .addParameter(pageRequestClass, "page")
-            .addParameter(tableWildcard, "countSource");
-        if (multiTenant) {
-            helper.addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl");
-        }
-        return helper
+            .addParameter(tableWildcard, "countSource")
+            .addParameter(build, "connection")
             .addCode(CodeBlock.builder()
                 .addStatement("$T buckets = new $T<>(keyCount)", listOfListOfRecord, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
@@ -272,11 +260,9 @@ public final class SplitRowsMethodEmitter {
                 .endControlFlow()
                 .addStatement("$T counts = new $T(countSource, countSource.field($S, $T.class), keyCount)",
                     batchCountsClass, batchCountsClass, IDX_COLUMN, Integer.class)
-                .addStatement("$T out = new $T<>(keyCount)", listOfConnectionResult, ARRAY_LIST)
+                .addStatement("$T out = new $T<>(keyCount)", listOfConnection, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
-                .addStatement("out.add(new $T(buckets.get(i), page, counts.slot(i)"
-                        + (multiTenant ? ", dsl" : "") + "))",
-                    connectionResultClass)
+                .addStatement("out.add(connection.apply(buckets.get(i), counts.slot(i)))")
                 .endControlFlow()
                 .addStatement("return out")
                 .build())

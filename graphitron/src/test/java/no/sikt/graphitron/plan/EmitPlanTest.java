@@ -49,7 +49,8 @@ class EmitPlanTest {
         GlobalUnitKind.OUTCOME,
         GlobalUnitKind.VOUCHER_CODEC,
         GlobalUnitKind.VOUCHER_KEYS,
-        GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION));
+        GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
+        GlobalUnitKind.CONNECTIONS));
 
     @Test
     void plainSchema_producesTheUnconditionalKinds() {

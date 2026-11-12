@@ -45,6 +45,23 @@ class ConnectionHelperClassGeneratorTest {
         assertThat(maxPageSize(helper)).isNull();
     }
 
+    @Test
+    @DisplayName("the helper resolves no field, and only a single-tenant build resolves the request's context")
+    void noResolversAndAPerRequestContextOnlyWhenSingleTenant() {
+        var single = ConnectionHelperClassGenerator.generate(OUTPUT_PACKAGE, false, OptionalInt.empty()).getFirst();
+        var routed = ConnectionHelperClassGenerator.generate(OUTPUT_PACKAGE, true, OptionalInt.empty()).getFirst();
+
+        assertThat(methodNames(single))
+            .contains("dsl", "trim", "hasNextPage", "hasPreviousPage", "cursorOf", "facetBuckets")
+            .doesNotContain("edges", "nodes", "pageInfo", "totalCount", "facets", "edgeNode", "edgeCursor");
+        assertThat(single.typeSpecs()).extracting(TypeSpec::name).doesNotContain("Edge");
+        assertThat(methodNames(routed)).doesNotContain("dsl", "graphitronContext");
+    }
+
+    private static java.util.List<String> methodNames(TypeSpec helper) {
+        return helper.methodSpecs().stream().map(m -> m.name()).toList();
+    }
+
     private static FieldSpec maxPageSize(TypeSpec helper) {
         return helper.fieldSpecs().stream()
             .filter(f -> f.name().equals(ConnectionHelperClassGenerator.MAX_PAGE_SIZE))

@@ -8581,43 +8581,6 @@ COMMENT ON COLUMN graphitron_result_class.shape IS 'always OBJECT, pinned so the
 COMMENT ON COLUMN graphitron_result_class.class_name IS 'the class, as graphitron_type_backing names it from what a producer returns or a member delivers';
 COMMENT ON COLUMN graphitron_result_class.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
-CREATE TABLE graphitron_runtime_class (
-  kind          VARCHAR NOT NULL,
-  relative_name VARCHAR NOT NULL,
-  PRIMARY KEY (kind),
-  UNIQUE (relative_name),
-  CHECK (kind IN ('CONNECTION_RESULT', 'CONNECTION_HELPER', 'CONNECTION_EDGE'))
-);
-COMMENT ON TABLE graphitron_runtime_class IS 'One class graphitron generates into every consumer from a fixed template, by what it is for and its binary name below the output package. For example CONNECTION_RESULT is util.ConnectionResult, the page a connection''s producer produces.';
-COMMENT ON COLUMN graphitron_runtime_class.kind IS 'what the class is for, a closed vocabulary: CONNECTION_RESULT the page a connection''s producer produces, CONNECTION_EDGE one record of it with its cursor, CONNECTION_HELPER the static functions the connection''s fields call';
-COMMENT ON COLUMN graphitron_runtime_class.relative_name IS 'the binary name below store_graph_output.output_package, a nested class after a $; a reader prefixes the package and a dot to name the class one graph''s generation wrote';
-INSERT INTO graphitron_runtime_class VALUES
-  ('CONNECTION_RESULT', 'util.ConnectionResult'),
-  ('CONNECTION_HELPER', 'util.ConnectionHelper'),
-  ('CONNECTION_EDGE', 'util.ConnectionHelper$Edge');
-
-CREATE TABLE graphitron_runtime_member (
-  kind        VARCHAR NOT NULL,
-  member_name VARCHAR NOT NULL,
-  descriptor  VARCHAR NOT NULL,
-  is_static   BOOLEAN NOT NULL,
-  PRIMARY KEY (kind, member_name, descriptor),
-  FOREIGN KEY (kind) REFERENCES graphitron_runtime_class (kind)
-);
-COMMENT ON TABLE graphitron_runtime_member IS 'One method of a class graphitron generates that an occurrence binds to, by its name and JVM descriptor. For example CONNECTION_RESULT''s trimmedResult ()Ljava/util/List; is the page''s records, which a connection''s nodes binds.';
-COMMENT ON COLUMN graphitron_runtime_member.kind IS 'the class the method is declared on, by its kind in graphitron_runtime_class';
-COMMENT ON COLUMN graphitron_runtime_member.member_name IS 'the method''s name';
-COMMENT ON COLUMN graphitron_runtime_member.descriptor IS 'the method''s raw JVM descriptor, as code_method spells one, so a binding names a generated method exactly as it names an author''s';
-COMMENT ON COLUMN graphitron_runtime_member.is_static IS 'whether the method is static: a function of its arguments, such as ConnectionHelper''s encodeCursor, rather than an accessor on an instance the producer produced';
-INSERT INTO graphitron_runtime_member VALUES
-  ('CONNECTION_RESULT', 'trimmedResult', '()Ljava/util/List;', FALSE),
-  ('CONNECTION_RESULT', 'hasNextPage', '()Z', FALSE),
-  ('CONNECTION_RESULT', 'hasPreviousPage', '()Z', FALSE),
-  ('CONNECTION_RESULT', 'orderByColumns', '()Ljava/util/List;', FALSE),
-  ('CONNECTION_EDGE', 'record', '()Lorg/jooq/Record;', FALSE),
-  ('CONNECTION_EDGE', 'cursor', '()Ljava/lang/String;', FALSE),
-  ('CONNECTION_HELPER', 'encodeCursor', '(Lorg/jooq/Record;Ljava/util/List;)Ljava/lang/String;', TRUE);
-
 CREATE INDEX graphql_ast_field_definition_entry_coordinate_ix
   ON graphql_ast_field_definition_entry (graph_name, type_name, name);
 COMMENT ON INDEX graphql_ast_field_definition_entry_coordinate_ix IS 'The coordinate side''s probe: graphitron_entry_defect_rule reaches a producing field''s definition site from its type and name, where the primary key leads with the site.';
@@ -17167,7 +17130,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISS
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
-  (graph_name, coordinate, shape, class_name, runtime_kind, table_source_name, table_schema,
+  (graph_name, coordinate, shape, class_name, table_source_name, table_schema,
    table_name, class_source_ref, class_name_ref) AS
 WITH produced (graph_name, coordinate, kind, is_list, connection, target_kind, payload,
                bound_source_name, bound_schema, bound_table, polymorphic,
@@ -17232,14 +17195,13 @@ shaped (graph_name, coordinate, kind, shape, element_class, table_source_name, t
               ELSE bound_table END
     FROM produced
 )
-SELECT r.graph_name, r.coordinate, r.shape, r.class_name, r.runtime_kind, r.table_source_name,
+SELECT r.graph_name, r.coordinate, r.shape, r.class_name, r.table_source_name,
        r.table_schema, r.table_name, oc.source_name, oc.class_name
   FROM (SELECT s.graph_name, s.coordinate, s.shape,
                CASE WHEN s.shape IN ('SCALAR', 'CONNECTION') THEN CAST(NULL AS VARCHAR)
                     WHEN s.kind = 'SERVICE' THEN s.element_class
                     WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN t.record_class_fqn
                     ELSE CAST(NULL AS VARCHAR) END,
-               CASE WHEN s.shape = 'CONNECTION' THEN 'CONNECTION_RESULT' END,
                -- The lift: a result of records is lifted onto the table whose rows they are.
                CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_source_name END,
                CASE WHEN s.shape IN ('SINGLE_RECORD', 'RECORD_LIST') THEN s.table_schema END,
@@ -17248,7 +17210,7 @@ SELECT r.graph_name, r.coordinate, r.shape, r.class_name, r.runtime_kind, r.tabl
           LEFT JOIN sql_table t
             ON t.source_name = s.table_source_name AND t.table_schema = s.table_schema
            AND t.table_name = s.table_name)
-       r (graph_name, coordinate, shape, class_name, runtime_kind, table_source_name, table_schema,
+       r (graph_name, coordinate, shape, class_name, table_source_name, table_schema,
           table_name)
   -- The class by its key: the copy the graph resolves the name to, as
   -- graphitron_occurrence_source_object decides it.
@@ -17258,7 +17220,6 @@ COMMENT ON VIEW graphitron_occurrence_producer_result_rule IS 'One row the produ
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.shape IS 'the shape of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.shape';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.class_name';
--- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.runtime_kind IS 'the runtime_kind of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.runtime_kind';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_result_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_result.table_name';
@@ -17270,7 +17231,6 @@ CREATE TABLE graphitron_occurrence_producer_result (
   coordinate        VARCHAR   NOT NULL,
   shape             VARCHAR   NOT NULL,
   class_name        VARCHAR,
-  runtime_kind      VARCHAR,
   table_source_name VARCHAR,
   table_schema      VARCHAR,
   table_name        VARCHAR,
@@ -17280,7 +17240,6 @@ CREATE TABLE graphitron_occurrence_producer_result (
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
-  FOREIGN KEY (runtime_kind) REFERENCES graphitron_runtime_class (kind),
   -- The class, through the row's own copy of its key, where one of the graph's entries declares it.
   FOREIGN KEY (class_source_ref, class_name_ref)
     REFERENCES code_class (source_name, class_name) ON DELETE SET NULL,
@@ -17289,16 +17248,14 @@ CREATE TABLE graphitron_occurrence_producer_result (
   FOREIGN KEY (table_source_name, table_schema, table_name)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
   CHECK (shape IN ('SINGLE_RECORD', 'RECORD_LIST', 'CONNECTION', 'OBJECT', 'SCALAR')),
-  CHECK (class_name IS NULL OR runtime_kind IS NULL),
   CHECK ((table_source_name IS NULL) = (table_name IS NULL)),
   CHECK (table_name IS NULL OR shape IN ('SINGLE_RECORD', 'RECORD_LIST'))
 );
-COMMENT ON TABLE graphitron_occurrence_producer_result IS 'What a producer produces: one row per producer, its shape, the class its values are where one is named, and for records the table they are rows of. For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION of the page class graphitron generates.';
+COMMENT ON TABLE graphitron_occurrence_producer_result IS 'What a producer produces: one row per producer, its shape, the class its values are where one is named, and for records the table they are rows of. For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION, whose class is the one graphitron generates for its connection type.';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.coordinate IS 'the producing occurrence, the whole key: one result per producer';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.shape IS 'SINGLE_RECORD, RECORD_LIST, CONNECTION, OBJECT or SCALAR: a connection''s count, stated by the connection model, is a SCALAR and its facets an OBJECT';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name IS 'the class its values are instances of: a record class, or the element class a @service method declares; NULL for a scalar, a connection, records of no single table and a payload graphitron builds';
-COMMENT ON COLUMN graphitron_occurrence_producer_result.runtime_kind IS 'the class graphitron generates for it, a graphitron_runtime_class kind: CONNECTION_RESULT for a connection''s page';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_source_name IS 'the lift: for records, the catalog entry of the table they are rows of, with the schema and the name a sql_table key; NULL for records of several tables or of none named';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that table, where the producer''s children''s source starts';
@@ -18889,14 +18846,6 @@ INSERT INTO meta_stated_relation VALUES
    'One position of the connection shape: the field a connection, its edge or its page info fills it with.',
    'For example TOTAL_COUNT is a connection''s totalCount, NODE an edge''s node and END_CURSOR the page info''s endCursor.',
    'The shape is the Relay Cursor Connections specification''s, with the fields graphitron adds beside it (nodes, totalCount, facets), so no corpus a capture reads states it: it is a constant, and the rules asking which position a field fills read it rather than spelling the names. The connection and edge recognition rules keep their literal edges and node: a name read through this table is no constant to the planner, which then probes graphitron_field by graph alone instead of seeking the index graphitron_field carries on its graph and field name.'),
-  ('graphitron_runtime_class',
-   'One class graphitron generates into every consumer from a fixed template, by what it is for and its binary name below the output package.',
-   'For example CONNECTION_RESULT is util.ConnectionResult, the page a connection''s producer produces.',
-   'The classes are graphitron''s own: the generator writes them from a template, so no classpath a capture reads declares them before generation runs, and their names are a function of the template, the output package aside. Stating them lets a producer''s result and an occurrence''s binding name a generated class as they name an author''s, where the emitters reference it directly today.'),
-  ('graphitron_runtime_member',
-   'One method of a class graphitron generates that an occurrence binds to, by its name and JVM descriptor.',
-   'For example CONNECTION_RESULT''s trimmedResult ()Ljava/util/List; is the page''s records, which a connection''s nodes binds.',
-   'The methods are the template''s, written by the generator and read by no capture, so the file states the ones a binding reaches. The set is closed by what the bindings read rather than by what the classes declare; a binding reaching another member is adding a row, and a test holds the rows against what the generator emits.'),
   ('code_delivery_container',
    'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many.',
    'For example java.util.List delivers its argument at position 0, many.',
@@ -20898,7 +20847,7 @@ INSERT INTO meta_relation VALUES
    'A path can be followed from another file, an inherited path from an implementation in one file to the interface''s field in another, and a written position moves when the file around it is edited, so a path names what it follows by names an author chose: the declared element and the type the path reaches, which tells two @referenceFor on one field apart. The position it stands for within its own file is kept beside them as an attribute, where the written elements are keyed. The element and the type are referenced through copies of their keys that their removal sets null, so the sweep, not a cascade, removes a claim the reading no longer finds.'),
   ('graphitron_occurrence_producer_result', 'graph-occurrence', 'graphitron',
    'What a producer produces: one row per producer, its shape, the class its values are where one is named, and for records the table they are rows of.',
-   'For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION of the page class graphitron generates.',
+   'For example Query.films produces a RECORD_LIST of FilmRecord lifted onto film, and a connection-returning field a CONNECTION, whose class is the one graphitron generates for its connection type.',
    'The producer knows what it produces (Alf, 2026-11-03): stated per producing occurrence, it is what the type-keyed graphitron_result family said per type, which a type reached under two producers could only say twice. Read off what the producer runs, its target, the method a service declares and the routine its field ends on, never off the result relations it replaces, and written by occurrence-producers beside the producer.'),
   ('graphitron_occurrence_producer_result_rule', 'graph-occurrence', 'graphitron',
    'One row the producer result rule computes, in the shape graphitron_occurrence_producer_result stores: the rule itself, evaluated on demand rather than read off disk.',

@@ -9,9 +9,9 @@ package no.sikt.graphitron.command;
  * {@link #FACETS})
  * are absent when their producer-side membership predicate excludes them.
  *
- * <p>Ten kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
+ * <p>Eleven kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
  * {@link #CONSTRAINT_VIOLATIONS}, {@link #CLIENT_EXCEPTION}, {@link #ZERO_ROWS_MATCHED_EXCEPTION},
- * {@link #ERROR_ROUTER}, {@link #OUTCOME} and the voucher runtime's {@link #VOUCHER_CODEC},
+ * {@link #ERROR_ROUTER}, {@link #OUTCOME}, {@link #CONNECTIONS} and the voucher runtime's {@link #VOUCHER_CODEC},
  * {@link #VOUCHER_KEYS} and {@link #VOUCHER_REJECTED_EXCEPTION} are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
  * what it wrote by these constants so the compile graph's wiring for them stays one switch.
  *
@@ -28,7 +28,11 @@ public enum GlobalUnitKind {
     COLUMN_VALUES,
     /** Present exactly when the schema declares federation entities. */
     ENTITY_FETCHER_DISPATCH,
-    CONNECTION_RESULT,
+    /**
+     * The connection and edge classes every connection producer builds, rendered from the store;
+     * present exactly when the graph has a connection type.
+     */
+    CONNECTIONS,
     CONNECTION_HELPER,
     /** The page info every connection hands its {@code pageInfo} field, one class shared by all. */
     PAGE_INFO,

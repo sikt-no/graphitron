@@ -79,7 +79,8 @@ public final class SchemaShapeRenderTestSupport {
             .map(r -> new TypeUnitCommand.SchemaShapeUnit(
                 r.typeName(), r.unit(), r.form(), typesWithFetchers.contains(r.typeName())))
             .toList();
-        return GraphitronSchemaClassGenerator.generate(schema, assembled, rows, outputPackage, federationLink);
+        return GraphitronSchemaClassGenerator.generate(schema, assembled, rows, outputPackage, federationLink,
+            null);
     }
 
     /** The schema class for a fixture with no fetcher-carrying names and no package prefix. */

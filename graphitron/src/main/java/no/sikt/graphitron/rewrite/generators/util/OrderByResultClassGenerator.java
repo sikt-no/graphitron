@@ -19,7 +19,7 @@ import java.util.List;
  * <ul>
  *   <li>{@code sortFields} — the jOOQ {@code SortField<?>} list passed to {@code .orderBy()} in SQL</li>
  *   <li>{@code columns} — the underlying jOOQ {@code Field<?>} list passed to {@code selectMany}
- *       as {@code extraFields} and stored in {@code ConnectionResult.orderByColumns} for cursor
+ *       as {@code extraFields}, from which a connection's cursor function is built for cursor
  *       construction</li>
  * </ul>
  *

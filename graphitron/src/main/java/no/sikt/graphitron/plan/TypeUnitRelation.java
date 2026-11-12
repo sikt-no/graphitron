@@ -57,14 +57,6 @@ public record TypeUnitRelation(List<TypeUnitCommand> rows) {
             .toList();
     }
 
-    /** The connection fetchers-pair rows, in producer order. */
-    public List<TypeUnitCommand.ConnectionFetchersUnit> connectionFetchers() {
-        return rows.stream()
-            .filter(r -> r instanceof TypeUnitCommand.ConnectionFetchersUnit)
-            .map(r -> (TypeUnitCommand.ConnectionFetchersUnit) r)
-            .toList();
-    }
-
     /** The schema-shape rows, in producer order (sorted by type name for deterministic output). */
     public List<TypeUnitCommand.SchemaShapeUnit> schemaShapes() {
         return rows.stream()
@@ -79,8 +71,7 @@ public record TypeUnitRelation(List<TypeUnitCommand> rows) {
     }
 
     /**
-     * The fetchers family's committed refs (plain rows, {@code @error} rows, and both refs of
-     * every connection pair), the write step's expected unit set for the one fetchers fold. The
+     * The fetchers family's committed refs (plain rows and {@code @error} rows), the write step's expected unit set for the one fetchers fold. The
      * {@code errorMappings} ref an {@code @error} row carries is not in this set: that unit is
      * committed by the global relation, and a row naming it is a reference, not a second claim.
      */
@@ -88,10 +79,6 @@ public record TypeUnitRelation(List<TypeUnitCommand> rows) {
         var refs = new java.util.ArrayList<UnitRef>();
         fetchers().forEach(r -> refs.add(r.unit()));
         errorFetchers().forEach(r -> refs.add(r.unit()));
-        connectionFetchers().forEach(r -> {
-            refs.add(r.connection());
-            refs.add(r.edge());
-        });
         return List.copyOf(refs);
     }
 }

@@ -270,7 +270,7 @@ class BatchedTableFieldPipelineTest {
     // plan-split-query-connection.md §1 + §2: Connection-cardinality pipeline coverage.
 
     @Test
-    void splitQueryConnection_fetcherReturnsConnectionResult_rowsMethodReturnsListOfConnectionResult() {
+    void splitQueryConnection_fetcherAndRowsMethodReturnTheConnectionTypesClass() {
         var schema = TestSchemaHelper.buildSchema("""
             type Actor @table(name: "actor") { name: String }
             type ActorEdge { node: Actor! cursor: String! }
@@ -291,13 +291,13 @@ class BatchedTableFieldPipelineTest {
             .filter(m -> m.name().equals("actorsConnection"))
             .findFirst().orElseThrow();
         assertThat(fetcher.returnType().toString())
-            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<fake.code.generated.util.ConnectionResult>>");
+            .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<fake.code.generated.util.Connections.ActorsConnection>>");
 
         var rowsMethod = filmFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("rowsActorsConnection"))
             .findFirst().orElseThrow();
         assertThat(rowsMethod.returnType().toString())
-            .isEqualTo("java.util.List<fake.code.generated.util.ConnectionResult>");
+            .isEqualTo("java.util.List<fake.code.generated.util.Connections.ActorsConnection>");
     }
 
     @Test
@@ -326,8 +326,9 @@ class BatchedTableFieldPipelineTest {
         assertThat(methodNames).as("plain-list scatterByIdx not emitted when no plain-list-cardinality Split* field")
             .doesNotContain("scatterByIdx");
 
-        // The scatter carries the shared count-source derived table so each per-parent
-        // ConnectionResult can bind a slot of one BatchCounts grouped over it.
+        // The scatter carries the shared count-source derived table so each per-parent connection
+        // binds a slot of one BatchCounts grouped over it, and builds each through the rows
+        // method's function, so one helper serves every connection type of the class.
         var scatter = filmFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("scatterConnectionByIdx"))
             .findFirst().orElseThrow();
@@ -336,8 +337,9 @@ class BatchedTableFieldPipelineTest {
             .containsExactly(
                 "org.jooq.Result<org.jooq.Record>",
                 "int",
-                "fake.code.generated.util.ConnectionHelper.PageRequest",
-                "org.jooq.Table<?>");
+                "org.jooq.Table<?>",
+                "java.util.function.BiFunction<java.util.List<org.jooq.Record>,"
+                    + " fake.code.generated.util.ConnectionHelper.TotalCount, C>");
     }
 
     @Test

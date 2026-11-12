@@ -105,7 +105,6 @@ public final class PlanCompileGraph {
         GlobalUnitKind.GRAPHITRON_VALUES,
         GlobalUnitKind.LIGHT_FETCHER,
         GlobalUnitKind.COLUMN_VALUES,
-        GlobalUnitKind.CONNECTION_RESULT,
         GlobalUnitKind.CONNECTION_HELPER,
         GlobalUnitKind.PAGE_INFO,
         GlobalUnitKind.SELECTION_OCCURRENCES,
@@ -184,9 +183,6 @@ public final class PlanCompileGraph {
             }
             for (var row : plan.typeUnits().errorFetchers()) {
                 fetchersByTypeName.put(row.typeName(), row.unit());
-            }
-            for (var row : plan.typeUnits().connectionFetchers()) {
-                fetchersByTypeName.put(row.typeName(), row.connection());
             }
             for (UnitRef unit : plan.typeUnits().fetchersUnits()) {
                 fetchersBySimpleName.put(unit.simpleName(), unit);
@@ -302,7 +298,7 @@ public final class PlanCompileGraph {
          */
         private void addFixedKindEdges(GlobalUnitKind kind, List<UnitRef> units) {
             switch (kind) {
-                case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
+                case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES,
                      CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
@@ -314,6 +310,18 @@ public final class PlanCompileGraph {
                 }
                 // Always a Facets row, never a fixed one; its edges are the row's arm above.
                 case FACETS -> { }
+                // The connection classes build the shared page info, build the facets records a
+                // faceted connection hands out, and route a failed facets field through the
+                // router. Declared: which of them a run's classes name follows the positions the
+                // store's connection types fill, and the page info and the router are frozen.
+                case CONNECTIONS -> {
+                    var connections = units.get(0);
+                    refOf(GlobalUnitKind.PAGE_INFO).ifPresent(p -> declared(connections, p));
+                    refOf(GlobalUnitKind.FACETS).ifPresent(f -> {
+                        declared(connections, f);
+                        refOf(GlobalUnitKind.ERROR_ROUTER).ifPresent(er -> declared(connections, er));
+                    });
+                }
                 // The context interface always names the per-operation carrier.
                 case GRAPHITRON_CONTEXT -> runtimeUnit("TenantConnections")
                     .ifPresent(t -> precise(units.get(0), t));
@@ -385,6 +393,8 @@ public final class PlanCompileGraph {
                     var schemaClass = units.get(0);
                     refOf(GlobalUnitKind.QUERY_NODE_FETCHER).ifPresent(n -> precise(schemaClass, n));
                     refOf(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL).ifPresent(o -> precise(schemaClass, o));
+                    // The connection and edge fields register through the connection classes.
+                    refOf(GlobalUnitKind.CONNECTIONS).ifPresent(c -> precise(schemaClass, c));
                 }
                 case QUERY_NODE_FETCHER -> {
                     var nodeFetcher = units.get(0);
@@ -511,8 +521,10 @@ public final class PlanCompileGraph {
                     case ResultShape.Connection connection -> {
                         addOrderingEdges(owner, connection.ordering());
                         precise(owner, connection.helper());
-                        precise(owner, connection.carrier());
+                        refOf(GlobalUnitKind.CONNECTIONS).ifPresent(c -> precise(owner, c));
                         if (connection.facets() != null) {
+                            // The facets closure builds the type's facets record.
+                            precise(owner, require(GlobalUnitKind.FACETS));
                             precise(owner, connection.facets().base().method().owner());
                             connection.facets().facets().forEach(entry ->
                                 precise(owner, entry.condition().method().owner()));
@@ -691,6 +703,34 @@ public final class PlanCompileGraph {
         // The blanket: the declared over-approximation, expressed over the plan's rows.
         // --------------------------------------------------------------------------------------
 
+        private void addPolymorphicConnectionEdges(GraphitronField field, UnitRef connections) {
+            if (field instanceof ChildField.NestingField nesting) {
+                for (var nested : nesting.nestedFields()) {
+                    addPolymorphicConnectionEdges(nested, connections);
+                }
+            }
+            if (isPolymorphicConnection(field)) {
+                UnitRef fetchers = fetchersByTypeName.get(field.parentTypeName());
+                if (fetchers != null) {
+                    precise(fetchers, connections);
+                }
+            }
+        }
+
+        private static boolean isPolymorphicConnection(GraphitronField field) {
+            var returnType = switch (field) {
+                case no.sikt.graphitron.rewrite.model.QueryField.QueryInterfaceField f -> f.returnType();
+                case no.sikt.graphitron.rewrite.model.QueryField.QueryUnionField f -> f.returnType();
+                case ChildField.InterfaceField f -> f.returnType();
+                case ChildField.UnionField f -> f.returnType();
+                case ChildField.BatchedInterfaceField f -> f.returnType();
+                case ChildField.BatchedUnionField f -> f.returnType();
+                default -> null;
+            };
+            return returnType != null
+                && returnType.wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection;
+        }
+
         private void addBlanketEdges() {
             UnitRef schemaClass = require(GlobalUnitKind.SCHEMA_CLASS);
             UnitRef context = require(GlobalUnitKind.GRAPHITRON_CONTEXT);
@@ -703,13 +743,15 @@ public final class PlanCompileGraph {
                 declared(fetchers, context);
                 declared(schemaClass, fetchers);
             }
-            // A faceted connection's facets delegate builds its facets record.
-            for (var row : plan.typeUnits().connectionFetchers()) {
-                if (schema.type(row.typeName()) instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType ct
-                        && !ct.facets().isEmpty()) {
-                    precise(row.connection(), require(GlobalUnitKind.FACETS));
+            // A polymorphic connection field's fetcher builds the field's connection class with no
+            // launcher row behind it, so the edge is the leaf's.
+            refOf(GlobalUnitKind.CONNECTIONS).ifPresent(connections -> {
+                for (var type : schema.types().values()) {
+                    for (var field : schema.fieldsOf(type.name())) {
+                        addPolymorphicConnectionEdges(field, connections);
+                    }
                 }
-            }
+            });
             for (var row : plan.typeUnits().schemaShapes()) {
                 declared(schemaClass, row.unit());
                 declared(row.unit(), lightFetcher);

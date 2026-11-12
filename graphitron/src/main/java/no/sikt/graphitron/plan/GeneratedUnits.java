@@ -316,9 +316,12 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "PageInfo");
     }
 
-    /** {@code <pkg>.util.ConnectionResult} — the generated connection carrier. */
-    public UnitRef connectionResult() {
-        return unit(SUB_UTIL, "ConnectionResult");
+    /**
+     * {@code <pkg>.util.Connections}: the connection and edge classes the connection producers
+     * build, rendered from the store rather than planned.
+     */
+    public UnitRef connections() {
+        return unit(SUB_UTIL, "Connections");
     }
 
     /** {@code <pkg>.util.OrderByResult} — the ordering helpers' two-view result carrier. */

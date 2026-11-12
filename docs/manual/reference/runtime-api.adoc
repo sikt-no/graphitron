@@ -92,7 +92,7 @@ ExecutionInput input = Graphitron.newExecutionInput(dsl, /* contextArgs... */)
     .build();
 ----
 
-Generated fetchers retrieve the impl through a private helper emitted once per `*Fetchers` class (`graphitronContext(env)`); generated helpers that issue SQL on behalf of those fetchers (for example, `ConnectionHelper.totalCount(env)` for `@asConnection` connections) emit the same shim. The sealed-interface + singleton-impl pair means `GraphitronContext` is global to the build, not per-request; all per-request state lives in the `GraphQLContext` the factory populates.
+Generated fetchers retrieve the impl through a private helper emitted once per `*Fetchers` class (`graphitronContext(env)`); generated helpers that issue SQL on behalf of those fetchers emit the same shim (for example, `ConnectionHelper.dsl(env)`, which resolves the context a connection's `totalCount` and facets run on when the client reads them). The sealed-interface + singleton-impl pair means `GraphitronContext` is global to the build, not per-request; all per-request state lives in the `GraphQLContext` the factory populates.
 
 === `getDslContext`
 

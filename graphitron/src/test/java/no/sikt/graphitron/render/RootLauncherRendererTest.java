@@ -146,12 +146,12 @@ class RootLauncherRendererTest {
     }
 
     @Test
-    void connectionShape_returnsTheCarrierRefAndKeepsTheLauncherSignature() {
+    void connectionShape_returnsTheConnectionClassAndKeepsTheLauncherSignature() {
         var m = render(filmsRow(null, new ResultShape.Connection(
-            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult(), null)));
+            pkDesc(), 100, UNITS.connectionHelper(), FILMS_CONNECTION, null)));
         assertThat(m.name()).isEqualTo("rowsFilms");
         assertThat(m.returnType().toString())
-            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.Connections.FilmsConnection");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
     }
@@ -161,7 +161,7 @@ class RootLauncherRendererTest {
         // A connection's unit fields sit at its node level; reading its own immediate fields
         // (edges/nodes/pageInfo) would match no arm and project only the row-present sentinel.
         assertThat(ProjectionCall.SelectionScope.of(new ResultShape.Connection(
-            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult(), null)))
+            pkDesc(), 100, UNITS.connectionHelper(), FILMS_CONNECTION, null)))
             .isEqualTo(ProjectionCall.SelectionScope.CONNECTION_NODES);
         assertThat(ProjectionCall.SelectionScope.of(list(null)))
             .isEqualTo(ProjectionCall.SelectionScope.OWN_FIELDS);
@@ -390,14 +390,14 @@ class RootLauncherRendererTest {
     }
 
     @Test
-    void discriminatedSource_connection_returnsTheCarrierRefLikeTheAnchorArm() {
+    void discriminatedSource_connection_returnsTheConnectionClassLikeTheAnchorArm() {
         // Signature only, per this class's convention for the connection arm; the body's
         // seam ordering and its SQL are the execution tier's baselines.
         var m = render(discriminatedRow(null, new ResultShape.Connection(pkDesc(), 100,
-            UNITS.connectionHelper(), UNITS.connectionResult(), null),
+            UNITS.connectionHelper(), FILMS_CONNECTION, null),
             List.of(), List.of(filmContentBranch())));
         assertThat(m.returnType().toString())
-            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.Connections.FilmsConnection");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("org.jooq.DSLContext", "graphql.schema.DataFetchingEnvironment");
     }
@@ -457,10 +457,13 @@ class RootLauncherRendererTest {
                     lookupRow(null).source(),
                     null, new Invocation.Direct(), new TenantStrategy.Single(),
                     new ResultShape.Connection(pkDesc(), 100,
-                        UNITS.connectionHelper(), UNITS.connectionResult(), null), UNITS.selectionOccurrences()))
+                        UNITS.connectionHelper(), FILMS_CONNECTION, null), UNITS.selectionOccurrences()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("never paginates");
     }
+
+    private static final no.sikt.graphitron.command.ConnectionClass FILMS_CONNECTION =
+        new no.sikt.graphitron.command.ConnectionClass("FilmsConnection", true, false);
 
     private static MethodSpec render(LauncherCommand row) {
         return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED,

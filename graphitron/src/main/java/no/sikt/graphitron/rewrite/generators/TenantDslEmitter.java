@@ -423,7 +423,7 @@ final class TenantDslEmitter {
     /**
      * Whether this emission context is a multi-tenant build (configured tenant scopes on a
      * classified schema). Sites whose emitted shape forks on tenancy beyond the DSL declaration
-     * (the connection carrier's routed-context slot, its scatter helper) read this one predicate.
+     * (a connection's count closure capturing the routed context) read this one predicate.
      */
     static boolean isMultiTenant(TypeFetcherEmissionContext ctx) {
         var schema = ctx.graphitronSchema();

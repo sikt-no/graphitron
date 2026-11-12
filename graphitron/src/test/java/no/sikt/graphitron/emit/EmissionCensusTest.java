@@ -90,8 +90,21 @@ class EmissionCensusTest {
         var shapes = ConnectionsQuery.read(handle());
         var runtime = new ConnectionsEmitter.Runtime(
             ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.PageInfoClassGenerator.CLASS_NAME),
-            ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.CLASS_NAME));
+            ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.CLASS_NAME),
+            ClassName.get("census.schema", "ErrorRouter"));
         var units = new java.util.HashMap<String, TypeSpec>();
+        // The router a faceted connection's registration routes a failure through, as a stand-in
+        // with the one member it calls: what the router decides is its generator's.
+        units.put("census.schema.ErrorRouter", TypeSpec.classBuilder("ErrorRouter")
+            .addModifiers(javax.lang.model.element.Modifier.PUBLIC)
+            .addMethod(com.palantir.javapoet.MethodSpec.methodBuilder("surfaceClientErrorOrRedact")
+                .addModifiers(javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC)
+                .returns(Object.class)
+                .addParameter(Throwable.class, "thrown")
+                .addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env")
+                .addStatement("return null")
+                .build())
+            .build());
         for (TypeSpec spec : ConnectionsEmitter.emit(shapes, "census", runtime)) {
             units.put("census.util." + spec.name(), spec);
         }

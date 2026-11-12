@@ -8899,7 +8899,7 @@ class FieldBuilder {
         SourceKey parentSourceKey = new SourceKey(hubTable.primaryKeyColumns(), hubLift.wrap());
         // The dispatch derivation's one home: an accessor-many parent fans out per element, so
         // its batched fetcher dispatches loader.loadMany; every other shape loads one key. The
-        // per-key value follows the wrapper (a list bucket, or one ConnectionResult when the
+        // per-key value follows the wrapper (a list bucket, or one connection class instance when the
         // isList parameter is false because the wrapper is a connection).
         var loaderRegistration = new LoaderRegistration(fieldIsList,
             LoaderRegistration.Container.POSITIONAL_LIST,

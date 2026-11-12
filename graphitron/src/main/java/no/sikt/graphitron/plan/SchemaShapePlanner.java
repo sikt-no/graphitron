@@ -74,8 +74,8 @@ public final class SchemaShapePlanner {
     /**
      * Whether {@code name}'s schema-shape class carries a {@code registerFetchers} body. One
      * rule per population, mirroring the retired registrations emitter's construction gates:
-     * connection and edge carriers always (their delegate methods exist unconditionally), and the
-     * shared page info where it declares a specification field, each reading the generated
+     * never a connection or an edge, whose fields the store-rendered {@code Connections} class
+     * registers itself; the shared page info where it declares a specification field, each reading the generated
      * {@code PageInfo}'s member; the facets and facet value types always, each field reading its
      * generated record's component;
      * fetcher-hosting classifications exactly when the type owns a classified coordinate (an
@@ -87,7 +87,7 @@ public final class SchemaShapePlanner {
     private static boolean registersFetchers(GraphitronSchema schema, NestingReach reach,
                                              String name, GraphitronType type) {
         if (type instanceof GraphitronType.ConnectionType || type instanceof GraphitronType.EdgeType) {
-            return true;
+            return false;
         }
         if (type instanceof GraphitronType.FacetsType || type instanceof GraphitronType.FacetValueType) {
             return true;

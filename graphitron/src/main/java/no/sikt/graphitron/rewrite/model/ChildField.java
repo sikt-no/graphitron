@@ -905,7 +905,7 @@ public sealed interface ChildField extends OutputField
          * {@code false} unconditionally, stated rather than inherited: the polymorphic family
          * is outside both consumer sites the base contract names (it inlines its own scatter
          * and never renders through the launcher relation), and its per-key value is never a
-         * single record — a bucket on the list arm, one {@code ConnectionResult} on the
+         * single record — a bucket on the list arm, one connection class instance on the
          * connection arm, a bucket flattened by the {@code loadMany} tail on the accessor-many
          * arm.
          */

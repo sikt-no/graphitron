@@ -6,7 +6,6 @@ import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
-import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -31,12 +30,10 @@ import java.util.TreeMap;
  *   <li>Regular object types. {@code codeRegistry.dataFetcher(FieldCoordinates.coordinates("Film", "title"), FilmFetchers::title)}.</li>
  *   <li>Nested object types that own any fetcher — every field references into the type's own
  *       {@code <Type>Fetchers} class, as a method reference or a {@code LightFetcher}-wrapped read.</li>
- *   <li>Connection types — binds {@code edges}, {@code nodes}, {@code pageInfo}, and (when the
- *       schema declares it) {@code totalCount} to the per-connection {@code <Conn>Fetchers}
- *       delegates, which forward to {@link ConnectionHelperClassGenerator}.</li>
- *   <li>Edge types — binds {@code node}, {@code cursor} to the per-edge {@code <Edge>Fetchers}
- *       delegates, which forward to {@link ConnectionHelperClassGenerator}.</li>
  * </ol>
+ *
+ * <p>Connection and edge types have no body here: the store-rendered {@code Connections} class
+ * registers their fields to its own members.
  *
  * <p>The fetcher-value expressions come from {@link FetcherEmitter#bind}'s
  * {@code registrationValue()}. Output map ordering is alphabetical by type name for stable
@@ -84,11 +81,7 @@ public final class FetcherRegistrationsEmitter {
             String name = row.typeName();
             var type = schema.type(name);
             CodeBlock body;
-            if (type instanceof GraphitronType.ConnectionType ct) {
-                body = connectionBody(ct, units);
-            } else if (type instanceof GraphitronType.EdgeType) {
-                body = edgeBody(name, units);
-            } else if (type instanceof GraphitronType.PageInfoType pageInfo) {
+            if (type instanceof GraphitronType.PageInfoType pageInfo) {
                 body = pageInfoBody(pageInfo, units);
             } else if (type instanceof GraphitronType.FacetsType
                     || type instanceof GraphitronType.FacetValueType) {
@@ -177,36 +170,6 @@ public final class FetcherRegistrationsEmitter {
         return Optional.of(body.build());
     }
 
-    private static CodeBlock connectionBody(GraphitronType.ConnectionType connectionType,
-            no.sikt.graphitron.plan.GeneratedUnits units) {
-        var fetchers = fetchersClass(units, connectionType.name());
-        var connName = connectionType.name();
-        var body = CodeBlock.builder()
-            .add("codeRegistry")
-            .indent()
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::edges)",    FIELD_COORDS, connName, "edges",    fetchers)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::nodes)",    FIELD_COORDS, connName, "nodes",    fetchers)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::pageInfo)", FIELD_COORDS, connName, "pageInfo", fetchers);
-        // totalCount is always present on synthesised connection types; on structural connections
-        // it is wired only when the SDL author declared it. GraphitronSchemaValidator already
-        // rejected non-Int totalCount, so a present field is guaranteed to be Int / Int!. The same
-        // gate drives ConnectionFetcherClassGenerator so the reference and the method agree.
-        var totalCount = connectionType.schemaType().getFieldDefinition("totalCount");
-        if (totalCount != null) {
-            body.add("\n.dataFetcher($T.coordinates($S, $S), $T::totalCount)", FIELD_COORDS, connName, "totalCount", fetchers);
-        }
-        // The facets resolver rides the same shape behind a has-facets gate. The gate is the
-        // model's facets() view (not SDL presence: the facets field only exists when the promoter
-        // synthesised it from that same list), and it drives ConnectionFetcherClassGenerator too so
-        // the reference and the method agree. The <Conn>Facets and *FacetValue types are wired to
-        // their records in util.Facets by facetRecordBody.
-        if (!connectionType.facets().isEmpty()) {
-            body.add("\n.dataFetcher($T.coordinates($S, $S), $T::facets)", FIELD_COORDS, connName, "facets", fetchers);
-        }
-        body.add(";\n").unindent();
-        return body.build();
-    }
-
     /**
      * The shared {@code PageInfo} type's fields, each registered to read the member of the shared
      * generated {@code PageInfo} of the same name, for the specification's fields the type
@@ -243,18 +206,6 @@ public final class FetcherRegistrationsEmitter {
                 no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.memberName(field.getName()));
         }
         return body.add(";\n").unindent().build();
-    }
-
-    private static CodeBlock edgeBody(String edgeTypeName,
-            no.sikt.graphitron.plan.GeneratedUnits units) {
-        var fetchers = fetchersClass(units, edgeTypeName);
-        return CodeBlock.builder()
-            .add("codeRegistry")
-            .indent()
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::node)",     FIELD_COORDS, edgeTypeName, "node",   fetchers)
-            .add("\n.dataFetcher($T.coordinates($S, $S), $T::cursor);\n", FIELD_COORDS, edgeTypeName, "cursor", fetchers)
-            .unindent()
-            .build();
     }
 
     private static CodeBlock buildBody(GraphitronSchema schema, String typeName, List<GraphitronField> fields,

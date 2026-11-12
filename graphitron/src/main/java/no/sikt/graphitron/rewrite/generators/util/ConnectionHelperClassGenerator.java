@@ -18,19 +18,15 @@ import java.util.OptionalInt;
 /**
  * Generates the {@code ConnectionHelper} utility class, emitted once per code-generation run.
  *
- * <p>Contains the static methods that connection-type wiring registrations call ({@code edges},
- * {@code nodes}, {@code pageInfo}, the lazy {@code totalCount} and {@code facets},
- * {@code edgeNode}, {@code edgeCursor}) plus a nested {@code Edge} class carrying a
- * {@code Record} and its cursor string.
- *
- * <p>Also the producer-callable pieces those resolvers are built from, none of which reads a
- * {@code ConnectionResult}: the page flags ({@code trim}, {@code hasNextPage},
+ * <p>The utility the connection producers build their connection classes with: the page request
+ * ({@code pageRequest}), the page flags ({@code trim}, {@code hasNextPage},
  * {@code hasPreviousPage}), the cursor function {@code cursorOf}, the facet bucketing
- * {@code facetBuckets}, and the nested count and facet types: {@value #TOTAL_COUNT_CLASS_NAME}
+ * {@code facetBuckets}, the request's {@code DSLContext} a single-tenant count or facets closure
+ * runs on ({@code dsl}), and the nested count and facet types: {@value #TOTAL_COUNT_CLASS_NAME}
  * (the count behind {@code totalCount}), {@value #SCOPED_CLASS_NAME} (a root connection's own
  * {@code count(*)}), {@value #BATCH_COUNTS_CLASS_NAME} (one grouped count per DataLoader batch,
  * handing out a {@value #SLOT_CLASS_NAME} per parent) and {@value #FACET_SPEC_CLASS_NAME} (one
- * facet arm). The {@code ConnectionResult} carrier stores these and delegates its page flags here.
+ * facet arm). It resolves no field: the store-rendered {@code Connections} classes do.
  *
  * <p>Cursor encoding, the bytes Graphitron 9 issued on Oracle: a JSON array with one element per
  * order column and no whitespace, SQL {@code NULL} as {@code null} and every other value as
@@ -109,10 +105,9 @@ public class ConnectionHelperClassGenerator {
 
     /**
      * Canonical form carrying the tenancy bit and the build's maximum page size. In a multi-tenant
-     * build the two lazy SQL resolvers ({@code totalCount}, {@code facets}) read the routed
-     * {@code DSLContext} off the {@code ConnectionResult} carrier, bound there by the owning
-     * fetcher per its classified tenant binding, so the aggregates run against the same source the
-     * page rows came from.
+     * build the producers' count and facets closures capture the routed {@code DSLContext} their
+     * page ran on, so the aggregates run against the same source the page rows came from, and the
+     * class carries no per-request {@code dsl}.
      *
      * <p>With a {@code maxAllowedPageSize} the class carries a {@value #MAX_PAGE_SIZE} constant and
      * {@code pageRequest} serves a larger page size at it. Nothing downstream changes: the query
@@ -121,37 +116,11 @@ public class ConnectionHelperClassGenerator {
      */
     public static List<TypeSpec> generate(String outputPackage, boolean multiTenant,
                                           OptionalInt maxAllowedPageSize) {
-        var connectionResultClass = ClassName.get(
-            outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         // Client-error marker: pageRequest's client-mistake guards throw it so the
         // no-channel disposition surfaces the real message instead of redacting.
         var clientException = ClassName.get(outputPackage + ".schema",
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
         var columnValuesClass = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
-
-        // --- Edge nested class ---
-        var edgeClass = TypeSpec.classBuilder("Edge")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addField(RECORD, "record", Modifier.PRIVATE, Modifier.FINAL)
-            .addField(String.class, "cursor", Modifier.PRIVATE, Modifier.FINAL)
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(RECORD, "record")
-                .addParameter(String.class, "cursor")
-                .addStatement("this.record = record")
-                .addStatement("this.cursor = cursor")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("record")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(RECORD)
-                .addStatement("return record")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("cursor")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(String.class)
-                .addStatement("return cursor")
-                .build())
-            .build();
 
         var fieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfField = ParameterizedTypeName.get(LIST_CLASS, fieldWildcard);
@@ -163,11 +132,11 @@ public class ConnectionHelperClassGenerator {
         var totalCountRef = ClassName.get(outputPackage + ".util", CLASS_NAME, TOTAL_COUNT_CLASS_NAME);
 
         // --- PageRequest nested class ---
-        // Carries the resolved pagination state from pageRequest(...) back to the fetcher body
-        // and onward to ConnectionResult. Two field lists deliberately coexist:
+        // Carries the resolved pagination state from pageRequest(...) back to the producer, which
+        // builds its connection from it. Two field lists deliberately coexist:
         //   - selectFields: selection ∪ extraFields, name-deduped; drives .select(...)
-        //   - extraFields:  the pure extra-ordering columns; drives cursor encoding in
-        //     ConnectionResult (which must hash only the ordering columns, not the whole selection)
+        //   - extraFields:  the pure extra-ordering columns; drives the cursor function, which
+        //     must hash only the ordering columns, not the whole selection
         // Emitted as a class with accessors (not a Java record) because the project's JavaPoet
         // fork does not expose recordBuilder.
         var pageRequestClass = buildPageRequestClass(listOfField, listOfSortField, fieldArray);
@@ -202,7 +171,7 @@ public class ConnectionHelperClassGenerator {
         // --- pageRequest(...) → PageRequest ---
         // The shared pagination entry point for every connection fetcher:
         //   - an empty or blank after/before reads as absent, ahead of everything else, so both
-        //     decodeCursor and the PageRequest the ConnectionResult page flags read from see null
+        //     decodeCursor and the PageRequest the page flags read from see null
         //   - client-mistake guards (first/last mutual exclusion, negative first/last,
         //     derived-limit overflow) throw GraphitronClientException so the real message
         //     reaches the client instead of a redacted correlation-id 500
@@ -639,87 +608,20 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return record -> encodeCursor(record, columns)")
             .build();
 
-        // --- edges(DataFetchingEnvironment) → List<Edge> ---
-        var edgeClassName = ClassName.get("", "Edge");
-        var listOfEdge = ParameterizedTypeName.get(LIST_CLASS, edgeClassName);
-
-        var edgesMethod = MethodSpec.methodBuilder("edges")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfEdge)
-            .addParameter(ENV, "env")
-            .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
-            .addStatement("$T<$T, String> cursor = cursorOf(cr.orderByColumns())", FUNCTION, RECORD)
-            .addStatement("$T<Edge> edges = new $T<>(trimmed.size())", ARRAY_LIST, ARRAY_LIST)
-            .addCode("for ($T record : trimmed) {\n", RECORD)
-            .addCode("    edges.add(new Edge(record, cursor.apply(record)));\n")
-            .addCode("}\n")
-            .addStatement("return edges")
-            .build();
-
-        // --- nodes(DataFetchingEnvironment) → List<Record> ---
-        var nodesMethod = MethodSpec.methodBuilder("nodes")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(listOfRecord)
-            .addParameter(ENV, "env")
-            .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addStatement("return cr.trimmedResult()")
-            .build();
-
-        // --- pageInfo(DataFetchingEnvironment) → PageInfo ---
-        // The shared generated PageInfo, whose fields are registered to read its members.
         var mapStringObject = ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class));
         var hashMap = ClassName.get("java.util", "LinkedHashMap");
-        var pageInfoClass = ClassName.get(outputPackage + ".util", PageInfoClassGenerator.CLASS_NAME);
-        var pageInfoMethod = MethodSpec.methodBuilder("pageInfo")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(pageInfoClass)
-            .addParameter(ENV, "env")
-            .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addStatement("$T trimmed = cr.trimmedResult()", listOfRecord)
-            .addStatement("$T<$T, String> cursor = cursorOf(cr.orderByColumns())", FUNCTION, RECORD)
-            .addStatement("String startCursor = trimmed.isEmpty() ? null : cursor.apply(trimmed.get(0))")
-            .addStatement("String endCursor = trimmed.isEmpty() ? null : cursor.apply(trimmed.get(trimmed.size() - 1))")
-            .addStatement("return new $T(cr.hasNextPage(), cr.hasPreviousPage(), startCursor, endCursor)", pageInfoClass)
-            .build();
-
-        // --- totalCount(DataFetchingEnvironment) → Integer ---
-        // Lazy on selection: graphql-java only invokes the registered resolver when the client
-        // selects totalCount, so the count SQL is skipped on every query that does not ask for
-        // it. The carrier's count slot decides the statement: Scoped on a root connection, one
-        // grouped count shared by the batch on a batched one, zero on the empty page. Returns null
-        // only when the slot is absent, which no producer builds.
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
-        // Multi-tenant: read the DSLContext the owning fetcher bound on the carrier (see the
-        // two-arg generate javadoc); otherwise resolve per-request via GraphitronContext.
-        CodeBlock lazyDslDeclaration = multiTenant
-            ? CodeBlock.builder().addStatement("$T dsl = cr.dsl()", dslContextClass).build()
-            : CodeBlock.builder()
-                .addStatement("$T dsl = graphitronContext(env).getDslContext(env)", dslContextClass)
-                .build();
-        var totalCountMethod = MethodSpec.methodBuilder("totalCount")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(Integer.class)
-            .addParameter(ENV, "env")
-            .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addCode("if (cr.totalCount() == null) return null;\n")
-            .addCode(lazyDslDeclaration)
-            .addStatement("return cr.totalCount().count(dsl)")
-            .build();
 
-        // --- facets(DataFetchingEnvironment) → Map<String, List<Map<String, Object>>> ---
-        // The facet sibling of totalCount. One UNION ALL of per-facet GROUP BY arms, each
-        // under the connection filter minus that facet's own predicate (base AND every other
-        // facet's predicate), value cast to TEXT to unify the arms and decoded back through the
-        // column's DataType. Each arm reads its source, typed group column and count key off its
-        // FacetSpec as the launcher bound them: a facet on the carrier's own table counts rows of
-        // the carrier's FROM, a @reference facet counts distinct carrier keys over that FROM
-        // inner-joined along its path, since a path that fans out repeats a carrier row once per
-        // related row and the filter's EXISTS selects it once. Lazy on selection like totalCount (this resolver only runs when the
-        // client selects facets; unselected facet fields contribute no arm). Returns null on a
-        // carrier with no facet plan (the scatter / non-faceted contract, mirroring totalCount's
-        // null-(table, condition) gate) and an empty map when no facet field is selected.
+        // --- facetBuckets(DSLContext, env, base, facetConditions, facetSpecs) → buckets by facet ---
+        // One UNION ALL of per-facet GROUP BY arms, each under the connection filter minus that
+        // facet's own predicate (base AND every other facet's predicate), value cast to TEXT to
+        // unify the arms and decoded back through the column's DataType. Each arm reads its source,
+        // typed group column and count key off its FacetSpec as the producer bound them: a facet on
+        // the connection's own table counts rows of its FROM, a @reference facet counts distinct
+        // connection keys over that FROM inner-joined along its path, since a path that fans out
+        // repeats a row once per related row and the filter's EXISTS selects it once. Lazy on
+        // selection: the producer's facets closure runs it only when the client selects facets,
+        // and unselected facet fields contribute no arm; an empty map when none is selected.
         //
         // Ordering happens in Java, after decode, not in SQL: the union's shared value column is
         // necessarily TEXT (heterogeneous facet columns unify on one type), so a SQL ORDER BY
@@ -759,21 +661,7 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return specs")
             .build();
 
-        // The resolver: the carrier's facet plan, or null without one. An empty map when no facet
-        // field is selected, decided before the DSLContext is resolved.
-        var facetsMethod = MethodSpec.methodBuilder("facets")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(facetsReturn)
-            .addParameter(ENV, "env")
-            .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addCode("if (cr.facetSpecs() == null || cr.table() == null || cr.facetBaseCondition() == null) return null;\n")
-            .addCode("if (selectedFacetSpecs(env, cr.facetSpecs()).isEmpty()) return $T.of();\n", MAP)
-            .addCode(lazyDslDeclaration)
-            .addStatement("return facetBuckets(dsl, env, cr.facetBaseCondition(), cr.facetConditions(), cr.facetSpecs())")
-            .build();
-
-        // facetBuckets: the bucketing itself, callable without a carrier. The env is read only for
-        // the selected immediate fields.
+        // The env is read only for the selected immediate fields.
         var facetBucketsMethod = MethodSpec.methodBuilder("facetBuckets")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(facetsReturn)
@@ -860,7 +748,7 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // Mirrors TypeFetcherGenerator.buildGraphitronContextHelper. Emitted on this helper so
-        // totalCount can resolve the per-request DSLContext without leaning on a fetcher class.
+        // dsl can resolve the per-request DSLContext without leaning on a fetcher class.
         var graphitronContextShim = MethodSpec.methodBuilder("graphitronContext")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(graphitronContextClass)
@@ -868,25 +756,19 @@ public class ConnectionHelperClassGenerator {
             .addStatement("return env.getGraphQlContext().get($T.class)", graphitronContextClass)
             .build();
 
-        // --- edgeNode(DataFetchingEnvironment) → Record ---
-        var edgeNodeMethod = MethodSpec.methodBuilder("edgeNode")
+        // --- dsl(DataFetchingEnvironment) → DSLContext ---
+        // The request's context, as a single-tenant producer's count and facets closures resolve
+        // it when they run; a multi-tenant producer's closures capture the routed context its
+        // page ran on instead, so the multi-tenant class has no such method.
+        var dslMethod = MethodSpec.methodBuilder("dsl")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(RECORD)
+            .returns(DSL_CONTEXT)
             .addParameter(ENV, "env")
-            .addStatement("return (($L) env.getSource()).record()", "Edge")
-            .build();
-
-        // --- edgeCursor(DataFetchingEnvironment) → String ---
-        var edgeCursorMethod = MethodSpec.methodBuilder("edgeCursor")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(String.class)
-            .addParameter(ENV, "env")
-            .addStatement("return (($L) env.getSource()).cursor()", "Edge")
+            .addStatement("return graphitronContext(env).getDslContext(env)")
             .build();
 
         var builder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC)
-            .addType(edgeClass)
             .addType(pageRequestClass)
             .addType(facetSpecClass(fieldWildcard, tableWildcard))
             .addType(totalCountInterface())
@@ -908,18 +790,13 @@ public class ConnectionHelperClassGenerator {
             .addMethod(hasNextPageMethod)
             .addMethod(hasPreviousPageMethod)
             .addMethod(cursorOfMethod)
-            .addMethod(edgesMethod)
-            .addMethod(nodesMethod)
-            .addMethod(pageInfoMethod)
-            .addMethod(totalCountMethod)
-            .addMethod(facetsMethod)
             .addMethod(facetBucketsMethod)
             .addMethod(selectedFacetSpecs)
             .addMethod(compareFacetEntries)
-            .addMethod(compareFacetValues)
-            .addMethod(graphitronContextShim)
-            .addMethod(edgeNodeMethod)
-            .addMethod(edgeCursorMethod);
+            .addMethod(compareFacetValues);
+        if (!multiTenant) {
+            builder.addMethod(graphitronContextShim).addMethod(dslMethod);
+        }
         maxAllowedPageSize.ifPresent(max -> builder.addField(FieldSpec
             .builder(int.class, MAX_PAGE_SIZE, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .initializer("$L", max)
@@ -1016,23 +893,23 @@ public class ConnectionHelperClassGenerator {
 
     /**
      * The per-batch count memo, the one mutable, lazy object in the generated runtime (the
-     * carrier and the scatter helpers are otherwise immutable). A batched producer creates one
+     * connections and the scatter helpers are otherwise immutable). A batched producer creates one
      * per DataLoader batch over its cursor-independent source, which projects the parent's batch
      * index for every row of every parent, and hands slot {@code i} to parent {@code i}'s
-     * carrier. The first slot to resolve runs {@code select idx, count(*) ... group by idx} once;
+     * connection's count closure. The first slot to resolve runs {@code select idx, count(*) ... group by idx} once;
      * later slots read the filled array. An index with no group row counts 0, which is what a
      * per-parent {@code count(*)} returns for an empty connection, so a slot never returns
      * {@code null}. A failed grouped statement is kept and rethrown by every later slot, so each
      * parent's {@code totalCount} reports the failure at its own path without re-running it.
      *
-     * <p>The memo leans on one invariant: every carrier of a batch would count on the same
+     * <p>The memo leans on one invariant: every connection of a batch would count on the same
      * context, so whichever resolves first may supply the {@code DSLContext} for all. In a
-     * multi-tenant build the producer binds its own routed context on every carrier of the batch
-     * and a loader batch holds one tenant; in a single-tenant build there is one context per
-     * request and DataLoaders are request-scoped. Synchronized because the carriers of one batch
-     * may resolve on different threads under an executor strategy.
+     * multi-tenant build the producer captures its own routed context in every count closure of
+     * the batch and a loader batch holds one tenant; in a single-tenant build there is one context
+     * per request and DataLoaders are request-scoped. Synchronized because the connections of one
+     * batch may resolve on different threads under an executor strategy.
      *
-     * <p>Producers: {@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter#buildScatterConnectionByIdxHelper(String, boolean)}
+     * <p>Producers: {@link no.sikt.graphitron.rewrite.generators.SplitRowsMethodEmitter#buildScatterConnectionByIdxHelper()}
      * and the batched connection rows method of
      * {@link no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter}.
      */
@@ -1068,7 +945,7 @@ public class ConnectionHelperClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("The counts of one DataLoader batch, computed by one grouped statement the first time any\n"
                 + "of its slots resolves {@code totalCount}, then answered from memory. The only mutable,\n"
-                + "lazy object in the generated runtime: it relies on every carrier of the batch counting\n"
+                + "lazy object in the generated runtime: it relies on every connection of the batch counting\n"
                 + "on the same {@code DSLContext}, which holds because a batch is request-scoped and, in a\n"
                 + "multi-tenant build, routed to one tenant. An index with no group row counts 0; a failed\n"
                 + "statement is rethrown by every later slot rather than re-run.\n")

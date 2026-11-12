@@ -1,6 +1,7 @@
 package no.sikt.graphitron.emit;
 
 import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
 import com.palantir.javapoet.MethodSpec;
 import com.palantir.javapoet.ParameterizedTypeName;
@@ -23,7 +24,13 @@ import java.util.List;
  * the cursor function it was handed, since one edge type serves every connection that pages through
  * it. Elements are jOOQ {@code Record}s, as every producer holds them.
  *
- * <p>The page info class and the facets records are other units' classes, named by the caller.
+ * <p>The class also registers every connection and edge field to its member, keyed by the field's
+ * own name and served by the member of the position it fills, through one {@code register} method
+ * the schema class calls. A facets field's failure is routed as every fetcher routes one: its
+ * aggregate is per-request SQL, so a raw message would otherwise reach the client.
+ *
+ * <p>The page info class, the facets records and the error router are other units' classes, named
+ * by the caller.
  */
 public final class ConnectionsEmitter {
 
@@ -35,11 +42,24 @@ public final class ConnectionsEmitter {
     private static final ClassName FUNCTION = ClassName.get("java.util.function", "Function");
     private static final TypeName LIST_OF_RECORD = ParameterizedTypeName.get(LIST, RECORD);
     private static final TypeName CURSOR = ParameterizedTypeName.get(FUNCTION, RECORD, ClassName.get(String.class));
+    private static final ClassName CODE_REGISTRY = ClassName.get("graphql.schema", "GraphQLCodeRegistry", "Builder");
+    private static final ClassName FIELD_COORDINATES = ClassName.get("graphql.schema", "FieldCoordinates");
 
     private ConnectionsEmitter() {}
 
-    /** The classes the connections read that other units write: the page info and the facets records. */
-    public record Runtime(ClassName pageInfo, ClassName facets) {}
+    /**
+     * The classes the connections read that other units write: the page info, the facets records
+     * and the error router a failed facets field is routed through.
+     */
+    public record Runtime(ClassName pageInfo, ClassName facets, ClassName errorRouter) {}
+
+    /**
+     * The class a producer of the connection or edge type {@code typeName} builds, nested in the
+     * {@code Connections} unit of the {@code util} package {@code utilPackage}.
+     */
+    public static ClassName className(String utilPackage, String typeName) {
+        return ClassName.get(utilPackage, CLASS_NAME, typeName);
+    }
 
     public static List<TypeSpec> emit(ConnectionsQuery.Shapes shapes, String outputPackage, Runtime runtime) {
         var util = outputPackage + ".util";
@@ -52,7 +72,61 @@ public final class ConnectionsEmitter {
         for (var connection : shapes.connections()) {
             outer.addType(connection(connection, util, runtime));
         }
+        outer.addMethod(register(shapes, util, runtime));
         return List.of(outer.build());
+    }
+
+    /**
+     * Registers every connection and edge field to the member its position names on the field's
+     * type's class. The facets member runs the facets aggregate, so its failure is caught and
+     * routed; every other member reads the page or runs the count.
+     */
+    private static MethodSpec register(ConnectionsQuery.Shapes shapes, String util, Runtime runtime) {
+        var method = MethodSpec.methodBuilder("register")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(CODE_REGISTRY, "codeRegistry");
+        for (var connection : shapes.connections()) {
+            var type = className(util, connection.typeName());
+            connection.fieldPositions().forEach((field, position) -> {
+                var read = CodeBlock.of("(($T) env.getSource())", type);
+                CodeBlock fetcher = switch (position) {
+                    case "EDGES" -> CodeBlock.of("$L.edges()", read);
+                    case "NODES" -> CodeBlock.of("$L.nodes()", read);
+                    case "PAGE_INFO" -> CodeBlock.of("$L.pageInfo()", read);
+                    case "TOTAL_COUNT" -> CodeBlock.of("$L.totalCount(env)", read);
+                    case "FACETS" -> CodeBlock.builder()
+                        .add("{\n").indent()
+                        .add("try {\n").indent()
+                        .add("return $L.facets(env);\n", read)
+                        .unindent().add("} catch ($T e) {\n", Exception.class).indent()
+                        .add("return $L;\n", no.sikt.graphitron.render.ErrorDispatchFragments
+                            .redact(runtime.errorRouter(), "e"))
+                        .unindent().add("}\n")
+                        .unindent().add("}")
+                        .build();
+                    default -> throw new IllegalStateException("Graphitron generator bug: connection '"
+                        + connection.typeName() + "' field '" + field + "' fills " + position
+                        + ", which is no connection position");
+                };
+                method.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), ($T env) -> $L)",
+                    FIELD_COORDINATES, connection.typeName(), field, ENV, fetcher);
+            });
+        }
+        for (var edge : shapes.edges()) {
+            var type = className(util, edge.typeName());
+            edge.fieldPositions().forEach((field, position) -> {
+                String member = switch (position) {
+                    case "NODE" -> "node";
+                    case "CURSOR" -> "cursor";
+                    default -> throw new IllegalStateException("Graphitron generator bug: edge '"
+                        + edge.typeName() + "' field '" + field + "' fills " + position
+                        + ", which is no edge position");
+                };
+                method.addStatement("codeRegistry.dataFetcher($T.coordinates($S, $S), ($T env) -> (($T) env.getSource()).$L())",
+                    FIELD_COORDINATES, edge.typeName(), field, ENV, type, member);
+            });
+        }
+        return method.build();
     }
 
     private static TypeSpec edge(ConnectionsQuery.Edge edge) {

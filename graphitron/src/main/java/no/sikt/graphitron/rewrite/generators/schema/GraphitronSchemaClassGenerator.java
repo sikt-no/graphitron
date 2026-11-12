@@ -106,10 +106,14 @@ public final class GraphitronSchemaClassGenerator {
      * from, so the class, the body and the call cannot drift. Scalar registrations stay
      * generator-side (they route through spec built-in constants or per-scalar factory helpers,
      * not per-type classes, so no row exists for them).
+     *
+     * <p>{@code connections} is the store-rendered {@code Connections} class where the run wrote
+     * one: it registers every connection and edge field itself, so the schema class calls its
+     * {@code register} once. {@code null} for a run without a connection type.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> rows,
-                                          String outputPackage, boolean federationLink) {
+                                          String outputPackage, boolean federationLink, ClassName connections) {
         String schemaPackage = outputPackage + ".schema";
 
         boolean hasQuery = false, hasMutation = false, hasSubscription = false;
@@ -146,6 +150,9 @@ public final class GraphitronSchemaClassGenerator {
         for (String name : sortedFetcherTypes) {
             // one call per row flagged registersFetchers; the flagged row also carries the method
             body.addStatement("$T.registerFetchers(codeRegistry)", ClassName.get(schemaPackage, name + "Type"));
+        }
+        if (connections != null) {
+            body.addStatement("$T.register(codeRegistry)", connections);
         }
 
         // Node interface TypeResolver, wherever the interface has an implementing node. Routes via

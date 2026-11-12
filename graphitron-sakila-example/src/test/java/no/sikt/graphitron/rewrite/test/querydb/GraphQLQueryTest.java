@@ -2073,7 +2073,7 @@ class GraphQLQueryTest {
         conn.extractingByKey("nodes", as(list(Map.class)))
             .extracting(n -> n.get("title"))
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
-        // hasPreviousPage pins that the empty cursor never reaches ConnectionResult as a cursor:
+        // hasPreviousPage pins that the empty cursor never reaches the page flags as a cursor:
         // a forward page reports hasPreviousPage from afterCursor != null.
         conn.extractingByKey("pageInfo", as(MAP))
             .containsEntry("hasNextPage", true)
@@ -2203,8 +2203,8 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_totalCount_returnsTotalRowCount() {
-        // Structural FilmsConnection declares totalCount: Int; root fetcher binds (table, condition)
-        // onto ConnectionResult so ConnectionHelper.totalCount issues SELECT count(*) on demand.
+        // Structural FilmsConnection declares totalCount: Int; root fetcher builds its connection
+        // with a count over (table, condition), so totalCount issues SELECT count(*) on demand.
         // filmsConnection takes no filter, so the exact number is a property of the table, not of
         // the query: the exact-count claim lives on the bounded sibling
         // filmsOrderedConnection_totalCount_underFilter_appliesSamePredicate. What is asserted here
@@ -4390,7 +4390,7 @@ class GraphQLQueryTest {
     @Test
     void splitQueryConnection_backwardPagination_returnsLastNAscending() {
         // last: 1 with no cursor: the CTE inverts the ORDER BY (actor_id DESC) so ROW_NUMBER()
-        // picks the largest actor_id per partition, then ConnectionResult.trimmedResult()
+        // picks the largest actor_id per partition, then ConnectionHelper.trim
         // re-reverses back to ascending for the GraphQL client.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(last: 1) "
@@ -4412,7 +4412,7 @@ class GraphQLQueryTest {
     @Test
     void splitQueryConnection_totalCount_isParentScoped() {
         // The rows method emits a shared cursor-independent countSource derived table; the
-        // batch's one BatchCounts groups it by __idx__ and each per-parent ConnectionResult reads
+        // batch's one BatchCounts groups it by __idx__ and each per-parent connection's count reads
         // its own slot, so totalCount counts the whole per-parent connection independent of the
         // page size. Seed: film 1 -> {1, 2}, film 2 -> {1, 3}, film 3 -> {1}, film 4 -> {2},
         // film 5 -> {3}. first: 1 distinguishes the connection count from the page size.
@@ -6711,8 +6711,8 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void searchConnection_totalCount_returnsTotalRowCountAcrossParticipants() {
-        // ConnectionResult carries the UNION-ALL derived table 'pages' so
-        // ConnectionHelper.totalCount runs SELECT count(*) FROM (UNION ALL Film + Actor) AS pages.
+        // The connection's count closes over the UNION-ALL derived table 'pages', so totalCount
+        // runs SELECT count(*) FROM (UNION ALL Film + Actor) AS pages.
         // The seed is 5 films + 3 actors; searchConnection takes no filter and other classes in
         // this module insert films, so the count is asserted as a floor. What that still
         // discriminates is the failure this case is for: a count over one branch of the union
@@ -7003,7 +7003,7 @@ class GraphQLQueryTest {
     //
     // Address.occupantsConnection wraps the same union as Address.occupants but in connection
     // mode. The per-branch parent-FK WHERE lives inside each UNION ALL branch; the outer
-    // pagesTable derived table feeds .seek/.limit and ConnectionResult.table() so totalCount
+    // pagesTable derived table feeds .seek/.limit and the connection's count, so totalCount
     // counts only this parent's occupants.
 
     @Test
@@ -7228,7 +7228,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void projectItemsConnection_totalCount_isParentScoped() {
-        // Each per-parent ConnectionResult reads slot i of the batch's grouped count over the
+        // Each per-parent connection's count reads slot i of the batch's grouped count over the
         // union, so totalCount restricts to the carrier parent's slice. Cipher should report
         // exactly 2; Atlas exactly 4. The count costs one statement for the three projects.
         QUERY_COUNT.set(0);

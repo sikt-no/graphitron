@@ -42,10 +42,8 @@ import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
-import no.sikt.graphitron.rewrite.generators.util.ConnectionFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
-import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator;
 import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
@@ -574,14 +572,20 @@ public class GraphQLRewriteGenerator {
         // stays deliberately shell-side: per-family argument assembly (including tenantKeyType,
         // a javapoet TypeName the plan must not hold), and the generators' own model reads. The
         // per-type-emitting families below fold over the type-unit relation's rows the same way.
+        var fixedRuntime = FixedRuntimeEmitter.render(store);
+        // The schema class calls the store-rendered connections' registration where the run
+        // wrote them.
+        var connections = fixedRuntime.stream()
+            .filter(unit -> unit.kind() == no.sikt.graphitron.command.GlobalUnitKind.CONNECTIONS)
+            .map(unit -> com.palantir.javapoet.ClassName.get(unit.ref().packageName(), unit.ref().simpleName()))
+            .findFirst().orElse(null);
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
                     connectionKeyShape, federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
-                    plan.sessionIdentity()),
+                    plan.sessionIdentity(), connections),
                 emittedThisRun);
         }
-        var fixedRuntime = FixedRuntimeEmitter.render(store);
         for (var unit : fixedRuntime) {
             writeUnits("fixed runtime " + unit.kind(), List.of(unit.ref()), List.of(unit.spec()), emittedThisRun);
         }
@@ -611,14 +615,9 @@ public class GraphQLRewriteGenerator {
 
         // The type-unit relation's fetchers rows: one fold for the whole family (the hosting
         // classifications and nested classes rendered above through the fetcher generator's
-        // per-row build, the connection pairs rendered per row here), landed at the committed
-        // refs under writeUnits' two-directional unit-set check.
-        var fetcherSpecs = new java.util.ArrayList<>(fetcherClasses);
-        plan.typeUnits().connectionFetchers().forEach(row ->
-            fetcherSpecs.addAll(ConnectionFetcherClassGenerator.generateFor(
-                (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType) schema.type(row.typeName()),
-                outputPackage)));
-        writeUnits("fetchers", plan.typeUnits().fetchersUnits(), fetcherSpecs, emittedThisRun);
+        // per-row build), landed at the committed refs under writeUnits' two-directional
+        // unit-set check.
+        writeUnits("fetchers", plan.typeUnits().fetchersUnits(), fetcherClasses, emittedThisRun);
 
         // The type-unit relation's schema-shape rows: one <Name>Type class per row, membership
         // and form decided by the producer's total switch over the classification permits; the
@@ -673,7 +672,8 @@ public class GraphQLRewriteGenerator {
                                         boolean federationLink,
                                         no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
                                         no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.Shapes legacyKeyShapes,
-                                        no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity) {
+                                        no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity,
+                                        com.palantir.javapoet.ClassName connections) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
@@ -687,7 +687,6 @@ public class GraphQLRewriteGenerator {
                     entityTenantRouting(schema, tenantKeyType, entities), Optional.ofNullable(tenantKeyType),
                     outputPackage);
             }
-            case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);
             case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null,
                 ctx.maxAllowedPageSize());
             case PAGE_INFO -> no.sikt.graphitron.rewrite.generators.util.PageInfoClassGenerator.generate();
@@ -701,10 +700,11 @@ public class GraphQLRewriteGenerator {
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, sessionIdentity);
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME, VOUCHER_CODEC, VOUCHER_KEYS,
-                 VOUCHER_REJECTED_EXCEPTION -> throw new IllegalStateException(command.kind()
+                 VOUCHER_REJECTED_EXCEPTION, CONNECTIONS -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
-            case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
+            case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage,
+                federationLink, connections);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, tenantKeyType != null);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity);

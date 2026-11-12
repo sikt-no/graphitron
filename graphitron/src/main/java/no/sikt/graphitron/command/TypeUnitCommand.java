@@ -71,21 +71,6 @@ public sealed interface TypeUnitCommand {
     }
 
     /**
-     * A connection carrier's fetchers pair: the {@code <Conn>Fetchers} lazy-resolver class and
-     * the {@code <Edge>Fetchers} class, one row per {@code ConnectionType} with the two refs in
-     * named roles (the one row-to-unit fan-out in the relation that is not 1:1; a list would
-     * erase which ref is which).
-     */
-    record ConnectionFetchersUnit(String typeName, UnitRef connection, UnitRef edge)
-            implements TypeUnitCommand {
-        public ConnectionFetchersUnit {
-            Objects.requireNonNull(typeName, "typeName");
-            Objects.requireNonNull(connection, "connection");
-            Objects.requireNonNull(edge, "edge");
-        }
-    }
-
-    /**
      * The graphql-java form a schema-shape class builds, decided once by the producer's total
      * switch over the classification permits (a new permit is a compile-time decision there,
      * never a silent skip at a renderer's {@code instanceof} chain); the renderer dispatches on

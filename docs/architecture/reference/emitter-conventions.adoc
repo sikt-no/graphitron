@@ -7,8 +7,11 @@ xref:../principles/development-principles.adoc[Graphitron Development Principles
 == Return types
 
 DataFetchers return `Result<Record>` ; no DTOs, no TypeMappers. GraphQL-Java traverses records
-using the registered field DataFetchers. Exception: Connection fields return `ConnectionResult`, a
-generated carrier wrapping `Result<Record>` + pagination context.
+using the registered field DataFetchers. Exception: a connection field returns an instance of the
+class generated for its connection type in `util.Connections`, rendered from the store: the page's
+records, its two page flags and its cursor function, with the count and facets as functions of the
+request where the type declares them. The connection's and its edge's fields are registered to that
+class's members, and no other resolver stands between them and the page.
 
 Every field in the schema is wired: the generated code registers a DataFetcher for each one and
 never leaves a field to graphql-java's default `PropertyDataFetcher` (Alf, 2026-11-11). Where a

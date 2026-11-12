@@ -181,7 +181,6 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                     .map(units::typeClass)
                     .toList()));
         }
-        globals.add(one(GlobalUnitKind.CONNECTION_RESULT, units.connectionResult()));
         globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.connectionHelper()));
         globals.add(one(GlobalUnitKind.PAGE_INFO, units.pageInfo()));
         facetsCommand(schema, units).ifPresent(globals::add);

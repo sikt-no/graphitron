@@ -368,7 +368,7 @@ sequenceDiagram
     DSL-->>Fetcher: rows
     Fetcher->>Ctx: getContextArgument(env, "userId")<br/>(if @condition uses contextArguments)
     Ctx-->>Fetcher: claim value (Java cast applied at call site)
-    Fetcher-->>Engine: Result&lt;Record&gt; / ConnectionResult
+    Fetcher-->>Engine: Result&lt;Record&gt; / connection class
     Engine-->>Client: response (graphql-java traverses records via field DataFetchers)
 ----
 

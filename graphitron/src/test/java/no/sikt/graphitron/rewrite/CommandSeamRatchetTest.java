@@ -119,8 +119,11 @@ class CommandSeamRatchetTest {
      * store-reading connection emitter when the connection classes are generated. Raised 62 to 64
      * when the facets types were wired to their generated records: the registrations emitter's arm
      * for the facets and facet value leaves, leaving with the connection units the same way.
+     * Lowered 64 to 62 when the connection classes came to be rendered from the store: the
+     * registrations emitter's connection and edge arms went, the store-rendered class registering
+     * those fields itself.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 64;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 62;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -306,8 +309,11 @@ class CommandSeamRatchetTest {
      * <p>Raised 141 to 143 when the facets types were wired: the schema-shape planner's arm for the
      * facets and facet value leaves, which register always; the facets row's producer reads the
      * same leaves. Both leave when the facets records are written from the store.
+     *
+     * <p>Lowered 143 to 142 when the connection classes came to be rendered from the store: the
+     * fetchers planner's connection-pair arm went with the per-type connection fetchers.
      */
-    private static final int PLAN_LEAF_REFERENCES = 143;
+    private static final int PLAN_LEAF_REFERENCES = 142;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

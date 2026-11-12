@@ -582,10 +582,10 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void connectionField_returnsConnectionResult() {
+    void connectionField_returnsTheConnectionTypesClass() {
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
         // Wrapped in DataFetcherResult<...>.
-        assertThat(method(spec, "films").returnType().toString()).endsWith("ConnectionResult>");
+        assertThat(method(spec, "films").returnType().toString()).endsWith("Connections.QueryFilmsConnection>");
     }
 
     @Test
@@ -1640,7 +1640,7 @@ class TypeFetcherGeneratorTest {
     // ===== Connection pagination on QueryInterfaceField / QueryUnionField =====
     //
     // The connection emit path mirrors the list path but: (a) returns
-    // DataFetcherResult<ConnectionResult>, (b) wraps stage 1's UNION ALL in a derived table
+    // a DataFetcherResult of the field's connection class, (b) wraps stage 1's UNION ALL in a derived table
     // 'pages' so .orderBy/.seek/.limit apply uniformly across the union, (c) calls
     // ConnectionHelper.pageRequest to derive PageRequest. The order itself (key columns, then
     // __typename) is pinned by the execution tier's paging tests, not by body text here.
@@ -1662,13 +1662,13 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryInterfaceField_connection_returnsDataFetcherResultOfConnectionResult() {
+    void queryInterfaceField_connection_returnsDataFetcherResultOfTheConnectionClass() {
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(spec, "searchConnection").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<" + DEFAULT_OUTPUT_PACKAGE
-                + ".util.ConnectionResult>");
+                + ".util.Connections.QuerySearchConnectionConnection>");
     }
 
     @Test
@@ -1710,22 +1710,21 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryInterfaceField_connection_wrapsResultInConnectionResult() {
-        // ConnectionResult takes (List<Record>, PageRequest, Table<?>, Condition). The emitter
-        // binds (payload, page, pagesTable, DSL.noCondition()) so ConnectionHelper.totalCount can run
+    void queryInterfaceField_connection_countsTheUnionAsItsConnectionsCount() {
+        // The connection's count closure counts (pagesTable, DSL.noCondition()), so totalCount runs
         // SELECT count(*) FROM (UNION ALL) AS pages lazily on selection. Per-branch WHEREs (when
         // wired for child connections) live inside the union, so the outer condition is a no-op.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
             DEFAULT_OUTPUT_PACKAGE);
         var body = method(spec, "searchConnection").code().toString();
-        assertThat(body).contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+        assertThat(body).contains("ConnectionHelper.Scoped(pagesTable, org.jooq.impl.DSL.noCondition())");
     }
 
     @Test
     void queryInterfaceField_connection_liftsUnionAllAsTableLocal() {
         // The UNION-ALL derived table is lifted to a local Table<?> pagesTable variable so the
-        // same reference backs both the page query (.from(pagesTable)) and ConnectionResult.table()
+        // same reference backs both the page query (.from(pagesTable)) and the connection's count closure
         // for totalCount. Without the local, totalCount would have to re-emit the entire
         // UNION ALL, doubling the emission size.
         var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
@@ -1779,7 +1778,7 @@ class TypeFetcherGeneratorTest {
             .contains(".asTable(\"pages\")")
             .contains("ConnectionHelper.pageRequest(")
             .contains(".seek(page.seekFields())")
-            .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
+            .contains("ConnectionHelper.Scoped(pagesTable, org.jooq.impl.DSL.noCondition())");
     }
 
     // ===== ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====
@@ -2004,7 +2003,7 @@ class TypeFetcherGeneratorTest {
     //
     // DataLoader-batched: one polymorphic UNION ALL JOINed to a parentInput VALUES table, ranked
     // per parent with ROW_NUMBER() OVER (PARTITION BY __idx__), then scattered into per-parent
-    // buckets. Each bucket's ConnectionResult carries slot i of one BatchCounts over the shared
+    // buckets. Each bucket's connection counts through slot i of one BatchCounts over the shared
     // pagesTable, so totalCount counts each parent's occupants with one grouped statement.
 
     private static ChildField.BatchedInterfaceField childInterfaceConnectionField(
@@ -2082,7 +2081,7 @@ class TypeFetcherGeneratorTest {
             .as("DataLoader name is built from the response path (no tenant prefix)")
             .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
         assertThat(body)
-            .as("DataLoader<Row1<Timestamp>, ConnectionResult> registration")
+            .as("DataLoader<Row1<Timestamp>, connection class> registration")
             .contains("org.jooq.Row1<java.sql.Timestamp>")
             .contains("DataLoaderFactory.newDataLoader");
         assertThat(body)
@@ -2091,7 +2090,7 @@ class TypeFetcherGeneratorTest {
             .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row("
                 + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
         assertThat(body)
-            .as("Async tail: thenApply lifts ConnectionResult into DataFetcherResult, exceptionally "
+            .as("Async tail: thenApply lifts the connection into DataFetcherResult, exceptionally "
                 + "routes through the no-channel disposition (surfaceClientErrorOrRedact, R415)")
             .contains("loader.load(key, env)")
             .contains(".thenApply(payload -> graphql.execution.DataFetcherResult.")
@@ -2101,8 +2100,8 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void childInterfaceField_connection_emitsBatchedRowsMethod() {
-        // The rows method takes List<Row1<PK>> + env and returns List<ConnectionResult>; one
-        // ConnectionResult per parent in the batch.
+        // The rows method takes List<Row1<PK>> + env and returns a list of the connection class;
+        // one connection per parent in the batch.
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
@@ -2171,9 +2170,9 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void childInterfaceField_connection_perParentConnectionResultsCarryBatchCountSlot() {
-        // The scatter loop wraps each per-parent bucket in ConnectionResult(bucket, page,
-        // counts.slot(i)) over one BatchCounts(pagesTable, idxField, keys.size()). totalCount runs
+    void childInterfaceField_connection_perParentConnectionsCountThroughABatchCountSlot() {
+        // The scatter loop builds each per-parent connection over its bucket, counting through
+        // counts.slot(i) of one BatchCounts(pagesTable, idxField, keys.size()). totalCount runs
         // SELECT __idx__, count(*) FROM pages GROUP BY __idx__ once for the batch.
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
@@ -2188,8 +2187,9 @@ class TypeFetcherGeneratorTest {
             .as("scatter into per-parent buckets keyed by parentIdxByOuter")
             .contains("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
         assertThat(rows)
-            .as("per-parent ConnectionResult carries its BatchCounts slot")
-            .contains(".util.ConnectionResult(buckets.get(i), page, counts.slot(i))");
+            .as("per-parent connection counts through its BatchCounts slot")
+            .contains("pageCount = counts.slot(i)")
+            .contains("countEnv -> pageCount.count(");
     }
 
     @Test
@@ -2210,8 +2210,9 @@ class TypeFetcherGeneratorTest {
             .contains(parentInputJoinOn("stage1_Film", "FILM_ID"))
             .contains(parentInputJoinOn("stage1_Actor", "ACTOR_ID"));
         assertThat(rows)
-            .as("union variant: same per-parent ConnectionResult with its BatchCounts slot")
-            .contains(".util.ConnectionResult(buckets.get(i), page, counts.slot(i))");
+            .as("union variant: same per-parent connection with its BatchCounts slot")
+            .contains("pageCount = counts.slot(i)")
+            .contains("countEnv -> pageCount.count(");
     }
 
     // ===== Composite-PK parent (RowN widening) =====
@@ -2276,7 +2277,7 @@ class TypeFetcherGeneratorTest {
             null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
         var fetcher = method(spec, "itemsConnection").code().toString();
         assertThat(fetcher)
-            .as("DataLoader<Row2<Integer, Integer>, ConnectionResult>")
+            .as("DataLoader<Row2<Integer, Integer>, connection class>")
             .contains("org.dataloader.DataLoader<org.jooq.Row2<java.lang.Integer, java.lang.Integer>");
         assertThat(fetcher)
             .as("Composite parent-PK extraction emits an inline DSL.row over both columns "

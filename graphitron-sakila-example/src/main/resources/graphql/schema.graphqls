@@ -2984,7 +2984,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     ]) @defaultOrder(primaryKey: true)
     # plan-split-query-connection.md §1: @splitQuery + @asConnection. Per-parent Relay pagination
     # via a ROW_NUMBER() OVER (PARTITION BY parentInput.idx) envelope. Each Film gets its own
-    # paginated actor slice via the same junction-path, wrapped in a ConnectionResult per key.
+    # paginated actor slice via the same junction-path, built into a connection per key.
     actorsConnection(
         first: Int, last: Int, after: String, before: String
     ): ActorsConnection! @splitQuery @reference(path: [
@@ -3678,8 +3678,8 @@ type ActorsConnection {
     nodes: [Actor!]!
     pageInfo: PageInfo!
     # R414: per-parent totalCount on @splitQuery connections. The rows method emits a shared
-    # cursor-independent countSource derived table; each per-parent ConnectionResult carries it
-    # with an __idx__ = i condition, so ConnectionHelper.totalCount serves a real count lazily.
+    # cursor-independent countSource derived table; each per-parent connection's count closure reads
+    # its own __idx__ slot, so totalCount serves a real count lazily.
     totalCount: Int
 }
 

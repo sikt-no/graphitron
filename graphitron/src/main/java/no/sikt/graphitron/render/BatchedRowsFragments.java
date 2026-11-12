@@ -366,14 +366,14 @@ public final class BatchedRowsFragments {
             prelude.firstAlias(), chain.correlation(), prelude.joinOnAlias(),
             prelude.joinOnCols(), prelude.joinOnParentCols());
 
-        windowedPageTail(body, stepDeclaration, countFrom.build(), "condition", carrierDsl);
+        windowedPageTail(body, stepDeclaration, countFrom.build(), "condition", conn, carrierDsl);
     }
 
     /**
      * The per-key element view of the batched payload, the {@code V} the entry point's
      * DataLoader resolves each key to: the scatter's marker-bearing {@code List<Object>}
-     * element list under fanned tenancy, the connection carrier (its ref minted on the row)
-     * for the connection shape, {@code Record} for the single-per-key shape and
+     * element list under fanned tenancy, the connection class the row names for the connection
+     * shape, {@code Record} for the single-per-key shape and
      * {@code List<Record>} otherwise. {@link #valueTypeOf} is exactly this view's {@code List}
      * lift and the entry-point emitter reads this method, so the launcher's batch container
      * and the loader's value type cannot disagree.
@@ -383,7 +383,7 @@ public final class BatchedRowsFragments {
             return ParameterizedTypeName.get(LIST_CN, ClassName.get(Object.class));
         }
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            return className(conn.carrier());
+            return ConnectionConstruction.classOf(className(conn.helper()), conn.connection());
         }
         return row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord
             ? RECORD
@@ -428,7 +428,7 @@ public final class BatchedRowsFragments {
         fromBridgeAndParentJoin(countFrom, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
             chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
 
-        windowedPageTail(body, step.build(), countFrom.build(), "where", carrierDsl);
+        windowedPageTail(body, step.build(), countFrom.build(), "where", conn, carrierDsl);
     }
 
     /**
@@ -468,7 +468,8 @@ public final class BatchedRowsFragments {
      * ranked inner table, the {@code asTable("ranked")} staging, the outer {@code __rn__ <=
      * limit} page filter, and the cursor-independent count source feeding
      * {@code scatterConnectionByIdx}, which groups it by idx once per batch for every
-     * parent's {@code totalCount}. The scatter call's trailing {@code dsl} rides the run's
+     * parent's {@code totalCount}. The scatter hands each parent's rows and count slot to the
+     * connection class the row names; the count closure's context rides the run's
      * carrier-routing fact.
      *
      * <p>Preconditions: {@link #pageRequestLocals} has run ({@code page} and {@code selectFields}
@@ -481,6 +482,7 @@ public final class BatchedRowsFragments {
      */
     private static void windowedPageTail(CodeBlock.Builder body, CodeBlock stepDeclaration,
             CodeBlock countFromTopology, String whereLocal,
+            no.sikt.graphitron.command.ResultShape.Connection conn,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         body.addStatement("$T<Integer> idxField = parentInput.field(0, $T.class)",
             FIELD, Integer.class);
@@ -521,8 +523,12 @@ public final class BatchedRowsFragments {
         count.unindent();
         body.add(count.build());
 
-        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), page, countSource"
-            + (carrierDsl == no.sikt.graphitron.command.CarrierDsl.ROUTED ? ", dsl" : "") + ")");
+        var helper = className(conn.helper());
+        var countOf = ConnectionConstruction.countOf(CodeBlock.of("pageCount.count($L)",
+            ConnectionConstruction.closureDsl(helper,
+                carrierDsl == no.sikt.graphitron.command.CarrierDsl.ROUTED, ConnectionConstruction.COUNT_ENV)));
+        body.addStatement("return scatterConnectionByIdx(flat, keys.size(), countSource, (pageRows, pageCount) -> $L)",
+            ConnectionConstruction.build(helper, conn.connection(), "pageRows", countOf, null));
     }
 
     /**

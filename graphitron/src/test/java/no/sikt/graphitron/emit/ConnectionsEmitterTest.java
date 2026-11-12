@@ -25,8 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The generated connection classes, compiled as a consumer compiles them and driven: an edge's
  * cursor is the cursor function's answer for its element, a page's info is bounded by its first and
- * last element, the count runs only when it is read, and a class has a member for exactly the
- * positions its type fills. Read over the {@code scenarios/connection-positions} fact document.
+ * last element, the count runs only when it is read, a class has a member for exactly the
+ * positions its type fills, and {@code register} wires exactly the position-filling fields, each
+ * to its member under its own name. Read over the {@code scenarios/connection-positions} fact
+ * document.
  */
 @PipelineTier
 class ConnectionsEmitterTest {
@@ -47,7 +49,8 @@ class ConnectionsEmitterTest {
         var units = new HashMap<String, TypeSpec>();
         var runtime = new ConnectionsEmitter.Runtime(
             ClassName.get(PKG + ".util", PageInfoClassGenerator.CLASS_NAME),
-            ClassName.get(PKG + ".util", "Facets"));
+            ClassName.get(PKG + ".util", "Facets"),
+            ClassName.get(PKG + ".schema", "ErrorRouter"));
         for (TypeSpec spec : ConnectionsEmitter.emit(shapes, PKG, runtime)) {
             units.put(PKG + ".util." + spec.name(), spec);
         }
@@ -150,5 +153,127 @@ class ConnectionsEmitterTest {
             assertThat(invoke(info, "endCursor")).isNull();
             assertThat((List<?>) invoke(page, "edges")).isEmpty();
         }
+    }
+
+    @Test
+    void registerWiresExactlyThePositionFillingFieldsToTheirMembers() throws Exception {
+        try (var harness = compile()) {
+            var outer = harness.load(PKG + ".util." + ConnectionsEmitter.CLASS_NAME);
+            var registry = graphql.schema.GraphQLCodeRegistry.newCodeRegistry();
+            outer.getMethod("register", graphql.schema.GraphQLCodeRegistry.Builder.class).invoke(null, registry);
+
+            for (var coordinate : List.of("FilmsConnection.edges", "FilmsConnection.pageInfo",
+                    "FilmsConnection.totalCount", "FilmsEdge.node", "FilmsEdge.cursor",
+                    "ActorsConnection.edges", "ActorsConnection.pageInfo", "ActorsEdge.node",
+                    "ActorsEdge.cursor")) {
+                assertThat(registry.hasDataFetcher(coordinates(coordinate))).as(coordinate).isTrue();
+            }
+            // A field an author added fills no position, and a position the type does not fill
+            // has no field to register.
+            for (var coordinate : List.of("FilmsConnection.label", "FilmsEdge.rank",
+                    "ActorsConnection.totalCount", "FilmsConnection.nodes")) {
+                assertThat(registry.hasDataFetcher(coordinates(coordinate))).as(coordinate).isFalse();
+            }
+
+            var films = Arrays.stream(outer.getClasses()).filter(c -> c.getSimpleName().equals("FilmsConnection"))
+                .findFirst().orElseThrow();
+            Function<Record, String> cursorOf = r -> "c" + r.get(0);
+            Function<Object, Integer> countOf = env -> 7;
+            var page = films.getConstructors()[0].newInstance(elements(4, 5), false, true, cursorOf, countOf);
+            var built = registry.build();
+            assertThat(fetch(built, "FilmsConnection.totalCount", page)).isEqualTo(7);
+            var edges = (List<?>) fetch(built, "FilmsConnection.edges", page);
+            assertThat(edges).hasSize(2);
+            assertThat(fetch(built, "FilmsEdge.cursor", edges.get(0))).isEqualTo("c4");
+            assertThat(((Record) fetch(built, "FilmsEdge.node", edges.get(1))).get(0)).isEqualTo(5);
+            var info = fetch(built, "FilmsConnection.pageInfo", page);
+            assertThat(invoke(info, "hasPreviousPage")).isEqualTo(true);
+        }
+    }
+
+    /**
+     * The members no authored connection of the fact document fills, nodes and facets, over a
+     * connection that fills every position: what register hands each field. A facets field's
+     * failure is routed, here through a router stand-in that answers a marker.
+     */
+    @Test
+    void registerHandsNodesAndFacetsTheirMembers_andRoutesAFailedFacets() throws Exception {
+        var shapes = new ConnectionsQuery.Shapes(
+            List.of(new ConnectionsQuery.Connection("BooksConnection", "BooksEdge", java.util.Map.of(
+                "edges", "EDGES", "nodes", "NODES", "pageInfo", "PAGE_INFO", "totalCount", "TOTAL_COUNT",
+                "facets", "FACETS"), "BooksConnectionFacets")),
+            List.of(new ConnectionsQuery.Edge("BooksEdge", java.util.Map.of("node", "NODE", "cursor", "CURSOR"))));
+        var units = new HashMap<String, TypeSpec>();
+        var runtime = new ConnectionsEmitter.Runtime(
+            ClassName.get(PKG + ".util", PageInfoClassGenerator.CLASS_NAME),
+            ClassName.get(PKG + ".util", "Facets"),
+            ClassName.get(PKG + ".schema", "ErrorRouter"));
+        for (TypeSpec spec : ConnectionsEmitter.emit(shapes, PKG, runtime)) {
+            units.put(PKG + ".util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : PageInfoClassGenerator.generate()) {
+            units.put(PKG + ".util." + spec.name(), spec);
+        }
+        var mod = new javax.lang.model.element.Modifier[] {
+            javax.lang.model.element.Modifier.PUBLIC, javax.lang.model.element.Modifier.STATIC};
+        units.put(PKG + ".util.Facets", TypeSpec.classBuilder("Facets")
+            .addModifiers(javax.lang.model.element.Modifier.PUBLIC)
+            .addType(TypeSpec.classBuilder("BooksConnectionFacets").addModifiers(mod).build())
+            .build());
+        units.put(PKG + ".schema.ErrorRouter", TypeSpec.classBuilder("ErrorRouter")
+            .addModifiers(javax.lang.model.element.Modifier.PUBLIC)
+            .addMethod(com.palantir.javapoet.MethodSpec.methodBuilder("surfaceClientErrorOrRedact")
+                .addModifiers(mod)
+                .returns(Object.class)
+                .addParameter(Throwable.class, "thrown")
+                .addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env")
+                .addStatement("return $S + thrown.getMessage()", "routed: ")
+                .build())
+            .build());
+        try (var harness = EmittedCodeHarness.compileStrictly(units)) {
+            var outer = harness.load(PKG + ".util." + ConnectionsEmitter.CLASS_NAME);
+            var registry = graphql.schema.GraphQLCodeRegistry.newCodeRegistry();
+            outer.getMethod("register", graphql.schema.GraphQLCodeRegistry.Builder.class).invoke(null, registry);
+            var built = registry.build();
+            var books = Arrays.stream(outer.getClasses()).filter(c -> c.getSimpleName().equals("BooksConnection"))
+                .findFirst().orElseThrow();
+            var facetsRecord = harness.load(PKG + ".util.Facets$BooksConnectionFacets")
+                .getDeclaredConstructor().newInstance();
+            Function<Record, String> cursorOf = r -> "c" + r.get(0);
+            Function<Object, Integer> countOf = env -> 3;
+            Function<Object, Object> facetsOf = env -> facetsRecord;
+            Function<Object, Object> failing = env -> {
+                throw new IllegalStateException("no facets");
+            };
+            var page = books.getConstructors()[0].newInstance(elements(8, 9), false, false, cursorOf, countOf, facetsOf);
+            var broken = books.getConstructors()[0].newInstance(elements(8), false, false, cursorOf, countOf, failing);
+
+            assertThat(((List<?>) fetch(built, "BooksConnection.nodes", page)))
+                .extracting(r -> ((Record) r).get(0)).containsExactly(8, 9);
+            assertThat(fetch(built, "BooksConnection.facets", page)).isSameAs(facetsRecord);
+            assertThat(fetch(built, "BooksConnection.facets", broken)).isEqualTo("routed: no facets");
+            assertThat(fetch(built, "BooksConnection.totalCount", page)).isEqualTo(3);
+            var edges = (List<?>) fetch(built, "BooksConnection.edges", page);
+            assertThat(fetch(built, "BooksEdge.cursor", edges.get(1))).isEqualTo("c9");
+            assertThat(((Record) fetch(built, "BooksEdge.node", edges.get(0))).get(0)).isEqualTo(8);
+            assertThat(invoke(fetch(built, "BooksConnection.pageInfo", page), "endCursor")).isEqualTo("c9");
+        }
+    }
+
+    private static graphql.schema.FieldCoordinates coordinates(String coordinate) {
+        var parts = coordinate.split("\\.");
+        return graphql.schema.FieldCoordinates.coordinates(parts[0], parts[1]);
+    }
+
+    private static Object fetch(graphql.schema.GraphQLCodeRegistry registry, String coordinate, Object source)
+            throws Exception {
+        var parts = coordinate.split("\\.");
+        var type = graphql.schema.GraphQLObjectType.newObject().name(parts[0])
+            .field(graphql.schema.GraphQLFieldDefinition.newFieldDefinition().name(parts[1])
+                .type(graphql.Scalars.GraphQLString))
+            .build();
+        var fetcher = registry.getDataFetcher(type, type.getFieldDefinition(parts[1]));
+        return fetcher.get(graphql.schema.DataFetchingEnvironmentImpl.newDataFetchingEnvironment()
+            .source(source).build());
     }
 }

@@ -14,70 +14,25 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 
 /**
- * Pipeline tests for the connection arm of {@link FetcherRegistrationsEmitter}: verifies that
- * synthesised and structural connection types emit the right set of {@code dataFetcher(…)}
- * registrations, including the {@code totalCount} arm gated on the SDL field's presence.
+ * Which connection-shaped types the schema-shape classes register: a connection and its edge none,
+ * their fields being registered by the store-rendered {@code Connections} class (pinned in
+ * {@code ConnectionsEmitterTest}), and the shared page info exactly when it declares a field of the
+ * specification.
  */
 @UnitTier
 class ConnectionRegistrationsTest {
 
     @Test
-    void synthesisedConnection_registersTotalCount() {
-        var body = bodyFor("""
+    void connectionAndEdge_carryNoRegistrationBody() {
+        GraphitronSchema schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { id: ID }
             type Query { films: [Film!]! @asConnection @defaultOrder(primaryKey: true) }
-            """, "QueryFilmsConnection");
-        assertThat(body).contains("\"edges\"");
-        assertThat(body).contains("\"nodes\"");
-        assertThat(body).contains("\"pageInfo\"");
-        assertThat(body).contains("\"totalCount\"");
-        // Wiring references the per-connection delegate class, which forwards to ConnectionHelper.
-        assertThat(body).contains("QueryFilmsConnectionFetchers::totalCount");
-        // No facets registration without @asFacet.
-        assertThat(body).doesNotContain("facets");
-    }
-
-    @Test
-    void facetedConnection_registersFacets() {
-        var body = bodyFor("""
-            type Film @table(name: "film") { title: String }
-            input FilmFilter {
-                title: [String!] @field(name: "title") @asFacet
-            }
-            type Query {
-                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
-            }
-            """, "QueryFilmsConnection");
-        assertThat(body).contains("\"facets\"");
-        assertThat(body).contains("QueryFilmsConnectionFetchers::facets");
-    }
-
-    @Test
-    void structuralConnection_withTotalCount_registersTotalCount() {
-        var body = bodyFor("""
-            type Film @table(name: "film") { id: ID }
-            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! totalCount: Int }
-            type FilmsEdge { cursor: String! node: Film! }
-            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
-            type Query { films: FilmsConnection }
-            """, "FilmsConnection");
-        assertThat(body).contains("\"totalCount\"");
-        assertThat(body).contains("FilmsConnectionFetchers::totalCount");
-    }
-
-    @Test
-    void structuralConnection_withoutTotalCount_doesNotRegisterTotalCount() {
-        var body = bodyFor("""
-            type Film @table(name: "film") { id: ID }
-            type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! }
-            type FilmsEdge { cursor: String! node: Film! }
-            type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
-            type Query { films: FilmsConnection }
-            """, "FilmsConnection");
-        assertThat(body).contains("\"edges\"");
-        assertThat(body).contains("\"pageInfo\"");
-        assertThat(body).doesNotContain("\"totalCount\"");
-        assertThat(body).doesNotContain("::totalCount");
+            """);
+        assertThat(registersFetchers(schema, "QueryFilmsConnection")).isFalse();
+        assertThat(registersFetchers(schema, "QueryFilmsConnectionEdge")).isFalse();
+        Map<String, CodeBlock> bodies = SchemaShapeRenderTestSupport.fetcherRegistrations(
+            schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(bodies).doesNotContainKeys("QueryFilmsConnection", "QueryFilmsConnectionEdge");
     }
 
     @Test
@@ -108,17 +63,5 @@ class ConnectionRegistrationsTest {
             .filter(row -> row.typeName().equals(typeName))
             .findFirst().orElseThrow()
             .registersFetchers();
-    }
-
-    private static String bodyFor(String sdl, String connectionTypeName) {
-        GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl);
-        Map<String, CodeBlock> bodies = SchemaShapeRenderTestSupport.fetcherRegistrations(
-            schema, DEFAULT_OUTPUT_PACKAGE);
-        var block = bodies.get(connectionTypeName);
-        if (block == null) {
-            throw new AssertionError("no registration body for connection type '"
-                + connectionTypeName + "' in " + bodies.keySet());
-        }
-        return block.toString();
     }
 }

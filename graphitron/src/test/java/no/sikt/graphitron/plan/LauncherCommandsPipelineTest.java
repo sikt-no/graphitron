@@ -173,7 +173,8 @@ class LauncherCommandsPipelineTest {
         assertThat(connection.ordering()).isInstanceOf(Ordering.Columns.class);
         assertThat(connection.defaultPageSize()).isPositive();
         assertThat(connection.helper().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionHelper");
-        assertThat(connection.carrier().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
+        assertThat(connection.connection().typeName()).isEqualTo("QueryFilmsConnection");
+        assertThat(connection.connection().counts()).isTrue();
     }
 
     @Test
@@ -289,7 +290,7 @@ class LauncherCommandsPipelineTest {
         assertThat(connection.ordering()).isInstanceOf(Ordering.Columns.class);
         assertThat(connection.defaultPageSize()).isPositive();
         assertThat(connection.helper().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionHelper");
-        assertThat(connection.carrier().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionResult");
+        assertThat(connection.connection().counts()).isTrue();
     }
 
     @Test

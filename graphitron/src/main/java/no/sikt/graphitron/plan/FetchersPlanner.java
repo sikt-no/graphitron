@@ -6,14 +6,13 @@ import no.sikt.graphitron.rewrite.NestingReach;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 
 /**
  * Plans the fetcher-family compilation units a type gets: its {@code <Type>Fetchers} class, the
- * {@code @error} host beside it, and a connection carrier's pair.
+ * {@code @error} host beside it.
  *
- * <p>Three arms in one planner because they answer one question, which types host fetchers, and
+ * <p>Two arms in one planner because they answer one question, which types host fetchers, and
  * split the answer by what the host is rather than by what decides it.
  */
 public final class FetchersPlanner {
@@ -22,8 +21,8 @@ public final class FetchersPlanner {
 
     /**
      * The fetchers kinds' rows: the variant-classified hosts sorted by name, then the reach
-     * fold's nested population in walk order, then the {@code @error} hosts on their own arm,
-     * then the connection pairs. A nested-reached name that also classifies as a fetcher-hosting
+     * fold's nested population in walk order, then the {@code @error} hosts on their own arm. A
+     * nested-reached name that also classifies as a fetcher-hosting
      * variant gets exactly the variant row (the merged view); one that classifies as any OTHER
      * variant would key-collide in the relation and fail loudly, where the retired loop
      * silently emitted a same-named second class.
@@ -61,12 +60,6 @@ public final class FetchersPlanner {
         // names exist.
         schema.errorTypes().keySet().forEach(name -> rows.add(new TypeUnitCommand.ErrorFetchersUnit(
             name, units.fetchers(name), units.errorMappings(), units.errorRouter())));
-        schema.types().values().stream()
-            .filter(t -> t instanceof GraphitronType.ConnectionType)
-            .map(t -> (GraphitronType.ConnectionType) t)
-            .sorted(Comparator.comparing(GraphitronType.ConnectionType::name))
-            .forEach(ct -> rows.add(new TypeUnitCommand.ConnectionFetchersUnit(ct.name(),
-                units.fetchers(ct.name()), units.fetchers(ct.edgeTypeName()))));
         return rows;
     }
 }
