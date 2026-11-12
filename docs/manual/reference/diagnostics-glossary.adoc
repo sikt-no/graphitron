@@ -183,6 +183,18 @@ routine is applied to:
 
 *Next step.* Write the reading you meant on the field. `@nodeId` publishes the encoded global ID; `xref:directives/field.adoc[@field(name: "id")]` exposes the raw column, at the cost of that type no longer round-tripping through `Query.node(id:)`. The xref:directives/node.adoc[`@node` reference] covers both.
 
+[#field-without-fetcher]
+=== A field graphitron has nothing to fetch with (`FIELD_WITHOUT_FETCHER`)
+
+*What it says.* `A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with`, at the field's declaration.
+
+*Cause.* Every field either runs something of its own (a query, a lookup, a write, a `@service`, a `@routine`) or reads its value from what its parent holds (a column of the parent's row, a member of the parent's object). A field doing neither is a field graphitron would leave unanswered, so the build stops. Two shapes reach it:
+
+* A field on a root type with nothing written on it whose return type lands on no table, for example a `Mutation` field with no `@mutation`, `@service` or `@routine`.
+* A field returning a union or interface none of whose implementers is xref:directives/table.adoc[`@table`]-bound, wherever graphitron would fetch it: at the root, or under a table-bound parent, as a list, a single value or a connection. Graphitron fetches such a field per table-bound participant, so with none there is nothing to fetch. Under a value a `@service` handed back, the field is read off that value instead, and is no defect.
+
+*Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
+
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.
