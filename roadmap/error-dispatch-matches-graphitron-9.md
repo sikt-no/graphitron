@@ -18,6 +18,8 @@ A schema that ran on Graphitron 9 has each exception its services and mutations 
 
 This item covers the throws Graphitron 9 routed through a handler. The throws Graphitron 9 handed to consumer code instead (an unclaimed `DataAccessException`, every `IllegalArgumentException`) reach their Graphitron 9 member through R1171 (`error-channel-default-member`), which depends on this item and inserts a default member into the order fixed here. Until it lands, an application that relied on that consumer code, which every Graphitron 9 application did, still answers those throws differently.
 
+Where each kind of throw lands on Graphitron 9.4, on Graphitron 10 today, after this item, and after R1171 on top of it, with a scenario matrix: [Error Dispatch, 9 to 10](https://claude.ai/artifact/4u5ReGFuvTTtvHCU5NxdBp).
+
 The schema below follows the catch-all the error-channel how-to recommends for consumers moving from Graphitron 9, placed in a union beside a database member taken from the sakila example (`FilmRentalRateOverflow`):
 
 ```graphql
