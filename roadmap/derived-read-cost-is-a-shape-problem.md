@@ -633,21 +633,16 @@ static method needs no holder.
     Every reason closes before the flip, which keeps no fallback to the classified model per
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
-    * **A filter read through a list of input objects is emitted from the store** `open`.
-      `graphitron_occurrence_list_element(graph, coordinate, list_coordinate)`, one row per input-field
-      occurrence and each list occurrence above it it is read once per element of, written by a stage
-      of its own before the depths from a two-arm rule view over the occurrence's parent and the
-      element's `is_list`, so neither `ArgumentPaths` nor the emitter groups terms by list. The
-      walk's refusals become store defects read off it, each at the element field's written position
-      but one: an element field that is a list or under a second list, carries `@nodeId` or
-      `@condition`, or binds no column; and element fields reaching their columns by different paths,
-      at the list field with each disagreeing field a detail row. Each is pinned by a `defects/`
-      document with `filmsByLanguagePairs`' nullable element field and nested nullable input as near
-      misses, and the glossary's "An element field a list-of-input filter cannot compare" names the
-      codes. `ConditionQuery` nests a list's element terms under it; the emitter writes today's
-      behaviour, the row membership where every element field is required and the disjunction of the
-      fields each element gives where one is not, on the field's table or inside one `EXISTS` over the
-      path they share, built on its one `read` helper rather than a ladder of its own.
+    * **A list of input objects' element fields are refused by the store where they cannot be compared as rows** `open`.
+      The walk's refusals of a list-of-input filter become store defects in a stage of their own after
+      the depths, read off `graphitron_occurrence_list_element`: an element field that is a list or
+      under a second list, carries `@nodeId` or `@condition`, or binds no column, each at the element
+      field's written position; and element fields reaching their columns by different paths, at the
+      list field with each disagreeing field a detail row. Each is pinned by a `defects/` document with
+      `filmsByLanguagePairs`' nullable element field and nested nullable input as near misses, and the
+      glossary's "An element field a list-of-input filter cannot compare" names the codes.
+      `ConditionEmitter`'s refusal of those shapes then becomes an invariant a defected graph never
+      reaches, and the flip waits on this node, since until it lands they are refused by the walk alone.
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move

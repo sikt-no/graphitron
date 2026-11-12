@@ -4467,6 +4467,44 @@ COMMENT ON COLUMN graphitron_occurrence.element_coordinate_ref IS 'the coordinat
 CREATE INDEX graphitron_occurrence_element_ix ON graphitron_occurrence (graph_name, element_coordinate);
 COMMENT ON INDEX graphitron_occurrence_element_ix IS 'A reader holding a declared element asks for its occurrences, and the primary key, a nested coordinate, serves none of that. graphitron_argmapping_step asks it of every argMapping, which is written on a declared field, argument or input field and resolved once per place that element is reached.';
 
+CREATE TABLE graphitron_occurrence_list_element (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  list_coordinate VARCHAR   NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, list_coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, list_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_list_element IS 'An input field read once per element of a list above it: one row per input-field occurrence and each argument or input-field occurrence above it whose type is a list. For example Query.filmActorsByPairs(filter.pairs.actorId:) is read once per element of Query.filmActorsByPairs(filter.pairs:), and Query.filmsByFilter(filter.title:) draws no row.';
+COMMENT ON COLUMN graphitron_occurrence_list_element.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_list_element.coordinate IS 'the input-field occurrence read per element';
+COMMENT ON COLUMN graphitron_occurrence_list_element.list_coordinate IS 'the list occurrence above it, an argument or an input field whose type is a list; with the graph and the coordinate, the grain, so an occurrence under two lists draws two rows';
+COMMENT ON COLUMN graphitron_occurrence_list_element.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_occurrence_list_element_rule (graph_name, coordinate, list_coordinate) AS
+SELECT o.graph_name, o.coordinate, p.coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  LEFT JOIN graphitron_argument a
+    ON p.kind = 'FIELD_ARGUMENT' AND a.graph_name = p.graph_name AND a.coordinate = p.element_coordinate
+  LEFT JOIN graphitron_field f
+    ON p.kind = 'INPUT_FIELD' AND f.graph_name = p.graph_name AND f.coordinate = p.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD' AND (a.is_list OR f.is_list)
+UNION ALL
+SELECT o.graph_name, o.coordinate, l.list_coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_list_element l
+    ON l.graph_name = o.graph_name AND l.coordinate = o.parent_coordinate
+ WHERE o.kind = 'INPUT_FIELD';
+COMMENT ON VIEW graphitron_occurrence_list_element_rule IS 'One row the list element rule computes, in the shape graphitron_occurrence_list_element stores: the rule itself, evaluated a depth at a time rather than read off disk. For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_list_element, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_list_element.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.list_coordinate IS 'the list_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.list_coordinate';
+
 -- An argMapping entry binding a parameter to an argument path, under one occurrence of its call.
 -- One pair of a written argMapping, named: the mapping's site and the parameter the pair binds, the
 -- first written of two naming one parameter kept. The entry's position rides along for a defect.
@@ -19114,13 +19152,14 @@ INSERT INTO meta_stage VALUES
   ('type-backings', 'graphitron', 28, 'no.sikt.graphitron.model.derive.TypeBackings'),
   ('fetchers', 'graphitron', 29, 'no.sikt.graphitron.model.derive.Fetchers'),
   ('occurrence-participants', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-depths', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-builds', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 35, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 36, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 37, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-lists', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
+  ('occurrence-depths', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-builds', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 36, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 37, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 38, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -19207,6 +19246,7 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_pivot'),
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
+  ('occurrence-lists', 'graphitron_occurrence_list_element'),
   ('occurrence-depths', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_occurrence_binding'),
@@ -19694,6 +19734,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence',
    'one use of one declared field, argument or input field reached along a chain, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('occurrence-list-element',
+   'one input-field occurrence and one list above it that it is read once per element of, in one graph',
+   'graph_name, coordinate, list_coordinate', 'sdl'),
   ('occurrence-node-id-key',
    'one key column one occurrence''s node id carries at one node table, in one graph',
    'graph_name, coordinate, bound, position', 'sdl'),
@@ -21637,6 +21680,14 @@ INSERT INTO meta_relation VALUES
    'One occurrence of an element, a use of a declared field, argument or input field reached along a chain: one row per nested coordinate.',
    'For example Emne.navn.en is en on the type Emne.navn returns, which has no table of its own, and Query.films(filter.cast.firstName:) an input field under the argument filter.',
    'A field of a type with no table of its own, an argument and an input field mean something different under each parent: which table they read, where their path starts, what their parent holds. Stated once per parent chain at a coordinate, every fact that depends on the parent has one row per occurrence, and a reader reads it without choosing among the tables a declaration-keyed row carries. Stored rather than a view because its population is a walk with a first-visit guard over a graph that can cycle, which a view cannot state safely, and because the parent-dependent relations key into it.'),
+  ('graphitron_occurrence_list_element', 'occurrence-list-element', 'graphitron',
+   'An input field read once per element of a list above it: one row per input-field occurrence and each argument or input-field occurrence above it whose type is a list.',
+   'For example Query.filmActorsByPairs(filter.pairs.actorId:) is read once per element of Query.filmActorsByPairs(filter.pairs:), and Query.filmsByFilter(filter.title:) draws no row.',
+   'A filter read through a list of input objects compares each element as one row, so its reader groups the element fields under their list, and a refusal of a field under two lists asks the same question. Stored at the occurrence pair, written a depth at a time from the parent''s rows, so neither reader rebuilds an occurrence''s chain to find the list above it, in SQL by recursion or in code by walking parents.'),
+  ('graphitron_occurrence_list_element_rule', 'occurrence-list-element', 'graphitron',
+   'One row the list element rule computes, in the shape graphitron_occurrence_list_element stores: the rule itself, evaluated a depth at a time rather than read off disk.',
+   'For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_list_element, which is the name every reader spells.',
+   'An input field is read per element of its parent where the parent is a list, and of every list its parent is read per element of, which are the depth above''s stored rows, so each arm is one join and the rule never recurses. Kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_occurrence_start_rule', 'graph-occurrence', 'graphitron',
    'One occurrence a chain starts at, in the shape graphitron_occurrence stores at depth 0: the rule itself, evaluated on demand rather than read off disk.',
    'For example Film.title on the table-bound Film, and Mutation.createFilm on the root.',

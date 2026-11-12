@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
@@ -75,16 +76,17 @@ public final class ConditionQuery {
      * One argument or input field's filter: its occurrence, its path of names from the argument, the
      * column it binds where it binds one rather than a node id, its type's kind, whether it is a node
      * id or a {@code @lookupKey}, its path's origin, the steps the path takes from the field's table
-     * to the column's, none on an empty path, and the record class of the table the path lands on,
-     * which a node id decodes into.
+     * to the column's, none on an empty path, the record class of the table the path lands on,
+     * which a node id decodes into, and the list occurrences above it it is read once per element of.
      */
     public record Term(String coordinate, ArgumentPaths.Path path, Column column, String typeKind,
                        boolean nodeId, boolean lookupKey, String origin, List<Step> steps,
-                       String landingRecordClass) {
+                       String landingRecordClass, List<ListAbove> lists) {
         public Term {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(path, "path");
             steps = List.copyOf(steps);
+            lists = List.copyOf(lists);
         }
 
         /** The names from the argument down to this term. */
@@ -97,16 +99,17 @@ public final class ConditionQuery {
             return path.lists().contains(path.names().size() - 1);
         }
 
-        /** Whether a list is read through above the last step. */
-        public boolean throughList() {
-            return path.lists().stream().anyMatch(i -> i < path.names().size() - 1);
-        }
-
         /** Whether every step is declared non-null, so the value is never absent. */
         public boolean present() {
             return path.present();
         }
     }
+
+    /**
+     * A list occurrence a term is read once per element of: its coordinate, and its position on the
+     * term's path of names, how many steps it sits below the argument.
+     */
+    public record ListAbove(String coordinate, int position) {}
 
     /** A column pair a step joins on: the column on the table it departs and on the one it reaches. */
     public record Pair(String fromJavaName, String toJavaName) {}
@@ -130,11 +133,12 @@ public final class ConditionQuery {
      * a value is coerced into it, the fill, and for an {@code ARGUMENT} the occurrence it takes, that
      * occurrence's path of names from its argument, its type's kind and whether it is a node id; for a
      * {@code CONTEXT_KEY} the key, for a {@code SESSION_MEMBER} the member; and the class the parameter
-     * delivers once its containers are peeled off, as the census states it.
+     * delivers once its containers are peeled off, as the census states it; and whether the occurrence
+     * it takes is read once per element of a list above it.
      */
     public record Fill(int position, String parameterType, String extraction, String fill, String landing,
                        ArgumentPaths.Path path, String landingKind, boolean landingNodeId, String contextKey,
-                       String sessionMember, String element) {
+                       String sessionMember, String element, boolean throughList) {
         public Fill {
             Objects.requireNonNull(parameterType, "parameterType");
             Objects.requireNonNull(fill, "fill");
@@ -174,7 +178,7 @@ public final class ConditionQuery {
     }
 
     private record Raw(String coordinate, Column column, String typeKind, boolean nodeId, boolean lookupKey,
-                       String origin, String targetType, String landingRecordClass) {}
+                       String origin, String targetType, String landingRecordClass, List<ListAbove> lists) {}
 
     private record Applied(Call call, boolean override) {}
 
@@ -226,12 +230,24 @@ public final class ConditionQuery {
         // A term is a lookup's key where the argument it is read from carries @lookupKey: the argument
         // itself, or every input field under it.
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
+        var le = GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
+        var listOccurrence = GRAPHITRON_OCCURRENCE.as("lo2");
+        var argumentOccurrence = GRAPHITRON_OCCURRENCE.as("la2");
+        var lists = multiset(select(le.LIST_COORDINATE, listOccurrence.DEPTH.minus(argumentOccurrence.DEPTH))
+                .from(le)
+                .join(listOccurrence).on(listOccurrence.GRAPH_NAME.eq(le.GRAPH_NAME),
+                    listOccurrence.COORDINATE.eq(le.LIST_COORDINATE))
+                .join(argumentOccurrence).on(argumentOccurrence.GRAPH_NAME.eq(o.GRAPH_NAME),
+                    argumentOccurrence.COORDINATE.eq(o.ARGUMENT_COORDINATE))
+                .where(le.GRAPH_NAME.eq(o.GRAPH_NAME), le.COORDINATE.eq(o.COORDINATE))
+                .orderBy(le.LIST_COORDINATE))
+            .convertFrom(r -> r.map(Records.mapping(ListAbove::new)));
         var terms = multiset(
             select(o.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeId,
                 field(exists(selectOne().from(ao).join(d).on(d.GRAPH_NAME.eq(ao.GRAPH_NAME),
                         d.COORDINATE.eq(ao.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey"))
                     .where(ao.GRAPH_NAME.eq(o.GRAPH_NAME), ao.COORDINATE.eq(o.ARGUMENT_COORDINATE)))),
-                p.ORIGIN, oc.TABLE_NAME, pn.TARGET_TYPE, lt.RECORD_CLASS_FQN)
+                p.ORIGIN, oc.TABLE_NAME, pn.TARGET_TYPE, lt.RECORD_CLASS_FQN, lists)
                 .from(o)
                 .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
                 .leftJoin(pn).on(pn.GRAPH_NAME.eq(o.GRAPH_NAME), pn.COORDINATE.eq(o.COORDINATE),
@@ -276,7 +292,10 @@ public final class ConditionQuery {
                     cp.LANDING_COORDINATE, lty.KIND,
                     field(exists(selectOne().from(ln).where(ln.GRAPH_NAME.eq(cp.GRAPH_NAME),
                         ln.COORDINATE.eq(cp.LANDING_COORDINATE)))), cp.CONTEXT_KEY, cp.SESSION_MEMBER,
-                    coalesce(mp.ELEMENT_CLASS, mp.ERASED_CLASS))
+                    coalesce(mp.ELEMENT_CLASS, mp.ERASED_CLASS),
+                    field(exists(selectOne().from(GRAPHITRON_OCCURRENCE_LIST_ELEMENT)
+                        .where(GRAPHITRON_OCCURRENCE_LIST_ELEMENT.GRAPH_NAME.eq(cp.GRAPH_NAME),
+                            GRAPHITRON_OCCURRENCE_LIST_ELEMENT.COORDINATE.eq(cp.LANDING_COORDINATE)))))
                 .from(mp)
                 .leftJoin(cp).on(cp.GRAPH_NAME.eq(cc.GRAPH_NAME), cp.COORDINATE.eq(cc.COORDINATE), cp.CALL.eq(cc.CALL),
                     cp.POSITION.eq(mp.POSITION))
@@ -316,7 +335,8 @@ public final class ConditionQuery {
                 var applied = r.value9().map(k -> new Applied(new Call(k.value1(), k.value2(), k.value4(),
                     k.value5(), k.value6(), k.value7().map(x -> new Fill(x.value1(), x.value2(), x.value3(),
                         x.value4(), x.value5(), x.value5() == null ? null : paths.get(x.value5()), x.value6(),
-                        Boolean.TRUE.equals(x.value7()), x.value8(), x.value9(), x.value10()))),
+                        Boolean.TRUE.equals(x.value7()), x.value8(), x.value9(), x.value10(),
+                        Boolean.TRUE.equals(x.value11())))),
                     Boolean.TRUE.equals(k.value3())));
                 // An override: true written on a condition suppresses the terms at its occurrence and
                 // under it, read as written.
@@ -324,12 +344,12 @@ public final class ConditionQuery {
                 var written = r.value8().stream()
                     .map(t -> new Raw(t.value1(), t.value2() == null ? null : new Column(t.value9(), t.value2(),
                         t.value3(), t.value4()), t.value5(), Boolean.TRUE.equals(t.value6()),
-                        Boolean.TRUE.equals(t.value7()), t.value8(), t.value10(), t.value11()))
+                        Boolean.TRUE.equals(t.value7()), t.value8(), t.value10(), t.value11(), t.value12()))
                     .filter(raw -> overriding.stream().noneMatch(at -> under(raw.coordinate(), at, parents)))
                     .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()), raw.column(), raw.typeKind(),
                         raw.nodeId(), raw.lookupKey(), raw.origin(),
                         steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
-                        raw.landingRecordClass()))
+                        raw.landingRecordClass(), raw.lists()))
                     .toList();
                 var made = applied.stream().map(Applied::call).toList();
                 if (r.value8().isEmpty() && made.isEmpty()) {

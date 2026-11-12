@@ -17,6 +17,7 @@ import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceBuilds;
 import no.sikt.graphitron.model.derive.OccurrenceDepthDefects;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
+import no.sikt.graphitron.model.derive.OccurrenceLists;
 import no.sikt.graphitron.model.derive.OccurrenceParticipants;
 import no.sikt.graphitron.model.derive.OccurrenceValues;
 import no.sikt.graphitron.model.derive.Outboxes;
@@ -133,6 +134,10 @@ public final class GraphitronAssemblyCapture {
         // before the depths, whose table bindings read them.
         new AnchorStage("occurrence-participants", OccurrenceParticipants.class,
             OccurrenceParticipants::derive),
+        // Which lists each input field is read once per element of, off the occurrences and the
+        // declared elements alone; before the depths, whose readers it serves.
+        new AnchorStage("occurrence-lists", OccurrenceLists.class,
+            OccurrenceLists::derive),
         // Each occurrence's producer, its calls' pins and fills, source, needs, paths and the node id
         // and column it binds, a depth at a time, off the occurrences, the landings and the claims above: one stage, each
         // depth reading what the depth above it wrote.

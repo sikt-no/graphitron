@@ -10,6 +10,7 @@ import com.palantir.javapoet.TypeName;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -52,6 +53,12 @@ import java.util.regex.Pattern;
  * where it is not an id of its type, and its key compared as a row value where it has several
  * columns: on the condition's own table where the id decodes onto it, its own key or the one foreign
  * key referencing the node, and otherwise on the table its path lands on.
+ *
+ * <p>A list of input objects compares each element as one row, its fields grouped under the list the
+ * store says they are read through: the column, or the row of columns, a member of the elements' rows
+ * where every element field is declared non-null below the list, and otherwise the disjunction over the
+ * elements of the fields each gives, a field an element leaves out placing no constraint. Its fields
+ * share one path, so a reached list compares inside one {@code EXISTS} over it.
  *
  * <p>A {@code @lookupKey} argument is the lookup's key, not a filter, and writes nothing here. What
  * this emitter does not write yet it says, and emits nothing for the occurrence: see {@link Reason}.
@@ -96,7 +103,11 @@ public final class ConditionEmitter {
          * id of another participant's type answers no row rather than a refusal.
          */
         NODE_ID_PARTICIPANT,
-        /** A term is read through a list of input objects, a match per element. */
+        /**
+         * A term is read through a list of input objects whose elements cannot be compared as rows: an
+         * element field that is a list, under a second list, a node id or bound to no column, or element
+         * fields reaching their columns by different paths; or a call's argument is read through one.
+         */
         THROUGH_LIST,
         /** A term's column is of a Java type this emitter cannot spell. */
         UNSPELLED_TYPE
@@ -135,10 +146,29 @@ public final class ConditionEmitter {
         if (terms.isEmpty() && row.calls().isEmpty()) {
             return new Result.Nothing();
         }
+        // A term read per element of a list compares with the other fields of its element, grouped
+        // under the list the store says it is read through; one under two lists is not emitted.
+        var plain = new ArrayList<ConditionQuery.Term>();
+        var listed = new LinkedHashMap<String, List<ConditionQuery.Term>>();
         for (var term : terms) {
+            if (term.lists().isEmpty()) {
+                plain.add(term);
+            } else if (term.lists().size() > 1) {
+                return new Result.NotYet(Reason.THROUGH_LIST, term.coordinate());
+            } else {
+                listed.computeIfAbsent(term.lists().getFirst().coordinate(), k -> new ArrayList<>()).add(term);
+            }
+        }
+        for (var term : plain) {
             var reason = reasonFor(row, term, decodes);
             if (reason.isPresent()) {
                 return new Result.NotYet(reason.get(), term.coordinate());
+            }
+        }
+        for (var group : listed.entrySet()) {
+            var reason = reasonFor(row, group.getValue());
+            if (reason.isPresent()) {
+                return new Result.NotYet(reason.get(), group.getKey());
             }
         }
         for (var call : row.calls()) {
@@ -166,7 +196,7 @@ public final class ConditionEmitter {
         var counter = new int[1];
         var adds = CodeBlock.builder();
         var helpers = new java.util.ArrayList<MethodSpec>();
-        for (var term : terms) {
+        for (var term : plain) {
             var local = local(term, locals);
             if (term.nodeId()) {
                 var decode = decodeOnto(row, term, decodes).orElseThrow();
@@ -212,6 +242,9 @@ public final class ConditionEmitter {
                 adds.addStatement("if ($L) conditions.add($L)", guard, predicate);
             }
         }
+        for (var elements : listed.values()) {
+            list(method, adds, helpers, name, row, elements, locals, counter);
+        }
         if (row.calls().stream().flatMap(call -> call.fills().stream())
                 .anyMatch(fill -> "ARGUMENT".equals(fill.fill()) && !"ENUM_VALUE_OF".equals(fill.extraction())
                     && javaType(fill.parameterType()).orElseThrow() instanceof ParameterizedTypeName)) {
@@ -233,6 +266,177 @@ public final class ConditionEmitter {
     }
 
     /**
+     * Why a list's element fields are not emitted yet: a field that is not one value bound to a column,
+     * fields reaching their columns by different paths, or a path or type every term is held to.
+     */
+    private static Optional<Reason> reasonFor(ConditionQuery.Row row, List<ConditionQuery.Term> elements) {
+        var first = elements.getFirst();
+        for (var element : elements) {
+            if (element.nodeId() || element.list() || element.column() == null
+                    || !element.steps().equals(first.steps())) {
+                return Optional.of(Reason.THROUGH_LIST);
+            }
+            boolean ownTable = element.column().tableSqlName().equals(row.table().sqlName());
+            if (element.steps().isEmpty() ? !ownTable : element.steps().stream()
+                    .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
+                return Optional.of(Reason.REACHED);
+            }
+            if (type(element.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
+        }
+        return Optional.empty();
+    }
+
+    /**
+     * A list of input objects' filter: each element compared as one row, by a helper of its own reading
+     * the list off the argument map. Where every element field is declared non-null below the list,
+     * the element is a row and the column, or the row of columns, is a member of the rows; a non-object
+     * element is a row of nulls, matching nothing. Otherwise each element compares only the fields it
+     * gives and the filter is their disjunction: an element giving none matches every row, a
+     * non-object element none. Absent or empty, the list filters nothing. Its fields share one path,
+     * so a reached list compares inside one {@code EXISTS} over it, a reached row matching a whole
+     * element.
+     */
+    private static void list(MethodSpec.Builder method, CodeBlock.Builder adds, List<MethodSpec> helpers,
+                             String name, ConditionQuery.Row row, List<ConditionQuery.Term> elements,
+                             Set<String> locals, int[] counter) {
+        var first = elements.getFirst();
+        int at = first.lists().getFirst().position();
+        var names = first.names().subList(0, at + 1);
+        var local = fresh(names.getLast(), locals);
+        var hops = hops(method, first, local);
+        var alias = hops.isEmpty() ? "table" : hops.getLast();
+        var tableClass = ClassName.bestGuess(hops.isEmpty() ? row.table().tableClassName()
+            : first.steps().getLast().to().tableClassName());
+        boolean whole = elements.stream().allMatch(element -> java.util.stream.IntStream
+            .range(at + 1, element.names().size()).allMatch(element.path().nonNull()::contains));
+        boolean present = java.util.stream.IntStream.rangeClosed(0, at).allMatch(first.path().nonNull()::contains);
+        var helper = name + "_" + local;
+        var wire = read(names, counter);
+        CodeBlock compare;
+        CodeBlock guard;
+        if (whole) {
+            var rows = rowsHelper(helper, tableClass, elements, at, counter);
+            helpers.add(rows);
+            method.addStatement("$T $L = $L($L, $L)", ParameterizedTypeName.get(LIST, elements.size() == 1
+                ? type(first.column().bindingType()).orElseThrow().box() : ClassName.get("org.jooq", "RowN")),
+                local, helper, wire, alias);
+            compare = elements.size() == 1
+                ? CodeBlock.of("$L.$L.in($L)", alias, first.column().javaName(), local)
+                : CodeBlock.of("$T.row(($T<?>) $T.of($L)).in($L)", DSL, java.util.Collection.class, LIST,
+                    columns(alias, elements), local);
+            guard = present ? CodeBlock.of("!$L.isEmpty()", local)
+                : CodeBlock.of("$L != null && !$L.isEmpty()", local, local);
+        } else {
+            helpers.add(matchHelper(helper, tableClass, elements, at, counter));
+            method.addStatement("$T $L = $L($L, $L)", CONDITION, local, helper, wire, alias);
+            compare = CodeBlock.of("$L", local);
+            guard = CodeBlock.of("$L != null", local);
+        }
+        var predicate = hops.isEmpty() ? compare : reached(first, hops, compare);
+        adds.addStatement("if ($L) conditions.add($L)", guard, predicate);
+    }
+
+    /** The element fields' columns on {@code alias}, in term order. */
+    private static CodeBlock columns(String alias, List<ConditionQuery.Term> elements) {
+        return CodeBlock.join(elements.stream()
+            .map(element -> CodeBlock.of("$L.$L", alias, element.column().javaName())).toList(), ", ");
+    }
+
+    /**
+     * The rows a list's elements are, each its fields' values typed at their columns, or the values
+     * themselves where the element has one field; {@code null} where the wire value is no list.
+     */
+    private static MethodSpec rowsHelper(String name, ClassName tableClass, List<ConditionQuery.Term> elements,
+                                         int at, int[] counter) {
+        boolean single = elements.size() == 1;
+        var first = elements.getFirst();
+        TypeName row = single ? type(first.column().bindingType()).orElseThrow().box()
+            : ClassName.get("org.jooq", "RowN");
+        var returns = ParameterizedTypeName.get(LIST, row);
+        var body = MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(returns)
+            .addParameter(Object.class, "wire")
+            .addParameter(tableClass, "table")
+            .addStatement("if (!(wire instanceof $T<?> elements)) return null", LIST)
+            .addStatement("$T rows = new $T<>(elements.size())", returns, ARRAY_LIST)
+            .beginControlFlow("for ($T element : elements)", Object.class);
+        var nulls = single ? CodeBlock.of("null") : CodeBlock.of("$T.row(($T<?>) $T.of($L))", DSL,
+            java.util.Collection.class, LIST, CodeBlock.join(elements.stream()
+                .map(e -> CodeBlock.of("$T.val(null, table.$L)", DSL, e.column().javaName())).toList(), ", "));
+        body.beginControlFlow("if (!(element instanceof $T<?, ?> fields))", MAP)
+            .addStatement("rows.add($L)", nulls)
+            .addStatement("continue")
+            .endControlFlow();
+        var cells = cells(body, elements, at, counter);
+        body.addStatement("rows.add($L)", single ? CodeBlock.of("$L", cells.getFirst())
+            : CodeBlock.of("$T.row(($T<?>) $T.of($L))", DSL, java.util.Collection.class, LIST,
+                CodeBlock.join(java.util.stream.IntStream.range(0, elements.size())
+                    .mapToObj(i -> CodeBlock.of("$T.val($L, table.$L)", DSL, cells.get(i),
+                        elements.get(i).column().javaName())).toList(), ", ")));
+        return body.endControlFlow().addStatement("return rows").build();
+    }
+
+    /**
+     * The disjunction over a list's elements of the fields each gives, compared at their columns;
+     * {@code null} where the wire value is no list or an empty one.
+     */
+    private static MethodSpec matchHelper(String name, ClassName tableClass, List<ConditionQuery.Term> elements,
+                                          int at, int[] counter) {
+        var conditions = ParameterizedTypeName.get(LIST, CONDITION);
+        var body = MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(CONDITION)
+            .addParameter(Object.class, "wire")
+            .addParameter(tableClass, "table")
+            .addStatement("if (!(wire instanceof $T<?> elements) || elements.isEmpty()) return null", LIST)
+            .addStatement("$T anyOf = new $T<>(elements.size())", conditions, ARRAY_LIST)
+            .beginControlFlow("for ($T element : elements)", Object.class)
+            .beginControlFlow("if (!(element instanceof $T<?, ?> fields))", MAP)
+            .addStatement("anyOf.add($T.falseCondition())", DSL)
+            .addStatement("continue")
+            .endControlFlow();
+        var cells = cells(body, elements, at, counter);
+        body.addStatement("$T cells = new $T<>()", conditions, ARRAY_LIST);
+        for (int i = 0; i < elements.size(); i++) {
+            var element = elements.get(i);
+            var compare = CodeBlock.of("cells.add(table.$L.eq($L))", element.column().javaName(), cells.get(i));
+            boolean required = java.util.stream.IntStream.range(at + 1, element.names().size())
+                .allMatch(element.path().nonNull()::contains);
+            if (required) {
+                body.addStatement(compare);
+            } else {
+                body.addStatement("if ($L != null) $L", cells.get(i), compare);
+            }
+        }
+        body.addStatement("anyOf.add(cells.isEmpty() ? $T.trueCondition() : $T.and(cells))", DSL, DSL);
+        return body.endControlFlow().addStatement("return $T.or(anyOf)", DSL).build();
+    }
+
+    /** Declares each element field's value off the element's map, typed at its column, and names them. */
+    private static List<String> cells(MethodSpec.Builder body, List<ConditionQuery.Term> elements, int at,
+                                      int[] counter) {
+        var out = new ArrayList<String>();
+        for (var element : elements) {
+            var cell = "c" + (out.size() + 1);
+            var type = type(element.column().bindingType()).orElseThrow();
+            var column = CodeBlock.of("table.$L", element.column().javaName());
+            var value = read("fields", element.names().subList(at + 1, element.names().size()), counter);
+            body.addStatement("$T $L = $L", type.box(), cell, typed(element, type, value, column, counter));
+            out.add(cell);
+        }
+        return out;
+    }
+
+    /** A local not yet taken, from {@code base}. */
+    private static String fresh(String base, Set<String> locals) {
+        var unique = free(base, locals) ? base : base + "Value";
+        for (int n = 2; !free(unique, locals); n++) unique = base + "Value" + n;
+        locals.add(unique);
+        return unique;
+    }
+
+    /**
      * Why an authored call is not emitted yet: a fill it takes that this emitter does not hand over, or
      * a table it is applied to by way of a node id.
      */
@@ -243,7 +447,7 @@ public final class ConditionEmitter {
                 case "TABLE" -> { }
                 case "ARGUMENT" -> {
                     if (fill.landingNodeId()) return Optional.of(Reason.AUTHORED_NODE_ID);
-                    if (fill.path().lists().stream().anyMatch(i -> i < fill.path().names().size() - 1)) {
+                    if (fill.throughList()) {
                         return Optional.of(Reason.THROUGH_LIST);
                     }
                     if ("INPUT_OBJECT".equals(fill.landingKind()) && !takesMap(fill)
@@ -336,7 +540,7 @@ public final class ConditionEmitter {
                                               NodeIdDecodeQuery decodes) {
         if (term.nodeId()) {
             if (row.tables() > 1) return Optional.of(Reason.NODE_ID_PARTICIPANT);
-            if (term.throughList() || decodeOnto(row, term, decodes).isEmpty()) return Optional.of(Reason.NODE_ID);
+            if (decodeOnto(row, term, decodes).isEmpty()) return Optional.of(Reason.NODE_ID);
             return Optional.empty();
         }
         boolean ownTable = term.column().tableSqlName().equals(row.table().sqlName());
@@ -344,7 +548,6 @@ public final class ConditionEmitter {
                 .anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
             return Optional.of(Reason.REACHED);
         }
-        if (term.throughList()) return Optional.of(Reason.THROUGH_LIST);
         if (type(term.column().bindingType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
         return Optional.empty();
     }
@@ -471,14 +674,19 @@ public final class ConditionEmitter {
      * {@code null} wherever one is absent.
      */
     private static CodeBlock read(List<String> names, int[] counter) {
+        return read("args", names, counter);
+    }
+
+    /** The value at the end of {@code names} off the map {@code root}, as {@link #read(List, int[])}. */
+    private static CodeBlock read(String root, List<String> names, int[] counter) {
         if (names.size() == 1) {
-            return CodeBlock.of("args.get($S)", names.getFirst());
+            return CodeBlock.of("$L.get($S)", root, names.getFirst());
         }
         var test = CodeBlock.builder();
         String previous = null;
         for (int i = 0; i < names.size() - 1; i++) {
             var map = "m" + ++counter[0];
-            var source = previous == null ? CodeBlock.of("args.get($S)", names.get(i))
+            var source = previous == null ? CodeBlock.of("$L.get($S)", root, names.get(i))
                 : CodeBlock.of("$L.get($S)", previous, names.get(i));
             if (i > 0) test.add(" && ");
             test.add("$L instanceof $T<?, ?> $L", source, MAP, map);

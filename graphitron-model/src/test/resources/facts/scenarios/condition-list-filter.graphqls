@@ -1,0 +1,77 @@
+# A filter field typed as a list of input objects: each element is compared as one row, so every
+# input field under the list is read once per element of it, at whatever depth below the list it
+# sits. FilmActorPairInput is read through a list nested in a filter and as the argument itself;
+# FilmLanguageInput gives an element field that may be left out and a nested input under it, whose
+# field is read per element of the same list one depth further down; FilmCastNameInput's fields
+# reach their columns through one @reference path; and a @lookupKey list is read per element too,
+# its fields being the lookup's key rather than a filter. A list of scalars and an input object
+# read through no list draw nothing.
+
+type Film @table(name: "film") {
+    title: String
+}
+
+type FilmActor @table(name: "film_actor") {
+    actorId: Int @field(name: "actor_id")
+}
+
+input FilmActorPairInput {
+    actorId: Int! @field(name: "actor_id")
+    filmId: Int! @field(name: "film_id")
+}
+
+input FilmActorPairFilter {
+    pairs: [FilmActorPairInput]
+}
+
+input FilmOriginalLanguageIdInput {
+    id: Int! @field(name: "original_language_id")
+}
+
+input FilmLanguageInput {
+    languageId: Int @field(name: "language_id")
+    original: FilmOriginalLanguageIdInput
+}
+
+input FilmCastNameInput {
+    firstName: String! @field(name: "first_name")
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    lastName: String! @field(name: "last_name")
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+input FilmActorKey {
+    filmId: Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
+}
+
+input FilmTitleFilter {
+    title: String
+}
+
+type Query {
+    filmActorsByPairs(filter: FilmActorPairFilter): [FilmActor!]!
+    filmActorsByPairList(pairs: [FilmActorPairInput]): [FilmActor!]!
+    filmsByLanguages(languages: [FilmLanguageInput]): [Film!]!
+    filmsByCastNames(names: [FilmCastNameInput!]): [Film!]!
+    filmActorsByKey(key: [FilmActorKey!]! @lookupKey): [FilmActor]!
+    filmsByLengths(lengths: [Int!] @field(name: "length")): [Film!]!
+    filmsByTitle(filter: FilmTitleFilter): [Film!]!
+}
+
+# Each input field under a list, and the list it is read per element of; an input field under a
+# nested input object inside the list is read per element of the same list.
+extend schema @expectEquals(relation: "graphitron_occurrence_list_element", rows: """
+  coordinate,                                         list_coordinate
+  Query.filmActorsByKey(key.actorId:),                Query.filmActorsByKey(key:)
+  Query.filmActorsByKey(key.filmId:),                 Query.filmActorsByKey(key:)
+  Query.filmActorsByPairList(pairs.actorId:),         Query.filmActorsByPairList(pairs:)
+  Query.filmActorsByPairList(pairs.filmId:),          Query.filmActorsByPairList(pairs:)
+  Query.filmActorsByPairs(filter.pairs.actorId:),     Query.filmActorsByPairs(filter.pairs:)
+  Query.filmActorsByPairs(filter.pairs.filmId:),      Query.filmActorsByPairs(filter.pairs:)
+  Query.filmsByCastNames(names.firstName:),           Query.filmsByCastNames(names:)
+  Query.filmsByCastNames(names.lastName:),            Query.filmsByCastNames(names:)
+  Query.filmsByLanguages(languages.languageId:),      Query.filmsByLanguages(languages:)
+  Query.filmsByLanguages(languages.original:),        Query.filmsByLanguages(languages:)
+  Query.filmsByLanguages(languages.original.id:),     Query.filmsByLanguages(languages:)
+  """)
