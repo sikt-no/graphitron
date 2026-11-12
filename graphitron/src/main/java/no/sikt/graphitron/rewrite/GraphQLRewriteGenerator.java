@@ -563,6 +563,9 @@ public class GraphQLRewriteGenerator {
                 CatalogRefs.constantsClass(representative.tenantTable()),
                 representative.tenantTable().javaFieldName(), representative.tenantColumn().javaName())
             : null;
+        // The connection key's shape, decided once here and handed to the generators that write, read
+        // or key by it: today its tenant part, from the tenant key type above.
+        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.ofTenantKey(tenantKeyType);
 
         // The global command relation: the core decided the family membership (the federation
         // @oneOf gate, the entity-dispatch, node-fetcher and dev-executor gates, the session-hook
@@ -574,7 +577,7 @@ public class GraphQLRewriteGenerator {
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
-                    federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
+                    connectionKeyShape, federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
                     plan.sessionIdentity()),
                 emittedThisRun);
         }
@@ -666,6 +669,7 @@ public class GraphQLRewriteGenerator {
     private List<TypeSpec> renderGlobal(GlobalCommand command, GraphitronSchema schema, GraphQLSchema assembled,
                                         List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> schemaShapeRows,
                                         TypeName tenantKeyType, CodeBlock tenantColumn,
+                                        no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape,
                                         boolean federationLink,
                                         no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
                                         no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.Shapes legacyKeyShapes,
@@ -693,7 +697,7 @@ public class GraphQLRewriteGenerator {
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
             case NESTING_COORDINATES -> NestingCoordinatesClassGenerator.generate(schema.nestingReach());
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
-            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, sessionIdentity, tenantKeyType, tenantColumn);
+            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, sessionIdentity, connectionKeyShape, tenantColumn);
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, sessionIdentity);
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME -> throw new IllegalStateException(command.kind()

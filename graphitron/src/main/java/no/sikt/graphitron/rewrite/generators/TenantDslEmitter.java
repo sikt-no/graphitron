@@ -2,7 +2,8 @@ package no.sikt.graphitron.rewrite.generators;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
-import no.sikt.graphitron.render.TenantHandDown;
+import no.sikt.graphitron.emit.ConnectionKeyShape;
+import no.sikt.graphitron.render.ConnectionKeyHandDown;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.model.OutputField;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -66,17 +67,33 @@ final class TenantDslEmitter {
 
     /**
      * One site's resolved declaration. {@code declaration} is the full statement block the site
-     * pastes where its {@code DSLContext dsl = ...} line goes. {@code handsDownTenant} is true
-     * exactly when the declaration bound the {@value #TENANT_KEY_LOCAL} local: the site's
-     * success return should then carry {@link #handDown()} so descendant fields'
-     * {@link TenantBinding.Inherited} reads see the divined key.
+     * pastes where its {@code DSLContext dsl = ...} line goes. {@code handDown} is the divined key's
+     * connection key exactly when the declaration bound the {@value #TENANT_KEY_LOCAL} local, and
+     * {@link ConnectionKeyHandDown#none()} otherwise: the site's success return carries it, so
+     * descendant fields' {@link TenantBinding.Inherited} reads see the divined key.
      */
-    record Resolution(CodeBlock declaration, boolean handsDownTenant) {
+    record Resolution(CodeBlock declaration, ConnectionKeyHandDown handDown) {
 
-        /** The divined key's hand-down when the site divined one, {@link TenantHandDown#none()} otherwise. */
-        TenantHandDown handDown() {
-            return handsDownTenant ? TenantHandDown.divined(TENANT_KEY_LOCAL) : TenantHandDown.none();
+        /** No hand-down: the site divined no key. */
+        Resolution(CodeBlock declaration) {
+            this(declaration, ConnectionKeyHandDown.none());
         }
+
+        /** Whether the declaration bound the {@value #TENANT_KEY_LOCAL} local, which the hand-down carries. */
+        boolean handsDownTenant() {
+            return handDown != ConnectionKeyHandDown.none();
+        }
+    }
+
+    /** The generated {@code ConnectionKey} beside the carrier {@code tenantConnections}. */
+    private static ClassName connectionKeyOf(ClassName tenantConnections) {
+        return ClassName.get(tenantConnections.packageName(), ConnectionKeyShape.CLASS_NAME);
+    }
+
+    /** The hand-down of the divined key held in {@value #TENANT_KEY_LOCAL}, for a carrier in {@code tenantConnections}' package. */
+    private static ConnectionKeyHandDown divinedHandDown(ClassName tenantConnections) {
+        return ConnectionKeyHandDown.divined(TENANT_KEY_LOCAL,
+            ClassName.get(tenantConnections.packageName(), ConnectionKeyShape.CLASS_NAME));
     }
 
     /**
@@ -150,13 +167,11 @@ final class TenantDslEmitter {
             case TenantBinding.Untenanted.GlobalRead ignored -> new Resolution(
                 CodeBlock.builder()
                     .addStatement("$T dsl = $T.dslGlobal(env)", DSL_CONTEXT, tenantConnections)
-                    .build(),
-                false);
+                    .build());
             case TenantBinding.Untenanted.DefaultSource ignored -> new Resolution(
                 CodeBlock.builder()
                     .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, tenantConnections)
-                    .build(),
-                false);
+                    .build());
             case TenantBinding.ArgumentBound bound -> argumentBound(ctx, fieldName, bound, tenantConnections, site);
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
@@ -278,8 +293,8 @@ final class TenantDslEmitter {
 
     /** The localContext-divined acquisition expression the inherited family splices in. */
     private static CodeBlock inheritedReadExpression(ClassName tenantConnections) {
-        return CodeBlock.of("$T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
-            tenantConnections, tenantConnections);
+        return CodeBlock.of("$T.dslFor(env, $T.divinedTenant($T.tenantIn(env.getLocalContext())))",
+            tenantConnections, tenantConnections, connectionKeyOf(tenantConnections));
     }
 
     /**
@@ -295,13 +310,14 @@ final class TenantDslEmitter {
     static Resolution handDownOnly(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage,
                                    EmptyAnswerSite site) {
         if (!routes(ctx)) {
-            return new Resolution(CodeBlock.of(""), false);
+            return new Resolution(CodeBlock.of(""));
         }
         TenantBinding binding = requireBinding(ctx, field.name());
-        var none = new Resolution(CodeBlock.of(""), false);
+        var none = new Resolution(CodeBlock.of(""));
         return switch (binding) {
             case TenantBinding.ArgumentBound bound -> new Resolution(
-                divinedKeyDeclaration(ctx, field.name(), bound, tenantConnectionsClass(outputPackage), site), true);
+                divinedKeyDeclaration(ctx, field.name(), bound, tenantConnectionsClass(outputPackage), site),
+                divinedHandDown(tenantConnectionsClass(outputPackage)));
             // A fanned field hands tenants down per element (each unioned row's DataFetcherResult
             // carries its own localContext), never as one divined-key local; the fanned-fetcher
             // emission owns that stamping.
@@ -339,7 +355,7 @@ final class TenantDslEmitter {
                 .addStatement("$T $L = $T.divinedTenant($L)", keyType, TENANT_KEY_LOCAL,
                     tenantConnectionsClass(outputPackage), keyLocal)
                 .build(),
-            true);
+            divinedHandDown(tenantConnectionsClass(outputPackage)));
     }
 
     /**
@@ -454,17 +470,15 @@ final class TenantDslEmitter {
         return new Resolution(
             CodeBlock.builder()
                 .addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall())
-                .build(),
-            false);
+                .build());
     }
 
     private static Resolution inheritedRead(ClassName tenantConnections) {
         return new Resolution(
             CodeBlock.builder()
-                .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant(env.<Object>getLocalContext()))",
-                    DSL_CONTEXT, tenantConnections, tenantConnections)
-                .build(),
-            false);
+                .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant($T.tenantIn(env.getLocalContext())))",
+                    DSL_CONTEXT, tenantConnections, tenantConnections, connectionKeyOf(tenantConnections))
+                .build());
     }
 
     /**
@@ -481,8 +495,7 @@ final class TenantDslEmitter {
                     DSL_CONTEXT, tenantConnections, tenantConnections, RECORD,
                     no.sikt.graphitron.render.CatalogRefs.constantsClass(parent),
                     parent.javaFieldName(), parentRow.slot().sourceSide().javaName())
-                .build(),
-            false);
+                .build());
     }
 
     private static Resolution argumentBound(TypeFetcherEmissionContext ctx, String fieldName,
@@ -493,7 +506,7 @@ final class TenantDslEmitter {
                 .add(divinedKeyDeclaration(ctx, fieldName, bound, tenantConnections, site))
                 .addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, tenantConnections, TENANT_KEY_LOCAL)
                 .build(),
-            true);
+            divinedHandDown(tenantConnections));
     }
 
     /**

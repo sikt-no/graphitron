@@ -2756,16 +2756,16 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
-        return returnSyncSuccess(valueType, payloadLocal, no.sikt.graphitron.render.TenantHandDown.none());
+        return returnSyncSuccess(valueType, payloadLocal, no.sikt.graphitron.render.ConnectionKeyHandDown.none());
     }
 
     /**
      * {@link #returnSyncSuccess(TypeName, String)} with a hand-down: routed tenant sites pass
      * {@code TenantDslEmitter.Resolution#handDown()} so a divined key rides down the subtree
-     * ({@code TenantHandDown.none()} everywhere else).
+     * ({@code ConnectionKeyHandDown.none()} everywhere else).
      */
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal,
-            no.sikt.graphitron.render.TenantHandDown handDown) {
+            no.sikt.graphitron.render.ConnectionKeyHandDown handDown) {
         return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, handDown);
     }
 

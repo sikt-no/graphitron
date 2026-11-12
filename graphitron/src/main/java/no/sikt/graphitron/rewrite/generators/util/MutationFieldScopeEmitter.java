@@ -76,8 +76,8 @@ final class MutationFieldScopeEmitter {
     private MutationFieldScopeEmitter() {}
 
     /** The carrier's {@code FieldScope} nested type: one top-level mutation field's transaction state. */
-    static TypeSpec fieldScopeType(ClassName self, ClassName provider, TypeName tenantKey) {
-        var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+    static TypeSpec fieldScopeType(ClassName self, ClassName provider, TypeName keyType) {
+        var optionalKey = keyType;
         var scope = provider.nestedClass("Scope");
         return TypeSpec.classBuilder(FIELD_SCOPE_CLASS_NAME)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -173,8 +173,8 @@ final class MutationFieldScopeEmitter {
     }
 
     /** {@code brokenKeys}: keys whose scope stack a field could not end, refused for the operation. */
-    static FieldSpec brokenKeys(TypeName tenantKey) {
-        var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+    static FieldSpec brokenKeys(TypeName keyType) {
+        var optionalKey = keyType;
         return FieldSpec.builder(ParameterizedTypeName.get(SET, optionalKey), "brokenKeys",
                 Modifier.PRIVATE, Modifier.FINAL)
             .initializer("$T.newKeySet()", CONCURRENT_HASH_MAP)
@@ -213,8 +213,8 @@ final class MutationFieldScopeEmitter {
      * {@code private DSLContext enlist(Optional<K> key, Entry entry)}: opens the active field's scope
      * on {@code entry}'s connection on first use, then hands out the entry's {@code DSLContext}.
      */
-    static MethodSpec enlist(ClassName self, ClassName provider, TypeName tenantKey, boolean multiTenant) {
-        var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+    static MethodSpec enlist(ClassName self, ClassName provider, TypeName keyType, boolean multiTenant) {
+        var optionalKey = keyType;
         var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
         var opening = self.nestedClass(OPENING_CLASS_NAME);
         var scope = provider.nestedClass("Scope");
@@ -239,7 +239,7 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("synchronized (field)");
         builder.addComment("Bookkeeping only: the key is reserved here, and the open runs outside the monitor.");
         if (multiTenant) {
-            builder.beginControlFlow("if (field.settled || (key.isPresent() && timedOutTenants.contains(key.get())))");
+            builder.beginControlFlow("if (field.settled || (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get())))");
         } else {
             builder.beginControlFlow("if (field.settled)");
         }
@@ -311,8 +311,8 @@ final class MutationFieldScopeEmitter {
     }
 
     /** {@code public Throwable settleField(boolean failed)}. */
-    static MethodSpec settleField(ClassName self, ClassName provider, TypeName tenantKey, boolean multiTenant) {
-        var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+    static MethodSpec settleField(ClassName self, ClassName provider, TypeName keyType, boolean multiTenant) {
+        var optionalKey = keyType;
         var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
         var opening = self.nestedClass(OPENING_CLASS_NAME);
         var scope = provider.nestedClass("Scope");
@@ -362,13 +362,13 @@ final class MutationFieldScopeEmitter {
                 .endControlFlow()
                 .endControlFlow()
                 .beginControlFlow("for ($T key : recorded.keySet())", optionalKey)
-                .beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
+                .beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
                 .addComment("Its worker may still be executing on the connection: never end the scope, leave")
                 .addComment("it to releaseAll's abort, which discards the transaction. The field fails, so")
                 .addComment("the client is never told a write committed that the abort will roll back.")
                 .addStatement("rollBack = true")
                 .beginControlFlow("if (cause == null)")
-                .addStatement("cause = new $T($S + key.get() + $S + field.path + $S)", IllegalStateException.class,
+                .addStatement("cause = new $T($S + key.tenant().get() + $S + field.path + $S)", IllegalStateException.class,
                     "Tenant '", "' timed out while mutation field ", " was open; its transaction is discarded"
                         + " with its connection")
                 .endControlFlow()
@@ -381,7 +381,7 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("for ($T scanned : recorded.entrySet())", mapEntry)
             .addStatement("$T key = scanned.getKey()", optionalKey);
         if (multiTenant) {
-            builder.beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
+            builder.beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
                 .addStatement("continue")
                 .endControlFlow();
         }
@@ -415,7 +415,7 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("for ($T ending : recorded.entrySet())", mapEntry)
             .addStatement("$T key = ending.getKey()", optionalKey);
         if (multiTenant) {
-            builder.beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
+            builder.beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
                 .addStatement("continue")
                 .endControlFlow();
         }

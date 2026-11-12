@@ -14,14 +14,14 @@ import java.util.regex.Pattern;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Structural guard: graphql-java's per-subtree {@code localContext} slot means the tenant in
- * generated code, and nothing else. The tenant resolvers write it (the divined key a routed
- * fetcher hands down, the per-row key a fanned fetcher stamps) and the inherited acquisitions read
- * it back; errors travel on the payload's {@code Outcome}. A second writer would make every
- * tenant read below it see the wrong value, which is how an errors list once arrived where a
- * tenant key was expected.
+ * Structural guard: graphql-java's per-subtree {@code localContext} slot carries the generated
+ * {@code ConnectionKey} in generated code, and nothing else. The routing resolvers write it (the
+ * divined key a routed fetcher hands down, the per-row key a fanned fetcher or the dispatch stamps)
+ * and the inherited acquisitions read it back; errors travel on the payload's {@code Outcome}. A
+ * second writer would make every read below it see the wrong value, which is how an errors list
+ * once arrived where a tenant key was expected.
  *
- * <p>The success envelope takes a {@link no.sikt.graphitron.render.TenantHandDown} rather than a
+ * <p>The success envelope takes a {@link no.sikt.graphitron.render.ConnectionKeyHandDown} rather than a
  * free builder tail, which keeps non-tenant code from reaching the slot through the envelope. This
  * guard backs the emitted-literal side: a {@code localContext(} or {@code getLocalContext} literal
  * in the generator's main sources must sit in one of the tenant owners named in
@@ -35,7 +35,7 @@ class LocalContextOwnershipGuardTest {
     private static final Set<String> OWNERS = Set.of(
         "TenantDslEmitter.java",
         "ConnectionRuntimeClassGenerator.java",
-        "TenantHandDown.java");
+        "ConnectionKeyHandDown.java");
 
     private static final Pattern SLOT = Pattern.compile("localContext\\(|getLocalContext");
 
@@ -66,7 +66,7 @@ class LocalContextOwnershipGuardTest {
             .isGreaterThan(MIN_SCANNED_FILES);
         assertThat(offenders)
             .as("graphql-java's localContext slot carries the tenant only; route a hand-down through "
-                + "TenantHandDown and a read through the tenant acquisitions. Offending sites:\n"
+                + "ConnectionKeyHandDown and a read through the tenant acquisitions. Offending sites:\n"
                 + String.join("\n", offenders))
             .isEmpty();
     }

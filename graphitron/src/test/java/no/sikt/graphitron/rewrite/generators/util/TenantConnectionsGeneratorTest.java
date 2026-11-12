@@ -473,7 +473,7 @@ class TenantConnectionsGeneratorTest {
                 ClassName.get(String.class), null))
             .isInstanceOf(IllegalArgumentException.class);
         assertThatThrownBy(() -> ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks,
-                null, TenantColumnFixtures.STRING_KEY_COLUMN))
+                (com.palantir.javapoet.TypeName) null, TenantColumnFixtures.STRING_KEY_COLUMN))
             .isInstanceOf(IllegalArgumentException.class);
     }
 

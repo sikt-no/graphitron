@@ -11,6 +11,7 @@ import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
+import no.sikt.graphitron.emit.ConnectionKeyShape;
 import no.sikt.graphitron.emit.SessionIdentityRows;
 
 import javax.lang.model.element.Modifier;
@@ -252,7 +253,7 @@ public final class ConnectionRuntimeClassGenerator {
      *                      emits {@link #SESSION_HOOK_IMPL_CLASS_NAME}, called directly
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity) {
-        return generate(outputPackage, identity, null, null);
+        return generate(outputPackage, identity, ConnectionKeyShape.none(), null);
     }
 
     /**
@@ -273,6 +274,18 @@ public final class ConnectionRuntimeClassGenerator {
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           TypeName tenantKeyType, CodeBlock tenantColumn) {
+        return generate(outputPackage, identity, ConnectionKeyShape.ofTenantKey(tenantKeyType), tenantColumn);
+    }
+
+    /**
+     * The canonical form: the build's {@link ConnectionKeyShape}, computed once by the caller, decides
+     * whether a {@code ConnectionKey} is emitted and the carrier keyed by it, and carries the tenant key
+     * type; {@code tenantColumn} is the representative tenant column, present exactly when the shape has
+     * a tenant part.
+     */
+    public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
+                                          ConnectionKeyShape shape, CodeBlock tenantColumn) {
+        TypeName tenantKeyType = shape.tenantKey().orElse(null);
         if ((tenantKeyType == null) != (tenantColumn == null)) {
             throw new IllegalArgumentException("A multi-tenant runtime needs both the tenant key type and"
                 + " the representative tenant column; a single-tenant one neither (key type: "
@@ -298,15 +311,21 @@ public final class ConnectionRuntimeClassGenerator {
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var columnValues = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
 
-        boolean multiTenant = tenantKeyType != null;
+        boolean multiTenant = shape.writesSlot();
+        var connectionKey = ConnectionKeyShape.className(outputPackage);
+        TypeName keyType = multiTenant ? connectionKey : ParameterizedTypeName.get(OPTIONAL, tenantKey);
 
         var units = new ArrayList<TypeSpec>();
+        if (multiTenant) {
+            units.add(connectionKey(connectionKey, tenantKey));
+        }
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
             identity, tenantKey, multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException));
+            multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException,
+            keyType, connectionKey));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
@@ -1399,20 +1418,24 @@ public final class ConnectionRuntimeClassGenerator {
      * multi-tenant refusal after a pin keeps naming the scatter deadline, which shares its check.
      */
     private static CodeBlock closedRefusal(boolean multiTenant, boolean pinned) {
+        // A multi-tenant carrier is keyed by the ConnectionKey; its message names the tenant part as the
+        // Optional key it replaced did.
+        String tenant = multiTenant ? "key.tenant()" : "key";
         if (multiTenant && pinned) {
-            return CodeBlock.of("$S + key + $S", "Key '",
+            return CodeBlock.of("$S + $L + $S", "Key '", tenant,
                 "' was pinned after its scatter deadline or after the operation completed.");
         }
-        return CodeBlock.of("$S + key.map(k -> $S + k + $S).orElse($S) + $S", "A connection",
+        return CodeBlock.of("$S + $L.map(k -> $S + k + $S).orElse($S) + $S", "A connection", tenant,
             " for tenant '", "'", "", " was requested after the operation had released its connections.");
     }
 
     /**
      * The per-operation connection carrier, unified across both topologies with single-tenant as
-     * the one-key case: one entry per <em>distinct</em> key within an operation, keyed by
-     * {@code Optional<tenantKey>} with {@code Optional.empty()} as the default source (the map is
-     * keyed by the typed divined tenant value, and no tenant value means the default source;
-     * {@code Optional} is also what sidesteps {@code ConcurrentHashMap}'s no-null-keys rule).
+     * the one-key case: one entry per <em>distinct</em> key within an operation, keyed by the
+     * generated {@code ConnectionKey} in a build that writes the {@code localContext} slot, its empty
+     * tenant the default source, and by {@code Optional<tenantKey>} with {@code Optional.empty()} as
+     * the default source in one that does not (either is a non-null value, which is what sidesteps
+     * {@code ConcurrentHashMap}'s no-null-keys rule).
      * An entry holds the key's pinned connection and its provider-bound {@code DSLContext}
      * together, minted inside the one {@code computeIfAbsent} and discarded together at release:
      * one cached {@code DSLContext} per key is one transaction provider per pinned connection,
@@ -1439,7 +1462,8 @@ public final class ConnectionRuntimeClassGenerator {
                                               boolean multiTenant, SessionIdentityRows identity,
                                               ClassName requestTenants, CodeBlock tenantColumn,
                                               ClassName errorRouter, ClassName columnValues,
-                                              ClassName sessionMountException) {
+                                              ClassName sessionMountException, TypeName keyType,
+                                              ClassName connectionKey) {
         var payload = payloadParams(identity, self);
         boolean mounts = identity.emitsHookImplementation();
         TypeName handleType = identity.handleType().orElse(null);
@@ -1448,7 +1472,7 @@ public final class ConnectionRuntimeClassGenerator {
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
         var optionalKey = ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), tenantKey);
         var entryType = self.nestedClass("Entry");
-        var entryMapType = ParameterizedTypeName.get(MAP, optionalKey, entryType);
+        var entryMapType = ParameterizedTypeName.get(MAP, keyType, entryType);
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -1559,12 +1583,13 @@ public final class ConnectionRuntimeClassGenerator {
         }
         String acquireDefault = "runtime.acquire(" + (payload.isEmpty() ? ""
             : payloadArgs.substring(2)) + ")";
-        String acquireKeyed = "runtime.acquireForTenant(key.get()" + payloadArgs + ")";
+        String acquireKeyed = "runtime.acquireForTenant(" + (multiTenant ? "k.tenant().get()" : "k.get()")
+            + payloadArgs + ")";
 
         var entryForBuilder = MethodSpec.methodBuilder("entryFor")
             .addModifiers(Modifier.PRIVATE)
             .returns(entryType)
-            .addParameter(optionalKey, "key")
+            .addParameter(keyType, "key")
             .addException(SQL_EXCEPTION);
         var brokenMessage = MutationFieldScopeEmitter.brokenKeyRefusalMessage();
         entryForBuilder
@@ -1579,14 +1604,14 @@ public final class ConnectionRuntimeClassGenerator {
                 .addComment("so an unauthorized caller cannot probe which tenants this deployment hosts. Every")
                 .addComment("keyed acquisition funnels through here (the static and instance dslFor, and the")
                 .addComment("scatter worker); nothing calls runtime.acquireForTenant directly.")
-                .beginControlFlow("if (key.isPresent() && !tenants.contains(key.get()))")
-                .addStatement("throw new $T($S + key.get() + $S)", clientException,
+                .beginControlFlow("if (key.tenant().isPresent() && !tenants.contains(key.tenant().get()))")
+                .addStatement("throw new $T($S + key.tenant().get() + $S)", clientException,
                     "Tenant '", "' is not permitted for this request.")
                 .endControlFlow()
-                .beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
+                .beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
                 .addComment("The key's scatter worker missed the join deadline; its connection may still be")
                 .addComment("executing, so it is never reused within the operation.")
-                .addStatement("throw new $T($S + key.get() + $S)", IllegalStateException.class,
+                .addStatement("throw new $T($S + key.tenant().get() + $S)", IllegalStateException.class,
                     "Tenant '", "' timed out earlier in this operation; its connection is never reused.")
                 .endControlFlow();
         }
@@ -1617,8 +1642,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("no-op, so the runtime keeps sole ownership of close/evict.")
             .addCode("entry = entries.computeIfAbsent(key, k -> {\n")
             .addCode("    try {\n")
-            .addCode("        $T pinned = k.isPresent() ? $L : $L;\n", pinnedConnection, acquireKeyed
-                .replace("key.get()", "k.get()"), acquireDefault)
+            .addCode("        $T pinned = $L ? $L : $L;\n", pinnedConnection,
+                multiTenant ? "k.tenant().isPresent()" : "k.isPresent()", acquireKeyed, acquireDefault)
             .addCode("        $T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings());\n",
                 DSL_CONTEXT, DSL)
             .addCode("        $T provider = new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin);\n", provider, provider)
@@ -1648,7 +1673,7 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow();
         entryForBuilder
             .beginControlFlow(multiTenant
-                ? "if (closed || (key.isPresent() && timedOutTenants.contains(key.get())))"
+                ? "if (closed || (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get())))"
                 : "if (closed)")
             .addComment(multiTenant
                 ? "The operation moved on (released, or this key's join deadline passed) while the pin"
@@ -1682,7 +1707,9 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(DSL_CONTEXT)
             .addParameter(tenantKey, "tenantKey")
             .addException(SQL_EXCEPTION)
-            .addStatement("$T key = $T.of(tenantKey)", optionalKey, ClassName.get("java.util", "Optional"))
+            .addCode(multiTenant
+                ? CodeBlock.of("$T key = $T.forTenant(tenantKey);\n", connectionKey, connectionKey)
+                : CodeBlock.of("$T key = $T.of(tenantKey);\n", keyType, ClassName.get("java.util", "Optional")))
             .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code tenantKey}, pinning and\n"
                 + "mounting one connection for the key on first use and reusing it thereafter. A drop-in for\n"
@@ -1694,7 +1721,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
             .addException(SQL_EXCEPTION)
-            .addStatement("$T key = $T.empty()", optionalKey, ClassName.get("java.util", "Optional"))
+            .addCode(multiTenant
+                ? CodeBlock.of("$T key = $T.defaultSource();\n", connectionKey, connectionKey)
+                : CodeBlock.of("$T key = $T.empty();\n", keyType, ClassName.get("java.util", "Optional")))
             .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for the default source, pinning and\n"
                 + "mounting one connection on first use and reusing it thereafter. The untenanted\n"
@@ -1707,7 +1736,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
             .addException(SQL_EXCEPTION)
-            .addStatement("return enlist(defaultTenant, entryFor(defaultTenant))")
+            .addStatement("$T key = new $T(defaultTenant)", connectionKey, connectionKey)
+            .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for graphitron's own reads of global\n"
                 + "tables: the request's default tenant when it names one, else the default source. A\n"
                 + "present default tenant resolves through {@link #entryFor} like any routed key, so it\n"
@@ -1723,7 +1753,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("aborts its own connection instead of leaking a fresh pin into a completed operation.")
             .addStatement("closed = true")
             .addStatement("$T failure = null", RuntimeException.class)
-            .beginControlFlow("for ($T key : entries.keySet())", optionalKey)
+            .beginControlFlow("for ($T key : entries.keySet())", keyType)
             .addComment("remove() hands each entry to exactly one processor, against a late acquisition's")
             .addComment("concurrent self-abort of the same entry.")
             .addStatement("$T entry = entries.remove(key)", entryType)
@@ -1732,7 +1762,7 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow();
         if (multiTenant) {
             releaseAllBuilder
-                .beginControlFlow("if (key.isPresent() && timedOutTenants.contains(key.get()))")
+                .beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
                 .addComment("A TimedOut outcome means the join stopped waiting, not that the worker stopped")
                 .addComment("working: the connection may still be mid-statement. A JDBC call cannot be safely")
                 .addComment("killed, so route the straggler through the abort seam; never close or return a")
@@ -1833,7 +1863,7 @@ public final class ConnectionRuntimeClassGenerator {
         }
         carrier.addField(entriesField)
             .addField(MutationFieldScopeEmitter.activeField(self))
-            .addField(MutationFieldScopeEmitter.brokenKeys(tenantKey));
+            .addField(MutationFieldScopeEmitter.brokenKeys(keyType));
         if (multiTenant) {
             carrier.addField(MutationFieldScopeEmitter.scatterField(self));
         }
@@ -1854,9 +1884,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(mountCause(mounts ? sessionMountException : null))
             .addMethod(isMountFailure())
             .addMethod(MutationFieldScopeEmitter.beginField(self))
-            .addMethod(MutationFieldScopeEmitter.enlist(self, provider, tenantKey, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.enlist(self, provider, keyType, multiTenant))
             .addMethod(MutationFieldScopeEmitter.await(self))
-            .addMethod(MutationFieldScopeEmitter.settleField(self, provider, tenantKey, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.settleField(self, provider, keyType, multiTenant))
             .addMethod(MutationFieldScopeEmitter.probe(self))
             .addMethod(MutationFieldScopeEmitter.rollBackQuietly(self, provider))
             .addMethod(MutationFieldScopeEmitter.markFieldFailed(self));
@@ -1881,7 +1911,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(MutationFieldScopeEmitter.reportedJoins())
             .addMethod(MutationFieldScopeEmitter.warnConsumerJoin(self));
         carrier.addType(entryClass)
-            .addType(MutationFieldScopeEmitter.fieldScopeType(self, provider, tenantKey))
+            .addType(MutationFieldScopeEmitter.fieldScopeType(self, provider, keyType))
             .addType(MutationFieldScopeEmitter.openingType(provider))
             .addType(MutationFieldScopeEmitter.nestedScopeFailedType());
         if (multiTenant) {
@@ -1899,7 +1929,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(fanOutDomain(self, tenantKey))
                 .addMethod(narrowedFanOutDomain(tenantKey))
                 .addMethod(namedTenants())
-                .addMethod(handDown(tenantKey))
+                .addMethod(handDown(tenantKey, connectionKey))
                 .addMethod(fanOutRows(self, tenantKey))
                 .addMethod(fanOutBatchRows(self, tenantKey))
                 .addMethod(collapseFanOut(self))
@@ -1917,7 +1947,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(staticEntityDefaultTenant(tenantKey))
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
-                .addMethod(tenantLoaderName())
+                .addMethod(tenantLoaderName(connectionKey))
                 .addMethod(tenantLoaderNameFor())
                 .addType(outcomeType(self, tenantKey))
                 .addType(fanOutFailureType());
@@ -2080,6 +2110,51 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * {@code record ConnectionKey(Optional<K> tenant)}: the value the carrier keys its connections by
+     * and the one value graphql-java's per-subtree {@code localContext} slot carries in generated code,
+     * so an inherited acquisition below a routed row takes the connection the row was read on. Its
+     * parts are the build's {@link ConnectionKeyShape}: the tenant, empty for the default source. Record
+     * equality is the map key's, and the named factories say which connection a site means; the one
+     * reader of the slot is {@code tenantIn}, so no site casts the slot's value itself.
+     */
+    private static TypeSpec connectionKey(ClassName self, TypeName tenantKey) {
+        var optionalTenant = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+        return TypeSpec.recordBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .addJavadoc("The key a connection is acquired and mounted under, and the value handed down a subtree in\n"
+                + "graphql-java's {@code localContext}: the tenant the connection serves, empty for the default\n"
+                + "source.\n"
+                + "@param tenant the tenant, or empty for the default source\n")
+            .recordConstructor(MethodSpec.constructorBuilder()
+                .addParameter(optionalTenant, "tenant")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("defaultSource")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(self)
+                .addStatement("return new $T($T.empty())", self, OPTIONAL)
+                .addJavadoc("The key of the default source, which serves global tables.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("forTenant")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(self)
+                .addParameter(tenantKey, "tenant")
+                .addStatement("return new $T($T.of(tenant))", self, OPTIONAL)
+                .addJavadoc("The key of {@code tenant}'s connection.\n"
+                    + "@param tenant the tenant, never null\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("tenantIn")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(tenantKey)
+                .addParameter(Object.class, "localContext")
+                .addStatement("return localContext instanceof $T key ? key.tenant().orElse(null) : null", self)
+                .addJavadoc("The tenant a subtree inherited, read off the {@code localContext} value graphql-java\n"
+                    + "handed the field, or {@code null} when it carries no key or a key of the default source.\n"
+                    + "@param localContext the field's {@code localContext}\n")
+                .build())
+            .build();
+    }
+
+    /**
      * {@code static <T> DataFetcherResult<T> handDown(T row, K tenantKey)}: the per-element tenant
      * stamp. Wraps one row as the field value graphql-java completes for it, carrying the row's
      * tenant as {@code localContext} so the subtree below that one element reads it back. Both
@@ -2087,7 +2162,7 @@ public final class ConnectionRuntimeClassGenerator {
      * and the node and entity dispatcher's per-tenant groups. Typed on the build's tenant key so
      * it is no general-purpose way into the slot.
      */
-    private static MethodSpec handDown(TypeName tenantKey) {
+    private static MethodSpec handDown(TypeName tenantKey, ClassName connectionKey) {
         var t = com.palantir.javapoet.TypeVariableName.get("T");
         return MethodSpec.methodBuilder(HAND_DOWN_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -2095,9 +2170,10 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(ParameterizedTypeName.get(DATA_FETCHER_RESULT, t))
             .addParameter(t, "row")
             .addParameter(tenantKey, "tenantKey")
-            .addStatement("return $T.<$T>newResult().data(row).localContext(tenantKey).build()",
-                DATA_FETCHER_RESULT, t)
-            .addJavadoc("Wraps one row as its own field value, handing {@code tenantKey} down to the\n"
+            .addStatement("return $T.<$T>newResult().data(row).localContext($T.forTenant(tenantKey)).build()",
+                DATA_FETCHER_RESULT, t, connectionKey)
+            .addJavadoc("Wraps one row as its own field value, handing the connection key for\n"
+                + "{@code tenantKey} down to the\n"
                 + "row's subtree: the per-element tenant stamp of the fan-out union and of node and\n"
                 + "entity dispatch. graphql-java unwraps a list's elements one by one, so each element\n"
                 + "keeps its own tenant.\n"
@@ -3092,13 +3168,14 @@ public final class ConnectionRuntimeClassGenerator {
      * tenant. The tenant segment is an opaque partition key, never parsed back (the captured
      * environment carries the typed tenant).
      */
-    private static MethodSpec tenantLoaderName() {
+    private static MethodSpec tenantLoaderName(ClassName connectionKey) {
         return MethodSpec.methodBuilder("tenantLoaderName")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(String.class, "parentType")
-            .addStatement("return tenantLoaderName(env, parentType, env.getLocalContext())")
+            .addStatement("return tenantLoaderName(env, parentType, $T.tenantIn(env.getLocalContext()))",
+                connectionKey)
             .addJavadoc("The tenant-partitioned DataLoader name for a field inheriting a divined tenant:\n"
                 + "{@link #tenantLoaderName(DataFetchingEnvironment, String, Object)} over the\n"
                 + "handed-down tenant.\n")

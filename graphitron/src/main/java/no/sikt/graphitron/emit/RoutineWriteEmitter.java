@@ -21,7 +21,7 @@ import no.sikt.graphitron.render.FetcherResult;
 import no.sikt.graphitron.render.ProjectedKeyReads;
 import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.RoutineCallEmitter;
-import no.sikt.graphitron.render.TenantHandDown;
+import no.sikt.graphitron.render.ConnectionKeyHandDown;
 
 import javax.lang.model.element.Modifier;
 
@@ -266,7 +266,7 @@ public final class RoutineWriteEmitter {
     /** The success return and the {@code catch} arm, closing the {@code try}. No tenant rides down. */
     private static MethodSpec closeEntryPoint(MethodSpec.Builder builder, Errors errors,
             TypeName declaredType, String payloadLocal) {
-        var handDown = TenantHandDown.none();
+        var handDown = ConnectionKeyHandDown.none();
         switch (errors) {
             case Errors.Redacting r -> {
                 builder.addCode(FetcherResult.success(declaredType, payloadLocal, handDown));

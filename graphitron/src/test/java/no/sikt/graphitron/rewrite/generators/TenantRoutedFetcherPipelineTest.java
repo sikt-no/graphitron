@@ -64,7 +64,7 @@ class TenantRoutedFetcherPipelineTest {
         assertThat(films)
             .contains("java.lang.Integer _divinedTenant = fake.code.generated.schema.TenantConnections.divinedTenant(env.<Object>getArgument(\"filmId\"))")
             .contains("org.jooq.DSLContext dsl = fake.code.generated.schema.TenantConnections.dslFor(env, _divinedTenant)")
-            .contains(".localContext(_divinedTenant)")
+            .contains(".localContext(fake.code.generated.schema.ConnectionKey.forTenant(_divinedTenant))")
             .doesNotContain("getDslContext(env)");
     }
 
@@ -192,7 +192,7 @@ class TenantRoutedFetcherPipelineTest {
             """);
 
         assertThat(render(schema, "FilmFetchers", "rowsInventories"))
-            .contains("dslFor(env, fake.code.generated.schema.TenantConnections.divinedTenant(env.<Object>getLocalContext()))")
+            .contains("dslFor(env, fake.code.generated.schema.TenantConnections.divinedTenant(fake.code.generated.schema.ConnectionKey.tenantIn(env.getLocalContext())))")
             .doesNotContain("getDslContext(env)");
     }
 
@@ -214,7 +214,7 @@ class TenantRoutedFetcherPipelineTest {
         assertThat(render(schema, "MutationFetchers", "createInventory"))
             .contains("divinedTenant(fake.code.generated.schema.TenantConnections.tenantSlot(env.getArgument(\"in\"), \"filmId\"))")
             .contains("dslFor(env, _divinedTenant)")
-            .contains(".localContext(_divinedTenant)")
+            .contains(".localContext(fake.code.generated.schema.ConnectionKey.forTenant(_divinedTenant))")
             .doesNotContain("getDslContext(env)");
     }
 

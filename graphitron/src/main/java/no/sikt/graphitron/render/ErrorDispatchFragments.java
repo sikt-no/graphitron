@@ -38,7 +38,7 @@ public final class ErrorDispatchFragments {
      * {@code Outcome.Success}. {@code declaredType} is {@link #outcomeType}'s answer.
      */
     public static CodeBlock outcomeSuccessReturn(ClassName outcome, TypeName declaredType,
-            String payloadLocal, TenantHandDown handDown) {
+            String payloadLocal, ConnectionKeyHandDown handDown) {
         return FetcherResult.outcomeSuccess(declaredType, outcome.nestedClass(SUCCESS_CLASS),
             payloadLocal, handDown);
     }

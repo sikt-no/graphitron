@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.emit.OwnedScope;
-import no.sikt.graphitron.render.TenantHandDown;
+import no.sikt.graphitron.render.ConnectionKeyHandDown;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
@@ -1349,7 +1349,7 @@ public class TypeFetcherGenerator {
             var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
                 new TenantDslEmitter.EmptyAnswerSite.Renders(value -> CodeBlock.builder()
                     .addStatement("$T empty = $L", valueType, TenantDslEmitter.emptyValue(value))
-                    .add(returnSyncSuccess(valueType, "empty", TenantHandDown.none()))
+                    .add(returnSyncSuccess(valueType, "empty", ConnectionKeyHandDown.none()))
                     .build()));
             builder.addCode(tenantDsl.declaration());
             builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
@@ -1928,8 +1928,8 @@ public class TypeFetcherGenerator {
         var emptySite = new TenantDslEmitter.EmptyAnswerSite.Renders(value -> CodeBlock.builder()
             .addStatement("$T empty = $L", emptyLocalType, TenantDslEmitter.emptyValue(value))
             .add(wrap
-                ? returnSyncSuccessWrapped(payloadType, outputPackage, "empty", TenantHandDown.none())
-                : returnSyncSuccess(liftedValueType, "empty", TenantHandDown.none()))
+                ? returnSyncSuccessWrapped(payloadType, outputPackage, "empty", ConnectionKeyHandDown.none())
+                : returnSyncSuccess(liftedValueType, "empty", ConnectionKeyHandDown.none()))
             .build());
         var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage, emptySite);
         builder.addCode(tenantHandDown.declaration());
@@ -2081,10 +2081,10 @@ public class TypeFetcherGenerator {
 
     /**
      * Success-path return wrapping the method result in {@code Outcome.Success}. {@code handDown}
-     * is the routed tenant site's hand-down, {@link TenantHandDown#none()} everywhere else.
+     * is the routed tenant site's hand-down, {@link ConnectionKeyHandDown#none()} everywhere else.
      */
     private static CodeBlock returnSyncSuccessWrapped(TypeName outcomeType, String outputPackage,
-                                                      String resultLocal, TenantHandDown handDown) {
+                                                      String resultLocal, ConnectionKeyHandDown handDown) {
         var success = ClassName.get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
             .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
         return no.sikt.graphitron.render.FetcherResult.outcomeSuccess(outcomeType, success, resultLocal, handDown);
@@ -6549,8 +6549,8 @@ public class TypeFetcherGenerator {
             .addStatement("$T empty = $L.newResult($L)", resultType, TenantDslEmitter.detachedDsl(),
                 buildPkFieldList(pkCols, tablesOnly, tableRef))
             .addCode(wrap
-                ? returnSyncSuccessWrapped(valueType, outputPackage, "empty", TenantHandDown.none())
-                : returnSyncSuccess(resultType, "empty", TenantHandDown.none()))
+                ? returnSyncSuccessWrapped(valueType, outputPackage, "empty", ConnectionKeyHandDown.none())
+                : returnSyncSuccess(resultType, "empty", ConnectionKeyHandDown.none()))
             .endControlFlow();
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
             TenantDslEmitter.gatedOnEmptyInput(ctx, field, argName));
@@ -7307,16 +7307,16 @@ public class TypeFetcherGenerator {
      * the local first.
      */
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal) {
-        return returnSyncSuccess(valueType, payloadLocal, TenantHandDown.none());
+        return returnSyncSuccess(valueType, payloadLocal, ConnectionKeyHandDown.none());
     }
 
     /**
      * {@link #returnSyncSuccess(TypeName, String)} with a hand-down: routed tenant sites pass
      * {@code TenantDslEmitter.Resolution#handDown()} so the divined tenant key rides down the
-     * subtree ({@link TenantHandDown#none()} everywhere else, keeping the single-tenant form
+     * subtree ({@link ConnectionKeyHandDown#none()} everywhere else, keeping the single-tenant form
      * byte-identical).
      */
-    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, TenantHandDown handDown) {
+    private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal, ConnectionKeyHandDown handDown) {
         return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, handDown);
     }
 
@@ -7328,7 +7328,7 @@ public class TypeFetcherGenerator {
      * the disposition {@link #noChannelCatchArm} is for sync fetchers.
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage) {
-        return asyncWrapTail(valueType, outputPackage, TenantHandDown.none());
+        return asyncWrapTail(valueType, outputPackage, ConnectionKeyHandDown.none());
     }
 
     /**
@@ -7336,7 +7336,7 @@ public class TypeFetcherGenerator {
      * result, so a fetcher that divined a tenant hands it down to the loaded value's subtree.
      */
     private static CodeBlock asyncWrapTail(TypeName valueType, String outputPackage,
-                                           TenantHandDown handDown) {
+                                           ConnectionKeyHandDown handDown) {
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(payload)$L.build())\n",
                 DATA_FETCHER_RESULT, boxed(valueType), handDown.builderTail())

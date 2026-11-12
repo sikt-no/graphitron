@@ -324,6 +324,7 @@ public final class PlanCompileGraph {
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
                     var mountException = runtimeUnit("SessionMountException");
                     var requestTenants = runtimeUnit("RequestTenants");
+                    var connectionKey = runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME);
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
@@ -341,6 +342,8 @@ public final class PlanCompileGraph {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
                         requestTenants.ifPresent(rt -> declared(t, rt));
+                        // The carrier is keyed by the connection key and hands it down.
+                        connectionKey.ifPresent(ck -> declared(t, ck));
                         mountException.ifPresent(m -> declared(t, m));
                         // The fan-out failure path hands its throw to the consumer's log through
                         // the router's shared guard.

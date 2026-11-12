@@ -286,7 +286,7 @@ class PackageImportDirectionTest {
             "the catch arm's dispositions and the Outcome wrap have one spelling",
         "no.sikt.graphitron.render.FetcherResult",
             "the DataFetcherResult envelope has one spelling",
-        "no.sikt.graphitron.render.TenantHandDown",
+        "no.sikt.graphitron.render.ConnectionKeyHandDown",
             "the success envelope takes a hand-down so only tenant code fills localContext; a routine write hands none",
         "no.sikt.graphitron.render.ProjectionCall",
             "the $project call has one spelling",

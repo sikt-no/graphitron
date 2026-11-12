@@ -31,10 +31,10 @@ public final class FetcherResult {
     /**
      * {@code return DataFetcherResult.<P>newResult().data(<local>)<hand-down>.build();}
      *
-     * <p>{@code handDown} is the routed-tenant sites' rider, {@link TenantHandDown#none()}
+     * <p>{@code handDown} is the routed-tenant sites' rider, {@link ConnectionKeyHandDown#none()}
      * everywhere else, which keeps the single-tenant form byte-identical.
      */
-    public static CodeBlock success(TypeName valueType, String payloadLocal, TenantHandDown handDown) {
+    public static CodeBlock success(TypeName valueType, String payloadLocal, ConnectionKeyHandDown handDown) {
         return successOf(valueType, CodeBlock.of("$L", payloadLocal), handDown);
     }
 
@@ -45,11 +45,11 @@ public final class FetcherResult {
      * {@code Success} arm.
      */
     public static CodeBlock outcomeSuccess(TypeName outcomeType, ClassName successClass,
-            String payloadLocal, TenantHandDown handDown) {
+            String payloadLocal, ConnectionKeyHandDown handDown) {
         return successOf(outcomeType, CodeBlock.of("new $T<>($L)", successClass, payloadLocal), handDown);
     }
 
-    private static CodeBlock successOf(TypeName valueType, CodeBlock data, TenantHandDown handDown) {
+    private static CodeBlock successOf(TypeName valueType, CodeBlock data, ConnectionKeyHandDown handDown) {
         return CodeBlock.of("return $T.<$T>newResult().data($L)$L.build();\n",
             DATA_FETCHER_RESULT, boxed(valueType), data, handDown.builderTail());
     }
