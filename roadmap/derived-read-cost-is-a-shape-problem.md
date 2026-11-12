@@ -393,6 +393,13 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     the per-depth rules and `graphitron_occurrence_producer_result_rule` read `graphitron_tabletype`
     and it in place of their type, member and `NOT EXISTS` combinations, priced by a quiet-machine
     A/B on `prepare_ms`.
+  * **A call's parameters bind against stored input types** `open`, F's. On sis
+    `graphitron_occurrence_call_parameter` costs 31 s warm, almost all of it the condition
+    parameter rule evaluated whole once per depth. It re-derives, inside correlated subqueries, the
+    class a scalar arrives as and the type each input element takes, and the producer candidate
+    re-derives both again. `graphitron_scalar_class` (written by macro expansion) and
+    `graphitron_occurrence_input_type` (written by the occurrences stage) store them, and both rules
+    read them; stored on a copy of the sis store, the rule went from 6.2 s to 0.5 s, same rows.
 * **Relations nobody reads go** `open`, F's.
   A census of every relation's readers, static over the main sources and at runtime over a full
   build (`roadmap/audits/2026-11-07-relations-nobody-reads.md`), found 56 that no main code reads.
