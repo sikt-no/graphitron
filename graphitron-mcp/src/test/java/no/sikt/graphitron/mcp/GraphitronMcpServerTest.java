@@ -325,8 +325,9 @@ class GraphitronMcpServerTest {
             String graph = fixture.handle().graphName();
             var at = java.time.LocalDateTime.of(2026, 10, 15, 12, 0);
             var d = no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
-            dsl.insertInto(d, d.GRAPH_NAME, d.SOURCE_NAME, d.KIND, d.ORIGIN, d.COORDINATE, d.TOUCHED_AT)
-                .values(graph, "/repo/service-1.0-SNAPSHOT.jar", "SNAPSHOT", "REACTOR", "ex:service", at)
+            dsl.insertInto(d, d.GRAPH_NAME, d.SOURCE_NAME, d.KIND, d.ORIGIN, d.COORDINATE, d.POSITION,
+                    d.TOUCHED_AT)
+                .values(graph, "/repo/service-1.0-SNAPSHOT.jar", "SNAPSHOT", "REACTOR", "ex:service", 0, at)
                 .execute();
             var m = no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
             dsl.insertInto(m, m.GRAPH_NAME, m.COORDINATE, m.BASE_DIRECTORY, m.CLASSES_DIRECTORY,
