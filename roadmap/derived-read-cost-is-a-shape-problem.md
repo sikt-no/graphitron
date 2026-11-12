@@ -652,7 +652,8 @@ static method needs no holder.
       occurrence has one, so the refusal can go.
   * **An inline list's ordering is resolved at its occurrence** `open`. `@defaultOrder` and `@order`
     are stored as written today; the occurrence states its sort keys in order, each a column with
-    direction and collation or an order-field method, read by the multiset's `orderBy`.
+    direction and collation or an order-field method, read by the multiset's `orderBy`. The walk's
+    row identity for a list over a table with no primary key, a node's key standing in, goes with it.
   * **An inline list states how it is narrowed** `open`. Its `@lookupKey` arguments in key order,
     which today claim `LOOKUP` only at a root or a split, and whether `first` limits it, which only a
     connection carrier says today.
@@ -1177,6 +1178,10 @@ before `generate` does.
 * **Each rule the walk enforces is a located defect** `open`. Every walk rejection becomes a code
   and a branch of `graphitron_entry_defect_rule`, and the walk's hand-built validation test for it
   becomes a fact document or goes with its rule.
+  * **A `@mutation` returning a bare `ID` is refused by the store where its table has no node or
+    several** `open`. The walk refuses both, a node this subgraph does not resolve counting, and the
+    store states neither: `NODE_ID_TARGET_UNRESOLVED` and `NODE_ID_TARGET_AMBIGUOUS` cover a
+    `@nodeId` at an argument or input field, not a mutation's return.
   * **A select's condition, paging and ordering are keyed to its producer** `open`. The
     modifiers are stated over `graphitron_producer`, so the operation rules are written over them
     once.
@@ -1218,7 +1223,8 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
     through the graph's sources; matched columns that disagree on type, and a pattern that matches
     nothing, are defects located in the build file the configuration was read from. An argument or
     input field is a tenant field when its column joins a matched column, which needs the argument
-    model; the walk's classifier goes with the walk rather than learning the pattern. The session
+    model; the walk's classifier goes with the walk rather than learning the pattern, its tenant fold
+    routing a tenant-keyed node's decode with it, resolvable or not. The session
     hook half reads `code_method` and its parameters' `role`, where sis's `FsSesjon.mount` and
     `unmount` take the context as `CONFIGURATION`, waiting on the two `CodeCapture` lines in the
     register.
@@ -1496,12 +1502,6 @@ disagree with the build about which types are nodes.
 * **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
-* **A node that is not resolvable reads as one where it changes behaviour** `open`. With such a node
-  a `NodeType`, four shapes no fixture has yet change: a list of them over a table with no primary
-  key takes its node key as row identity, an `id` argument on a field returning one decodes as its
-  node id, a table under a resolvable node and a non-resolvable one is ambiguous for a bare-`ID`
-  mutation return, and a tenant-keyed one's decode routes rather than declining. Each is pinned by a
-  fact document, or refused as a store defect where it should be.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
   squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
   already does.
@@ -1530,7 +1530,8 @@ occurrence, the node type, the rule that decided it and the node's key columns o
     cached, and the `@nodeId` filter's route becomes a store query owned by the resolver, so
     `NodeIdLeafResolver`'s `selectRoute`, `resolveFkJoinPath`, `walkExplicit` and `landKeyColumns`
     go. Meanwhile the walk's auto-discovery counts the one key in both directions, as the store
-    does, an interim (Alf, 2026-11-07).
+    does, an interim (Alf, 2026-11-07). An `id` argument on a field returning a node, resolvable or
+    not, decodes as its node id in the walk as in the store, and the walk's reading goes here too.
 * **An overload accepts a member by two spellings** `open`. Its parameter is the member's own
   record or one of `Object`, `Record`, `TableRecord<?>` and `UpdatableRecord<?>`, most specific
   first.
