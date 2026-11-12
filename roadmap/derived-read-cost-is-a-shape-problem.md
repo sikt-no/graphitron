@@ -124,6 +124,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The vocabulary listed twice, by the editor from `graphitron_directive` and by MCP from
   `graphql_directive`. Ends at "The MCP lists the composed vocabulary".
 * `SeededStore` and capture, both building test stores. Ends at "`SeededStore` is deleted".
+* A stub's own `id`, encoded by the walk's arm in `FieldBuilder` beside `graphitron_occurrence_node_id`. Ends at "An output field's node id is encoded from the store".
 
 ### Every rule has an owner, and the register has no subject `open`
 
@@ -1421,9 +1422,10 @@ disagree with the build about which types are nodes.
 * **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
-* **A node without an `id` field is a defect** `open`. A node has one, a stub included, and so does
-  a type whose `@key` names `id` (Alf, 2026-11-11, in `fact-model.adoc`); the documents declaring
-  stubs without one, `defects/node-stub` and `scenarios/synthesized-node-type-id` among them, follow.
+* **A `@key` names only fields its type declares** `open`. On a table-bound type
+  `KEY_FIELD_NOT_A_COLUMN` refuses a `@key(fields: "id")` with no `id`; a `@key` on a type with no
+  table naming an undeclared field draws nothing. Whether the rule is `id`'s alone or every field's,
+  splitting "not declared" from "declared but not a column", is Alf and Filip's to say.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
   squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
   already does.
