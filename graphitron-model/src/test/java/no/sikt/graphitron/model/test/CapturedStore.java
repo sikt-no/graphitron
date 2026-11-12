@@ -234,6 +234,50 @@ public final class CapturedStore implements AutoCloseable {
         return new CapturedStore(store, graphName, directory, file, registry, schemas, true);
     }
 
+    /**
+     * A fact document run into a store of the caller's own, under {@code graphName}: the store
+     * captures the scenario's readings as a build reads a folder, each step under the configuration
+     * the document states and its catalog read over {@code fixture}, against {@code classpath}. The
+     * document's claims are not checked here, {@code FactExpectationTest} checks them; this is for a
+     * test whose subject needs a store the shared population cannot give it, a store it writes,
+     * fails, times or fills with graphs it chooses, while its schema stays a document.
+     */
+    public static CapturedStore ownStoreOfDocument(Path directory, String path, String graphName,
+                                                   CatalogInput fixture,
+                                                   List<ClasspathEntry> classpath) {
+        var store = ownedStore(StoreUse.ONE_CAPTURE);
+        Path folder = directory.resolve(graphName);
+        var schemas = runDocument(store.dsl(), folder, path, graphName, fixture, classpath);
+        return new CapturedStore(store, graphName, folder, folder, schemas.written().read().registry(),
+            schemas, true);
+    }
+
+    /**
+     * Runs the fact document {@code path} into this store as a further graph, {@code graphName}, as
+     * {@link #ownStoreOfDocument} runs the first, and hands back what its capture built.
+     */
+    public CapturedSchema andDocument(String path, String graphName, CatalogInput fixture,
+                                      List<ClasspathEntry> classpath) {
+        return runDocument(dsl(), directory.getParent().resolve(graphName), path, graphName, fixture,
+            classpath);
+    }
+
+    private static CapturedSchema runDocument(DSLContext dsl, Path folder, String path, String graphName,
+                                              CatalogInput fixture, List<ClasspathEntry> classpath) {
+        var built = new CapturedSchema[1];
+        Scenario.load(path).run(folder, (rendered, at, first, stated) -> {
+                var texts = stated.isEmpty() ? List.<String>of() : List.of(stated);
+                built[0] = captureFolder(dsl, rendered, graphName,
+                    FactDocuments.StatedConfiguration.catalog(texts, fixture), classpath,
+                    FactDocuments.StatedConfiguration.of(texts), at, !first);
+            },
+            claim -> { });
+        if (built[0] == null) {
+            throw new IllegalStateException(path + " renders nothing to capture");
+        }
+        return built[0];
+    }
+
     /** {@link #ofFiles(Path, String, String, String, String)} on a store of its own. */
     public static CapturedStore ownStoreOfFiles(Path directory, String firstName, String firstSdl,
                                                 String secondName, String secondSdl) {
