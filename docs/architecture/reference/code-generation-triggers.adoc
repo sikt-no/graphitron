@@ -247,8 +247,10 @@ its fields to the columns they set or key. That is how the store states it today
 to emit the `INSERT`, `UPDATE` and `DELETE` statements directly, which is more powerful than going
 through a record. A `@routine` producer composes with filters: an argument its call does not
 bind filters its result, as on any field. A `@service` cannot: an argument it does not bind has
-nowhere to go and is a defect. A routine joined into a parent's query is a join, not a call, at least
-for now; its arguments are stated on the join path's step.
+nowhere to go and is a defect. A child `@routine` is never a producer
+but a join, at least for now: the field's producer is the lift that starts a query from the
+parent's key, as for `@splitQuery`, and the routine is a step on that query's path, first or after a
+table, its arguments stated on the step. Only a root `@routine` is a call.
 
 The store does not state every binding yet: nothing writes an `@externalField`'s `EXPRESSION`
 binding, so such an occurrence has no row of that kind.
