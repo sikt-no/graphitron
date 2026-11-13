@@ -38,7 +38,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1177` | A capture does not reclaim a source another graph still names | Spec | 2026-11-13 <sub>created 2026-11-12</sub> | [plan](reclaim-spares-sources-other-graphs-name.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R1169` | Connection pagination on a routine-backed child field | Spec | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](routine-child-connection.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -47,6 +46,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
+| `R1177` | A capture does not reclaim a source another graph still names | Ready | 2026-11-13 <sub>created 2026-11-12</sub> | [plan](reclaim-spares-sources-other-graphs-name.md) |
 | `R1137` | A rejected @error type cascades into misleading diagnostics on the types around it | Ready | 2026-10-31 <sub>created 2026-10-30</sub> | [plan](rejected-type-cascades-into-secondary-diagnostics.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
@@ -802,7 +802,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R789` [**The annotation enforcement walks skip nested classes, so an annotation on one goes unenforced**](nested-classes-escape-the-annotation-enforcement-walks.md) — Backlog, cleanup
 - `R736` [**The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering**](trace-writer-disabled-for-rest-of-fork.md) — Spec, bug
 - `R761` [**The dependency relation is derived after the store is stamped, so an interrupted boot leaves a warm store ordering alphabetically**](materialize-dependency-derived-before-stamp.md) — Backlog, dx
-- `R1177` [**A capture does not reclaim a source another graph still names**](reclaim-spares-sources-other-graphs-name.md) — Spec, bug
+- `R1177` [**A capture does not reclaim a source another graph still names**](reclaim-spares-sources-other-graphs-name.md) — Ready, bug
 - `R1131` [**A clean build runs in under five minutes**](clean-build-under-five-minutes.md) — In Progress, dx, blocked by [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)
 - `R907` [**Active roadmap items render their goal paragraph in the roll-up**](active-items-render-goal-paragraph.md) — Backlog, dx
 - `R748` [**Decouple the roadmap tool from the generator reactor**](roadmap-tool-reactor-decoupling.md) — Spec, dx

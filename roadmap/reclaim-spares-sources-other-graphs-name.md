@@ -1,7 +1,7 @@
 ---
 id: R1177
 title: "A capture does not reclaim a source another graph still names"
-status: Spec
+status: Ready
 bucket: bug
 priority: 5
 theme: tooling
