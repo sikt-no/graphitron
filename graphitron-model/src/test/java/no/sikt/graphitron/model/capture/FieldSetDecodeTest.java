@@ -1,7 +1,6 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +26,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * throws, and what "whatever parsed" means is a fact worth stating rather than leaving to whoever
  * next reads the tokenizer.
  */
-@UnitTier
 class FieldSetDecodeTest {
 
     private static String federated(String fieldSet) {

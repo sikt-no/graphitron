@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,7 +12,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_KEY;
@@ -29,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * one the catalog cannot make. The fixture uses {@code films_for_actor}, whose result exposes
  * {@code film_id}, so the name-match to {@code film} succeeds.
  */
-@PipelineTier
 class NameMatchedStepHopTest {
 
     @TempDir
@@ -83,7 +81,7 @@ class NameMatchedStepHopTest {
     }
 
     private void withCaptured(String sdl, Consumer<DSLContext> body) {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         try (var store = CapturedStore.ofCatalog(tmp, sdl,
                 CatalogInput.of(ctx))) {
             body.accept(store.dsl());

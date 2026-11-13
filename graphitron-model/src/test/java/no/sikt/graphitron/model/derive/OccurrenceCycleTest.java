@@ -1,8 +1,7 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,7 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -21,7 +20,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * nests a type in itself is one the classifier refuses without the store stating a defect, so its
  * cases are captured here rather than in a fact document.
  */
-@PipelineTier
 class OccurrenceCycleTest {
 
     @TempDir
@@ -73,7 +71,7 @@ class OccurrenceCycleTest {
     }
 
     private void withCaptured(String sdl, Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, CatalogInput.of(testContext()))) {
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, CatalogInput.of(TestRunContext.of()))) {
             body.accept(store.dsl());
         }
     }

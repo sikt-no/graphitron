@@ -1,10 +1,9 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.read.SourceGraph;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.jooq.ExecuteContext;
 import org.jooq.ExecuteListener;
@@ -30,7 +29,6 @@ import no.sikt.graphitron.model.run.GraphIdentity;
  * hands the ambiguity back rather than resolving it by row order, where the answer would depend on
  * which module's build happened to run first.
  */
-@UnitTier
 class SourceGraphScopingTest {
 
     private static final String SDL = """

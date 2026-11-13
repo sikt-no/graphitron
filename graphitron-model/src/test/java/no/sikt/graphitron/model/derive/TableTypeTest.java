@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -11,7 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
@@ -30,7 +29,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * fixture but about the rule: the two populations agree exactly, so the readers can move over one
  * at a time and the old relation can be dissolved when none is left.
  */
-@PipelineTier
 class TableTypeTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
@@ -90,7 +88,7 @@ class TableTypeTest {
     }
 
     private static CatalogInput jooq() {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         return CatalogInput.of(ctx);
     }
 }

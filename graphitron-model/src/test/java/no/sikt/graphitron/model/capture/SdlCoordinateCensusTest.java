@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import graphql.schema.GraphQLEnumType;
@@ -9,7 +9,6 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.ScalarInfo;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -62,7 +61,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * where the equality arms ask whether the merge reaches the same set, the ordinal arm asks whether
  * it reached it in the document's order.
  */
-@PipelineTier
 class SdlCoordinateCensusTest {
 
     private static final String INTROSPECTION_PREFIX = "__";

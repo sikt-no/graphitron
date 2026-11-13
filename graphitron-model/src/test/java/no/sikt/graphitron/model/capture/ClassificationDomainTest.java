@@ -1,10 +1,9 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -14,7 +13,7 @@ import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
@@ -40,7 +39,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>What a consumer makes of these rows is not asked here. What stands here is that an author's
  * schema reaches the membership the seed rule promises.
  */
-@PipelineTier
 class ClassificationDomainTest {
 
     private static final String NODE_INTERFACE = "interface Node { id: ID! }\n";
@@ -242,7 +240,7 @@ class ClassificationDomainTest {
     }
 
     private static CatalogInput jooq() {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         return CatalogInput.of(ctx);
     }
 }

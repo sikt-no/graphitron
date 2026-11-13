@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import graphql.language.AstPrinter;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +35,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and transcribes what nobody declared, which is exactly the population a round trip has no schema
  * to lean on for.
  */
-@PipelineTier
 class DirectiveLiteralRoundTripTest {
 
     private static final String FIXTURE = """

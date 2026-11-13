@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.FactWriters;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.assertj.core.groups.Tuple;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +38,6 @@ import no.sikt.graphitron.model.sources.SourceWalker;
  * moved, prunes the files that left the roots it walked, and touches nothing under a root it never
  * walked.
  */
-@UnitTier
 class JavaSourceFactsTest {
 
     /** The corpus this family crawls, as {@code meta_gatherer_corpus} names it. */

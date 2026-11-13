@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite;
+package no.sikt.graphitron.model;
 
 import graphql.schema.GraphQLObjectType;
 import graphql.schema.GraphQLSchema;
@@ -13,10 +13,9 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
+import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
+import static no.sikt.graphitron.model.test.TestRunContext.OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
@@ -26,7 +25,6 @@ import no.sikt.graphitron.model.schema.SchemaAssembly;
  * post-synthesis schema a capture builds, which is the schema the generator emits. The tag and note
  * rewrites have tests of their own; this pins that what they apply reaches the emitted schema.
  */
-@PipelineTier
 class TaggedInputsPipelineTest {
 
     @Test
@@ -60,8 +58,8 @@ class TaggedInputsPipelineTest {
             ),
             tmp, "TaggedInputsPipelineTest",
             tmp,
-            DEFAULT_OUTPUT_PACKAGE,
-            DEFAULT_JOOQ_PACKAGE
+            OUTPUT_PACKAGE,
+            JOOQ_PACKAGE
         );
 
         GraphQLSchema assembled;

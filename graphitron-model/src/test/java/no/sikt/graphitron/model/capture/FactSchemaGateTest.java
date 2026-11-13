@@ -1,12 +1,11 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -60,7 +59,6 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  * application of a non-repeatable directive is author-reachable under registry capture, so it is
  * a detection and has no business failing a build.
  */
-@UnitTier
 class FactSchemaGateTest {
 
     /**
@@ -422,7 +420,7 @@ class FactSchemaGateTest {
 
     /** The generated catalog the node-metadata gate above reads; a composite key lives in it. */
     private static CatalogInput fixtureCatalog() {
-        var ctx = TestConfiguration.testContext();
+        var ctx = TestRunContext.of();
         return CatalogInput.of(ctx);
     }
 

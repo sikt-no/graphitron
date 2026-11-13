@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.boot.StoreReaper;
 import no.sikt.graphitron.model.boot.StoreUnavailableException;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.DisplayName;
@@ -61,7 +60,6 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  * demote rather than wait on another process, and the capture, which gives up the anchor row on a
  * short budget while keeping the generous one for every row after it.
  */
-@UnitTier
 class PersistentStoreTest {
 
     private static final String SDL = """

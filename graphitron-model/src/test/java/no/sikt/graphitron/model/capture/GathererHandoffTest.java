@@ -1,7 +1,6 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -27,7 +26,6 @@ import no.sikt.graphitron.model.sink.FactSink;
 // Acknowledges FactSink's deprecation. This case's subject is the handoff between gatherers
 // and it drives the sink directly to make it observable, so it goes with the sink rather
 // than with any caller that merely writes through one.
-@PipelineTier
 @SuppressWarnings("deprecation")
 class GathererHandoffTest {
 

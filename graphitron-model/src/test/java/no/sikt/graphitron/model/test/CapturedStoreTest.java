@@ -1,10 +1,9 @@
-package no.sikt.graphitron.rewrite;
+package no.sikt.graphitron.model.test;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,7 +28,6 @@ import no.sikt.graphitron.model.test.CapturedStore;
  * its only one. Each is a claim about what capture does rather than about the helper, which is why
  * they are worth pinning here rather than left to the first consumer to discover.
  */
-@UnitTier
 class CapturedStoreTest {
 
     private static final String SDL = """
@@ -99,7 +97,7 @@ class CapturedStoreTest {
     @DisplayName("the catalog arm captures the generated model; the bare arm has no catalog to capture")
     void theCatalogArmIsWhatPutsTablesInTheStore(@TempDir Path tmp) {
         try (var store = CapturedStore.ofCatalog(tmp.resolve("catalog"), SDL,
-                CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+                CatalogInput.of(TestRunContext.JOOQ_PACKAGE))) {
             assertThat(store.dsl().fetchCount(SQL_TABLE)).isPositive();
         }
         try (var store = CapturedStore.of(tmp.resolve("bare"), SDL)) {
@@ -139,7 +137,7 @@ class CapturedStoreTest {
     @DisplayName("the refused arm keeps the surviving source's rows and leaves the verdict beside them")
     void theRefusedArmCapturesBothHalvesOfARefusedRead(@TempDir Path tmp) {
         try (var store = CapturedStore.ofRefusedSchema(tmp, SDL, "type Actor { name: String\n",
-                CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+                CatalogInput.of(TestRunContext.JOOQ_PACKAGE))) {
             assertThat(store.dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Film")))
                 .as("the source that parsed is in the store, which is what a reader answers from")
                 .isOne();
@@ -155,7 +153,7 @@ class CapturedStoreTest {
         // Left to itself the capture would succeed and the fixture would go on being read as a
         // refusal, so the arm says so rather than handing back a store that disagrees with its name.
         assertThatThrownBy(() -> CapturedStore.ofRefusedSchema(tmp, SDL, "type Actor { name: String }\n",
-            CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE)))
+            CatalogInput.of(TestRunContext.JOOQ_PACKAGE)))
             .isInstanceOf(AssertionError.class)
             .hasMessageContaining("fixture-refused.graphqls");
     }

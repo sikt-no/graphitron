@@ -1,11 +1,10 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -29,7 +28,6 @@ import no.sikt.graphitron.model.derive.ReferenceForParticipantDefects;
  * <p>Sibling of {@code NodeIdParticipantRoutePipelineTest}, where the per-use-site half stands: an
  * application naming a participant of one consumer and not another classifies clean at both.
  */
-@PipelineTier
 class ReferenceForParticipantDefectsTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
@@ -38,7 +36,7 @@ class ReferenceForParticipantDefectsTest {
 
     @BeforeAll
     static void scanTheCatalog() {
-        var ctx = TestConfiguration.testContext();
+        var ctx = TestRunContext.of();
         jooq = CatalogInput.of(ctx);
     }
 

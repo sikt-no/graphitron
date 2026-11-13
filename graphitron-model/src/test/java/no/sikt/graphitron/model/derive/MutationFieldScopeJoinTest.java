@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,7 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -24,7 +23,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * and a routine) are the mutation fields whose kind says so, a {@code @service} mutation is not
  * one of them, and a query field never is.
  */
-@PipelineTier
 class MutationFieldScopeJoinTest {
 
     @TempDir
@@ -59,7 +57,7 @@ class MutationFieldScopeJoinTest {
                     @service(service: {className: "%s", method: "writeOne"})
             }
             """.formatted(SERVICE);
-        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, CatalogInput.of(testContext()),
+        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, CatalogInput.of(TestRunContext.of()),
                 ClasspathCorpus.entries())) {
             assertThat(mutationFieldsTheScopeIsOpenedFor(store.dsl()))
                 .as("INSERT, UPDATE, DELETE and the routine are generated writes; the service and every"

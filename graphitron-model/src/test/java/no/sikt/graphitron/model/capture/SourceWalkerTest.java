@@ -1,6 +1,5 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -23,7 +22,6 @@ import no.sikt.graphitron.model.sources.SourceWalker;
  * what {@link JavaSourceFacts} writes into the store. Nothing here asks the walk to pick one
  * declaration per name: that question belongs to whoever queries the rows.
  */
-@UnitTier
 class SourceWalkerTest {
 
     @Test

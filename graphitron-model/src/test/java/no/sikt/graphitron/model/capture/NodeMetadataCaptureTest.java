@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -15,7 +14,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static org.assertj.core.api.Assertions.assertThat;
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
+import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 
 /**
  * What the catalog walk writes for the node-identity constants a generated table class publishes,
@@ -29,7 +28,6 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
  * name, and a stock table beside them. What it does not produce is a malformed class, which is the
  * whole reason the defect derivation is pinned against stated rows instead.
  */
-@PipelineTier
 class NodeMetadataCaptureTest {
 
     private static final String SDL = """
@@ -101,7 +99,7 @@ class NodeMetadataCaptureTest {
     @Test
     @DisplayName("a second capture over the same source restates the rows rather than colliding")
     void aSecondCaptureRestatesTheRows(@TempDir Path tmp) {
-        var jooq = CatalogInput.of(DEFAULT_JOOQ_PACKAGE);
+        var jooq = CatalogInput.of(JOOQ_PACKAGE);
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq)) {
             int metadata = store.dsl().fetchCount(SQL_NODE_METADATA);
             int entries = store.dsl().fetchCount(SQL_NODE_KEY_COLUMN);
@@ -122,7 +120,7 @@ class NodeMetadataCaptureTest {
     }
 
     private static void withFixtureCatalog(Path tmp, java.util.function.Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ofCatalog(tmp, SDL, CatalogInput.of(DEFAULT_JOOQ_PACKAGE))) {
+        try (var store = CapturedStore.ofCatalog(tmp, SDL, CatalogInput.of(JOOQ_PACKAGE))) {
             body.accept(store.dsl());
         }
     }

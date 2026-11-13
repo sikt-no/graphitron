@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
@@ -13,7 +13,6 @@ import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SdlVerdicts;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Record;
 import org.jooq.Table;
@@ -39,8 +38,8 @@ import java.util.Optional;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -76,7 +75,6 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  * untouched, because a jar absent from this module's classpath may be another graph's live
  * dependency and other graphs' rows are another run's business.
  */
-@PipelineTier
 class WarmStartRefreshTest {
 
     /** An instant no reading would choose, which is what makes a surviving row visible. */
@@ -177,7 +175,7 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a second capture of one graph leaves every relation's row count unchanged")
     void aSecondCaptureOfOneGraphDoublesNothing(@TempDir Path tmp) {
-        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        var jooq = new CatalogInput(JOOQ_PACKAGE, TestRunContext.of().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
 
         Map<String, Integer> once;
@@ -212,7 +210,7 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a path edited from object to list form re-captures into a warm store")
     void anEditedPathRecapturesIntoAWarmStore(@TempDir Path tmp) {
-        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        var jooq = new CatalogInput(JOOQ_PACKAGE, TestRunContext.of().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
         String before = """
             type Query { films: [Film!]! }
@@ -268,7 +266,7 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a store whose first capture stopped part-way is repaired by the next capture")
     void aCaptureStoppedPartWayIsRepairedByTheNext(@TempDir Path tmp) {
-        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE, testContext().codegenLoader());
+        var jooq = new CatalogInput(JOOQ_PACKAGE, TestRunContext.of().codegenLoader());
         Path directory = tmp.resolve("graphitron-model");
 
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -647,8 +645,8 @@ class WarmStartRefreshTest {
     @Test
     @DisplayName("a warm refresh over a multi-package jOOQ catalog completes")
     void aWarmRefreshOverAMultiPackageCatalogCompletes(@TempDir Path tmp) {
-        var jooq = new CatalogInput(DEFAULT_JOOQ_PACKAGE,
-            testContext().codegenLoader());
+        var jooq = new CatalogInput(JOOQ_PACKAGE,
+            TestRunContext.of().codegenLoader());
         try (var store = GraphitronModelStore.open()) {
             CapturedStore.writeSource(tmp, SDL);
             ModelCapture.capture(store.dsl(), graph(tmp),

@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.schema.input;
+package no.sikt.graphitron.model.schema.input;
 
 import graphql.schema.GraphQLObjectType;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -30,7 +29,6 @@ import no.sikt.graphitron.model.schema.input.SchemaSource;
  * case closes the loop from a minted file arm, through the parser and capture, to the schema that
  * applies what the join found.
  */
-@PipelineTier
 class SourceNameRenderingTest {
 
     @Test

@@ -1,10 +1,9 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,7 +28,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the nullable half of the row is stated in the relation's comment rather than pinned here: a case
  * asserting a shape no fixture produces would be asserting the assertion.
  */
-@PipelineTier
 class EnumBindingCaptureTest {
 
     private static final String ENUM_PACKAGE = "no.sikt.graphitron.rewrite.test.jooq.public_.enums.";
@@ -110,7 +108,7 @@ class EnumBindingCaptureTest {
     @Test
     @DisplayName("a second capture over the same source restates the rows rather than colliding")
     void aSecondCaptureRestatesTheRows(@TempDir Path tmp) {
-        var jooq = CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+        var jooq = CatalogInput.of(TestRunContext.JOOQ_PACKAGE);
         try (var store = CapturedStore.ofCatalog(tmp, SDL, jooq)) {
             int before = store.dsl().fetchCount(SQL_ENUM_BINDING);
             assertThat(before).isPositive();
@@ -122,7 +120,7 @@ class EnumBindingCaptureTest {
 
     private static void withCatalog(Path tmp, Consumer<DSLContext> assertions) {
         try (var store = CapturedStore.ofCatalog(tmp, SDL,
-                CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
+                CatalogInput.of(TestRunContext.JOOQ_PACKAGE))) {
             assertions.accept(store.dsl());
         }
     }

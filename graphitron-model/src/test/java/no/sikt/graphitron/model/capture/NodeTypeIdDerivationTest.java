@@ -1,16 +1,15 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import graphql.language.AstPrinter;
 import graphql.language.ObjectTypeDefinition;
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -33,7 +32,6 @@ import static org.assertj.core.api.Assertions.tuple;
  * the cases that pin the three tiers do so over a real catalog: one type pins its id, one is named
  * by the class its table publishes, one has neither.
  */
-@UnitTier
 class NodeTypeIdDerivationTest {
 
     private static final String LINK =
@@ -192,7 +190,7 @@ class NodeTypeIdDerivationTest {
     // ---------------------------------------------------------------------------------------
 
     private static CapturedStore captured(Path tmp, String sdl) {
-        return CapturedStore.ofCatalog(tmp, sdl, CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE));
+        return CapturedStore.ofCatalog(tmp, sdl, CatalogInput.of(TestRunContext.JOOQ_PACKAGE));
     }
 
     /** The one author-facing message the emitted registry refuses with, in the author's terms. */

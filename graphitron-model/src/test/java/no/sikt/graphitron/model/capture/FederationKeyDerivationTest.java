@@ -1,15 +1,14 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -47,7 +46,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * these add is that a real {@code .graphqls} read by the real walk, against a real generated jOOQ
  * catalog, produces the rows that algebra needs.
  */
-@UnitTier
 class FederationKeyDerivationTest {
 
     /**
@@ -62,7 +60,7 @@ class FederationKeyDerivationTest {
     /** The node type every federated case declares, the anchor its variations replace at. */
     private static final String FILM = "type Film implements Node @table(name: \"film\") @node";
 
-    private static final CatalogInput JOOQ = CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+    private static final CatalogInput JOOQ = CatalogInput.of(TestRunContext.JOOQ_PACKAGE);
 
     private static final String LINK =
         "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\", import: [\"@key\"])";
@@ -324,7 +322,7 @@ class FederationKeyDerivationTest {
         return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty())),
             dir, "FederationKeyDerivationTest", dir.resolve("out"),
-            TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+            TestRunContext.OUTPUT_PACKAGE, TestRunContext.JOOQ_PACKAGE);
     }
 
     /** The types the rule minted a key for, by name. */

@@ -110,9 +110,11 @@ class StoreFixtureGuardTest {
      */
     private static final List<Exempt> EXEMPT = List.of(
         // Permanent: the store's lifetime is what these assert on.
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/PersistentStoreTest.java",
+        new Exempt("graphitron-model/src/test/java/no/sikt/graphitron/model/capture/"
+            + "PersistentStoreTest.java",
             Why.LIFETIME, "opens and reopens one directory, holding two handles at once"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/WarmStartRefreshTest.java",
+        new Exempt("graphitron-model/src/test/java/no/sikt/graphitron/model/capture/"
+            + "WarmStartRefreshTest.java",
             Why.LIFETIME, "compares a cold round against a warm one across a reopen"),
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/"
             + "BrokenSourceStillCapturesPipelineTest.java",
@@ -124,9 +126,11 @@ class StoreFixtureGuardTest {
                 + "the last handle's compaction reports"),
 
         // Permanent: capture oracles, which drive capture themselves per arm.
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java",
+        new Exempt("graphitron-model/src/test/java/no/sikt/graphitron/model/capture/"
+            + "FactCaptureAgreementTest.java",
             Why.ORACLE, "one arm per view against the walk, opening directly where no factory fits"),
-        new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactSchemaGateTest.java",
+        new Exempt("graphitron-model/src/test/java/no/sikt/graphitron/model/capture/"
+            + "FactSchemaGateTest.java",
             Why.ORACLE, "the same family, plus bare-store gates over the model's own DDL"));
 
     @Test

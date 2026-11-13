@@ -1,4 +1,4 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.Public;
@@ -11,7 +11,6 @@ import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
 import no.sikt.graphitron.model.compile.CompileRound;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -22,7 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.JAVAC_DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_NO_RULE;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
@@ -191,7 +190,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * <p>These tests retire as consumers migrate off {@code GraphitronSchema} piece by piece; they pin
  * a shadow copy, and a shadow with a reader does not need one.
  */
-@PipelineTier
 class FactCaptureAgreementTest {
 
 
@@ -408,7 +406,7 @@ class FactCaptureAgreementTest {
 
     /** The generated test catalog, as the cases reading the node rule capture against. */
     private static JooqCatalog catalog() {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         return new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader());
     }
 }

@@ -1,9 +1,8 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
@@ -13,7 +12,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.function.Consumer;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
@@ -43,7 +42,6 @@ import static org.jooq.impl.DSL.upper;
  * view: a payload carrier's data field declares no {@code @reference}, so the authored view's
  * population never reaches it, and the two would otherwise each carry a copy of the rule.
  */
-@PipelineTier
 class NameMatchedKeyPairTest {
 
     @TempDir
@@ -316,7 +314,7 @@ class NameMatchedKeyPairTest {
     }
 
     private void withCaptured(String sdl, Consumer<DSLContext> body) {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         try (var store = CapturedStore.ofCatalog(tmp, sdl,
                 CatalogInput.of(ctx))) {
             body.accept(store.dsl());

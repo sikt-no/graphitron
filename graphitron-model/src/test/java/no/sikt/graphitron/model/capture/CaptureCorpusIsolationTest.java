@@ -1,12 +1,11 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.common.configuration.TestConfiguration;
+import no.sikt.graphitron.model.test.TestRunContext;
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.EntryFamilyFixture;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
@@ -68,7 +67,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * than by agreeing, so that case holds every entry relation to being populated as well as to
  * agreeing.
  */
-@PipelineTier
 class CaptureCorpusIsolationTest {
 
     /** The family whose rows are about the SDL corpus, and must not vary with the catalog. */
@@ -172,7 +170,7 @@ class CaptureCorpusIsolationTest {
     }
 
     private static CatalogInput catalog() {
-        return CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+        return CatalogInput.of(TestRunContext.JOOQ_PACKAGE);
     }
 
     /** Captures the fixture under one arm and reads every in-scope relation's rows out. */

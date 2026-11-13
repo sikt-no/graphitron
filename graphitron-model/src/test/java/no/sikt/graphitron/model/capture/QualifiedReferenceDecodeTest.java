@@ -1,7 +1,6 @@
-package no.sikt.graphitron.rewrite.capture;
+package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.DSLContext;
 import org.jooq.Record2;
 import org.junit.jupiter.api.DisplayName;
@@ -35,7 +34,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * class owes that one is the fact underneath it, which is that capture stores the empty half rather
  * than repairing it.
  */
-@UnitTier
 class QualifiedReferenceDecodeTest {
 
     /**

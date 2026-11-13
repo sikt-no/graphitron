@@ -35,18 +35,18 @@ in the file, so the import is dead:
 - `graphitron/src/main/java/no/sikt/graphitron/rewrite/capture/SdlFactCapture.java:25`
 - `graphitron-lsp/src/test/java/no/sikt/graphitron/lsp/StoreFixture.java:11`
 - `graphitron-mcp/src/test/java/no/sikt/graphitron/mcp/StoreFixture.java:7`
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java:25`
-- `graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/PersistentStoreTest.java:5`
+- `graphitron-model/src/test/java/no/sikt/graphitron/model/capture/FactCaptureAgreementTest.java:25`
+- `graphitron-model/src/test/java/no/sikt/graphitron/model/capture/PersistentStoreTest.java:5`
 - `graphitron/src/test/java/no/sikt/graphitron/rewrite/diagnostics/DiagnosticFactsTest.java:35`
 
 Two neighbours are not on that list and must not be swept with it.
 `graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/NodeTypeShadowTest.java:5` carries the
 same import and uses the type four times, and
-`graphitron/src/test/java/no/sikt/graphitron/rewrite/derive/TypeBackingClassTest.java` never names
+`graphitron-model/src/test/java/no/sikt/graphitron/model/derive/TypeBackingClassTest.java` never names
 the type at all; its line 5 is a live `CompletionData` import.
 
 The seventh is the one that motivates the rest.
-`graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/WarmStartRefreshTest.java:296` documents
+`graphitron-model/src/test/java/no/sikt/graphitron/model/capture/WarmStartRefreshTest.java:296` documents
 `aWarmRefreshOverAMultiPackageCatalogCompletes` with a `{@link}` whose target is a
 `FactCapture#capture` overload ending `..., Map, JooqCatalog, List, NodeDeclaration)`. No such overload
 exists. That file needs two edits, the link and then the import it was the last reader of.
