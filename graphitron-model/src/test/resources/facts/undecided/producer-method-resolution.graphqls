@@ -49,9 +49,11 @@ extend schema @assertContains(relation: "code_class", rows: """
 
 # What each reference that did not resolve draws instead, at the position it was written. The
 # service naming no method draws nothing: the fallback to the field's own name is the external
-# field's alone.
+# field's alone. The external field resolves, but to a service method returning no org.jooq.Field,
+# which an @externalField cannot call: CODE_REFERENCE_METHOD_UNFIT, pinned by
+# defects/external-field-expression and left out here.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
-    where: "code LIKE 'CODE_REFERENCE%'", rows: """
+    where: "code LIKE 'CODE_REFERENCE%' AND code <> 'CODE_REFERENCE_METHOD_UNFIT'", rows: """
   code,                            type_name, field_name, detail
   CODE_REFERENCE_CLASS_NOT_READ,   Query,     unread,     no.sikt.graphitron.rewrite.test.services.NotOnTheClasspath
   CODE_REFERENCE_METHOD_AMBIGUOUS, Query,     topRated,   no.sikt.graphitron.rewrite.test.services.FilmService.topRated

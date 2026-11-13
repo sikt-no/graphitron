@@ -706,9 +706,24 @@ static method needs no holder.
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
     it has one; the census's `INLINE_CHILD` line closes with it.
-  * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
-    `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
-    parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
+  * **An `@externalField` binds an expression at its occurrence** `open`. `occurrence-bindings`
+    writes an `EXPRESSION` row of `graphitron_occurrence_binding` per `@externalField` occurrence
+    and table its values are rows of (`graphitron_occurrence_source_table`: a nesting type's
+    field takes the chain's anchor), and on it an `EXPRESSION` call, `'expression:' || bound`,
+    as a `@condition`'s is: the method is `graphitron_occurrence_call_method`'s, the candidate
+    being the method `graphitron_code_reference` resolves where `code_external_field_method`
+    admits it and its parameter takes the table, and the position the table fills is a `TABLE`
+    fill in `graphitron_occurrence_call_parameter`. `graphitron_occurrence_expression(graph,
+    coordinate, bound, call, call_kind)` ties binding and call, keyed into both, so the arm has
+    a reader. A resolution to a method `@externalField` cannot call is
+    `CODE_REFERENCE_METHOD_UNFIT`, owned by `code-references`; a method typed on a table the
+    field's values are not rows of is `EXTERNAL_FIELD_TABLE_NOT_TAKEN`, owned by
+    `occurrence-bindings`; a written `@reference` beside it is `EXTERNAL_FIELD_PATH_UNSUPPORTED`,
+    a deferral at `occurrence-bindings`, as the manual already states it; none touches
+    `graphitron_entry_defect_rule`. The manual's constraints name the nesting case and the three
+    codes. Pinned by
+    `defects/external-field-expression`, with the outbox nesting case in
+    `scenarios/nesting-field-named-like-a-column`.
   * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on
     "A `@condition` is a call per table its occurrence binds". The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure

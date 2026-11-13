@@ -7984,6 +7984,35 @@ COMMENT ON COLUMN graphitron_code_reference.method_name IS 'the resolved method'
 COMMENT ON COLUMN graphitron_code_reference.method_descriptor IS 'the resolved method''s JVM descriptor, completing the reference into code_method. Not in the key: a reference matching two overloads is ambiguous and draws no row, so the descriptor is what the one method is rather than what tells two rows apart';
 COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that derived this row ran. Swept per graph after the reading upserts, so a reference that stopped resolving leaves and the rest stay; a reference the author removed goes through the cascade on its written form';
 
+-- The defects judging what a resolved reference resolved to, written by the code-references stage
+-- beside graphitron_code_reference: a method the directive cannot call as it calls the methods it
+-- names. An @externalField's must be one code_external_field_method admits: static, taking one jOOQ
+-- table and returning an org.jooq.Field. Reported at the reference, the first clause it fails in the
+-- detail.
+CREATE VIEW graphitron_code_reference_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column, 'CODE_REFERENCE_METHOD_UNFIT',
+       CASE WHEN NOT m.is_static THEN 'not static'
+            WHEN m.result_erased_class IS NULL OR m.result_erased_class <> 'org.jooq.Field'
+              THEN 'returns ' || COALESCE(m.result_erased_class, m.result_type)
+            WHEN (SELECT COUNT(*) FROM code_method_parameter p
+                   WHERE p.source_name = m.source_name AND p.class_name = m.class_name
+                     AND p.method_name = m.method_name AND p.descriptor = m.descriptor) <> 1
+              THEN 'takes ' || CAST((SELECT COUNT(*) FROM code_method_parameter p
+                                      WHERE p.source_name = m.source_name AND p.class_name = m.class_name
+                                        AND p.method_name = m.method_name
+                                        AND p.descriptor = m.descriptor) AS VARCHAR) || ' parameters'
+            ELSE 'takes no table' END
+  FROM graphitron_code_reference r
+  JOIN code_method m
+    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
+   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+ WHERE r.directive_name = 'externalField' AND r.kind = 'ROOT'
+   AND NOT EXISTS (SELECT 1 FROM code_external_field_method x
+                    WHERE x.source_name = m.source_name AND x.class_name = m.class_name
+                      AND x.method_name = m.method_name AND x.descriptor = m.descriptor);
+COMMENT ON VIEW graphitron_code_reference_entry_defect_rule IS 'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.';
+
 CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
 COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_path_element_routine_rule) both join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
 
@@ -10989,7 +11018,7 @@ CREATE TABLE graphitron_occurrence_binding (
 COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.';
 COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
-COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
+COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the table the method takes for EXPRESSION, the method for RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
 COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs; VOUCHER, the voucher an @issue field carries, computed from its members'' columns and bound at the issuing table, with no subtype; PARAMETER, a call parameter an argument or input field supplies, bound at the parameter';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
@@ -11520,15 +11549,16 @@ CREATE TABLE graphitron_occurrence_call_candidate (
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
     REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
-  CHECK (call_kind IN ('SERVICE', 'CONDITION')),
+  CHECK (call_kind IN ('SERVICE', 'CONDITION', 'EXPRESSION')),
   CHECK (call_kind <> 'SERVICE' OR call = 'producer'),
-  CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%')
+  CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%'),
+  CHECK (call_kind <> 'EXPRESSION' OR call LIKE 'expression:%')
 );
 COMMENT ON TABLE graphitron_occurrence_call_candidate IS 'One method one call of one occurrence could be: one row per call and candidate method. For example Query.filmsByPath''s producer call has one candidate, the FilmService#filmsByIds its @service reference names.';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.coordinate IS 'the occurrence making the call, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.call IS 'which of the occurrence''s calls, spelled as graphitron_occurrence_call.call is; the call row exists only once a candidate is pinned';
-COMMENT ON COLUMN graphitron_occurrence_call_candidate.call_kind IS 'SERVICE, a service producer''s call, or CONDITION, a @condition''s on one table';
+COMMENT ON COLUMN graphitron_occurrence_call_candidate.call_kind IS 'SERVICE, a service producer''s call, CONDITION, a @condition''s on one table, or EXPRESSION, an @externalField''s on one table';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_class_name IS 'the class declaring the method';
 COMMENT ON COLUMN graphitron_occurrence_call_candidate.method_name IS 'the method';
@@ -11817,17 +11847,18 @@ CREATE TABLE graphitron_occurrence_call (
   UNIQUE (graph_name, coordinate, call, call_kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (call_kind IN ('SERVICE', 'CONDITION')),
-  -- The call spelled from its subtype's own key: a producer makes one call, a condition one per
-  -- table it is applied to.
+  CHECK (call_kind IN ('SERVICE', 'CONDITION', 'EXPRESSION')),
+  -- The call spelled from its subtype's own key: a producer makes one call, a condition and an
+  -- expression one per table it is applied to.
   CHECK (call_kind <> 'SERVICE' OR call = 'producer'),
-  CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%')
+  CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%'),
+  CHECK (call_kind <> 'EXPRESSION' OR call LIKE 'expression:%')
 );
 COMMENT ON TABLE graphitron_occurrence_call IS 'One call an occurrence makes: one row per occurrence and call, of whatever kind. For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.';
 COMMENT ON COLUMN graphitron_occurrence_call.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call.coordinate IS 'the occurrence making the call, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_call.call IS 'which of the occurrence''s calls, spelled from its subtype''s own key as graphitron_occurrence_binding.bound is: producer for a producer''s call; completing the key';
-COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call, or CONDITION, a @condition''s on one table; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
+COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call, CONDITION, a @condition''s on one table, or EXPRESSION, an @externalField''s on the table its values are rows of; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
 COMMENT ON COLUMN graphitron_occurrence_call.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The method a call makes, the candidate it pinned: a fact of every call that makes a method, stated
@@ -11967,8 +11998,9 @@ CREATE TABLE graphitron_occurrence_call_parameter (
                   'TABLE')),
   -- What a call's source hands it, the batch's keys, fills only a producer's call.
   CHECK (fill <> 'SOURCE' OR call_kind = 'SERVICE'),
-  -- The table a condition is applied to, the call's own bound table, fills only a condition's.
-  CHECK (fill <> 'TABLE' OR call_kind = 'CONDITION'),
+  -- The table a condition or an expression is applied to, the call's own bound table, fills only
+  -- theirs.
+  CHECK (fill <> 'TABLE' OR call_kind IN ('CONDITION', 'EXPRESSION')),
   CHECK ((landing_coordinate IS NOT NULL) = (fill = 'ARGUMENT')),
   CHECK ((context_key IS NOT NULL) = (fill = 'CONTEXT_KEY')),
   CHECK ((session_member IS NOT NULL) = (fill = 'SESSION_MEMBER')),
@@ -11992,7 +12024,7 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.call IS 'which of the occ
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.call_kind IS 'the call''s kind, carried so a fill only some calls take is a check';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.position IS 'the parameter''s position in the method the call resolved, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.parameter_name IS 'the parameter''s name, NULL where the class was compiled without -parameters, which only a fill decided by type or shape can then reach';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter.fill IS 'what supplies the value. Written: SESSION, the session handle; SESSION_MEMBER, one member of it; CONTEXT_KEY, a value the request context carries; ARGUMENT, an argument or input field a pair names. Inferred where nothing is written: DSL_CONTEXT, the jOOQ context, by the parameter''s type; ARGUMENT, the call''s own argument of the parameter''s name; SOURCE, what the call''s source hands it, by a collection''s shape at a call with a source: the source''s keys, or the target''s where the source states them, which the split decides and building judges; TABLE, on a @condition''s call, the table it is applied to, by a table parameter';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter.fill IS 'what supplies the value. Written: SESSION, the session handle; SESSION_MEMBER, one member of it; CONTEXT_KEY, a value the request context carries; ARGUMENT, an argument or input field a pair names. Inferred where nothing is written: DSL_CONTEXT, the jOOQ context, by the parameter''s type; ARGUMENT, the call''s own argument of the parameter''s name; SOURCE, what the call''s source hands it, by a collection''s shape at a call with a source: the source''s keys, or the target''s where the source states them, which the split decides and building judges; TABLE, on a @condition''s or an @externalField''s call, the table it is applied to, by a table parameter';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.landing_coordinate IS 'on ARGUMENT, the argument or input-field occurrence taken; a reader at that occurrence asks here for the parameter it fills';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.context_key IS 'on CONTEXT_KEY, the key the request context carries the value under';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.session_member IS 'on SESSION_MEMBER, the member of the session handle, as written after $session.';
@@ -15333,7 +15365,43 @@ SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
    AND EXISTS (SELECT 1 FROM graphitron_node_table nt
                 WHERE nt.graph_name = pw.graph_name AND nt.table_source_name = pw.table_source_name
                   AND nt.table_schema = pw.table_schema AND nt.table_name = pw.table_name
-                  AND nt.node_count > 1);
+                  AND nt.node_count > 1)
+UNION ALL
+-- An @externalField whose reference resolved to a method it may name, at a table its values are rows
+-- of that the method does not take: its parameter is typed on another table's class or record, so no
+-- call was pinned there. Read off the claim and the source table the binding is written from, not the
+-- binding, which later stages write other kinds of.
+-- Reported once per reference, at the reference, the first table not taken in the detail.
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'EXTERNAL_FIELD_TABLE_NOT_TAKEN', MIN(st.table_schema || '.' || st.table_name)
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim x
+    ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
+  JOIN graphitron_occurrence_source_table st
+    ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN graphitron_code_reference r
+    ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
+   AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
+  JOIN code_external_field_method m
+    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
+   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call c
+                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate
+                      AND c.call = 'expression:' || st.table_schema || '.' || st.table_name
+                      AND c.call_kind = 'EXPRESSION')
+ GROUP BY r.graph_name, r.source_name, r.source_line, r.source_column
+UNION ALL
+-- An @externalField whose field also writes a @reference path: the expression would bind at the
+-- path's landing, which the binding does not state yet, so it is deferred rather than bound at the
+-- source table the path leaves. Reported at the @reference, the directive to remove.
+SELECT ref.graph_name, ref.source_name, ref.source_line, ref.source_column,
+       'EXTERNAL_FIELD_PATH_UNSUPPORTED', x.coordinate
+  FROM graphitron_binding_claim x
+  JOIN graphitron_directive_application ref
+    ON ref.graph_name = x.graph_name AND ref.coordinate = x.coordinate
+   AND ref.directive_name = 'reference'
+ WHERE x.kind = 'EXPRESSION' AND ref.source_line IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
 -- The defects of what an input object is built into and how its fields fill it, read off the built
@@ -18150,6 +18218,132 @@ COMMENT ON COLUMN graphitron_occurrence_condition.call IS 'the call it is, condi
 COMMENT ON COLUMN graphitron_occurrence_condition.call_kind IS 'always CONDITION, pinned so the foreign key holds the row to a call of that kind';
 COMMENT ON COLUMN graphitron_occurrence_condition.override_written IS 'whether the @condition was written with override: true, false where override: was not written; carried for the transition and retired with the rule that decides what a condition consumes';
 COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- An @externalField occurrence binds an expression at each table its values are rows of: the table
+-- its method takes, the parent's row for a field of a table-bound type and the nesting chain's
+-- anchor for a field of a nesting type under one. Which method computes it is the call's, below.
+CREATE VIEW graphitron_occurrence_expression_binding_rule (graph_name, coordinate, bound) AS
+SELECT DISTINCT o.graph_name, o.coordinate, st.table_schema || '.' || st.table_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim x
+    ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
+  JOIN graphitron_occurrence_source_table st
+    ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+ WHERE o.kind = 'FIELD';
+COMMENT ON VIEW graphitron_occurrence_expression_binding_rule IS 'One row the occurrence expression binding rule computes, in the shape graphitron_occurrence_binding stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_binding as EXPRESSION bindings, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.coordinate IS 'the @externalField occurrence';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.bound IS 'the table its values are rows of, schema-qualified';
+
+-- The method an expression's call could be: the one its reference resolves to, where that method is
+-- one @externalField may name and its table parameter takes the bound table, by the table's own
+-- class, or as any table whose record type, where it names one, the table's record is.
+CREATE VIEW graphitron_occurrence_expression_candidate_rule
+  (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
+   method_descriptor) AS
+SELECT DISTINCT o.graph_name, o.coordinate, 'expression:' || st.table_schema || '.' || st.table_name,
+       'EXPRESSION', r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim x
+    ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
+  JOIN graphitron_occurrence_source_table st
+    ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
+  JOIN sql_table t
+    ON t.source_name = st.table_source_name AND t.table_schema = st.table_schema
+   AND t.table_name = st.table_name
+  JOIN graphitron_code_reference r
+    ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
+   AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
+  JOIN code_external_field_method m
+    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
+   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+  JOIN code_method_parameter p
+    ON p.source_name = m.source_name AND p.class_name = m.class_name
+   AND p.method_name = m.method_name AND p.descriptor = m.descriptor
+ WHERE o.kind = 'FIELD'
+   AND (p.role <> 'TABLE_CONCRETE' OR p.erased_class = t.class_fqn)
+   AND (p.first_argument_class IS NULL OR p.first_argument_class = t.record_class_fqn
+        OR EXISTS (SELECT 1 FROM sql_table_record_supertype rs
+                    WHERE rs.source_name = t.source_name AND rs.table_schema = t.table_schema
+                      AND rs.table_name = t.table_name
+                      AND rs.supertype_name = p.first_argument_class));
+COMMENT ON VIEW graphitron_occurrence_expression_candidate_rule IS 'One row the expression candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for an @externalField''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.method_source_name IS 'the method_source_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.method_class_name IS 'the method_class_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_class_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.method_name IS 'the method_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.method_descriptor IS 'the method_descriptor of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.method_descriptor';
+
+-- The one parameter of an expression's method takes the table the call is applied to.
+CREATE VIEW graphitron_occurrence_expression_parameter_rule
+  (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name, fill,
+   landing_coordinate, context_key, session_member) AS
+SELECT k.graph_name, k.coordinate, k.call, k.call_kind, k.method_descriptor, p.position,
+       p.parameter_name, 'TABLE', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_call_candidate k
+  JOIN code_method_parameter p
+    ON p.source_name = k.method_source_name AND p.class_name = k.method_class_name
+   AND p.method_name = k.method_name AND p.descriptor = k.method_descriptor
+ WHERE k.call_kind = 'EXPRESSION';
+COMMENT ON VIEW graphitron_occurrence_expression_parameter_rule IS 'One row the expression parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for an @externalField''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.method_descriptor IS 'the candidate''s descriptor, which the stage matches against the method the call pinned';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.position';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.parameter_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.fill IS 'always TABLE';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.landing_coordinate IS 'always null, a table fill landing on no occurrence';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.context_key IS 'always null';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_parameter_rule.session_member IS 'always null';
+
+-- Each EXPRESSION binding whose call pinned a method.
+CREATE VIEW graphitron_occurrence_expression_rule
+  (graph_name, coordinate, bound, kind, call_kind) AS
+SELECT b.graph_name, b.coordinate, b.bound, b.kind, c.call_kind
+  FROM graphitron_occurrence_binding b
+  JOIN graphitron_occurrence_call c
+    ON c.graph_name = b.graph_name AND c.coordinate = b.coordinate AND c.call = 'expression:' || b.bound
+   AND c.call_kind = 'EXPRESSION'
+ WHERE b.kind = 'EXPRESSION';
+COMMENT ON VIEW graphitron_occurrence_expression_rule IS 'One row the expression call rule computes, in the shape graphitron_occurrence_expression stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_expression, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_expression.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_expression.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_expression.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_expression.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_expression.call_kind';
+
+CREATE TABLE graphitron_occurrence_expression (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  bound      VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  call       VARCHAR GENERATED ALWAYS AS ('expression:' || bound) NOT NULL,
+  call_kind  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  UNIQUE (graph_name, coordinate, call),
+  -- The EXPRESSION binding it is the subtype of, so an expression cannot outlive its table.
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  -- The call it is, a call subtype, whose method and table fill hang under it.
+  FOREIGN KEY (graph_name, coordinate, call, call_kind)
+    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
+  CHECK (kind = 'EXPRESSION'),
+  CHECK (call_kind = 'EXPRESSION')
+);
+COMMENT ON TABLE graphitron_occurrence_expression IS 'An @externalField computed at one table its occurrence''s values are rows of: one row per occurrence carrying @externalField and table its values are rows of whose call pinned a method. For example Film.isEnglish calls FilmExtensions#isEnglish on public.film, and OutboxMessage.payload.eventKind, under a nesting type, calls OutboxExtensions#eventKind on public.outbox, the parent''s row.';
+COMMENT ON COLUMN graphitron_occurrence_expression.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_expression.coordinate IS 'the occurrence carrying @externalField, at its nested coordinate';
+COMMENT ON COLUMN graphitron_occurrence_expression.bound IS 'the table the method takes, schema-qualified, as the binding spells it; completing the key';
+COMMENT ON COLUMN graphitron_occurrence_expression.kind IS 'always EXPRESSION, pinned so the foreign key holds the row to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_expression.call IS 'the call it is, expression: and the bound table. Generated from bound, so nothing writes it, and a reader joins on bound rather than parsing it. The method is graphitron_occurrence_call_method''s under this call, and the position the table fills graphitron_occurrence_call_parameter''s TABLE fill';
+COMMENT ON COLUMN graphitron_occurrence_expression.call_kind IS 'always EXPRESSION, pinned so the foreign key holds the row to a call of that kind';
+COMMENT ON COLUMN graphitron_occurrence_expression.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
 -- An input-field occurrence read per element of a list a filter compares: its field reads, looks up
@@ -21188,6 +21382,7 @@ ALTER TABLE graphitron_path_need_precedence ADD FOREIGN KEY (owner_stage)
 INSERT INTO meta_stage_write VALUES
   ('anchor', 'graphitron_deprecated'),
   ('code-references', 'graphitron_code_reference'),
+  ('code-references', 'graphitron_entry_defect'),
   ('argmapping-sites', 'graphitron_argmapping_site'),
   ('argmapping-pairs', 'graphitron_argmapping_pair'),
   ('call-context-keys', 'graphitron_call_context_key'),
@@ -21293,6 +21488,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_entry_defect'),
   ('occurrence-bindings', 'graphitron_occurrence_binding'),
   ('occurrence-bindings', 'graphitron_occurrence_column'),
+  ('occurrence-bindings', 'graphitron_occurrence_expression'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id'),
   ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
   ('occurrence-producers', 'graphitron_occurrence_call'),
@@ -22302,6 +22498,12 @@ INSERT INTO graphitron_defect_type VALUES
    'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.', 'entry-defects'),
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
    'A code reference where the generator calls exactly one method, a @service, an @externalField or a FieldSort.method, names a method the classpath declares as several overloads, and nothing says which of them is meant.', 'entry-defects'),
+  ('CODE_REFERENCE_METHOD_UNFIT', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_UNFIT',
+   'A code reference names a method the directive cannot call: an @externalField''s method must be static, take exactly one jOOQ table and return an org.jooq.Field.', 'code-references'),
+  ('EXTERNAL_FIELD_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_EXTERNAL_FIELD_PATH_UNSUPPORTED',
+   'An @externalField on a field that also writes a @reference path is not supported yet: the method takes the table the field''s values are rows of, and an expression at the path''s end is not bound. Remove the @reference and reach the joined table inside the method.', 'occurrence-bindings'),
+  ('EXTERNAL_FIELD_TABLE_NOT_TAKEN', 'error', 'GRAPHITRON', 'GRAPHITRON_EXTERNAL_FIELD_TABLE_NOT_TAKEN',
+   'An @externalField''s method takes a table its field''s values are not rows of: its parameter is typed on another table''s class or record, so the call does not compile. Type it as the parent''s table class, or widen it to org.jooq.Table<?>.', 'occurrence-bindings'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.', 'entry-defects'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
@@ -22888,6 +23090,30 @@ INSERT INTO meta_relation VALUES
    'One member call an accessor path makes: one row per path and position, naming the member''s code_read_slot row.',
    'For example Query.filmBlurbHolder.blurb calls FilmBlurbHolder.blurb() at position 0; a path where the object passes through calls nothing and has no step.',
    'What an accessor path calls, as a join path''s steps say what it joins, so a reader renders the call off the row rather than finding the member again. One step today, a bound name being one member. Written by the occurrence-depths stage with its path.'),
+  ('graphitron_occurrence_expression', 'graph-occurrence-binding', 'graphitron',
+   'An @externalField computed at one table its occurrence''s values are rows of: one row per occurrence carrying @externalField and table its values are rows of whose call pinned a method.',
+   'For example Film.isEnglish calls FilmExtensions#isEnglish on public.film, and OutboxMessage.payload.eventKind, under a nesting type, calls OutboxExtensions#eventKind on public.outbox, the parent''s row.',
+   'The EXPRESSION subtype of graphitron_occurrence_binding and a call subtype at once, as graphitron_occurrence_condition is the second: the method is stated once for every call, in graphitron_occurrence_call_method, and the position the table fills is the call''s TABLE fill in graphitron_occurrence_call_parameter, so this relation carries only what ties the two (the fact model''s same-payload ruling, Alf 2026-11-10). The table is the occurrence''s source table, the parent''s row the manual says the method takes, which for a nesting type is the chain''s anchor. Written by occurrence-bindings with its binding, candidates, call, method and fill, marked and swept by kind.'),
+  ('graphitron_occurrence_expression_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the expression call rule computes, in the shape graphitron_occurrence_expression stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_expression, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_expression_binding_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the occurrence expression binding rule computes, in the shape graphitron_occurrence_binding stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_binding as EXPRESSION bindings, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it. A binding is written whether or not a method could be pinned, so a table the method does not take is a defect judged against the binding rather than a missing row.'),
+  ('graphitron_occurrence_expression_candidate_rule', 'graph-occurrence-call-candidate', 'graphitron',
+   'One row the expression candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for an @externalField''s call: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.',
+   'The expression''s own candidate rule beside the service''s and the condition''s, so no kind''s rule branches on another; the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_expression_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
+   'One row the expression parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for an @externalField''s call: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',
+   'The expression''s own fill rule beside the service''s and the condition''s: its method takes one parameter, the table, so the rule is that one TABLE fill.'),
+  ('graphitron_code_reference_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.',
+   'The defects judging a resolution against the code arm its directive names from, written by the code-references stage that writes graphitron_code_reference, since they judge no occurrence fact, so graphitron_entry_defect_rule does not carry them.'),
   ('graphitron_occurrence_condition', 'graph-occurrence-binding', 'graphitron',
    'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method.',
    'For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.',

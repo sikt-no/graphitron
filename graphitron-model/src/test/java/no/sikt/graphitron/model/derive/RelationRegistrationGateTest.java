@@ -318,6 +318,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_built_class", Arm.DERIVED);
         registrations.put("graphitron_occurrence_built_class_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_code_reference_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_build_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_depth_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_value_rule", Arm.DERIVED);
@@ -500,6 +501,11 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_condition_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_condition_candidate_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_condition_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_expression", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_expression_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_expression_binding_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_expression_candidate_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_expression_parameter_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_pair", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_pair_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_landing_key_column", Arm.DERIVED);

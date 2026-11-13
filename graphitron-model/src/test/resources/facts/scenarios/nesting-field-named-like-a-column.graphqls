@@ -34,3 +34,10 @@ extend schema @expectEquals(relation: "graphitron_reader", where: "type_name IN 
   OutboxPayload, type,          COLUMN
   OutboxPayload, eventKind, EXPRESSION
   """)
+
+# The expression is computed on the outbox row, the nesting chain's anchor, under both nesting fields.
+extend schema @expectEquals(relation: "graphitron_occurrence_expression", rows: """
+  coordinate,                       bound
+  OutboxMessage.envelope.eventKind, public.outbox
+  OutboxMessage.payload.eventKind,  public.outbox
+  """)

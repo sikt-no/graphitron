@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_EXPRESSION_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -115,6 +116,11 @@ public final class OccurrenceCallParameters {
             .doUpdate()
             .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))
             .execute();
+    }
+
+    /** States the table fill of each {@code @externalField} call, the one parameter its method takes. */
+    public static void writeExpressions(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_EXPRESSION_PARAMETER_RULE);
     }
 
     /**
