@@ -257,6 +257,13 @@ type Query {
     # Producer for FilmDetailsCarrier: returns the film records as a list, binding the carrier to
     # FilmRecord (JooqTableRecordType) by reflection. Drives the record-sourced BatchedTableField /
     # Lookup-keyed batched-read multi-parent DataLoader-batching tests.
+    # A list of node ids handing the service each id's key column: film_id projected out of each
+    # into the List<Integer> filmsByIds takes, a null id a null element.
+    filmsByProjectedIds(ids: [ID] @nodeId(typeName: "Film")): [Film!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+        method: "filmsByIds",
+        argMapping: "ids: ids.film_id"
+    })
     filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]! @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
         method: "filmsByIds"
@@ -2865,6 +2872,13 @@ type Film implements Node & Searchable @table(name: "film") @node {
     titleTitlecase: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "titleTitlecase"
+    })
+    # A list of composite node ids handing the service one key column: the second of
+    # InventoryUnit's key, store_id, projected out of each id into a List<Integer>.
+    copiesAtStores(units: [ID] @nodeId(typeName: "InventoryUnit")): Int @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmService",
+        method: "copiesAtStores",
+        argMapping: "storeIds: units.store_id"
     })
     # R177 fixture: child @service with a @table-bound (Language) return. The service method
     # returns Map<Record1<Integer>, LanguageRecord>, which post-R177 matches the rows-method's

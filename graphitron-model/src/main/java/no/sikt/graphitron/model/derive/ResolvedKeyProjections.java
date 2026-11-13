@@ -115,7 +115,8 @@ public final class ResolvedKeyProjections {
             .selectDistinct(p.TYPE_NAME, p.FIELD_NAME, p.WRITTEN_PATH, p.TRAILING_NAME,
                 p.NODE_TYPE_NAME, p.COLUMN_NAME)
             .from(p)
-            .where(p.GRAPH_NAME.eq(graphName))
+            // A @service parameter's projection is read by the fetcher the store emits, off the slot.
+            .where(p.GRAPH_NAME.eq(graphName), p.DIRECTIVE_NAME.ne("service"))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.WRITTEN_PATH)
             .fetch(row -> projectionOf(nodeTables, row.value1(), row.value2(), row.value3(),
                 row.value4(), row.value5(), row.value6())));

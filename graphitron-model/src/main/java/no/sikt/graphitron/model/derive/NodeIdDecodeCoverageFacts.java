@@ -25,7 +25,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
@@ -71,7 +75,9 @@ public final class NodeIdDecodeCoverageFacts {
         GRAPHITRON_DIRECTIVE_APPLICATION, GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_ARGUMENT,
         GRAPHQL_FIELD_ELEMENT, GRAPHQL_FIELD, GRAPHQL_ROOT_OPERATION, GRAPHITRON_TYPE,
         INTENT_TYPE_DOMAIN, GRAPHITRON_OCCURRENCE,
-        GRAPHITRON_FIELD, GRAPHITRON_ARGUMENT, INTENT_RESOLVED_NODE_KEY_PROJECTION);
+        GRAPHITRON_FIELD, GRAPHITRON_ARGUMENT, INTENT_RESOLVED_NODE_KEY_PROJECTION,
+        GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION, GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER,
+        GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE, GRAPHITRON_OCCURRENCE_CALL_PARAMETER);
 
     /**
      * One authored decoding instruction at one use site: where it is, what node type it decodes
@@ -262,16 +268,22 @@ public final class NodeIdDecodeCoverageFacts {
      * emitters are wired for. Presence in the view alone would not do: it resolves a projection at
      * every site, and what leaves only the emitting ones is that {@link ArgmappingProjectionDefects}
      * has already failed the build for the rest.
+     *
+     * <p>A {@code @service} parameter's projection is the store-fed emitter's, which decodes every slot
+     * {@code graphitron_occurrence_node_id_shape} states a shape for, so its install is read there,
+     * at the landing occurrence, and the walk-era relation is not asked about that site.
      */
     private static Set<NodeIdDecodeCoordinate> projectedInstalls(DSLContext dsl, String graphName) {
         var v = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         var out = new LinkedHashSet<NodeIdDecodeCoordinate>();
         var occurrences = InputOccurrences.read(dsl, graphName);
+        var walkSites = java.util.EnumSet.copyOf(ArgmappingProjectionDefects.EMITTING_SITES);
+        walkSites.remove(ArgmappingProjectionDefects.Site.SERVICE);
         dsl.selectDistinct(v.BOUND_KIND, v.BOUND_TYPE_NAME, v.BOUND_FIELD_NAME,
                 v.BOUND_ARGUMENT_NAME, v.TYPE_NAME, v.FIELD_NAME)
             .from(v)
             .where(v.GRAPH_NAME.eq(graphName), ArgmappingProjectionDefects.Site.anyOf(
-                ArgmappingProjectionDefects.EMITTING_SITES, v.DIRECTIVE_NAME, v.ELEMENT_KIND))
+                walkSites, v.DIRECTIVE_NAME, v.ELEMENT_KIND))
             .forEach(row -> {
                 if ("ARGUMENT".equals(row.value1())) {
                     out.add(new NodeIdDecodeCoordinate.Argument(
@@ -279,6 +291,30 @@ public final class NodeIdDecodeCoverageFacts {
                 } else {
                     out.addAll(inputFieldUseSites(occurrences, row.value5(), row.value6(),
                         row.value2(), row.value3()));
+                }
+            });
+        var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
+        var sp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+        var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+        var cp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var o = GRAPHITRON_OCCURRENCE;
+        var ra = GRAPHITRON_ARGUMENT;
+        dsl.selectDistinct(o.COORDINATE, o.KIND, ra.TYPE_NAME, ra.FIELD_NAME, ra.ARGUMENT_NAME)
+            .from(pj)
+            .join(sp).on(sp.GRAPH_NAME.eq(pj.GRAPH_NAME), sp.CALL_COORDINATE.eq(pj.CALL_COORDINATE),
+                sp.CALL.eq(pj.CALL), sp.POSITION.eq(pj.POSITION))
+            .join(cp).on(cp.GRAPH_NAME.eq(sp.GRAPH_NAME), cp.COORDINATE.eq(sp.CALL_COORDINATE),
+                cp.CALL.eq(sp.CALL), cp.POSITION.eq(sp.POSITION), cp.CALL_KIND.eq("SERVICE"))
+            .join(d).on(d.GRAPH_NAME.eq(sp.GRAPH_NAME), d.COORDINATE.eq(sp.COORDINATE), d.SLOT.eq(sp.SLOT),
+                d.BOUND.eq(pj.BOUND))
+            .join(o).on(o.GRAPH_NAME.eq(pj.GRAPH_NAME), o.COORDINATE.eq(pj.COORDINATE))
+            .leftJoin(ra).on(ra.GRAPH_NAME.eq(o.GRAPH_NAME), ra.COORDINATE.eq(o.ELEMENT_COORDINATE))
+            .where(pj.GRAPH_NAME.eq(graphName))
+            .forEach(row -> {
+                if ("FIELD_ARGUMENT".equals(row.value2())) {
+                    out.add(new NodeIdDecodeCoordinate.Argument(row.value3(), row.value4(), row.value5()));
+                } else if (occurrences.coordinateOf(row.value1()) != null) {
+                    out.add(occurrences.coordinateOf(row.value1()));
                 }
             });
         return out;

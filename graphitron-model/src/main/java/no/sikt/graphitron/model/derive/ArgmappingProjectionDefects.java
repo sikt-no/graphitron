@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_NODE_KEY_PROJECTIO
 import static no.sikt.graphitron.model.derive.NodeIdMessages.keyColumnsOf;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.nodeIdSpelling;
 import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
+import static org.jooq.impl.DSL.not;
 
 /**
  * The {@code @nodeId} key-projection rules for {@code argMapping}, projected from the store: an
@@ -71,8 +72,8 @@ import static no.sikt.graphitron.model.derive.NodeIdMessages.simpleName;
  * one off a list-shaped node id, are both {@link Rejection.Deferred}. Whether an emitter exists is a
  * fact about this codebase and not about the schema. {@link #EMITTING_SITES} is the first of those
  * facts, held beside the switch that names the five sites so a value can neither be misspelled nor
- * forgotten; the second is the list shape, a coherent request naming the list of a key column across
- * the decoded ids that nothing builds yet. Both shrink as emitters land rather than being deleted,
+ * forgotten; the second is the list shape at every site but {@code @service}, a coherent request
+ * naming the list of a key column across the decoded ids that nothing else builds yet. Both shrink as emitters land rather than being deleted,
  * and a projection either arm covers fails the build saying so, which is the honest state: emitting
  * nothing, or emitting the raw base64, are the two outcomes they exist to prevent.
  *
@@ -99,16 +100,19 @@ public final class ArgmappingProjectionDefects {
     /**
      * The sites whose emitters read a resolved key projection: a routine IN parameter and
      * a {@code @condition} method parameter, both reading their column off a decoded record through
-     * {@code ProjectedKeyReads}. The two condition sites are one emitter, the
-     * conditions class's glue, which is why they were wired together rather than one at a time.
+     * {@code ProjectedKeyReads}, and a {@code @service} parameter, which the fetcher the store emits
+     * decodes into the node's record and reads the column off, one id or a list of them. The two
+     * condition sites are one emitter, the conditions class's glue, which is why they were wired
+     * together rather than one at a time. A {@code @service} field whose fetcher the store does not
+     * emit is refused by the generator, which is the one that knows.
      *
      * <p>Package-visible rather than private because a second reader narrows on it:
      * {@link NodeIdDecodeCoverageFacts} counts a resolved projection as an installed decode exactly
      * where an emitter reads one, and reading that off a list of its own would go quiet the day a
-     * site joins this set. One declaration, two readers.
+     * site joins this set. One declaration, two readers. The {@code @service} site it reads off the
+     * store's decode shape instead, that emitter reading no walk-era projection.
      *
-     * <p>{@code SERVICE} joins when its emitter lands. The input-field {@code @condition} stays out for
-     * a different reason worth stating: its pair rows are keyed by the input type and input field, while
+     * <p>The input-field {@code @condition} stays out for a reason worth stating: its pair rows are keyed by the input type and input field, while
      * the condition row rendering it is keyed by the consuming output field, so the projection relation's
      * coordinate never matches and the lookup misses by construction rather than by omission.
      *
@@ -120,7 +124,7 @@ public final class ArgmappingProjectionDefects {
      * see the directive a pair was spelled on.
      */
     static final Set<Site> EMITTING_SITES =
-        EnumSet.of(Site.ROUTINE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
+        EnumSet.of(Site.ROUTINE, Site.SERVICE, Site.FIELD_CONDITION, Site.ARGUMENT_CONDITION);
 
     /**
      * Where a mapping the projection relations read sits: each directive and element kind
@@ -329,11 +333,18 @@ public final class ArgmappingProjectionDefects {
         "boolean", "Boolean", "byte", "Byte", "char", "Character", "short", "Short",
         "int", "Integer", "long", "Long", "float", "Float", "double", "Double");
 
-    /** The view's six author arms, decoded. */
+    /**
+     * The view's six author arms, decoded, but the type mismatch at a {@code @service} parameter:
+     * the occurrence build judges that parameter against the shape the id decodes into, a {@code List}
+     * of the column for a list of ids, as {@code NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT}, and the view
+     * compares the column with the whole declared type.
+     */
     private static List<Defect> authorDefects(DSLContext dsl, String graphName) {
         var v = INTENT_ARGMAPPING_PROJECTION_DEFECT;
         return dsl.selectFrom(v)
-            .where(v.GRAPH_NAME.eq(graphName))
+            // A @service parameter's type is the occurrence build's to judge, against the decode shape.
+            .where(v.GRAPH_NAME.eq(graphName), not(v.VERDICT.eq("KEY_COLUMN_TYPE_MISMATCH")
+                .and(v.DIRECTIVE_NAME.eq("service"))))
             .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.COORDINATE, v.ORDINAL, v.POSITION)
             .fetch(row -> {
                 var site = Site.of(row.getDirectiveName(), row.getElementKind());
@@ -360,9 +371,9 @@ public final class ArgmappingProjectionDefects {
      *
      * <p>Two deferrals, and they are here rather than in SQL for one reason: each is a fact about
      * this codebase and not about the schema. A site whose emitter does not read a projection yet is
-     * {@link #EMITTING_SITES}' business, and a list-shaped node id is an emitter that does not exist
-     * for a request that is perfectly coherent, the author having named the list of one key column
-     * across the decoded ids. A view cannot see either. Both arms shrink as emitters land, which is
+     * {@link #EMITTING_SITES}' business, and a list-shaped node id off a site other than
+     * {@code @service} is an emitter that does not exist for a request that is perfectly coherent,
+     * the author having named the list of one key column across the decoded ids. A view cannot see either. Both arms shrink as emitters land, which is
      * what distinguishes them from the author defects the view states.
      */
     private static List<Defect> unemittableProjections(DSLContext dsl, String graphName) {
@@ -375,7 +386,8 @@ public final class ArgmappingProjectionDefects {
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.COORDINATE, p.ORDINAL, p.POSITION)
             .fetch()
             .stream()
-            .filter(row -> Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
+            .filter(row -> listDeferred(row.get(p.LEAF_IS_LIST), Site.of(row.get(p.DIRECTIVE_NAME),
+                    row.get(p.ELEMENT_KIND)))
                 || !EMITTING_SITES.contains(Site.of(row.get(p.DIRECTIVE_NAME),
                     row.get(p.ELEMENT_KIND))))
             .map(row -> {
@@ -385,7 +397,7 @@ public final class ArgmappingProjectionDefects {
                     row.get(p.FIELD_NAME), row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH));
                 // The list reason is reported ahead of the unwired-site one where both hold: it is
                 // the shape the author can act on, an unwired site being nothing they control.
-                String why = Boolean.TRUE.equals(row.get(p.LEAF_IS_LIST))
+                String why = listDeferred(row.get(p.LEAF_IS_LIST), site)
                     ? " opens a list of node ids, so it names the list of a key column of '"
                       + row.get(p.NODE_TYPE_NAME)
                       + "' across the decoded ids, which parameter binding does not emit yet"
@@ -399,6 +411,15 @@ public final class ArgmappingProjectionDefects {
                         row.get(p.SOURCE_COLUMN)));
             })
             .toList();
+    }
+
+    /**
+     * Whether a projection off a list of node ids is deferred at {@code site}: everywhere but a
+     * {@code @service} parameter, whose emitter decodes each id of the list and reads the column off
+     * each.
+     */
+    private static boolean listDeferred(Boolean leafIsList, Site site) {
+        return Boolean.TRUE.equals(leafIsList) && site != Site.SERVICE;
     }
 
     /**

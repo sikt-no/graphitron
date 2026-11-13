@@ -158,7 +158,9 @@ A dot opens the thing at that position, and what it opens into depends on what t
 object opens into its fields, which is the case below. An `ID` carrying
 xref:nodeId.adoc[`@nodeId(typeName:)`] opens into the key columns of the node type it names, so the
 segment after it names a key column rather than a field of any SDL type; see
-xref:routine.adoc#node-id-key-projection[Projecting a key column out of a node id]. Nothing else
+xref:routine.adoc#node-id-key-projection[Projecting a key column out of a node id]. At a `@service`
+parameter a list of node ids opens the same way, the parameter taking a `List` of the column, one
+element per id; see xref:nodeId.adoc#key-column-projection[Projecting one key column]. Nothing else
 opens, and a segment on something that does not is a build error.
 
 The common case is a wrapper input, the shape a Relay-style mutation has: the field declares one

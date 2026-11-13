@@ -259,6 +259,47 @@ class ArgmappingProjectionDefectsTest {
     }
 
     /**
+     * A projection off a list of node ids defers where parameter binding does not build the list,
+     * and the deferral says it is the list: a routine IN parameter takes one value.
+     */
+    @Test
+    void aListProjectionDefersAtARoutine() {
+        var violations = detect("""
+            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+                id: ID! @nodeId
+            }
+            type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
+            type Query { rental: Rental, inventory: Inventory }
+            input RentFilmInput { inventoryIds: [ID!]! @nodeId(typeName: "Inventory"), customerId: Int! }
+            type Mutation {
+                rentFilm(input: RentFilmInput!): Rental
+                    @routine(name: "rent_film",
+                             argMapping: "pInventoryId: input.inventoryIds.inventory_id, pCustomerId: input.customerId")
+                    @reference(path: [{table: "rental"}])
+            }
+            """);
+
+        assertThat(violations).hasSize(1);
+        assertThat(violations.getFirst().rejection()).isInstanceOf(Rejection.Deferred.class);
+        assertThat(violations.getFirst().message())
+            .contains("opens a list of node ids, so it names the list of a key column of 'Inventory'");
+    }
+
+    /** The same list at a {@code @service} parameter is built, one column per decoded id, so nothing defers. */
+    @Test
+    void aListProjectionAtAServiceMintsNothing() {
+        assertThat(detect("""
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            type Query {
+                films(ids: [ID] @nodeId(typeName: "Film")): [Film!]!
+                    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+                                       method: "filmsByIds", argMapping: "ids: ids.film_id"})
+            }
+            """))
+            .isEmpty();
+    }
+
+    /**
      * A composite projection is one deferral per bound parameter, not one per key column of the
      * type. The projection relation's grain is the key column, so a read that did not collapse it
      * would report a two-column key twice for one entry.

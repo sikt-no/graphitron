@@ -829,7 +829,11 @@ static method needs no holder.
   changes on purpose, its behaviour does not, save a behaviour ruled a defect. It goes field by
   field as the parts land: `ServiceEmission` emits a field the store states whole, the classified
   emitters the rest, and `EmissionCensusTest` pins the count, 124 of the example schema's services
-  on 2026-11-10, the 3 left being the polymorphic node ids on the `BUILD_REFUSED` line.
+  on 2026-11-10, the 3 left being the polymorphic node ids on the `BUILD_REFUSED` line. Two Java
+  refusals stand in for the store until then, transitional (Alf, 2026-11-13: "as long as we shed it
+  very soon"): `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes`, refusing a
+  key-column projection and an `@outbox` at a `@service` whose fetcher is not emitted from the store.
+  Both go with the last classified service, deleted in the flip's commit.
   * **A built argument decodes what `BuildQuery` refuses today** `open`. `NodeIdDecodeQuery` follows
     the id's stated path. A list of node ids into a class member, a decode into one key value and a
     record's groupings are built; what is left is an id of several node types into a supertype of
@@ -839,13 +843,6 @@ static method needs no holder.
     parameter: an id filling a bean member is never compared. Widened to member slots, the emitter
     dispatches on the type id over the member decodes it already groups, and the three
     `BUILD_REFUSED` services leave the census's exclusions.
-  * **A list of node ids projects its key column through `argMapping`** `open`, E's. A `@service`
-    parameter taking the key column's values of a list of node ids, as opptak's
-    `tilstandForAlleUtdanningstilbud(larestedIder:)` takes `List<String>`, asks for the column with an
-    `argMapping` projection, and the emitter decodes each id and hands over the list of columns. Until it
-    lands, no Graphitron release carries a13964b51d's removal of the single-column unwrap (Alf,
-    2026-11-13): opptak, at FS-plattform main 946fc4aa20, draws `NODE_ID_KEY_ARITY_EXCEEDS_SLOT` there and
-    has no other way through, unless its method changes to take the node's record.
   * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
     At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
     `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and
@@ -2867,9 +2864,17 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`; ask for the column with an `argMapping` entry projecting it, as
   `id: key.film_id`. Used in FS-plattform after all: opptak's
   `Opptak.tilstandForAlleUtdanningstilbud(larestedIder: [ID!] @nodeId(typeName: "URegOrganisasjon"))`
-  (added 2026-11-09, after the check this entry first rested on) takes `List<String>`, and a list has no
-  projection yet. No release carries this change until "A list of node ids projects its key column through `argMapping`" lands, or opptak's method
-  takes the node's record (Alf, 2026-11-13).
+  (added 2026-11-09, after the check this entry first rested on) takes `List<String>`: it asks for the
+  column with `argMapping: "larestedIder: larestedIder.<key column>"`, which a `@service` parameter
+  takes as a list since the entry below. Alf held releases until it could (2026-11-13).
+* **New: a `@service` parameter takes a key column of each of a list of node ids** ("a list of node ids
+  projects its key column at a @service parameter"). An `argMapping` entry projecting a key column out
+  of a `[ID]` `@nodeId` argument, as `storeIds: units.store_id`, hands the parameter a `List` of that
+  column, one element per id in order and a null id a null element; any column of a composite key can
+  be projected. A parameter that is not a `List` of the column's type is
+  `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`, naming `List<...>` as the declaration that takes it. A
+  `@service` field whose fetcher the store does not emit yet is refused, naming why. At a `@routine` or
+  `@condition` parameter a list projection is still deferred.
 * **Breaking: a bean member holding one value no longer takes a node id's single key column**
   ("a bean member is judged as a parameter is"). A `@nodeId` field of an input object built into a
   class lands on its member as on a parameter: the node type's record, a record supertype for an id of

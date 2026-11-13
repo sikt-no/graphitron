@@ -13,6 +13,7 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
@@ -20,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
@@ -186,6 +188,37 @@ public final class BuildQuery {
         nodeIdRoots(store).forEach((root, shapes) -> out.put(root,
             decodeParameter(root.landingCoordinate(), shapes, catalog)));
         return out;
+    }
+
+    /**
+     * A @service parameter an {@code argMapping} pair projects one key column of a node id into: the
+     * call's occurrence, the field it is an occurrence of, the entry as written and where.
+     */
+    public record Projected(String callCoordinate, String fieldCoordinate, String entry, String sourceName,
+                            int line, int column) {}
+
+    /** Every @service parameter a pair projects a key column into, one row per parameter. */
+    public static List<Projected> projected(StoreHandle store) {
+        var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        var pp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
+        var ap = GRAPHITRON_ARGMAPPING_PAIR;
+        var o = GRAPHITRON_OCCURRENCE;
+        return store.dsl().selectDistinct(pj.CALL_COORDINATE, o.ELEMENT_COORDINATE, ap.PARAMETER_NAME, ap.BOUND_TO,
+                ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+            .from(pj)
+            .join(c).on(c.GRAPH_NAME.eq(pj.GRAPH_NAME), c.COORDINATE.eq(pj.CALL_COORDINATE), c.CALL.eq(pj.CALL),
+                c.POSITION.eq(pj.POSITION), c.CALL_KIND.eq("SERVICE"))
+            .join(pp).on(pp.GRAPH_NAME.eq(c.GRAPH_NAME), pp.COORDINATE.eq(c.COORDINATE), pp.CALL.eq(c.CALL),
+                pp.POSITION.eq(c.POSITION))
+            .join(ap).on(ap.GRAPH_NAME.eq(pp.GRAPH_NAME), ap.COORDINATE.eq(pp.PAIR_COORDINATE),
+                ap.DIRECTIVE_NAME.eq(pp.DIRECTIVE_NAME), ap.ORDINAL.eq(pp.ORDINAL), ap.OWNER.eq(pp.OWNER),
+                ap.PARAMETER_NAME.eq(pp.PARAMETER_NAME))
+            .join(o).on(o.GRAPH_NAME.eq(pj.GRAPH_NAME), o.COORDINATE.eq(pj.CALL_COORDINATE))
+            .where(pj.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(pj.CALL_COORDINATE, ap.PARAMETER_NAME)
+            .fetch(r -> new Projected(r.value1(), r.value2(), r.value3() + ": " + r.value4(), r.value5(),
+                r.value6(), r.value7()));
     }
 
     /** A node id parameter's decode shape at one node table, with the key column a pair projects. */

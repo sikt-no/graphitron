@@ -169,6 +169,27 @@ public final class FilmService {
     }
 
     /**
+     * A child service handed one key column of a list of composite node ids: the store each id
+     * names, projected out of {@code InventoryUnit}'s {@code (inventory_id, store_id)} key by its
+     * {@code argMapping}. Counts each film's copies held at those stores; a null id's store is null and
+     * counts nothing.
+     */
+    public static Map<FilmRecord, Integer> copiesAtStores(Set<FilmRecord> films, List<Integer> storeIds,
+                                                          DSLContext dsl) {
+        var counts = dsl.select(Tables.INVENTORY.FILM_ID, DSL.count())
+            .from(Tables.INVENTORY)
+            .where(Tables.INVENTORY.FILM_ID.in(films.stream().map(FilmRecord::getFilmId).toList()),
+                Tables.INVENTORY.STORE_ID.in(storeIds))
+            .groupBy(Tables.INVENTORY.FILM_ID)
+            .fetchMap(Tables.INVENTORY.FILM_ID, DSL.count());
+        Map<FilmRecord, Integer> result = new LinkedHashMap<>();
+        for (FilmRecord film : films) {
+            result.put(film, counts.getOrDefault(film.getFilmId(), 0));
+        }
+        return result;
+    }
+
+    /**
      * A child service whose two arguments are named after neither parameter: each pairs with the
      * parameter of its type, the date by the Java type its scalar's {@code @scalarType} coerces to.
      */

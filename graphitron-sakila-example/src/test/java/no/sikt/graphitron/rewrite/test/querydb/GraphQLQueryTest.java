@@ -8224,6 +8224,39 @@ class GraphQLQueryTest {
             .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
     }
 
+    @Test
+    void filmsByProjectedIds_handsTheServiceEachIdsKeyColumn() {
+        // argMapping "ids: ids.film_id": each wire id decodes into a FilmRecord and the service
+        // takes its film_id, a List<Integer> in id order; a null id is a null element, matching no film.
+        String film1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        String film2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        Map<String, Object> data = execute(
+            "{ filmsByProjectedIds(ids: [\"" + film2 + "\", null, \"" + film1 + "\"]) { title } }");
+        assertThat((List<Map<String, Object>>) data.get("filmsByProjectedIds"))
+            .extracting(f -> f.get("title"))
+            .containsExactly("ACE GOLDFINGER", "ACADEMY DINOSAUR");
+    }
+
+    @Test
+    void copiesAtStores_handsEachFilmTheSecondKeyColumnOfEachCompositeId() {
+        // argMapping "storeIds: units.store_id": store_id is the second of InventoryUnit's
+        // (inventory_id, store_id) key, so each id hands the child service the store it names. The
+        // three copies in the seed data are films 1 to 3, all at store 1.
+        String atStore1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("InventoryUnit", 1, 1);
+        String atStore2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("InventoryUnit", 1, 2);
+        Map<String, Object> store1 = execute(
+            "{ films { filmId copiesAtStores(units: [\"" + atStore1 + "\", null]) } }");
+        assertThat((List<Map<String, Object>>) store1.get("films"))
+            .filteredOn(f -> ((Integer) f.get("filmId")) <= 4)
+            .extracting(f -> f.get("filmId") + ":" + f.get("copiesAtStores"))
+            .containsExactlyInAnyOrder("1:1", "2:1", "3:1", "4:0");
+        Map<String, Object> store2 = execute(
+            "{ films { filmId copiesAtStores(units: [\"" + atStore2 + "\"]) } }");
+        assertThat((List<Map<String, Object>>) store2.get("films"))
+            .extracting(f -> f.get("copiesAtStores"))
+            .containsOnly(0);
+    }
+
     // ===== A polymorphic @nodeId at a @service slot (record-supertype destination) =====
 
     @Test

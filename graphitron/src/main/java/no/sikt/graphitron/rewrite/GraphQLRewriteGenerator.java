@@ -459,7 +459,34 @@ public class GraphQLRewriteGenerator {
      */
     private List<ValidationError> refusals(no.sikt.graphitron.emit.ServiceEmission services) {
         var stored = storedRefusals();
-        return stored.isEmpty() ? unemittedOutboxes(services) : stored;
+        if (!stored.isEmpty()) {
+            return stored;
+        }
+        var out = new ArrayList<>(unemittedOutboxes(services));
+        out.addAll(unemittedProjections(services));
+        return List.copyOf(out);
+    }
+
+    /**
+     * An {@code argMapping} pair projecting a key column of a node id into a {@code @service}
+     * parameter whose field the store does not emit yet: only the fetcher the store emits reads a
+     * projection there, so the field is deferred, naming why its fetcher is not emitted, rather than
+     * handed the encoded id. A deferral and not a store defect: which fetchers this generator emits is
+     * a fact about its code, as the sites {@code ArgmappingProjectionDefects} defers are.
+     */
+    private List<ValidationError> unemittedProjections(no.sikt.graphitron.emit.ServiceEmission services) {
+        return no.sikt.graphitron.emit.BuildQuery.projected(store).stream()
+            .filter(row -> !no.sikt.graphitron.emit.ServiceEmission.EMITTED.equals(services.verdict(row.callCoordinate())))
+            .map(row -> {
+                var rejection = no.sikt.graphitron.model.diagnostics.Rejection.deferred(
+                    "The argMapping entry '" + row.entry() + "' projects a key column of a node id into a @service"
+                    + " parameter, which only the fetcher the store emits reads, and this field's is not emitted"
+                    + " from the store yet (" + services.verdict(row.callCoordinate()) + "): hand the parameter the"
+                    + " node's record or a tuple of its key instead.");
+                return ValidationError.forField(row.fieldCoordinate(), rejection,
+                    new graphql.language.SourceLocation(row.line(), row.column(), row.sourceName()));
+            })
+            .toList();
     }
 
     /**

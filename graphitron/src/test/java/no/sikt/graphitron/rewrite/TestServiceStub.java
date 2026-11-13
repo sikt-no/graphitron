@@ -1116,6 +1116,11 @@ public class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /** A list of one key column's values, as an {@code argMapping} projection out of node ids hands it. */
+    public static Result<FilmRecord> getFilmsByIds(java.util.List<Integer> ids) {
+        throw new UnsupportedOperationException();
+    }
+
     /** A service parameter bound to the {@code brukerId} member of the record handle. */
     public static Long brukerOf(org.jooq.DSLContext dsl, Long brukerId) {
         throw new UnsupportedOperationException();

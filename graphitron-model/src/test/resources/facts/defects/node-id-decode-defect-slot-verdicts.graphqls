@@ -5,7 +5,15 @@
 # that resolve, since the relation is the population the decode does not claim and an absence there
 # is a resolution.
 
-type Film @table(name: "film") @node { title: String }
+type Film @table(name: "film") @node {
+  title: String
+  # A list of composite ids projecting the key's second column into each element of a List<Integer>.
+  copiesAtStores(units: [ID] @nodeId(typeName: "InventoryUnit")): Int
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "copiesAtStores", argMapping: "storeIds: units.store_id"})
+}
+
+# A composite key, (inventory_id, store_id).
+type InventoryUnit @table(name: "inventory") @node(keyColumns: ["inventory_id", "store_id"]) { storeId: Int @field(name: "store_id") }
 
 # A composite key, (actor_id, film_id).
 type FilmActor @table(name: "film_actor") @node { filmId: Int @field(name: "film_id") }
@@ -44,7 +52,10 @@ type Query {
   # ... which a pair projecting the column into the parameter takes as the column's value.
   filmByProjection(ref: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ref.film_id"})
-  # A projected key column is refused at an element of another type.
+  # A list projects the column into each element ...
+  filmsByProjectedIds(ids: [ID] @nodeId(typeName: "Film")): [Film]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds", argMapping: "ids: ids.film_id"})
+  # ... and is refused at an element of another type.
   rateFilmsByProjection(ratings: [ID!] @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "rateFilms", argMapping: "ratings: ratings.film_id"})
   # The node type's own record takes the whole tuple, at any arity.
@@ -132,6 +143,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.rateFilmsByProjection,    NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.util.List<no.sikt.graphitron.rewrite.test.services.FilmRating>: Declare it List<Integer>"
   """)
 
+
 # What the decode lands in at each slot the verdicts read.
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", rows: """
   coordinate,                    kind,      slot_shape, landing_class
@@ -147,9 +159,19 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", ro
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                 bound,             decode_shape
   Query.filmByProjection(ref:), public.film,      KEY_VALUE
+  Query.filmsByProjectedIds(ids:), public.film,  KEY_VALUE
+  Film.copiesAtStores(units:), public.inventory, KEY_VALUE
   Query.assignByFilm(in.film:), public.film,       OWN_RECORD
   Query.filmActorRecord(in:), public.film_actor, OWN_RECORD
   Query.filmByTuple(key:),    public.film,       RECORD_N
   Query.pairByTuple(key:),    public.film_actor, RECORD_N
   Query.pairsByRows(keys:),   public.film_actor, ROW_N
+  """)
+
+# What a pair projects into its parameter: the key position of the column it names, the composite's
+# second as readily as a one-column key's only.
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot_projection", rows: """
+  coordinate,                        bound,            key_position
+  Query.filmsByProjectedIds(ids:),   public.film,      0
+  Film.copiesAtStores(units:),       public.inventory, 1
   """)

@@ -115,6 +115,26 @@ argMapping: "pOrganisasjonskode: input.organisasjonId.organisasjonskode"
 type. `typeName:` is required at such a position: there is no containing table to infer the target
 from. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
 
+At a `@service` method parameter a list of node ids projects too: each id is decoded and the
+parameter takes the named column of each, in the order the ids came, as a `List` of the column's
+type. A null id is a null element. Any key column can be projected, so a composite key hands over
+whichever of its columns the method needs:
+
+[source,graphql]
+----
+type Film @table(name: "film") @node {
+    # InventoryUnit's key is (inventory_id, store_id); the method takes List<Integer> storeIds
+    copiesAtStores(units: [ID] @nodeId(typeName: "InventoryUnit")): Int
+        @service(service: {className: "com.example.FilmService", method: "copiesAtStores",
+                           argMapping: "storeIds: units.store_id"})
+}
+----
+
+A parameter that is not of the column's type, or not a `List` of it for a list of ids, is refused
+at the `@service` reference, naming the declaration that would take it. A list projected at a
+`@routine` or `@condition` parameter is not emitted yet and fails the build saying so, and so does
+a projection at a `@service` whose fetcher is not emitted from the store yet, the message naming why.
+
 [[named-parameter-decode]]
 === Decoding into a producer parameter named for the argument
 
@@ -310,7 +330,7 @@ either resolves or is refused by name, and no arm hands the wire format on.
 * On a filter input field or argument of a query returning a multi-table interface or union, the route from each participant's table to the target is resolved once per participant. A participant with no unique single-hop FK to the target needs its own route: state it with xref:referenceFor.adoc[`@referenceFor`]`(type:, path:)`, which at this coordinate runs from the participant's table toward the target, or hand the whole predicate to your method with xref:condition.adoc[`@condition`]`(override: true)` on the leaf. `override: false` plus an unresolvable route still fails, and a leaf where some participants route and others do not is rejected as a split contract. See xref:../../how-to/global-id.adoc#multitable-filter-inputs[Multitable filter inputs].
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, `[ID!]!`, `[ID]` or `[ID]!` (lists are valid for batch decode).
 * In a list with nullable elements (`[ID]`, `[ID]!`) on a filter, xref:condition.adoc[`@condition`] or xref:service.adoc[`@service`] slot, a `null` element decodes to a key of nulls: a `null` at a one-column key, a row of nulls at a composite one, in the element's own position. As a filter it matches no row, so `[null]` returns nothing rather than the unfiltered table, and `[<id>, null]` returns what `[<id>]` does. An element that is present but malformed or of another type still fails the request.
-* In an `argMapping` path, a `@nodeId` leaf must name `typeName:` explicitly; opening a list of node ids is reported as deferred, that shape naming the list of a key column across the decoded ids and parameter binding not emitting it yet. Whether you have to open the leaf with a key column depends on the node type's key: with one key column you may leave it closed and that column is what the parameter receives, and with more than one the build asks you to name which, one binding carrying one value. Either way the parameter receives a key column's own value and never the encoded id. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
+* In an `argMapping` path, a `@nodeId` leaf must name `typeName:` explicitly; opening a list of node ids is reported as deferred at a `@routine` or `@condition` parameter, that shape naming the list of a key column across the decoded ids and parameter binding there not emitting it yet; a `@service` parameter takes it as a `List` of the column (see <<key-column-projection>>). Whether you have to open the leaf with a key column depends on the node type's key: with one key column you may leave it closed and that column is what the parameter receives, and with more than one the build asks you to name which, one binding carrying one value. Either way the parameter receives a key column's own value and never the encoded id. See xref:routine.adoc#node-id-key-projection[Binding a parameter to a node id's key column].
 
 * A single-valued Java slot carries two preconditions, and the build states whichever one fails. The
   node key must be *one column*, because one slot holds one value; and the slot's declared type must

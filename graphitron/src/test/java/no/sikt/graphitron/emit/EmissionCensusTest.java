@@ -75,7 +75,10 @@ class EmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(125);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(127);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED))
+            .as("a key column projected out of each of a list of node ids, one key and a composite's second")
+            .contains("Query.filmsByProjectedIds", "Film.copiesAtStores");
         // Each line goes as its shape is emitted from the store; a service moving between lines is
         // a change to look at, not to re-pin.
         assertThat(byVerdict)
@@ -216,7 +219,7 @@ class EmissionCensusTest {
             "Store.customersByFirstName customer", "Store.customersByFirstNameSplit customer",
             "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer",
             "Store.customersSeenByUser customer");
-        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(44);
+        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(45);
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
         assertThat(census)
