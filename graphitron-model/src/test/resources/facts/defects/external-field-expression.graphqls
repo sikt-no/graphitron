@@ -4,7 +4,8 @@
 # type, an object type with no @table read off its parent's row, it is the parent's, the chain's
 # anchor. The refusals sit beside them: a reference resolving to a method @externalField cannot
 # call, at the code-references stage; a method typed on a table the field's values are not rows of,
-# at the occurrence-bindings stage; and a written @reference path beside it, which that stage defers.
+# at the occurrence-bindings stage, by its class or by its record argument; and a written @reference
+# path beside it, which that stage defers.
 # A method typed on any table is the near miss.
 
 type Film @table(name: "film") {
@@ -22,6 +23,12 @@ type Film @table(name: "film") {
   "combine(Film, Film) takes two tables."
   combine: String
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmFields"})
+  "nameOfActor(Table<ActorRecord>) names actor's record, and a film's values are rows of film."
+  nameOfActor: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits"})
+  "titleViaImpl(TableImpl<FilmRecord>) takes jOOQ's internal TableImpl, which fits no table."
+  titleViaImpl: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits"})
   "A written path beside it: deferred, and still bound at film, the table the method takes."
   englishByLanguage: Boolean
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
@@ -55,7 +62,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: "k
   Film.helper,            public.film
   Film.isEnglish,         public.film
   Film.labels.lowerTitle, public.film
+  Film.nameOfActor,       public.film
   Film.titleByName,       public.film
+  Film.titleViaImpl,      public.film
   """)
 
 # The expression, where a call was pinned: the method is the call's, and the table fills its one parameter.
@@ -89,4 +98,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   CODE_REFERENCE_METHOD_UNFIT,    Film,  helper,    returns java.lang.String
   EXTERNAL_FIELD_PATH_UNSUPPORTED, Film, englishByLanguage, Film.englishByLanguage
   PARAMETER_MISMATCH, Actor, isEnglish, public.actor
+  PARAMETER_MISMATCH, Film, nameOfActor, public.film
+  PARAMETER_MISMATCH, Film, titleViaImpl, public.film
   """)

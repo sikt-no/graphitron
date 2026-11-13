@@ -140,6 +140,8 @@ The method must be `static`, and it takes at least one table parameter, `Table<?
 
 *The table.* A table parameter receives the table the condition is applied to: the consuming field's own table, each participant's table on a multitable field, or, on an input field carrying `@nodeId`, the table the decoded id identifies, under the `EXISTS` described above.
 
+A parameter accepts a table when it is declared as that table's generated class, or as one of jOOQ's public table types (`Table`, `TableLike`) whose record argument, where it names one, is that table's generated record or one of jOOQ's public record types (`Record`, `TableRecord`, `UpdatableRecord` where the table has a primary key). `Table<FilmRecord>` accepts `film`, `Table<ActorRecord>` accepts `actor` and nothing else, and `Table<? extends UpdatableRecord<?>>` accepts every table with a primary key. jOOQ's internal classes in `org.jooq.impl`, such as `TableImpl`, accept no table, and neither does a class of your own between a generated class and jOOQ's types, a table base or a record interface, nor `Object`. Where overloads accept the same table, the one declared as its generated class is called. The rule is the same for every method graphitron calls with a table, xref:externalField.adoc[`@externalField`] among them.
+
 *The other parameters*, each taking the first of these that applies:
 
 . `$session` or `$session.<member>` written for it in `argMapping:`, the session handle or one member of it.

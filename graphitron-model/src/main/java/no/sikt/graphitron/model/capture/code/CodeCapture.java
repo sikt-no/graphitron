@@ -160,7 +160,10 @@ public final class CodeCapture {
      * gatherer: after the reading, so a name resolves among the rows the reading has just written.
      */
     public static final List<AnchorStage> STAGES = List.of(
-        new AnchorStage("graph-classes", GraphClasses.class, GraphClasses::write));
+        new AnchorStage("graph-classes", GraphClasses.class, GraphClasses::write),
+        // Which catalog tables each table parameter fits, pairing the methods just read with the
+        // catalog the jooq gatherer read before this one.
+        new AnchorStage("method-parameter-tables", MethodParameterTables.class, MethodParameterTables::write));
 
     private static void gather(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {
