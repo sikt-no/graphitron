@@ -464,15 +464,15 @@ class RootLauncherRendererTest {
 
     /**
      * The store's answer for the two connection coordinates these rows render, stated as the value
-     * the renderer reads; which answer the store gives a field is pinned over a fact document by
-     * {@link ConnectionClassPipelineTest}.
+     * the renderer reads; which answer the store gives a field is claimed by the
+     * {@code scenarios/connection-classes} fact document.
      */
     private static final no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections CONNECTIONS =
         new no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections(java.util.Map.of(
             "Query.films", new no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection(
-                "Query", "films", "FilmsConnection", java.util.Set.of("EDGES", "PAGE_INFO", "TOTAL_COUNT")),
+                "Query", "films", "FilmsConnection", true, false),
             "Query.allContent", new no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection(
-                "Query", "allContent", "FilmsConnection", java.util.Set.of("EDGES", "PAGE_INFO", "TOTAL_COUNT"))));
+                "Query", "allContent", "FilmsConnection", true, false)));
 
     private static MethodSpec render(LauncherCommand row) {
         return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED, CONNECTIONS,

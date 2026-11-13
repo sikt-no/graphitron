@@ -1,4 +1,4 @@
-"The class a connection field's producer builds, one field per kind of connection field. The connection type the field returns names the class, and the positions that type fills decide what its constructor takes beyond the page: a count where the type fills TOTAL_COUNT, facets where it fills FACETS. Query.languages is a connection @asConnection synthesises, which counts and carries no facets; Query.filmsByTitle is one whose filter declares a facet, so it also carries facets; Query.filmsPage is an authored connection declaring no totalCount, so it takes no count; Query.films is an authored connection sharing its edge with filmsPage, two classes over one edge; Query.people is a union connection and Film.actors a connection batched over its parents, which name their classes the same way."
+"The class a connection field's producer builds, one field per kind of connection field. The connection type the field returns names the class, and the positions that type fills decide what its constructor takes beyond the page: a count where the type fills TOTAL_COUNT, facets where it fills FACETS. Query.languages is a connection @asConnection synthesises, which counts and carries no facets; Query.filmsByTitle is one whose filter declares a facet, so it also carries facets; Query.filmsPage is an authored connection declaring no totalCount, so it takes no count; Query.films is an authored connection sharing its edge with filmsPage, two classes over one edge; Query.people is a union connection and Film.actors a connection batched over its parents, which name their classes the same way. The first claim is the truth table, one row per field: the class is named by connection_type_name, and counts and faceted say whether its constructor takes a count and facets. The second shows filmsPage and films sharing FilmsEdge."
 type Film @table(name: "film") {
   title: String
   actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery @reference(path: [
@@ -29,24 +29,14 @@ type Query {
   people: [Person!]! @asConnection
 }
 
-extend schema @expectEquals(relation: "graphitron_field_target", where: "wrapper_type_name IS NOT NULL", rows: """
-  type_name, field_name,   target_type_name, wrapper_type_name
-  Film,      actors,       Actor,            ActorsConnection
-  Query,     languages,    Language,         QueryLanguagesConnection
-  Query,     filmsByTitle, Film,             QueryFilmsByTitleConnection
-  Query,     filmsPage,    Film,             FilmsPage
-  Query,     films,        Film,             FilmsConnection
-  Query,     people,       Person,           QueryPeopleConnection
-  """)
-
-extend schema @expectEquals(relation: "graphitron_field_position", where: "position IN ('TOTAL_COUNT', 'FACETS')", rows: """
-  type_name,                   field_name, position
-  ActorsConnection,            totalCount, TOTAL_COUNT
-  QueryLanguagesConnection,    totalCount, TOTAL_COUNT
-  QueryFilmsByTitleConnection, totalCount, TOTAL_COUNT
-  QueryFilmsByTitleConnection, facets,     FACETS
-  FilmsConnection,             totalCount, TOTAL_COUNT
-  QueryPeopleConnection,       totalCount, TOTAL_COUNT
+extend schema @expectEquals(relation: "graphitron_field_connection", rows: """
+  type_name, field_name,   connection_type_name,        counts, faceted
+  Query,     languages,    QueryLanguagesConnection,    TRUE,   FALSE
+  Query,     filmsByTitle, QueryFilmsByTitleConnection, TRUE,   TRUE
+  Query,     filmsPage,    FilmsPage,                   FALSE,  FALSE
+  Query,     films,        FilmsConnection,             TRUE,   FALSE
+  Query,     people,       QueryPeopleConnection,       TRUE,   FALSE
+  Film,      actors,       ActorsConnection,            TRUE,   FALSE
   """)
 
 extend schema @expectEquals(relation: "graphitron_connection", where: "type_name IN ('FilmsConnection', 'FilmsPage')", rows: """

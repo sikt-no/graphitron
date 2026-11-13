@@ -86,6 +86,7 @@ public class StageAnswerAgreementTest {
         new Stage("graphitron_connection", "graphitron_connection_rule"),
         new Stage("graphitron_field_position", "graphitron_field_position_rule"),
         new Stage("graphitron_field_target", "graphitron_field_target_rule"),
+        new Stage("graphitron_field_connection", "graphitron_field_connection_rule"),
         new Stage("graphitron_path_element_key", "graphitron_path_element_key_rule"),
         new Stage("graphitron_path_element_primary_key", "graphitron_path_element_primary_key_rule"),
         new Stage("graphitron_path_element_table", "graphitron_path_element_table_rule"),

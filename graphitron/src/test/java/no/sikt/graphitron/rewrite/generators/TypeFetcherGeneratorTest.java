@@ -551,8 +551,8 @@ class TypeFetcherGeneratorTest {
     //
     // None here. A connection producer names the class its field's type builds from the store's
     // answer for the field, which a hand-built field list has none of, so every connection shape
-    // is pinned where it is generated from a captured graph: the class each producer builds by
-    // ConnectionClassPipelineTest over the connection-classes fact document, and the producers'
+    // is pinned where it is generated from a captured graph: the class each producer builds by the
+    // connection-classes fact document's claim, and the producers'
     // paging, cursors, counts and batching by ConnectionProducersExecutionTest and the
     // *Connection_* execution tests in graphitron-sakila-example's GraphQLQueryTest.
 

@@ -39,6 +39,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONNECTION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_CONNECTION_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -86,9 +88,12 @@ public final class GraphitronAssemblyCapture {
         // The legacy key shape each type id answers to, against the current keys just written.
         new AnchorStage("node-legacy-key-shapes", NodeLegacyKeyShapes.class,
             (dsl, graph, readAt) -> NodeLegacyKeyShapes.derive(dsl, graph)),
-        // Each field's target type, over the population the generator emits.
-        new AnchorStage("field-targets", GraphitronAssemblyCapture.class,
-            GraphitronAssemblyCapture::targets),
+        // Each field's target type, over the population the generator emits, then for each field
+        // returning a connection the class its producer builds, off those targets.
+        new AnchorStage("field-targets", GraphitronAssemblyCapture.class, (dsl, graph, readAt) -> {
+            targets(dsl, graph, readAt);
+            connections(dsl, graph, readAt);
+        }),
         // What each field's written directives claim it runs, off the anchor's fields and
         // applications; the fetchers and the entry defects below read it.
         new AnchorStage("producer-claims", ProducerClaims.class,
@@ -219,6 +224,38 @@ public final class GraphitronAssemblyCapture {
             .execute();
         // The coordinates this reading no longer names, which an upsert cannot find: there is no
         // incoming row to match. A field the author removed goes through the cascade instead.
+        dsl.deleteFrom(target)
+            .where(target.GRAPH_NAME.eq(graph))
+            .and(target.TOUCHED_AT.ne(touchedAt))
+            .execute();
+    }
+
+    /**
+     * Each field returning a connection, with the connection type it returns and whether that type
+     * fills {@code TOTAL_COUNT} and {@code FACETS}: which class the field's producer builds and what
+     * its constructor takes beyond the page. Off the targets {@link #targets} just wrote and the
+     * positions macro expansion wrote before it; the rule is the view beside the table.
+     */
+    static void connections(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var target = GRAPHITRON_FIELD_CONNECTION;
+        var rule = GRAPHITRON_FIELD_CONNECTION_RULE;
+        dsl.insertInto(target)
+            .columns(target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME,
+                target.CONNECTION_TYPE_NAME, target.COUNTS, target.FACETED, target.TOUCHED_AT)
+            .select(dsl
+                .select(rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME,
+                    rule.CONNECTION_TYPE_NAME, rule.COUNTS, rule.FACETED,
+                    val(touchedAt, target.TOUCHED_AT))
+                .from(rule)
+                .where(rule.GRAPH_NAME.eq(graph)))
+            .onConflict(target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME)
+            .doUpdate()
+            .set(target.CONNECTION_TYPE_NAME, excluded(target.CONNECTION_TYPE_NAME))
+            .set(target.COUNTS, excluded(target.COUNTS))
+            .set(target.FACETED, excluded(target.FACETED))
+            .set(target.TOUCHED_AT, excluded(target.TOUCHED_AT))
+            .execute();
+        // A field that stopped returning a connection, which an upsert cannot find.
         dsl.deleteFrom(target)
             .where(target.GRAPH_NAME.eq(graph))
             .and(target.TOUCHED_AT.ne(touchedAt))

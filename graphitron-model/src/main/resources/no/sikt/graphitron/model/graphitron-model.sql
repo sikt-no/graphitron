@@ -8165,6 +8165,50 @@ COMMENT ON VIEW graphitron_field_target_rule IS 'One row the field target rule c
 -- COMMENT ON COLUMN graphitron_field_target_rule.target_type_name IS 'the connection''s item where the field''s named type is a connection, and the named type otherwise';
 -- COMMENT ON COLUMN graphitron_field_target_rule.wrapper_type_name IS 'the field''s named type where it is a connection, and null otherwise';
 
+CREATE TABLE graphitron_field_connection (
+  graph_name           VARCHAR   NOT NULL,
+  type_name            VARCHAR   NOT NULL,
+  field_name           VARCHAR   NOT NULL,
+  connection_type_name VARCHAR   NOT NULL,
+  counts               BOOLEAN   NOT NULL,
+  faceted              BOOLEAN   NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  -- The field's target row, which a field returning a connection has like every other field.
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field_target (graph_name, type_name, field_name) ON DELETE CASCADE,
+  -- The connection it returns, which names the class.
+  FOREIGN KEY (graph_name, connection_type_name)
+    REFERENCES graphitron_connection (graph_name, type_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_connection IS 'A field returning a connection, the connection type it returns and what the class that type names is built from beyond the page: one row per such field. For example films: FilmsConnection, a type declaring totalCount, counts and carries no facets; filmsPage: FilmsPage, declaring neither, does neither; and title: String has no row.';
+COMMENT ON COLUMN graphitron_field_connection.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_connection.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_connection.field_name IS 'the field returning a connection; with the graph and the type, the grain';
+COMMENT ON COLUMN graphitron_field_connection.connection_type_name IS 'the connection type the field returns, graphitron_field_target''s wrapper, which names the class util.Connections holds for it';
+COMMENT ON COLUMN graphitron_field_connection.counts IS 'whether the connection type fills TOTAL_COUNT, so its class has a count member and the constructor a producer calls takes a count';
+COMMENT ON COLUMN graphitron_field_connection.faceted IS 'whether the connection type fills FACETS, so its class has a facets member and the constructor takes facets';
+COMMENT ON COLUMN graphitron_field_connection.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts, so a field that stopped returning a connection leaves';
+
+CREATE VIEW graphitron_field_connection_rule
+  (graph_name, type_name, field_name, connection_type_name, counts, faceted) AS
+SELECT t.graph_name, t.type_name, t.field_name, t.wrapper_type_name,
+       EXISTS (SELECT 1 FROM graphitron_field_position p
+                WHERE p.graph_name = t.graph_name AND p.type_name = t.wrapper_type_name
+                  AND p.position = 'TOTAL_COUNT'),
+       EXISTS (SELECT 1 FROM graphitron_field_position p
+                WHERE p.graph_name = t.graph_name AND p.type_name = t.wrapper_type_name
+                  AND p.position = 'FACETS')
+  FROM graphitron_field_target t
+ WHERE t.wrapper_type_name IS NOT NULL;
+COMMENT ON VIEW graphitron_field_connection_rule IS 'One row the field connection rule computes, in the shape graphitron_field_connection stores: the rule itself, evaluated on demand rather than read off disk. For example the field-targets stage inserts this view''s rows for one graph into graphitron_field_connection, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_field_connection_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_field_connection_rule.type_name IS 'the type owning the field';
+-- COMMENT ON COLUMN graphitron_field_connection_rule.field_name IS 'the field returning a connection';
+-- COMMENT ON COLUMN graphitron_field_connection_rule.connection_type_name IS 'the field''s wrapper';
+-- COMMENT ON COLUMN graphitron_field_connection_rule.counts IS 'whether the wrapper fills TOTAL_COUNT';
+-- COMMENT ON COLUMN graphitron_field_connection_rule.faceted IS 'whether the wrapper fills FACETS';
+
 CREATE TABLE graphitron_entry_defect (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -19632,6 +19676,7 @@ INSERT INTO meta_stage_write VALUES
   ('node-legacy-key-shapes', 'graphitron_node_legacy_key_defect'),
   ('node-legacy-key-shapes', 'graphitron_node_legacy_keycolumn'),
   ('field-targets', 'graphitron_field_target'),
+  ('field-targets', 'graphitron_field_connection'),
   ('producer-claims', 'graphitron_claim'),
   ('binding-claims', 'graphitron_binding_claim'),
   ('binding-claims', 'graphitron_binding_claim_container'),
@@ -22336,6 +22381,14 @@ INSERT INTO meta_relation VALUES
    'One row the field target rule computes, in the shape graphitron_field_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
+  ('graphitron_field_connection', 'graph-field', 'graphitron',
+   'A field returning a connection, the connection type it returns and what the class that type names is built from beyond the page: one row per such field.',
+   'For example films: FilmsConnection, a type declaring totalCount, counts and carries no facets; filmsPage: FilmsPage, declaring neither, does neither; and title: String has no row.',
+   'Which class a connection field''s producer builds and what its constructor takes, decided once at the field''s grain so the producer and the class read one answer rather than each joining the field''s wrapper to the positions it fills. The class is named by the connection type; a count is taken where that type fills TOTAL_COUNT and facets where it fills FACETS, which is graphitron_field_position''s to state. Written by the field-targets stage after the targets it reads, macro expansion having written the positions before it.'),
+  ('graphitron_field_connection_rule', 'graph-field', 'graphitron',
+   'One row the field connection rule computes, in the shape graphitron_field_connection stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the field-targets stage inserts this view''s rows for one graph into graphitron_field_connection, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('intent_type_domain', 'graph-type', 'sdl',
    'The classification domain''s type members: every named type, of every kind, the generator''s intended traversal reaches from its seeds.',
    'For example a graph whose Query.films returns Film draws a row for Query and one for Film, and a type nothing reachable names draws none.',

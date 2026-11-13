@@ -4,6 +4,7 @@ import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import graphql.schema.DataFetchingFieldSelectionSet;
 import no.sikt.graphitron.generated.facts.connection_producers.Graphitron;
+import no.sikt.graphitron.generated.facts.connection_producers.fetchers.AddressFetchers;
 import no.sikt.graphitron.generated.facts.connection_producers.fetchers.FilmFetchers;
 import no.sikt.graphitron.generated.facts.connection_producers.fetchers.QueryFetchers;
 import no.sikt.graphitron.generated.facts.connection_producers.util.ConnectionHelper;
@@ -35,8 +36,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * directly against the shared database: the root producer and the batched one each return the
  * generated connection class its type names, whose edges carry cursors that decode back to the
  * element's key, whose page info is bounded by its first and last element, and whose count runs
- * only when read. The batched producer's parents share one count statement. Every read is over
- * seeded rows: films 1 to 3, and their actors {1, 2}, {1, 3} and {1}.
+ * only when read. The batched producer's parents share one count statement. The same holds over
+ * the union {@code Occupant = Customer | Staff}, whose producers page the participants' keys in one
+ * statement, ordered by key and then type name, and select each participant type's rows in one
+ * statement of its own. Every read is over seeded rows: films 1 to 3, and their actors {1, 2},
+ * {1, 3} and {1}; addresses 1 to 4, and their occupants customers {1, 4}, customers {2, 5} with
+ * staff 2, customer 3 with staff 1, and none.
  */
 @ExecutionTier
 class ConnectionProducersExecutionTest {
@@ -133,5 +138,98 @@ class ConnectionProducersExecutionTest {
 
         assertThat(pages.stream().map(p -> p.totalCount(env)).toList()).containsExactly(2, 2, 1);
         assertThat(statements).as("every parent's count is one grouped statement").hasValue(2);
+    }
+
+    /** The key and type an occupant's cursor decodes back to, as {@code Customer 2}. */
+    private static String occupantOf(String cursor) {
+        Field<?>[] seek = ConnectionHelper.decodeCursor(cursor, List.of(
+            DSL.field(DSL.name("__pk0__"), Integer.class), DSL.field(DSL.name("__typename"), String.class)));
+        return ((Param<?>) seek[1]).getValue() + " " + ((Param<?>) seek[0]).getValue();
+    }
+
+    /** The occupant a node is, read off the type and key the producer selected it by. */
+    private static String occupantOf(Record node) {
+        return node.get("__typename", String.class) + " " + node.get("__pk0__", Integer.class);
+    }
+
+    @Test
+    void thePolymorphicRootProducerBuildsItsConnection_andCountsOnlyWhenRead() {
+        var statements = new AtomicInteger();
+        var dsl = counting(statements);
+        var arguments = new HashMap<String, Object>();
+        arguments.put("addressIds", List.of(2, 3));
+        arguments.put("first", 3);
+        var env = env(dsl, arguments);
+
+        var result = QueryFetchers.occupants(env);
+        assertThat(result.getErrors()).isEmpty();
+        Connections.QueryOccupantsConnection page = result.getData();
+        assertThat(statements).as("the keys are one statement and each participant type's rows one more")
+            .hasValue(3);
+
+        var edges = page.edges();
+        assertThat(edges.stream().map(e -> occupantOf(e.cursor())).toList())
+            .containsExactly("Staff 1", "Customer 2", "Staff 2");
+        assertThat(edges.stream().map(e -> occupantOf(e.node())).toList())
+            .containsExactly("Staff 1", "Customer 2", "Staff 2");
+        var info = page.pageInfo();
+        assertThat(info.hasNextPage()).isTrue();
+        assertThat(info.hasPreviousPage()).isFalse();
+        assertThat(info.startCursor()).isEqualTo(edges.get(0).cursor());
+        assertThat(info.endCursor()).isEqualTo(edges.get(2).cursor());
+        assertThat(statements).as("nothing read so far runs a statement").hasValue(3);
+
+        assertThat(page.totalCount(env)).isEqualTo(5);
+        assertThat(statements).as("reading the count runs it once").hasValue(4);
+
+        // The next page, after the last cursor: the two customers left, with a page behind them.
+        arguments.put("after", info.endCursor());
+        Connections.QueryOccupantsConnection next = QueryFetchers.occupants(env(dsl, arguments)).getData();
+        assertThat(next.edges().stream().map(e -> occupantOf(e.node())).toList())
+            .containsExactly("Customer 3", "Customer 5");
+        assertThat(next.pageInfo().hasNextPage()).isFalse();
+        assertThat(next.pageInfo().hasPreviousPage()).isTrue();
+    }
+
+    @Test
+    void thePolymorphicBatchedProducerBuildsOneConnectionPerParent_andCountsTheBatchInOneStatement() {
+        var statements = new AtomicInteger();
+        var dsl = counting(statements);
+        var env = env(dsl, Map.of("first", 2));
+
+        List<Connections.AddressOccupantsConnection> pages = AddressFetchers.rowsOccupants(
+            List.of(DSL.row(1), DSL.row(2), DSL.row(3), DSL.row(4)), env);
+        assertThat(statements)
+            .as("the batch's keys are one statement and each participant type's rows one more")
+            .hasValue(3);
+
+        assertThat(pages).hasSize(4);
+        assertThat(pages.stream().map(p -> p.edges().stream().map(e -> occupantOf(e.cursor())).toList()).toList())
+            .containsExactly(
+                List.of("Customer 1", "Customer 4"),
+                List.of("Customer 2", "Staff 2"),
+                List.of("Staff 1", "Customer 3"),
+                List.of());
+        assertThat(pages.stream().map(p -> p.edges().stream().map(e -> occupantOf(e.node())).toList()).toList())
+            .containsExactly(
+                List.of("Customer 1", "Customer 4"),
+                List.of("Customer 2", "Staff 2"),
+                List.of("Staff 1", "Customer 3"),
+                List.of());
+        assertThat(pages.stream().map(p -> p.pageInfo().hasNextPage()).toList())
+            .containsExactly(false, true, false, false);
+        assertThat(statements).as("nothing read so far runs a statement").hasValue(3);
+
+        assertThat(pages.stream().map(p -> p.totalCount(env)).toList()).containsExactly(2, 3, 2, 0);
+        assertThat(statements).as("every parent's count is one grouped statement").hasValue(4);
+
+        // The second address's next page, after its last cursor: customer 5 alone.
+        var after = new HashMap<String, Object>();
+        after.put("first", 2);
+        after.put("after", pages.get(1).pageInfo().endCursor());
+        var next = AddressFetchers.rowsOccupants(List.of(DSL.row(2)), env(dsl, after)).get(0);
+        assertThat(next.edges().stream().map(e -> occupantOf(e.node())).toList()).containsExactly("Customer 5");
+        assertThat(next.pageInfo().hasNextPage()).isFalse();
+        assertThat(next.pageInfo().hasPreviousPage()).isTrue();
     }
 }

@@ -215,6 +215,7 @@ public final class SeededStore {
             SELECT graph_name, type_name, field_name, position, CURRENT_TIMESTAMP
               FROM graphitron_field_position_rule
             """);
+        dsl.execute("DELETE FROM graphitron_field_connection");
         dsl.execute("DELETE FROM graphitron_field_target");
         dsl.execute("""
             INSERT INTO graphitron_field_target
@@ -222,6 +223,13 @@ public final class SeededStore {
             SELECT graph_name, type_name, field_name, target_type_name, wrapper_type_name,
                    CURRENT_TIMESTAMP
               FROM graphitron_field_target_rule
+            """);
+        dsl.execute("""
+            INSERT INTO graphitron_field_connection
+              (graph_name, type_name, field_name, connection_type_name, counts, faceted, touched_at)
+            SELECT graph_name, type_name, field_name, connection_type_name, counts, faceted,
+                   CURRENT_TIMESTAMP
+              FROM graphitron_field_connection_rule
             """);
     }
 

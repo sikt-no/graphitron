@@ -378,6 +378,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_connection_rule", Arm.DERIVED);
         registrations.put("graphitron_field_position", Arm.DERIVED);
         registrations.put("graphitron_field_position_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_connection", Arm.DERIVED);
+        registrations.put("graphitron_field_connection_rule", Arm.DERIVED);
         registrations.put("graphitron_type_backing", Arm.DERIVED);
         registrations.put("graphitron_type_backing_rule", Arm.DERIVED);
         registrations.put("code_graph_class", Arm.DERIVED);

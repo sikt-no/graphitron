@@ -1,4 +1,4 @@
-"Connections whose producers a test calls directly: a root connection over the films chosen by id, and each film's actors as a connection batched over its parents, both counting what they page through. The count is a producer of its own, run only when a client reads it."
+"Connections whose producers a test calls directly: a root connection over the films chosen by id, and each film's actors as a connection batched over its parents, both counting what they page through; and the same two over a union, Customer | Staff: a root connection over the occupants of the addresses chosen by id, and each address's occupants as a connection batched over its parents. The count is a producer of its own, run only when a client reads it."
 type Film @table(name: "film") {
   title: String
   actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery @reference(path: [
@@ -7,6 +7,12 @@ type Film @table(name: "film") {
   ]) @defaultOrder(primaryKey: true)
 }
 type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+union Occupant = Customer | Staff
+type Address @table(name: "address") {
+  occupants: [Occupant!]! @asConnection
+}
 
 type FilmsConnection { edges: [FilmsEdge!]! nodes: [Film!]! pageInfo: PageInfo! totalCount: Int }
 type FilmsEdge { cursor: String! node: Film! }
@@ -16,10 +22,14 @@ type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: Str
 
 type Query {
   films(filmIds: [Int!] @field(name: "film_id"), first: Int, last: Int, after: String, before: String): FilmsConnection @defaultOrder(primaryKey: true)
+  occupants(addressIds: [Int!] @field(name: "address_id")): [Occupant!]! @asConnection
+  address(addressId: Int! @field(name: "address_id")): Address
 }
 
 extend schema @expectEquals(relation: "graphitron_producer", where: "kind = 'COUNT'", rows: """
-  type_name,        field_name, kind
-  ActorsConnection, totalCount, COUNT
-  FilmsConnection,  totalCount, COUNT
+  type_name,                  field_name, kind
+  ActorsConnection,           totalCount, COUNT
+  AddressOccupantsConnection, totalCount, COUNT
+  FilmsConnection,            totalCount, COUNT
+  QueryOccupantsConnection,   totalCount, COUNT
   """)

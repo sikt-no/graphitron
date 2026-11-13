@@ -268,8 +268,8 @@ class BatchedTableFieldPipelineTest {
     }
 
     // Connection cardinality: none here. The class a batched connection's producer builds is the
-    // store's answer for the field, so it is pinned over captured graphs: the class by
-    // ConnectionClassPipelineTest, the producers' typed return and one-statement batching by
+    // store's answer for the field, so it is pinned over captured graphs: the class by the
+    // connection-classes fact document, the producers' typed return and one-statement batching by
     // ConnectionProducersExecutionTest, and the per-parent scatter, counts and @orderBy partitions
     // by GraphQLQueryTest's splitQueryConnection_* execution tests.
 
