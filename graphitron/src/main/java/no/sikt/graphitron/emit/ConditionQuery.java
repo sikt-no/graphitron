@@ -44,7 +44,7 @@ import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.inline;
-import static org.jooq.impl.DSL.selectCount;
+import static org.jooq.impl.DSL.countDistinct;
 
 /**
  * The condition emitter's query: for every field occurrence whose arguments or input fields bind a
@@ -74,19 +74,25 @@ public final class ConditionQuery {
 
     /**
      * One argument or input field's filter: its occurrence, its path of names from the argument, the
-     * column it binds where it binds one rather than a node id, its type's kind, whether it is a node
-     * id or a {@code @lookupKey}, its path's origin, the steps the path takes from the field's table
+     * column it binds where it binds one rather than a node id, its type's kind, how many node tables
+     * a node id there binds, none where it is no node id, whether it is a {@code @lookupKey}, its
+     * path's origin, the steps the path takes from the field's table
      * to the column's, none on an empty path, the record class of the table the path lands on,
      * which a node id decodes into, and the list occurrences above it it is read once per element of.
      */
     public record Term(String coordinate, ArgumentPaths.Path path, Column column, String typeKind,
-                       boolean nodeId, boolean lookupKey, String origin, List<Step> steps,
+                       int nodeIdBindings, boolean lookupKey, String origin, List<Step> steps,
                        String landingRecordClass, List<ListAbove> lists) {
         public Term {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(path, "path");
             steps = List.copyOf(steps);
             lists = List.copyOf(lists);
+        }
+
+        /** Whether the term is a node id. */
+        public boolean nodeId() {
+            return nodeIdBindings > 0;
         }
 
         /** The names from the argument down to this term. */
@@ -162,13 +168,12 @@ public final class ConditionQuery {
      * One field occurrence's filters on one table its rows are, a row of its {@code TABLE} binding: the
      * occurrence, what it produces where it produces anything, the table, the generated terms in
      * coordinate order but those an {@code override: true} suppresses, the {@code @condition} calls
-     * applied there in coordinate order, a condition on a node id's table among them, how many tables
-     * the field filters, more than one where its rows are a polymorphic type's participants on tables
-     * of their own, and whether a call reads the request context or the session, which the emitted
+     * applied there in coordinate order, a condition on a node id's table among them, and whether a
+     * call reads the request context or the session, which the emitted
      * method then takes.
      */
     public record Row(String coordinate, String producerKind, LiftQuery.Table table, List<Term> terms,
-                      List<Call> calls, int tables, boolean takesEnv, boolean takesDsl) {
+                      List<Call> calls, boolean takesEnv, boolean takesDsl) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(table, "table");
@@ -177,7 +182,7 @@ public final class ConditionQuery {
         }
     }
 
-    private record Raw(String coordinate, Column column, String typeKind, boolean nodeId, boolean lookupKey,
+    private record Raw(String coordinate, Column column, String typeKind, int nodeIdBindings, boolean lookupKey,
                        String origin, String targetType, String landingRecordClass, List<ListAbove> lists) {}
 
     private record Applied(Call call, boolean override) {}
@@ -194,7 +199,6 @@ public final class ConditionQuery {
         // The rows: a field and each table it is bound to, where its query starts and its filter
         // applies.
         var rb = GRAPHITRON_OCCURRENCE_BINDING_TABLE.as("rb");
-        var rb2 = GRAPHITRON_OCCURRENCE_BINDING_TABLE.as("rb2");
         var fo = GRAPHITRON_OCCURRENCE.as("fo");
         var rbGraph = rb.GRAPH_NAME;
         var rbCoordinate = rb.COORDINATE;
@@ -227,6 +231,10 @@ public final class ConditionQuery {
         var landingSchema = coalesce(jp.TARGET_SCHEMA, pn.LANDING_SCHEMA);
         var landingTable = coalesce(jp.TARGET_TABLE, pn.LANDING_TABLE);
         var nodeId = field(exists(selectOne().from(n).where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE))));
+        // A node id under a field over several tables binds one node table, or one per participant
+        // where each decodes the id as a node of its own.
+        var nodeIdBindings = field(select(countDistinct(n.BOUND)).from(n)
+            .where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE)));
         // A term is a lookup's key where the argument it is read from carries @lookupKey: the argument
         // itself, or every input field under it.
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
@@ -243,7 +251,7 @@ public final class ConditionQuery {
                 .orderBy(le.LIST_COORDINATE))
             .convertFrom(r -> r.map(Records.mapping(ListAbove::new)));
         var terms = multiset(
-            select(o.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeId,
+            select(o.COORDINATE, c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, ty.KIND, nodeIdBindings,
                 field(exists(selectOne().from(ao).join(d).on(d.GRAPH_NAME.eq(ao.GRAPH_NAME),
                         d.COORDINATE.eq(ao.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey"))
                     .where(ao.GRAPH_NAME.eq(o.GRAPH_NAME), ao.COORDINATE.eq(o.ARGUMENT_COORDINATE)))),
@@ -316,13 +324,11 @@ public final class ConditionQuery {
                     coalesce(co.FIELD_COORDINATE, co.COORDINATE).eq(rbCoordinate),
                     cc.BOUND.eq(rbBound).or(cb.KIND.eq("NODE_ID")))
                 .orderBy(cc.COORDINATE));
-        var tables = field(selectCount().from(rb2)
-            .where(rb2.GRAPH_NAME.eq(rbGraph), rb2.COORDINATE.eq(rbCoordinate)));
 
         var out = new ArrayList<Row>();
         store.dsl()
             .select(rbCoordinate, rp.KIND, rt.TABLE_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN, rt.JOOQ_NAME,
-                rt.RECORD_CLASS_FQN, terms, calls, tables)
+                rt.RECORD_CLASS_FQN, terms, calls)
             .from(rb)
             .join(fo).on(fo.GRAPH_NAME.eq(rbGraph), fo.COORDINATE.eq(rbCoordinate), fo.KIND.eq("FIELD"))
             .join(rt).on(rt.SOURCE_NAME.eq(rbSource), rt.TABLE_SCHEMA.eq(rbSchema),
@@ -343,11 +349,11 @@ public final class ConditionQuery {
                 var overriding = applied.stream().filter(Applied::override).map(x -> x.call().coordinate()).toList();
                 var written = r.value8().stream()
                     .map(t -> new Raw(t.value1(), t.value2() == null ? null : new Column(t.value9(), t.value2(),
-                        t.value3(), t.value4()), t.value5(), Boolean.TRUE.equals(t.value6()),
+                        t.value3(), t.value4()), t.value5(), t.value6() == null ? 0 : t.value6(),
                         Boolean.TRUE.equals(t.value7()), t.value8(), t.value10(), t.value11(), t.value12()))
                     .filter(raw -> overriding.stream().noneMatch(at -> under(raw.coordinate(), at, parents)))
                     .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()), raw.column(), raw.typeKind(),
-                        raw.nodeId(), raw.lookupKey(), raw.origin(),
+                        raw.nodeIdBindings(), raw.lookupKey(), raw.origin(),
                         steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
                         raw.landingRecordClass(), raw.lists()))
                     .toList();
@@ -358,7 +364,7 @@ public final class ConditionQuery {
                 var kinds = made.stream().flatMap(x -> x.fills().stream()).map(Fill::fill).toList();
                 out.add(new Row(r.value1(), r.value2(),
                     new LiftQuery.Table(r.value3(), r.value4(), r.value5(), r.value6(), r.value7()), written, made,
-                    r.value10(), kinds.contains("CONTEXT_KEY"),
+                    kinds.contains("CONTEXT_KEY"),
                     kinds.contains("SESSION") || kinds.contains("SESSION_MEMBER")));
             });
         return out;

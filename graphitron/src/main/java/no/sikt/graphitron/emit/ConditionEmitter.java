@@ -99,8 +99,10 @@ public final class ConditionEmitter {
         /** A term is a node id the store cannot state a decode of into the table it lands on. */
         NODE_ID,
         /**
-         * A term is a node id under a field whose rows are participants on tables of their own, where an
-         * id of another participant's type answers no row rather than a refusal.
+         * A term is a node id each participant of its field decodes as a node of its own, binding one
+         * node table per participant, where an id of another participant's type answers no row on
+         * that branch rather than a refusal. A node id naming one node type binds one table and is
+         * decoded on every participant alike.
          */
         NODE_ID_PARTICIPANT,
         /**
@@ -539,7 +541,7 @@ public final class ConditionEmitter {
     private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term,
                                               NodeIdDecodeQuery decodes) {
         if (term.nodeId()) {
-            if (row.tables() > 1) return Optional.of(Reason.NODE_ID_PARTICIPANT);
+            if (term.nodeIdBindings() > 1) return Optional.of(Reason.NODE_ID_PARTICIPANT);
             if (decodeOnto(row, term, decodes).isEmpty()) return Optional.of(Reason.NODE_ID);
             return Optional.empty();
         }

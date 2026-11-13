@@ -1,0 +1,52 @@
+# A node id filtering a field over a union: where each participant decodes the id as a node of its
+# own, it binds one node table per participant, and where it names one node type it binds that
+# node's table alone, every participant decoding it alike: through a foreign key of its own, or
+# through a path each participant states with @referenceFor.
+
+interface Node { id: ID! }
+
+type Customer implements Node @table(name: "customer") @node { id: ID! }
+type Staff implements Node @table(name: "staff") @node { id: ID! }
+type Address implements Node @table(name: "address") @node { id: ID! }
+type LanguageNode implements Node @table(name: "language") @node { id: ID! }
+
+union AddressOccupant = Customer | Staff
+
+type StockFilm @table(name: "film") { filmId: Int! @field(name: "film_id") }
+type StockInventory @table(name: "inventory") { inventoryId: Int! @field(name: "inventory_id") }
+union LanguageStock = StockFilm | StockInventory
+
+input LanguageStockFilter {
+  languageId: ID @nodeId(typeName: "LanguageNode")
+    @referenceFor(type: "StockFilm", path: [{key: "film_language_id_fkey"}])
+    @referenceFor(type: "StockInventory", path: [{key: "inventory_film_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+
+type Query {
+  # Each participant decodes the id as its own node.
+  occupantById(id: ID! @nodeId): AddressOccupant
+  # One node type, which both participants reference over a foreign key of their own.
+  occupantsByAddress(addressId: [ID!] @nodeId(typeName: "Address")): [AddressOccupant!]!
+  # One node type, each participant reaching it over the path it states.
+  stockByLanguage(filter: LanguageStockFilter): [LanguageStock!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate LIKE 'Query.%'", rows: """
+  coordinate,                               bound,           node_type_name
+  Query.occupantById(id:),                  public.customer, Customer
+  Query.occupantById(id:),                  public.staff,    Staff
+  Query.occupantsByAddress(addressId:),     public.address,  Address
+  Query.stockByLanguage(filter.languageId:), public.language, LanguageNode
+  """)
+
+# Each field filters every table its rows are on.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_table",
+    where: "coordinate IN ('Query.occupantById', 'Query.occupantsByAddress', 'Query.stockByLanguage')", rows: """
+  coordinate,               table_name
+  Query.occupantById,       customer
+  Query.occupantById,       staff
+  Query.occupantsByAddress, customer
+  Query.occupantsByAddress, staff
+  Query.stockByLanguage,    film
+  Query.stockByLanguage,    inventory
+  """)

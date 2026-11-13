@@ -205,6 +205,7 @@ class EmissionCensusTest {
             "Query.filmsWithMultiImplicit film", "Query.filmsWithNestedImplicit film",
             "Query.inventoryItemsByIds inventory", "Query.languagesByKeyFiltered language",
             "Query.languagesByKeyGenerated language", "Query.levelIntervals level_interval",
+            "Query.occupantsByAddress customer", "Query.occupantsByAddress staff",
             "Query.occupantsByFilter customer", "Query.occupantsByFilter staff",
             "Query.occupantsByMixedNamePrefix customer", "Query.occupantsByMixedNamePrefix staff",
             "Query.occupantsByName customer", "Query.occupantsByName staff",
@@ -216,7 +217,8 @@ class EmissionCensusTest {
             "Query.presenceDetail presence_detail", "Query.presenceDetailNode presence_detail",
             "Query.presenceDetailRequired presence_detail", "Query.presenceHostRefs presence_host",
             "Query.presenceHosts presence_host", "Query.rentalsByInventoryItem rental",
-            "Query.splitFilterParentsByTargetLabel split_filter_parent", "Query.xlatChildByParentId xlat_child",
+            "Query.splitFilterParentsByTargetLabel split_filter_parent", "Query.stockByLanguage film",
+            "Query.stockByLanguage inventory", "Query.xlatChildByParentId xlat_child",
             "Query.xlatChildrenByFilter xlat_child", "Query.xlatChildrenByParentIds xlat_child",
             "Query.xlatCompChildrenByParentIds xlat_comp_child", "SessionStore.customersOfPrincipal customer",
             "Store.customersByFirstName customer", "Store.customersByFirstNameSplit customer",
@@ -237,11 +239,9 @@ class EmissionCensusTest {
                 "Query.converterCampusTermsByNodeIds converter_campus_term",
                 "Query.converterIdChangeByNodeId converter_id_change"))
             .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
-                "Query.occupantByOptionalId staff", "Query.occupantsByAddress customer",
-                "Query.occupantsByAddress staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
+                "Query.occupantByOptionalId staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
                 "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",
-                "Query.occupantsByNullableIds customer", "Query.occupantsByNullableIds staff",
-                "Query.stockByLanguage film", "Query.stockByLanguage inventory"))
+                "Query.occupantsByNullableIds customer", "Query.occupantsByNullableIds staff"))
             .containsEntry("NOTHING", List.of("Film.actors actor", "Film.actorsBySplitLookup actor", "Film.actorsOrderedBySplitLookup actor",
                 "Film.filmDetails.actorsByLookup actor", "Film.info.castByKey actor",
                 "Film.inlineBundle.actorsByKey actor", "Film.inlineBundle.actorsByKeyViaJunctionCondition actor",
