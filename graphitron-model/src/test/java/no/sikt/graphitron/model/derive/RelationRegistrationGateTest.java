@@ -255,6 +255,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphql_element_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_node", Arm.DERIVED);
+        registrations.put("graphitron_node_table", Arm.DERIVED);
+        registrations.put("graphitron_node_table_rule", Arm.DERIVED);
         registrations.put("graphitron_key_field_binding", Arm.DERIVED);
         registrations.put("graphitron_minted_key", Arm.DERIVED);
         registrations.put("graphitron_voucher_member", Arm.DERIVED);

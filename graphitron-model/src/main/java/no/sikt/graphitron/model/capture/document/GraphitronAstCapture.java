@@ -6,6 +6,7 @@ import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.VoucherMembers;
 import no.sikt.graphitron.model.derive.Vouchers;
+import no.sikt.graphitron.model.derive.NodeTables;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -158,7 +159,11 @@ public final class GraphitronAstCapture {
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
         // written and corpora captured before this one, and the mint below reads the second.
         new AnchorStage("table-types", TableTypes.class, (dsl, graph, readAt) -> TableTypes.derive(dsl, graph)),
-        new AnchorStage("nodes", Nodes.class, (dsl, graph, readAt) -> Nodes.derive(dsl, graph)),
+        new AnchorStage("nodes", Nodes.class, (dsl, graph, readAt) -> {
+            Nodes.derive(dsl, graph);
+            NodeTables.write(dsl, graph, readAt);
+            NodeTables.sweep(dsl, graph, readAt);
+        }),
         // Each voucher member's column and scalar and each claim's member, read over the tables and
         // nodes just written, with the issuing side's refusals.
         new AnchorStage("vouchers", Vouchers.class, Vouchers::derive),

@@ -1242,11 +1242,6 @@ before `generate` does.
     stay in `graphitron_entry_defect_rule`; the input field arm reads `graphql_field` and
     `graphql_field_element`, which the expanded-population reader gate refuses in a new view, so it
     moves once that arm reads the `graphitron_field` anchors.
-  * **"The one node over a table" is stated once** `open`. The node id rule's four inferring arms,
-    both `NODE_ID_TARGET_*` defects and `outbox_key_rule`'s node table each count the nodes over a
-    table themselves. An anchored relation, one row per graph and table at least one node declares
-    itself over, with the count, is read by all of them; the two defects then key on a missing
-    binding and that count, and the outbox root arm can read the written table's binding instead.
   * **A DELETE payload's `ID` carrier binds against the written table** `open`. The carrier's
     `ID` element under a write takes the written table's one node as a write's bare `ID` return
     does, so `NODE_ID_TARGET_UNRESOLVED` and `NODE_ID_TARGET_AMBIGUOUS` state its refusals and the
