@@ -430,6 +430,11 @@ public final class RootLauncherRenderer {
             .add(".limit(page.limit())\n")
             .add(".fetch();\n")
             .unindent();
+        if (built.faceted() != (connection.facets() != null)) {
+            throw new IllegalStateException("Graphitron generator bug: the store says connection '"
+                + built.connectionTypeName() + "' is " + (built.faceted() ? "" : "not ")
+                + "faceted, but its root producer's facet plan says otherwise");
+        }
         CodeBlock facetsOf = null;
         if (connection.facets() != null) {
             code.add(facetBindings(connection, fromLocal, aliasLocal));
@@ -498,6 +503,11 @@ public final class RootLauncherRenderer {
             .unindent();
         // No facet plan: an interface-element carrier is rejected at the SDL boundary, so the
         // producer never lands a plan on this coordinate.
+        if (built.faceted()) {
+            throw new IllegalStateException("Graphitron generator bug: connection '"
+                + built.connectionTypeName() + "' over an interface element is faceted in the store, "
+                + "which the SDL boundary refuses");
+        }
         code.addStatement("$T pageCondition = condition", CONDITION);
         code.addStatement("return $L", ConnectionConstruction.build(helperClass, built,
             "result", scopedCount(helperClass, tableLocal, carrierDsl), null));
