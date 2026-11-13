@@ -11460,6 +11460,25 @@ COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence col
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.column_name IS 'the one column the spelling names there';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.matched_by IS 'which name it met';
 
+CREATE TABLE graphitron_occurrence_nesting (
+  graph_name  VARCHAR   NOT NULL,
+  coordinate  VARCHAR   NOT NULL,
+  target_type VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  -- The empty path it rests on: a nesting field is one because nothing lies between it and its
+  -- parent's row, so it goes when that path does.
+  FOREIGN KEY (graph_name, coordinate, target_type)
+    REFERENCES graphitron_path (graph_name, coordinate, target_type) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_nesting IS 'An occurrence that is a nesting field, its fields read off its parent''s row: one row per such occurrence. For example Film.details, a single FilmDetails with no table of its own reached by an empty path, whose length and lastUpdate are columns of the film row.';
+COMMENT ON COLUMN graphitron_occurrence_nesting.graph_name IS 'the owning graph''s partition, carried from the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_nesting.coordinate IS 'the nesting occurrence; with the graph, the key and a reference into graphitron_occurrence';
+COMMENT ON COLUMN graphitron_occurrence_nesting.target_type IS 'the object type it returns, which binds no table; with the coordinate a reference to the empty path meeting its need';
+COMMENT ON COLUMN graphitron_occurrence_nesting.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 
 CREATE TABLE graphitron_occurrence_producer (
   graph_name VARCHAR   NOT NULL,
@@ -11482,6 +11501,28 @@ COMMENT ON COLUMN graphitron_occurrence_producer.coordinate IS 'the producing oc
 COMMENT ON COLUMN graphitron_occurrence_producer.kind IS 'what it runs, in graphitron_producer''s vocabulary: SELECT, LOOKUP, COUNT, FACETS, a write, ROUTINE or SERVICE';
 COMMENT ON COLUMN graphitron_occurrence_producer.start IS 'ROOT for an occurrence on a root type, which has no source and executes from nothing; CHILD for one that starts its own query from what its parent produced';
 COMMENT ON COLUMN graphitron_occurrence_producer.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_nesting_rule (graph_name, coordinate, target_type) AS
+-- A single object with no table and no producer of its own, whose need is met by an empty path: a
+-- list, a table-bound object, a producer's result or anything read down a path is no nesting field.
+SELECT o.graph_name, o.coordinate, p.target_type
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type gt ON gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
+  JOIN graphitron_path p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.target_type = ft.target_type_name
+ WHERE o.kind = 'FIELD' AND f.list_depth = 0 AND gt.kind = 'OBJECT'
+   AND p.kind = 'JOIN' AND p.origin = 'EMPTY'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                     WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer op
+                     WHERE op.graph_name = o.graph_name AND op.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_occurrence_nesting_rule IS 'One row the occurrence nesting rule computes, in the shape graphitron_occurrence_nesting stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_nesting, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_nesting_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_nesting.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_nesting_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_nesting.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_nesting_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_occurrence_nesting.target_type';
 
 
 -- A call's candidate methods, each of whose parameters the fills below are stated for, and the one
@@ -21298,6 +21339,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_entry_defect'),
   ('occurrence-bindings', 'graphitron_occurrence_binding'),
   ('occurrence-bindings', 'graphitron_occurrence_column'),
+  ('occurrence-bindings', 'graphitron_occurrence_nesting'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id'),
   ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
   ('occurrence-producers', 'graphitron_occurrence_call'),
@@ -22553,6 +22595,14 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the tables are what readers join, and the rule stays runnable beside them.'),
+  ('graphitron_occurrence_nesting', 'graph-occurrence', 'graphitron',
+   'An occurrence that is a nesting field, its fields read off its parent''s row: one row per such occurrence.',
+   'For example Film.details, a single FilmDetails with no table of its own reached by an empty path, whose length and lastUpdate are columns of the film row.',
+   'Stated at the occurrence, not the field: whether a field''s fields are read off its parent''s row is its path''s, and one field reached from two places can be a nesting field at one and read down a path at the other. Stored once for every reader that projects a row, the projection unit and the discriminated lift, rather than each deriving it from the reader, target, list and path facts it rests on.'),
+  ('graphitron_occurrence_nesting_rule', 'graph-occurrence', 'graphitron',
+   'One row the occurrence nesting rule computes, in the shape graphitron_occurrence_nesting stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_nesting, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_node_id', 'occurrence-node-id-key', 'graphitron',
    'One key column a node id at an occurrence packs or unpacks: one row per occurrence, node table and key position.',
    'For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.',

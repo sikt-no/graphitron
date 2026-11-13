@@ -1,0 +1,38 @@
+"A nesting field is an occurrence whose fields are read off its parent's row: a single object with no table and no producer of its own, reached by an empty path. Film.details and Film.facts are; a table-bound object (Film.language), a list of one (Film.actors) and a plain object a producer hands back (Query.serviceFilmById) are not, nor is a nesting field's own scalar. A plain object down a written path is refused (REFERENCE_WITHOUT_TARGET_TABLE), so it has no occurrence to miss."
+
+type Film @table(name: "film") {
+  "A single plain object on the film row: a nesting field."
+  details: FilmDetails
+  "Non-null, the same."
+  facts: FilmDetails!
+  "A table-bound object: read down its path, not off the film row."
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  "A list of a table-bound type."
+  actors: [Actor!]! @reference(path: [{table: "film_actor"}, {table: "actor"}])
+}
+
+"Read off the film row it is nested under."
+type FilmDetails {
+  length: Int
+  releaseYear: Int @field(name: "release_year")
+}
+
+type Language @table(name: "language") { name: String }
+
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+
+"A service's result: what its producer hands back, read off that, never off a parent's row."
+type FilmServicePayload { film: Film }
+
+type Query {
+  films: [Film!]!
+  "A single plain object a producer hands back: no nesting field."
+  serviceFilmById(id: Int!): FilmServicePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_nesting", rows: """
+  coordinate,   target_type
+  Film.details, FilmDetails
+  Film.facts,   FilmDetails
+  """)

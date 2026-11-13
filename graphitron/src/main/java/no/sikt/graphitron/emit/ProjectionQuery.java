@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
@@ -63,12 +64,13 @@ public final class ProjectionQuery {
      * binds, the key columns its node id packs in key order, the origin of each path that meets
      * one of its needs, the side its field is fetched on with the producer's kind or the reader's
      * way of reading, the type it returns and whether that type is table-bound or a pivot's result,
-     * and the occurrences nested beneath it in the order their fields are declared.
+     * whether it is a nesting field, its fields read off its parent's row, and the occurrences
+     * nested beneath it in the order their fields are declared.
      */
     public record Arm(String coordinate, List<String> chain, boolean nonNull, int listDepth,
                       List<Column> columns, List<Column> nodeKeys, List<String> pathOrigins, String side,
                       String producerKind, String reads, String targetType, boolean targetTable,
-                      boolean pivot, List<Arm> nested) {
+                      boolean pivot, boolean nesting, List<Arm> nested) {
         public Arm {
             Objects.requireNonNull(coordinate, "coordinate");
             chain = List.copyOf(chain);
@@ -125,6 +127,7 @@ public final class ProjectionQuery {
         var pv = GRAPHITRON_RESULT_PIVOT;
         var oc = GRAPHITRON_OCCURRENCE_COLUMN;
         var on = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var ns = GRAPHITRON_OCCURRENCE_NESTING;
         var p = GRAPHITRON_PATH;
         var c = SQL_COLUMN;
         var facts = new LinkedHashMap<String, Fact>();
@@ -149,7 +152,8 @@ public final class ProjectionQuery {
                     .convertFrom(rs -> rs.map(rec -> rec.value1())),
                 fe.SIDE, pr.KIND, rd.READS, ft.TARGET_TYPE_NAME, target.TYPE_NAME,
                 exists(selectOne().from(pv).where(pv.GRAPH_NAME.eq(f.GRAPH_NAME),
-                    pv.PIVOT_TYPE_NAME.eq(f.TYPE_NAME), pv.PIVOT_FIELD_NAME.eq(f.FIELD_NAME))))
+                    pv.PIVOT_TYPE_NAME.eq(f.TYPE_NAME), pv.PIVOT_FIELD_NAME.eq(f.FIELD_NAME))),
+                exists(selectOne().from(ns).where(ns.GRAPH_NAME.eq(o.GRAPH_NAME), ns.COORDINATE.eq(o.COORDINATE))))
             .from(o)
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .leftJoin(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
@@ -165,7 +169,8 @@ public final class ProjectionQuery {
             .forEach(r -> facts.put(r.value1(), new Fact(r.value1(), r.value2(), r.value3(), r.value4(),
                 Boolean.TRUE.equals(r.value5()), r.value6() == null ? 0 : r.value6(),
                 r.value7() == null ? 0 : r.value7(), r.value8(), r.value9(), r.value10(), r.value11(),
-                r.value12(), r.value13(), r.value14(), r.value15() != null, Boolean.TRUE.equals(r.value16()))));
+                r.value12(), r.value13(), r.value14(), r.value15() != null, Boolean.TRUE.equals(r.value16()),
+                Boolean.TRUE.equals(r.value17()))));
 
         // A chain starts at an occurrence with no parent; the type declaring its field is the unit
         // it belongs to.
@@ -196,7 +201,7 @@ public final class ProjectionQuery {
                 chain.add(fact.name());
                 return new Arm(fact.coordinate(), chain, fact.nonNull(), fact.listDepth(), fact.columns(),
                     fact.nodeKeys(), fact.pathOrigins(), fact.side(), fact.producerKind(), fact.reads(),
-                    fact.targetType(), fact.targetTable(), fact.pivot(),
+                    fact.targetType(), fact.targetTable(), fact.pivot(), fact.nesting(),
                     arms(children.getOrDefault(fact.coordinate(), List.of()), chain, children));
             })
             .toList();
@@ -210,5 +215,5 @@ public final class ProjectionQuery {
     private record Fact(String coordinate, String parent, String name, String declaringType, boolean nonNull,
                         int listDepth, int ordinal, List<Column> columns, List<Column> nodeKeys,
                         List<String> pathOrigins, String side, String producerKind, String reads,
-                        String targetType, boolean targetTable, boolean pivot) {}
+                        String targetType, boolean targetTable, boolean pivot, boolean nesting) {}
 }

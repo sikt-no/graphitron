@@ -154,12 +154,9 @@ public final class ProjectionEmitter {
         };
     }
 
-    /**
-     * A nesting field: a single object with no table of its own whose one path is empty, so its
-     * fields are read off its parent's row. Anything else nested is read down a path.
-     */
+    /** A nesting field, its fields read off its parent's row; anything else nested is read down a path. */
     private static boolean nesting(ProjectionQuery.Arm arm) {
-        return "NESTED".equals(arm.reads()) && !arm.targetTable() && arm.listDepth() == 0 && sameRow(arm);
+        return arm.nesting();
     }
 
     /** The occurrence's one path is empty: what it reads ends where its parent's row starts. */
