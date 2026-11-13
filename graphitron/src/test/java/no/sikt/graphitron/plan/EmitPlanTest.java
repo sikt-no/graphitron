@@ -50,6 +50,7 @@ class EmitPlanTest {
         GlobalUnitKind.VOUCHER_CODEC,
         GlobalUnitKind.VOUCHER_KEYS,
         GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
+        GlobalUnitKind.VOUCHER_FETCHERS,
         GlobalUnitKind.CONNECTIONS));
 
     @Test

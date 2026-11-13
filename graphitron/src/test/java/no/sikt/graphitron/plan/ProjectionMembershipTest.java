@@ -170,12 +170,9 @@ class ProjectionMembershipTest {
                 + " ServiceProjectionPipelineTest) and the polymorphic child shapes (both"
                 + " delivery halves of the interface/union pair, and both halves of the"
                 + " single-table discriminated pair), whose gated correlation-key arms are"
-                + " pinned per-shape by CorrelationKeyArmPipelineTest; and the voucher field,"
-                + " whose columns are the store's voucher rows, which this fixture's schema has"
-                + " none of (VoucherIssueExecutionTest reads the issued voucher)")
+                + " pinned per-shape by CorrelationKeyArmPipelineTest")
             .containsExactlyInAnyOrder(
                 ChildField.ComputedField.class,
-                ChildField.VoucherField.class,
                 ChildField.TableInterfaceField.class,
                 ChildField.BatchedTableInterfaceField.class,
                 ChildField.InterfaceField.class,

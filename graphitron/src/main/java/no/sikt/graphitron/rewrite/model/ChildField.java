@@ -25,7 +25,6 @@ public sealed interface ChildField extends OutputField
             ChildField.RecordReadField,
             ChildField.RecordCompositeField,
             ChildField.ComputedField,
-            ChildField.VoucherField,
             ChildField.SingleRecordIdField,
             ChildField.SingleRecordIdFieldFromReturning,
             ChildField.ErrorsField {
@@ -72,8 +71,6 @@ public sealed interface ChildField extends OutputField
             case ServiceTableField f -> f.keySource().sourceShape();
             case ServiceRecordField f -> f.keySource().sourceShape();
             case ComputedField ignored -> SourceShape.Table;
-            // A voucher is signed over its table row's absorbed columns.
-            case VoucherField ignored -> SourceShape.Table;
             case NestingField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
@@ -127,8 +124,6 @@ public sealed interface ChildField extends OutputField
             case PivotSlotField ignored -> OutputField.single(new TargetShape.Field());
             // @externalField inlines a jOOQ Field<X> into the parent SELECT; the shape stays Column.
             case ComputedField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Column());
-            // A voucher is one scalar per row, computed off the row's columns: Single(Column).
-            case VoucherField ignored -> OutputField.single(new TargetShape.Column());
             // Polymorphic children: catalog-bound.
             case InterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Interface());
             case UnionField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Union());
@@ -1535,24 +1530,6 @@ public sealed interface ChildField extends OutputField
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Plain(OutputField.peelToClassName(method.returnType()));
-        }
-    }
-
-    /**
-     * A field carrying {@code @issue}: its value is a voucher signed over the row's absorbed fields,
-     * computed in Java after the row is read. The walk only recognises it; what the voucher carries,
-     * the columns it reads and the scalars that serialize them, is the store's
-     * ({@code graphitron_voucher_component}), and {@link no.sikt.graphitron.emit.VoucherIssueQuery}
-     * reads it for the projection and the fetcher. Holding none of it here keeps the walk from
-     * deciding again what the store decided.
-     */
-    record VoucherField(
-        String parentTypeName,
-        String name,
-        SourceLocation location
-    ) implements ChildField {
-        @Override public DomainReturnType domainReturnType() {
-            return new DomainReturnType.Plain(STRING_CLASS);
         }
     }
 

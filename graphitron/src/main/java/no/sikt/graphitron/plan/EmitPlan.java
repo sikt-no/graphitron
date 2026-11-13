@@ -53,8 +53,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                        KeyProjectionRelation keyProjections,
                        ErrorChannelRelation errorChannels,
                        OutboxQuery.Rows outboxes,
-                       SessionIdentityRows sessionIdentity,
-                       no.sikt.graphitron.emit.VoucherIssueQuery.Rows vouchers) {
+                       SessionIdentityRows sessionIdentity) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -85,9 +84,6 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (errorChannels == null) {
             throw new IllegalArgumentException("the plan carries the error-channel relation; an empty relation is a value, not null");
-        }
-        if (vouchers == null) {
-            throw new IllegalArgumentException("the plan carries the voucher rows; an empty set is a value, not null");
         }
         if (outboxes == null) {
             throw new IllegalArgumentException("the plan carries the outbox rows; no rows is a value, not null");
@@ -215,9 +211,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty() : RoutineWriteQuery.read(store);
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
-        var vouchers = store == null ? no.sikt.graphitron.emit.VoucherIssueQuery.Rows.empty()
-            : no.sikt.graphitron.emit.VoucherIssueQuery.read(store);
-        var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage, vouchers);
+        var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,
+            store == null ? no.sikt.graphitron.emit.VoucherBindingQuery.Rows.empty()
+                : no.sikt.graphitron.emit.VoucherBindingQuery.read(store));
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
             projectionRelation.dslProjections(), store);
         var keyProjections = KeyProjectionCommands.produce(projections);
@@ -232,8 +228,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             keyProjections,
             errorChannels,
             outboxes,
-            sessionIdentity,
-            vouchers);
+            sessionIdentity);
     }
 
     /**

@@ -115,7 +115,6 @@ class BuildContext {
     static final String DIR_SPLIT_QUERY         = no.sikt.graphitron.facts.DeliveryFactVisitor.DIR_SPLIT_QUERY;
     static final String DIR_SERVICE             = no.sikt.graphitron.facts.ServiceFactVisitor.DIR_SERVICE;
     static final String DIR_EXTERNAL_FIELD      = "externalField";
-    static final String DIR_ISSUE               = "issue";
     static final String DIR_LOOKUP_KEY          = no.sikt.graphitron.facts.LookupFactVisitor.DIR_LOOKUP_KEY;
     static final String DIR_TENANT_FAN_OUT      = no.sikt.graphitron.facts.DeliveryFactVisitor.DIR_TENANT_FAN_OUT;
     static final String DIR_GLOBAL_DATA         = "globalData";

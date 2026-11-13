@@ -109,11 +109,14 @@ public final class GraphitronSchemaClassGenerator {
      *
      * <p>{@code connections} is the store-rendered {@code Connections} class where the run wrote
      * one: it registers every connection and edge field itself, so the schema class calls its
-     * {@code register} once. {@code null} for a run without a connection type.
+     * {@code register} once. {@code null} for a run without a connection type. {@code vouchers} is
+     * the store-rendered {@code Vouchers} class where the graph issues, registering every voucher
+     * field the same way; {@code null} otherwise.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
                                           List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> rows,
-                                          String outputPackage, boolean federationLink, ClassName connections) {
+                                          String outputPackage, boolean federationLink, ClassName connections,
+                                          ClassName vouchers) {
         String schemaPackage = outputPackage + ".schema";
 
         boolean hasQuery = false, hasMutation = false, hasSubscription = false;
@@ -153,6 +156,9 @@ public final class GraphitronSchemaClassGenerator {
         }
         if (connections != null) {
             body.addStatement("$T.register(codeRegistry)", connections);
+        }
+        if (vouchers != null) {
+            body.addStatement("$T.register(codeRegistry)", vouchers);
         }
 
         // Node interface TypeResolver, wherever the interface has an implementing node. Routes via

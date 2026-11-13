@@ -219,10 +219,6 @@ public final class FetcherEdgeCommands {
             case ChildField.ColumnBackedReferenceField ignored -> null;
             case ChildField.ParticipantColumnReferenceField ignored -> null;
             case ChildField.ComputedField ignored -> null;
-            // The voucher's fetcher signs through the codec's per-operation issuers.
-            case ChildField.VoucherField f -> row(f.parentTypeName(), f.name(), units,
-                targets -> targets.add(units.singleton(GeneratedUnits.SUB_SCHEMA,
-                    no.sikt.graphitron.emit.VoucherRuntime.CODEC)));
             case ChildField.RecordCompositeField ignored -> null;
             case ChildField.RecordReadField ignored -> null;
             case ChildField.SingleRecordIdField ignored -> null;

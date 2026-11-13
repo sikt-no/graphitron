@@ -324,6 +324,11 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "Connections");
     }
 
+    /** The store-rendered voucher fields' fetchers and their registration. */
+    public UnitRef vouchers() {
+        return unit(SUB_FETCHERS, no.sikt.graphitron.emit.VoucherIssueEmitter.CLASS_NAME);
+    }
+
     /** {@code <pkg>.util.OrderByResult} — the ordering helpers' two-view result carrier. */
     public UnitRef orderByResult() {
         return unit(SUB_UTIL, "OrderByResult");

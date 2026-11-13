@@ -306,7 +306,6 @@ public sealed interface ParentSourceBinding {
         ChildField.BatchedPivotField.class,
         ChildField.PivotSlotField.class,
         ChildField.ComputedField.class,
-        ChildField.VoucherField.class,
         ChildField.ServiceTableField.class,
         ChildField.ServiceRecordField.class,
         GraphitronField.UnclassifiedField.class);

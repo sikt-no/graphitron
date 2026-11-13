@@ -57,6 +57,11 @@ public final class FixedRuntimeEmitter {
         if (vouches) {
             out.addAll(renderVoucherRuntime(outputPackage));
         }
+        var issues = no.sikt.graphitron.emit.VoucherIssueQuery.read(store);
+        if (!issues.byCoordinate().isEmpty()) {
+            add(out, GlobalUnitKind.VOUCHER_FETCHERS, new GeneratedUnits(outputPackage).vouchers(),
+                List.of(no.sikt.graphitron.emit.VoucherIssueEmitter.render(issues, outputPackage)));
+        }
         var shapes = ConnectionsQuery.read(store);
         if (!shapes.connections().isEmpty()) {
             var units = new GeneratedUnits(outputPackage);

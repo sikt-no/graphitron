@@ -212,8 +212,6 @@ public final class OperationMembers {
             shape(Set.of(), Set.of())),
         Map.entry(ChildField.ComputedField.class,
             shape(Set.of(Kind.SELECT), Set.of(Kind.JOIN))),
-        Map.entry(ChildField.VoucherField.class,
-            shape(Set.of(Kind.SELECT), Set.of())),
         Map.entry(ChildField.SingleRecordIdField.class,
             shape(Set.of(), Set.of())),
         Map.entry(ChildField.SingleRecordIdFieldFromReturning.class,
@@ -267,8 +265,6 @@ public final class OperationMembers {
 
             // --- Child fields: catalog column projections ---
             case ChildField.ColumnBackedField _ -> List.of(new Select());
-            // A voucher reads its absorbed columns off the same row.
-            case ChildField.VoucherField _ -> List.of(new Select());
             case ChildField.ColumnBackedReferenceField f -> columnReference(f.joinPath());
             case ChildField.ParticipantColumnReferenceField _ -> List.of(new Select(), new Join());
             case ChildField.ComputedField f -> columnReference(f.joinPath());

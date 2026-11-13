@@ -254,7 +254,7 @@ public final class TestSchemaHelper {
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
             bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),
             plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(), plan.routineWrites(),
-            plan.keyProjections(), plan.errorChannels(), plan.outboxes(), backed.recordAccessors(), no.sikt.graphitron.emit.ServiceEmission.none(), plan.vouchers());
+            plan.keyProjections(), plan.errorChannels(), plan.outboxes(), backed.recordAccessors(), no.sikt.graphitron.emit.ServiceEmission.none());
     }
 
     /**

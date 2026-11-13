@@ -116,17 +116,13 @@ class EmittedRegistryAgreementTest {
      * this gate exists to remove. It leaves the set when the walk does, and nothing else would
      * remove it.
      *
-     * <p>{@code voucher-issue} is of the same kind: the store withholds the fields an {@code @issue}
-     * absorbs and mints the voucher's key and {@code @inaccessible}, and the walk's synthesis is not
-     * taught to, for the same reason. It leaves the set with {@code node-type-id}.
-     *
      * <p>The entry for {@code authored-pagination-argument} is not owed a fix in capture. The synthesis replaces an authored
      * {@code first} with one carrying the connection's page size, and the store yields to what the
      * author wrote; the class comment argues why that makes the store right. It stops being a
      * disagreement when the synthesis goes, not when capture changes.
      */
     private static final Set<String> KNOWN_DISAGREEMENTS =
-        Set.of("authored-pagination-argument", "node-type-id", "voucher-issue");
+        Set.of("authored-pagination-argument", "node-type-id");
 
     @Test
     @DisplayName("the store-derived schema and the incumbent agree on every corpus document but the recorded ones")

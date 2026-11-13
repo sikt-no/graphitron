@@ -304,6 +304,8 @@ public final class PlanCompileGraph {
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS, VOUCHER_KEYS, VOUCHER_REJECTED_EXCEPTION -> { }
                 // The codec signs with the keys and throws the rejection.
+                // The voucher fetchers sign through the codec's issuers.
+                case VOUCHER_FETCHERS -> precise(units.get(0), require(GlobalUnitKind.VOUCHER_CODEC));
                 case VOUCHER_CODEC -> {
                     precise(units.get(0), require(GlobalUnitKind.VOUCHER_KEYS));
                     precise(units.get(0), require(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION));
@@ -395,6 +397,8 @@ public final class PlanCompileGraph {
                     refOf(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL).ifPresent(o -> precise(schemaClass, o));
                     // The connection and edge fields register through the connection classes.
                     refOf(GlobalUnitKind.CONNECTIONS).ifPresent(c -> precise(schemaClass, c));
+                    // The voucher fields register through the voucher fetchers.
+                    refOf(GlobalUnitKind.VOUCHER_FETCHERS).ifPresent(v -> precise(schemaClass, v));
                 }
                 case QUERY_NODE_FETCHER -> {
                     var nodeFetcher = units.get(0);

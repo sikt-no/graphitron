@@ -129,9 +129,7 @@ public class TypeFetcherGenerator {
      * record parameter it can check. {@code services} is the {@code @service} fetchers the store
      * emits, which take the place of the classified model's; a field it does not emit keeps its
      * classified fetcher, and a caller with no store passes
-     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}. {@code vouchers} is the store's
-     * issuing fields: each {@code @issue} field's fetcher is the store's
-     * ({@link no.sikt.graphitron.emit.VoucherIssueEmitter}), added to its type's class.
+     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage,
@@ -143,8 +141,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
             no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
-            no.sikt.graphitron.emit.ServiceEmission services,
-            no.sikt.graphitron.emit.VoucherIssueQuery.Rows vouchers) {
+            no.sikt.graphitron.emit.ServiceEmission services) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -165,10 +162,9 @@ public class TypeFetcherGenerator {
             var type = schema.type(row.typeName());
             if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
-                result.add(withVoucherFetchers(generateForType(schema, row.typeName(), assembled, outputPackage,
+                result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
                     nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
-                    errorChannels, outboxes, recordAccessors, services), row.typeName(), vouchers,
-                    outputPackage));
+                    errorChannels, outboxes, recordAccessors, services));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -279,26 +275,6 @@ public class TypeFetcherGenerator {
         return no.sikt.graphitron.rewrite.NestingReach.pivotWiring(field);
     }
 
-    /**
-     * Adds the store's fetcher of each {@code @issue} field of {@code typeName} to its class: the
-     * dispatch below leaves the field's method to the store, which states what its voucher carries.
-     */
-    private static TypeSpec withVoucherFetchers(TypeSpec spec, String typeName,
-            no.sikt.graphitron.emit.VoucherIssueQuery.Rows vouchers, String outputPackage) {
-        var issues = vouchers.byCoordinate().values().stream()
-            .filter(issue -> issue.typeName().equals(typeName))
-            .sorted(Comparator.comparing(no.sikt.graphitron.emit.VoucherIssueQuery.Issue::fieldName))
-            .toList();
-        if (issues.isEmpty()) {
-            return spec;
-        }
-        var builder = spec.toBuilder();
-        for (var issue : issues) {
-            builder.addMethod(no.sikt.graphitron.emit.VoucherIssueEmitter.fetcher(issue, outputPackage));
-        }
-        return builder.build();
-    }
-
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
@@ -375,7 +351,6 @@ public class TypeFetcherGenerator {
     public static final Set<Class<? extends GraphitronField>> IMPLEMENTED_LEAVES = Set.of(
         ChildField.ColumnBackedField.class,
         ChildField.ComputedField.class,
-        ChildField.VoucherField.class,
         QueryField.QueryNodeField.class,
         QueryField.QueryNodesField.class,
         QueryField.QueryTableField.class,
@@ -1041,7 +1016,6 @@ public class TypeFetcherGenerator {
                 // FetcherEmitter.bind into a named (DataFetchingEnvironment env) method, collected below.
                 case ChildField.RecordCompositeField ignored    -> { /* source passthrough reified by FetcherEmitter.bind, collected below */ }
                 case ChildField.ComputedField ignored           -> { /* alias-pickup read reified by FetcherEmitter.bind; projected via the type's $project unit */ }
-                case ChildField.VoucherField ignored            -> { /* the store's fetcher, added by withVoucherFetchers; projected via the type's $project unit */ }
                 case ChildField.ErrorsField ignored             -> { /* the Outcome's error arm, reified by FetcherEmitter.bind */ }
                 // Cannot occur — filtered by generateForType before dispatch
                 case InputField ignored ->

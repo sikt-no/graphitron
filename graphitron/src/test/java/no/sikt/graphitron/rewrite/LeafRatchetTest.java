@@ -74,11 +74,8 @@ class LeafRatchetTest {
      * 24 to 23 (2026-10-30): SameRowTableField retired. A same-table child with no
      * {@code @reference} is rejected, and the parent's own row is the primary-key
      * {@code @reference}, an ordinary TableField over the identity join.
-     * 23 to 24 (2026-11-12): VoucherField, a target-grain addition: a voucher signed over the
-     * row's absorbed columns, which no column, computed column or encoded node id is. It holds
-     * no data; what it signs is the store's, read by the projection and the fetcher alike.
      */
-    private static final int CHILD_FIELD_LEAVES = 24;
+    private static final int CHILD_FIELD_LEAVES = 23;
 
     /**
      * Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

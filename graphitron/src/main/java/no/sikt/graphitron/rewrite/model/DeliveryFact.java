@@ -101,7 +101,7 @@ public sealed interface DeliveryFact {
                  ChildField.PivotField _, ChildField.PivotSlotField _,
                  ChildField.ServiceTableField _, ChildField.ServiceRecordField _,
                  ChildField.RecordReadField _, ChildField.RecordCompositeField _,
-                 ChildField.ComputedField _, ChildField.VoucherField _, ChildField.SingleRecordIdField _,
+                 ChildField.ComputedField _, ChildField.SingleRecordIdField _,
                  ChildField.SingleRecordIdFieldFromReturning _, ChildField.ErrorsField _ ->
                 Inline.INSTANCE;
             // Roots are the entry points: nothing arrives, so nothing splits.

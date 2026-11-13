@@ -16,7 +16,6 @@ import no.sikt.graphitron.rewrite.model.AliasOwner;
 import no.sikt.graphitron.rewrite.model.AliasScope;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
-import no.sikt.graphitron.emit.VoucherIssueQuery;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.DeliveryFact;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
@@ -90,7 +89,6 @@ public final class ProjectionCommands {
         ChildField.TableField.class,
         ChildField.NestingField.class,
         ChildField.ComputedField.class,
-        ChildField.VoucherField.class,
         ChildField.PivotField.class,
         ChildField.BatchedPivotField.class,
         ChildField.PivotSlotField.class,
@@ -107,16 +105,18 @@ public final class ProjectionCommands {
 
     public static ProjectionRelation produce(GraphitronSchema schema, ConditionRelation conditions,
             String outputPackage) {
-        return produce(schema, conditions, outputPackage, VoucherIssueQuery.Rows.empty());
+        return produce(schema, conditions, outputPackage, no.sikt.graphitron.emit.VoucherBindingQuery.Rows.empty());
     }
 
     /**
-     * As {@link #produce(GraphitronSchema, ConditionRelation, String)}, with the store's issuing
-     * fields: an {@code @issue} field projects the columns its voucher is signed over, read off
-     * {@code vouchers} rather than off the leaf, which holds none of them.
+     * As {@link #produce(GraphitronSchema, ConditionRelation, String)}, with the store's voucher
+     * fields: the walk leaves such a field unclassified, the store owning it whole, so its columns
+     * reach its type's unit from its {@code VOUCHER} binding rather than from a leaf. The unit's
+     * switch dispatches on the selected field's name, so the voucher's columns are projected exactly
+     * when it is selected. This addition goes when the units are rendered from the store.
      */
     public static ProjectionRelation produce(GraphitronSchema schema, ConditionRelation conditions,
-            String outputPackage, VoucherIssueQuery.Rows vouchers) {
+            String outputPackage, no.sikt.graphitron.emit.VoucherBindingQuery.Rows vouchers) {
         var units = new GeneratedUnits(outputPackage);
         var glueEnvByMethod = conditions.rows().stream()
             .collect(Collectors.toMap(row -> row.glue(),
@@ -130,7 +130,12 @@ public final class ProjectionCommands {
             var anchor = units.typeClass(typeName);
             var contributions = collectContributions(
                 schema, schema.fieldsOf(typeName), anchor, typeName, units, glueEnvByMethod,
-                census, false, vouchers);
+                census, false);
+            vouchers.of(typeName).forEach((field, columns) -> contributions.add(new Contribution.Project(field,
+                columns.stream()
+                    .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
+                    .toList(),
+                AliasOwner.shared(), AliasScope.rowOwner())));
             census.add(new ProjectionCommand.AnchorUnit(anchor, type.table(), contributions),
                 "table-backed type '" + typeName + "'");
         }
@@ -213,8 +218,7 @@ public final class ProjectionCommands {
     private static List<Contribution> collectContributions(GraphitronSchema schema,
             List<? extends GraphitronField> fields,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested,
-            VoucherIssueQuery.Rows vouchers) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested) {
         var contributions = new ArrayList<Contribution>();
         for (var field : fields) {
             if (field instanceof GraphitronField.UnclassifiedField) {
@@ -227,7 +231,7 @@ public final class ProjectionCommands {
                     + "root operation types are never projection units");
             }
             var contribution = contributionFor(schema, cf, owner, anchorTypeName, units,
-                glueEnvByMethod, census, nested, vouchers);
+                glueEnvByMethod, census, nested);
             contribution.ifPresent(c -> {
                 requireAliasedWriteArm(cf, c);
                 contributions.add(c);
@@ -238,8 +242,7 @@ public final class ProjectionCommands {
 
     private static Optional<Contribution> contributionFor(GraphitronSchema schema, ChildField field,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested,
-            VoucherIssueQuery.Rows vouchers) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested) {
         return switch (field) {
             case ChildField.ColumnBackedField cf -> Optional.of(new Contribution.Project(cf.name(),
                 cf.columns().stream()
@@ -272,23 +275,13 @@ public final class ProjectionCommands {
             // both off the schema's contract, the one the fetcher emitter reads.
             // The probe rides beside it, minted from the same contract the fetcher emitter reads.
             case ChildField.NestingField nf -> {
-                var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census, vouchers);
+                var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
                 var contract = schema.nullContractOf(nf);
                 yield Optional.of(new Contribution.Call(nf.name(), nested2,
                     new CallWrap.Splice(contract.presenceColumns(),
                         probeOf(nf, contract, units, glueEnvByMethod)),
                     aliasOwnerOf(nf), aliasScopeOf(nf)));
             }
-            // The voucher's components, as the store states them: projected whenever the field is
-            // selected, so its fetcher signs the row it is handed.
-            case ChildField.VoucherField vf -> Optional.of(new Contribution.Project(vf.name(),
-                vouchers.issue(vf.qualifiedName())
-                    .orElseThrow(() -> new IllegalStateException("the @issue field '" + vf.qualifiedName()
-                        + "' has no issuing row in the store; the walk and the voucher stage disagree"))
-                    .columns().stream()
-                    .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
-                    .toList(),
-                aliasOwnerOf(vf), aliasScopeOf(vf)));
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp), aliasScopeOf(cmp)));
             case ChildField.PivotField pf -> {
@@ -463,11 +456,10 @@ public final class ProjectionCommands {
 
     private static UnitRef mintNestedUnit(GraphitronSchema schema, ChildField.NestingField nf,
             String anchorTypeName,
-            GeneratedUnits units, Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census,
-            VoucherIssueQuery.Rows vouchers) {
+            GeneratedUnits units, Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census) {
         var unit = units.nestingUnit(anchorTypeName, nf.returnType().returnTypeName());
         var contributions = collectContributions(
-            schema, nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census, true, vouchers);
+            schema, nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census, true);
         census.add(new ProjectionCommand.NestedUnit(unit, nf.returnType().table(), contributions),
             "nesting type '" + nf.returnType().returnTypeName() + "' under anchor '"
                 + anchorTypeName + "'");

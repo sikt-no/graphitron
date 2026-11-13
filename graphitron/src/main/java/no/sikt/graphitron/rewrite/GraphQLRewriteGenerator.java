@@ -350,7 +350,13 @@ public class GraphQLRewriteGenerator {
                                   List<EmittedRegistry.TagNarrowing> narrowings,
                                   no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
-        var walkErrors = List.copyOf(new GraphitronSchemaValidator().validate(schema));
+        // The store owns validation, the walk's verdict being retired: where the store states a
+        // field's binding as one it owns whole, a voucher field, the walk's verdict on it is not
+        // asked, the store's defects being the only refusals that field has.
+        var storeOwned = no.sikt.graphitron.emit.VoucherBindingQuery.read(store).coordinates();
+        var walkErrors = new GraphitronSchemaValidator().validate(schema).stream()
+            .filter(error -> !storeOwned.contains(error.coordinate()))
+            .toList();
         var fused = new ArrayList<>(walkErrors);
         fused.addAll(storeFacts.violations());
         // The decode-coverage rule, stated where its two operands meet and nowhere else: the
@@ -543,8 +549,7 @@ public class GraphQLRewriteGenerator {
             plan.errorChannels(),
             plan.outboxes(),
             recordAccessors,
-            services,
-            plan.vouchers());
+            services);
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
@@ -583,11 +588,16 @@ public class GraphQLRewriteGenerator {
             .filter(unit -> unit.kind() == no.sikt.graphitron.command.GlobalUnitKind.CONNECTIONS)
             .map(unit -> com.palantir.javapoet.ClassName.get(unit.ref().packageName(), unit.ref().simpleName()))
             .findFirst().orElse(null);
+        // And the store-rendered voucher fields' registration, where the graph issues.
+        var vouchers = fixedRuntime.stream()
+            .filter(unit -> unit.kind() == no.sikt.graphitron.command.GlobalUnitKind.VOUCHER_FETCHERS)
+            .map(unit -> com.palantir.javapoet.ClassName.get(unit.ref().packageName(), unit.ref().simpleName()))
+            .findFirst().orElse(null);
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
                     connectionKeyShape, federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
-                    plan.sessionIdentity(), connections, vouches),
+                    plan.sessionIdentity(), connections, vouchers, vouches),
                 emittedThisRun);
         }
         for (var unit : fixedRuntime) {
@@ -678,6 +688,7 @@ public class GraphQLRewriteGenerator {
                                         no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.Shapes legacyKeyShapes,
                                         no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity,
                                         com.palantir.javapoet.ClassName connections,
+                                        com.palantir.javapoet.ClassName vouchers,
                                         boolean vouches) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
@@ -707,11 +718,11 @@ public class GraphQLRewriteGenerator {
                 vouches);
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME, VOUCHER_CODEC, VOUCHER_KEYS,
-                 VOUCHER_REJECTED_EXCEPTION, CONNECTIONS -> throw new IllegalStateException(command.kind()
+                 VOUCHER_REJECTED_EXCEPTION, VOUCHER_FETCHERS, CONNECTIONS -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage,
-                federationLink, connections);
+                federationLink, connections, vouchers);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, tenantKeyType != null);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches);
