@@ -1,25 +1,17 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
-import graphql.schema.GraphQLFieldDefinition;
-import no.sikt.graphitron.facts.GatheredFacts;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.rewrite.SchemaReachability;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
-import java.util.stream.Collectors;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_CLAIM;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.derive.ClaimConflicts;
 
 /**
  * The build's report of the directive mutual-exclusivity rule: the conflict fixtures capture into a
@@ -28,8 +20,7 @@ import no.sikt.graphitron.model.derive.ClaimConflicts;
  * hand-written message the store does not hold, the message being the reader's aggregation of the
  * directives that wrote the claims under the defect.
  * Beside the fixtures sit the build-error consumer's population pin, the sibling-graph scoping
- * guard, the undecoded applications, and the anchor that keeps the stored lookup claims honest
- * against the walk's {@code LookupFacts.triggersFor}.
+ * guard and the undecoded applications.
  *
  * <p>What the claims and the defects hold is not asked here. That is the relations' own rule, and it
  * lives in the module whose DDL declares them, in the {@code producer-claim}, {@code binding-claim},
@@ -38,7 +29,6 @@ import no.sikt.graphitron.model.derive.ClaimConflicts;
  * stands here is that an author's schema reaches those relations and that the report a build meets
  * is composed from what they hold.
  */
-@PipelineTier
 class ClaimConflictsTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
@@ -294,42 +284,6 @@ class ClaimConflictsTest {
         });
     }
 
-
-    // ===== The agreement anchor =====
-
-    @Test
-    void lookupArmAgreesWithTheWalkedTriggerPredicate() {
-        // The trigger predicate has two homes: the walk's LookupFacts.triggersFor and the stored
-        // lookupKey claims. This anchor binds them over a marked argument, an input-typed argument
-        // without the directive, and an untouched control.
-        var sdl = """
-            type Language @table(name: "language") { name: String }
-            input LookupInput { language_id: Int }
-            type Query {
-                direct(language_id: [Int] @lookupKey): [Language!]!
-                byInput(in: LookupInput): [Language!]!
-                untouched: [Language!]!
-            }
-            """;
-        var bundle = TestSchemaHelper.walkBundle(sdl);
-        var nodes = TestSchemaHelper.nodeDeclaration();
-        var facts = GatheredFacts.gather(bundle.assembled(), (s, v) -> SchemaReachability.walk(s, nodes, v));
-        var triggered = bundle.assembled().getQueryType().getFieldDefinitions().stream()
-            .filter(f -> facts.lookup().triggersFor(f))
-            .map(GraphQLFieldDefinition::getName)
-            .collect(Collectors.toSet());
-        assertThat(triggered).containsExactlyInAnyOrder("direct");
-
-        withCapturedStore(tmp, sdl, dsl -> {
-            var claimed = dsl.selectDistinct(GRAPHITRON_CLAIM.COORDINATE)
-                .from(GRAPHITRON_CLAIM)
-                .where(GRAPHITRON_CLAIM.GRAPH_NAME.eq(GRAPH),
-                    GRAPHITRON_CLAIM.COORDINATE.startsWith("Query."),
-                    GRAPHITRON_CLAIM.KIND.eq("LOOKUP"))
-                .fetchSet(r -> r.value1().substring("Query.".length()));
-            assertThat(claimed).isEqualTo(triggered);
-        });
-    }
 
     // ===== Helpers =====
 

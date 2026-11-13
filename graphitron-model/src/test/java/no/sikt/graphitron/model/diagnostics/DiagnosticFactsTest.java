@@ -1,10 +1,7 @@
-package no.sikt.graphitron.rewrite.diagnostics;
+package no.sikt.graphitron.model.diagnostics;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.test.FactStores;
-import no.sikt.graphitron.model.diagnostics.BuildWarning;
-import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.compile.CompileDiagnostic;
@@ -12,13 +9,8 @@ import no.sikt.graphitron.model.compile.CompileRound;
 import no.sikt.graphitron.model.derive.ClaimConflicts;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.model.lint.LintRule;
-import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.model.diagnostics.PivotError;
-import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -69,10 +61,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * axis has its own pin here too, and it is a property rather than a parity: no arm stores or
  * projects a URI, so no spelling is computed in these relations at all.
  */
-@PipelineTier
 class DiagnosticFactsTest {
 
     private static final String GRAPH = "DiagnosticFactsTest";
+
+    /** A stubbed leaf class for a deferred rejection to name, spelled with its enclosing class. */
+    private record ComputedField() {}
 
     @TempDir
     Path tmp;
@@ -88,7 +82,7 @@ class DiagnosticFactsTest {
             ValidationError.forType("Film",
                 Rejection.directiveConflict(List.of("splitQuery", "routine"), "conflict"), loc),
             ValidationError.forField("Film.texts",
-                Rejection.deferred("computed fields are not generated yet", ChildField.ComputedField.class), loc),
+                Rejection.deferred("computed fields are not generated yet", ComputedField.class), loc),
             ValidationError.forField("Film.title",
                 new PivotError.NonNullSlot("nn", "TranslatedTexts"), loc),
             new ValidationError(null, Rejection.invalidSchema("schema-wide"), null));
@@ -127,7 +121,7 @@ class DiagnosticFactsTest {
 
             var deferred = rows.get(2);
             assertThat(deferred.getKind()).isEqualTo("DEFERRED");
-            assertThat(deferred.getStubKey()).isEqualTo("ChildField.ComputedField");
+            assertThat(deferred.getStubKey()).isEqualTo("DiagnosticFactsTest.ComputedField");
 
             var coded = rows.get(3);
             assertThat(coded.getVariant()).isEqualTo("PivotError.NonNullSlot");

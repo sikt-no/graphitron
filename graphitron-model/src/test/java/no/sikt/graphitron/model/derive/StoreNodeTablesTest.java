@@ -1,20 +1,17 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.ColumnRef;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static org.assertj.core.api.Assertions.assertThat;
-import no.sikt.graphitron.model.derive.StoreNodeTables;
 
 /**
  * What {@link StoreNodeTables} assembles out of the store: a node type's table reference, its ordered
@@ -33,7 +30,6 @@ import no.sikt.graphitron.model.derive.StoreNodeTables;
  * SDL alone; the metadata tier needs a generated class publishing the constant, which the fixture
  * catalog does not, and its absence is stated here rather than left as a silent gap.
  */
-@PipelineTier
 class StoreNodeTablesTest {
 
     @TempDir
@@ -55,11 +51,11 @@ class StoreNodeTablesTest {
 
         assertThat(table.table().tableName()).isEqualTo("inventory");
         assertThat(table.table().javaFieldName()).isEqualTo("INVENTORY");
-        assertThat(CatalogRefs.tableClass(table.table()).simpleName()).isEqualTo("Inventory");
-        assertThat(CatalogRefs.recordClass(table.table()).simpleName()).isEqualTo("InventoryRecord");
-        assertThat(CatalogRefs.constantsClass(table.table()).simpleName())
+        assertThat(table.table().tableClassName()).endsWith(".Inventory");
+        assertThat(table.table().recordClassName()).endsWith(".InventoryRecord");
+        assertThat(table.table().constantsClassName())
             .as("the per-schema Tables class, read from sql_schema rather than concatenated")
-            .isEqualTo("Tables");
+            .endsWith(".Tables");
         assertThat(table.table().allColumns())
             .as("the whole row, so the ref is not a partial one")
             .isNotEmpty();
@@ -181,7 +177,7 @@ class StoreNodeTablesTest {
      * combination it does not name.
      */
     private StoreNodeTables.Tables read(String sdl) {
-        var ctx = testContext();
+        var ctx = TestRunContext.of();
         CapturedStore.writeSource(tmp, sdl);
         try (var store = FactStores.inMemory()) {
             CapturedStore.capture(store.dsl(), CapturedStore.graph(tmp), CapturedStore.corpusOf(tmp),

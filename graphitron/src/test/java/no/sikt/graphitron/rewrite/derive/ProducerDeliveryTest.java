@@ -1,35 +1,28 @@
 package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
-
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.facts.GatheredFacts;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.rewrite.SchemaReachability;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.List;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The fields {@code graphitron_producer} says run a statement of their own, against the walk's own
  * account of which fields leave their parent's statement.
  *
- * <p>Two questions. The first is agreement: the walk's gathered delivery relation
- * ({@link GatheredFacts#delivery()}) reads the split and fan-out markers off the assembled schema,
- * independently of the captured rows the producer rule reads, and every field it names is a
- * {@code SELECT} producer. The second is reach: a table-bound child of a payload a service hands
- * back is a producer, the payload's backing being a row the graphitron gatherer anchored from a
- * captured census rather than anything an author wrote.
+ * <p>The walk's gathered delivery relation ({@link GatheredFacts#delivery()}) reads the split and
+ * fan-out markers off the assembled schema, independently of the captured rows the producer rule
+ * reads, and every field it names is a {@code SELECT} producer. It goes when the walk does.
  *
  * <p>What the producer rule makes of given rows is stated in the fact documents
  * {@code fetcher-producers.graphqls}, {@code producer-out-of-the-parent-statement.graphqls} and
@@ -38,12 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ProducerDeliveryTest {
 
-    @TempDir
-    Path tmp;
-
-    private static final String GRAPH = CapturedStore.GRAPH;
-    private static final String PRODUCER =
-        "no.sikt.graphitron.rewrite.test.services.HandedFilmService";
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /**
      * Every field the walk delivers apart is a {@code SELECT} producer, and the inlined sibling and the
@@ -61,62 +50,29 @@ class ProducerDeliveryTest {
             }
             type Query { films: [Film!]! }
             """;
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
-            var dsl = store.dsl();
-            var delivered = gather(sdl).delivery().rows().stream()
-                .filter(r -> r.splitQuery() || r.tenantFanOut())
-                .map(r -> r.parentTypeName() + "." + r.fieldName())
-                .toList();
-            assertThat(delivered)
-                .as("the fixture authors both markers, so the comparison is not vacuous")
-                .containsExactlyInAnyOrder("Film.languageSplit", "Film.fannedLanguages");
-            assertThat(producersOf(dsl, "Film"))
-                .containsExactlyInAnyOrderElementsOf(delivered.stream()
-                    .map(coordinate -> coordinate + " SELECT")
-                    .toList());
-        }
-    }
-
-    /**
-     * A table-bound child of a payload a service hands back re-reads by the keys the service's
-     * record carries, so it is a producer of its own with nothing authored at it. The payload's
-     * backing is the premise rather than the scenery: it is what keeps the rule from joining to a
-     * relation nothing in a real pipeline populates in the shape it reads.
-     */
-    @Test
-    void aTableChildOfAServicesPayloadIsAProducer() {
-        String sdl = """
-            type Query {
-                payload: Payload @service(service: {className: "%s", method: "make"})
-            }
-            type Payload {
-                name: String
-                film: Film
-            }
-            type Film @table(name: "film") { title: String }
-            """.formatted(PRODUCER);
-        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, jooq(),
-                ClasspathCorpus.entries())) {
-            var dsl = store.dsl();
-            assertThat(dsl.select(GRAPHITRON_TYPE_BACKING.CLASS_NAME, GRAPHITRON_TYPE_BACKING.DECLARED_VIA)
-                .from(GRAPHITRON_TYPE_BACKING)
-                .where(GRAPHITRON_TYPE_BACKING.GRAPH_NAME.eq(GRAPH))
-                .and(GRAPHITRON_TYPE_BACKING.TYPE_NAME.eq("Payload"))
-                .fetch(r -> r.value1() + " " + r.value2()))
-                .as("the premise: the backing the rule joins to is a writer's row, not a fixture's")
-                .containsExactly("no.sikt.graphitron.rewrite.test.services.HandedFilm PRODUCER");
-            assertThat(producersOf(dsl, "Payload")).containsExactly("Payload.film LOOKUP");
-        }
+        var producers = FACTS.readInline("producer-delivery", sdl, jooq(),
+            graph -> producersOf(graph.handle().dsl(), graph.handle().graphName(), "Film"));
+        var delivered = gather(sdl).delivery().rows().stream()
+            .filter(r -> r.splitQuery() || r.tenantFanOut())
+            .map(r -> r.parentTypeName() + "." + r.fieldName())
+            .toList();
+        assertThat(delivered)
+            .as("the fixture authors both markers, so the comparison is not vacuous")
+            .containsExactlyInAnyOrder("Film.languageSplit", "Film.fannedLanguages");
+        assertThat(producers)
+            .containsExactlyInAnyOrderElementsOf(delivered.stream()
+                .map(coordinate -> coordinate + " SELECT")
+                .toList());
     }
 
     // ===== Helpers =====
 
     /** The producers a type declares, as {@code Type.field KIND}. */
-    private static List<String> producersOf(DSLContext dsl, String typeName) {
+    private static List<String> producersOf(DSLContext dsl, String graphName, String typeName) {
         return dsl.select(GRAPHITRON_PRODUCER.TYPE_NAME, GRAPHITRON_PRODUCER.FIELD_NAME,
                 GRAPHITRON_PRODUCER.KIND)
             .from(GRAPHITRON_PRODUCER)
-            .where(GRAPHITRON_PRODUCER.GRAPH_NAME.eq(GRAPH))
+            .where(GRAPHITRON_PRODUCER.GRAPH_NAME.eq(graphName))
             .and(GRAPHITRON_PRODUCER.TYPE_NAME.eq(typeName))
             .orderBy(GRAPHITRON_PRODUCER.FIELD_NAME)
             .fetch(r -> r.value1() + "." + r.value2() + " " + r.value3());

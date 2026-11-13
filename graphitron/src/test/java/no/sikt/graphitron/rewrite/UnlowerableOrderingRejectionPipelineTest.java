@@ -8,9 +8,10 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -46,6 +47,9 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 @PipelineTier
 class UnlowerableOrderingRejectionPipelineTest {
+
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /**
      * A three-implementation multitable interface whose participants share an order column,
@@ -189,33 +193,32 @@ class UnlowerableOrderingRejectionPipelineTest {
      * than a fix, which is how an editor should triage a declaration waiting on a lowering.
      */
     @Test
-    void theStoredDefectReachesTheDiagnosticSurfaceAsNotActionable(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, CHILD, jooq())) {
-            var rows = store.dsl().selectFrom(DIAGNOSTIC)
-                .where(DIAGNOSTIC.GRAPH_NAME.eq(CapturedStore.GRAPH),
+    void theStoredDefectReachesTheDiagnosticSurfaceAsNotActionable() {
+        var rows = FACTS.readInline("unlowerable-ordering", CHILD, jooq(), graph ->
+            graph.handle().dsl().selectFrom(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(graph.handle().graphName()),
                     DIAGNOSTIC.TYPE_NAME.eq("Store"), DIAGNOSTIC.FIELD_NAME.eq("occupants"),
                     DIAGNOSTIC.LSP_CODE.eq("GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS"))
                 .orderBy(DIAGNOSTIC.MESSAGE)
-                .fetch();
+                .fetch());
 
-            assertThat(rows)
-                .as("one diagnostic row per declaring directive")
-                .hasSize(2);
-            assertThat(rows).allSatisfy(row -> {
-                assertThat(row.getSeverity()).isEqualTo("error");
-                assertThat(row.getActionable())
-                    .as("recognised but not yet generator-supported, a workaround rather than a"
-                        + " schema fix")
-                    .isFalse();
-                assertThat(row.getSourceLine())
-                    .as("the declaring directive's own position, so an editor underlines what the"
-                        + " author wrote")
-                    .isNotNull();
-            });
-            assertThat(rows).extracting(row -> row.getMessage())
-                .anyMatch(m -> m.endsWith("(defaultOrder)"))
-                .anyMatch(m -> m.endsWith("(orderBy)"));
-        }
+        assertThat(rows)
+            .as("one diagnostic row per declaring directive")
+            .hasSize(2);
+        assertThat(rows).allSatisfy(row -> {
+            assertThat(row.getSeverity()).isEqualTo("error");
+            assertThat(row.getActionable())
+                .as("recognised but not yet generator-supported, a workaround rather than a"
+                    + " schema fix")
+                .isFalse();
+            assertThat(row.getSourceLine())
+                .as("the declaring directive's own position, so an editor underlines what the"
+                    + " author wrote")
+                .isNotNull();
+        });
+        assertThat(rows).extracting(row -> row.getMessage())
+            .anyMatch(m -> m.endsWith("(defaultOrder)"))
+            .anyMatch(m -> m.endsWith("(orderBy)"));
     }
 
     // ===== Helpers =====

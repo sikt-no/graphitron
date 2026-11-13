@@ -1,17 +1,14 @@
-package no.sikt.graphitron.rewrite.derive;
+package no.sikt.graphitron.model.derive;
 
-import no.sikt.graphitron.model.derive.StoreLegacyKeyShapes;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
-import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
+import no.sikt.graphitron.model.test.TestRunContext;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -21,7 +18,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * emitted conversion spells, the table constants it qualifies the columns through and the pick it
  * makes.
  */
-@PipelineTier
 class NodeLegacyKeyShapesPipelineTest {
 
     private static final String GRAPH = CapturedStore.GRAPH;
@@ -50,7 +46,7 @@ class NodeLegacyKeyShapesPipelineTest {
             assertThat(shape.keptAt()).as("the current key's one value sits at legacy position 1")
                 .containsExactly(1);
             assertThat(shape.table().javaFieldName()).isEqualTo("INVENTORY");
-            assertThat(CatalogRefs.constantsClass(shape.table()).simpleName()).isEqualTo("Tables");
+            assertThat(shape.table().constantsClassName()).endsWith(".Tables");
         });
     }
 
@@ -83,6 +79,6 @@ class NodeLegacyKeyShapesPipelineTest {
     }
 
     private static CatalogInput jooq() {
-        return CatalogInput.of(testContext());
+        return CatalogInput.of(TestRunContext.of());
     }
 }
