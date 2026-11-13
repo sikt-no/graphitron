@@ -150,6 +150,12 @@ shape that meets neither `scenarios` nor `defects` is a gap to close, not to par
 store does not state yet is a defect to add, and one raised on a valid schema is a regression to
 fix.
 
+One exception, by ruling only: a document whose schema is valid and whose facts the store states, but
+which the generator refuses because the emitter does not yet handle the shape, may wait in
+`undecided` rather than lose its claims. The ceiling is then raised by one, its javadoc saying why,
+and a graph node brings the document back to `scenarios` and the ceiling back down when the emitter
+follows. Nothing else raises the ceiling.
+
 Within the folder, choose by subject. A document has one subject, what one page example would show,
 is named for it (`field-key-row`, `node-id-decode-unresolved-type`), and opens with a header saying
 what it pins and why each type is there.
