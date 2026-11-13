@@ -743,9 +743,24 @@ static method needs no holder.
       critical path. The condition keeps its own by-type pairing through the flip; the differences
       from the service's, listed under "A `@condition`'s fills", are closed then, one rule for every
       call, each difference a test first.
-    * **An input field's `@condition` takes a bean** `open`, off the critical path. Refused today
+    * **An input field's `@condition` takes an input object's fields through `argMapping`** `open`,
+      G's. An input object reaches a call typed, never as the untyped map graphql-java delivers
+      (Alf, 2026-11-13): `argMapping: "fra: vektingstallIntervall.fraVerdi, til:
+      vektingstallIntervall.tilVerdi"` onto `(Table t, BigDecimal fra, BigDecimal til)` is the first
+      of the two typed forms. A fact document and a sakila execution test show it emitted from the
+      store.
+    * **An input field's `@condition` takes a bean** `open`, G's. Refused today
       because that condition was resolved once per input type with no consuming field; a call per
-      occurrence has one, so the refusal can go.
+      occurrence has one, so the refusal can go. The second typed form: a record or bean the store
+      builds from the input object at each consuming coordinate, and a `List` of them for a list of
+      input objects, as `filterUtdanningsinstanserByVarighet` on `varighet: [VarighetFilterInput]`
+      takes.
+    * **A parameter declaring `Map` or `Object` for an input object is refused** `blocked`, G's, on "An input field's `@condition` takes a bean".
+      A stored defect, basis `GRAPHITRON` since graphitron does not mean to generate the shape, its
+      remedy naming the two typed forms, owned per defects-as-facts § Ownership. The walk's `Map`
+      pass-through and `ConditionBeanAtInputField` go, and typed-rejection.adoc says so. Breaking
+      for utdanningsregisteret's `searchVektingstallRange` and `filterUtdanningsinstanserByVarighet`,
+      so it lands after the typed forms, with a `BREAKING-CHANGE` footer naming the migration.
   * **An inline list's ordering is resolved at its occurrence** `open`. `@defaultOrder` and `@order`
     are stored as written today; the occurrence states its sort keys in order, each a column with
     direction and collation or an order-field method, read by the multiset's `orderBy`. The walk's
