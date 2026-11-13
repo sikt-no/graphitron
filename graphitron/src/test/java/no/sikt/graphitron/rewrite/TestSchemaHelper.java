@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
 
 /**
@@ -132,22 +133,16 @@ public final class TestSchemaHelper {
     }
 
     private static graphql.schema.GraphQLSchema deriveEmittedSchema(String captured) {
-        // Its own store, never the thread's: a fixture that holds a CapturedStore across its
-        // cases would have the rows it captured cleared out from under it by this one.
-        try (var store = no.sikt.graphitron.model.test.CapturedStore.ownStore(
-                java.nio.file.Files.createTempDirectory("emitted"),
-                captured)) {
-            var assembly = no.sikt.graphitron.model.schema.SchemaAssembly.of(
-                no.sikt.graphitron.model.schema.EmittedRegistry.derive(store.registry(),
-                    new no.sikt.graphitron.model.read.StoreHandle(store.dsl(),
-                        no.sikt.graphitron.model.test.CapturedStore.GRAPH)).registry());
-            if (assembly instanceof no.sikt.graphitron.model.schema.SchemaAssembly.Assembled a) {
-                return a.schema();
-            }
-            throw new IllegalStateException("the emitted registry did not assemble: " + assembly);
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException(e);
+        // Into the population's pooled inline stores, never the thread's: a fixture that holds a
+        // CapturedStore across its cases would have the rows it captured cleared out from under it.
+        var assembly = FactGraphs.inline().read(CapturedStore.GRAPH, captured, null,
+            java.util.List.of(), graph -> no.sikt.graphitron.model.schema.SchemaAssembly.of(
+                no.sikt.graphitron.model.schema.EmittedRegistry.derive(graph.registry(),
+                    graph.handle()).registry()));
+        if (assembly instanceof no.sikt.graphitron.model.schema.SchemaAssembly.Assembled a) {
+            return a.schema();
         }
+        throw new IllegalStateException("the emitted registry did not assemble: " + assembly);
     }
 
     /**
@@ -159,13 +154,8 @@ public final class TestSchemaHelper {
     public static <T> T withStoreOver(String schemaText,
             java.util.function.Function<no.sikt.graphitron.model.read.StoreHandle, T> body) {
         String captured = (schemaText.contains("interface Node") ? "" : NODE_INTERFACE) + schemaText;
-        try (var store = no.sikt.graphitron.model.test.CapturedStore.ownStore(
-                java.nio.file.Files.createTempDirectory("relation"), captured)) {
-            return body.apply(new no.sikt.graphitron.model.read.StoreHandle(store.dsl(),
-                no.sikt.graphitron.model.test.CapturedStore.GRAPH));
-        } catch (java.io.IOException e) {
-            throw new java.io.UncheckedIOException(e);
-        }
+        return FactGraphs.inline().read(CapturedStore.GRAPH, captured, null, java.util.List.of(),
+            graph -> body.apply(graph.handle()));
     }
 
     /**
@@ -219,14 +209,12 @@ public final class TestSchemaHelper {
                 ctx.sessionStateConfig(), java.util.OptionalInt.empty(),
                 ctx.outboxConfig())
             : no.sikt.graphitron.model.run.SubjectConfig.none();
-        try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,
-                no.sikt.graphitron.model.test.CatalogInput.of(ctx),
-                testClasspath(), configuration)) {
-            var handle = new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH);
-            return new StoreBacked(no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
-                bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections, handle),
-                no.sikt.graphitron.emit.RecordAccessorQuery.read(handle));
-        }
+        return FactGraphs.inline().read(CapturedStore.GRAPH, schemaText,
+            no.sikt.graphitron.model.test.CatalogInput.of(ctx), testClasspath(), configuration,
+            graph -> new StoreBacked(no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
+                bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections,
+                graph.handle()),
+                no.sikt.graphitron.emit.RecordAccessorQuery.read(graph.handle())));
     }
 
     /**
