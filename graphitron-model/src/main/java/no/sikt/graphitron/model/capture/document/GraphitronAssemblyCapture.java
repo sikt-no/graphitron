@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceBindings;
+import no.sikt.graphitron.model.derive.OccurrenceLookupKeys;
 import no.sikt.graphitron.model.derive.OccurrenceBuilds;
 import no.sikt.graphitron.model.derive.OccurrenceDepthDefects;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
@@ -40,6 +41,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MANY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MANY_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -163,6 +166,10 @@ public final class GraphitronAssemblyCapture {
         // @condition calls, for the whole graph off the depths: nothing in the depths reads them.
         new AnchorStage("occurrence-bindings", OccurrenceBindings.class,
             OccurrenceBindings::derive),
+        // The keys a caller narrows each list by, off the columns and node ids the arguments bind at
+        // the list's table just above, and the defects of a @lookupKey they cannot state.
+        new AnchorStage("occurrence-lookup-keys", OccurrenceLookupKeys.class,
+            OccurrenceLookupKeys::derive),
         // The class each input object is built into and the member each field fills, the shape each
         // node id lands in, and the defects judging them, off the calls and parameters just pinned.
         new AnchorStage("occurrence-builds", OccurrenceBuilds.class,
@@ -230,3 +237,20 @@ public final class GraphitronAssemblyCapture {
             .execute();
     }
 }
+        // Which of them return many, off the targets just written and the fields' own wrappers.
+        var many = GRAPHITRON_FIELD_MANY;
+        var manyRule = GRAPHITRON_FIELD_MANY_RULE;
+        dsl.insertInto(many)
+            .columns(many.GRAPH_NAME, many.TYPE_NAME, many.FIELD_NAME, many.TOUCHED_AT)
+            .select(dsl.select(manyRule.GRAPH_NAME, manyRule.TYPE_NAME, manyRule.FIELD_NAME,
+                    val(touchedAt, many.TOUCHED_AT))
+                .from(manyRule)
+                .where(manyRule.GRAPH_NAME.eq(graph)))
+            .onConflict(many.GRAPH_NAME, many.TYPE_NAME, many.FIELD_NAME)
+            .doUpdate()
+            .set(many.TOUCHED_AT, excluded(many.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(many)
+            .where(many.GRAPH_NAME.eq(graph))
+            .and(many.TOUCHED_AT.ne(touchedAt))
+            .execute();

@@ -504,6 +504,13 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_condition_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_condition_candidate_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_condition_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_lookup_key", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_node_id_carried", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_node_id_carried_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_many", Arm.DERIVED);
+        registrations.put("graphitron_field_many_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_lookup_key_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_lookup_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_pair", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_pair_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_landing_key_column", Arm.DERIVED);

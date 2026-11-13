@@ -205,6 +205,19 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
 
+[#lookup-key-refusals]
+=== A `@lookupKey` that names no key of the field's rows
+
+*What it says.* One of three codes, at the `@lookupKey` application:
+
+* `LOOKUP_KEY_ON_CONNECTION`: the field returns a connection, which pages where a lookup answers the keys it is given.
+* `LOOKUP_KEY_ON_SINGLE_CHILD`: a field of a `@table` type returns one `@table` object, and graphitron generates a lookup there only for a list. This one is a deferral, not a fault in the schema.
+* `LOOKUP_KEY_OFF_TABLE`: the argument is a node id of a node on another table than the field reads, or takes an input object with such an id whose columns no one foreign key from the field's table carries back; the node's table is named in the detail.
+
+*Cause.* A lookup narrows the field's rows by the keys the caller passes, each a column of the table the field reads. A key the build cannot state as such a column would narrow by fewer keys than were written and read more rows than asked for, so the build stops instead.
+
+*Next step.* Drop `@asConnection` or `@lookupKey`; return a list; or, for a node id of another node, drop `@lookupKey` and let the id filter through the foreign key. xref:directives/lookupKey.adoc#constraints[`@lookupKey` constraints] lists the rules.
+
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.

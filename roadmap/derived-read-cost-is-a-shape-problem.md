@@ -772,10 +772,18 @@ static method needs no holder.
     are stored as written today; the occurrence states its sort keys in order, each a column with
     direction and collation or an order-field method, read by the multiset's `orderBy`. The walk's
     row identity for a list over a table with no primary key, a node's key standing in, goes with it.
-  * **An inline list states how it is narrowed** `open`. Its `@lookupKey` arguments in key order,
-    which today claim `LOOKUP` only at a root or a split; FS-plattform writes `@lookupKey` on child
-    fields, so the flip needs it. A `first` limiting an inline list is not stated and not needed:
-    pagination is a connection's (Alf, 2026-11-13).
+  * **An inline list states how it is narrowed** `done`.
+    `graphitron_occurrence_lookup_key(graph, coordinate, bound, position, key_coordinate, key_kind)`
+    states, per field occurrence and table its binding reads, each argument or input-field occurrence
+    written `@lookupKey` that binds a column or node id there, in key order: arguments as declared,
+    an input object's fields as declared within it, a node id's columns in its own key order. It
+    keys into the key occurrence's binding rather than copying the column, and holds for root, split
+    and inline lists alike, where the producer says where the lookup runs; the filter conditions
+    leave a key out of the generated predicates by joining it, never by reading `@lookupKey` again.
+    Written by the `occurrence-lookup-keys` stage after `occurrence-bindings`, which also states what
+    the walk refuses so no key is silently missing: `LOOKUP_KEY_ON_CONNECTION`,
+    `LOOKUP_KEY_ON_SINGLE_CHILD` (a deferral) and `LOOKUP_KEY_OFF_TABLE`, a node id of a node on
+    another table. A `first` limit is no part of it: pagination is a connection's (Alf, 2026-11-13).
   * **A `@pivot` is resolved against the catalog** `open`, off the critical path. The attribute table, its on and value
     columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,

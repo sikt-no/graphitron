@@ -6,7 +6,8 @@ import java.time.LocalDateTime;
 
 /**
  * The {@code occurrence-bindings} stage: what each occurrence binds once {@link OccurrenceDepths} has
- * resolved where every occurrence's rows come from. The producers' lifts, the node ids and the key
+ * resolved where every occurrence's rows come from. The producers' lifts, the node ids, the columns
+ * a node id's key is carried back to through its path's one foreign key, and the key
  * columns argMapping paths project out of them, the columns, the nesting fields read off their
  * parent's row, the vouchers, the tables and the {@code @condition}
  * calls applied to them, each over the whole graph from its rule view, then swept.
@@ -24,6 +25,7 @@ public final class OccurrenceBindings {
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         OccurrenceLifts.write(dsl, graph, touchedAt);
         OccurrenceNodeIds.write(dsl, graph, touchedAt);
+        OccurrenceNodeIdCarriedColumns.write(dsl, graph, touchedAt);
         LandingKeyColumns.write(dsl, graph, touchedAt);
         OccurrenceColumns.write(dsl, graph, touchedAt);
         OccurrenceNestings.write(dsl, graph, touchedAt);
@@ -32,6 +34,7 @@ public final class OccurrenceBindings {
         OccurrenceConditions.write(dsl, graph, touchedAt);
         // The lifts need no sweep: their writer clears what this reading did not mark before it writes.
         OccurrenceConditions.sweep(dsl, graph, touchedAt);
+        OccurrenceNodeIdCarriedColumns.sweep(dsl, graph, touchedAt);
         OccurrenceNodeIds.sweep(dsl, graph, touchedAt);
         LandingKeyColumns.sweep(dsl, graph, touchedAt);
         OccurrenceColumns.sweep(dsl, graph, touchedAt);

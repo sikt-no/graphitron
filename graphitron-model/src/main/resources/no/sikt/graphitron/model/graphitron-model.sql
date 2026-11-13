@@ -4481,6 +4481,35 @@ CREATE TABLE graphitron_occurrence (
     WHEN POSITION('(', coordinate) = 0 THEN coordinate
     ELSE SUBSTRING(coordinate, 1, POSITION('(', coordinate) - 1) END),
   argument_coordinate    VARCHAR GENERATED ALWAYS AS (CASE
+-- Whether a field returns many: a list, or a connection over its target. Both inputs are this field's
+-- own, its list wrapper and the connection it was unwrapped from, so the answer is stated once here
+-- at field grain rather than spelled again by each rule that asks it of a field or its occurrences.
+CREATE VIEW graphitron_field_many_rule (graph_name, type_name, field_name) AS
+SELECT ft.graph_name, ft.type_name, ft.field_name
+  FROM graphitron_field_target ft
+  JOIN graphitron_field f
+    ON f.graph_name = ft.graph_name AND f.type_name = ft.type_name AND f.field_name = ft.field_name
+ WHERE f.is_list OR ft.wrapper_type_name IS NOT NULL;
+COMMENT ON VIEW graphitron_field_many_rule IS 'One row the many rule computes, in the shape graphitron_field_many stores: the rule itself, evaluated on demand rather than read off disk. For example the field-targets step inserts this view''s rows for one graph into graphitron_field_many, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_field_many_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_field_many.graph_name';
+-- COMMENT ON COLUMN graphitron_field_many_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_field_many.type_name';
+-- COMMENT ON COLUMN graphitron_field_many_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_many.field_name';
+
+CREATE TABLE graphitron_field_many (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field_target (graph_name, type_name, field_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_many IS 'A field that returns many of its target: one row per field returning a list or a connection. For example films: [Film!]! and films: FilmsConnection are rows here, and film: Film is not.';
+COMMENT ON COLUMN graphitron_field_many.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_many.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_field_many.field_name IS 'the field; with the two columns above the grain, a reference into graphitron_field_target, so a field whose target goes takes this row with it';
+COMMENT ON COLUMN graphitron_field_many.touched_at IS 'when the reading that last wrote this row ran; swept per graph after the step upserts';
+
     WHEN POSITION('(', coordinate) = 0 THEN NULL
     ELSE REGEXP_REPLACE(coordinate, '\(([^.:]+)[.:].*$', '($1:)') END),
   PRIMARY KEY (graph_name, coordinate),
@@ -18272,23 +18301,224 @@ COMMENT ON COLUMN graphitron_occurrence_condition.call_kind IS 'always CONDITION
 COMMENT ON COLUMN graphitron_occurrence_condition.override_written IS 'whether the @condition was written with override: true, false where override: was not written; carried for the transition and retired with the rule that decides what a condition consumes';
 COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
-CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
--- An input-field occurrence read per element of a list a filter compares: its field reads, looks up
--- or counts rows, and its argument is not a @lookupKey, whose fields are the lookup's key.
-WITH element (graph_name, coordinate, element_coordinate) AS (
-  SELECT DISTINCT o.graph_name, o.coordinate, o.element_coordinate
-    FROM graphitron_occurrence_list_element le
-    JOIN graphitron_occurrence o ON o.graph_name = le.graph_name AND o.coordinate = le.coordinate
-    JOIN graphitron_occurrence_producer fp
-      ON fp.graph_name = o.graph_name AND fp.coordinate = o.field_coordinate
-     AND fp.kind IN ('SELECT', 'LOOKUP', 'COUNT')
-    JOIN graphitron_occurrence ao ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application k
-                      WHERE k.graph_name = ao.graph_name AND k.coordinate = ao.element_coordinate
-                        AND k.directive_name = 'lookupKey')
-)
--- It carries @condition, whose value would be read through the list as one object.
-SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_CONDITION'
+-- The column a node id's key position is carried back to on the table its path departs: where the
+-- path to the node's table is one foreign-key step, the departing table's column paired with the key
+-- column. A filter or a lookup on that table then reads its own column rather than joining the
+-- node's table. A path of several steps, one whose foreign key does not pair the key column, or
+-- paths to several types pairing it with different columns, carry nothing back, and state no row.
+CREATE VIEW graphitron_occurrence_node_id_carried_rule
+  (graph_name, coordinate, bound, position, table_source_name, table_schema, table_name, column_name) AS
+SELECT n.graph_name, n.coordinate, n.bound, n.position, MIN(sc.from_source_name), MIN(sc.from_schema),
+       MIN(sc.from_table), MIN(sc.from_column)
+  FROM graphitron_occurrence_node_id n
+  JOIN graphitron_join_path_step_column sc
+    ON sc.graph_name = n.graph_name AND sc.coordinate = n.coordinate AND sc.position = 0
+   AND sc.to_source_name = n.table_source_name AND sc.to_schema = n.table_schema
+   AND sc.to_table = n.table_name AND sc.to_column = n.column_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s
+                    WHERE s.graph_name = sc.graph_name AND s.coordinate = sc.coordinate
+                      AND s.target_type = sc.target_type AND s.position > 0)
+ GROUP BY n.graph_name, n.coordinate, n.bound, n.position
+HAVING COUNT(DISTINCT sc.from_source_name || '.' || sc.from_schema || '.' || sc.from_table || '.'
+                      || sc.from_column) = 1;
+COMMENT ON VIEW graphitron_occurrence_node_id_carried_rule IS 'One row the carried key rule computes, in the shape graphitron_occurrence_node_id_carried stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_node_id_carried, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.position';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.column_name';
+
+CREATE TABLE graphitron_occurrence_node_id_carried (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  position          INT       NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, position),
+  FOREIGN KEY (graph_name, coordinate, bound, position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_carried IS 'The column a node id''s key position is carried back to on the table its path departs: one row per node id occurrence, node table and key position whose one foreign-key step pairs it. For example Query.customersByKey(key.store:), a Store id under a customer list, carries the store key at position 0 back to the customer table''s own foreign-key column.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.coordinate IS 'the occurrence carrying the id';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.bound IS 'the node''s table, as the node id binding spells it';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.position IS 'the key position, graphitron_occurrence_node_id''s; with the three columns above a reference into it, so the carried column goes with the key column it was paired with';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_source_name IS 'the catalog source of the departing table';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_schema IS 'the departing table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_name IS 'the table the path departs, whose foreign key reaches the node''s table';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.column_name IS 'the departing table''s column the foreign key pairs with the key column at this position';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
+-- input object one takes, that binds a column or a node id of the table the list reads. Ordered as
+-- the walk's lookup mapping orders its slots, arguments as declared and within an argument its input
+-- object's fields as declared; a node id's own key columns follow its binding's positions. Stated
+-- for every field occurrence carrying the keys, inline, split or at the root, since where the lookup
+-- runs is the producer's fact and not this one's.
+CREATE VIEW graphitron_occurrence_lookup_key_rule
+  (graph_name, coordinate, bound, position, key_coordinate, key_bound, key_kind) AS
+SELECT graph_name, coordinate, bound,
+       CAST(ROW_NUMBER() OVER (PARTITION BY graph_name, coordinate, bound
+                               ORDER BY argument_ordinal, field_ordinal) - 1 AS INT),
+       key_coordinate, key_kind
+  FROM (
+    -- A scalar or node id argument written @lookupKey, bound at the list's table.
+    SELECT t.graph_name, t.coordinate, t.bound, a.ordinal, -1, k.coordinate, b.bound, b.kind
+      FROM graphitron_occurrence_binding_table t
+      JOIN graphitron_occurrence k
+        ON k.graph_name = t.graph_name AND k.parent_coordinate = t.coordinate AND k.kind = 'FIELD_ARGUMENT'
+      JOIN graphitron_argument a ON a.graph_name = k.graph_name AND a.coordinate = k.element_coordinate
+      JOIN graphitron_occurrence_binding b
+        ON b.graph_name = k.graph_name AND b.coordinate = k.coordinate AND b.bound = t.bound
+       AND b.kind IN ('COLUMN', 'NODE_ID')
+     WHERE EXISTS (SELECT 1 FROM graphitron_directive_application d
+                    WHERE d.graph_name = a.graph_name AND d.coordinate = a.coordinate
+                      AND d.directive_name = 'lookupKey')
+    UNION ALL
+    -- A field of the input object an argument written @lookupKey takes, bound at the list's table,
+    -- or a node id of another table's node carried back to it in full.
+    SELECT t.graph_name, t.coordinate, t.bound, a.ordinal, f.ordinal, i.coordinate, b.bound, b.kind
+      FROM graphitron_occurrence_binding_table t
+      JOIN graphitron_occurrence k
+        ON k.graph_name = t.graph_name AND k.parent_coordinate = t.coordinate AND k.kind = 'FIELD_ARGUMENT'
+      JOIN graphitron_argument a ON a.graph_name = k.graph_name AND a.coordinate = k.element_coordinate
+      JOIN graphitron_occurrence i
+        ON i.graph_name = k.graph_name AND i.parent_coordinate = k.coordinate AND i.kind = 'INPUT_FIELD'
+      JOIN graphitron_field f ON f.graph_name = i.graph_name AND f.coordinate = i.element_coordinate
+      JOIN graphitron_occurrence_binding b
+        ON b.graph_name = i.graph_name AND b.coordinate = i.coordinate AND b.bound = t.bound
+       AND b.kind IN ('COLUMN', 'NODE_ID')
+     WHERE EXISTS (SELECT 1 FROM graphitron_directive_application d
+                    WHERE d.graph_name = a.graph_name AND d.coordinate = a.coordinate
+                      AND d.directive_name = 'lookupKey')
+       AND (b.bound = t.bound
+            OR (b.kind = 'NODE_ID'
+                AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                                 WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
+                                   AND n.bound = b.bound
+                                   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_carried c
+                                                    WHERE c.graph_name = n.graph_name AND c.coordinate = n.coordinate
+                                                      AND c.bound = n.bound AND c.position = n.position
+                                                      AND c.table_source_name = t.table_source_name
+                                                      AND c.table_schema = t.table_schema
+                                                      AND c.table_name = t.table_name))))
+  ) slot (graph_name, coordinate, bound, argument_ordinal, field_ordinal, key_coordinate, key_bound, key_kind);
+COMMENT ON VIEW graphitron_occurrence_lookup_key_rule IS 'One row the lookup key rule computes, in the shape graphitron_occurrence_lookup_key stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-lookup-keys stage inserts this view''s rows for one graph into graphitron_occurrence_lookup_key, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.position';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.key_coordinate IS 'the key_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.key_coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.key_kind IS 'the key_kind of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.key_kind';
+
+CREATE TABLE graphitron_occurrence_lookup_key (
+  graph_name     VARCHAR   NOT NULL,
+  coordinate     VARCHAR   NOT NULL,
+  bound          VARCHAR   NOT NULL,
+  position       INT       NOT NULL,
+  key_coordinate VARCHAR   NOT NULL,
+  key_kind       VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, position),
+  UNIQUE (graph_name, coordinate, bound, key_coordinate),
+  -- The table the list reads, so a key cannot outlive the list's binding.
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_table (graph_name, coordinate, bound) ON DELETE CASCADE,
+  -- The column or node id the key's occurrence binds, where it binds it, which carries the column.
+  FOREIGN KEY (graph_name, key_coordinate, key_bound, key_kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  CHECK (key_kind IN ('COLUMN', 'NODE_ID')),
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_occurrence_lookup_key IS 'One key a caller narrows a list by: one row per field occurrence, table it reads, and argument or input-field occurrence written @lookupKey that binds a column or node id there, in key order. For example Film.actors(actor_id:) narrows Film.actors at public.actor by actor_id at position 0.';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.coordinate IS 'the field occurrence the keys narrow, inline in its parent''s statement, split or at the root alike';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.bound IS 'the table the field reads, as its TABLE binding spells it; one per participant table where the field reads several';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.position IS 'the key''s place, numbered from zero: the arguments in declaration order and, within an argument taking an input object, its fields in declaration order. A node id''s key columns are one key here, in the order graphitron_occurrence_node_id states them';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_coordinate IS 'the occurrence whose value the caller passes: the argument written @lookupKey, or a field of the input object it takes. Its binding names the column, graphitron_occurrence_column for COLUMN and graphitron_occurrence_node_id for NODE_ID, so the column is joined and never copied';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_bound IS 'the table the key occurrence''s binding sits at: the list''s own table, or for an input field''s node id of a node on another table that node''s table, whose key graphitron_occurrence_node_id_carried carries back to the list''s table column by column';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_kind IS 'what the key occurrence binds, COLUMN or NODE_ID, carried so the foreign key holds the row to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_lookup_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- What a @lookupKey the keys above cannot state, each at the application. Two rules the walk
+-- enforces: a field returning a connection, which pages where the keys answer one row each; and a
+-- node id of a node on another table than the list reads, as the argument itself, or as a field of
+-- the input object it takes whose path's one foreign key does not carry every key position back to
+-- the list's table, either narrowing by nothing. One deferral: a field of a table-bound type returning
+-- one table-bound object, which the walk does not generate a lookup for.
+CREATE VIEW graphitron_occurrence_lookup_key_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'LOOKUP_KEY_ON_CONNECTION', CAST(NULL AS VARCHAR), 'occurrence-lookup-keys'
+  FROM graphql_directive_application da
+  JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name AND ft.field_name = a.field_name
+ WHERE da.directive_name = 'lookupKey' AND ft.wrapper_type_name IS NOT NULL
+UNION ALL
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'LOOKUP_KEY_ON_SINGLE_CHILD', CAST(NULL AS VARCHAR), 'occurrence-lookup-keys'
+  FROM graphql_directive_application da
+  JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+  JOIN graphitron_field f
+    ON f.graph_name = a.graph_name AND f.type_name = a.type_name AND f.field_name = a.field_name
+  -- Below a table-bound parent, returning one table-bound object: the walk checks cardinality there
+  -- alone, a child under a record or a plain type being classified by other rules.
+  JOIN graphitron_tabletype pt ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype rt
+    ON rt.graph_name = ft.graph_name AND rt.type_name = ft.target_type_name AND rt.named_type_kind = 'OBJECT'
+ WHERE da.directive_name = 'lookupKey'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_many m
+                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name)
+UNION ALL
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'LOOKUP_KEY_OFF_TABLE', n.bound, 'occurrence-lookup-keys'
+  FROM graphitron_occurrence_binding_table t
+  JOIN graphitron_occurrence k
+    ON k.graph_name = t.graph_name AND k.parent_coordinate = t.coordinate AND k.kind = 'FIELD_ARGUMENT'
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = k.graph_name AND n.coordinate = k.coordinate AND n.bound <> t.bound
+  JOIN graphql_directive_application da
+    ON da.graph_name = k.graph_name AND da.coordinate = k.element_coordinate
+   AND da.directive_name = 'lookupKey'
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key lk
+                    WHERE lk.graph_name = t.graph_name AND lk.coordinate = t.coordinate
+                      AND lk.bound = t.bound AND lk.key_coordinate = k.coordinate)
+UNION ALL
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'LOOKUP_KEY_OFF_TABLE', n.bound, 'occurrence-lookup-keys'
+  FROM graphitron_occurrence_binding_table t
+  JOIN graphitron_occurrence k
+    ON k.graph_name = t.graph_name AND k.parent_coordinate = t.coordinate AND k.kind = 'FIELD_ARGUMENT'
+  JOIN graphitron_occurrence i
+    ON i.graph_name = k.graph_name AND i.parent_coordinate = k.coordinate AND i.kind = 'INPUT_FIELD'
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = i.graph_name AND n.coordinate = i.coordinate AND n.bound <> t.bound
+  JOIN graphql_directive_application da
+    ON da.graph_name = k.graph_name AND da.coordinate = k.element_coordinate
+   AND da.directive_name = 'lookupKey'
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key lk
+                    WHERE lk.graph_name = t.graph_name AND lk.coordinate = t.coordinate
+                      AND lk.bound = t.bound AND lk.key_coordinate = i.coordinate);
+COMMENT ON VIEW graphitron_occurrence_lookup_key_entry_defect_rule IS 'One row the lookup key defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-lookup-keys stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect.source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect.source_line';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect.source_column';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect.code';
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.detail IS 'the detail of a row of this rule, which the stage writes into graphitron_entry_defect.detail';
+
   FROM element e
  WHERE EXISTS (SELECT 1 FROM graphitron_directive_application c
                 WHERE c.graph_name = e.graph_name AND c.coordinate = e.element_coordinate
@@ -18305,6 +18535,7 @@ SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NODE_ID'
                    WHERE ol.graph_name = e.graph_name AND ol.coordinate = e.coordinate)
    AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
                 WHERE n.graph_name = e.graph_name AND n.coordinate = e.coordinate)
+-- COMMENT ON COLUMN graphitron_occurrence_lookup_key_rule.key_bound IS 'the key_bound of a row of this rule, which the stage writes into graphitron_occurrence_lookup_key.key_bound';
 UNION ALL
 -- It is itself a list, and one cell holds one value.
 SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NOT_ONE_VALUE'
@@ -18313,6 +18544,7 @@ SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_NOT_ONE_VALUE'
                     JOIN graphitron_occurrence_overridden ov
                       ON ov.graph_name = ol.graph_name AND ov.coordinate = ol.list_coordinate
                    WHERE ol.graph_name = e.graph_name AND ol.coordinate = e.coordinate)
+  key_bound      VARCHAR   NOT NULL,
    AND EXISTS (SELECT 1 FROM graphitron_field f
                 WHERE f.graph_name = e.graph_name AND f.coordinate = e.element_coordinate AND f.is_list)
 UNION ALL
@@ -21274,12 +21506,13 @@ INSERT INTO meta_stage VALUES
   ('occurrence-source-claims', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
   ('occurrence-depths', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
   ('occurrence-bindings', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-builds', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 40, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 41, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 42, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-lookup-keys', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
+  ('occurrence-builds', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 41, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 42, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 43, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -22070,6 +22303,7 @@ INSERT INTO meta_grain VALUES
    'one directive one author applied at one coordinate, in one graph',
    'graph_name, coordinate, directive_name, ordinal', 'sdl'),
   ('directive-application-argument',
+  ('field-targets', 'graphitron_field_many'),
    'one argument one author passed to one application, in one graph',
    'graph_name, coordinate, directive_name, ordinal, directive_argument_name', 'sdl'),
   ('directive-name',
@@ -22327,6 +22561,12 @@ INSERT INTO graphitron_defect_type VALUES
    'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.'),
   ('LIST_OVER_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_OVER_ONE_VALUE',
    'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.'),
+  ('LOOKUP_KEY_ON_CONNECTION', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_ON_CONNECTION',
+   'A @lookupKey argument sits on a field returning a connection, and a lookup answers the keys it is given where a connection pages through rows, so the two cannot both hold: drop @asConnection or drop @lookupKey.'),
+  ('LOOKUP_KEY_ON_SINGLE_CHILD', 'error', 'UNSUPPORTED', 'GRAPHITRON_LOOKUP_KEY_ON_SINGLE_CHILD',
+   'A @lookupKey argument sits on a field of a table-bound type returning one table-bound object, and graphitron generates a lookup there only for a list: return a list, or drop @lookupKey.'),
+  ('LOOKUP_KEY_OFF_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_OFF_TABLE',
+   'A @lookupKey argument is a node id of a node on another table than the one the field reads, or takes an input object with such a field that no one foreign key from the field''s table carries back to its columns, so it unpacks into no key of the field''s rows and there is nothing for it to narrow by: drop @lookupKey, which leaves the id a filter through the foreign key, put the id in an input object the field''s table points from, or key on the field''s own node.'),
   ('LIST_ELEMENT_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_CONDITION',
    'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.'),
   ('LIST_ELEMENT_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NODE_ID',
@@ -22686,6 +22926,18 @@ INSERT INTO meta_relation VALUES
    'For example Film.id packs film_id at public.film under Film, and Query.filmsByNodeIdArg(ids:), written @nodeId(typeName: "Film"), unpacks into the same column.',
    'The NODE_ID subtype of graphitron_occurrence_binding, on its key with the key position added and pinned to its kind by the unique key beside it. The key columns are the node type''s own, on its own table, whatever the occurrence reads: a written typeName takes them from the named node, and only an inference that reads where a need lands lets a table decide which node it is. Stored because the encode and the decode, the argMapping key projection and the defects all ask which columns an id at this occurrence carries, and a foreign key into graphitron_node_keycolumn holds the answer to the node''s key as it stands, the binding cascading with it as a derivation goes with what it was derived from.'),
   ('graphitron_occurrence_node_id_slot', 'occurrence-node-id-slot', 'graphitron',
+  ('occurrence-lookup-key',
+   'one key column slot one @lookupKey argument fills at the table one field occurrence reads, in one graph',
+   'graph_name, coordinate, bound, position', 'sdl'),
+  ('occurrence-order',
+   'one order one list or connection occurrence can be read in at one table it reads, in one graph',
+   'graph_name, coordinate, bound, choice', 'sdl'),
+  ('occurrence-sort-key',
+   'one key at one position of one order of one list or connection occurrence, in one graph',
+   'graph_name, coordinate, bound, choice, position', 'sdl'),
+  ('type-identifying-key',
+   'one column of one ranked key that identifies a row of one table-bound type, in one graph',
+   'graph_name, type_name, key_ordinal, position', 'sdl'),
    'Where a node id at an occurrence lands in Java: one row per node id occurrence and place it lands.',
    'For example Query.greetings(userId:), written @nodeId(typeName: "Film") on a @service whose method takes String userId, lands on that parameter, at java.lang.String in the SINGLE shape.',
    'What the decode shape and the decode-into-Java defects judge, stated once rather than each reader climbing to the place: the supertype of the three places an id lands, carrying the class and shape every landing is judged on. Keyed by the place spelled from its subtype''s own key, as graphitron_occurrence_binding.bound is, there being no key the three places share (Alf, 2026-11-12).'),
