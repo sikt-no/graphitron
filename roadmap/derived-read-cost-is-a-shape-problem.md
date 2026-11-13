@@ -81,6 +81,7 @@ The walk's read path is gone
 ├── The projection units are rendered from the store
 │   ├── A projection unit is emitted from the store, censused
 │   ├── The filter conditions are emitted from the store
+│   │   └── A routine and a write state what they bind as call parameters
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child producer states the parent columns it is handed
 │   ├── A child read inline is emitted from the store
@@ -810,7 +811,13 @@ static method needs no holder.
     which holds a `@condition`'s parameters since 2026-11-13, and a single column only through
     `graphitron_occurrence_node_id_slot_projection`. `NODE_ID`, a generated term on a converter-backed
     or composite key, waits on `NodeIdDecodeQuery` resolving a decode for it, which no parameter's
-    shape row answers. `NODE_ID_PARTICIPANT` waits on the not-this-participant decode policy.
+    shape row answers. `NODE_ID_PARTICIPANT`, an id each participant decodes as a node of its own,
+    waits on the not-this-participant decode policy; an id naming one node type is emitted on every
+    participant.
+    * **A routine and a write state what they bind as call parameters** `open`. A `@routine`'s and a
+      write's fills are `graphitron_occurrence_call_parameter` rows from rule views of their own, so
+      `ConditionQuery` excludes a term some call's fill binds and `CONSUMED` goes (Alf, 2026-11-13); a root
+      `SELECT` or `LOOKUP`'s own call parameters wait for "The root query fetchers are emitted from the store".
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence, and flips in the same pass as `$project` and the
@@ -1110,6 +1117,13 @@ pass and no stratum that clears and recomputes.
         write's result as records of the return's table re-read by its key in a statement of their
         own, a write's statement joining nothing onward since it holds its locks, and the emitter
         refuses the shape only because it has no lift for a write.
+    * **A table write's refusals are codes a stage writes** `open`. `UpdateRowsWalker` and
+      `DeleteRowsWalker` refuse what `MutationInputResolver` admits, `@condition(override: true)` on
+      an UPDATE or DELETE input, beside their own key and shape rules: `NoUniqueKeyCoverage`,
+      `NoSetFields`, `MixedCarrierKeyMembership`, `NullableStraddlingReference`,
+      `PlainColumnCollision`, `FailOnMissingNeedsKey`, the idempotent delete's key and echo, and
+      `UnsupportedInputFieldShape`. Each becomes a stored defect before the walkers go, or the shape
+      is admitted silently.
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
       The walk's single-channel rules for the type a write, a routine or a service returns are no
       rule of the model: each field under the result is an occurrence with its own lift off its parent, so two
