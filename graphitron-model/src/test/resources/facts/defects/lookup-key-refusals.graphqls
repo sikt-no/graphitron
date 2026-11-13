@@ -1,0 +1,53 @@
+# What a @lookupKey asks that no key can state: a lookup on a field returning a connection, which
+# pages where the keys answer one row each; a lookup on a field below the root returning one value,
+# which graphitron does not generate; and a node id argument of a node on another table than the
+# field reads, which unpacks into no key of its rows. Each is refused at the application. Beside them
+# the near misses: a single-valued lookup at the root and a node id of the field's own node, both
+# keys; an input object's node id of another table's node, carried back through the foreign key, is
+# a key too, stated in scenarios/inline-list-lookup-key.
+
+type Store implements Node @table(name: "store") @node(typeId: "Store", keyColumns: ["store_id"]) {
+    id: ID!
+}
+
+type Customer @table(name: "customer") {
+    email: String
+}
+
+type Film implements Node @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) {
+    id: ID!
+    title: String
+
+    # Below the root, one value.
+    sequel(film_id: Int @lookupKey @field(name: "film_id")): Film
+        @reference(path: [{key: "film_original_language_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+
+type Query {
+    filmsPaged(film_id: [Int] @lookupKey @field(name: "film_id")): [Film] @asConnection
+
+    customersByStore(store: [ID] @nodeId(typeName: "Store") @lookupKey): [Customer]
+
+    filmByKey(film_id: Int! @lookupKey @field(name: "film_id")): Film
+    filmsById(id: [ID] @nodeId(typeName: "Film") @lookupKey): [Film]
+    node(id: ID!): Node
+}
+
+interface Node {
+    id: ID!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
+  source_line, code,                       detail
+  22,          LOOKUP_KEY_ON_SINGLE_CHILD,
+  27,          LOOKUP_KEY_ON_CONNECTION,
+  29,           LOOKUP_KEY_OFF_TABLE,       public.store
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", rows: """
+  coordinate,       bound,       position, key_coordinate,             key_bound,   key_kind
+  Film.sequel,      public.film, 0,        Film.sequel(film_id:),      public.film, COLUMN
+  Query.filmsPaged, public.film, 0,        Query.filmsPaged(film_id:), public.film, COLUMN
+  Query.filmByKey,  public.film, 0,        Query.filmByKey(film_id:),  public.film, COLUMN
+  Query.filmsById,  public.film, 0,        Query.filmsById(id:),       public.film, NODE_ID
+  """)

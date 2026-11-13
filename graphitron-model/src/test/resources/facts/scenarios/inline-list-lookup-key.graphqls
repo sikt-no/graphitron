@@ -1,0 +1,95 @@
+# How a list is narrowed by the keys a caller gives: each @lookupKey argument fills one key column
+# of the list's table, a scalar its column, an input object one column per field in the order its
+# fields are declared, and a node id the key columns its node is identified by, in key order. The
+# keys are stated in the order the arguments are declared, beside the list's own table, whether the
+# list is read inline in its parent's statement, by a split query or at the root.
+
+type Actor implements Node @table(name: "actor") @node(typeId: "Actor", keyColumns: ["actor_id"]) {
+    id: ID!
+    firstName: String @field(name: "first_name")
+}
+
+type FilmActor @table(name: "film_actor") {
+    actorId: Int @field(name: "actor_id")
+}
+
+input FilmActorKey {
+    filmId:  Int! @field(name: "film_id")
+    actorId: Int! @field(name: "actor_id")
+}
+
+type Film @table(name: "film") {
+    title: String
+
+    # A scalar key on the table a junction path lands on.
+    actors(actor_id: [Int!] @lookupKey): [Actor!]! @reference(path: [
+        {key: "film_actor_film_id_fkey"},
+        {key: "film_actor_actor_id_fkey"}
+    ])
+
+    # The near miss beside the key: first_name filters, it does not narrow.
+    actorsNamed(actor_id: [Int!] @lookupKey, first_name: String @field(name: "first_name")): [Actor!]!
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+
+    # An input object's fields, each a column of the list's table, in declaration order.
+    cast(key: [FilmActorKey!] @lookupKey): [FilmActor!]!
+        @reference(path: [{key: "film_actor_film_id_fkey"}])
+
+    # A node id, unpacked into its node's key columns.
+    actorsById(id: [ID!] @nodeId(typeName: "Actor") @lookupKey): [Actor!]!
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+
+    # Read by a split query: the keys are the same fact.
+    actorsSplit(actor_id: [Int!] @lookupKey): [Actor!]! @splitQuery
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+
+    # A list no argument narrows holds no key.
+    allActors(first_name: String @field(name: "first_name")): [Actor!]!
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+# A store's node id in an input object under a customer list: its key is carried back through the
+# customer's foreign key to customer.store_id, which the lookup keys on.
+type Store implements Node @table(name: "store") @node(typeId: "Store", keyColumns: ["store_id"]) {
+    id: ID!
+}
+
+type Customer @table(name: "customer") {
+    email: String
+}
+
+input CustomerKey {
+    email: String
+    store: ID @nodeId(typeName: "Store")
+}
+
+type Query {
+    films: [Film!]!
+    customersByKey(key: [CustomerKey] @lookupKey): [Customer]
+    filmsByKey(film_id: [Int] @lookupKey @field(name: "film_id")): [Film]!
+    node(id: ID!): Node
+}
+
+interface Node {
+    id: ID!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", rows: """
+  coordinate,           bound,             position, key_coordinate,                    key_bound,         key_kind
+  Film.actors,          public.actor,      0,        Film.actors(actor_id:),            public.actor,      COLUMN
+  Film.actorsNamed,     public.actor,      0,        Film.actorsNamed(actor_id:),       public.actor,      COLUMN
+  Film.cast,            public.film_actor, 0,        Film.cast(key.filmId:),            public.film_actor, COLUMN
+  Film.cast,            public.film_actor, 1,        Film.cast(key.actorId:),           public.film_actor, COLUMN
+  Film.actorsById,      public.actor,      0,        Film.actorsById(id:),              public.actor,      NODE_ID
+  Film.actorsSplit,     public.actor,      0,        Film.actorsSplit(actor_id:),       public.actor,      COLUMN
+  Query.filmsByKey,     public.film,       0,        Query.filmsByKey(film_id:),        public.film,       COLUMN
+  Query.customersByKey, public.customer,   0,        Query.customersByKey(key.email:),  public.customer,   COLUMN
+  Query.customersByKey, public.customer,   1,        Query.customersByKey(key.store:),  public.store,      NODE_ID
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_carried", where: "coordinate LIKE 'Query.customersByKey%'", rows: """
+  coordinate,                       bound,        position, table_name, column_name
+  Query.customersByKey(key.store:), public.store, 0,        customer,   store_id
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect")

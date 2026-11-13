@@ -52,6 +52,7 @@ query {
 
 returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`, `{ title: "ACE GOLDFINGER" }`.
 
+[#constraints]
 == Constraints
 
 * Keys must be one-dimensional lists. Two layers of lists (e.g. `[InList] @lookupKey` where `InList { field: [String] }`) is rejected: the lookup operates over a flat keyset.
@@ -64,6 +65,9 @@ returns three positions in input order: `{ title: "ACADEMY DINOSAUR" }`, `null`,
 * A key whose row fails a non-key predicate is indistinguishable from an unmatched key. Both hold `null` at their position, so a filter narrows which positions are populated rather than which positions exist.
 * An empty or absent key list returns no rows, short-circuiting before SQL rather than degrading into an unfiltered read. Worth knowing when migrating from a generator that returned everything for an empty key list.
 * Only arguments on root-level fields (or on their referenced input types) and on child fields with arguments may be keys.
+* A field returning a connection takes no `@lookupKey`, at the root or below it: a lookup answers the keys it is given and a connection pages through rows, so the build refuses the pair (`LOOKUP_KEY_ON_CONNECTION`).
+* Below the root, a lookup narrows a list. A field of a `@table` type returning one `@table` object with a `@lookupKey` argument is not generated yet (`LOOKUP_KEY_ON_SINGLE_CHILD`); a root field may return one value.
+* A `@nodeId` argument used as a key must be an id of the node on the table the field reads; an id of a node on another table unpacks into no key of the field's rows, so `@lookupKey` on it is refused (`LOOKUP_KEY_OFF_TABLE`), and without `@lookupKey` it filters through the foreign key. Inside an input object taken as a key, such an id is a key when the field's table points at the node's with one foreign key: its key columns are carried back to that foreign key's columns, which the lookup matches. One whose columns no single foreign key carries back is refused with the same code.
 
 == See also
 
