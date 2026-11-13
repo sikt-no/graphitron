@@ -24,6 +24,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RU
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -82,6 +83,10 @@ public final class EntryDefects {
     /** The outbox stage's rule. */
     public static final Rule OUTBOX = new Rule("outbox", GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE);
 
+    /** The call defects' rule, {@link OccurrenceProducers}: a root routine's parameter nothing fills. */
+    public static final Rule PRODUCERS =
+        new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE);
+
     /** The node id binding defects' rule, {@link OccurrenceBindings}. */
     public static final Rule BINDINGS =
         new Rule("occurrence-bindings", GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE);
@@ -115,7 +120,8 @@ public final class EntryDefects {
         new Rule("argmapping-pairs", GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE);
 
     /** Every raising stage's rule, one per stage. */
-    public static final List<Rule> RULES = List.of(ARGMAPPING_PAIRS, VOUCHERS, MINTED_KEYS, ENTITY_KEYS, BINDINGS, BUILDS, TENANTS, ROUTES, DEPTHS, OUTBOX, GRAPHITRON);
+    public static final List<Rule> RULES = List.of(ARGMAPPING_PAIRS, VOUCHERS, MINTED_KEYS, ENTITY_KEYS,
+        PRODUCERS, BINDINGS, BUILDS, TENANTS, ROUTES, DEPTHS, OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

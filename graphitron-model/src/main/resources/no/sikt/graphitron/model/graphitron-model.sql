@@ -11987,17 +11987,17 @@ CREATE TABLE graphitron_occurrence_call (
   UNIQUE (graph_name, coordinate, call, call_kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (call_kind IN ('SERVICE', 'WRITE', 'CONDITION')),
+  CHECK (call_kind IN ('SERVICE', 'WRITE', 'ROUTINE', 'CONDITION')),
   -- The call spelled from its subtype's own key: a producer makes one call, a condition one per
   -- table it is applied to.
-  CHECK (call_kind NOT IN ('SERVICE', 'WRITE') OR call = 'producer'),
+  CHECK (call_kind NOT IN ('SERVICE', 'WRITE', 'ROUTINE') OR call = 'producer'),
   CHECK (call_kind <> 'CONDITION' OR call LIKE 'condition:%')
 );
 COMMENT ON TABLE graphitron_occurrence_call IS 'One call an occurrence makes: one row per occurrence and call, of whatever kind. For example Query.filmsByPath''s service call is its producer call, and each parameter of FilmService#filmsByIds is filled under it.';
 COMMENT ON COLUMN graphitron_occurrence_call.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call.coordinate IS 'the occurrence making the call, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_call.call IS 'which of the occurrence''s calls, spelled from its subtype''s own key as graphitron_occurrence_binding.bound is: producer for a producer''s call; completing the key';
-COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call, WRITE, a write producer''s, or CONDITION, a @condition''s on one table; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
+COMMENT ON COLUMN graphitron_occurrence_call.call_kind IS 'SERVICE, a service producer''s call, WRITE, a write producer''s, ROUTINE, a root routine producer''s, or CONDITION, a @condition''s on one table; the kind a subtype pins so its foreign key holds it to a call of that kind, and a parameter fill carries so a fill only some calls take is a check';
 COMMENT ON COLUMN graphitron_occurrence_call.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The method a call makes, the candidate it pinned: a fact of every call that makes a method, stated
@@ -12242,6 +12242,11 @@ SELECT c.graph_name, c.coordinate, c.call, c.position, l.coordinate, l.directive
     ON l.graph_name = c.graph_name AND l.call_coordinate = c.coordinate
    AND l.landing_coordinate = c.landing_coordinate AND l.target_name = c.parameter_name AND l.target_kind = 'NAME'
    AND ((c.call_kind = 'SERVICE' AND l.directive_name = 'service' AND l.owner = 'service')
+        -- A root routine's call is its field's first @routine, so its pairs are that application's.
+        OR (c.call_kind = 'ROUTINE' AND l.directive_name = 'routine' AND l.owner = 'argMapping'
+            AND l.ordinal = (SELECT MIN(d.ordinal) FROM graphitron_directive_application d
+                              WHERE d.graph_name = l.graph_name AND d.coordinate = l.coordinate
+                                AND d.directive_name = 'routine'))
         OR (c.call_kind = 'CONDITION' AND l.directive_name = 'condition' AND l.owner = 'condition'))
  WHERE c.fill = 'ARGUMENT';
 COMMENT ON VIEW graphitron_occurrence_call_parameter_pair_rule IS 'One row the fill pair rule computes, in the shape graphitron_occurrence_call_parameter_pair stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_occurrence_call_parameter_pair after the fills, which is the name every reader spells.';
@@ -13316,6 +13321,97 @@ COMMENT ON VIEW graphitron_occurrence_write_parameter_rule IS 'One row the write
 -- COMMENT ON COLUMN graphitron_occurrence_write_parameter_rule.record_source_name IS 'the record_source_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.record_source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_write_parameter_rule.record_schema IS 'the record_schema of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.record_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_write_parameter_rule.record_table IS 'the record_table of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.record_table';
+
+-- A root @routine is a call: the routine's generated method, taking each of its parameters. A child
+-- @routine is a step of its lift's path, not a call, and states its parameters on the step. It pins
+-- no method, so its call is its producer's own, stated directly.
+CREATE VIEW graphitron_occurrence_routine_call_rule (graph_name, coordinate, call, call_kind) AS
+SELECT pr.graph_name, pr.coordinate, 'producer', 'ROUTINE'
+  FROM graphitron_occurrence_producer_routine pr
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = pr.graph_name AND p.coordinate = pr.coordinate AND p.start = 'ROOT';
+COMMENT ON VIEW graphitron_occurrence_routine_call_rule IS 'One row the routine call rule computes, in the shape graphitron_occurrence_call stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_call_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_call_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_call_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call.call';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_call_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call.call_kind';
+
+-- What a root @routine's parameters take: the argument its argMapping entry lands on, else the
+-- argument named exactly as the parameter, an unmentioned parameter binding as if mapped to its own
+-- name. A parameter an entry names but lands nowhere is the entry's defect, so it falls back to no
+-- name. A root has no row for $source, so an argument is all a parameter can take.
+CREATE VIEW graphitron_occurrence_routine_parameter_rule
+  (graph_name, coordinate, call, call_kind, position, parameter_name, fill, landing_coordinate) AS
+SELECT pr.graph_name, pr.coordinate, 'producer', 'ROUTINE', sp.position, sp.jooq_name, 'ARGUMENT',
+       COALESCE(l.landing_coordinate, a.coordinate)
+  FROM graphitron_occurrence_producer_routine pr
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = pr.graph_name AND p.coordinate = pr.coordinate AND p.start = 'ROOT'
+  JOIN graphitron_occurrence o ON o.graph_name = pr.graph_name AND o.coordinate = pr.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name
+  LEFT JOIN graphitron_argmapping_landing l
+    ON l.graph_name = pr.graph_name AND l.call_coordinate = pr.coordinate
+   AND l.directive_name = 'routine' AND l.target_kind = 'NAME' AND l.target_name = sp.jooq_name
+   -- The routine called is the field's first @routine, so its pairs are that application's.
+   AND l.ordinal = (SELECT MIN(d.ordinal) FROM graphitron_directive_application d
+                     WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                       AND d.directive_name = 'routine')
+  LEFT JOIN graphitron_occurrence a
+    ON a.graph_name = pr.graph_name AND a.parent_coordinate = pr.coordinate
+   AND a.kind = 'FIELD_ARGUMENT' AND a.name = sp.jooq_name
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pp
+                    WHERE pp.graph_name = o.graph_name AND pp.coordinate = o.element_coordinate
+                      AND pp.directive_name = 'routine' AND pp.target_kind = 'NAME'
+                      AND pp.target_name = sp.jooq_name)
+ WHERE COALESCE(l.landing_coordinate, a.coordinate) IS NOT NULL;
+COMMENT ON VIEW graphitron_occurrence_routine_parameter_rule IS 'One row the routine parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.position';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.parameter_name';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.fill IS 'the fill of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.fill';
+-- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter.landing_coordinate';
+
+-- The occurrence-producers stage's defects: a root @routine's parameter nothing fills, at the
+-- @routine, once per routine, the detail the first such parameter. A parameter an argMapping entry
+-- names is the entry's to judge, where it lands nowhere.
+CREATE VIEW graphitron_occurrence_producer_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'PARAMETER_UNFILLED',
+       MIN(sp.jooq_name), 'occurrence-producers'
+  FROM graphitron_occurrence_producer_routine pr
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = pr.graph_name AND p.coordinate = pr.coordinate AND p.start = 'ROOT'
+  JOIN graphitron_occurrence o ON o.graph_name = pr.graph_name AND o.coordinate = pr.coordinate
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = pr.routine_source_name AND sp.table_schema = pr.table_schema
+   AND sp.routine_name = pr.routine_name
+  JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'routine' AND da.source_name IS NOT NULL
+   AND da.ordinal = (SELECT MIN(d2.ordinal) FROM graphitron_directive_application d2
+                      WHERE d2.graph_name = da.graph_name AND d2.coordinate = da.coordinate
+                        AND d2.directive_name = 'routine')
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_routine_parameter_rule r
+                    WHERE r.graph_name = pr.graph_name AND r.coordinate = pr.coordinate
+                      AND r.position = sp.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pp
+                    WHERE pp.graph_name = o.graph_name AND pp.coordinate = o.element_coordinate
+                      AND pp.directive_name = 'routine' AND pp.target_kind = 'NAME'
+                      AND pp.target_name = sp.jooq_name)
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
+COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the @routine''s file';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter nothing fills';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 
 -- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
@@ -22170,6 +22266,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_node_id'),
   ('occurrence-bindings', 'graphitron_occurrence_binding_table'),
   ('occurrence-producers', 'graphitron_occurrence_call'),
+  ('occurrence-producers', 'graphitron_entry_defect'),
   ('occurrence-bindings', 'graphitron_occurrence_call'),
   ('occurrence-producers', 'graphitron_occurrence_call_candidate'),
   ('occurrence-bindings', 'graphitron_occurrence_call_candidate'),
@@ -23168,7 +23265,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('TABLE_INTERFACE_PARTICIPANT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_INTERFACE_PARTICIPANT_UNBOUND',
    'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
-   'A method a @service or a @condition calls has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and nothing it could take by its type. Name it in argMapping or contextArguments, or rename it after the argument it takes.'),
+   'A method a @service or a @condition calls, or a root @routine, has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and nothing it could take by its type. Name it in argMapping or contextArguments, or rename it after the argument it takes.'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',
    'A parameter of a method a @service or a @condition calls could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.'),
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
@@ -23597,6 +23694,18 @@ INSERT INTO meta_relation VALUES
    'The statement a write producer runs: the table it mutates and, for an identifying write, how many rows one input may match; one row per write producer whose table resolved.',
    'For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from film, MANY a key.',
    'Stated per occurrence rather than per declared field, since a field reached under two parents can start differently under each; read today off the field-keyed producer relations through the occurrence''s field, so the two agree until the rule reads the occurrence''s source, and written by occurrence-producers ahead of the source''s loop, whose sources read it.'),
+  ('graphitron_occurrence_routine_call_rule', 'graph-occurrence-call', 'graphitron',
+   'One row the routine call rule computes, in the shape graphitron_occurrence_call stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call, which is the name every reader spells.',
+   'A root @routine is a call, its generated method taking each parameter, and states it as a service does; a child @routine is a step of its lift''s path and gets none (Alf, 2026-11-13). It pins no method, so its call is read off the root routine producer directly rather than through the candidates and the pin.'),
+  ('graphitron_occurrence_routine_parameter_rule', 'graph-occurrence-call-parameter', 'graphitron',
+   'One row the routine parameter rule computes, in the shape graphitron_occurrence_call_parameter stores for a root routine''s call: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call_parameter, which is the name every reader spells.',
+   'A root routine''s parameters are its call-surface parameter list, each taking the argument its argMapping entry lands on or, unmentioned, the argument of its exact name, as the walk binds them. The routine''s own fill rule beside the service''s, the write''s and the condition''s, so no kind''s rule branches on another.'),
+  ('graphitron_occurrence_producer_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.',
+   'A defect is raised by the first stage holding its facts (Alf, 2026-11-13): a root routine''s fills are written here, so a parameter none reaches is judged here rather than at a later stage reading them.'),
   ('graphitron_occurrence_write_call_rule', 'graph-occurrence-call', 'graphitron',
    'One row the write call rule computes, in the shape graphitron_occurrence_call stores for a write''s call: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_call, which is the name every reader spells.',

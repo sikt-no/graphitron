@@ -1,0 +1,54 @@
+# A child @routine is a join: a step of the path under the field's lift producer, its parameters the
+# step's. Its argMapping, or a parameter's own name, hands it an argument, and a name that argument
+# shares with a column of the table the path lands on is a coincidence of names, not a filter.
+# Actor.filmsWithId joins the routine first, its argument named like a column of the routine's
+# result; Film.castRecentFilmsByLength joins it after a table, its argument named like a column of
+# the table it lands on past the routine. A root @routine is a call instead: Query.filmsWithId binds
+# its arguments to the routine's parameters, film_id by its argMapping entry, though film_id names a
+# column of the routine's result too.
+
+type ActorFilm {
+  filmId: Int @field(name: "film_id")
+}
+
+type Actor @table(name: "actor") {
+  filmsWithId(film_id: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: film_id")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+type Film @table(name: "film") {
+  title: String
+  castRecentFilmsByLength(length: Int!): [Film!]
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: length")
+    @reference(path: [{table: "film"}])
+    @defaultOrder(primaryKey: true)
+}
+
+type Query {
+  actors: [Actor]
+  films: [Film]
+  filmsWithId(actorId: Int!, film_id: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: film_id")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+# The root routine is the call; its parameters are its call-surface list, in position order.
+extend schema @expectEquals(relation: "graphitron_occurrence_call", where: "call_kind = 'ROUTINE'", rows: """
+  coordinate,        call,     call_kind
+  Query.filmsWithId, producer, ROUTINE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter", rows: """
+  coordinate,                    call_coordinate,   call,     position, call_kind
+  Query.filmsWithId(actorId:),   Query.filmsWithId, producer, 0,        ROUTINE
+  Query.filmsWithId(film_id:),   Query.filmsWithId, producer, 1,        ROUTINE
+  """)
+
+# The argument the routine binds names a column of its result as well, which is what the call's
+# binding answers: it is the routine's, not a filter.
+extend schema @assertContains(relation: "graphitron_occurrence_column", rows: """
+  coordinate,                  column_name
+  Query.filmsWithId(film_id:), film_id
+  """)

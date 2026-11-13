@@ -27,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SER
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_WRITE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_CALL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_WRITE_CALL_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.selectOne;
@@ -48,15 +49,21 @@ public final class OccurrenceProducers {
 
     private OccurrenceProducers() {}
 
-    /** The stage: the producers and their service and write calls, the calls' fills, what they produce, then the sweep. */
+    /**
+     * The stage: the producers and their service, write and root routine calls, the calls' fills,
+     * what they produce, the sweep, then the defects its facts break.
+     */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         write(dsl, graph, touchedAt);
         OccurrenceCallParameters.writeServices(dsl, graph, touchedAt);
         OccurrenceCallParameters.sweep(dsl, graph, touchedAt, "SERVICE");
         OccurrenceCallParameters.writeWrites(dsl, graph, touchedAt);
         OccurrenceCallParameters.sweep(dsl, graph, touchedAt, "WRITE");
+        OccurrenceCallParameters.writeRoutines(dsl, graph, touchedAt);
+        OccurrenceCallParameters.sweep(dsl, graph, touchedAt, "ROUTINE");
         writeResults(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.PRODUCERS);
     }
 
     /**
@@ -101,9 +108,11 @@ public final class OccurrenceProducers {
             graph, null, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE_RULE,
             graph, null, touchedAt);
-        // A write's call, read off the write it makes, since it pins no method.
+        // A write's call and a root routine's, read off the producer, since neither pins a method.
         refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_WRITE_CALL_RULE, graph, null, touchedAt);
         sweepCalls(dsl, graph, touchedAt, "WRITE");
+        refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_ROUTINE_CALL_RULE, graph, null, touchedAt);
+        sweepCalls(dsl, graph, touchedAt, "ROUTINE");
     }
 
     /**

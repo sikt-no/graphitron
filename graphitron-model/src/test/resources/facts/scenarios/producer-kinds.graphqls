@@ -72,5 +72,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding",
   Query.filmsByKey(film_id:),         public.film,            COLUMN
   Query.filmsByService,               public.film,            TABLE
   Query.filmsByService(ids:),         Query.filmsByService producer 1, PARAMETER
+  Query.rows(actorId:),               Query.rows producer 0,  PARAMETER
+  Query.rows(minLength:),             Query.rows producer 1,  PARAMETER
   Query.rows.title,                   public.films_for_actor, COLUMN
   """)

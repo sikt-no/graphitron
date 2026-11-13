@@ -6,6 +6,9 @@
 
 type Query {
   films: [String] @routine(name: "films_for_actor")
+  # Every parameter bound, one by its entry and one by its own name: nothing is unfilled.
+  filmsBound(actorId: Int!, pMinLength: Int!): [String]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId")
   chained: [String] @routine(name: "films_for_actor") @routine(name: "rent_film")
   missing: [String] @routine(name: "no_such_routine")
   notCallable: [String] @routine(name: "film")
@@ -76,11 +79,15 @@ extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
   no_such_routine
   """)
 
-# What stops the graph generating: the chain's second routine, rent_film, departs from
-# films_for_actor's result and finds no value there for its parameters, and the two names that
-# resolve to nothing are each a name claimed that does not exist, at the @routine that claims it.
+# What stops the graph generating: a root field's first routine is its call, and films_for_actor's
+# parameters have no argument here, at Query.films and at Query.chained; the chain's second routine,
+# rent_film, departs from films_for_actor's result and finds no value there for its parameters; and
+# the two names that resolve to nothing are each a name claimed that does not exist, at the @routine
+# that claims it.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   code,                      coordinate
+  PARAMETER_UNFILLED,        Query.films
+  PARAMETER_UNFILLED,        Query.chained
   ROUTINE_PARAMETER_UNBOUND, Query.chained
   ELEMENT_UNRESOLVED,        Query.missing
   ELEMENT_UNRESOLVED,        Query.notCallable
