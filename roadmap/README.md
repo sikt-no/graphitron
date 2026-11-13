@@ -33,7 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1168` | An error handler that an earlier handler shadows is reported, as a warning or an error <sub>blocked by: [error-dispatch-matches-graphitron-9](error-dispatch-matches-graphitron-9.md)</sub> | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](shadowed-error-handler-is-reported.md) |
 | `R1167` | Error-channel dispatch routes every throw where Graphitron 9 routed it | Ready | 2026-11-12 <sub>created 2026-11-11</sub> | [plan](error-dispatch-matches-graphitron-9.md) |
-| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | In Progress | 2026-11-12 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
+| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | In Progress | 2026-11-13 <sub>created 2026-10-28</sub> | [plan](signed-reference-entities-across-subgraphs.md) |
 | `R920` | a failed batch logs once, without its SQL, and a consumer can cap batch size | In Review | 2026-11-12 <sub>created 2026-09-04</sub> | [plan](batch-failure-logs-once-not-per-field.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |

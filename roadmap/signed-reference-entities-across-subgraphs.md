@@ -7,7 +7,7 @@ priority: 3
 theme: service
 depends-on: []
 created: 2026-10-28
-last-updated: 2026-11-12
+last-updated: 2026-11-13
 ---
 
 # Signed voucher handover: one subgraph vouches, another grants through RLS
@@ -335,19 +335,19 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
   * Owned by `minted-keys`, which already reads the federation link: either marker in a graph with no
     federation link (ruled 2026-11-12: a voucher only makes sense where a router plans across subgraphs,
     and the minted key it publishes needs the link).
-  * Owned by the voucher stage, decided from the transcription and the capture entries: two `@issue`
-    fields on one type, or two `@accept`; `@issue` on a type with an authored `@key` (it would let a router reach B without the voucher); `@issue` on a type
+  * Owned by the voucher stage, decided from the transcription and the capture entries: more than one
+    voucher field on one type, whichever markers they carry (one code, `VOUCHER_FIELD_REPEATED`, at each
+    marker after the first; it replaces slice 4's `VOUCHER_ISSUE_TWICE`); `@issue` on a type with an authored `@key` (it would let a router reach B without the voucher); `@issue` on a type
     `graphitron_node` holds, authored or inferred from the table's node metadata, since the minted node
     key would name an absorbed `id`; an `@issue` that absorbs nothing; an absorbed field that is a list or
     an object, or carries `@nodeId`, `@service`, `@routine`, `@reference` or another directive that gives
     it a value of its own (read off `graphql_directive_application`, not off a producer fact); an absorbed
-    field whose column does not resolve (a member with no component row); both markers on one type; either
+    field whose column does not resolve (a member with no component row); either
     marker in a graph with no `<sessionState>` (no `store_graph_session_supplied` row), since the caller
     rides on `SessionState`. And the claims, on either marker: a `claims:` naming no field, a field named
     twice, a list, object or nested selection, or a field carrying `@nodeId`, `@service`, `@routine`,
     `@reference` or another value-giving directive; on `@issue`, a claims field that is not an absorbed
-    field; on `@accept`, a claims field that is not a field of the type or is also a field of the key the
-    voucher decodes to (refused rather than allowed, so the two parts never share a value); and two
+    field; on `@accept`, a claims field that is not a field of the type; and two
     `@accept` fields in one graph whose claims differ in names or scalars, since the generated
     `ConnectionKey` has one shape.
   * Owned by `entry-defects`, since what a root field returns is an element-keyed fact the voucher stage
@@ -359,7 +359,14 @@ the vouched documents. Either is the consumer's choice, and both are covered by 
     `EntityResolutionBuilder`: `@accept` on a type with no authored
     resolvable `@key`, or with several and no `key:`, or a `key:` naming no authored key; `@accept` whose
     `key:` is an authored key with a nested selection (`@key(fields: "org { id }")`), since absorbed fields
-    are top-level scalars.
+    are top-level scalars. And two refusals of an `@accept`'s claims, moved here at take-up: a claims
+    field that does not bind a column at the type's table (the test key fields pass, read off the
+    occurrence binding, so B's claims fields need no copy of A's value-giving directive list, which A
+    needed only because its members have no bindings); and a claims field that is also a field of the
+    key the voucher decodes to (refused rather than allowed, so the two parts never share a value), which
+    reads `graphitron_accept_key` and so cannot be the voucher stage's. A rule broken the same way by
+    either marker is one code for both: the session-state, federation-link, empty-claims and
+    repeated-claim refusals say "a voucher marker".
 * *Voucher codec.* One generated class owns the format: version byte, vouch id, scope, caller, expiry,
   key id, the claims section, the lookup section, signature. Each section is the values of its fields,
   so the token itself says which values are the claims and which the row's key. The key values travel in GraphQL's own wire form, so A and B never
@@ -440,8 +447,9 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    feeding them from the store would keep them there. They dissolve instead. The node and entity
    generators move onto the store under R876's node "The node and entity generators read the store",
    reading the alternatives through the `EntityKeyQuery`; the tenant fold's entity routing follows
-   once the tenant facts are in the model. The builder goes when its last reader does, before
-   slice 7 adds the voucher alternative. Ruled by the user (2026-11-11), after a first cut that
+   once the tenant facts are in the model. The builder goes when its last reader does. At slice 7
+   the tenant fold still reads it, so slice 7 states the voucher alternative in the store only and
+   leaves the builder and the walk untouched; the `EntityKeyQuery` composes it in slice 8. Ruled by the user (2026-11-11), after a first cut that
    deleted the builder behind an adapter left the walk's tenant tests with no entities.
 3. *Connection key.* `ConnectionKey` in every build that writes the slot, tenant part only. A refactor:
    single-tenant output unchanged, multi-tenant output differs only in the key's type.
@@ -480,10 +488,22 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    can follow if a consumer needs it.
 7. *B's facts.* `@accept` and its capture entry, its claims rows, its refusals, the `ACCEPT` key and
    `@inaccessible`, the voucher alternative in the entity key alternatives. The same temporary-refusal device as slice 4,
-   removed in slice 8.
+   removed in slice 8. Planned at take-up in five commits, each green: the directive, its entry, the
+   accepting field's `VOUCHER` binding (in the first commit, so no fact document records
+   `COLUMN_UNRESOLVED` on a valid `voucher`) and the temporary refusal, `VOUCHER_ACCEPT_NOT_GENERATED`;
+   `graphitron_accept_claim` and the voucher stage's structural claims refusals; the `ACCEPT` minted key
+   and `@inaccessible`, the minted keys numbered once across roles rather than per arm, since `@accept`
+   may sit on a node and its key would collide with the node's; `graphitron_accept_key` and the
+   `ACCEPT` key's field as a `graphitron_key_field_binding` row of kind `VOUCHER`, written by the minted
+   arm reading the key's own field set (so its hardcoded `id` and `NODE` go), with
+   `entity-key-alternatives`' refusals; the reference page. The voucher alternative is stated in the
+   store only: `EntityKeyQuery` composes it in slice 8 beside the dispatch arm that renders it, since an
+   arm with nothing to render, unreachable behind the refusal, is code no test can run.
 8. *Dispatch.* The claims as a part of `ConnectionKey`, the dispatcher's verify and group, vouched
    acquisition, `Vouch` typed by the claims and `MountedSession.vouch()`, the A and B RLS execution fixture, and the recorded composition
-   check.
+   check. The walk's stand-down reads the `VOUCHER` binding alone: `VoucherBindingQuery` reaches a voucher
+   field through A's members, so B's accepting field, which has none, would drop out of it and be asked
+   of the walk; the stand-down takes the binding and the projection takes the components.
 
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)
 
@@ -741,7 +761,11 @@ column-bound `id` is a plain key, with the node key minted beside it.
   (`id eierId`): replaced by the claims.
 * The vouch cap: replaced by the one-claims-per-operation limit.
 * The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8 remove,
-  `VOUCHER_ISSUE_NOT_GENERATED` among them, and the "refused for now" sentences of their reference pages.
+  `VOUCHER_ISSUE_NOT_GENERATED` and `VOUCHER_ACCEPT_NOT_GENERATED`, and the "refused for now" sentences
+  of their reference pages and directive definitions.
+* `VOUCHER_ISSUE_TWICE`, folded into `VOUCHER_FIELD_REPEATED` in slice 7.
+* The hardcoded `id` field and `NODE` role of `graphitron_key_field_binding_rule`'s minted arm, which
+  reads the minted key's own field set from slice 7.
 
 ## Other solutions we've considered
 
