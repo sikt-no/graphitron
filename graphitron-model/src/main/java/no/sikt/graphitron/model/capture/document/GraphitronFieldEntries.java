@@ -47,14 +47,15 @@ import static org.jooq.impl.DSL.val;
  * row it decodes, and those rows are in different relations.
  *
  * <p>Seventeen directive names reach this site and five of them get a relation here.
- * {@code @service}, {@code @externalField}, {@code @pivot} and {@code @defaultOrder} get none,
+ * {@code @service}, {@code @externalField} and {@code @pivot} get none,
  * nothing reading a decode of them: each application and its arguments stand in the
  * {@code graphql_ast_} relations. {@code @splitQuery}, {@code @tenantFanOut} and
  * {@code @globalData} declare no argument, and {@code @multitableReference} is rejected before anything reads its one argument, so a row for
  * any of the four would carry its key and nothing else, which is what the applied-directive row
  * already says. {@code @reference} and {@code @referenceFor} are the path family's, written for
- * every site at once by {@link GraphitronReferencePathEntries}, and {@code @field} and
- * {@code @nodeId} by {@link GraphitronBindingEntries}.
+ * every site at once by {@link GraphitronReferencePathEntries}, {@code @field} and
+ * {@code @nodeId} by {@link GraphitronBindingEntries}, and {@code @defaultOrder} by
+ * {@link GraphitronOrderEntries}, the decode it shares with {@code @order}.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */

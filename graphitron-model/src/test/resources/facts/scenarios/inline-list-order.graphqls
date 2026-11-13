@@ -1,0 +1,164 @@
+# What a list is ordered by, stated at its occurrence: the default a @defaultOrder writes, by a
+# table's primary key, an index or named elements, or the primary key a list with none falls back
+# to; and each choice an @orderBy argument offers, one per value of its sort enum. Each key is a
+# column of the list's table, a method computing one, or a column read through a path, in order,
+# with its direction and collation. Beside them what identifies a row of each table-bound type: its
+# table's primary key, a node key standing in where the table has none, or a unique key.
+
+# A node over a table with a primary key: two identifying keys, the primary key ranked first.
+type Actor implements Node @table(name: "actor") @node {
+    id: ID!
+    lastName: String @field(name: "last_name")
+}
+
+type Language @table(name: "language") {
+    name: String
+
+    # A method key, then a column, each in its own direction.
+    films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [
+            {method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC},
+            {name: "film_id"}
+        ])
+}
+
+type Film @table(name: "film") {
+    title: String
+
+    # Named columns, the first collated and descending, the second in the application's direction.
+    actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(fields: [{name: "last_name", collate: "C", direction: DESC}, {name: "first_name"}])
+
+    # An index, in the application's direction.
+    actorsByIndex: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(index: "idx_actor_last_name", direction: DESC)
+
+    # A column read through a path, whose steps are not resolved here.
+    language: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+input ActorOrderBy {
+    field:     ActorSort!
+    direction: SortDirection
+}
+
+enum ActorSort {
+    LAST_NAME @order(fields: [{name: "last_name", direction: DESC}])
+    ACTOR_ID  @order(primaryKey: true)
+    BY_INDEX  @index(name: "idx_actor_last_name")
+}
+
+type Store @table(name: "store") {
+    films: [Film!]! @reference(path: [{key: "inventory_store_id_fkey"}, {key: "inventory_film_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+}
+
+# A table with no primary key: the node key stands in for its rows' identity, and a list over it
+# states the order it is read in.
+type RoleAssignment implements Node @table(name: "role_assignment") @node(typeId: "RoleAssignment", keyColumns: ["holder_id", "role_code"]) {
+    id: ID!
+    roleCode: String @field(name: "role_code")
+}
+
+type RoleHolder @table(name: "role_holder") {
+    roles: [RoleAssignment!]! @defaultOrder(fields: [{name: "role_code"}])
+}
+
+# A table with no primary key and no node: its first unique key whose columns refuse null.
+type Stint @table(name: "stint") {
+    validFrom: String @field(name: "valid_from")
+}
+
+type Query {
+    films: [Film!]!
+    # Nothing written: the table's primary key, and each choice the argument offers. A client's
+    # choice is applied where the list is read by a query of its own; inline it is deferred.
+    actorsOrdered(order: [ActorOrderBy!] @orderBy): [Actor!]!
+    holders: [RoleHolder!]!
+    stores: [Store!]!
+    stints: [Stint!]! @defaultOrder(fields: [{name: "valid_from"}])
+    node(id: ID!): Node
+}
+
+interface Node {
+    id: ID!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_order", rows: """
+  coordinate, bound, choice, kind, surface
+  Film.actors, public.actor, Film.actors, DEFAULT, FIELDS
+  Film.actorsByIndex, public.actor, Film.actorsByIndex, DEFAULT, INDEX
+  Query.actorsOrdered, public.actor, ActorSort.ACTOR_ID, CHOICE, PRIMARY_KEY
+  Query.actorsOrdered, public.actor, ActorSort.BY_INDEX, CHOICE, INDEX
+  Query.actorsOrdered, public.actor, ActorSort.LAST_NAME, CHOICE, FIELDS
+  Query.actorsOrdered, public.actor, Query.actorsOrdered, DEFAULT, IMPLICIT_PRIMARY_KEY
+  Language.films, public.film, Language.films, DEFAULT, FIELDS
+  Query.films, public.film, Query.films, DEFAULT, IMPLICIT_PRIMARY_KEY
+  Query.holders, public.role_holder, Query.holders, DEFAULT, IMPLICIT_PRIMARY_KEY
+  Query.stints, public.stint, Query.stints, DEFAULT, FIELDS
+  Query.stores, public.store, Query.stores, DEFAULT, IMPLICIT_PRIMARY_KEY
+  RoleHolder.roles, public.role_assignment, RoleHolder.roles, DEFAULT, FIELDS
+  Store.films, public.film, Store.films, DEFAULT, FIELDS
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key", rows: """
+  coordinate, choice, position, kind, direction, collation
+  Film.actors, Film.actors, 0, COLUMN, DESC, C
+  Film.actors, Film.actors, 1, COLUMN, ASC, 
+  Film.actorsByIndex, Film.actorsByIndex, 0, COLUMN, DESC, 
+  Query.actorsOrdered, ActorSort.ACTOR_ID, 0, COLUMN, ASC, 
+  Query.actorsOrdered, ActorSort.BY_INDEX, 0, COLUMN, ASC, 
+  Query.actorsOrdered, ActorSort.LAST_NAME, 0, COLUMN, DESC, 
+  Query.actorsOrdered, Query.actorsOrdered, 0, COLUMN, ASC, 
+  Language.films, Language.films, 0, METHOD, DESC, 
+  Language.films, Language.films, 1, COLUMN, ASC, 
+  Query.films, Query.films, 0, COLUMN, ASC, 
+  Query.holders, Query.holders, 0, COLUMN, ASC, 
+  Query.stints, Query.stints, 0, COLUMN, ASC, 
+  Query.stores, Query.stores, 0, COLUMN, ASC, 
+  RoleHolder.roles, RoleHolder.roles, 0, COLUMN, ASC, 
+  Store.films, Store.films, 0, PATH, ASC, 
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", rows: """
+  coordinate, choice, position, column_name
+  Film.actors, Film.actors, 0, last_name
+  Film.actors, Film.actors, 1, first_name
+  Film.actorsByIndex, Film.actorsByIndex, 0, last_name
+  Query.actorsOrdered, ActorSort.ACTOR_ID, 0, actor_id
+  Query.actorsOrdered, ActorSort.BY_INDEX, 0, last_name
+  Query.actorsOrdered, ActorSort.LAST_NAME, 0, last_name
+  Query.actorsOrdered, Query.actorsOrdered, 0, actor_id
+  Language.films, Language.films, 1, film_id
+  Query.films, Query.films, 0, film_id
+  Query.holders, Query.holders, 0, holder_id
+  Query.stints, Query.stints, 0, valid_from
+  Query.stores, Query.stores, 0, store_id
+  RoleHolder.roles, RoleHolder.roles, 0, role_code
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_method", rows: """
+  coordinate, choice, position, directive_name, ordinal, owner
+  Language.films, Language.films, 0, defaultOrder, 0, fields.0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_identifying_key", rows: """
+  type_name,      key_ordinal, position, table_name,      column_name, basis
+  Actor,          0,           0,        actor,           actor_id,    PRIMARY_KEY
+  Actor,          1,           0,        actor,           actor_id,    NODE_KEY
+  Film,           0,           0,        film,            film_id,     PRIMARY_KEY
+  Language,       0,           0,        language,        language_id, PRIMARY_KEY
+  RoleAssignment, 0,           0,        role_assignment, holder_id,   NODE_KEY
+  RoleAssignment, 0,           1,        role_assignment, role_code,   NODE_KEY
+  RoleHolder,     0,           0,        role_holder,     holder_id,   PRIMARY_KEY
+  Stint,          0,           0,        stint,           person_id,   UNIQUE_KEY
+  Stint,          0,           1,        stint,           valid_from,  UNIQUE_KEY
+  Store,          0,           0,        store,           store_id,    PRIMARY_KEY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_order_input", rows: """
+  type_name,    sort_field_name, direction_field_name
+  ActorOrderBy, field,           direction
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect")

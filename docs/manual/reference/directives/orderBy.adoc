@@ -27,6 +27,7 @@ A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films s
 == Constraints
 
 * Applies only to arguments. Putting `@orderBy` on a field, input field, or enum value is rejected.
+* A list read inside its parent's query, one with neither `@splitQuery` nor a query of its own, does not apply a client's choice yet, so `@orderBy` on it fails the build (`ORDER_CHOICE_ON_INLINE_LIST`) rather than accept a choice and drop it. Read the list with xref:splitQuery.adoc[`@splitQuery`], or order it with xref:defaultOrder.adoc[`@defaultOrder`].
 * The argument's input type must contain exactly one field whose type is the project's `SortDirection` enum (declared by name, looked up by type) and exactly one field whose type is an enum carrying xref:order.adoc[`@order`] on every value. Field names are free; the generator binds by type.
 * Every value of the bound enum must declare exactly one of `index`, `fields`, or `primaryKey` via xref:order.adoc[`@order`]. Missing or ambiguous specifications fail the build.
 * `@orderBy` and xref:defaultOrder.adoc[`@defaultOrder`] coexist on the same field. When the client supplies a value the dynamic order wins; when omitted, `@defaultOrder` applies.

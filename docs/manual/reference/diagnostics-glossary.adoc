@@ -218,6 +218,24 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Drop `@asConnection` or `@lookupKey`; return a list; or, for a node id of another node, drop `@lookupKey` and let the id filter through the foreign key. xref:directives/lookupKey.adoc#constraints[`@lookupKey` constraints] lists the rules.
 
+[#ordering-refusals]
+=== An ordering that says nothing to sort by
+
+*What it says.* One of eight codes, at the `@defaultOrder`, `@order`, `@orderBy` or `fields` element written, or at the list field:
+
+* `ORDER_SURFACES`: the application writes other than exactly one of `index`, `primaryKey: true` and `fields`.
+* `ORDER_PRIMARY_KEY_MISSING`: `primaryKey: true` over a table with no primary key, named in the detail.
+* `ORDER_INDEX_UNRESOLVED`: an `index` the table does not have, named in the detail.
+* `ORDER_COLUMN_UNRESOLVED`: a `fields` element's `name` matching no one column of the table, named in the detail.
+* `ORDER_FIELD_SHAPE`: a `fields` element writing neither or both of `name` and `method`, or a `path` beside a `method`.
+* `ORDER_VALUE_UNORDERED`: a value of an xref:directives/orderBy.adoc[`@orderBy`] argument's sort enum with neither `@order` nor `@index`.
+* `ORDER_CHOICE_ON_INLINE_LIST`: an `@orderBy` argument on a list read inside its parent's query, where a client's choice of order is not applied yet. A deferral, not a fault in the schema: read the list with `@splitQuery`, or order it with `@defaultOrder`.
+* `LIST_ORDER_UNDETERMINED`: a list or connection over a table with no primary key, read inside its parent's query, for which no order is stated: no `@defaultOrder`, and no `@orderBy` argument whose input type offers a choice.
+
+*Cause.* Each list is read in an order the build states: the one `@defaultOrder` writes, the table's primary key where none is written, or the one a client picks through `@orderBy`. An ordering whose keys cannot be stated would sort by fewer keys than were written, or by none, so the build stops instead.
+
+*Next step.* Write one surface, name a column, index or primary key the table has, or add `@defaultOrder` to the list. xref:directives/defaultOrder.adoc#constraints[`@defaultOrder` constraints] and xref:directives/order.adoc[`@order`] list the rules.
+
 == Drift protection
 
 `DiagnosticsDocCoverageTest` asserts every value of `RejectionKind` and `Rejection.AttemptKind` has an anchored `=== <kebab-case-name>` heading on this page, and every such heading corresponds to an enum value. A new diagnostic added to one of these enums cannot land green without a doc paragraph; an obsolete code's removal forces the heading's removal.

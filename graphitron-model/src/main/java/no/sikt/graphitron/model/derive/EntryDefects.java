@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RU
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static org.jooq.impl.DSL.field;
@@ -88,6 +89,10 @@ public final class EntryDefects {
     public static final Rule LOOKUP_KEYS =
         new Rule("occurrence-lookup-keys", GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE);
 
+    /** The ordering defects' rule, {@link OccurrenceOrderings}. */
+    public static final Rule ORDERINGS =
+        new Rule("occurrence-orderings", GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE);
+
     /** The build and decode-shape defects' rule, {@link OccurrenceBuilds}. */
     public static final Rule BUILDS = new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE);
 
@@ -105,7 +110,7 @@ public final class EntryDefects {
     public static final Rule VOUCHERS = new Rule("vouchers", GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE);
 
     /** Every raising stage's rule, one per stage. */
-    public static final List<Rule> RULES = List.of(VOUCHERS, MINTED_KEYS, ENTITY_KEYS, BINDINGS, LOOKUP_KEYS, BUILDS, DEPTHS, OUTBOX, GRAPHITRON);
+    public static final List<Rule> RULES = List.of(VOUCHERS, MINTED_KEYS, ENTITY_KEYS, BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, DEPTHS, OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

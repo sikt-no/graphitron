@@ -74,6 +74,11 @@ public final class GraphitronAstEntries {
         GraphitronFieldEntries.write(dsl, graph, source, onFields, touchedAt);
         GraphitronInputValueEntries.write(dsl, graph, source, onInputValues, touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source, onEnumValues, touchedAt);
+        // The ordering vocabulary, one decode whether a field falls back to it or an enum value
+        // offers it to an argument.
+        var orders = new ArrayList<Directive>(applied(onFields, "defaultOrder"));
+        orders.addAll(applied(onEnumValues, "order"));
+        GraphitronOrderEntries.write(dsl, graph, source, orders, touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source, onSchemas, touchedAt);
         // The writers that are not a site's: a code reference, an argMapping, a path, a @field's name
         // and a @nodeId's type are each the same fact wherever they are written, so they are read off

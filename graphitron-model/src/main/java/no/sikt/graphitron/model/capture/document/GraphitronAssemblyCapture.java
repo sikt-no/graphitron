@@ -17,6 +17,8 @@ import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceBindings;
 import no.sikt.graphitron.model.derive.OccurrenceLookupKeys;
+import no.sikt.graphitron.model.derive.OccurrenceOrderings;
+import no.sikt.graphitron.model.derive.TypeIdentifyingKeys;
 import no.sikt.graphitron.model.derive.OccurrenceBuilds;
 import no.sikt.graphitron.model.derive.OccurrenceDepthDefects;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
@@ -39,10 +41,10 @@ import org.jooq.DSLContext;
 import java.time.LocalDateTime;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MANY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MANY_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
@@ -90,6 +92,8 @@ public final class GraphitronAssemblyCapture {
         // The legacy key shape each type id answers to, against the current keys just written.
         new AnchorStage("node-legacy-key-shapes", NodeLegacyKeyShapes.class,
             (dsl, graph, readAt) -> NodeLegacyKeyShapes.derive(dsl, graph)),
+        // The ranked keys identifying a row of each table-bound type, the node keys just written among them.
+        new AnchorStage("type-identifying-keys", TypeIdentifyingKeys.class, TypeIdentifyingKeys::derive),
         // Each field's target type, over the population the generator emits.
         new AnchorStage("field-targets", GraphitronAssemblyCapture.class,
             GraphitronAssemblyCapture::targets),
@@ -170,6 +174,10 @@ public final class GraphitronAssemblyCapture {
         // the list's table just above, and the defects of a @lookupKey they cannot state.
         new AnchorStage("occurrence-lookup-keys", OccurrenceLookupKeys.class,
             OccurrenceLookupKeys::derive),
+        // The orders each list can be read in and the keys each sorts by, off the tables the lists'
+        // bindings read above, and the defects of an ordering they cannot state.
+        new AnchorStage("occurrence-orderings", OccurrenceOrderings.class,
+            OccurrenceOrderings::derive),
         // The class each input object is built into and the member each field fills, the shape each
         // node id lands in, and the defects judging them, off the calls and parameters just pinned.
         new AnchorStage("occurrence-builds", OccurrenceBuilds.class,
@@ -235,8 +243,6 @@ public final class GraphitronAssemblyCapture {
             .where(target.GRAPH_NAME.eq(graph))
             .and(target.TOUCHED_AT.ne(touchedAt))
             .execute();
-    }
-}
         // Which of them return many, off the targets just written and the fields' own wrappers.
         var many = GRAPHITRON_FIELD_MANY;
         var manyRule = GRAPHITRON_FIELD_MANY_RULE;
@@ -254,3 +260,5 @@ public final class GraphitronAssemblyCapture {
             .where(many.GRAPH_NAME.eq(graph))
             .and(many.TOUCHED_AT.ne(touchedAt))
             .execute();
+    }
+}
