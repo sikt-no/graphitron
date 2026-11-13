@@ -386,19 +386,39 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     and facets classes are named by the caller. No unit emits them yet, so no consumer sees them
     before the producers return them; `ConnectionsEmitterTest` compiles and drives them over
     `scenarios/connection-positions`, and the emission census compiles the sakila example's.
-  * **The producers return the connection type's class** `open`.
-    One change, since a connection type may have several producers: a global `util.Connections`
-    unit rendered from the store (no plan-layer row; one global unit for now, Alf 2026-11-12, at
-    the cost of coarser dev-loop recompiles), the five construction sites building the
-    closures (`Scoped` and `BatchCounts` becoming how a producer makes its count function, moved
-    with the cursor codec into the small utility), the registrations reading each position's member,
-    and the per-type fetchers and `ConnectionHelper`'s resolvers going. A `refactor`:
-    `ConnectionHelper` is generated wiring, not consumer API. Pinned by `CursorEncodingTest`, `CursorFormatExecutionTest` and the count, facets and
-    batched-count execution tests; `emitter-conventions.adoc`, `connections.adoc`,
-    `runtime-api.adoc`, `runtime-extension-points.adoc` and `code-generation-triggers.adoc` change.
-  * **The runtime connection vocabulary goes** `blocked`, on "The producers return the connection type's class".
-    The connection runtime rows, `runtime_kind`, `RESULT_EXPRESSION`, `ConnectionResult` and
-    `ResultShape.Connection`'s helper and carrier go, with the retirement sweep.
+  * The producers return the connection type's class. `util.Connections` is one global unit
+    rendered from the store (no plan-layer row; one global unit for now, Alf 2026-11-12, at the
+    cost of coarser dev-loop recompiles), and its `register` wires every connection and edge field
+    to its member, from the same `ConnectionsQuery` row that gives the class its members. The five
+    construction sites build the closures: the count is a function of the request that runs when
+    read (`Scoped` over the table and condition, a `BatchCounts` slot for a batched page), a tenant-
+    routed producer capturing its own `DSLContext`; the facets function builds the facets record.
+    `ConnectionResult`, the per-type connection fetchers, `ConnectionHelper`'s resolvers, the
+    connection and edge registration arms and the store's runtime class vocabulary
+    (`graphitron_runtime_class`, `graphitron_runtime_member`, `runtime_kind`) went. A `refactor`:
+    `ConnectionHelper` is generated wiring, not consumer API (Alf, 2026-11-12); it stays as the
+    producers' utility (page request, cursor codec, page flags, count types, facet bucketing).
+    Pinned by the execution tests and by direct calls of the generated code: `PageFlagsTest`,
+    `FacetBucketsExecutionTest`, `ConnectionProducersExecutionTest` over
+    `scenarios/connection-producers`, and `ConnectionsEmitterTest`'s `register` cases.
+  * The producers read their connection class from the store, the arity decided once.
+    `ConnectionsQuery.byField` reads, per field returning a connection, the connection type
+    (`graphitron_field_target.wrapper_type_name`) and the positions it fills; a producer passes a
+    count function where the type fills `TOTAL_COUNT` and a facets function where it fills `FACETS`,
+    the same positions that give the class its constructor, and a connection field with no row is a
+    generator bug. `LauncherCommands.produce` reads it once and carries it on
+    `LauncherRelation.connections()`, the classified-model generators on
+    `TypeFetcherEmissionContext`; `command.ConnectionClass`, `LauncherCommands.connectionClassAt`
+    and the classified `totalCount` probe went. The truth table (synthesised, authored without
+    `totalCount`, faceted, union, batched child, two connections sharing an edge) is
+    `scenarios/connection-classes`, read by `ConnectionClassPipelineTest`. The schema-free emitted-
+    text tests of connection fetchers went, each named covering test recorded in the commit.
+  * **The runtime connection vocabulary goes** `open`.
+    `RESULT_EXPRESSION` and `ResultShape.Connection` go, with the retirement sweep, as does the
+    store answer's carriage on `LauncherRelation` and `TypeFetcherEmissionContext` where the
+    producer renderers read the store rather than `LauncherCommand` rows. The facets record is still
+    built from the classified type's facet specs while `ConnectionsQuery` reads the facets type
+    from the store; it reads the store once R606 stores the facets derivation.
 
 **What the connection thread found (2026-11-11, Alf with this session and the principles-architect).**
 The terms *result set*, *page*, *cursor position* and *how the result set was produced* (Alf's
@@ -2799,6 +2819,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   the node's record.
 
 ## Retired vocabulary
+
+**A connection's producer builds its class** (2026-11-12). The generated `ConnectionResult` and
+its unit kind `CONNECTION_RESULT`, `ConnectionFetcherClassGenerator` with the per-type connection
+and edge fetcher classes and `TypeUnitCommand.ConnectionFetchersUnit`, `ConnectionHelper`'s
+resolvers (`edges`, `nodes`, `pageInfo`, `totalCount`, `facets`, `edgeNode`, `edgeCursor`) and its
+nested `Edge`, and the store's `graphitron_runtime_class`, `graphitron_runtime_member` and
+`graphitron_occurrence_producer_result.runtime_kind` went. A connection field is answered by the
+generated `util.Connections` class its producer builds.
 
 **A node that is not resolvable is a node** (2026-11-12). The walk's stub classification is gone:
 `NodeDeclaration.isStub` is `isResolvable`, a fact beside nodehood, `BuildContext.TargetKeys.OfStub`
