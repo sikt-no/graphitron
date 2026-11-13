@@ -1570,15 +1570,13 @@ treating each kind by what it can do, and catching a stale catalog.
 A node is what the manual says takes effect: a type that implements `Node` over a `@table` the
 catalog resolves, with `@node` or published catalog metadata giving its type id and key columns.
 `graphitron_node` states that answer, and the walk's `NodeDeclaration.isNodeType` states the same
-one; it is still settled from coordinate copies of `@node` and `@table`, refilled whole each
-reading.
+one. The editor's completion and `typeName:` check and the MCP read it, the hover keeping to what
+the author wrote; it is still settled from coordinate copies of `@node` and `@table`, refilled
+whole each reading.
 
 * **Table types, nodes and node key columns are marked and swept** `open`. An unchanged binding
   keeps its node and key columns rather than losing them to a clear and refill; `Nodes.derive` still
   deletes and refills `graphitron_node`.
-* **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
-  squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
-  already does.
 
 ### A node id is a target type, read as its ID `open`
 
@@ -2874,6 +2872,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**The editor and the MCP read the resolved node** (2026-11-13). The MCP's `node` reports the
+resolved type id and key columns with the tier that answered each (`typeIdOrigin`,
+`keyColumnsOrigin`), where it reported only what `@node` wrote. The editor's `typeName:`
+completion and check read `graphitron_node`, and the check's message no longer says the type must
+carry `@node`.
 
 **A node is what the manual says takes effect** (2026-11-13). `graphitron_node_type`, which
 added every written `@node` to the resolved nodes, is gone; its readers read `graphitron_node`.
