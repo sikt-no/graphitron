@@ -81,6 +81,7 @@ The walk's read path is gone
 ├── The projection units are rendered from the store
 │   ├── A projection unit is emitted from the store, censused
 │   ├── The filter conditions are emitted from the store
+│   │   ├── An argument binds the call parameter it supplies
 │   │   └── A routine and a write state what they bind as call parameters
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child producer states the parent columns it is handed
@@ -814,6 +815,10 @@ static method needs no holder.
     shape row answers. `NODE_ID_PARTICIPANT`, an id each participant decodes as a node of its own,
     waits on the not-this-participant decode policy; an id naming one node type is emitted on every
     participant.
+    * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
+      `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
+      the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
+      then goes, after the flips.
     * **A routine and a write state what they bind as call parameters** `open`. A `@routine`'s and a
       write's fills are `graphitron_occurrence_call_parameter` rows from rule views of their own, so
       `ConditionQuery` excludes a term some call's fill binds and `CONSUMED` goes (Alf, 2026-11-13); a root

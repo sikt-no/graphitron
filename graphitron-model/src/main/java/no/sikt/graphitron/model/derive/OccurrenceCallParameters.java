@@ -7,6 +7,9 @@ import org.jooq.Table;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR_RULE;
@@ -29,6 +32,10 @@ import static org.jooq.impl.DSL.val;
  * argument asks for its parameter. An {@code ARGUMENT} fill whose parameter takes a table's generated
  * jOOQ record, itself or as its element type, carries that table: the occurrence taken lands there.
  *
+ * <p>Each {@code ARGUMENT} fill is also the {@code PARAMETER} binding of the occurrence it takes, into
+ * {@code graphitron_occurrence_binding} and {@code graphitron_occurrence_binding_parameter}, written
+ * beside the fill.
+ *
  * <p>Two stages own the rows, by call kind. The service calls' are {@link OccurrenceProducers}', ahead
  * of {@link OccurrenceDepths}, whose sources read a record a service takes; the condition calls' are
  * {@link OccurrenceBindings}', after the depths, since a condition's call waits on the bindings. Each
@@ -38,10 +45,14 @@ public final class OccurrenceCallParameters {
 
     private OccurrenceCallParameters() {}
 
+    private static final String PARAMETER = "PARAMETER";
+
     /** States what fills each parameter of the service calls, the method each pinned. */
     public static void writeServices(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        unbind(dsl, graph, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE, "SERVICE");
         write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
         pairs(dsl, graph, touchedAt, "SERVICE");
+        bindings(dsl, graph, touchedAt, "SERVICE");
     }
 
     /**
@@ -49,8 +60,61 @@ public final class OccurrenceCallParameters {
      * tables they are applied to.
      */
     public static void writeConditions(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        unbind(dsl, graph, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE, "CONDITION");
         write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
         pairs(dsl, graph, touchedAt, "CONDITION");
+        bindings(dsl, graph, touchedAt, "CONDITION");
+    }
+
+    /**
+     * Deletes the parameter bindings of the calls of {@code callKind} that {@code rule} no longer
+     * states for the method each call pinned, before the fills they reference are rewritten: a
+     * parameter now supplied by another occurrence, or by no argument, would otherwise hold its old
+     * fill in place.
+     */
+    private static void unbind(DSLContext dsl, String graph, Table<?> rule, String callKind) {
+        var p = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var r = RuleColumns.of(rule);
+        var made = GRAPHITRON_OCCURRENCE_CALL_METHOD;
+        dsl.deleteFrom(p)
+            .where(p.GRAPH_NAME.eq(graph), p.CALL_KIND.eq(callKind))
+            .andNotExists(selectOne().from(rule)
+                .join(made).on(made.GRAPH_NAME.eq(r.GRAPH_NAME), made.COORDINATE.eq(r.COORDINATE),
+                    made.CALL.eq(r.CALL), made.METHOD_DESCRIPTOR.eq(r.METHOD_DESCRIPTOR))
+                .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.CALL_COORDINATE), r.CALL.eq(p.CALL),
+                    r.POSITION.eq(p.POSITION), r.FILL.eq(inline("ARGUMENT")),
+                    r.LANDING_COORDINATE.eq(p.COORDINATE)))
+            .execute();
+    }
+
+    /**
+     * The {@code PARAMETER} binding of each occurrence an {@code ARGUMENT} fill of the calls of
+     * {@code callKind} takes, read off the fills just written.
+     */
+    private static void bindings(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
+        var p = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var r = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER_RULE;
+        dsl.insertInto(b)
+            .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline(PARAMETER), val(touchedAt, b.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph), r.CALL_KIND.eq(callKind)))
+            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
+            .doUpdate()
+            .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
+            .execute();
+        dsl.insertInto(p)
+            .columns(p.GRAPH_NAME, p.COORDINATE, p.CALL_COORDINATE, p.CALL, p.POSITION, p.CALL_KIND, p.FILL,
+                p.KIND, p.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL_COORDINATE, r.CALL, r.POSITION, r.CALL_KIND,
+                    r.FILL, inline(PARAMETER), val(touchedAt, p.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph), r.CALL_KIND.eq(callKind)))
+            .onConflict(p.GRAPH_NAME, p.COORDINATE, p.BOUND)
+            .doUpdate()
+            .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))
+            .execute();
     }
 
     /**
@@ -131,7 +195,12 @@ public final class OccurrenceCallParameters {
             .execute();
     }
 
-    /** Deletes the fills of the calls of {@code callKind} this reading did not mark, their pairs first. */
+    /**
+     * Deletes the fills of the calls of {@code callKind} this reading did not mark, their pairs first,
+     * then the parameter bindings of those calls the reading did not mark. A {@code PARAMETER} binding
+     * left with no parameter beneath it is stale whichever stage wrote it, the cascade having taken its
+     * parameter.
+     */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
         var pair = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
@@ -146,6 +215,19 @@ public final class OccurrenceCallParameters {
             .where(c.GRAPH_NAME.eq(graph))
             .and(c.CALL_KIND.eq(callKind))
             .and(c.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        var p = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        dsl.deleteFrom(p)
+            .where(p.GRAPH_NAME.eq(graph))
+            .and(p.CALL_KIND.eq(callKind))
+            .and(p.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
+        dsl.deleteFrom(b)
+            .where(b.GRAPH_NAME.eq(graph))
+            .and(b.KIND.eq(PARAMETER))
+            .andNotExists(selectOne().from(p)
+                .where(p.GRAPH_NAME.eq(b.GRAPH_NAME), p.COORDINATE.eq(b.COORDINATE), p.BOUND.eq(b.BOUND)))
             .execute();
     }
 

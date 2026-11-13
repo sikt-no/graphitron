@@ -1,0 +1,41 @@
+# An argument or input field a call takes binds the call's parameter, beside whatever else it binds.
+# A @service's argument binds the method's parameter. A @condition's argMapping can hand one argument
+# to several parameters, so the argument binds each. An argument no call takes binds no parameter.
+
+type Film @table(name: "film") { title: String }
+
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+
+input RateWindow { rate: BigDecimal }
+
+type Query {
+  filmsByService(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
+  filmsAtRate(window: RateWindow): [Film!]!
+    @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "rentalRateRange", argMapping: "fra: window.rate, til: window.rate"}, override: true)
+  filmsByTitle(title: String): [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter", rows: """
+  coordinate,                     call_coordinate,      call,                  position, call_kind
+  Query.filmsByService(ids:),     Query.filmsByService, producer,              1,        SERVICE
+  Query.filmsAtRate(window.rate:), Query.filmsAtRate,   condition:public.film, 1,        CONDITION
+  Query.filmsAtRate(window.rate:), Query.filmsAtRate,   condition:public.film, 2,        CONDITION
+  """)
+
+# The supertype carries each, bound at the parameter its key spells.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: "kind = 'PARAMETER'", rows: """
+  coordinate,                      bound
+  Query.filmsByService(ids:),      Query.filmsByService producer 1
+  Query.filmsAtRate(window.rate:), Query.filmsAtRate condition:public.film 1
+  Query.filmsAtRate(window.rate:), Query.filmsAtRate condition:public.film 2
+  """)
+
+# An argument no call takes binds what it filters by and nothing else.
+extend schema @assertAbsent(relation: "graphitron_occurrence_binding_parameter", rows: """
+  coordinate
+  Query.filmsByTitle(title:)
+  """)

@@ -195,6 +195,9 @@ and place it binds, keyed by the place and stating its kind.
 
 | `RESULT_EXPRESSION`
 | A value computed over what its producer produced.
+
+| `PARAMETER`
+| A parameter of a call, which its value supplies.
 |===
 
 Each kind has a relation of its own beneath the binding stating what it takes. In the running
@@ -225,8 +228,11 @@ range.fraVerdi`. A parameter declaring `Map` or `Object` for an input object is 
 remedy names those two forms; it is not a deferral, the shape being one graphitron does not mean to
 generate.
 
-An argument a call consumes binds no row here: the call's parameter is stated on the call, in
-`graphitron_occurrence_call_parameter`, whose fill names the occurrence it takes.
+An argument or input field a call takes binds the call's parameter, a `PARAMETER` binding at the
+parameter, stated in `graphitron_occurrence_binding_parameter`. One occurrence may bind several
+parameters, of one call or of several, as `argMapping` hands it to each; a parameter is bound by one
+occurrence. The call's own parameter list, with what supplies each parameter no argument does, stays
+in `graphitron_occurrence_call_parameter`.
 
 Every producer is a call (Alf, 2026-11-13): a `@service` or `@condition` method, a `@routine`, a
 write, and a selection graphitron generates alike. Where graphitron generates the producer's body,

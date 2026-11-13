@@ -10984,13 +10984,13 @@ CREATE TABLE graphitron_occurrence_binding (
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'EXPRESSION', 'RESULT_EXPRESSION',
-                  'VOUCHER'))
+                  'VOUCHER', 'PARAMETER'))
 );
 COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.';
 COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
-COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs; VOUCHER, the voucher an @issue field carries, computed from its members'' columns and bound at the issuing table, with no subtype';
+COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs; VOUCHER, the voucher an @issue field carries, computed from its members'' columns and bound at the issuing table, with no subtype; PARAMETER, a call parameter an argument or input field supplies, bound at the parameter';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The member each occurrence with an object source reads, off its accessor path.
@@ -11981,7 +11981,9 @@ CREATE TABLE graphitron_occurrence_call_parameter (
   CHECK ((record_schema IS NULL) = (record_table IS NULL)),
   CHECK (record_source_ref IS NULL OR record_source_ref = record_source_name),
   CHECK (record_schema_ref IS NULL OR record_schema_ref = record_schema),
-  CHECK (record_table_ref IS NULL OR record_table_ref = record_table)
+  CHECK (record_table_ref IS NULL OR record_table_ref = record_table),
+  -- What a PARAMETER binding references, so only a parameter an argument supplies can be bound.
+  UNIQUE (graph_name, coordinate, call, position, call_kind, fill)
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter IS 'What fills one parameter of one call: one row per call and parameter position some fill reaches. For example Query.filmsByPath''s parameter ids takes Query.filmsByPath(input.ids:), and a DSLContext parameter takes the jOOQ context.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.graph_name IS 'the owning graph''s partition';
@@ -12001,6 +12003,61 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_source_ref IS 'the
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_schema_ref IS 'the schema half of the record table''s key, equal to record_schema while the table stands';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.record_table_ref IS 'the table half of the record table''s key, equal to record_table while the table stands';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- An argument or input field binds the call parameter its value supplies: one row per occurrence and
+-- parameter, read off the ARGUMENT fills. One occurrence may bind several parameters, of one call or
+-- of several, and a parameter is bound by one occurrence.
+CREATE VIEW graphitron_occurrence_binding_parameter_rule
+  (graph_name, coordinate, bound, call_coordinate, call, position, call_kind, fill) AS
+SELECT c.graph_name, c.landing_coordinate, c.coordinate || ' ' || c.call || ' ' || c.position,
+       c.coordinate, c.call, c.position, c.call_kind, c.fill
+  FROM graphitron_occurrence_call_parameter c
+ WHERE c.fill = 'ARGUMENT';
+COMMENT ON VIEW graphitron_occurrence_binding_parameter_rule IS 'One row the parameter binding rule computes, in the shape graphitron_occurrence_binding_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s service rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_binding_parameter, which are the names every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_binding.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.call_coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.call';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.position';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.call_kind IS 'the call_kind of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.call_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.fill IS 'the fill of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.fill';
+
+CREATE TABLE graphitron_occurrence_binding_parameter (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  position        INT       NOT NULL,
+  call_kind       VARCHAR   NOT NULL,
+  fill            VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  bound           VARCHAR GENERATED ALWAYS AS (call_coordinate || ' ' || call || ' ' || position) NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- A parameter is bound by one occurrence.
+  UNIQUE (graph_name, call_coordinate, call, position),
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  -- The parameter it binds, which an argument supplies; the call's kind is the owner beside the
+  -- binding's, so a stage sweeps only its own calls' bindings.
+  FOREIGN KEY (graph_name, call_coordinate, call, position, call_kind, fill)
+    REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position, call_kind, fill)
+    ON DELETE CASCADE,
+  CHECK (kind = 'PARAMETER'),
+  CHECK (fill = 'ARGUMENT')
+);
+COMMENT ON TABLE graphitron_occurrence_binding_parameter IS 'The call parameter an argument or input field supplies: one row per occurrence and parameter it binds. For example Query.filmsByService(ids:) binds the ids parameter of SampleQueryService.filmsByService.';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.coordinate IS 'the argument or input-field occurrence binding the parameter';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.call_coordinate IS 'the occurrence making the call; with call and position, the parameter';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.call IS 'which of its calls, as graphitron_occurrence_call spells it';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.position IS 'the parameter''s position in the call';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.call_kind IS 'the call''s kind, which with the binding''s kind owns the row';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.fill IS 'ARGUMENT, pinned so the foreign key holds the binding to a parameter an argument supplies';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.kind IS 'PARAMETER, pinned so the foreign key holds it to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.bound IS 'the parameter spelled from its key, the call''s occurrence, the call and the position; with the coordinate the key';
+COMMENT ON COLUMN graphitron_occurrence_binding_parameter.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The written argMapping pair a fill came from: an ARGUMENT fill whose landing is the pair's under
 -- the call's occurrence, the pair of the directive that wrote the call. A fill a name or a type
@@ -21250,6 +21307,9 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-bindings', 'graphitron_occurrence_condition'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter'),
   ('occurrence-bindings', 'graphitron_occurrence_call_parameter'),
+  ('occurrence-producers', 'graphitron_occurrence_binding'),
+  ('occurrence-producers', 'graphitron_occurrence_binding_parameter'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding_parameter'),
   ('occurrence-producers', 'graphitron_occurrence_producer'),
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift'),
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift_accessor'),
@@ -22868,6 +22928,14 @@ INSERT INTO meta_relation VALUES
    'The member of the class an input object is built into that an input field fills: one row per MEMBER binding, in the shape graphitron_occurrence_binding_member stores, with when the parent row it reads was written.',
    'For example Mutation.assignFilmRecordList(in:).films fills FilmRecordListAssignment#films, the record component at position 0 of its canonical constructor.',
    'The rule the stored relation is written from, with the built classes of the depth above it.'),
+  ('graphitron_occurrence_binding_parameter', 'graph-occurrence-binding', 'graphitron',
+   'The call parameter an argument or input field supplies: one row per occurrence and parameter it binds.',
+   'For example Query.filmsByService(ids:) binds the ids parameter of SampleQueryService.filmsByService.',
+   'Every producer is a call, so what an argument does for a call is a binding like any other rather than the absence of one: a reader at an argument asks its bindings what takes it. Written from the ARGUMENT fills by the stage owning the call''s kind, the service calls'' with the producers ahead of the depth loop and the condition calls'' with the bindings after it, each sweeping its own; the fill''s landing_coordinate stays beside it until its readers move.'),
+  ('graphitron_occurrence_binding_parameter_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the parameter binding rule computes, in the shape graphitron_occurrence_binding_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-producers stage writes this view''s service rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_binding_parameter, which are the names every reader spells.',
+   'One rule for every kind of call, each stage writing the rows of its own calls'' kind, so neither stage restates it. Kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_occurrence_binding_value', 'graph-occurrence-binding', 'graphitron',
    'The member an occurrence''s value is read by off the object it reads from: one row per VALUE binding, the class read from, the class of the value and the member''s code_read_slot row, none where the object passes through.',
    'For example Query.filmBlurbHolder.blurb binds FilmBlurbHolder#blurb, a FilmBlurb, and a payload''s data element that its producer''s class backs binds that class itself.',

@@ -313,6 +313,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_binding_value", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_member", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_member_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_binding_parameter", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_binding_parameter_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_built_class", Arm.DERIVED);
         registrations.put("graphitron_occurrence_built_class_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_entry_defect_rule", Arm.DERIVED);
