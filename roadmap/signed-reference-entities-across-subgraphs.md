@@ -498,7 +498,11 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
    arm reading the key's own field set (so its hardcoded `id` and `NODE` go), with
    `entity-key-alternatives`' refusals; the reference page. The voucher alternative is stated in the
    store only: `EntityKeyQuery` composes it in slice 8 beside the dispatch arm that renders it, since an
-   arm with nothing to render, unreachable behind the refusal, is code no test can run.
+   arm with nothing to render, unreachable behind the refusal, is code no test can run. As built,
+   in four commits: the first two planned commits landed as one, their SQL being interleaved; a
+   `key:` is matched against the authored key's own `graphitron_key_field_binding` rows rather than
+   its parse, which the plan gate needs and which is the fact the alternative's columns come from;
+   and `EntityKeyQuery` passes over a voucher key until slice 8 composes it.
 8. *Dispatch.* The claims as a part of `ConnectionKey`, the dispatcher's verify and group, vouched
    acquisition, `Vouch` typed by the claims and `MountedSession.vouch()`, the A and B RLS execution fixture, and the recorded composition
    check. The walk's stand-down reads the `VOUCHER` binding alone: `VoucherBindingQuery` reaches a voucher
