@@ -8298,6 +8298,11 @@ COMMENT ON VIEW graphitron_field_target_rule IS 'One row the field target rule c
 -- COMMENT ON COLUMN graphitron_field_target_rule.target_type_name IS 'the connection''s item where the field''s named type is a connection, and the named type otherwise';
 -- COMMENT ON COLUMN graphitron_field_target_rule.wrapper_type_name IS 'the field''s named type where it is a connection, and null otherwise';
 
+-- graphitron_field_target is declared ahead of the connections, so the reference from a wrapper to
+-- the connection it names is added here: a field's wrapper is a recognised connection or nothing.
+ALTER TABLE graphitron_field_target ADD FOREIGN KEY (graph_name, wrapper_type_name)
+  REFERENCES graphitron_connection (graph_name, type_name) ON DELETE CASCADE;
+
 CREATE TABLE graphitron_entry_defect (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,

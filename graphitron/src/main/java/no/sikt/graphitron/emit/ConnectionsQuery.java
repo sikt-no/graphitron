@@ -12,6 +12,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
@@ -29,9 +30,11 @@ import static org.jooq.impl.DSL.select;
  * An edge two connections share is one row.
  *
  * <p>{@link #byField} reads the same facts at the grain of the field that returns a connection, which
- * is what a producer building the class needs: the class it names and the positions its type fills,
- * so the constructor it calls takes a count exactly where the class has a count member and facets
- * exactly where it has a facets member. The class and its producers read one fact, decided once.
+ * is what a producer building the class needs: the class it names and whether its type counts and
+ * carries facets, so the constructor it calls takes a count exactly where the class has a count
+ * member and facets exactly where it has a facets member. Both are the positions the type fills, read
+ * here off the field's wrapper rather than restated per field: the class and its producers read one
+ * fact.
  */
 public final class ConnectionsQuery {
 
@@ -73,24 +76,11 @@ public final class ConnectionsQuery {
 
     /**
      * A field returning a connection: the field's coordinate, the connection type it returns, which
-     * names the class its producer builds, and the positions that type fills.
+     * names the class its producer builds, whether that class counts what it pages through (its type
+     * fills {@code TOTAL_COUNT}) and whether it carries facets (its type fills {@code FACETS}).
      */
     public record FieldConnection(String parentTypeName, String fieldName, String connectionTypeName,
-            Set<String> positions) {
-        public FieldConnection {
-            positions = Set.copyOf(positions);
-        }
-
-        /** Whether the class counts what it pages through: its type fills {@code TOTAL_COUNT}. */
-        public boolean counts() {
-            return positions.contains("TOTAL_COUNT");
-        }
-
-        /** Whether the class carries facets: its type fills {@code FACETS}. */
-        public boolean faceted() {
-            return positions.contains("FACETS");
-        }
-    }
+            boolean counts, boolean faceted) {}
 
     /** The graph's connection-returning fields, keyed by coordinate ({@code Type.field}). */
     public record FieldConnections(Map<String, FieldConnection> byCoordinate) {
@@ -120,20 +110,22 @@ public final class ConnectionsQuery {
     private ConnectionsQuery() {}
 
     /**
-     * Every field of the graph returning a connection, with the connection type it returns
-     * ({@code graphitron_field_target}'s wrapper) and the positions that type fills.
+     * Every field of the graph returning a connection, with the connection type it returns and
+     * ({@code graphitron_field_target}'s wrapper) and whether that type fills {@code TOTAL_COUNT} and
+     * {@code FACETS}.
      */
     public static FieldConnections byField(StoreHandle store) {
         var t = GRAPHITRON_FIELD_TARGET;
         var p = GRAPHITRON_FIELD_POSITION;
         var rows = store.dsl()
             .select(t.TYPE_NAME, t.FIELD_NAME, t.WRAPPER_TYPE_NAME,
-                multiset(select(p.POSITION).from(p)
-                    .where(p.GRAPH_NAME.eq(t.GRAPH_NAME), p.TYPE_NAME.eq(t.WRAPPER_TYPE_NAME)))
-                    .convertFrom(r -> Set.copyOf(r.map(x -> x.value1()))))
+                field(exists(select(p.POSITION).from(p).where(p.GRAPH_NAME.eq(t.GRAPH_NAME),
+                    p.TYPE_NAME.eq(t.WRAPPER_TYPE_NAME), p.POSITION.eq("TOTAL_COUNT")))),
+                field(exists(select(p.POSITION).from(p).where(p.GRAPH_NAME.eq(t.GRAPH_NAME),
+                    p.TYPE_NAME.eq(t.WRAPPER_TYPE_NAME), p.POSITION.eq("FACETS")))))
             .from(t)
             .where(t.GRAPH_NAME.eq(store.graphName()), t.WRAPPER_TYPE_NAME.isNotNull())
-            .fetch(r -> new FieldConnection(r.value1(), r.value2(), r.value3(), r.value4()));
+            .fetch(r -> new FieldConnection(r.value1(), r.value2(), r.value3(), r.value4(), r.value5()));
         var byCoordinate = new TreeMap<String, FieldConnection>();
         for (var row : rows) {
             byCoordinate.put(row.parentTypeName() + "." + row.fieldName(), row);
