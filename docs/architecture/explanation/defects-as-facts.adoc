@@ -43,6 +43,12 @@ store already reports macros that disagree, `graphitron_minted_conflict` (Alf, 2
 judging authored elements therefore leaves minted ones out, rather than reporting at a coordinate no
 document declares.
 
+A schema graphitron cannot generate yet, though it is valid, is a deferral: a defect whose code has
+`basis` `UNSUPPORTED`, stored and reported like any other, so the editor shows what the build refuses.
+That holds for the generator's own gaps too: "the generator cannot emit this yet" is a deferral in the
+store, never a refusal the generator raises in Java at generate time (Alf, 2026-11-13). A deferral is
+shed when the generator learns the shape, its code going with it.
+
 `graphitron_defect_type` declares each code once:
 
 [cols="1,3"]
@@ -51,7 +57,7 @@ document declares.
 
 | `severity` | `error` or `warning`.
 | `basis` | Whether the rule comes from the GraphQL specification, from graphitron, or marks something
-graphitron does not support yet.
+graphitron does not support yet: `UNSUPPORTED`, a deferral.
 | `lsp_code` | The code the editor shows.
 | `statement` | One sentence an author reads to understand the rule.
 | `owner_stage` | The stage that writes the code's rows, a `meta_stage` row naming its gatherer,
@@ -177,6 +183,7 @@ since the verdict stops first, and goes with the walk.
 
 Some rule families still judge in Java outside the defect family, the ones `StoreDetections`
 gathers; their violations join the walk's errors once the verdict has accepted the graph. They are
-what remains to move into the family.
+what remains to move into the family. The walk's `Deferred` rejections and the generator's Java refusals of a field it does not emit
+from the store yet are among them: each is a deferral, and moves into the family as one.
 
 xref:index.adoc[← Explanation index]
