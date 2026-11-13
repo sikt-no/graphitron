@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_VALUE;
@@ -30,6 +31,7 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
@@ -170,10 +172,14 @@ public final class OutboxQuery {
     /** A {@code @service} on a mutation field: it writes no one table, and hands back a value. */
     public record Service() implements Producer {}
 
-    /** A node type's table and key columns, in key order: what its id is encoded from. */
-    public record NodeKey(Table table, List<Column> columns) {
+    /**
+     * A node type's table, the type id its ids carry and its key columns, in key order: what its id
+     * is encoded from and decoded into.
+     */
+    public record NodeKey(Table table, String typeId, List<Column> columns) {
         public NodeKey {
             Objects.requireNonNull(table, "table");
+            Objects.requireNonNull(typeId, "typeId");
             columns = List.copyOf(columns);
         }
     }
@@ -395,7 +401,10 @@ public final class OutboxQuery {
             .toList());
     }
 
-    /** The table and key columns of every node type a result leaf encodes, the columns in key order. */
+    /**
+     * The table, type id and key columns of every node type a leaf encodes or decodes, the columns in
+     * key order.
+     */
     private static java.util.Map<String, NodeKey> nodeKeys(StoreHandle store, List<RawMessage> messages) {
         var types = messages.stream()
             .flatMap(m -> m.leaves().stream())
@@ -408,11 +417,13 @@ public final class OutboxQuery {
         var c = SQL_COLUMN;
         var t = SQL_TABLE.as("node_table");
         var s = SQL_SCHEMA.as("node_schema");
+        var n = GRAPHITRON_NODE;
         for (var type : types) {
             var rows = store.dsl()
                 .select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE,
-                    t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN)
+                    t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN, coalesce(n.TYPE_ID, k.TYPE_NAME))
                 .from(k)
+                .leftJoin(n).on(n.GRAPH_NAME.eq(k.GRAPH_NAME), n.TYPE_NAME.eq(k.TYPE_NAME))
                 .join(c).on(c.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
                     c.TABLE_NAME.eq(k.TABLE_NAME), c.COLUMN_NAME.eq(k.COLUMN_NAME))
                 .join(t).on(t.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
@@ -426,7 +437,7 @@ public final class OutboxQuery {
             }
             var first = rows.getFirst();
             out.put(type, new NodeKey(
-                new Table(first.value4(), first.value5(), first.value6(), first.value7()),
+                new Table(first.value4(), first.value5(), first.value6(), first.value7()), first.value8(),
                 rows.map(r -> new Column(r.value1(), r.value2(), r.value3()))));
         }
         return out;

@@ -380,7 +380,7 @@ public final class OutboxEmitter {
                 .addStatement("$L.add($L.value($L($L)))", entries, key, JSON_VALUE_HELPER,
                     runtime.sessionMember().read(leaf.path(), row.typeName() + "." + row.fieldName()))
                 .build();
-            case ARGUMENT -> argumentLeaf(leaf, entries, key, local, outputPackage);
+            case ARGUMENT -> argumentLeaf(row, leaf, entries, key, local, outputPackage);
             case RESULT_COLUMN -> CodeBlock.builder()
                 .addStatement("$L.add($L.value($L))", entries, key,
                     listResult ? CodeBlock.of("$T.jsonbArrayAgg(t.$L)", DSL, leaf.column().javaName())
@@ -459,7 +459,7 @@ public final class OutboxEmitter {
      * field on the way was left out, {@code null} where the last was set to it. A value that is an
      * object or a list is rendered as the JSON it is.
      */
-    private static CodeBlock argumentLeaf(Leaf leaf, String entries, CodeBlock key, String local,
+    private static CodeBlock argumentLeaf(Row row, Leaf leaf, String entries, CodeBlock key, String local,
                                           String outputPackage) {
         // A key column named past a node id is not a name in the argument; the walk ends on the id.
         var segments = leaf.keyPosition() == null ? leaf.segments()
@@ -468,7 +468,7 @@ public final class OutboxEmitter {
         var b = CodeBlock.builder();
         if (segments.size() == 1) {
             b.beginControlFlow("if (env.containsArgument($S))", segments.getFirst());
-            addArgument(b, leaf, entries, key, CodeBlock.of("$L", root), local, outputPackage);
+            addArgument(b, row, leaf, entries, key, CodeBlock.of("$L", root), local, outputPackage);
             return b.endControlFlow().build();
         }
         // arg instanceof Map<?, ?> p1 && p1.get("b") instanceof Map<?, ?> p2 && p2.containsKey("c")
@@ -488,7 +488,7 @@ public final class OutboxEmitter {
             current = pattern;
         }
         b.beginControlFlow("if ($L)", condition.build());
-        addArgument(b, leaf, entries, key, CodeBlock.of("$L.get($S)", current, segments.getLast()), local,
+        addArgument(b, row, leaf, entries, key, CodeBlock.of("$L.get($S)", current, segments.getLast()), local,
             outputPackage);
         return b.endControlFlow().build();
     }
@@ -497,20 +497,26 @@ public final class OutboxEmitter {
      * Adds an argument's value to the message: as the client sent it, or, where the key names a key
      * column past a node id, that column decoded out of each id, an id that does not decode giving null.
      */
-    private static void addArgument(CodeBlock.Builder b, Leaf leaf, String entries, CodeBlock key,
+    private static void addArgument(CodeBlock.Builder b, Row row, Leaf leaf, String entries, CodeBlock key,
                                     CodeBlock value, String local, String outputPackage) {
         if (leaf.keyPosition() == null) {
             b.addStatement("$L.add($L.value($L($L)))", entries, key, JSON_VALUE_HELPER, value);
             return;
         }
+        var node = row.nodeKeys().get(leaf.nodeType());
+        if (node == null) {
+            throw new IllegalStateException("the node type " + leaf.nodeType() + " read by "
+                + row.typeName() + "." + row.fieldName() + " states no key column");
+        }
         var encoder = ClassName.get(outputPackage + ".util", "NodeIdEncoder");
-        var record = ClassName.get("org.jooq", "Record");
+        var tables = ClassName.bestGuess(node.table().constantsClassName());
+        var columns = CodeBlock.join(node.columns().stream()
+            .map(c -> CodeBlock.of("$T.$L.$L", tables, node.table().javaFieldName(), c.javaName())).toList(), ", ");
         String decode = local + "_decode";
-        b.addStatement("$T<$T, $T> $L = $L_id -> { $T $L_r = $L_id instanceof $T $L_s ? $T.$L($L_s) : null;"
-                + " return $L_r == null ? null : $L_r.get($L); }",
-            java.util.function.Function.class, Object.class, Object.class, decode, local, record, local, local,
-            String.class, local, encoder, NodeIdHelperNames.decode(leaf.nodeType()), local, local, local,
-            leaf.keyPosition());
+        b.addStatement("$T<$T, $T> $L = $L_id -> { $T[] $L_k = $L_id instanceof $T $L_s"
+                + " ? $T.decodeColumns($S, $L_s, $L) : null; return $L_k == null ? null : $L_k[$L]; }",
+            java.util.function.Function.class, Object.class, Object.class, decode, local, Object.class, local,
+            local, String.class, local, encoder, node.typeId(), local, columns, local, local, leaf.keyPosition());
         b.addStatement("$T $L_v = $L", Object.class, local, value);
         b.addStatement("$L.add($L.value($L($L_v instanceof $T<?> $L_c ? $L_c.stream().map($L).toList()"
                 + " : $L.apply($L_v))))",
