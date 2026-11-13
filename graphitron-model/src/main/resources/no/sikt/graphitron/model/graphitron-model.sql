@@ -8862,6 +8862,7 @@ CREATE TABLE graphitron_occurrence_source (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
   kind       VARCHAR   NOT NULL,
+  rule       VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   -- What each subtype references, so a subtype row can only hang under a source of its own kind.
@@ -8874,6 +8875,7 @@ COMMENT ON TABLE graphitron_occurrence_source IS 'What one occurrence''s values 
 COMMENT ON COLUMN graphitron_occurrence_source.graph_name IS 'the owning graph''s partition, carried from the occurrence';
 COMMENT ON COLUMN graphitron_occurrence_source.coordinate IS 'the occurrence whose source this is, at its nested coordinate; with the graph, the key and a reference into graphitron_occurrence, so a source goes with its occurrence';
 COMMENT ON COLUMN graphitron_occurrence_source.kind IS 'TABLE, rows of the tables graphitron_occurrence_source_table names, or OBJECT, an instance of the class graphitron_occurrence_source_object names; carried into each subtype''s key so a subtype of the other kind cannot be written';
+COMMENT ON COLUMN graphitron_occurrence_source.rule IS 'the rule whose claim took effect, the one of smallest priority value in graphitron_occurrence_source_precedence among those claiming the occurrence; with the graph and the coordinate a reference to that claim, so the source goes with it';
 COMMENT ON COLUMN graphitron_occurrence_source.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_occurrence_source_table (
@@ -8979,6 +8981,7 @@ CREATE TABLE graphitron_path_need_table (
   landing_source_name  VARCHAR,
   landing_schema       VARCHAR,
   landing_table        VARCHAR,
+  rule                 VARCHAR   NOT NULL,
   touched_at           TIMESTAMP NOT NULL,
   start_graph_ref      VARCHAR,
   start_coordinate_ref VARCHAR,
@@ -9025,6 +9028,7 @@ COMMENT ON COLUMN graphitron_path_need_table.start_table IS 'the source table th
 COMMENT ON COLUMN graphitron_path_need_table.landing_source_name IS 'the catalog partition of the table the path lands on, null with landing_table';
 COMMENT ON COLUMN graphitron_path_need_table.landing_schema IS 'the SQL schema of the table the path lands on, null with landing_table';
 COMMENT ON COLUMN graphitron_path_need_table.landing_table IS 'the table the path lands on: a table-bound target''s own table, the start table for a target bound to none, and null for a scalar whose declaration writes a path until its steps say where it lands. An attribute and not a key, so a need is one row however its landing is learnt';
+COMMENT ON COLUMN graphitron_path_need_table.rule IS 'the rule whose claim took effect, the one of smallest priority value in graphitron_path_need_precedence among those claiming the occurrence; with the graph, the coordinate and the type a reference to that claim, so the need''s table side goes with it';
 COMMENT ON COLUMN graphitron_path_need_table.touched_at IS 'when the reading that last stated this need ran, as its need''s; carried so a reader of the table side filters on its own row';
 COMMENT ON COLUMN graphitron_path_need_table.start_graph_ref IS 'the graph half of the start''s graphitron_occurrence_source_table key, nullable so the source table row''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_path_need_table.start_coordinate_ref IS 'the coordinate half of the start''s key, equal to coordinate while the source table row stands';
@@ -19373,6 +19377,42 @@ COMMENT ON VIEW graphitron_field_handed_record_rule IS 'One row the handed recor
 -- COMMENT ON COLUMN graphitron_field_handed_record_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_field_handed_record.table_schema';
 -- COMMENT ON COLUMN graphitron_field_handed_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_field_handed_record.table_name';
 
+CREATE TABLE graphitron_occurrence_source_precedence (
+  rule        VARCHAR NOT NULL,
+  kind        VARCHAR NOT NULL,
+  owner_stage VARCHAR NOT NULL,
+  priority    INTEGER NOT NULL,
+  PRIMARY KEY (rule),
+  UNIQUE (priority),
+  -- What a claim references, so a claim can only carry its rule's kind.
+  UNIQUE (rule, kind),
+  CHECK (kind IN ('TABLE', 'OBJECT'))
+);
+COMMENT ON TABLE graphitron_occurrence_source_precedence IS 'One rule that claims where an occurrence''s values come from, declared once: the kind it claims, the stage writing its claims and its place in the order deciding between claims. For example ownServiceRecord claims a TABLE, written ahead of the depths, and wins over every other rule.';
+COMMENT ON COLUMN graphitron_occurrence_source_precedence.rule IS 'the rule''s name, and the whole key; its claims are stated by a rule view named for it, which a gate holds to these rows';
+COMMENT ON COLUMN graphitron_occurrence_source_precedence.kind IS 'TABLE or OBJECT, what every claim of the rule is';
+COMMENT ON COLUMN graphitron_occurrence_source_precedence.owner_stage IS 'the stage that writes and sweeps the rule''s claims, a meta_stage key: occurrence-source-claims for a rule reading nothing a depth writes, occurrence-depths for one reading the parent''s rows';
+COMMENT ON COLUMN graphitron_occurrence_source_precedence.priority IS 'where the rule stands when several claim one occurrence, the smallest value winning; unique, so one rule answers. A child''s own service record wins over every rule, and a record a service call takes over every rule but that one; record wins over object. Between rules no occurrence can meet twice, the shapes of what they read being disjoint, the order is arbitrary and decides nothing';
+
+INSERT INTO graphitron_occurrence_source_precedence VALUES
+  ('ownServiceRecord', 'TABLE', 'occurrence-source-claims', 10),
+  ('recordParameter', 'TABLE', 'occurrence-source-claims', 20),
+  ('declaringTable', 'TABLE', 'occurrence-source-claims', 30),
+  ('rootRoutine', 'TABLE', 'occurrence-source-claims', 40),
+  ('argumentTarget', 'TABLE', 'occurrence-source-claims', 50),
+  ('argumentMember', 'TABLE', 'occurrence-source-claims', 60),
+  ('argumentWrite', 'TABLE', 'occurrence-source-claims', 70),
+  ('record', 'TABLE', 'occurrence-depths', 80),
+  ('object', 'OBJECT', 'occurrence-depths', 90),
+  ('objectMember', 'OBJECT', 'occurrence-depths', 100),
+  ('writePayload', 'TABLE', 'occurrence-depths', 110),
+  ('writePayloadMember', 'TABLE', 'occurrence-depths', 120),
+  ('nestedCopy', 'TABLE', 'occurrence-depths', 130),
+  ('nestedPath', 'TABLE', 'occurrence-depths', 140),
+  ('argumentCopy', 'TABLE', 'occurrence-depths', 150),
+  ('argumentPath', 'TABLE', 'occurrence-depths', 160),
+  ('inputFieldCopy', 'TABLE', 'occurrence-depths', 170);
+
 CREATE TABLE graphitron_occurrence_source_claim (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -19384,8 +19424,13 @@ CREATE TABLE graphitron_occurrence_source_claim (
   UNIQUE (graph_name, coordinate, rule, kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (rule, kind) REFERENCES graphitron_occurrence_source_precedence (rule, kind),
   CHECK (kind IN ('TABLE', 'OBJECT'))
 );
+-- graphitron_occurrence_source is declared ahead of the claims it is written from, so the reference
+-- to the claim that answered is added here.
+ALTER TABLE graphitron_occurrence_source ADD FOREIGN KEY (graph_name, coordinate, rule)
+  REFERENCES graphitron_occurrence_source_claim (graph_name, coordinate, rule) ON DELETE CASCADE;
 COMMENT ON TABLE graphitron_occurrence_source_claim IS 'A rule''s claim on where one occurrence''s values come from: one row per occurrence and rule that claims it. For example a field under Query.films is claimed by nestedCopy, its parent''s film table, and an argument a service takes as a FilmRecord by recordParameter, beside what its field''s target claims.';
 COMMENT ON COLUMN graphitron_occurrence_source_claim.graph_name IS 'the owning graph''s partition, carried from the occurrence';
 COMMENT ON COLUMN graphitron_occurrence_source_claim.coordinate IS 'the occurrence claimed, at its nested coordinate';
@@ -19608,15 +19653,12 @@ SELECT DISTINCT o.graph_name, o.coordinate, 'object', 'OBJECT', hc.class_name
     ON hc.graph_name = pf.graph_name AND hc.type_name = pf.type_name AND hc.field_name = pf.field_name
   JOIN graphitron_field cf ON cf.graph_name = o.graph_name AND cf.coordinate = o.element_coordinate
  WHERE o.kind = 'FIELD' AND p.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_handed_record hr
-                     WHERE hr.graph_name = pf.graph_name AND hr.type_name = pf.type_name
-                       AND hr.field_name = pf.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source po
                      WHERE po.graph_name = p.graph_name AND po.coordinate = p.coordinate AND po.kind = 'OBJECT')
    AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
                      WHERE ef.graph_name = cf.graph_name AND ef.type_name = cf.type_name
                        AND ef.field_name = cf.field_name);
-COMMENT ON VIEW graphitron_occurrence_source_claim_object_rule IS 'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class that is no table''s record reads an instance of it. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.';
+COMMENT ON VIEW graphitron_occurrence_source_claim_object_rule IS 'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class reads an instance of it, which record overrides where the class is a table''s record. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_object_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_object.rule';
@@ -19788,13 +19830,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, 'argumentCopy', 'TABLE', pt.table_so
    AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
                      JOIN graphitron_tabletype mt
                        ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name
-                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write pw
-                    WHERE pw.graph_name = pf.graph_name AND pw.type_name = pf.type_name
-                      AND pw.field_name = pf.field_name
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_type gt
-                     WHERE gt.graph_name = ft.graph_name AND gt.type_name = ft.target_type_name
-                       AND gt.kind IN ('INTERFACE', 'UNION')));
+                    WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name);
 COMMENT ON VIEW graphitron_occurrence_source_claim_argument_copy_rule IS 'One claim the argumentCopy rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument of a field whose target binds no table reads its field''s own tables. For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_argument_copy_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
@@ -19837,27 +19873,27 @@ COMMENT ON VIEW graphitron_occurrence_source_claim_input_field_copy_rule IS 'One
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
 
-CREATE VIEW graphitron_occurrence_source_rule (graph_name, coordinate, kind) AS
--- A claim holds unless the occurrence has a claim of a higher rank: a child's own service record over
--- every other rule, a record a service call takes over every rule but that one.
-SELECT DISTINCT c.graph_name, c.coordinate, c.kind
-  FROM graphitron_occurrence_source_claim c
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim w
-                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
-                      AND CASE w.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END < CASE c.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END);
+CREATE VIEW graphitron_occurrence_source_rule (graph_name, coordinate, kind, rule) AS
+-- The claim of smallest priority value among the occurrence's claims takes effect. A window: join it on its
+-- key, never correlate it per row, which evaluates it whole once per row.
+SELECT c.graph_name, c.coordinate, c.kind, c.rule
+  FROM (SELECT c.graph_name, c.coordinate, c.kind, c.rule, cp.priority,
+               MIN(cp.priority) OVER (PARTITION BY c.graph_name, c.coordinate) AS winning
+          FROM graphitron_occurrence_source_claim c
+          JOIN graphitron_occurrence_source_precedence cp ON cp.rule = c.rule) c
+ WHERE c.priority = c.winning;
 COMMENT ON VIEW graphitron_occurrence_source_rule IS 'One row the occurrence source rule computes, in the shape graphitron_occurrence_source stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_source_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_source_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source.rule';
 
 CREATE VIEW graphitron_occurrence_source_table_rule (graph_name, coordinate, table_source_name, table_schema, table_name, kind) AS
--- A claim holds unless the occurrence has a claim of a higher rank: a child's own service record over
--- every other rule, a record a service call takes over every rule but that one.
+-- The tables the claim that took effect names, by the rule the source written ahead of it records.
 SELECT DISTINCT c.graph_name, c.coordinate, c.table_source_name, c.table_schema, c.table_name, c.kind
   FROM graphitron_occurrence_source_claim_table c
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim w
-                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
-                      AND CASE w.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END < CASE c.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END);
+  JOIN graphitron_occurrence_source s
+    ON s.graph_name = c.graph_name AND s.coordinate = c.coordinate AND s.rule = c.rule;
 COMMENT ON VIEW graphitron_occurrence_source_table_rule IS 'One row the source table rule computes, in the shape graphitron_occurrence_source_table stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source_table, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_table.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_table.coordinate';
@@ -19867,13 +19903,11 @@ COMMENT ON VIEW graphitron_occurrence_source_table_rule IS 'One row the source t
 -- COMMENT ON COLUMN graphitron_occurrence_source_table_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_source_table.kind';
 
 CREATE VIEW graphitron_occurrence_source_object_rule (graph_name, coordinate, kind, class_name) AS
--- A claim holds unless the occurrence has a claim of a higher rank: a child's own service record over
--- every other rule, a record a service call takes over every rule but that one.
-SELECT DISTINCT c.graph_name, c.coordinate, c.kind, c.class_name
+-- The class the claim that took effect names, by the rule the source written ahead of it records.
+SELECT c.graph_name, c.coordinate, c.kind, c.class_name
   FROM graphitron_occurrence_source_claim_object c
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim w
-                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
-                      AND CASE w.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END < CASE c.rule WHEN 'ownServiceRecord' THEN 1 WHEN 'recordParameter' THEN 2 ELSE 3 END);
+  JOIN graphitron_occurrence_source s
+    ON s.graph_name = c.graph_name AND s.coordinate = c.coordinate AND s.rule = c.rule;
 COMMENT ON VIEW graphitron_occurrence_source_object_rule IS 'One row the source object rule computes, in the shape graphitron_occurrence_source_object stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source_object, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_object.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_object.coordinate';
@@ -19881,6 +19915,29 @@ COMMENT ON VIEW graphitron_occurrence_source_object_rule IS 'One row the source 
 -- COMMENT ON COLUMN graphitron_occurrence_source_object_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_occurrence_source_object.class_name';
 
 -- ==== Path needs, claimed by rule =================================================
+
+CREATE TABLE graphitron_path_need_precedence (
+  rule        VARCHAR NOT NULL,
+  owner_stage VARCHAR NOT NULL,
+  priority    INTEGER NOT NULL,
+  PRIMARY KEY (rule),
+  UNIQUE (priority)
+);
+COMMENT ON TABLE graphitron_path_need_precedence IS 'One rule that claims what an occurrence must reach from its source, declared once: the stage writing its claims and its place in the order deciding between claims. For example recordParameter is written by occurrence-depths and wins over every other rule.';
+COMMENT ON COLUMN graphitron_path_need_precedence.rule IS 'the rule''s name, and the whole key; its claims are stated by a rule view named for it, which a gate holds to these rows';
+COMMENT ON COLUMN graphitron_path_need_precedence.owner_stage IS 'the stage that writes and sweeps the rule''s claims, a meta_stage key';
+COMMENT ON COLUMN graphitron_path_need_precedence.priority IS 'where the rule stands when several claim one occurrence, the smallest value winning at the occurrence, over every target type the others claim; unique, so one rule answers. A record a service call takes wins over every rule. Between rules no occurrence can meet twice, the shapes of what they read being disjoint, the order is arbitrary and decides nothing';
+
+INSERT INTO graphitron_path_need_precedence VALUES
+  ('recordParameter', 'occurrence-depths', 10),
+  ('fieldTableBound', 'occurrence-depths', 20),
+  ('fieldMember', 'occurrence-depths', 30),
+  ('fieldUnbound', 'occurrence-depths', 40),
+  ('argumentCopy', 'occurrence-depths', 50),
+  ('argumentTableBound', 'occurrence-depths', 60),
+  ('argumentMember', 'occurrence-depths', 70),
+  ('argumentUnbound', 'occurrence-depths', 80),
+  ('inputFieldCopy', 'occurrence-depths', 90);
 
 CREATE TABLE graphitron_path_need_claim (
   graph_name          VARCHAR   NOT NULL,
@@ -19896,8 +19953,13 @@ CREATE TABLE graphitron_path_need_claim (
   touched_at          TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, target_type, rule),
   FOREIGN KEY (graph_name, coordinate)
-    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (rule) REFERENCES graphitron_path_need_precedence (rule)
 );
+-- graphitron_path_need_table is declared ahead of the claims it is written from, so the reference to
+-- the claim that answered is added here.
+ALTER TABLE graphitron_path_need_table ADD FOREIGN KEY (graph_name, coordinate, target_type, rule)
+  REFERENCES graphitron_path_need_claim (graph_name, coordinate, target_type, rule) ON DELETE CASCADE;
 COMMENT ON TABLE graphitron_path_need_claim IS 'A rule''s claim that one occurrence must reach one type, with where it starts and lands: one row per occurrence, type and rule. For example a field under Query.films whose target is bound to the language table is claimed by fieldTableBound, starting on film and landing on language.';
 COMMENT ON COLUMN graphitron_path_need_claim.graph_name IS 'the owning graph''s partition, carried from the occurrence';
 COMMENT ON COLUMN graphitron_path_need_claim.coordinate IS 'the occurrence that must reach the type';
@@ -20138,16 +20200,19 @@ COMMENT ON VIEW graphitron_path_need_claim_input_field_copy_rule IS 'One claim t
 -- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_schema';
 -- COMMENT ON COLUMN graphitron_path_need_claim_input_field_copy_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_claim.landing_table';
 
-CREATE VIEW graphitron_path_need_table_rule (graph_name, coordinate, target_type, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table) AS
--- A claim holds unless its occurrence has a claim of a higher rank: a record a service call takes over
--- every other rule.
-SELECT DISTINCT c.graph_name, c.coordinate, c.target_type, c.start_source_name, c.start_schema, c.start_table,
-       c.landing_source_name, c.landing_schema, c.landing_table
-  FROM graphitron_path_need_claim c
- WHERE c.rule = 'recordParameter'
-    OR NOT EXISTS (SELECT 1 FROM graphitron_path_need_claim w
-                    WHERE w.graph_name = c.graph_name AND w.coordinate = c.coordinate
-                      AND w.rule = 'recordParameter');
+CREATE VIEW graphitron_path_need_table_rule (graph_name, coordinate, target_type, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table, rule) AS
+-- The claims of the rule of smallest priority value among the occurrence's claims, at any target type, take
+-- effect. A window: join it on its key, never correlate it per row, which evaluates it whole once per
+-- row.
+SELECT c.graph_name, c.coordinate, c.target_type, c.start_source_name, c.start_schema, c.start_table,
+       c.landing_source_name, c.landing_schema, c.landing_table, c.rule
+  FROM (SELECT c.graph_name, c.coordinate, c.target_type, c.start_source_name, c.start_schema,
+               c.start_table, c.landing_source_name, c.landing_schema, c.landing_table, c.rule,
+               cp.priority,
+               MIN(cp.priority) OVER (PARTITION BY c.graph_name, c.coordinate) AS winning
+          FROM graphitron_path_need_claim c
+          JOIN graphitron_path_need_precedence cp ON cp.rule = c.rule) c
+ WHERE c.priority = c.winning;
 COMMENT ON VIEW graphitron_path_need_table_rule IS 'One row the path need table rule computes, in the shape graphitron_path_need_table stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_table, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_table.graph_name';
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_table.coordinate';
@@ -20158,6 +20223,7 @@ COMMENT ON VIEW graphitron_path_need_table_rule IS 'One row the path need table 
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.landing_source_name IS 'the landing_source_name of a row of this rule, which the stage writes into graphitron_path_need_table.landing_source_name';
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.landing_schema IS 'the landing_schema of a row of this rule, which the stage writes into graphitron_path_need_table.landing_schema';
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.landing_table IS 'the landing_table of a row of this rule, which the stage writes into graphitron_path_need_table.landing_table';
+-- COMMENT ON COLUMN graphitron_path_need_table_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_path_need_table.rule';
 
 -- ==== Diagnostics ==================================================================
 -- Violations as facts: six arms behind one prefix-less union view (diagnostic, at the
@@ -20289,6 +20355,14 @@ INSERT INTO meta_stated_relation VALUES
    'One rule a schema can break, declared once: what to call it, how bad it is, what the verdict rests on, and the sentence that states the rule.',
    'For example CONNECTION_RETURN is an error resting on graphitron''s directive contract, whose statement is that a @routine write re-reads by the keys it returned rather than by a page.',
    'Declared rather than captured, so no graph partition and no instant: which defects exist is a property of this generator and not of anybody''s schema, which is lint_rule''s reason beside it. Severity, basis and the editor''s code live here because each is a function of the defect and nothing else, so carrying any of them on a finding would repeat one value per row; a routine write''s seat once made exactly that argument about severity, found no relation to put it in, and stated it in prose per value instead, which is the gap this row closes. Basis is the axis that prose was really carrying: what the verdict rests on, and so whether an author edits the schema or works around what graphitron does not do yet; never the generator''s fault, the generator running only on a schema that validates. A code whose basis depends on which row it is is two codes, and splitting it is the same argument as the collapse run the other way, payload sameness merging relations and action difference splitting codes. The statement is the rule in one author-facing sentence, and it plus a finding''s detail is what a consumer composes a message from, which is why no finding stores prose.'),
+  ('graphitron_occurrence_source_precedence',
+   'One rule that claims where an occurrence''s values come from, declared once: the kind it claims, the stage writing its claims and its place in the order deciding between claims.',
+   'For example ownServiceRecord claims a TABLE, written ahead of the depths, and wins over every other rule.',
+   'Which rules exist and which of them wins is a property of this generator and not of anybody''s schema, as graphitron_defect_type''s codes are. Stating the rules once lets each claim name its rule by a key, the winner read one priority rather than a ranking copied into every winner view, and the stages sweeping the claims read which rules they own rather than a list in their code.'),
+  ('graphitron_path_need_precedence',
+   'One rule that claims what an occurrence must reach from its source, declared once: the stage writing its claims and its place in the order deciding between claims.',
+   'For example recordParameter is written by occurrence-depths and wins over every other rule.',
+   'Stated for graphitron_occurrence_source_precedence''s reason: which rules claim a need and which of them wins is a property of this generator, so each claim names its rule by a key and the winner reads one priority.'),
   ('lint_rule',
    'One lint rule the generator declares: its identity, which producer mints its findings, and how severe a finding of it is.',
    'For example field-names-camel-case is an engine rule and a warning.',
@@ -21014,6 +21088,13 @@ CREATE TABLE meta_stage_write (
 COMMENT ON TABLE meta_stage_write IS 'One relation a stage writes rows into: an insert, a merge, an update or a delete the stage issues, a sweep of its own relations included. For example occurrence-depths writes graphitron_path_need.';
 COMMENT ON COLUMN meta_stage_write.stage_name IS 'the writing stage, a meta_stage key';
 COMMENT ON COLUMN meta_stage_write.relation_name IS 'the base table written, lower case as declared; a gate in this module reads the stage writes the fact documents'' captures recorded and refuses one its stage does not declare here';
+
+-- The claim precedences name the stage owning each rule, a reference added once the roster holds
+-- the stages.
+ALTER TABLE graphitron_occurrence_source_precedence ADD FOREIGN KEY (owner_stage)
+  REFERENCES meta_stage (stage_name);
+ALTER TABLE graphitron_path_need_precedence ADD FOREIGN KEY (owner_stage)
+  REFERENCES meta_stage (stage_name);
 
 -- Seeded from the anchor phase's writes over the fact documents, the classification corpus and the
 -- scaled fixture.
@@ -22582,7 +22663,7 @@ INSERT INTO meta_relation VALUES
    'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
    'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_occurrence_source_claim_object_rule', 'source-claim', 'graphitron',
-   'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class that is no table''s record reads an instance of it.',
+   'One claim the object rule makes, in the shape graphitron_occurrence_source_claim_object stores: a field under a parent handing back a class reads an instance of it, which record overrides where the class is a table''s record.',
    'For example the occurrence-depths stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_object, the rule''s own and no other.',
    'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_occurrence_source_claim_object_member_rule', 'source-claim', 'graphitron',

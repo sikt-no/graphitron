@@ -13,6 +13,8 @@
 # field writes a path, the tables that path's join path lands on; an input field reads its parent's.
 # A connection's fields hang under the field returning it and read the page its producer produces,
 # which no table source states, so they have none yet; its arguments read the element's table.
+# Each rule claims what it finds and the source names the rule whose claim took effect: under a
+# service handing back a table record, record and object both claim a field, and record wins.
 
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
   title: String
@@ -263,4 +265,22 @@ extend schema @assertContains(relation: "graphitron_type_member", rows: """
   Searchable,     UNION,          Language,         OBJECT
   MediaItem,      INTERFACE,      Film,             OBJECT
   Node,           INTERFACE,      Language,         OBJECT
+  """)
+
+# The rule whose claim took effect, kept on the source.
+extend schema @assertContains(relation: "graphitron_occurrence_source", rows: """
+  coordinate,                                rule
+  Film.title,                                declaringTable
+  Film.details.length,                       nestedCopy
+  Query.filmDetailsBatch.filmId,             record
+  Query.filmBlurbHolder.blurb,               object
+  Query.filmBlurbHolder.blurb.description,   objectMember
+  """)
+
+# Under a service handing back FilmRecords both rules claim the field; record's claim is the one kept.
+extend schema @expectEquals(relation: "graphitron_occurrence_source_claim",
+    where: "coordinate = 'Query.filmDetailsBatch.filmId'", rows: """
+  coordinate,                      rule,   kind
+  Query.filmDetailsBatch.filmId,   object, OBJECT
+  Query.filmDetailsBatch.filmId,   record, TABLE
   """)

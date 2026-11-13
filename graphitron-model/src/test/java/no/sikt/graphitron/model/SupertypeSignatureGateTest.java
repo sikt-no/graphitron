@@ -164,16 +164,14 @@ class SupertypeSignatureGateTest {
      */
     private static final Set<Set<String>> SUBTYPE_SETS = Set.of(
         Set.of("graphql_implements_interface", "graphql_union_member"),
-        // An occurrence's source and its binding, whose payload is their kind alone: what each kind
-        // takes is its subtype's, so a binding and a source are two supertypes of the occurrence, not
-        // one fact under two keys. A node id's member slot joins them on the same terms: its payload
-        // is the kind its supertype pins, and the bound it is keyed by is its own MEMBER binding's,
-        // which it references rather than restates. A source claim carries the same kind under the
-        // rule that claims it, the candidates the source is written from, and a claimed table the kind
-        // beside the table; the claims are what each rule says, the source what took effect.
+        // An occurrence's binding, whose payload is its kind alone: what each kind takes is its
+        // subtype's. A node id's member slot joins it on the same terms: its payload is the kind its
+        // supertype pins, and the bound it is keyed by is its own MEMBER binding's, which it
+        // references rather than restates. A source claim carries a kind under the rule that claims
+        // it, and a claimed table the kind beside the table: what each rule says, from which the
+        // source, carrying the rule that took effect beside its kind, is written.
         Set.of("graphitron_occurrence_binding", "graphitron_occurrence_node_id_slot_member",
-            "graphitron_occurrence_source", "graphitron_occurrence_source_claim",
-            "graphitron_occurrence_source_claim_table"),
+            "graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_table"),
         // A call and the methods it could make, whose payload is the call's kind alone: a candidate is
         // stated before the pin that decides which call exists, so it cannot key into the call, and
         // the call keeps the kind its subtypes key on. Two grains, not one fact under two keys.

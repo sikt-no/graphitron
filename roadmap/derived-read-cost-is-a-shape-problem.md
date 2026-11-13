@@ -485,17 +485,21 @@ The terms *result set*, *page*, *cursor position* and *how the result set was pr
     the per-depth rules and `graphitron_occurrence_producer_result_rule` read `graphitron_tabletype`
     and it in place of their type, member and `NOT EXISTS` combinations, priced by a quiet-machine
     A/B on `prepare_ms`.
-  * **A claim states only what its rule finds, and one rank decides between rules** `open`, F's.
-    The rules filling `graphitron_occurrence_source_claim` and `graphitron_path_need_claim` still
-    exclude one another: `argumentCopy` restates the conditions of three sibling rules, and the
-    nested rules restate those of `record` and `object`, while the winner views copy one rank
-    `CASE` three times. A constant relation keyed by rule, carrying its kind, owning stage and rank,
-    takes a foreign key from each claim's rule; each rule view states only its own condition, the
-    winner view reads the rank, two claims of equal rank that disagree store a defect at the
-    occurrence, and the stored source and need carry the rule that answered. This also removes
-    the exclusion joins the per-depth rules pay for. Whether `graphitron_field_handed_class`
-    restates what `graphitron_occurrence_producer_result` already holds for the parent's producer
-    is checked first.
+  * **A claim states only what its rule finds** `open`, F's. The rules are stated in
+    `graphitron_occurrence_source_precedence` and `graphitron_path_need_precedence`, the winner is
+    the claim of lowest priority and the stored source and need carry its rule; `object` no longer
+    restates `record`, nor `argumentCopy` `argumentWrite`. The exclusions left that read the
+    parent's stored source are precedence only where the condition implies the higher rule's whole
+    condition, its own exclusions included, so each is proved or kept as the rule's own: `record`
+    and `object` refusing a parent whose source is an object (likely its own, `objectMember`
+    refusing record classes), `writePayload` and `writePayloadMember` refusing a parent with any
+    source, against the nested rules' own exclusions, and the argument need rules refusing a
+    parent with needs, against `argumentCopy`'s landing. Each departure accepted is shown by a fact
+    document. The nested rules' tests for a service claim and a record-returning `@externalField`
+    wait on whether `graphitron_field_handed_class` covers every such parent, which is the same
+    check as whether it restates what `graphitron_occurrence_producer_result` holds for the
+    parent's producer. Whether the two precedence relations become one keyed by claim family is
+    open for Alf and Filip.
   * **A target's binding shape is stated once** `open`, F's. "The field writes a path" and "the
     target binds no table and no member binds one" are spelled again in about ten claim rules;
     stored once at field grain, in `occurrence-source-claims`, the rules become key joins, priced

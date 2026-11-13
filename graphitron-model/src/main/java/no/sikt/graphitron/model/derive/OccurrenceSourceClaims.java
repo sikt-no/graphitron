@@ -14,6 +14,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_HANDED_RECORD_RUL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -46,20 +47,18 @@ public final class OccurrenceSourceClaims {
         }
     }
 
-    /** The rules that read nothing a depth writes: the starts, the overrides and the parent field's statics. */
-    private static final List<Rule> AHEAD = List.of(
-        new Rule("declaringTable", "TABLE"), new Rule("rootRoutine", "TABLE"),
-        new Rule("ownServiceRecord", "TABLE"), new Rule("recordParameter", "TABLE"),
-        new Rule("argumentTarget", "TABLE"), new Rule("argumentMember", "TABLE"),
-        new Rule("argumentWrite", "TABLE"));
+    /** The stage writing the rules that read nothing a depth writes: the starts, the overrides and the parent field's statics. */
+    private static final String AHEAD = "occurrence-source-claims";
 
-    /** The rules that read the parent occurrence's rows, which the depth above wrote. */
-    private static final List<Rule> PER_DEPTH = List.of(
-        new Rule("record", "TABLE"), new Rule("object", "OBJECT"), new Rule("objectMember", "OBJECT"),
-        new Rule("writePayload", "TABLE"), new Rule("writePayloadMember", "TABLE"),
-        new Rule("nestedCopy", "TABLE"), new Rule("nestedPath", "TABLE"),
-        new Rule("argumentCopy", "TABLE"), new Rule("argumentPath", "TABLE"),
-        new Rule("inputFieldCopy", "TABLE"));
+    /** The stage writing the rules that read the parent occurrence's rows, which the depth above wrote. */
+    private static final String PER_DEPTH = "occurrence-depths";
+
+    /** The rules {@code stage} owns, as {@code graphitron_occurrence_source_precedence} states them. */
+    private static List<Rule> rules(DSLContext dsl, String stage) {
+        var p = GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
+        return dsl.select(p.RULE, p.KIND).from(p).where(p.OWNER_STAGE.eq(stage)).orderBy(p.PRIORITY)
+            .fetch(r -> new Rule(r.value1(), r.value2()));
+    }
 
     /**
      * The stage: the class each field hands back and the tables it is a record of, which the rules
@@ -68,10 +67,11 @@ public final class OccurrenceSourceClaims {
      */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         writeHanded(dsl, graph, touchedAt);
-        for (Rule rule : AHEAD) {
+        var rules = rules(dsl, AHEAD);
+        for (Rule rule : rules) {
             write(dsl, graph, null, touchedAt, rule);
         }
-        sweep(dsl, graph, null, touchedAt, AHEAD);
+        sweep(dsl, graph, null, touchedAt, rules);
     }
 
     /**
@@ -79,10 +79,11 @@ public final class OccurrenceSourceClaims {
      * the sweep of their stale claims there, so the sources read only this reading's.
      */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
-        for (Rule rule : PER_DEPTH) {
+        var rules = rules(dsl, PER_DEPTH);
+        for (Rule rule : rules) {
             write(dsl, graph, depth, touchedAt, rule);
         }
-        sweep(dsl, graph, depth, touchedAt, PER_DEPTH);
+        sweep(dsl, graph, depth, touchedAt, rules);
     }
 
     /** The handed classes, then the tables they are records of, each swept of what this reading did not state. */

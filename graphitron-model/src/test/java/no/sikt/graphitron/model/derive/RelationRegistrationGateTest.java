@@ -602,6 +602,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_claim_kind", Arm.UNSHADOWED);
         registrations.put("graphitron_claim_inclusion", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
+        registrations.put("graphitron_occurrence_source_precedence", Arm.UNSHADOWED);
+        registrations.put("graphitron_path_need_precedence", Arm.UNSHADOWED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement
         // is vacuous by construction; the arm-specific derived columns are pinned by
         // DiagnosticFactsTest against their Java spellings.

@@ -7,8 +7,10 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE_RULE;
@@ -30,8 +32,9 @@ import static org.jooq.impl.DSL.val;
  * effect, as the source rule views state, a depth at a time inside {@link OccurrenceDepths}: a field
  * under a parent reads what this reading stated for the parent at the depth above.
  *
- * <p>A kind is part of its subtypes' keys, so a source whose kind changed since the last reading is
- * deleted before it is written again, taking its subtypes.
+ * <p>A source names the rule whose claim took effect, and a kind is its rule's and part of its
+ * subtypes' keys, so a source another rule now outranks is deleted before it is written again,
+ * taking its subtypes; one whose claim is gone goes with the claim.
  */
 public final class OccurrenceSources {
 
@@ -42,25 +45,34 @@ public final class OccurrenceSources {
         OccurrenceSourceClaims.writeDepth(dsl, graph, depth, touchedAt);
         var o = GRAPHITRON_OCCURRENCE;
 
-        // A source whose kind changed goes with its subtypes first.
+        // A source a claim of lower priority now outranks goes with its subtypes first, its kind
+        // being its rule's; one whose claim is gone went with the claim. Read off the claims, not the
+        // winning ones, which a correlated read would compute once per source.
         var s = GRAPHITRON_OCCURRENCE_SOURCE;
         var r = GRAPHITRON_OCCURRENCE_SOURCE_RULE;
+        var w = GRAPHITRON_OCCURRENCE_SOURCE_CLAIM.as("w");
+        var wp = GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE.as("wp");
+        var sp = GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE.as("sp");
         dsl.deleteFrom(s)
             .where(s.GRAPH_NAME.eq(graph))
-            .and(exists(selectOne().from(r)
-                .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
-                .where(r.GRAPH_NAME.eq(s.GRAPH_NAME), r.COORDINATE.eq(s.COORDINATE), r.KIND.ne(s.KIND),
-                    o.DEPTH.eq(depth))))
+            .and(exists(selectOne().from(o)
+                .where(o.GRAPH_NAME.eq(s.GRAPH_NAME), o.COORDINATE.eq(s.COORDINATE), o.DEPTH.eq(depth))))
+            .and(exists(selectOne().from(w)
+                .join(wp).on(wp.RULE.eq(w.RULE))
+                .join(sp).on(sp.RULE.eq(s.RULE))
+                .where(w.GRAPH_NAME.eq(s.GRAPH_NAME), w.COORDINATE.eq(s.COORDINATE),
+                    wp.PRIORITY.lt(sp.PRIORITY))))
             .execute();
 
         dsl.insertInto(s)
-            .columns(s.GRAPH_NAME, s.COORDINATE, s.KIND, s.TOUCHED_AT)
-            .select(selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.KIND, val(touchedAt, s.TOUCHED_AT))
+            .columns(s.GRAPH_NAME, s.COORDINATE, s.KIND, s.RULE, s.TOUCHED_AT)
+            .select(selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.KIND, r.RULE, val(touchedAt, s.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(r.GRAPH_NAME.eq(graph), o.DEPTH.eq(depth)))
             .onConflict(s.GRAPH_NAME, s.COORDINATE)
             .doUpdate()
+            .set(s.RULE, excluded(s.RULE))
             .set(s.TOUCHED_AT, excluded(s.TOUCHED_AT))
             .execute();
 

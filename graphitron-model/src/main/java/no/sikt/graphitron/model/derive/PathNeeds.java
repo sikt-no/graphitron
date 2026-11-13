@@ -15,6 +15,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_OBJECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_PRECEDENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -63,20 +64,20 @@ public final class PathNeeds {
 
     private PathNeeds() {}
 
-    /** The rules a need is claimed by, each stated by its own view. */
-    private static final List<String> RULES = List.of("fieldTableBound", "fieldMember", "fieldUnbound",
-        "argumentCopy", "recordParameter", "argumentTableBound", "argumentMember", "argumentUnbound",
-        "inputFieldCopy");
-
     /** States the needs of the occurrences at {@code depth}. */
     public static void writeDepth(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt) {
         requireOneSourceTablePerField(dsl, graph, touchedAt, depth);
-        for (String rule : RULES) {
+        // The rules a need is claimed by that this stage owns, each stated by its own view.
+        var p = GRAPHITRON_PATH_NEED_PRECEDENCE;
+        var rules = dsl.select(p.RULE).from(p).where(p.OWNER_STAGE.eq("occurrence-depths"))
+            .orderBy(p.PRIORITY).fetch(p.RULE);
+        for (String rule : rules) {
             writeClaims(dsl, graph, depth, touchedAt, rule);
         }
         var c = GRAPHITRON_PATH_NEED_CLAIM;
         dsl.deleteFrom(c)
             .where(c.GRAPH_NAME.eq(graph))
+            .and(c.RULE.in(rules))
             .and(c.TOUCHED_AT.ne(touchedAt))
             .and(OccurrenceProducers.atDepth(c.GRAPH_NAME, c.COORDINATE, depth))
             .execute();
@@ -260,12 +261,12 @@ public final class PathNeeds {
         dsl.insertInto(nt)
             .columns(nt.GRAPH_NAME, nt.COORDINATE, nt.TARGET_TYPE, nt.START_KIND,
                 nt.START_SOURCE_NAME, nt.START_SCHEMA, nt.START_TABLE, nt.LANDING_SOURCE_NAME,
-                nt.LANDING_SCHEMA, nt.LANDING_TABLE, nt.TOUCHED_AT,
+                nt.LANDING_SCHEMA, nt.LANDING_TABLE, nt.RULE, nt.TOUCHED_AT,
                 nt.START_GRAPH_REF, nt.START_COORDINATE_REF, nt.START_SOURCE_REF, nt.START_SCHEMA_REF,
                 nt.START_TABLE_REF, nt.LANDING_SOURCE_REF, nt.LANDING_SCHEMA_REF, nt.LANDING_TABLE_REF)
             .select(selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.TARGET_TYPE, inline(TABLE),
                     r.START_SOURCE_NAME, r.START_SCHEMA, r.START_TABLE, r.LANDING_SOURCE_NAME,
-                    r.LANDING_SCHEMA, r.LANDING_TABLE, val(touchedAt, nt.TOUCHED_AT),
+                    r.LANDING_SCHEMA, r.LANDING_TABLE, r.RULE, val(touchedAt, nt.TOUCHED_AT),
                     s.GRAPH_NAME, s.COORDINATE, s.TABLE_SOURCE_NAME, s.TABLE_SCHEMA, s.TABLE_NAME,
                     lt.SOURCE_NAME, lt.TABLE_SCHEMA, lt.TABLE_NAME)
                 .from(r)
@@ -284,6 +285,7 @@ public final class PathNeeds {
             .set(nt.LANDING_SOURCE_NAME, excluded(nt.LANDING_SOURCE_NAME))
             .set(nt.LANDING_SCHEMA, excluded(nt.LANDING_SCHEMA))
             .set(nt.LANDING_TABLE, excluded(nt.LANDING_TABLE))
+            .set(nt.RULE, excluded(nt.RULE))
             .set(nt.TOUCHED_AT, excluded(nt.TOUCHED_AT))
             .set(nt.START_GRAPH_REF, excluded(nt.START_GRAPH_REF))
             .set(nt.START_COORDINATE_REF, excluded(nt.START_COORDINATE_REF))

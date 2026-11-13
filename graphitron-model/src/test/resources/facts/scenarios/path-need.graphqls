@@ -258,3 +258,13 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
   Film.castFilms(minLength:), films_for_actor
   Film.castFilms.filmId,      films_for_actor
   """)
+
+# The rule whose claim took effect, kept on the need's table side.
+extend schema @assertContains(relation: "graphitron_path_need_table", rows: """
+  coordinate,               target_type, rule
+  Film.actorRows,           FilmActor,   fieldTableBound
+  Film.actorRows(first:),   FilmActor,   argumentCopy
+  FilmActor.actorId,        Int,         fieldUnbound
+  FilmActor.credits,        Film,        fieldMember
+  FilmActor.credits,        Language,    fieldMember
+  """)
