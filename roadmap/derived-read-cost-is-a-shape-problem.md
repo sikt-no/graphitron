@@ -824,10 +824,10 @@ static method needs no holder.
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
       then goes, after the flips.
-    * **A routine and a write state what they bind as call parameters** `open`. A `@routine`'s and a
-      write's fills are `graphitron_occurrence_call_parameter` rows from rule views of their own, so
-      `ConditionQuery` excludes a term some call's fill binds and `CONSUMED` goes (Alf, 2026-11-13); a root
-      `SELECT` or `LOOKUP`'s own call parameters wait for "The root query fetchers are emitted from the store".
+    * **A routine and a write state what they bind as call parameters** `open`. A write's and a root
+      `@routine`'s fills are call parameters, and a child routine's step parameter names the
+      argument occurrence it reads, so `ConditionQuery` excludes a term either binds and `CONSUMED`
+      goes, a name shared with a column being no filter (Alf, 2026-11-13); a root `SELECT` or `LOOKUP`'s own call parameters wait for "The root query fetchers are emitted from the store".
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence, and flips in the same pass as `$project` and the
@@ -1127,6 +1127,9 @@ pass and no stratum that clears and recomputes.
         write's result as records of the return's table re-read by its key in a statement of their
         own, a write's statement joining nothing onward since it holds its locks, and the emitter
         refuses the shape only because it has no lift for a write.
+      * **A routine write's unread input is a code** `open`. On a `Mutation` `@routine` every input
+        leaf feeds a parameter, the re-read being keyed, so a leaf no parameter binds is a located
+        GRAPHITRON refusal per leaf, as the walk's `unreadWriteInput` states it today.
     * **A table write's refusals are codes a stage writes** `open`. `UpdateRowsWalker` and
       `DeleteRowsWalker` refuse what `MutationInputResolver` admits, `@condition(override: true)` on
       an UPDATE or DELETE input, beside their own key and shape rules: `NoUniqueKeyCoverage`,
@@ -1134,6 +1137,13 @@ pass and no stratum that clears and recomputes.
       `PlainColumnCollision`, `FailOnMissingNeedsKey`, the idempotent delete's key and echo, and
       `UnsupportedInputFieldShape`. Each becomes a stored defect before the walkers go, or the shape
       is admitted silently.
+    * **A root routine's refusals are codes a stage writes** `blocked`, on "A routine and a write state what they bind as call parameters".
+      `RoutineDirectiveResolver`'s GRAPHITRON refusals, a parameter nothing binds, an argMapping
+      naming no IN parameter, a non-scalar leaf, `$source` at a root, an unknown or mistyped
+      `$source` column and `@field` or `@condition` on a bound leaf, and its UNSUPPORTED deferrals, a
+      path through a list, a coercing extraction and `$source` under a record-backed parent, each
+      become a stored defect read off the routine's parameter bindings before the walk's routine
+      path goes; who owns the unbound parameter at a root is Alf's.
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
       The walk's single-channel rules for the type a write, a routine or a service returns are no
       rule of the model: each field under the result is an occurrence with its own lift off its parent, so two
