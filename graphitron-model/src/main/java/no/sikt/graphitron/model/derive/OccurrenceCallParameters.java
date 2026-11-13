@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_WRITE_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -36,7 +37,7 @@ import static org.jooq.impl.DSL.val;
  * {@code graphitron_occurrence_binding} and {@code graphitron_occurrence_binding_parameter}, written
  * beside the fill.
  *
- * <p>Two stages own the rows, by call kind. The service calls' are {@link OccurrenceProducers}', ahead
+ * <p>Two stages own the rows, by call kind. The service and write calls' are {@link OccurrenceProducers}', ahead
  * of {@link OccurrenceDepths}, whose sources read a record a service takes; the condition calls' are
  * {@link OccurrenceBindings}', after the depths, since a condition's call waits on the bindings. Each
  * writes and sweeps its own kind.
@@ -53,6 +54,49 @@ public final class OccurrenceCallParameters {
         write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
         pairs(dsl, graph, touchedAt, "SERVICE");
         bindings(dsl, graph, touchedAt, "SERVICE");
+    }
+
+    /**
+     * States what fills each parameter of the write calls: each argument of the write's field, an input
+     * object bound against the record of the table written. A write pins no method, so its fills are
+     * the rule's rows as they stand.
+     */
+    public static void writeWrites(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var p = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var r = GRAPHITRON_OCCURRENCE_WRITE_PARAMETER_RULE;
+        dsl.deleteFrom(p)
+            .where(p.GRAPH_NAME.eq(graph), p.CALL_KIND.eq("WRITE"))
+            .andNotExists(selectOne().from(r)
+                .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.CALL_COORDINATE), r.CALL.eq(p.CALL),
+                    r.POSITION.eq(p.POSITION), r.LANDING_COORDINATE.eq(p.COORDINATE)))
+            .execute();
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        dsl.insertInto(c)
+            .columns(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.CALL_KIND, c.POSITION, c.PARAMETER_NAME, c.FILL,
+                c.LANDING_COORDINATE, c.RECORD_SOURCE_NAME, c.RECORD_SCHEMA, c.RECORD_TABLE, c.TOUCHED_AT,
+                c.RECORD_SOURCE_REF, c.RECORD_SCHEMA_REF, c.RECORD_TABLE_REF)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.CALL_KIND, r.POSITION, r.PARAMETER_NAME,
+                    r.FILL, r.LANDING_COORDINATE, r.RECORD_SOURCE_NAME, r.RECORD_SCHEMA, r.RECORD_TABLE,
+                    val(touchedAt, c.TOUCHED_AT), r.RECORD_SOURCE_NAME, r.RECORD_SCHEMA, r.RECORD_TABLE)
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.POSITION)
+            .doUpdate()
+            .set(c.CALL_KIND, excluded(c.CALL_KIND))
+            .set(c.PARAMETER_NAME, excluded(c.PARAMETER_NAME))
+            .set(c.FILL, excluded(c.FILL))
+            .set(c.LANDING_COORDINATE, excluded(c.LANDING_COORDINATE))
+            .set(c.CONTEXT_KEY, (String) null)
+            .set(c.SESSION_MEMBER, (String) null)
+            .set(c.RECORD_SOURCE_NAME, excluded(c.RECORD_SOURCE_NAME))
+            .set(c.RECORD_SCHEMA, excluded(c.RECORD_SCHEMA))
+            .set(c.RECORD_TABLE, excluded(c.RECORD_TABLE))
+            .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
+            .set(c.RECORD_SOURCE_REF, excluded(c.RECORD_SOURCE_REF))
+            .set(c.RECORD_SCHEMA_REF, excluded(c.RECORD_SCHEMA_REF))
+            .set(c.RECORD_TABLE_REF, excluded(c.RECORD_TABLE_REF))
+            .execute();
+        bindings(dsl, graph, touchedAt, "WRITE");
     }
 
     /**

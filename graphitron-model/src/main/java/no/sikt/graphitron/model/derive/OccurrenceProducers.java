@@ -25,6 +25,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SER
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_WRITE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_WRITE_CALL_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
@@ -45,11 +46,13 @@ public final class OccurrenceProducers {
 
     private OccurrenceProducers() {}
 
-    /** The stage: the producers and their service calls, the calls' fills, what they produce, then the sweep. */
+    /** The stage: the producers and their service and write calls, the calls' fills, what they produce, then the sweep. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         write(dsl, graph, touchedAt);
         OccurrenceCallParameters.writeServices(dsl, graph, touchedAt);
         OccurrenceCallParameters.sweep(dsl, graph, touchedAt, "SERVICE");
+        OccurrenceCallParameters.writeWrites(dsl, graph, touchedAt);
+        OccurrenceCallParameters.sweep(dsl, graph, touchedAt, "WRITE");
         writeResults(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
@@ -96,6 +99,9 @@ public final class OccurrenceProducers {
             graph, null, touchedAt);
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE_RULE,
             graph, null, touchedAt);
+        // A write's call, read off the write it makes, since it pins no method.
+        refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_WRITE_CALL_RULE, graph, null, touchedAt);
+        sweepCalls(dsl, graph, touchedAt, "WRITE");
     }
 
     /**

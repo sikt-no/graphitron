@@ -66,6 +66,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding",
   Mutation.createFilm(in.title:),     public.film,            COLUMN
   Mutation.createFilm,                public.film,            TABLE
   Mutation.createFilm(in:),           public.film,            TABLE
+  Mutation.createFilm(in:),           Mutation.createFilm producer 0, PARAMETER
   Query.films,                        public.film,            TABLE
   Query.filmsByKey,                   public.film,            TABLE
   Query.filmsByKey(film_id:),         public.film,            COLUMN

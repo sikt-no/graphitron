@@ -1,0 +1,57 @@
+# A write is a call: it takes each argument of its field as one parameter, an input object bound against
+# the record of the table it writes. The input is built into that record, and a nested input object
+# groups onto it at every depth, so every input object under the write's input is built. The fields
+# keep binding the columns they set.
+
+type Film @table(name: "film") { title: String }
+
+input FilmSizesInput { length: Int }
+
+input FilmDetailsInput {
+  description: String
+  sizes: FilmSizesInput
+}
+
+input FilmInput {
+  title: String!
+  languageId: Int! @field(name: "language_id")
+  details: FilmDetailsInput
+}
+
+type Query { films: [Film!]! }
+
+type Mutation {
+  createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call", where: "call_kind = 'WRITE'", rows: """
+  coordinate,          call,     call_kind
+  Mutation.createFilm, producer, WRITE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter", where: "call_kind = 'WRITE'", rows: """
+  coordinate,          call,     position, parameter_name, fill,     landing_coordinate,     record_table
+  Mutation.createFilm, producer, 0,        in,             ARGUMENT, Mutation.createFilm(in:), film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter", rows: """
+  coordinate,               call_coordinate,     call,     position, call_kind
+  Mutation.createFilm(in:), Mutation.createFilm, producer, 0,        WRITE
+  """)
+
+# Built into the written table's record at every depth.
+extend schema @expectEquals(relation: "graphitron_occurrence_built_class", rows: """
+  coordinate,                            class_name,                                                         declared_via
+  Mutation.createFilm(in:),              no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PARAMETER
+  Mutation.createFilm(in.details:),      no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, GROUPING
+  Mutation.createFilm(in.details.sizes:), no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, GROUPING
+  """)
+
+# The fields set columns, as they did.
+extend schema @assertContains(relation: "graphitron_occurrence_column", rows: """
+  coordinate,                                   column_name
+  Mutation.createFilm(in.title:),               title
+  Mutation.createFilm(in.languageId:),          language_id
+  Mutation.createFilm(in.details.description:), description
+  Mutation.createFilm(in.details.sizes.length:), length
+  """)
