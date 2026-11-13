@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.derive;
 import no.sikt.graphitron.model.test.CatalogInput;
 
 import no.sikt.graphitron.model.diagnostics.NodeIdDecodeCoordinate;
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.classifieddsl.ClassifiedHarness;
@@ -14,10 +14,9 @@ import no.sikt.graphitron.rewrite.model.RoutineRef;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.lang.reflect.RecordComponent;
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
@@ -57,8 +56,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class RoutineSpentInputShadowTest {
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     // ===== The corpus sweep =====
 
@@ -121,11 +120,9 @@ class RoutineSpentInputShadowTest {
             Map.entry("Query.actorFilms|filter.actorId.actor_id", "filter.actorId"),
             Map.entry("Query.actorFilms|filter.minLength", "filter.minLength"));
 
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
-            assertThat(storeLandings(store.dsl(), CapturedStore.GRAPH))
-                .as("the store reaches the same two landings by its own route")
-                .isEqualTo(walked);
-        }
+        assertThat(storeLandings(sdl))
+            .as("the store reaches the same two landings by its own route")
+            .isEqualTo(walked);
     }
 
     /**
@@ -150,9 +147,7 @@ class RoutineSpentInputShadowTest {
             Map.entry("Mutation.rentFilm|inventoryId", "inventoryId"),
             Map.entry("Mutation.rentFilm|customerId", "customerId"));
 
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq())) {
-            assertThat(storeLandings(store.dsl(), CapturedStore.GRAPH)).isEqualTo(walked);
-        }
+        assertThat(storeLandings(sdl)).isEqualTo(walked);
     }
 
     // ===== The two derivations, each rendered to one comparable shape =====
@@ -161,6 +156,12 @@ class RoutineSpentInputShadowTest {
      * The store's answer: {@code bound_path} per written {@code @routine} entry, keyed by the
      * spelling site and the path the author wrote.
      */
+    private static Map<String, String> storeLandings(String sdl) {
+        return FACTS.readInline("routine-spent-input", sdl, jooq(),
+            graph -> storeLandings(graph.handle().dsl(), graph.handle().graphName()));
+    }
+
+    /** {@link #storeLandings(String)} over a store already holding the graph. */
     private static Map<String, String> storeLandings(DSLContext dsl, String graphName) {
         var m = GRAPHITRON_ARGMAPPING_MATCH;
         var out = new LinkedHashMap<String, String>();

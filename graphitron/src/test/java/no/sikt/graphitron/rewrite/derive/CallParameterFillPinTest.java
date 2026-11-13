@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
@@ -17,7 +17,7 @@ import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -53,8 +53,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class CallParameterFillPinTest {
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     /**
      * Fields filled differently by the classifier and the store, each for a fact the store does not
@@ -80,63 +80,71 @@ class CallParameterFillPinTest {
             "resources", "graphql", "schema.graphqls"));
         var walked = walked(sdl);
         var walkedConditions = walkedConditions(sdl);
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-                CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath())) {
-            var stored = stored(store.dsl());
-            var absent = whyNoCall(store.dsl());
-            assertThat(walked).as("the classifier builds this many @service fields, so the pin is"
-                + " not vacuous").hasSizeGreaterThanOrEqualTo(100);
-            var disagreements = new TreeMap<String, String>();
-            walked.forEach((coordinate, fills) -> {
-                var at = stored.get(coordinate);
-                if (at == null) {
-                    disagreements.put(coordinate, "classifier " + fills + ", store has no call: "
-                        + absent.getOrDefault(coordinate, "no producer and no resolved method"));
-                } else if (at.size() != 1 || !at.contains(fills)) {
-                    disagreements.put(coordinate, "classifier " + fills + ", store " + at);
-                }
+        var read = FACTS.readInline("call-parameter-fill-pin", sdl, CatalogInput.of(testContext()),
+            TestSchemaHelper.sakilaExampleClasspath(), graph -> {
+                var dsl = graph.handle().dsl();
+                var graphName = graph.handle().graphName();
+                return new Stored(stored(dsl, graphName), whyNoCall(dsl, graphName),
+                    storedConditions(dsl, graphName));
             });
-            var unexplained = new TreeMap<>(disagreements);
-            unexplained.keySet().removeAll(UPSTREAM_GAPS.keySet());
-            assertThat(unexplained).as("fields the store fills differently from the classifier,"
-                + " with both fillings").isEmpty();
-            assertThat(disagreements.keySet()).as("the gaps still standing are exactly the listed"
-                + " ones; one going away is a line to delete")
-                .containsExactlyInAnyOrderElementsOf(UPSTREAM_GAPS.keySet());
+        var stored = read.fills();
+        var absent = read.absent();
+        assertThat(walked).as("the classifier builds this many @service fields, so the pin is"
+            + " not vacuous").hasSizeGreaterThanOrEqualTo(100);
+        var disagreements = new TreeMap<String, String>();
+        walked.forEach((coordinate, fills) -> {
+            var at = stored.get(coordinate);
+            if (at == null) {
+                disagreements.put(coordinate, "classifier " + fills + ", store has no call: "
+                    + absent.getOrDefault(coordinate, "no producer and no resolved method"));
+            } else if (at.size() != 1 || !at.contains(fills)) {
+                disagreements.put(coordinate, "classifier " + fills + ", store " + at);
+            }
+        });
+        var unexplained = new TreeMap<>(disagreements);
+        unexplained.keySet().removeAll(UPSTREAM_GAPS.keySet());
+        assertThat(unexplained).as("fields the store fills differently from the classifier,"
+            + " with both fillings").isEmpty();
+        assertThat(disagreements.keySet()).as("the gaps still standing are exactly the listed"
+            + " ones; one going away is a line to delete")
+            .containsExactlyInAnyOrderElementsOf(UPSTREAM_GAPS.keySet());
 
-            var storedConditions = storedConditions(store.dsl());
-            assertThat(walkedConditions).as("the classifier builds this many fields with a @condition, so the pin"
-                + " is not vacuous").hasSizeGreaterThanOrEqualTo(20);
-            var conditionDisagreements = new TreeMap<String, String>();
-            walkedConditions.forEach((coordinate, calls) -> {
-                var at = storedConditions.getOrDefault(coordinate, List.of());
-                if (at.isEmpty()) {
-                    conditionDisagreements.put(coordinate, "classifier " + calls + ", store has no condition call");
-                } else if (at.stream().anyMatch(occurrence -> !occurrence.equals(calls))) {
-                    conditionDisagreements.put(coordinate, "classifier " + calls + ", store " + at);
-                }
-            });
-            storedConditions.forEach((coordinate, at) -> {
-                if (!walkedConditions.containsKey(coordinate)) {
-                    conditionDisagreements.put(coordinate, "store " + at + ", classifier has no condition");
-                }
-            });
-            var conditionsUnexplained = new TreeMap<>(conditionDisagreements);
-            conditionsUnexplained.keySet().removeAll(CONDITION_GAPS.keySet());
-            assertThat(conditionsUnexplained).as("fields whose conditions the store fills differently from the"
-                + " classifier, with both fillings").isEmpty();
-            assertThat(conditionDisagreements.keySet()).as("the gaps still standing are exactly the listed"
-                + " ones; one going away is a line to delete")
-                .containsExactlyInAnyOrderElementsOf(CONDITION_GAPS.keySet());
-        }
+        var storedConditions = read.conditions();
+        assertThat(walkedConditions).as("the classifier builds this many fields with a @condition, so the pin"
+            + " is not vacuous").hasSizeGreaterThanOrEqualTo(20);
+        var conditionDisagreements = new TreeMap<String, String>();
+        walkedConditions.forEach((coordinate, calls) -> {
+            var at = storedConditions.getOrDefault(coordinate, List.of());
+            if (at.isEmpty()) {
+                conditionDisagreements.put(coordinate, "classifier " + calls + ", store has no condition call");
+            } else if (at.stream().anyMatch(occurrence -> !occurrence.equals(calls))) {
+                conditionDisagreements.put(coordinate, "classifier " + calls + ", store " + at);
+            }
+        });
+        storedConditions.forEach((coordinate, at) -> {
+            if (!walkedConditions.containsKey(coordinate)) {
+                conditionDisagreements.put(coordinate, "store " + at + ", classifier has no condition");
+            }
+        });
+        var conditionsUnexplained = new TreeMap<>(conditionDisagreements);
+        conditionsUnexplained.keySet().removeAll(CONDITION_GAPS.keySet());
+        assertThat(conditionsUnexplained).as("fields whose conditions the store fills differently from the"
+            + " classifier, with both fillings").isEmpty();
+        assertThat(conditionDisagreements.keySet()).as("the gaps still standing are exactly the listed"
+            + " ones; one going away is a line to delete")
+            .containsExactlyInAnyOrderElementsOf(CONDITION_GAPS.keySet());
     }
+
+    /** What the store answers for the pin, read in one transaction over the captured graph. */
+    private record Stored(Map<String, TreeSet<List<String>>> fills, Map<String, String> absent,
+                          Map<String, List<TreeSet<String>>> conditions) {}
 
     /**
      * The store's fill per position, per declared field: each occurrence of the field contributes its
      * list, so a field filled differently under two parents shows two lists. A position no fill reaches
      * reads {@code UNFILLED}.
      */
-    private static Map<String, TreeSet<List<String>>> stored(DSLContext dsl) {
+    private static Map<String, TreeSet<List<String>>> stored(DSLContext dsl, String graphName) {
         var o = GRAPHITRON_OCCURRENCE;
         var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
         var p = CODE_METHOD_PARAMETER;
@@ -152,7 +160,7 @@ class CallParameterFillPinTest {
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR))
             .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL),
                 c.POSITION.eq(p.POSITION))
-            .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH), s.CALL_KIND.eq("SERVICE"))
+            .where(s.GRAPH_NAME.eq(graphName), s.CALL_KIND.eq("SERVICE"))
             .orderBy(s.COORDINATE, p.POSITION)
             .forEach(r -> {
                 elementOf.put(r.value2(), r.value1());
@@ -172,7 +180,7 @@ class CallParameterFillPinTest {
      * Why the store has no call at a declared field, by the two relations a call joins: what kind
      * of producer each occurrence of the field is, and whether the field's method resolved.
      */
-    private static Map<String, String> whyNoCall(DSLContext dsl) {
+    private static Map<String, String> whyNoCall(DSLContext dsl, String graphName) {
         var o = GRAPHITRON_OCCURRENCE;
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var f = GRAPHITRON_FIELD;
@@ -184,7 +192,7 @@ class CallParameterFillPinTest {
             .leftJoin(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE))
             .leftJoin(s).on(s.GRAPH_NAME.eq(f.GRAPH_NAME), s.TYPE_NAME.eq(f.TYPE_NAME),
                 s.FIELD_NAME.eq(f.FIELD_NAME))
-            .where(f.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .where(f.GRAPH_NAME.eq(graphName))
             .forEach(r -> out.merge(r.value1(),
                 "producer " + (r.value2() == null ? "none" : r.value2())
                     + ", method " + (r.value3() == null ? "unresolved" : r.value3()),
@@ -245,7 +253,7 @@ class CallParameterFillPinTest {
      * condition calls and its arguments' and input fields', each a method and its fills by position.
      * A position no fill reaches reads {@code UNFILLED}.
      */
-    private static Map<String, List<TreeSet<String>>> storedConditions(DSLContext dsl) {
+    private static Map<String, List<TreeSet<String>>> storedConditions(DSLContext dsl, String graphName) {
         var o = GRAPHITRON_OCCURRENCE;
         var f = GRAPHITRON_OCCURRENCE.as("f");
         var a = GRAPHITRON_OCCURRENCE.as("a");
@@ -265,7 +273,7 @@ class CallParameterFillPinTest {
                 p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR))
             .leftJoin(c).on(c.GRAPH_NAME.eq(s.GRAPH_NAME), c.COORDINATE.eq(s.COORDINATE), c.CALL.eq(s.CALL),
                 c.POSITION.eq(p.POSITION))
-            .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH), s.CALL_KIND.eq("CONDITION"))
+            .where(s.GRAPH_NAME.eq(graphName), s.CALL_KIND.eq("CONDITION"))
             .orderBy(s.COORDINATE, s.CALL, p.POSITION)
             .forEach(r -> {
                 var fills = calls.computeIfAbsent(r.value1(), k -> new TreeMap<>())
@@ -275,7 +283,7 @@ class CallParameterFillPinTest {
                 }
             });
         dsl.select(f.COORDINATE, f.ELEMENT_COORDINATE).from(f)
-            .where(f.GRAPH_NAME.eq(CapturedStore.GRAPH), f.KIND.eq("FIELD"))
+            .where(f.GRAPH_NAME.eq(graphName), f.KIND.eq("FIELD"))
             .forEach(r -> elementOf.put(r.value1(), r.value2()));
         var out = new TreeMap<String, List<TreeSet<String>>>();
         calls.forEach((occurrence, byCall) -> {

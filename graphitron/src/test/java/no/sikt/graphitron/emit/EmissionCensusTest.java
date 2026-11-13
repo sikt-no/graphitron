@@ -6,17 +6,15 @@ import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionCla
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -43,37 +41,37 @@ class EmissionCensusTest {
         (member, coordinate) -> com.palantir.javapoet.CodeBlock.of("null"),
         new NodeIdDecodeEmitter.Runtime(ClassName.get("census.util", NodeIdEncoderClassGenerator.CLASS_NAME), "census"));
 
-    @TempDir
-    static Path shared;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
-    /** The sakila example's schema, captured once for every census. */
-    private static CapturedStore sakila;
-
-    @TempDir
-    Path tmp;
+    /** What each census reads of the sakila example's schema, captured once for all of them. */
+    private static ServiceEmission services;
+    private static ConnectionsQuery.Shapes connections;
+    private static List<ConditionQuery.Row> conditions;
+    private static NodeIdDecodeQuery decodes;
+    private static Map<BuildQuery.Root, BuildQuery.Result> builds;
+    private static Map<String, ProjectionQuery.Unit> projections;
 
     @BeforeAll
     static void capture() throws Exception {
         String sdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main",
             "resources", "graphql", "schema.graphqls"));
-        // A store of the class's own: a case capturing a schema of its own borrows the thread's
-        // store, which would clear this capture under the censuses read after it.
-        sakila = CapturedStore.ownStoreOfCatalogWith(shared, CapturedStore.GRAPH, sdl,
-            CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath());
-    }
-
-    @AfterAll
-    static void close() {
-        if (sakila != null) sakila.close();
-    }
-
-    private static StoreHandle handle() {
-        return new StoreHandle(sakila.dsl(), CapturedStore.GRAPH);
+        FACTS.readInline("sakila-example", sdl, CatalogInput.of(testContext()),
+            TestSchemaHelper.sakilaExampleClasspath(), graph -> {
+                var handle = graph.handle();
+                services = ServiceEmission.read(handle);
+                connections = ConnectionsQuery.read(handle);
+                conditions = ConditionQuery.read(handle);
+                decodes = NodeIdDecodeQuery.read(handle);
+                builds = BuildQuery.read(handle);
+                projections = ProjectionQuery.read(handle);
+                return null;
+            });
     }
 
     @Test
     void theCensusOfTheExampleSchemasServices() {
-        Map<String, String> census = ServiceEmission.read(handle()).census();
+        Map<String, String> census = services.census();
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
@@ -98,7 +96,7 @@ class EmissionCensusTest {
 
     @Test
     void theCensusOfTheExampleSchemasConnections() {
-        var shapes = ConnectionsQuery.read(handle());
+        var shapes = connections;
         var runtime = new ConnectionsEmitter.Runtime(
             ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.PageInfoClassGenerator.CLASS_NAME),
             ClassName.get("census.util", no.sikt.graphitron.rewrite.generators.util.FacetsClassGenerator.CLASS_NAME),
@@ -142,9 +140,7 @@ class EmissionCensusTest {
 
     @Test
     void theCensusOfTheExampleSchemasConditions() throws Exception {
-        var rows = ConditionQuery.read(handle());
-        var decodes = NodeIdDecodeQuery.read(handle());
-        var builds = BuildQuery.read(handle());
+        var rows = conditions;
         var census = new TreeMap<String, List<String>>();
         var type = TypeSpec.classBuilder("Conditions").addModifiers(Modifier.PUBLIC);
         int n = 0;
@@ -270,7 +266,7 @@ class EmissionCensusTest {
         var units = new java.util.HashMap<String, TypeSpec>();
         var emitted = new ArrayList<String>();
         var refused = new TreeMap<String, List<String>>();
-        for (var unit : ProjectionQuery.read(handle()).values()) {
+        for (var unit : projections.values()) {
             switch (ProjectionEmitter.emit(unit, "census")) {
                 case ProjectionEmitter.Result.Emitted e -> {
                     emitted.add(unit.type());
@@ -356,11 +352,9 @@ class EmissionCensusTest {
             }
             type Query { films: [Film!]! }
             """;
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-                CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath())) {
-            var services = ServiceEmission.read(new StoreHandle(store.dsl(), CapturedStore.GRAPH));
-            assertThat(services.census()).containsEntry("Film.greeting", "CALL_REFUSED");
-            assertThat(services.emits("Film.greeting")).isFalse();
-        }
+        var refusing = FACTS.readInline("call-refused", sdl, CatalogInput.of(testContext()),
+            TestSchemaHelper.sakilaExampleClasspath(), graph -> ServiceEmission.read(graph.handle()));
+        assertThat(refusing.census()).containsEntry("Film.greeting", "CALL_REFUSED");
+        assertThat(refusing.emits("Film.greeting")).isFalse();
     }
 }

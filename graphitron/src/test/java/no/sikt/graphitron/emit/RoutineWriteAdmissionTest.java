@@ -1,19 +1,14 @@
 package no.sikt.graphitron.emit;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 
@@ -41,9 +36,6 @@ class RoutineWriteAdmissionTest {
 
     @RegisterExtension
     static final FactGraphs.Reader FACTS = FactGraphs.reader();
-
-    @TempDir
-    Path tmp;
 
     @Test
     void theWritesTheEmitterRendersDrawARowEachInTheirResultShape() {
@@ -101,21 +93,21 @@ class RoutineWriteAdmissionTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
             """;
-        var ctx = testContext();
-        try (var store = CapturedStore.ofCatalogWith(tmp, GRAPH, sdl, CatalogInput.of(ctx),
-                TestSchemaHelper.testClasspath())) {
-            DSLContext dsl = store.dsl();
-            var handle = new StoreHandle(dsl, GRAPH);
+        FACTS.readInline("routine-write-admission", sdl, CatalogInput.of(testContext()),
+                TestSchemaHelper.testClasspath(), graph -> {
+            var handle = graph.handle();
             assertThat(RoutineWriteQuery.read(handle).rows()).isEmpty();
             var d = GRAPHITRON_ENTRY_DEFECT;
-            assertThat(dsl.select(d.CODE).from(d).where(d.GRAPH_NAME.eq(GRAPH)).fetch(d.CODE))
+            assertThat(handle.dsl().select(d.CODE).from(d).where(d.GRAPH_NAME.eq(handle.graphName()))
+                .fetch(d.CODE))
                 .containsExactly("NODE_ID_LANDS_ON_TABLE");
             assertThat(RoutineWriteQuery.unrendered(handle)).containsOnly(
                 entry("Mutation.lifted", RoutineWriteQuery.Unrendered.LIFT_WITHOUT_STEP),
                 entry("Mutation.twice", RoutineWriteQuery.Unrendered.SEVERAL_RE_READING_FIELDS),
                 entry("Mutation.withId", RoutineWriteQuery.Unrendered.ID_ENCODED_FROM_KEYS),
                 entry("Mutation.nonNull", RoutineWriteQuery.Unrendered.NON_NULL_SINGLE_RE_READ));
-        }
+            return null;
+        });
         Map<FieldCoordinates, GraphitronField> classified = TestSchemaHelper.buildBundle(sdl).model().fields();
         for (String field : List.of("lifted", "twice", "withId", "nonNull")) {
             assertThat(classified.get(FieldCoordinates.coordinates("Mutation", field)))
@@ -123,8 +115,6 @@ class RoutineWriteAdmissionTest {
                 .isInstanceOf(GraphitronField.UnclassifiedField.class);
         }
     }
-
-    private static final String GRAPH = "RoutineWriteAdmissionTest";
 
     /** Every row, one string per row: the coordinate, the result shape and the type it returns. */
     private static List<String> describe(RoutineWriteQuery.Rows rows) {

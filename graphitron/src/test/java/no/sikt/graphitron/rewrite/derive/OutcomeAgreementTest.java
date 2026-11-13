@@ -1,17 +1,15 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
-
-import java.nio.file.Path;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
@@ -32,8 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class OutcomeAgreementTest {
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     private static final String SDL = """
         type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
@@ -95,20 +93,18 @@ class OutcomeAgreementTest {
             .containsExactlyInAnyOrder("Query.sak", "Query.single", "Mutation.behandleSak", "Mutation.createFilm",
                 "Film.sak");
 
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL, jooq(),
-                ClasspathCorpus.entries())) {
-            var outcome = GRAPHITRON_PRODUCER_OUTCOME;
-            var rows = store.dsl()
+        var outcome = GRAPHITRON_PRODUCER_OUTCOME;
+        var rows = FACTS.readInline("outcome-agreement", SDL, jooq(), ClasspathCorpus.entries(), graph ->
+            graph.handle().dsl()
                 .select(outcome.TYPE_NAME, outcome.FIELD_NAME, outcome.OUTCOME_TYPE_NAME,
                     outcome.ERRORS_FIELD_NAME)
                 .from(outcome)
-                .where(outcome.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .fetch();
-            assertThat(rows.map(r -> r.value1() + "." + r.value2()))
-                .containsExactlyInAnyOrderElementsOf(walkProducers);
-            assertThat(rows.map(r -> r.value3() + "." + r.value4()).stream().distinct().toList())
-                .containsExactlyInAnyOrderElementsOf(walkOutcomes);
-        }
+                .where(outcome.GRAPH_NAME.eq(graph.handle().graphName()))
+                .fetch());
+        assertThat(rows.map(r -> r.value1() + "." + r.value2()))
+            .containsExactlyInAnyOrderElementsOf(walkProducers);
+        assertThat(rows.map(r -> r.value3() + "." + r.value4()).stream().distinct().toList())
+            .containsExactlyInAnyOrderElementsOf(walkOutcomes);
     }
 
     private static CatalogInput jooq() {

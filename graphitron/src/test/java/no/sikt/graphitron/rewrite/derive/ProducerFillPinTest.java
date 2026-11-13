@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.derive;
 
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.CatalogInput;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ServiceKeySource;
@@ -10,7 +10,7 @@ import no.sikt.graphitron.rewrite.model.KeyLift;
 import no.sikt.graphitron.rewrite.model.SourceShape;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,24 +45,24 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class ProducerFillPinTest {
 
-    @TempDir
-    Path tmp;
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     @Test
     void theStoreTakesKeysAsTheClassifierLiftsThem() throws Exception {
         String sdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main",
             "resources", "graphql", "schema.graphqls"));
         var walked = walked(sdl);
-        try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, sdl,
-                CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath())) {
-            var dsl = store.dsl();
+        var stored = FACTS.readInline("producer-fill-pin", sdl, CatalogInput.of(testContext()),
+                TestSchemaHelper.sakilaExampleClasspath(), graph -> {
+            var dsl = graph.handle().dsl();
             var k = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
             var a = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
             var o = GRAPHITRON_OCCURRENCE;
             var f = GRAPHITRON_FIELD;
             var tt = GRAPHITRON_TABLETYPE;
             var ns = GRAPHITRON_OCCURRENCE_NESTING;
-            var stored = new TreeMap<String, String>();
+            var rows = new TreeMap<String, String>();
             // An accessor key names the member it reads, its code_read_slot row. A field reached
             // under several parents is filled once per occurrence, the same way each time.
             dsl.select(f.TYPE_NAME, f.FIELD_NAME, k.READ, k.ARITY, a.SLOT_METHOD_NAME)
@@ -70,27 +70,29 @@ class ProducerFillPinTest {
                 .join(o).on(o.GRAPH_NAME.eq(k.GRAPH_NAME), o.COORDINATE.eq(k.COORDINATE))
                 .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
                 .leftJoin(a).on(a.GRAPH_NAME.eq(k.GRAPH_NAME), a.COORDINATE.eq(k.COORDINATE))
-                .whereNotExists(selectOne().from(tt)
+                .where(k.GRAPH_NAME.eq(graph.handle().graphName()))
+                .andNotExists(selectOne().from(tt)
                     .where(tt.GRAPH_NAME.eq(f.GRAPH_NAME), tt.TYPE_NAME.eq(f.TYPE_NAME)))
                 .andNotExists(selectOne().from(ns)
                     .where(ns.GRAPH_NAME.eq(o.GRAPH_NAME), ns.COORDINATE.eq(o.PARENT_COORDINATE)))
                 .fetch()
-                .forEach(r -> stored.merge(r.value1() + "." + r.value2(),
+                .forEach(r -> rows.merge(r.value1() + "." + r.value2(),
                     r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5()),
                     (x, y) -> x.equals(y) ? x : x + " | " + y));
-            assertThat(walked).as("the classifier lifts keys off a held object at this many fields")
-                .hasSizeGreaterThanOrEqualTo(30);
-            var onlyWalked = new TreeMap<>(walked);
-            onlyWalked.keySet().removeAll(stored.keySet());
-            var agreed = new TreeMap<>(walked);
-            agreed.keySet().retainAll(stored.keySet());
-            assertThat(stored).as("the store takes keys nowhere the classifier does not")
-                .containsOnlyKeys(agreed.keySet());
-            assertThat(agreed.entrySet()).as("and the same way, field by field, where both do")
-                .allMatch(e -> e.getValue().equals(stored.get(e.getKey())));
-            assertThat(onlyWalked.keySet()).as("no field the classifier lifts keys at goes unfilled in"
-                + " the store").isEmpty();
-        }
+            return rows;
+        });
+        assertThat(walked).as("the classifier lifts keys off a held object at this many fields")
+            .hasSizeGreaterThanOrEqualTo(30);
+        var onlyWalked = new TreeMap<>(walked);
+        onlyWalked.keySet().removeAll(stored.keySet());
+        var agreed = new TreeMap<>(walked);
+        agreed.keySet().retainAll(stored.keySet());
+        assertThat(stored).as("the store takes keys nowhere the classifier does not")
+            .containsOnlyKeys(agreed.keySet());
+        assertThat(agreed.entrySet()).as("and the same way, field by field, where both do")
+            .allMatch(e -> e.getValue().equals(stored.get(e.getKey())));
+        assertThat(onlyWalked.keySet()).as("no field the classifier lifts keys at goes unfilled in"
+            + " the store").isEmpty();
     }
 
 

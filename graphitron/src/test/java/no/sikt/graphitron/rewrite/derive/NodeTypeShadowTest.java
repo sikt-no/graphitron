@@ -2,15 +2,14 @@ package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.grammar.NodeDeclaration;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import graphql.schema.GraphQLObjectType;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.Set;
 import java.util.function.BiConsumer;
@@ -37,6 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class NodeTypeShadowTest {
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
     private static final String DIRECTIVES = "interface Node { id: ID! }\n";
 
     /**
@@ -45,7 +47,7 @@ class NodeTypeShadowTest {
      * one, so the inferred arm has real constants to conjoin rather than seeded ones.
      */
     @Test
-    void theDerivationAgreesWithThePredicateOnBothArms(@TempDir Path tmp) {
+    void theDerivationAgreesWithThePredicateOnBothArms() {
         String sdl = DIRECTIVES + """
             type Query { film: Film, pairing: Pairing, plain: Plain }
 
@@ -64,7 +66,7 @@ class NodeTypeShadowTest {
 
             type Loose { note: String }
             """;
-        withBothSpellings(tmp, sdl, (derived, predicate) -> {
+        withBothSpellings(sdl, (derived, predicate) -> {
             assertThat(derived).as("the derivation answered something").isNotEmpty();
             assertThat(predicate).as("the predicate answered something").isNotEmpty();
             assertThat(derived).containsExactlyInAnyOrderElementsOf(predicate);
@@ -79,7 +81,7 @@ class NodeTypeShadowTest {
      * disagreement here go unnoticed.
      */
     @Test
-    void aNodeImplementorOverATableWithoutMetadataIsANodeOnNeitherSpelling(@TempDir Path tmp) {
+    void aNodeImplementorOverATableWithoutMetadataIsANodeOnNeitherSpelling() {
         String sdl = DIRECTIVES + """
             type Query { hollow: Hollow }
 
@@ -87,7 +89,7 @@ class NodeTypeShadowTest {
               id: ID!
             }
             """;
-        withBothSpellings(tmp, sdl, (derived, predicate) -> {
+        withBothSpellings(sdl, (derived, predicate) -> {
             assertThat(predicate).isEmpty();
             assertThat(derived).isEmpty();
         });
@@ -99,7 +101,7 @@ class NodeTypeShadowTest {
      * answer is over captured facts rather than over the directive alone.
      */
     @Test
-    void withNoCatalogCapturedNeitherSpellingFindsANode(@TempDir Path tmp) {
+    void withNoCatalogCapturedNeitherSpellingFindsANode() {
         String sdl = DIRECTIVES + """
             type Query { film: Film, pairing: Pairing }
 
@@ -107,10 +109,8 @@ class NodeTypeShadowTest {
 
             type Pairing implements Node @table(name: "film_actor") { id: ID! }
             """;
-        try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(nodeTypesBy(new NodeDeclaration(null), sdl)).isEmpty();
-            assertThat(derivedNodeTypes(store)).isEmpty();
-        }
+        assertThat(nodeTypesBy(new NodeDeclaration(null), sdl)).isEmpty();
+        assertThat(derivedNodeTypes(sdl, null)).isEmpty();
     }
 
     /**
@@ -119,7 +119,7 @@ class NodeTypeShadowTest {
      * {@code @table} binds.
      */
     @Test
-    void aNodeOverNoBoundTableIsANodeOnNeitherSpelling(@TempDir Path tmp) {
+    void aNodeOverNoBoundTableIsANodeOnNeitherSpelling() {
         String sdl = DIRECTIVES + """
             type Query { film: Film, floating: Floating, ev: Ev }
 
@@ -131,7 +131,7 @@ class NodeTypeShadowTest {
 
             type Ev implements Node @table(name: "event") @node { id: ID! }
             """;
-        withBothSpellings(tmp, sdl, (derived, predicate) -> {
+        withBothSpellings(sdl, (derived, predicate) -> {
             assertThat(derived).containsExactlyInAnyOrderElementsOf(predicate);
             assertThat(derived).containsExactly("Film");
         });
@@ -141,21 +141,19 @@ class NodeTypeShadowTest {
      * Runs both spellings over one schema and one catalog: the derivation reads the store the capture
      * filled, the predicate reads the same jOOQ package live off the assembled schema.
      */
-    private static void withBothSpellings(Path tmp, String sdl,
-                                          BiConsumer<Set<String>, Set<String>> body) {
-        var ctx = testContext();
-        var jooq = CatalogInput.of(ctx);
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, jooq)) {
-            body.accept(derivedNodeTypes(store), nodeTypesBy(TestSchemaHelper.nodeDeclaration(), sdl));
-        }
+    private static void withBothSpellings(String sdl, BiConsumer<Set<String>, Set<String>> body) {
+        body.accept(derivedNodeTypes(sdl, CatalogInput.of(testContext())),
+            nodeTypesBy(TestSchemaHelper.nodeDeclaration(), sdl));
     }
 
-    /** The store's answer: the membership relation's rows for the captured graph. */
-    private static Set<String> derivedNodeTypes(CapturedStore store) {
-        return new LinkedHashSet<>(store.dsl()
-            .select(GRAPHITRON_NODE.TYPE_NAME)
-            .from(GRAPHITRON_NODE)
-            .fetch(GRAPHITRON_NODE.TYPE_NAME));
+    /** The store's answer: the membership relation's rows for {@code sdl}'s graph, over {@code jooq}. */
+    private static Set<String> derivedNodeTypes(String sdl, CatalogInput jooq) {
+        return FACTS.readInline("node-type-shadow", sdl, jooq, graph -> new LinkedHashSet<>(
+            graph.handle().dsl()
+                .select(GRAPHITRON_NODE.TYPE_NAME)
+                .from(GRAPHITRON_NODE)
+                .where(GRAPHITRON_NODE.GRAPH_NAME.eq(graph.handle().graphName()))
+                .fetch(GRAPHITRON_NODE.TYPE_NAME)));
     }
 
     /**
