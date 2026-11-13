@@ -407,16 +407,22 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     `FacetBucketsExecutionTest`, `ConnectionProducersExecutionTest` over
     `scenarios/connection-producers`, and `ConnectionsEmitterTest`'s `register` cases.
   * The producers read their connection class from the store, the arity decided once.
-    `ConnectionsQuery.byField` reads, per field returning a connection, the connection type
-    (`graphitron_field_target.wrapper_type_name`) and the positions it fills; a producer passes a
-    count function where the type fills `TOTAL_COUNT` and a facets function where it fills `FACETS`,
-    the same positions that give the class its constructor, and a connection field with no row is a
-    generator bug. `LauncherCommands.produce` reads it once and carries it on
+    `graphitron_field_connection` stores, per field returning a connection, the connection type
+    and whether it counts and carries facets, derived from the positions its type fills, the same
+    positions that give the class its constructor; `ConnectionsQuery.byField` reads it, and a
+    connection field with no row is a generator bug. `LauncherCommands.produce` reads it once and carries it on
     `LauncherRelation.connections()`, the classified-model generators on
     `TypeFetcherEmissionContext`; `command.ConnectionClass`, `LauncherCommands.connectionClassAt`
     and the classified `totalCount` probe went. The truth table (synthesised, authored without
     `totalCount`, faceted, union, batched child, two connections sharing an edge) is
-    `scenarios/connection-classes`, read by `ConnectionClassPipelineTest`. The schema-free emitted-
+    `scenarios/connection-classes`, one `@expectEquals` over `graphitron_field_connection` (Alf,
+    2026-11-13). `ConnectionProducersExecutionTest` calls the generated root, batched and
+    polymorphic producers directly. Open for Alf and Filip: `counts` and `faceted` are facts of the
+    connection type, restated at field grain so the claim (and the per-field reader) has its table;
+    `ConnectionsQuery.read` answers the same predicate from the positions at type grain. Whether a
+    type fact may be restated at field grain for a claim is not ruled. If it moves to type grain,
+    `graphitron_field_target.wrapper_type_name` gains the foreign key to `graphitron_connection`
+    and `connection_type_name` stops repeating it. The schema-free emitted-
     text tests of connection fetchers went, each named covering test recorded in the commit.
   * **The runtime connection vocabulary goes** `open`.
     `RESULT_EXPRESSION` and `ResultShape.Connection` go, with the retirement sweep, as does the
