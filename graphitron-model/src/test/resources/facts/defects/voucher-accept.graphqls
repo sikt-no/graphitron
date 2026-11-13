@@ -100,3 +100,17 @@ extend schema @expectEquals(relation: "graphitron_directive_application_arg", wh
   value_sdl
   true
   """)
+
+# The voucher alternative, stated: the voucher key's one field binds the voucher, and each @accept decodes
+# to its type's one authored resolvable key, the one it names being left out.
+extend schema @expectEquals(relation: "graphitron_key_field_binding", where: "kind = 'VOUCHER'", rows: """
+  type_name, ordinal, position, field_name, kind,    bound
+  Film,      1,       0,        voucher,    VOUCHER, public.film
+  Store,     2,       0,        voucher,    VOUCHER, public.store
+  """)
+
+extend schema @expectEquals(relation: "graphitron_accept_key", rows: """
+  type_name, directive_name, ordinal
+  Film,      key,            0
+  Store,     key,            0
+  """)

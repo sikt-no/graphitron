@@ -18,6 +18,8 @@ A node whose `id` carries `@field(name:)` encodes no node id, so neither `Query.
 
 A type whose field carries xref:directives/issue.adoc[`@issue`] is given `@key(fields: "<that field>", resolvable: false)` after the keys its author wrote, and the field is marked `@inaccessible`: the type is keyed by its voucher and not resolved here, so a router reaches the other subgraph's entity from this one only through the voucher.
 
+A type whose field carries xref:directives/accept.adoc[`@accept`] is given `@key(fields: "<that field>")`, resolvable, after the keys its author wrote and the node key, and the field is marked `@inaccessible`: a router hands this subgraph the voucher it fetched from the issuing one, and the voucher decodes to the authored key `@accept(key:)` names. The authored keys are untouched.
+
 == What a key may select
 
 Each refusal below is reported at the `@key` that breaks it.

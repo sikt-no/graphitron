@@ -2784,6 +2784,32 @@ COMMENT ON COLUMN graphitron_ast_accept_claim_entry.touched_at IS 'when the read
 COMMENT ON COLUMN graphitron_ast_accept_claim_entry.field_name IS 'the selection''s first segment, the field it names on the accepting type';
 COMMENT ON COLUMN graphitron_ast_accept_claim_entry.nested IS 'whether the selection goes on into a nested selection, which a claim cannot';
 
+CREATE TABLE graphitron_ast_accept_key_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  nested        BOOLEAN NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_accept_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_ast_accept_key_entry IS 'One selection an @accept''s key field set parsed into, at its index in that parse. For example key: "id" gives one row, id at position 0, not nested; an @accept with no key gives none.';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.source_name IS 'the @accept''s file';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.source_line IS 'the @accept''s line';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.source_column IS 'the @accept''s column';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.position IS 'the selection''s place in the field set as written, numbered from zero';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.touched_at IS 'when the reading that produced this row ran';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.field_name IS 'the selection''s first segment, the field it names on the accepting type';
+COMMENT ON COLUMN graphitron_ast_accept_key_entry.nested IS 'whether the selection goes on into a nested selection, which the voucher''s lookup part, top-level scalars, cannot fill';
+
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
 -- relation below keyed by the position of the @ token, which is
@@ -14109,11 +14135,12 @@ CREATE TABLE graphitron_key_field_binding (
     ON DELETE CASCADE,
   CHECK (directive_name = 'key'),
   CHECK (position >= 0),
-  CHECK (kind IN ('COLUMN', 'NODE_ID')),
-  -- The node id binds only as a key's sole field; the rule writes the "sole" half, which spans rows.
-  CHECK (kind <> 'NODE_ID' OR position = 0)
+  CHECK (kind IN ('COLUMN', 'NODE_ID', 'VOUCHER')),
+  -- The node id and the voucher bind only as a key's sole field; the rule writes the "sole" half,
+  -- which spans rows.
+  CHECK (kind NOT IN ('NODE_ID', 'VOUCHER') OR position = 0)
 );
-COMMENT ON TABLE graphitron_key_field_binding IS 'One field a federation key selects on a table-bound object type, authored or synthesised, and how it binds at that type''s own table. For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and the @key(fields: "id") synthesised for a node type draws one NODE_ID row, or a COLUMN row where its id carries @field.';
+COMMENT ON TABLE graphitron_key_field_binding IS 'One field a federation key selects on a table-bound object type, authored or synthesised, and how it binds at that type''s own table. For example @key(fields: "tenantId sku") on a Product draws two COLUMN rows, the @key(fields: "id") synthesised for a node type one NODE_ID row, or a COLUMN row where its id carries @field, and the @key(fields: "voucher") an @accept mints one VOUCHER row.';
 COMMENT ON COLUMN graphitron_key_field_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_key_field_binding.type_name IS 'the entity type the key is applied to, the coordinate of its directive application';
 COMMENT ON COLUMN graphitron_key_field_binding.directive_name IS 'always key; carried so the row references its directive application whole';
@@ -14122,7 +14149,7 @@ COMMENT ON COLUMN graphitron_key_field_binding.position IS 'the field''s place i
 COMMENT ON COLUMN graphitron_key_field_binding.field_name IS 'the field the key selects, a top-level field of the type';
 COMMENT ON COLUMN graphitron_key_field_binding.coordinate IS 'the field''s coordinate, type and field joined by a dot, as its occurrence binding spells it. Generated from type_name and field_name, so nothing writes it';
 COMMENT ON COLUMN graphitron_key_field_binding.bound IS 'the type''s own table, schema-qualified, as the binding spells it. Generated from table_schema and table_name, so nothing writes it';
-COMMENT ON COLUMN graphitron_key_field_binding.kind IS 'how the field binds there: COLUMN, a column of the table whose value the representation carries; NODE_ID, the node''s own id, the key''s only field, decoded into the node''s key columns';
+COMMENT ON COLUMN graphitron_key_field_binding.kind IS 'how the field binds there: COLUMN, a column of the table whose value the representation carries; NODE_ID, the node''s own id, the key''s only field, decoded into the node''s key columns; VOUCHER, an @accept''s voucher field, the minted key''s only field, verified and decoded into the columns of the authored key graphitron_accept_key names';
 COMMENT ON COLUMN graphitron_key_field_binding.table_source_name IS 'the catalog source of the type''s table';
 COMMENT ON COLUMN graphitron_key_field_binding.table_schema IS 'the schema of the type''s table';
 COMMENT ON COLUMN graphitron_key_field_binding.table_name IS 'the type''s table';
@@ -14169,26 +14196,28 @@ SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, p.position, g.se
                            AND n.bound = b.bound AND n.position = 0
                            AND n.node_type_name = a.coordinate)))
 UNION ALL
--- The node key federation synthesises is a key like any other and binds the same way: its one field,
--- id, binds the node id where the id is the node's own and the column where it carries @field.
-SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, 0, 'id',
+-- A minted key is a key like any other and binds the same way, its one field the one its minting rule
+-- states: the node key's id binds the node id where the id is the node's own and the column where it
+-- carries @field, and the voucher key's voucher field binds the voucher.
+SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, 0, mk.fields,
        b.coordinate, b.bound, b.kind, tt.table_source_name, tt.table_schema, tt.table_name
   FROM graphitron_directive_application a
   JOIN graphitron_minted_key mk
     ON mk.graph_name = a.graph_name AND mk.type_name = a.coordinate AND mk.ordinal = a.ordinal
-   AND mk.role = 'NODE'
   JOIN graphitron_tabletype tt
     ON tt.graph_name = a.graph_name AND tt.type_name = a.coordinate AND tt.named_type_kind = 'OBJECT'
   JOIN graphitron_occurrence_binding b
-    ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate || '.id'
+    ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate || '.' || mk.fields
    AND b.bound = tt.table_schema || '.' || tt.table_name
  WHERE a.directive_name = 'key' AND a.origin = 'MINTED'
-   AND (b.kind = 'COLUMN'
-        OR (b.kind = 'NODE_ID'
-            AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
-                         WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
-                           AND n.bound = b.bound AND n.position = 0
-                           AND n.node_type_name = a.coordinate)));
+   AND ((mk.role = 'NODE'
+         AND (b.kind = 'COLUMN'
+              OR (b.kind = 'NODE_ID'
+                  AND EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                               WHERE n.graph_name = b.graph_name AND n.coordinate = b.coordinate
+                                 AND n.bound = b.bound AND n.position = 0
+                                 AND n.node_type_name = a.coordinate))))
+        OR (mk.role = 'ACCEPT' AND b.kind = 'VOUCHER'));
 COMMENT ON VIEW graphitron_key_field_binding_rule IS 'One key field binding the entity key rule computes, in the shape graphitron_key_field_binding stores: the rule itself, evaluated on demand rather than read off disk. For example the entity key stage writes this view''s rows for one graph into graphitron_key_field_binding, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.type_name IS 'the entity type';
@@ -14198,104 +14227,95 @@ COMMENT ON VIEW graphitron_key_field_binding_rule IS 'One key field binding the 
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.field_name IS 'the field selected';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.coordinate IS 'the field''s coordinate';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.bound IS 'the type''s own table';
--- COMMENT ON COLUMN graphitron_key_field_binding_rule.kind IS 'COLUMN or NODE_ID';
+-- COMMENT ON COLUMN graphitron_key_field_binding_rule.kind IS 'COLUMN, NODE_ID or VOUCHER';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.table_source_name IS 'the table''s catalog source';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.table_schema IS 'the table''s schema';
 -- COMMENT ON COLUMN graphitron_key_field_binding_rule.table_name IS 'the table';
 
--- A federation @key's refusals, the entity key stage's own, judged from how each key field binds at
--- its entity's table. An entity is resolved by a SELECT on its table, so a key needs a table-bound
--- object type (an interface is keyed on its implementations), selects at least one field, and each
--- field it selects binds a column of that table, the one exception being a key whose only field is
--- the node's own id, which binds the node id and is decoded. A type whose every key is
--- resolvable: false is another subgraph's to resolve and needs no table. A @key on a type whose
--- @table did not resolve is that defect's, and is not judged again here. Reported at the @key.
-CREATE VIEW graphitron_entity_key_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TYPE_NOT_TABLE_BOUND',
-       d.coordinate
-  FROM graphql_directive_application d
-  JOIN graphitron_type t
-    ON t.graph_name = d.graph_name AND t.type_name = d.coordinate AND t.kind = 'OBJECT'
+-- The authored key each @accept's vouchers decode to: the one its key: names, field set for field set,
+-- or, where the author left key: out, the type's one authored resolvable key. An @accept no key
+-- answers draws no row, which is the entity key stage's refusal. The key's fields are read as they
+-- bind, graphitron_key_field_binding, which the stage writes first: a key with a nested selection or
+-- a field binding nothing is refused as a key, so it is not told apart here.
+CREATE TABLE graphitron_accept_key (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT     NOT NULL,
+  source_column  INT     NOT NULL,
+  type_name      VARCHAR NOT NULL,
+  directive_name VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_accept_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, directive_name, ordinal)
+    REFERENCES graphitron_directive_application (graph_name, coordinate, directive_name, ordinal)
+    ON DELETE CASCADE,
+  CHECK (directive_name = 'key')
+);
+COMMENT ON TABLE graphitron_accept_key IS 'The authored federation key one @accept''s vouchers decode to. For example voucher: String! @accept(scope: "results", claims: "ownerId") on a VgsResultat whose one authored key is @key(fields: "id") gives one row naming that key.';
+COMMENT ON COLUMN graphitron_accept_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_accept_key.source_name IS 'the @accept''s file';
+COMMENT ON COLUMN graphitron_accept_key.source_line IS 'the @accept''s line';
+COMMENT ON COLUMN graphitron_accept_key.source_column IS 'the @accept''s column; with the three before it, the application''s own key';
+COMMENT ON COLUMN graphitron_accept_key.type_name IS 'the accepting type, the coordinate of the key''s application';
+COMMENT ON COLUMN graphitron_accept_key.directive_name IS 'always key; carried so the row references the key''s application whole';
+COMMENT ON COLUMN graphitron_accept_key.ordinal IS 'the key''s place among the type''s @key applications, the authored application''s own ordinal';
+
+CREATE VIEW graphitron_accept_key_rule
+  (graph_name, source_name, source_line, source_column, type_name, directive_name, ordinal) AS
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, i.type_name, 'key', MIN(a.ordinal)
+  FROM graphitron_ast_accept_entry e
+  JOIN graphql_directive_application d
+    ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+   AND d.source_line = e.source_line AND d.source_column = e.source_column
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+  -- A key the accepting type's author wrote, resolvable here.
+  JOIN graphitron_directive_application a
+    ON a.graph_name = i.graph_name AND a.coordinate = i.type_name
+   AND a.directive_name = 'key' AND a.origin = 'AUTHORED'
   JOIN graphitron_ast_federation_key_entry k
-    ON k.graph_name = d.graph_name AND k.source_name = d.source_name
-   AND k.source_line = d.source_line AND k.source_column = d.source_column
- WHERE d.directive_name = 'key' AND COALESCE(k.resolvable, TRUE) = TRUE
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application b
-                    WHERE b.graph_name = d.graph_name AND b.coordinate = d.coordinate
-                      AND b.directive_name = 'table')
-UNION ALL
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_ON_INTERFACE', d.coordinate
-  FROM graphql_directive_application d
-  JOIN graphitron_tabletype tt
-    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'INTERFACE'
- WHERE d.directive_name = 'key'
-UNION ALL
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_SELECTS_NOTHING',
-       d.coordinate
-  FROM graphql_directive_application d
-  JOIN graphitron_tabletype tt
-    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
-  JOIN graphitron_ast_federation_key_entry k
-    ON k.graph_name = d.graph_name AND k.source_name = d.source_name
-   AND k.source_line = d.source_line AND k.source_column = d.source_column
- WHERE d.directive_name = 'key'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry p
-                    WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
-                      AND p.source_line = k.source_line AND p.source_column = k.source_column
-                      AND p.position = 0)
-UNION ALL
--- One row per @key, on any type whatever it is bound to, a selection of which names a field the type
--- does not declare: the fields a key selects are fields of its type. The detail is the first such
--- name as written.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_MISSING',
-       MIN(g.segment_name)
-  FROM graphql_directive_application d
-  JOIN graphitron_ast_federation_key_selection_entry p
-    ON p.graph_name = d.graph_name AND p.source_name = d.source_name
-   AND p.source_line = d.source_line AND p.source_column = d.source_column
-  JOIN graphitron_ast_federation_key_segment_entry g
-    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
-   AND g.source_line = p.source_line AND g.source_column = p.source_column
-   AND g.position = p.position AND g.segment_position = 0
- WHERE d.directive_name = 'key'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field f
-                    WHERE f.graph_name = d.graph_name AND f.type_name = d.coordinate
-                      AND f.field_name = g.segment_name)
- GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
-UNION ALL
--- One row per selection of a declared field that binds nothing at the entity's table, which
--- graphitron_key_field_binding states: a nested selection, or a field binding anything but a column
--- there, the node's own id alone excepted. A name the type does not declare is KEY_FIELD_MISSING
--- above. The detail is the selection's first segment, the name the author wrote.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_NOT_A_COLUMN',
-       MIN(g.segment_name)
-  FROM graphql_directive_application d
-  JOIN graphitron_tabletype tt
-    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
-  JOIN graphitron_ast_federation_key_selection_entry p
-    ON p.graph_name = d.graph_name AND p.source_name = d.source_name
-   AND p.source_line = d.source_line AND p.source_column = d.source_column
-  JOIN graphitron_ast_federation_key_segment_entry g
-    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
-   AND g.source_line = p.source_line AND g.source_column = p.source_column
-   AND g.position = p.position AND g.segment_position = 0
- WHERE d.directive_name = 'key'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_key_field_binding k
-                    WHERE k.graph_name = d.graph_name AND k.type_name = d.coordinate
-                      AND k.directive_name = d.directive_name AND k.ordinal = d.ordinal
-                      AND k.position = p.position)
-   AND EXISTS (SELECT 1 FROM graphitron_field f
-                WHERE f.graph_name = d.graph_name AND f.type_name = d.coordinate
-                  AND f.field_name = g.segment_name)
- GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column;
-COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_line IS 'its line';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.code IS 'the rule the key breaks';
--- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.detail IS 'the type, or for a key field the first field the author wrote that is not a column'
+    ON k.graph_name = a.graph_name AND k.source_name = a.source_name
+   AND k.source_line = a.source_line AND k.source_column = a.source_column
+ WHERE COALESCE(k.resolvable, TRUE) = TRUE
+   AND ((e.key_fields IS NULL
+         AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application o
+                           JOIN graphitron_ast_federation_key_entry ko
+                             ON ko.graph_name = o.graph_name AND ko.source_name = o.source_name
+                            AND ko.source_line = o.source_line AND ko.source_column = o.source_column
+                          WHERE o.graph_name = a.graph_name AND o.coordinate = a.coordinate
+                            AND o.directive_name = 'key' AND o.origin = 'AUTHORED'
+                            AND o.ordinal <> a.ordinal AND COALESCE(ko.resolvable, TRUE) = TRUE))
+     -- key: names, with no nested selection, exactly the fields the key binds at the type's table,
+     -- which this stage has just stated: as many distinct names as the key has fields, every one of
+     -- them among those fields. A key a field of which binds nothing is refused as a key.
+     OR (e.key_fields IS NOT NULL
+         AND NOT EXISTS (SELECT 1 FROM graphitron_ast_accept_key_entry s
+                          WHERE s.graph_name = e.graph_name AND s.source_name = e.source_name
+                   AND s.source_line = e.source_line AND s.source_column = e.source_column AND s.nested)
+         AND (SELECT COUNT(DISTINCT s.field_name) FROM graphitron_ast_accept_key_entry s
+               WHERE s.graph_name = e.graph_name AND s.source_name = e.source_name
+                   AND s.source_line = e.source_line AND s.source_column = e.source_column)
+             = (SELECT COUNT(*) FROM graphitron_key_field_binding kf WHERE kf.graph_name = a.graph_name AND kf.type_name = a.coordinate
+                   AND kf.directive_name = a.directive_name AND kf.ordinal = a.ordinal)
+         AND (SELECT COUNT(*) FROM graphitron_key_field_binding kf
+               WHERE kf.graph_name = a.graph_name AND kf.type_name = a.coordinate
+                   AND kf.directive_name = a.directive_name AND kf.ordinal = a.ordinal
+                 AND kf.field_name IN (SELECT s.field_name FROM graphitron_ast_accept_key_entry s
+                                        WHERE s.graph_name = e.graph_name AND s.source_name = e.source_name
+                   AND s.source_line = e.source_line AND s.source_column = e.source_column))
+             = (SELECT COUNT(*) FROM graphitron_key_field_binding kf WHERE kf.graph_name = a.graph_name AND kf.type_name = a.coordinate
+                   AND kf.directive_name = a.directive_name AND kf.ordinal = a.ordinal)))
+ GROUP BY e.graph_name, e.source_name, e.source_line, e.source_column, i.type_name;
+COMMENT ON VIEW graphitron_accept_key_rule IS 'One accept key the rule computes, in the shape graphitron_accept_key stores: the rule itself, evaluated on demand rather than read off disk. For example the entity key stage writes this view''s rows for one graph into graphitron_accept_key, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.source_name IS 'the @accept''s file';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.type_name IS 'the accepting type';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.directive_name IS 'key';
+-- COMMENT ON COLUMN graphitron_accept_key_rule.ordinal IS 'the authored key''s ordinal';
 
 -- A voucher member's column and scalar, resolved: what the issue emitter selects and how it
 -- serializes the value. The column is the member's first @field(name:), else its name, matched on the
@@ -14630,6 +14650,200 @@ COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher sta
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.code IS 'the rule broken';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.detail IS 'the type, the coordinate, or the claim or duration as written'
+
+-- A federation @key's refusals, the entity key stage's own, judged from how each key field binds at
+-- its entity's table. An entity is resolved by a SELECT on its table, so a key needs a table-bound
+-- object type (an interface is keyed on its implementations), selects at least one field, and each
+-- field it selects binds a column of that table, the one exception being a key whose only field is
+-- the node's own id, which binds the node id and is decoded. A type whose every key is
+-- resolvable: false is another subgraph's to resolve and needs no table. A @key on a type whose
+-- @table did not resolve is that defect's, and is not judged again here. Reported at the @key. And
+-- an @accept's refusals that read which key its vouchers decode to and how its claims fields bind,
+-- both decided here, reported at the @accept.
+CREATE VIEW graphitron_entity_key_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TYPE_NOT_TABLE_BOUND',
+       d.coordinate
+  FROM graphql_directive_application d
+  JOIN graphitron_type t
+    ON t.graph_name = d.graph_name AND t.type_name = d.coordinate AND t.kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_entry k
+    ON k.graph_name = d.graph_name AND k.source_name = d.source_name
+   AND k.source_line = d.source_line AND k.source_column = d.source_column
+ WHERE d.directive_name = 'key' AND COALESCE(k.resolvable, TRUE) = TRUE
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application b
+                    WHERE b.graph_name = d.graph_name AND b.coordinate = d.coordinate
+                      AND b.directive_name = 'table')
+UNION ALL
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_ON_INTERFACE', d.coordinate
+  FROM graphql_directive_application d
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'INTERFACE'
+ WHERE d.directive_name = 'key'
+UNION ALL
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_SELECTS_NOTHING',
+       d.coordinate
+  FROM graphql_directive_application d
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_entry k
+    ON k.graph_name = d.graph_name AND k.source_name = d.source_name
+   AND k.source_line = d.source_line AND k.source_column = d.source_column
+ WHERE d.directive_name = 'key'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_key_selection_entry p
+                    WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
+                      AND p.source_line = k.source_line AND p.source_column = k.source_column
+                      AND p.position = 0)
+UNION ALL
+-- One row per @key, on any type whatever it is bound to, a selection of which names a field the type
+-- does not declare: the fields a key selects are fields of its type. The detail is the first such
+-- name as written.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_MISSING',
+       MIN(g.segment_name)
+  FROM graphql_directive_application d
+  JOIN graphitron_ast_federation_key_selection_entry p
+    ON p.graph_name = d.graph_name AND p.source_name = d.source_name
+   AND p.source_line = d.source_line AND p.source_column = d.source_column
+  JOIN graphitron_ast_federation_key_segment_entry g
+    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
+   AND g.source_line = p.source_line AND g.source_column = p.source_column
+   AND g.position = p.position AND g.segment_position = 0
+ WHERE d.directive_name = 'key'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field f
+                    WHERE f.graph_name = d.graph_name AND f.type_name = d.coordinate
+                      AND f.field_name = g.segment_name)
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
+UNION ALL
+-- One row per selection of a declared field that binds nothing at the entity's table, which
+-- graphitron_key_field_binding states: a nested selection, or a field binding anything but a column
+-- there, the node's own id alone excepted. A name the type does not declare is KEY_FIELD_MISSING
+-- above. The detail is the selection's first segment, the name the author wrote.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_NOT_A_COLUMN',
+       MIN(g.segment_name)
+  FROM graphql_directive_application d
+  JOIN graphitron_tabletype tt
+    ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
+  JOIN graphitron_ast_federation_key_selection_entry p
+    ON p.graph_name = d.graph_name AND p.source_name = d.source_name
+   AND p.source_line = d.source_line AND p.source_column = d.source_column
+  JOIN graphitron_ast_federation_key_segment_entry g
+    ON g.graph_name = p.graph_name AND g.source_name = p.source_name
+   AND g.source_line = p.source_line AND g.source_column = p.source_column
+   AND g.position = p.position AND g.segment_position = 0
+ WHERE d.directive_name = 'key'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_key_field_binding k
+                    WHERE k.graph_name = d.graph_name AND k.type_name = d.coordinate
+                      AND k.directive_name = d.directive_name AND k.ordinal = d.ordinal
+                      AND k.position = p.position)
+   AND EXISTS (SELECT 1 FROM graphitron_field f
+                WHERE f.graph_name = d.graph_name AND f.type_name = d.coordinate
+                  AND f.field_name = g.segment_name)
+ GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column
+UNION ALL
+-- An @accept's vouchers decode to an authored key this subgraph resolves the type by, and a type with
+-- none has nothing for the lookup part to fill. Reported at the @accept.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_WITHOUT_KEY',
+       i.type_name
+  FROM graphitron_ast_accept_entry e
+  JOIN graphql_directive_application d
+    ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+   AND d.source_line = e.source_line AND d.source_column = e.source_column
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application a
+                    JOIN graphitron_ast_federation_key_entry k
+                      ON k.graph_name = a.graph_name AND k.source_name = a.source_name
+                     AND k.source_line = a.source_line AND k.source_column = a.source_column
+                   WHERE a.graph_name = i.graph_name AND a.coordinate = i.type_name
+                     AND a.directive_name = 'key' AND a.origin = 'AUTHORED'
+                     AND COALESCE(k.resolvable, TRUE) = TRUE)
+UNION ALL
+-- key: left out, and more than one authored resolvable key to choose from.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_KEY_AMBIGUOUS',
+       i.type_name
+  FROM graphitron_ast_accept_entry e
+  JOIN graphql_directive_application d
+    ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+   AND d.source_line = e.source_line AND d.source_column = e.source_column
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+ WHERE e.key_fields IS NULL
+   AND (SELECT COUNT(*) FROM graphitron_directive_application a
+                    JOIN graphitron_ast_federation_key_entry k
+                      ON k.graph_name = a.graph_name AND k.source_name = a.source_name
+                     AND k.source_line = a.source_line AND k.source_column = a.source_column
+                   WHERE a.graph_name = i.graph_name AND a.coordinate = i.type_name
+                     AND a.directive_name = 'key' AND a.origin = 'AUTHORED'
+                     AND COALESCE(k.resolvable, TRUE) = TRUE) > 1
+UNION ALL
+-- key: with a nested selection, which the voucher's lookup part, top-level scalars, cannot fill.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_KEY_NESTED',
+       e.key_fields
+  FROM graphitron_ast_accept_entry e
+  JOIN graphql_directive_application d
+    ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+   AND d.source_line = e.source_line AND d.source_column = e.source_column
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+ WHERE EXISTS (SELECT 1 FROM graphitron_ast_accept_key_entry s
+                WHERE s.graph_name = e.graph_name AND s.source_name = e.source_name
+                  AND s.source_line = e.source_line AND s.source_column = e.source_column AND s.nested)
+UNION ALL
+-- key: names no authored resolvable key of the type, field set for field set, where the type has one.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_KEY_UNKNOWN',
+       e.key_fields
+  FROM graphitron_ast_accept_entry e
+  JOIN graphql_directive_application d
+    ON d.graph_name = e.graph_name AND d.source_name = e.source_name
+   AND d.source_line = e.source_line AND d.source_column = e.source_column
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+ WHERE e.key_fields IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_directive_application a
+                    JOIN graphitron_ast_federation_key_entry k
+                      ON k.graph_name = a.graph_name AND k.source_name = a.source_name
+                     AND k.source_line = a.source_line AND k.source_column = a.source_column
+                   WHERE a.graph_name = i.graph_name AND a.coordinate = i.type_name
+                     AND a.directive_name = 'key' AND a.origin = 'AUTHORED'
+                     AND COALESCE(k.resolvable, TRUE) = TRUE)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_accept_key_entry s
+                    WHERE s.graph_name = e.graph_name AND s.source_name = e.source_name
+                      AND s.source_line = e.source_line AND s.source_column = e.source_column AND s.nested)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_accept_key ak
+                    WHERE ak.graph_name = e.graph_name AND ak.source_name = e.source_name
+                      AND ak.source_line = e.source_line AND ak.source_column = e.source_column)
+UNION ALL
+-- A claims field that is also a field of the key the vouchers decode to: the claims and the lookup
+-- part never share a value. One row per @accept, the detail the first such field by name.
+SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_IN_KEY',
+       MIN(c.field_name)
+  FROM graphitron_accept_claim c
+  JOIN graphitron_accept_key ak
+    ON ak.graph_name = c.graph_name AND ak.source_name = c.source_name
+   AND ak.source_line = c.source_line AND ak.source_column = c.source_column
+  JOIN graphitron_key_field_binding kf
+    ON kf.graph_name = ak.graph_name AND kf.type_name = ak.type_name
+   AND kf.directive_name = ak.directive_name AND kf.ordinal = ak.ordinal
+   AND kf.field_name = c.field_name
+ GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
+UNION ALL
+-- A claims field that does not read one column of the accepting type's own table, the test a key
+-- field passes: the voucher's claims parse into it as one scalar value, as a key field's value does.
+-- One row per @accept, the detail the first such field by name.
+SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_NOT_A_COLUMN',
+       MIN(c.field_name)
+  FROM graphitron_accept_claim c
+  JOIN graphitron_field f
+    ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+  JOIN graphitron_tabletype tt ON tt.graph_name = c.graph_name AND tt.type_name = c.type_name
+ WHERE f.is_list
+    OR NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                    WHERE b.graph_name = f.graph_name AND b.coordinate = f.coordinate
+                      AND b.bound = tt.table_schema || '.' || tt.table_name AND b.kind = 'COLUMN')
+ GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column;
+COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.code IS 'the rule the key breaks';
+-- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.detail IS 'the type, or for a key field the first field the author wrote that is not a column'
 
 -- The minted-keys stage's refusals: a voucher marker in a graph with no federation link, since a
 -- voucher only makes sense where a router plans across subgraphs and the key it is reached by needs
@@ -20956,6 +21170,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-participants', 'graphitron_occurrence_participant'),
   ('entity-key-alternatives', 'graphitron_entry_defect'),
   ('entity-key-alternatives', 'graphitron_key_field_binding'),
+  ('entity-key-alternatives', 'graphitron_accept_key'),
   ('outbox', 'graphitron_entry_defect'),
   ('outbox', 'graphitron_outbox_key'),
   ('outbox', 'graphitron_outbox_message'),
@@ -21374,6 +21589,9 @@ INSERT INTO meta_grain VALUES
   ('accept-claim',
    'one claim one @accept makes, at its place in the claims field set, in one graph',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('accept-key',
+   'one @accept and the authored key its vouchers decode to, in one graph',
+   'graph_name, source_name, source_line, source_column', 'sdl'),
   ('synthesized-node-type-id',
    'one node type whose wire type id the emitted schema publishes, in one graph',
    'graph_name, type_name', 'sdl'),
@@ -21999,6 +22217,18 @@ INSERT INTO graphitron_defect_type VALUES
    'A federation @key''s fields: selects no field, so nothing identifies the entity: name the fields of its key.', 'entity-key-alternatives'),
   ('KEY_FIELD_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_MISSING',
    'A federation @key selects a field its type does not declare. The fields a key selects are fields of its type, whatever the type is bound to: declare the field, or name one the type has.', 'entity-key-alternatives'),
+  ('VOUCHER_ACCEPT_WITHOUT_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_WITHOUT_KEY',
+   '@accept is on a type with no authored @key this subgraph resolves it by, and a voucher''s lookup part decodes to such a key: write the key.', 'entity-key-alternatives'),
+  ('VOUCHER_ACCEPT_KEY_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_AMBIGUOUS',
+   '@accept leaves key: out on a type with more than one authored resolvable @key, so which one the voucher decodes to is unsaid: name it with key:.', 'entity-key-alternatives'),
+  ('VOUCHER_ACCEPT_KEY_NESTED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_NESTED',
+   '@accept''s key: has a nested selection, and a voucher''s lookup part carries top-level scalar fields: name a key of top-level fields.', 'entity-key-alternatives'),
+  ('VOUCHER_ACCEPT_KEY_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_UNKNOWN',
+   '@accept''s key: names no authored resolvable @key of the type, field set for field set: name the fields of one.', 'entity-key-alternatives'),
+  ('VOUCHER_CLAIM_IN_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_IN_KEY',
+   '@accept''s claims names a field of the key the voucher decodes to, and the claims and the lookup part never share a value: claim fields outside the key.', 'entity-key-alternatives'),
+  ('VOUCHER_CLAIM_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_NOT_A_COLUMN',
+   '@accept''s claims names a field that does not read one column of the type''s own table, a list or a field read some other way, and the voucher''s claims parse into each as one scalar value, as a key field''s value does: claim fields that read the table''s columns.', 'entity-key-alternatives'),
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
    'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.', 'entity-key-alternatives'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
@@ -23148,6 +23378,10 @@ INSERT INTO meta_relation VALUES
    'What an @accept application says: the scope of the vouchers it accepts, the authored key they decode to and the claims they carry, as written.',
    'For example voucher: String! @accept(scope: "results", claims: "ownerId") gives one row with no key.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on is one join away rather than a column here. The arguments are kept as written: the claims are resolved to fields by the voucher stage and the key to an authored key by the entity key stage, where a malformed value can be a defect at the application. An omitted key is a null, not the one authored key filled in: which key a bare @accept decodes to is the entity key stage''s decision.'),
+  ('graphitron_ast_accept_key_entry', 'sdl-parsed-selection', 'graphitron',
+   'One selection an @accept''s key field set parsed into, at its index in that parse.',
+   'For example key: "id" gives one row, id at position 0, not nested; an @accept with no key gives none.',
+   'The parse of the key argument, on graphitron_ast_issue_claim_entry''s terms: what the author wrote, each selection''s first name and whether it nests. Which authored key it names is the entity key stage''s decision, read into graphitron_accept_key, field set against field set.'),
   ('graphitron_ast_accept_claim_entry', 'sdl-parsed-selection', 'graphitron',
    'One selection an @accept''s claims field set parsed into, at its index in that parse.',
    'For example claims: "eierId" gives one row, eierId at position 0, not nested.',
@@ -23548,8 +23782,16 @@ INSERT INTO meta_relation VALUES
    'The rule the stored relation is written from, after the nodes it counts.'),
   ('graphitron_key_field_binding', 'key-field', 'graphitron',
    'One field a federation key selects on a table-bound object type, authored or synthesised, and how it binds at that type''s own table.',
-   'For example @key(fields: "tenantId sku") on a Product over the product table draws two COLUMN rows, one per field, and the @key(fields: "id") synthesised for a node type draws one NODE_ID row, or a COLUMN row where its id carries @field.',
+   'For example @key(fields: "tenantId sku") on a Product draws two COLUMN rows, the @key(fields: "id") synthesised for a node type one NODE_ID row, or a COLUMN row where its id carries @field, and the @key(fields: "voucher") an @accept mints one VOUCHER row.',
    'The one fact an entity key alternative needs that no other relation states: which of the type''s occurrence bindings each key field resolves to at the entity''s table. Everything else an alternative carries, the column, the node''s type id and key columns, the resolvability, is stated elsewhere, so only the binding is stored and a reader composes the rest from the relations that state it. Keyed by the key''s directive application and the field''s place in the parse, since a key on an extension can name a field declared in another file; referencing the application, the occurrence binding (which carries the kind) and the type''s table, so a row is a binding at the type''s own table by construction. A selection with no row binds nothing there, which is the entity key stage''s refusal.'),
+  ('graphitron_accept_key', 'accept-key', 'graphitron',
+   'The authored federation key one @accept''s vouchers decode to.',
+   'For example voucher: String! @accept(scope: "results", claims: "ownerId") on a VgsResultat whose one authored key is @key(fields: "id") gives one row naming that key.',
+   'The one fact the voucher alternative needs beyond how the minted key''s field binds, which graphitron_key_field_binding states as a VOUCHER row: which authored key the lookup part decodes to, decided once from key: or the type''s one authored resolvable key. The alternative''s columns are that key''s, read through its own key field bindings, so nothing about the columns is restated here. Keyed by the @accept application, referencing the key''s application, so a decode onto a key that is gone cascades away. An @accept no key answers draws no row, which is the refusal.'),
+  ('graphitron_accept_key_rule', 'accept-key', 'graphitron',
+   'One accept key the rule computes, in the shape graphitron_accept_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the entity key stage writes this view''s rows for one graph into graphitron_accept_key, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_key_field_binding_rule', 'key-field', 'graphitron',
    'One key field binding the entity key rule computes, in the shape graphitron_key_field_binding stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the entity key stage writes this view''s rows for one graph into graphitron_key_field_binding, which is the name every reader spells.',

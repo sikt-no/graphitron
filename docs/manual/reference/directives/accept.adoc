@@ -76,6 +76,24 @@ Each refusal below is reported at the `@accept`.
 | `VOUCHER_CLAIM_REPEATED`
 | No claim is named twice.
 
+| `VOUCHER_CLAIM_NOT_A_COLUMN`
+| Each claims field reads one column of the type's own table, as a key field does: not a list, not a field read some other way.
+
+| `VOUCHER_CLAIM_IN_KEY`
+| No claims field is a field of the key the voucher decodes to: the claims and the lookup part never share a value.
+
+| `VOUCHER_ACCEPT_WITHOUT_KEY`
+| The type has an authored `@key` this subgraph resolves it by, which the voucher's lookup part decodes to.
+
+| `VOUCHER_ACCEPT_KEY_AMBIGUOUS`
+| `key` is given when the type has more than one authored resolvable key.
+
+| `VOUCHER_ACCEPT_KEY_NESTED`
+| `key` has no nested selection: the lookup part carries top-level scalar fields.
+
+| `VOUCHER_ACCEPT_KEY_UNKNOWN`
+| `key` names the fields of an authored resolvable key of the type, in any order.
+
 | `VOUCHER_ACCEPT_NOT_GENERATED`
 | Generation does not verify vouchers yet. Removed when it does.
 |===

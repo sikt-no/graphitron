@@ -1,0 +1,94 @@
+extend schema @withConfiguration(sessionState: true)
+
+"The accepting side's refusals the entity key stage decides, each at the @accept. A voucher decodes to an authored key this subgraph resolves the type by: the one key: names, field set for field set in any order, or the type's one such key where key: is left out, never a nested selection. Its claims fields read one column of the type's own table each, and none is a field of that key."
+type NoKey @table(name: "actor") {
+  actorId: Int @field(name: "actor_id")
+  firstName: String @field(name: "first_name")
+  voucher: String @accept(scope: "s", claims: "firstName")
+}
+
+# A key this subgraph does not resolve by is no key to decode to.
+type StubKey @table(name: "staff") @key(fields: "staffId", resolvable: false) {
+  staffId: Int @field(name: "staff_id")
+  firstName: String @field(name: "first_name")
+  voucher: String @accept(scope: "s", claims: "firstName")
+}
+
+type TwoKeys @table(name: "customer") @key(fields: "customerId") @key(fields: "email") {
+  customerId: Int @field(name: "customer_id")
+  email: String
+  firstName: String @field(name: "first_name")
+  voucher: String @accept(scope: "s", claims: "firstName")
+}
+
+# key: names the first key in another order; the claim is a field of the other key, which is allowed.
+type Named @table(name: "inventory") @key(fields: "filmId storeId") @key(fields: "inventoryId") {
+  inventoryId: Int @field(name: "inventory_id")
+  filmId: Int @field(name: "film_id")
+  storeId: Int @field(name: "store_id")
+  voucher: String @accept(scope: "s", key: "storeId filmId", claims: "inventoryId")
+}
+
+type Unknown @table(name: "category") @key(fields: "categoryId") {
+  categoryId: Int @field(name: "category_id")
+  name: String
+  voucher: String @accept(scope: "s", key: "name", claims: "name")
+}
+
+type Nested @table(name: "city") @key(fields: "cityId") {
+  cityId: Int @field(name: "city_id")
+  city: String
+  voucher: String @accept(scope: "s", key: "cityId { x }", claims: "city")
+}
+
+type ClaimInKey @table(name: "country") @key(fields: "countryId") {
+  countryId: Int @field(name: "country_id")
+  country: String
+  voucher: String @accept(scope: "s", claims: "countryId country")
+}
+
+type NotColumn @table(name: "language") @key(fields: "languageId") {
+  languageId: Int @field(name: "language_id")
+  tags: [String]
+  voucher: String @accept(scope: "s", claims: "tags")
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  noKeys: [NoKey!]!
+  stubKeys: [StubKey!]!
+  twoKeys: [TwoKeys!]!
+  named: [Named!]!
+  unknowns: [Unknown!]!
+  nested: [Nested!]!
+  claimInKeys: [ClaimInKey!]!
+  notColumns: [NotColumn!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('VOUCHER_ACCEPT_WITHOUT_KEY', 'VOUCHER_ACCEPT_KEY_AMBIGUOUS', 'VOUCHER_ACCEPT_KEY_UNKNOWN',
+           'VOUCHER_CLAIM_IN_KEY', 'VOUCHER_CLAIM_NOT_A_COLUMN')
+  """, rows: """
+  code,                         type_name,  detail
+  VOUCHER_ACCEPT_KEY_AMBIGUOUS, TwoKeys,    TwoKeys
+  VOUCHER_ACCEPT_KEY_UNKNOWN,   Unknown,    name
+  VOUCHER_ACCEPT_WITHOUT_KEY,   NoKey,      NoKey
+  VOUCHER_ACCEPT_WITHOUT_KEY,   StubKey,    StubKey
+  VOUCHER_CLAIM_IN_KEY,         ClaimInKey, countryId
+  VOUCHER_CLAIM_NOT_A_COLUMN,   NotColumn,  tags
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'VOUCHER_ACCEPT_KEY_NESTED'
+  """, rows: """
+  code,                      type_name
+  VOUCHER_ACCEPT_KEY_NESTED, Nested
+  """)
+
+extend schema @expectEquals(relation: "graphitron_accept_key", rows: """
+  type_name,  directive_name, ordinal
+  ClaimInKey, key,            0
+  Named,      key,            0
+  NotColumn,  key,            0
+  """)

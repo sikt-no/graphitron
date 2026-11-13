@@ -251,10 +251,13 @@ class SupertypeSignatureGateTest {
         // roster together on the day that derivation lands.
         // @node's two list arguments, the current key and the legacy one, decoded as twins.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry"),
-        // The two voucher markers' claims, each parsed on the same terms. Siblings by decision: each
-        // references its own marker's entry, so a claim cannot hang off an application that is not
-        // that marker, which one relation keyed on the bare directive application could not say.
-        Set.of("graphitron_ast_issue_claim_entry", "graphitron_ast_accept_claim_entry"),
+        // The voucher markers' field-set arguments, each parsed on the same terms: both markers'
+        // claims and an @accept's key. Siblings by decision: each references its own marker's entry,
+        // so a selection cannot hang off an application that is not that marker, which one relation
+        // keyed on the bare directive application could not say, and a claim and a key are read by
+        // different rules.
+        Set.of("graphitron_ast_issue_claim_entry", "graphitron_ast_accept_claim_entry",
+            "graphitron_ast_accept_key_entry"),
         // And each resolved: an @issue's claim to the member it names, an @accept's to the field of
         // its type. Siblings by decision: a member is no field and a field no member, so one relation
         // would carry a foreign key null on every row of the other marker.

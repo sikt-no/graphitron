@@ -222,6 +222,11 @@ public final class EntityKeyQuery {
             if (key.fields().isEmpty()) {
                 continue;
             }
+            // A voucher key is resolved by verifying the voucher, not by matching columns, and no
+            // alternative here states that yet; a graph carrying one is refused before generation.
+            if (key.fields().stream().anyMatch(field -> "VOUCHER".equals(field.kind()))) {
+                continue;
+            }
             boolean nodeId = key.fields().size() == 1 && "NODE_ID".equals(key.fields().getFirst().kind());
             if (nodeId) {
                 if (node == null) {

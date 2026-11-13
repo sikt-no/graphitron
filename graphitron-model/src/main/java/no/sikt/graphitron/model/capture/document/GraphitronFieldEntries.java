@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_CLAIM_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_CLAIM_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
@@ -80,6 +81,7 @@ final class GraphitronFieldEntries {
         var acceptApplications = applied(applications, "accept");
         accepts(dsl, graph, touchedAt, acceptApplications);
         acceptClaims(dsl, graph, touchedAt, acceptApplications);
+        acceptKeys(dsl, graph, touchedAt, acceptApplications);
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -95,7 +97,8 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_ISSUE_ENTRY,
         GRAPHITRON_AST_ISSUE_CLAIM_ENTRY,
         GRAPHITRON_AST_ACCEPT_ENTRY,
-        GRAPHITRON_AST_ACCEPT_CLAIM_ENTRY);
+        GRAPHITRON_AST_ACCEPT_CLAIM_ENTRY,
+        GRAPHITRON_AST_ACCEPT_KEY_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<Directive> applications) {
@@ -247,15 +250,27 @@ final class GraphitronFieldEntries {
                 .set(t.CLAIMS, excluded(t.CLAIMS)));
     }
 
-    /** One selection of a voucher marker's claims, at its index in the parse, with its segments. */
+    /**
+     * One selection of a voucher marker's field-set argument, its claims or an {@code @accept}'s key,
+     * at its index in the parse, with its segments.
+     */
     private record Claim(Directive application, int position, List<String> segments) {}
 
     /** Each selection of each application's claims field set, at its index in the parse. */
     private static List<Claim> claims(List<Directive> applications) {
+        return selections(applications, "claims");
+    }
+
+    /** Each selection of each application's {@code argument} field set, at its index in the parse. */
+    private static List<Claim> selections(List<Directive> applications, String argument) {
         var claims = new java.util.ArrayList<Claim>();
         for (Directive application : applications) {
             int position = 0;
-            for (List<String> segments : FieldSetGrammar.paths(string(application, "claims"))) {
+            String fieldSet = string(application, argument);
+            if (fieldSet == null) {
+                continue;
+            }
+            for (List<String> segments : FieldSetGrammar.paths(fieldSet)) {
                 claims.add(new Claim(application, position++, segments));
             }
         }
@@ -319,6 +334,28 @@ final class GraphitronFieldEntries {
             claim -> val(touchedAt, t.TOUCHED_AT),
             claim -> val(claim.segments().getFirst(), t.FIELD_NAME),
             claim -> val(claim.segments().size() > 1, t.NESTED)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.POSITION, t.TOUCHED_AT, t.FIELD_NAME, t.NESTED)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.FIELD_NAME, excluded(t.FIELD_NAME))
+                .set(t.NESTED, excluded(t.NESTED)));
+    }
+
+    private static void acceptKeys(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                   List<Directive> applications) {
+        var t = GRAPHITRON_AST_ACCEPT_KEY_ENTRY;
+        var rows = selections(applications, "key").stream().collect(Rows.toRowList(
+            key -> val(graph, t.GRAPH_NAME),
+            key -> GraphQLAstEntries.sourceName(key.application()),
+            key -> GraphQLAstEntries.sourceLine(key.application()),
+            key -> GraphQLAstEntries.sourceColumn(key.application()),
+            key -> val(key.position(), t.POSITION),
+            key -> val(touchedAt, t.TOUCHED_AT),
+            key -> val(key.segments().getFirst(), t.FIELD_NAME),
+            key -> val(key.segments().size() > 1, t.NESTED)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                     t.POSITION, t.TOUCHED_AT, t.FIELD_NAME, t.NESTED)
