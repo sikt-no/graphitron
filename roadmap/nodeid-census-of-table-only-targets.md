@@ -14,7 +14,7 @@ last-updated: 2026-10-14
 
 ## Goal
 
-A `@nodeId(typeName: T)` whose `T` is a `@table` type without `implements Node`, over a table with catalog node metadata, gets the same build-time guarantees from the fact store that a node-type target gets. Today the store has no rows for such a coordinate. `graphitron_node_id_instruction_rule` resolves a target only through `graphitron_node_type`, or as a polymorphic container, so the decode-coverage rule (`NodeIdDecodeCoverage`, which fails the build when an authored `@nodeId` is neither decoded nor refused) never censuses it, and the slot-shape and landing views never check it. The record path already decodes these targets, and R1032 opens the leaf path, so an authored decode on a slot no rail reaches would pass silently as the wire string.
+A `@nodeId(typeName: T)` whose `T` is a `@table` type without `implements Node`, over a table with catalog node metadata, gets the same build-time guarantees from the fact store that a node-type target gets. Today the store has no rows for such a coordinate. `graphitron_node_id_instruction_rule` resolves a target only through `graphitron_node`, or as a polymorphic container, so the decode-coverage rule (`NodeIdDecodeCoverage`, which fails the build when an authored `@nodeId` is neither decoded nor refused) never censuses it, and the slot-shape and landing views never check it. The record path already decodes these targets, and R1032 opens the leaf path, so an authored decode on a slot no rail reaches would pass silently as the wire string.
 
 ## Scope notes for the Spec
 

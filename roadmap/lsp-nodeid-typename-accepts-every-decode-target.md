@@ -18,6 +18,6 @@ The LSP stops flagging a `@nodeId(typeName: T)` that the build accepts. Today `D
 
 ## Scope notes for the Spec
 
-- The accepted set is the build's: `graphitron_node_type` (authored and inferred node types), plus `@table` types whose table carries catalog node metadata, plus the polymorphic containers the arm already reads. If R1033 lands first, read its instruction-target vocabulary rather than restating the predicate.
+- The accepted set is the build's: `graphitron_node` (authored and inferred node types), plus `@table` types whose table carries catalog node metadata, plus the polymorphic containers the arm already reads. If R1033 lands first, read its instruction-target vocabulary rather than restating the predicate.
 - The diagnostic's text should stop saying the type must carry `@node`.
 - Found while specifying R1032.

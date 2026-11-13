@@ -116,8 +116,10 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `CodeCapture` sweeping by instant beside the class-file sweep. Ends at "A single changed class re-reads only itself, swept at the class file".
 * An argument's or input field's `@nodeId` route in `NodeIdLeafResolver`'s walk and in the store's
   inferred and written paths. Ends at "The classifier reads its routes from the store, the @nodeId filter first".
-* `graphitron_node_type`, `graphitron_node` and `NodeDeclaration.isNodeType`, each saying what a
-  node is. Ends at "A node is what the manual says takes effect".
+* `graphitron_node` and `NodeDeclaration.isNodeType`, each saying what a node is, held to one set
+  by `NodeTypeShadowTest`. Ends at "The shadow tests go with their walk side", the predicate's
+  readers going at "The classifier reads its routes from the store, the @nodeId filter first" and
+  "The generator builds no schema".
 * Walk derivations and their store replacements, pinned by the shadow tests. Ends at "The shadow tests go with their walk side".
 * The vocabulary listed twice, by the editor from `graphitron_directive` and by MCP from
   `graphql_directive`. Ends at "The MCP lists the composed vocabulary".
@@ -1567,16 +1569,13 @@ treating each kind by what it can do, and catching a stale catalog.
 
 A node is what the manual says takes effect: a type that implements `Node` over a `@table` the
 catalog resolves, with `@node` or published catalog metadata giving its type id and key columns.
-Today that answer is settled from coordinate copies of `@node` and `@table`, refilled whole each
-reading, and `graphitron_node_type` adds every written `@node` to it, so readers and the editor
-disagree with the build about which types are nodes.
+`graphitron_node` states that answer, and the walk's `NodeDeclaration.isNodeType` states the same
+one; it is still settled from coordinate copies of `@node` and `@table`, refilled whole each
+reading.
 
 * **Table types, nodes and node key columns are marked and swept** `open`. An unchanged binding
   keeps its node and key columns rather than losing them to a clear and refill; `Nodes.derive` still
   deletes and refills `graphitron_node`.
-* **A node is what the manual says takes effect** `open`.
-  `graphitron_node_type` goes, its readers read `graphitron_node`, and
-  `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
   squiggle and `SchemaQueries` read `graphitron_node` and `graphitron_node_keycolumn`, as the hover
   already does.
@@ -1677,7 +1676,7 @@ relation rather than what it shadows.
   silence check goes, and `@assertEmpty` applies to every relation carrying the graph.
 * **The fact model cites what pins it** `blocked`, on "A registration says what pins a relation, not what it shadows". `fact-model.adoc` stops naming `FactCaptureAgreementTest`.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on "The oracle writers' lifecycle cases stay with their writers", "A registration says what pins a relation, not what it shadows" and "Any relation that carries the graph can be asserted empty".
-* **The shadow tests go with their walk side** `blocked`, on "A node is what the manual says takes effect" and "The generator builds no schema". `RoutineSpentInputShadowTest`
+* **The shadow tests go with their walk side** `blocked`, on "The generator builds no schema". `RoutineSpentInputShadowTest`
   and `NodeTypeShadowTest` are deleted.
 * **The corpus goes** `blocked`, on "The shadow tests go with their walk side". The corpus
   documents and `CorpusStore` are deleted, each reader becoming a fact document or going with the walk
@@ -2875,6 +2874,11 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A node is what the manual says takes effect** (2026-11-13). `graphitron_node_type`, which
+added every written `@node` to the resolved nodes, is gone; its readers read `graphitron_node`.
+`NodeDeclaration.isNodeType` answers on the same terms, a `@node` with no bound table being no
+node, and `NodeCaptureTest` went with the view.
 
 **A connection's producer builds its class** (2026-11-12). The generated `ConnectionResult` and
 its unit kind `CONNECTION_RESULT`, `ConnectionFetcherClassGenerator` with the per-type connection
