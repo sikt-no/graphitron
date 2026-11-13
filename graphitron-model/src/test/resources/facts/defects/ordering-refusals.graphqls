@@ -1,0 +1,82 @@
+# What an ordering cannot state, each refused where it is written: an application writing two
+# surfaces; a primary key the table does not have; an index or a column the table does not have; a
+# fields element naming both a column and a method; a value of an @orderBy sort enum with no @order;
+# a client's choice of order on a list read inline in its parent's statement, which graphitron does
+# not generate yet, though its choices are stated; and such a list over a table with no primary key
+# with no order written at all. The near misses beside them draw nothing: the same keyless list
+# ordered by a column, and a sort enum whose every value carries @order, read by a root list.
+
+type Actor @table(name: "actor") {
+    lastName: String @field(name: "last_name")
+}
+
+type RoleAssignment @table(name: "role_assignment") {
+    roleCode: String @field(name: "role_code")
+}
+
+type RoleHolder @table(name: "role_holder") {
+    rolesUnordered: [RoleAssignment!]!
+    rolesByKey: [RoleAssignment!]! @defaultOrder(primaryKey: true)
+    rolesOrdered: [RoleAssignment!]! @defaultOrder(fields: [{name: "role_code"}])
+}
+
+type Film @table(name: "film") {
+    title: String
+
+    actorsTwice: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(index: "idx_actor_last_name", primaryKey: true)
+    actorsByNoIndex: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(index: "idx_no_such_index")
+    actorsByNoColumn: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(fields: [{name: "no_such_column"}])
+    actorsByBoth: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        @defaultOrder(fields: [{name: "last_name", method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+
+    actorsSorted(order: ActorOrderBy @orderBy): [Actor!]!
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+input ActorOrderBy {
+    field:     ActorSort!
+    direction: SortDirection
+}
+
+enum ActorSort {
+    LAST_NAME @order(fields: [{name: "last_name"}])
+    UNSAID
+}
+
+input ActorFullOrderBy {
+    field:     ActorFullSort!
+    direction: SortDirection
+}
+
+enum ActorFullSort {
+    LAST_NAME @order(fields: [{name: "last_name"}])
+    ACTOR_ID  @order(primaryKey: true)
+}
+
+type Query {
+    films: [Film!]!
+    holders: [RoleHolder!]!
+    actorsFullySorted(order: ActorFullOrderBy @orderBy): [Actor!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
+  source_line, code,                        detail
+  18,          LIST_ORDER_UNDETERMINED,     public.role_assignment
+  19,          ORDER_PRIMARY_KEY_MISSING,   public.role_assignment
+  27,          ORDER_SURFACES,
+  29,          ORDER_INDEX_UNRESOLVED,      idx_no_such_index
+  31,          ORDER_COLUMN_UNRESOLVED,     no_such_column
+  33,          ORDER_FIELD_SHAPE,
+  35,          ORDER_CHOICE_ON_INLINE_LIST,
+  46,          ORDER_VALUE_UNORDERED,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
+  coordinate,              choice,                  surface
+  Film.actorsSorted,       ActorSort.LAST_NAME,     FIELDS
+  Query.actorsFullySorted, ActorFullSort.LAST_NAME, FIELDS
+  Query.actorsFullySorted, ActorFullSort.ACTOR_ID,  PRIMARY_KEY
+  """)

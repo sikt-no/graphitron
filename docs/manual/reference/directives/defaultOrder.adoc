@@ -71,6 +71,7 @@ Index-based with descending direction:
 include::examples/defaultOrder.graphqls[tag=IndexDescending]
 ----
 
+[#constraints]
 == Constraints
 
 * Exactly one of `index`, `fields`, or `primaryKey` must be set. Multiple or none fails the build.
@@ -82,6 +83,7 @@ include::examples/defaultOrder.graphqls[tag=IndexDescending]
 * A `path` follows to-one hops only and carries no `condition:`; a `method` takes the field's table and returns a `Field<X>`. Neither counts toward a connection's row identity, and neither is available on a multi-table interface or union or over a table-valued function result. See xref:../../how-to/sort-results.adoc#sort-by-a-related-value[How-to: Sort by a value on another table].
 * On a root field returning a list or connection of a multi-table interface or union, the columns resolve against each participant's own table, and every participant has to carry them at the same SQL type and bound Java type. A child field, or a single-valued root field, over such a type rejects the directive. See xref:../../how-to/sort-results.adoc#sort-across-polymorphism[How-to: Sort across polymorphism].
 * Stable keyset pagination depends on the order identifying a row. On a connection, graphitron appends the table's primary key to a field-based or index-based order that does not already contain a key, in the direction of the last listed column; see xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].
+* A list over a table with no primary key has nothing to fall back to, so it needs `@defaultOrder` or an xref:orderBy.adoc[`@orderBy`] argument; one with neither fails the build (`LIST_ORDER_UNDETERMINED`) rather than return rows in whatever order the database hands them back. The other refusals above are `ORDER_SURFACES`, `ORDER_PRIMARY_KEY_MISSING`, `ORDER_INDEX_UNRESOLVED`, `ORDER_COLUMN_UNRESOLVED` and `ORDER_FIELD_SHAPE`, and an `@orderBy` on a list read inside its parent's query is deferred (`ORDER_CHOICE_ON_INLINE_LIST`); see xref:../diagnostics-glossary.adoc#ordering-refusals[the diagnostics glossary].
 * A column that admits `NULL` sorts its `NULL` rows last whatever the `direction:`, on lists and connections alike; see xref:../../how-to/sort-results.adoc#where-null-sorts[Where `NULL` sorts].
 
 == See also
