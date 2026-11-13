@@ -5535,6 +5535,27 @@ type Mutation {
             method: "create"
         })
         @outbox(event: "FilmCardMade", argMapping: "film: $result.film.id")
+    # A payload key takes a node id as the API's clients see it, encoded, whatever its key, and a list
+    # of them as an array, while the service decodes the same ids into the records it takes; a key
+    # column named past the id is decoded out of it, or out of each id of a list.
+    outboxAssignFilm(in: FilmRecordAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmRecord"
+        })
+        @outbox(event: "FilmAssigned", argMapping: "film: in.film, filmId: in.film.film_id")
+    outboxAssignFilmActor(in: FilmActorRecordAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmActorRecord"
+        })
+        @outbox(event: "FilmActorAssigned", argMapping: "actor: in.filmActor, actorId: in.filmActor.actor_id")
+    outboxAssignFilmActors(in: FilmActorRecordListAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignFilmActorRecordList"
+        })
+        @outbox(event: "FilmActorsAssigned", argMapping: "actors: in.filmActors, filmIds: in.filmActors.film_id")
 
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$project>).fetchOne(r -> r)`.

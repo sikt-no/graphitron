@@ -4876,7 +4876,7 @@ COMMENT ON VIEW graphitron_argmapping_step_next_rule IS 'One next step the argMa
 
 CREATE VIEW graphitron_argmapping_landing_rule
   (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
-   landing_coordinate, trailing_name, repeats_own_name, descends) AS
+   landing_coordinate, trailing_name, repeats_own_name, descends, receives) AS
 -- Where the path stops: every name consumed, or every name but one, which then names a key column of
 -- a node id at the occurrence reached and is the path end's to resolve.
 SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
@@ -4887,7 +4887,15 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.param
        -- Past the slot the path opens: a field's argument, or the argument or input field the
        -- directive is written on.
        CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
-            ELSE lo.coordinate <> co.coordinate END
+            ELSE lo.coordinate <> co.coordinate END,
+       -- What a node id at the landing hands over. A key column named past it is that column. A
+       -- payload key otherwise takes the id whole, as the API's clients see it; a call parameter
+       -- reached by descending onto it takes a key column, one stopping on its slot the whole key.
+       CASE WHEN s.consumed < s.segments THEN 'COLUMN'
+            WHEN s.directive_name = 'outbox' THEN 'WHOLE'
+            WHEN CASE WHEN co.kind = 'FIELD' THEN lo.parent_coordinate IS DISTINCT FROM co.coordinate
+                      ELSE lo.coordinate <> co.coordinate END THEN 'COLUMN'
+            ELSE 'WHOLE' END
   FROM graphitron_argmapping_step s
   JOIN graphitron_occurrence co ON co.graph_name = s.graph_name AND co.coordinate = s.call_coordinate
   JOIN graphitron_occurrence lo ON lo.graph_name = s.graph_name AND lo.coordinate = s.step_coordinate
@@ -4910,6 +4918,7 @@ COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping la
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.landing_coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.trailing_name IS 'the trailing_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.trailing_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.repeats_own_name IS 'the repeats_own_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.repeats_own_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.receives IS 'the receives of a row of this rule, which the stage writes into graphitron_argmapping_landing.receives';
 
 CREATE TABLE graphitron_argmapping_landing (
   graph_name         VARCHAR   NOT NULL,
@@ -4923,9 +4932,11 @@ CREATE TABLE graphitron_argmapping_landing (
   trailing_name      VARCHAR,
   repeats_own_name   BOOLEAN   NOT NULL,
   descends           BOOLEAN   NOT NULL,
+  receives           VARCHAR   NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name,
                call_coordinate),
+  CHECK (receives IN ('WHOLE', 'COLUMN')),
   -- The pair, so a landing cannot outlive what an author wrote.
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name)
     REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, parameter_name)
@@ -4946,7 +4957,8 @@ COMMENT ON COLUMN graphitron_argmapping_landing.parameter_name IS 'the parameter
 COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on, completing the key: a field of a nested type is reached once per parent, and the path resolves under each';
 COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
 COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: a key column of the node id the landing carries, which the landing''s binding resolves and judges';
-COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it: a path stopping on a @nodeId slot hands over the whole decoded key, one descending onto it projects a key column';
+COMMENT ON COLUMN graphitron_argmapping_landing.descends IS 'whether the path goes past the slot it opens, an argument of a field-level call or the argument or input field the directive is written on, rather than stopping on it';
+COMMENT ON COLUMN graphitron_argmapping_landing.receives IS 'what a node id at the landing hands over: COLUMN, one key column, where the path names one past the id or, at a call parameter, descends onto it; WHOLE otherwise, the decoded key at a call parameter and the encoded id at an @outbox payload key, whose clients see the id as the API does';
 COMMENT ON COLUMN graphitron_argmapping_landing.repeats_own_name IS 'whether the path began with the call''s own name, as an argument-level or input-field-level argMapping was once required to: a spelling that still resolves';
 COMMENT ON COLUMN graphitron_argmapping_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 CREATE INDEX graphitron_argmapping_landing_landing_ix
@@ -11176,7 +11188,7 @@ WITH projected (graph_name, coordinate, directive_name, ordinal, owner, paramete
     FROM graphitron_argmapping_landing l
     JOIN graphitron_occurrence_node_id n
       ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
-   WHERE (l.descends = TRUE OR l.trailing_name IS NOT NULL)
+   WHERE l.receives = 'COLUMN'
      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id m
                       WHERE m.graph_name = n.graph_name AND m.coordinate = n.coordinate
                         AND m.bound <> n.bound)
@@ -11260,7 +11272,7 @@ SELECT DISTINCT pr.graph_name, pr.source_name, pr.source_line, pr.source_column,
    AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
    AND pr.parameter_name = l.parameter_name
   JOIN graphitron_occurrence_node_id n ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
- WHERE (l.descends = TRUE OR l.trailing_name IS NOT NULL)
+ WHERE l.receives = 'COLUMN'
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing_key_column kc
                     WHERE kc.graph_name = l.graph_name AND kc.coordinate = l.coordinate
                       AND kc.directive_name = l.directive_name AND kc.ordinal = l.ordinal
@@ -13275,10 +13287,15 @@ CREATE TABLE graphitron_outbox_key (
   landing_coordinate VARCHAR,
   column_name        VARCHAR,
   node_type_name     VARCHAR,
+  key_position       INT,
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, ordinal, key_name),
   FOREIGN KEY (graph_name, coordinate, ordinal)
     REFERENCES graphitron_outbox_message (graph_name, coordinate, ordinal) ON DELETE CASCADE,
+  -- The key column an argument key decodes, so a node whose key changes takes it.
+  FOREIGN KEY (graph_name, node_type_name, key_position)
+    REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE CASCADE,
+  CHECK (key_position IS NULL OR fill = 'ARGUMENT'),
   CHECK (origin IN ('MESSAGE', 'COMMON')),
   CHECK (fill IN ('ARGUMENT', 'RESULT', 'SCOPE', 'SESSION_MEMBER')),
   CHECK ((fill = 'RESULT') = (reads IS NOT NULL)),
@@ -13295,8 +13312,9 @@ COMMENT ON COLUMN graphitron_outbox_key.fill IS 'what fills it, on graphitron_oc
 COMMENT ON COLUMN graphitron_outbox_key.reads IS 'for a RESULT key, what it reads of the result: ROOT, the result whole; NODE_ID, a node''s id; COLUMN, a column of the written row; MEMBER, a member of the object a service returns. Null for every other fill';
 COMMENT ON COLUMN graphitron_outbox_key.source_path IS 'the source as written without its sigil, null for the result whole';
 COMMENT ON COLUMN graphitron_outbox_key.landing_coordinate IS 'the occurrence an ARGUMENT or RESULT path lands on, whose binding the key reads; null where no path is written';
-COMMENT ON COLUMN graphitron_outbox_key.column_name IS 'the written table''s column a COLUMN key reads, off the landed occurrence''s column binding';
-COMMENT ON COLUMN graphitron_outbox_key.node_type_name IS 'the node type whose id a ROOT or NODE_ID key encodes';
+COMMENT ON COLUMN graphitron_outbox_key.column_name IS 'the written table''s column a COLUMN key reads, off the landed occurrence''s column binding; or the key column an ARGUMENT key names past a node id, which it decodes';
+COMMENT ON COLUMN graphitron_outbox_key.node_type_name IS 'the node type whose id a ROOT or NODE_ID key encodes, or whose id an ARGUMENT key naming a key column decodes';
+COMMENT ON COLUMN graphitron_outbox_key.key_position IS 'for an ARGUMENT key naming a key column past a node id, the column''s position in the node''s key, which the key decodes out of each id; null where the argument is carried as the client sent it';
 COMMENT ON COLUMN graphitron_outbox_key.touched_at IS 'when the reading that stated this row ran; the outbox stage deletes the graph''s rows a reading did not mark';
 
 -- How a child producer's keys are filled from its source, stated per occurrence at the end of its
@@ -13708,7 +13726,7 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_accessor_rule IS 'One row th
 
 CREATE VIEW graphitron_outbox_key_rule
   (graph_name, coordinate, ordinal, key_name, origin, position, fill, reads, source_path,
-   landing_coordinate, column_name, node_type_name) AS
+   landing_coordinate, column_name, node_type_name, key_position) AS
 WITH written (graph_name, coordinate, ordinal, key_name, origin, position, bound_to) AS (
   SELECT m.graph_name, m.coordinate, m.ordinal, p.param_name, 'MESSAGE', p.position, p.bound_to
     FROM graphitron_outbox_message m
@@ -13772,6 +13790,18 @@ node_table (graph_name, table_source_name, table_schema, table_name, node_type_n
     FROM graphitron_node_table t
    WHERE t.node_count = 1
 ),
+-- The key column an argument path names past a node id, which the key decodes: the id it lands on,
+-- the node type whose id it is and the column.
+decoded (graph_name, coordinate, ordinal, key_name, landing_coordinate, node_type_name, column_name,
+         key_position) AS (
+  SELECT DISTINCT kc.graph_name, kc.coordinate, kc.ordinal, kc.parameter_name, kc.landing_coordinate,
+         n.node_type_name, n.column_name, kc.position
+    FROM graphitron_argmapping_landing_key_column kc
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = kc.graph_name AND n.coordinate = kc.landing_coordinate AND n.bound = kc.bound
+     AND n.position = kc.position
+   WHERE kc.directive_name = 'outbox'
+),
 -- Where each key's path lands under the call, whole: every name consumed.
 landed (graph_name, coordinate, ordinal, key_name, call_coordinate, landing_coordinate) AS (
   SELECT l.graph_name, l.coordinate, l.ordinal, l.parameter_name, MIN(l.call_coordinate),
@@ -13820,10 +13850,13 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
             WHEN r.bound_to LIKE '$scope.%' THEN SUBSTRING(r.bound_to, 8)
             WHEN r.bound_to LIKE '$session.%' THEN SUBSTRING(r.bound_to, 10)
             ELSE r.bound_to END,
-       CASE WHEN r.bound_to NOT LIKE '$%' OR r.bound_to LIKE '$result.%' THEN ld.landing_coordinate END,
-       tc.column_name,
+       CASE WHEN r.bound_to NOT LIKE '$%' THEN COALESCE(ld.landing_coordinate, dc.landing_coordinate)
+            WHEN r.bound_to LIKE '$result.%' THEN ld.landing_coordinate END,
+       CASE WHEN r.bound_to NOT LIKE '$%' THEN dc.column_name ELSE tc.column_name END,
        CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.coordinate IS NOT NULL)
-            THEN nt.node_type_name END
+            THEN nt.node_type_name
+            WHEN r.bound_to NOT LIKE '$%' THEN dc.node_type_name END,
+       dc.key_position
   FROM ranked r
   JOIN graphitron_outbox_message m
     ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
@@ -13835,6 +13868,9 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
   LEFT JOIN landed ld
     ON ld.graph_name = r.graph_name AND ld.coordinate = r.coordinate AND ld.ordinal = r.ordinal
    AND ld.key_name = r.key_name
+  LEFT JOIN decoded dc
+    ON dc.graph_name = r.graph_name AND dc.coordinate = r.coordinate AND dc.ordinal = r.ordinal
+   AND dc.key_name = r.key_name AND r.bound_to NOT LIKE '$%'
   -- The node id a $result field packs, off its landed occurrence, at the written table.
   LEFT JOIN (SELECT DISTINCT graph_name, coordinate, table_source_name, table_schema, table_name
                FROM graphitron_occurrence_node_id) nid
@@ -13868,7 +13904,8 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
                         AND cs.method_name = hm.method_name AND cs.descriptor = hm.descriptor
                       WHERE hm.graph_name = r.graph_name AND hm.member_name = SUBSTRING(r.bound_to, 10)
                         AND cs.slot_type IN (SELECT class_name FROM carriable)))
-     OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%' AND ld.landing_coordinate IS NOT NULL))
+     OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%'
+         AND (ld.landing_coordinate IS NOT NULL OR dc.landing_coordinate IS NOT NULL)))
 UNION ALL
 -- A $result over a service's returned value: bare, a scalar return a payload can carry; a path read
 -- whole ending on a member a payload can carry; or ending after a record lifted onto a node type's
@@ -13880,7 +13917,8 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
        ld.landing_coordinate, CAST(NULL AS VARCHAR),
        CASE WHEN rec.step_coordinate IS NOT NULL
             THEN (SELECT MIN(oni.node_type_name) FROM graphitron_occurrence_node_id oni
-                   WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate) END
+                   WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate) END,
+       CAST(NULL AS INT)
   FROM ranked r
   JOIN graphitron_outbox_message m
     ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
@@ -22239,7 +22277,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
    'The key column an argMapping path projects out of a @nodeId''s node has a jOOQ type that is not the type of the parameter of the @service or @condition method it goes to: declare the parameter with the column''s own type, boxed.', 'occurrence-builds'),
   ('ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_KEY_COLUMN_UNRESOLVED',
-   'An argMapping path past a @nodeId reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name the key column after the id, or bind the whole id and take its decoded key.', 'entry-defects'),
+   'An argMapping path past a @nodeId reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column after the id, or end the path on the id: a parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.', 'entry-defects'),
   ('NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINER_NOT_AT_A_SLOT',
    'A @nodeId(typeName:) names an interface or union, which an id decodes per member only into a @service parameter, and here the value reaches none: name one node type, or move the polymorphic id to the @service input.', 'occurrence-builds'),
   ('NODE_ID_SINGLE_TABLE_CONTAINER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SINGLE_TABLE_CONTAINER',

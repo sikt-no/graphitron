@@ -1,0 +1,65 @@
+# A payload key takes a node id as the API's clients see it: a path ending on a @nodeId slot hands
+# the key the encoded id whole, whether it stops on the slot it opens or descends through an input
+# object onto it, and whatever the node's key; a list of them is an array. Only a key column named
+# past the id projects, as at a call parameter, and the key decodes it out of the id, or out of each
+# id of a list. So the projection a call parameter takes from a descending path is no payload key's:
+# no key column is stated for the other landings and none is refused as unresolved, though
+# FilmActor's key has two columns.
+
+extend schema @withConfiguration(outboxTable: "outbox")
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+}
+
+type FilmActor implements Node @table(name: "film_actor") @node {
+  id: ID!
+}
+
+input CastRef {
+  film: ID! @nodeId(typeName: "Film")
+  filmActor: ID! @nodeId(typeName: "FilmActor")
+  filmActors: [ID!]! @nodeId(typeName: "FilmActor")
+}
+
+type Mutation {
+  recast(marker: String!, ref: CastRef!, filmActorId: ID! @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService", method: "writeOne"})
+    @outbox(event: "Recast", argMapping: "film: ref.film, actor: ref.filmActor, actors: ref.filmActors, direct: filmActorId, actorId: ref.filmActor.actor_id, filmIds: ref.filmActors.film_id")
+}
+
+# Each path lands on the id it names, the input field's descending past the argument it opens, and
+# each hands its key the id whole but where it names a key column.
+extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "directive_name = 'outbox'", rows: """
+  parameter_name, landing_coordinate,                trailing_name, descends, receives
+  film,           Mutation.recast(ref.film:),        ,              TRUE,     WHOLE
+  actor,          Mutation.recast(ref.filmActor:),   ,              TRUE,     WHOLE
+  actors,         Mutation.recast(ref.filmActors:),  ,              TRUE,     WHOLE
+  direct,         Mutation.recast(filmActorId:),     ,              FALSE,    WHOLE
+  actorId,        Mutation.recast(ref.filmActor:),   actor_id,      TRUE,     COLUMN
+  filmIds,        Mutation.recast(ref.filmActors:),  film_id,       TRUE,     COLUMN
+  """)
+
+# A key column is projected only where a payload key names one, at its position in FilmActor's key,
+# (actor_id, film_id).
+extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column", where: "directive_name = 'outbox'", rows: """
+  parameter_name, landing_coordinate,               bound,             position
+  actorId,        Mutation.recast(ref.filmActor:),  public.film_actor, 0
+  filmIds,        Mutation.recast(ref.filmActors:), public.film_actor, 1
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_key", rows: """
+  key_name, origin,  position, fill,     source_path,   landing_coordinate,               column_name, node_type_name, key_position
+  film,     MESSAGE, 0,        ARGUMENT, ref.film,       Mutation.recast(ref.film:),       , ,
+  actor,    MESSAGE, 1,        ARGUMENT, ref.filmActor,  Mutation.recast(ref.filmActor:),  , ,
+  actors,   MESSAGE, 2,        ARGUMENT, ref.filmActors, Mutation.recast(ref.filmActors:), , ,
+  direct,   MESSAGE, 3,        ARGUMENT, filmActorId,    Mutation.recast(filmActorId:),    , ,
+  actorId,  MESSAGE, 4,        ARGUMENT, ref.filmActor.actor_id, Mutation.recast(ref.filmActor:), actor_id, FilmActor, 0
+  filmIds,  MESSAGE, 5,        ARGUMENT, ref.filmActors.film_id, Mutation.recast(ref.filmActors:), film_id, FilmActor, 1
+  """)
+
+# A valid schema: nothing is refused.
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")

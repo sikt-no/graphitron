@@ -77,9 +77,11 @@ public final class OutboxQuery {
      * other kind. {@code accessors} are the methods a key read off a service's returned value calls,
      * outermost first: to the member a {@code RESULT_MEMBER} ends on, or to the record a
      * {@code RESULT_NODE_ID} encodes; empty for every other key, and where the value passes through.
+     * {@code keyPosition} is the position in {@code nodeType}'s key of the column an {@code ARGUMENT}
+     * names past a node id, which the key decodes; null where the argument is carried as sent.
      */
     public record Leaf(String key, Origin origin, LeafKind kind, String path, Column column,
-                       String nodeType, List<Accessor> accessors) {
+                       String nodeType, Integer keyPosition, List<Accessor> accessors) {
         public Leaf {
             Objects.requireNonNull(key, "key");
             Objects.requireNonNull(origin, "origin");
@@ -246,7 +248,7 @@ public final class OutboxQuery {
     }
 
     private record RawLeaf(String key, String origin, String kind, String path, String columnSql,
-                           String columnJava, String columnType, String nodeType) {}
+                           String columnJava, String columnType, String nodeType, Integer keyPosition) {}
 
     private record RawMessage(int ordinal, String event, List<RawLeaf> leaves) {}
 
@@ -305,7 +307,8 @@ public final class OutboxQuery {
         Field<String> none = DSL.castNull(String.class);
         return multiset(
             select(o.ORDINAL, o.EVENT, multiset(
-                    select(l.KEY_NAME, l.ORIGIN, kind, l.SOURCE_PATH, none, none, none, l.NODE_TYPE_NAME)
+                    select(l.KEY_NAME, l.ORIGIN, kind, l.SOURCE_PATH, none, none, none, l.NODE_TYPE_NAME,
+                            l.KEY_POSITION)
                         .from(l)
                         .where(l.GRAPH_NAME.eq(o.GRAPH_NAME), l.COORDINATE.eq(o.COORDINATE),
                             l.ORDINAL.eq(o.ORDINAL))
@@ -384,6 +387,7 @@ public final class OutboxQuery {
                     l.columnSql() == null ? null
                         : new Column(l.columnSql(), l.columnJava(), l.columnType()),
                     l.nodeType(),
+                    l.keyPosition(),
                     readsValue
                         ? accessors(store, coordinate, m.ordinal(), l.key(), kind == LeafKind.RESULT_NODE_ID)
                         : List.of());
@@ -458,7 +462,7 @@ public final class OutboxQuery {
             .otherwise(l.FILL);
         return multiset(
             select(l.KEY_NAME, l.ORIGIN, kind, l.SOURCE_PATH, rc.COLUMN_NAME, rc.JOOQ_NAME,
-                    rc.BINDING_TYPE, l.NODE_TYPE_NAME)
+                    rc.BINDING_TYPE, l.NODE_TYPE_NAME, l.KEY_POSITION)
                 .from(l)
                 .leftJoin(rc).on(rc.SOURCE_NAME.eq(w.TABLE_SOURCE_NAME),
                     rc.TABLE_SCHEMA.eq(w.TABLE_SCHEMA), rc.TABLE_NAME.eq(w.TABLE_NAME),

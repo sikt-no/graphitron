@@ -83,10 +83,10 @@ public final class Outboxes {
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.ORDINAL, t.KEY_NAME, t.ORIGIN, t.POSITION, t.FILL,
                 t.READS, t.SOURCE_PATH, t.LANDING_COORDINATE, t.COLUMN_NAME, t.NODE_TYPE_NAME,
-                t.TOUCHED_AT)
+                t.KEY_POSITION, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.ORDINAL, r.KEY_NAME, r.ORIGIN, r.POSITION,
                     r.FILL, r.READS, r.SOURCE_PATH, r.LANDING_COORDINATE, r.COLUMN_NAME,
-                    r.NODE_TYPE_NAME, val(touchedAt, t.TOUCHED_AT))
+                    r.NODE_TYPE_NAME, r.KEY_POSITION, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(t.GRAPH_NAME, t.COORDINATE, t.ORDINAL, t.KEY_NAME)
@@ -99,6 +99,7 @@ public final class Outboxes {
             .set(t.LANDING_COORDINATE, excluded(t.LANDING_COORDINATE))
             .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
             .set(t.NODE_TYPE_NAME, excluded(t.NODE_TYPE_NAME))
+            .set(t.KEY_POSITION, excluded(t.KEY_POSITION))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).and(t.TOUCHED_AT.ne(touchedAt)).execute();

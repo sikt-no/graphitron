@@ -135,6 +135,11 @@ at the `@service` reference, naming the declaration that would take it. A list p
 `@routine` or `@condition` parameter is not emitted yet and fails the build saying so, and so does
 a projection at a `@service` whose fetcher is not emitted from the store yet, the message naming why.
 
+A path that reaches the node id through an input object, `pick.film`, projects too where the node's
+key has one column, and must name the column where it has several. An xref:outbox.adoc[`@outbox`]
+payload key is not a parameter: a path ending on a node id there carries the id as your clients see
+it, encoded, and only a key column named past the id is decoded.
+
 [[named-parameter-decode]]
 === Decoding into a producer parameter named for the argument
 

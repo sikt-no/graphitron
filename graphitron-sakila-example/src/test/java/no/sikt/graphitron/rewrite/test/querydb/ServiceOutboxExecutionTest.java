@@ -36,7 +36,8 @@ class ServiceOutboxExecutionTest {
     @AfterAll
     static void removeWhatWasWritten() {
         dsl.execute("delete from outbox where type in ('MarkerWritten', 'MarkerThrown', 'FilmBlurbRead',"
-            + " 'FilmCardMade')");
+            + " 'FilmCardMade', 'FilmAssigned',"
+            + " 'FilmActorAssigned', 'FilmActorsAssigned')");
         dsl.execute("delete from mutation_scope_marker where marker like 'service-outbox-%'");
     }
 
@@ -105,5 +106,52 @@ class ServiceOutboxExecutionTest {
 
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         assertThat(payloads("FilmCardMade", "film", NodeIdEncoder.encodeFilm(7))).isNotEmpty();
+    }
+
+    private static Map<String, Object> message(String type, String key, String value, String select) {
+        var written = dsl.fetch("select " + select + " from outbox where type = ? and payload ->> ? = ?"
+            + " order by 1 desc", type, key, value).intoMaps();
+        assertThat(written).as(type + " written").isNotEmpty();
+        return written.getFirst();
+    }
+
+    @Test
+    void anArgumentNodeId_isCarriedEncoded_andANamedKeyColumnDecoded_oneColumnKey() {
+        String film = NodeIdEncoder.encodeFilm(7);
+        var result = execute("mutation { outboxAssignFilm(in: {film: \"" + film + "\"}) }");
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var m = message("FilmAssigned", "film", film, "payload -> 'filmId' as film_id");
+        assertThat(String.valueOf(m.get("film_id"))).as("the column named, decoded").isEqualTo("7");
+    }
+
+    @Test
+    void anArgumentNodeId_isCarriedEncoded_andANamedKeyColumnDecoded_twoColumnKey() {
+        String actor = NodeIdEncoder.encode("FilmActor", 2, 1);
+        var result = execute("mutation { outboxAssignFilmActor(in: {filmActor: \"" + actor + "\"}) }");
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var m = message("FilmActorAssigned", "actor", actor, "payload -> 'actorId' as actor_id");
+        assertThat(String.valueOf(m.get("actor_id"))).as("the column named, out of a two-column key")
+            .isEqualTo("2");
+    }
+
+    @Test
+    void aListOfNodeIds_isAnArrayOfThem_andANamedKeyColumnAnArrayOfTheColumn() {
+        String actor = NodeIdEncoder.encode("FilmActor", 2, 1);
+        String other = NodeIdEncoder.encode("FilmActor", 3, 4);
+        var result = execute("mutation { outboxAssignFilmActors(in: {filmActors: [\"" + actor + "\", \""
+            + other + "\"]}) }");
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var written = dsl.fetch("select payload -> 'actors' as actors, payload -> 'filmIds' as film_ids"
+            + " from outbox where type = 'FilmActorsAssigned' and payload -> 'actors' ->> 0 = ?", actor).intoMaps();
+        assertThat(written).isNotEmpty();
+        assertThat(String.valueOf(written.getLast().get("actors")).replace(" ", ""))
+            .as("a list of ids is an array of them, as the client sent them")
+            .isEqualTo("[\"" + actor + "\",\"" + other + "\"]");
+        assertThat(String.valueOf(written.getLast().get("film_ids")).replace(" ", ""))
+            .as("a list of ids is an array of the column, one per id")
+            .isEqualTo("[1,4]");
     }
 }

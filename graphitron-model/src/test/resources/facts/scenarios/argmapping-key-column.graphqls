@@ -26,12 +26,12 @@ type Query {
       method: "filmIdKeyEquals", argMapping: "filmId: pick.film"}, override: true)
 }
 
-# Whether each written path descends past the slot it opens.
+# Whether each written path descends past the slot it opens, and so what it hands over.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing",
     where: "directive_name = 'condition'", rows: """
-  call_coordinate,     landing_coordinate,          trailing_name, descends
-  Query.filmsByNamed,  Query.filmsByNamed(id:),     film_id,       FALSE
-  Query.filmsByPicked, Query.filmsByPicked(pick.film:), ,          TRUE
+  call_coordinate,     landing_coordinate,              trailing_name, descends, receives
+  Query.filmsByNamed,  Query.filmsByNamed(id:),         film_id,       FALSE,    COLUMN
+  Query.filmsByPicked, Query.filmsByPicked(pick.film:), ,              TRUE,     COLUMN
   """)
 
 # The key column each projecting landing takes; the whole slot takes none.

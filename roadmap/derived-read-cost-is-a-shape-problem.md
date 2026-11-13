@@ -789,18 +789,6 @@ static method needs no holder.
     condition reads anything but its own field's value is decided with it.
   * **A list element compares any number of fields** `blocked`. The walk's cap of 22, jOOQ's typed
     `Row1` to `Row22`, is not the store-fed emitter's, which writes a `RowN`; the cap's refusal goes.
-* **An `@outbox` payload key takes a node id whole, and decodes a key column named past it** `open`,
-  A's, a regression first (sikt-no/graphitron#580). A path that goes past the slot it opens onto a
-  `@nodeId` projects one key column, and the key column rule and `ARGMAPPING_KEY_COLUMN_UNRESOLVED`
-  apply it whatever the pair fills. So since 10.0.0-RC49 an `@outbox(argMapping: "booking:
-  input.bookingId")` over a composite-key node fails the build, where RC48 put the encoded id in the
-  payload, and a list of them an array. The landing states what it hands over, the whole id or one
-  key column, decided once in `graphitron_argmapping_landing_rule`: at a call parameter as today, at
-  a payload key the id whole unless a key column is named. Both key column rules and
-  `graphitron_outbox_key_rule` read that. Then a payload key naming a key column,
-  `input.bookingId.customer_id`, gets the column's decoded value, a list of ids an array of them,
-  where today the emitter walks into the id's text and drops the key (Alf, 2026-11-13: decode, not
-  refuse). `$result.x.id` and `$result.xs.id`, refused before RC49 too, are not this node's.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
@@ -2758,6 +2746,16 @@ The entry is written at Done, the board and the changelog holding an id one plac
 are what it owes a consumer reading it, each with the subject of the commit it landed in, a hash
 not surviving the harvest, so they are recorded here as they land rather than found afterwards.
 
+* **Fixed: an `@outbox` payload key takes a node id as the API's clients see it** ("an @outbox
+  payload key takes a node id whole and decodes a key column named past it",
+  sikt-no/graphitron#580). 10.0.0-RC49 applied the key column projection a call parameter takes to
+  `@outbox` too: `@outbox(argMapping: "booking: input.bookingId")` over a `@nodeId` input field
+  failed the build with `ARGMAPPING_KEY_COLUMN_UNRESOLVED` where the node's key has several columns.
+  RC48 put the encoded id in the payload, and it does again: the id as the client sent it, whatever
+  its key, through an input object or not, and a list of them an array. A key column named past the
+  id, `input.bookingId.customer_id`, is decoded out of it, or out of each id of a list, where it was
+  left out of the payload without a word. Call parameters are unchanged.
+
 * **Breaking: a same-table `@table` field narrowed by an argument needs its path** ("inference is
   written into the store, and a need nothing covers is a defect"). A field returning a `@table` type
   on its parent's own table, narrowed by an argument and with no `@reference`, was read uncorrelated,
@@ -2890,6 +2888,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**An `@outbox` payload key takes a node id whole, and decodes a key column named past it**
+(2026-11-13). What a node id at a landing hands over is `graphitron_argmapping_landing.receives`:
+the key column rule and `ARGMAPPING_KEY_COLUMN_UNRESOLVED` read it rather than whether the path
+descends, so neither judges a payload key's id; `descends` states the path's shape alone.
+`graphitron_outbox_key` states the key column an argument key decodes and its node type.
 
 **The editor and the MCP read the resolved node** (2026-11-13). The MCP's `node` reports the
 resolved type id and key columns with the tier that answered each (`typeIdOrigin`,
