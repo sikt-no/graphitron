@@ -2400,3 +2400,17 @@ CREATE TABLE outbox_debezium (
     type          varchar(255) NOT NULL,
     payload       jsonb        NOT NULL
 );
+
+-- A region and the period it was valid, as a register's county is: valid_period is a daterange,
+-- which jOOQ's PostgreSQL extensions generate as LocalDateRange. A nesting field named like it reads
+-- the parent's row, its fields computed from the range by @externalField methods, never read off
+-- the range's Java value.
+CREATE TABLE region (
+    region_id    integer   NOT NULL PRIMARY KEY,
+    name         text      NOT NULL,
+    valid_period daterange NOT NULL
+);
+
+INSERT INTO region (region_id, name, valid_period) VALUES
+    (1, 'Northern', daterange('2020-01-01', '2024-01-01')),
+    (2, 'Western',  daterange('2024-01-01', '2100-01-01'));

@@ -180,6 +180,13 @@
                 <artifactId>jooq</artifactId>
                 <version>${version.org.jooq}</version>
             </dependency>
+            <!-- PostgreSQL types jOOQ's core does not map, a range among them, as consumers'
+                 catalogs generate them (a daterange as LocalDateRange). -->
+            <dependency>
+                <groupId>org.jooq</groupId>
+                <artifactId>jooq-postgres-extensions</artifactId>
+                <version>${version.org.jooq}</version>
+            </dependency>
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>

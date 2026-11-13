@@ -38,6 +38,12 @@
             <groupId>org.jooq</groupId>
             <artifactId>jooq</artifactId>
         </dependency>
+        <!-- The generated tables type a daterange column as LocalDateRange, which this module
+             carries at compile time and at runtime, as a consumer's catalog does. -->
+        <dependency>
+            <groupId>org.jooq</groupId>
+            <artifactId>jooq-postgres-extensions</artifactId>
+        </dependency>
         <!-- R413: the generated ConverterOrg / ConverterCampus tables reference
              OrgCodeStringConverter (registered via <forcedTypes> below) at compile time and at
              runtime, so the fixtures-codegen module rides the regular classpath too — not just
@@ -220,6 +226,13 @@
                         <groupId>no.sikt</groupId>
                         <artifactId>graphitron-fixtures-codegen</artifactId>
                         <version>${project.version}</version>
+                    </dependency>
+                    <!-- On the generator's classpath, so a daterange column generates as
+                         LocalDateRange rather than an unknown Object. -->
+                    <dependency>
+                        <groupId>org.jooq</groupId>
+                        <artifactId>jooq-postgres-extensions</artifactId>
+                        <version>${version.org.jooq}</version>
                     </dependency>
                     <dependency>
                         <groupId>org.postgresql</groupId>

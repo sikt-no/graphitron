@@ -1,0 +1,48 @@
+"A node type's field returning a type with no @table is a nesting field, read off the node's row, even where a column of the node's table shares its name and its Java type is no JDK type. Region.validPeriod shares its name with region.valid_period, a daterange jOOQ generates as LocalDateRange; the field stays a nesting field and its fields compute the period's bounds from the row, as a register's county does. Its projection unit is not emitted from the store yet: the nesting field is nullable, whose null contract is not stated, and its fields are @externalField expressions no binding states at the occurrence."
+
+interface Node { id: ID! }
+
+scalar Date @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
+
+type Region implements Node @node(keyColumns: ["region_id"]) @table(name: "region") {
+  id: ID!
+  name: String
+  "Named like the valid_period column: still a nesting field."
+  validPeriod: RegionPeriod
+}
+
+"Read off the region row it is nested under."
+type RegionPeriod {
+  "The period's first day, computed from the parent's row."
+  validFrom: Date
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.RegionExtensions"})
+  "The period's last day, computed from the parent's row."
+  validTo: Date
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.RegionExtensions"})
+}
+
+type Query { regions: [Region!]! }
+
+# No class backs the nesting type: the node's record class is not read through accessors, so its
+# valid_period getter grounds nothing.
+extend schema @assertEmpty(relation: "graphitron_type_backing", where: "type_name = 'RegionPeriod'")
+
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'RegionPeriod'", rows: """
+  type_name,    shape
+  RegionPeriod, ROW
+  """)
+
+extend schema @expectEquals(relation: "graphitron_reader", where: "type_name = 'RegionPeriod' OR field_name = 'validPeriod'", rows: """
+  type_name,    field_name,  reads
+  Region,       validPeriod, NESTED
+  RegionPeriod, validFrom,   EXPRESSION
+  RegionPeriod, validTo,     EXPRESSION
+  """)
+
+# The nesting field's fields read the region row they are nested under.
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table", where: "coordinate LIKE 'Region.validPeriod%'", rows: """
+  coordinate,                   table_name
+  Region.validPeriod,           region
+  Region.validPeriod.validFrom, region
+  Region.validPeriod.validTo,   region
+  """)
