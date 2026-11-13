@@ -68,16 +68,28 @@ restated here; the history and `## Retired vocabulary` keep it.
 
 **Root: an expensive derived read is a modelling defect, so fix the shape rather than the cost.**
 
-**Destination: a `@service` field is generated from the store alone.** Its fetcher is assembled by
-emitters that each own a jOOQ query over the store, `multiset` for what nests, so neither
-`ServiceCatalog` nor the walk resolves anything for it. Additive, flip, subtract; the critical path,
-by node title:
+**Destination: a table-bound read is generated from the store alone, and so is a `@service`
+field.** A root fetcher's query, its condition, order and page, and every `<Type>.$project`
+projection unit below it are assembled by emitters that each own a jOOQ query over the store,
+`multiset` for what nests, so neither the walk nor `ServiceCatalog` resolves anything for them. The
+`$project` flip goes first (Alf, 2026-11-13), in one pass with the filter conditions and the root
+fetchers that call them, `@externalField` included; it is also what makes utdanningsregisteret
+generate again. Additive, flip, subtract; the critical path, by node title:
 
 ```text
-The walk's service path is gone
-└── The service fields are emitted from the store
-    └── A producer's fetcher parts are emitted from the store
-        └── What an occurrence takes is a binding   (the fills only)
+The walk's read path is gone
+├── The projection units are rendered from the store
+│   ├── A projection unit is emitted from the store, censused
+│   ├── The filter conditions are emitted from the store
+│   ├── The root query fetchers are emitted from the store
+│   ├── A child producer states the parent columns it is handed
+│   ├── An inline list's ordering is resolved at its occurrence
+│   ├── A single child's null contract is stated
+│   │   └── An `@externalField` binds an expression at its occurrence
+│   └── An inline list states how it is narrowed
+└── The walk's service path is gone
+    └── The service fields are emitted from the store
+        └── A producer's fetcher parts are emitted from the store
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -124,6 +136,10 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The vocabulary listed twice, by the editor from `graphitron_directive` and by MCP from
   `graphql_directive`. Ends at "The MCP lists the composed vocabulary".
 * `SeededStore` and capture, both building test stores. Ends at "`SeededStore` is deleted".
+* `ProjectionCommands` and `ProjectionUnitRenderer` beside the store-fed projection emitter, and the
+  walk's condition glue beside `ConditionEmitter`, which nothing calls yet. Ends at "The projection
+  units are rendered from the store", which moves the units, the conditions and the root fetchers
+  in one pass.
 
 ### Every rule has an owner, and the register has no subject `open`
 
@@ -643,7 +659,9 @@ static method needs no holder.
   call, the re-read and the polymorphic re-read each have an emitter reading the store; what remains
   is routine writes, which take neither the re-read, today an unordered `IN` (a bug), nor the frame,
   whose error channel and tenancy their caller still hands `RoutineWriteEmitter` as values.
-* **The projection units are rendered from the store** `blocked`, on the facts below.
+* **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store" and "The walk's service path is gone". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
+* **The projection units are rendered from the store** `blocked`, on the facts below. The flip goes
+  first, in one pass with the filter conditions and the root fetchers (Alf, 2026-11-13).
   The store-fed lift selects through `<Type>.$project`, the projection unit `ProjectionUnitRenderer`
   renders from `ProjectionCommand` rows, which `ProjectionCommands` derives from the classified
   model; so a producer whose body the store emits still projects through units the walk decides,
@@ -656,7 +674,7 @@ static method needs no holder.
   of the selection, taking the shared-alias field names where it is merged into a discriminated
   select, so the four call sites that restrict before calling it today (`SelectMethodBody`,
   `MultiTablePolymorphicEmitter`, `DiscriminatedTableFragments` and the store-fed `LiftEmitter`)
-  stop doing so; after the `@service` flip, which keeps the call-site restriction.
+  stop doing so.
   One unit per table-bound type, its arms the occurrences of the chain the type's fields start: a
   nesting field's arms are its chain's deeper occurrences, inline in the anchor's unit, so
   `NestedUnit`, `CallWrap.Splice` and the `<Anchor><Nesting>` classes go. A result-key alias is the
@@ -667,6 +685,16 @@ static method needs no holder.
   on a table of its own, a field the interface declares off the shared table, a participant's field
   nesting an object and a cross-table field more than one step away, and it restricts each participant
   with no shared-alias names; those cases stay with the walk's emitters until the units are designed.
+  Dropping the threaded `rkPath` changes the result-key aliases the walk's field readers read, so the
+  unit keeps today's alias formula or those readers flip in the same pass.
+  * **A projection unit is emitted from the store, censused** `open`, F's. A `ProjectionQuery` and a
+    `ProjectionEmitter`, additive and uncalled, render a type's unit from `graphitron_occurrence_column`,
+    `graphitron_occurrence_node_id` and the join path's steps, with a census beside the condition
+    census whose reasons are the facts below not yet landed, each closing as its fact lands. First
+    check `code-generation-triggers.adoc`'s claim that `Film.language`, `Film.actors` and
+    `Film.inventory` have no `TABLE` binding, which `graphitron_occurrence_binding_table_rule` seems to
+    cover. Its pins include utdanningsregisteret's shape: a node type whose nesting field is named like
+    a range column, with `@externalField` children (beside `nesting-field-named-like-a-column`).
   * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
@@ -716,9 +744,11 @@ static method needs no holder.
   * **An inline list states how it is narrowed** `open`. Its `@lookupKey` arguments in key order,
     which today claim `LOOKUP` only at a root or a split, and whether `first` limits it, which only a
     connection carrier says today.
-  * **A `@pivot` is resolved against the catalog** `open`. The attribute table, its on and value
+  * **A `@pivot` is resolved against the catalog** `open`, off the critical path. The attribute table, its on and value
     columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
-    written and the slots bind no column.
+    written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
+    so the flip states it as a deferral, a stored defect of basis `UNSUPPORTED`, until this lands
+    (Alf, 2026-11-13).
   * **A child producer states the parent columns it is handed** `open`. Beside the key
     `graphitron_occurrence_producer_lift` fills it with, the columns of the parent occurrence's table its
     loader keys on, so the parent's unit projects them by a join from the producer rather than by
@@ -741,7 +771,7 @@ static method needs no holder.
     if that proves hard. Additive and uncalled until the flip, which moves every caller at once, the
     root, split and batched fetchers, the facets and `$project`'s multisets, so the old glue goes in
     it; pinned by tests that compile the emitted code and run it against the database, and by
-    `ConditionEmissionCensusTest`, whose reasons are what is left (Alf, 2026-11-08).
+    `EmissionCensusTest.theCensusOfTheExampleSchemasConditions`, whose reasons are what is left (Alf, 2026-11-08).
     Every reason closes before the flip, which keeps no fallback to the classified model per
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
@@ -758,8 +788,8 @@ static method needs no holder.
     shape row answers. `NODE_ID_PARTICIPANT` waits on the not-this-participant decode policy.
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
-    and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move
-    in one pass; the hard part is `$project`, the root fetchers following it (Alf, 2026-11-08).
+    and facets, is read off its occurrence, and flips in the same pass as `$project` and the
+    conditions, so every condition caller moves at once (Alf, 2026-11-08, 2026-11-13).
 * **What a filter means does not depend on where it is written** `open`, off the critical path.
   Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
   `falseCondition()`, the lenient node-id decode drops a malformed id with one of another type, a
