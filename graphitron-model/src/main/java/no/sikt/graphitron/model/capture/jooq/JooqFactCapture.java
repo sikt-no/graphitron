@@ -78,7 +78,8 @@ public final class JooqFactCapture {
      * Makes the {@code sql_} rows of the catalog generated into {@code jooqPackage} be what it now
      * says, then the catalog's own closure over them, the keys a name alone matches; one
      * transaction, its progress recorded by {@link Progress}. The catalog is read through
-     * {@code loader}, jOOQ building its tables in static initialisers. No package is no catalog.
+     * {@code loader}, jOOQ building its tables in static initialisers. No package is no catalog,
+     * and the graph drops whatever catalog sources it claimed before.
      */
     public static void capture(DSLContext dsl, String graphName, String jooqPackage,
                                ClassLoader loader, LocalDateTime touchedAt) {
@@ -99,10 +100,8 @@ public final class JooqFactCapture {
 
     private static void gather(DSLContext dsl, String graphName, JooqCatalog jooq,
                                LocalDateTime touchedAt) {
-        if (jooq == null) {
-            return;
-        }
-        List<TableAt> tables = tablesOf(jooq);
+        List<TableAt> tables = jooq == null ? List.of() : tablesOf(jooq);
+        dropMembership(dsl, graphName, sourceNames(tables));
         if (tables.isEmpty()) {
             return;
         }
@@ -937,6 +936,31 @@ public final class JooqFactCapture {
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME)
                 .values(markers)
                 .onDuplicateKeyIgnore());
+    }
+
+    /**
+     * The catalog sources this graph has stopped claiming: a package no longer configured, one the
+     * catalog no longer has a table under, or every one of them where no package is configured.
+     *
+     * <p>Scoped to the kind this gatherer owns, the schema files and classpath entries having
+     * memberships in the same relation that a reading of the catalog has nothing to say about.
+     * Only the claim goes. The source and its {@code sql_} rows are what the store holds for that
+     * package whoever reads it, so they stay until the registry drops the source; this graph just
+     * stops seeing them.
+     */
+    private static void dropMembership(DSLContext dsl, String graphName, Set<String> claimed) {
+        if (graphName == null) {
+            return;
+        }
+        var m = STORE_GRAPH_SOURCE;
+        var s = STORE_SOURCE;
+        var scope = m.GRAPH_NAME.eq(graphName)
+            .and(m.SOURCE_NAME.in(dsl.select(s.SOURCE_NAME).from(s)
+                .where(s.SOURCE_KIND.eq(JOOQ_SCHEMA))));
+        if (!claimed.isEmpty()) {
+            scope = scope.and(m.SOURCE_NAME.notIn(claimed));
+        }
+        dsl.deleteFrom(m).where(scope).execute();
     }
 
     /**

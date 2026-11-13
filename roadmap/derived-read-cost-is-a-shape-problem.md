@@ -195,12 +195,10 @@ census it replaced is gone.
   * **A catalog source is read alone** `open`. The reading is sound: every capture reads each
     catalog whole with no store-wide skip, and nothing in it depends on the order sources are read
     in. What is not:
-    * **A graph's catalog claims are dropped when it stops claiming them** `open`. Membership is
-      insert-or-ignore (`JooqFactCapture` around 929-939, and the early returns at 102-108), so a
-      graph that changes or drops `jooqPackage` keeps reading the old sources; drop the memberships
-      a pass did not claim, as `GraphQLSourceCapture.dropMembership` does.
-    * **A catalog source is the entry its classes were read from, not its package name** `blocked`,
-      on the two siblings beside it. The source is keyed by the jOOQ package and filled through the
+    * **A graph's catalog claims are dropped when it stops claiming them** `done`. Each pass drops
+      the graph's `JOOQ_SCHEMA` memberships it did not claim, all of them when it names no package;
+      an unclaimed source keeps its rows, as a schema file's does.
+    * **A catalog source is the entry its classes were read from, not its package name** `open`. The source is keyed by the jOOQ package and filled through the
       reading graph's loader, so two graphs loading different builds of one package (a stale jar, a
       release against a reactor build) share one source, and the last capture's sweep deletes the
       other's rows. Keyed by the entry `code_graph_class` names for the package's classes, plus the
@@ -208,9 +206,9 @@ census it replaced is gone.
       code gatherer upstream, never the loader. Whether a catalog's facts also depend on what its
       classes resolve to on the graph's classpath (the jOOQ runtime, converters, bindings) is open
       for Alf and Filip.
-    * **Every read of `sql_table` by record class goes through the graph's sources** `open`.
-      `graphitron_occurrence_depth_entry_defect_rule` and `graphitron_entry_defect_rule` match a
-      record class against any graph's catalog.
+    * **Every read of `sql_table` by record class goes through the graph's sources** `done`. The
+      key-row and result-shape defect arms and the emitters' `BuildQuery` and `NodeIdDecodeQuery`
+      catalog reads join the graph's sources; every other `sql_table` read already did.
     * `sql_table_record_supertype` is never swept and is filled through the reading graph's
       classpath, so it holds the union of every reader's: ends with "A class's supertypes are one
       code fact". `NameMatchedKeys` matches functions against every catalog in the store: ends with

@@ -15402,6 +15402,8 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                  WHERE s.class_name = rc.class_name AND s.delivery = 'DIRECT' AND s.element_class IN (
                          SELECT kt.record_class_fqn FROM code_method_parameter mp
                            JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
+                           JOIN store_graph_source kg
+                             ON kg.graph_name = p.graph_name AND kg.source_name = kt.source_name
                           WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                             AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
                             AND mp.delivery = 'MANY')) AS found
@@ -15418,12 +15420,16 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
            AND EXISTS (SELECT 1 FROM code_read_slot known WHERE known.class_name = rc.class_name)
            -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a fill's.
            AND EXISTS (SELECT 1 FROM code_method_parameter mp JOIN sql_table kt ON kt.record_class_fqn = mp.element_class
+                          JOIN store_graph_source kg
+                            ON kg.graph_name = p.graph_name AND kg.source_name = kt.source_name
                         WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                           AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
                           AND mp.delivery = 'MANY')
            -- The record's own table is the key: read straight off it, so no member is wanted.
            AND NOT EXISTS (SELECT 1 FROM sql_table rt JOIN code_method_parameter mp
                              ON mp.element_class = rt.record_class_fqn AND mp.delivery = 'MANY'
+                             JOIN store_graph_source rg
+                               ON rg.graph_name = p.graph_name AND rg.source_name = rt.source_name
                             WHERE rt.record_class_fqn = rc.class_name
                               AND mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                               AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor)) c
@@ -16621,6 +16627,8 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                      WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
             AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
                               JOIN sql_table st ON st.record_class_fqn = rc.class_name
+                              JOIN store_graph_source sg
+                                ON sg.graph_name = rc.graph_name AND sg.source_name = st.source_name
                              WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
 UNION ALL
 -- A field whose union or interface lists an @error type, or whose type is one, but which is no errors

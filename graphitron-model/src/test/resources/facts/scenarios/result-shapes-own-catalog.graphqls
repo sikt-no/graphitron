@@ -1,0 +1,33 @@
+# A type a result reaches as a row and as an object is refused only where the object is a table's
+# own record, and a class is a table's record only in the catalog the graph reads. RecordTexts is
+# nested in solo_parent's row and handed back by a service as film's record, which is a table's
+# record in the fixture catalog and in no table of this one: here it is a class graphitron reads by
+# accessor, so the mix is the one it serves. Its twin under the fixture catalog is fetcher-readers'
+# RecordTexts, which is refused.
+
+extend schema @withConfiguration(jooqPackage: "no.sikt.graphitron.rewrite.singleschemafixture")
+
+type Parent @table(name: "solo_parent") {
+  name: String
+  "Nested in the parent's row."
+  texts: RecordTexts
+}
+
+type RecordTexts { name: String }
+
+type Query {
+  parents: [Parent!]!
+  recordTexts(id: Int): RecordTexts
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+}
+
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'RecordTexts'", rows: """
+  type_name,   shape
+  RecordTexts, OBJECT
+  RecordTexts, ROW
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  coordinate,  code
+  RecordTexts, RESULT_SHAPES_CONFLICT
+  """)

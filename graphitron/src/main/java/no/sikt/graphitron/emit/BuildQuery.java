@@ -521,6 +521,7 @@ public final class BuildQuery {
                     sc.TABLES_CLASS_FQN, t.JOOQ_NAME)
                 .from(t)
                 .join(sc).on(sc.SOURCE_NAME.eq(t.SOURCE_NAME), sc.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
+                .where(store.reads(t.SOURCE_NAME))
                 .forEach(r -> tables.putIfAbsent(r.value1(),
                     new Table(r.value2(), r.value3(), r.value4(), r.value5(), r.value6())));
 
