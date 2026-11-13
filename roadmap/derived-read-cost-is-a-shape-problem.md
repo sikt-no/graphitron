@@ -83,6 +83,7 @@ The walk's read path is gone
 │   ├── The filter conditions are emitted from the store
 │   │   ├── An argument binds the call parameter it supplies
 │   │   └── A routine and a write state what they bind as call parameters
+│   │       └── A defect is keyed by the stage that raised it
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child producer states the parent columns it is handed
 │   ├── A child read inline is emitted from the store
@@ -824,10 +825,14 @@ static method needs no holder.
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
       then goes, after the flips.
-    * **A routine and a write state what they bind as call parameters** `open`. A write's and a root
+    * **A routine and a write state what they bind as call parameters** `blocked`, on "A defect is keyed by the stage that raised it". A write's and a root
       `@routine`'s fills are call parameters, and a child routine's step parameter names the
       argument occurrence it reads, so `ConditionQuery` excludes a term either binds and `CONSUMED`
       goes, a name shared with a column being no filter (Alf, 2026-11-13); a root `SELECT` or `LOOKUP`'s own call parameters wait for "The root query fetchers are emitted from the store".
+      * **A defect is keyed by the stage that raised it** `open`. `graphitron_entry_defect`'s key and
+        every detail relation's take the raising stage beside the position and the code, each stage
+        sweeps the rows it raised and `graphitron_defect_type.owner_stage` goes, nobody owning a code
+        (Alf, 2026-11-13); no code changes stage here, so nothing an author sees moves.
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence, and flips in the same pass as `$project` and the
@@ -1143,7 +1148,14 @@ pass and no stratum that clears and recomputes.
       `$source` column and `@field` or `@condition` on a bound leaf, and its UNSUPPORTED deferrals, a
       path through a list, a coercing extraction and `$source` under a record-backed parent, each
       become a stored defect read off the routine's parameter bindings before the walk's routine
-      path goes; who owns the unbound parameter at a root is Alf's.
+      path goes; a parameter nothing binds is `PARAMETER_UNFILLED`, raised where the root call's fills
+      are.
+    * **An unbound parameter is one code, raised where its fills are** `blocked`, on "A routine and a write state what they bind as call parameters".
+      `PARAMETER_UNFILLED` is raised by the first stage holding each parameter list's fills, a service's
+      and a root routine's at `occurrence-producers`, a child routine's step at `occurrence-depths` and
+      a condition's at `occurrence-bindings`, rather than at `occurrence-depth-defects`, and
+      `ROUTINE_PARAMETER_UNBOUND` retires into it, a breaking change to the codes an editor filters by
+      (Alf, 2026-11-13).
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
       The walk's single-channel rules for the type a write, a routine or a service returns are no
       rule of the model: each field under the result is an occurrence with its own lift off its parent, so two
