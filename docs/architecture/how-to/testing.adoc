@@ -31,6 +31,10 @@ Pipeline beats unit: per-variant structural tests are bookkeeping; the primary s
 Pipeline also beats compilation and execution where the behaviour can be asserted on the store's rows, since pipeline runs without jOOQ codegen or Postgres.
 Execution beats compilation only when SQL behaviour or row content is the contract.
 
+*Unit and integration (Alf, 2026-11-12).* Graphitron generates SQL, so a unit test of generated code may use the database: a test that calls a generated method directly is a unit test of that method, database or not.
+A test that reaches generated code through a graphql-java operation is an integration test.
+The tier annotations below say what a test needs to run, `@ExecutionTier` that it needs PostgreSQL, not which of the two it is; whether they move to follow this line is not yet decided.
+
 _Tier is determined by what's asserted, not by what module the file lives in._
 `graphitron-sakila-example` hosts tests at every tier; its module dependency on post-generator artifacts is the reason those tests live there, not a tier signal.
 
