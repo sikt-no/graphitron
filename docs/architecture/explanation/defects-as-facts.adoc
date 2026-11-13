@@ -77,8 +77,10 @@ run, the gatherer sweeps the codes its stages own once, deleting the rows of
 those codes the reading did not mark. Another gatherer's rows are never touched.
 
 The split is under way. `graphitron_entry_defect_rule` takes no new arm: a new code goes to the
-stage whose facts it judges, and an existing one leaves with its family. `occurrence-builds`,
-`occurrence-depth-defects`, `outbox` and `entity-key-alternatives` write their own; the
+stage whose facts it judges, and an existing one leaves with its family. `occurrence-bindings`,
+`occurrence-builds`, `occurrence-depth-defects`, `outbox` and `entity-key-alternatives` write their
+own, `occurrence-bindings` the `NODE_ID_TARGET_*` family of a node id no binding could be written
+for; the
 `entry-defects` stage, `EntryDefects` itself as the graphitron anchor phase's last step, owns every
 graphitron code no earlier stage writes yet, from `graphitron_entry_defect_rule`. A stage takes its
 codes by writing them and moving their `owner_stage`, and the members a per-member defect names go

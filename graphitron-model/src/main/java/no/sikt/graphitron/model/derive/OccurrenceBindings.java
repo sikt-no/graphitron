@@ -12,7 +12,8 @@ import java.time.LocalDateTime;
  *
  * <p>Nothing in the depths reads these, so they are written once rather than a depth at a time.
  * Each step reads the ones before it: the columns skip what a node id binds, a table binding is
- * refused where a column or node id binds, and a condition is applied to the tables bound.
+ * refused where a column or node id binds, and a condition is applied to the tables bound. Last,
+ * the defects of a node id no binding could be written for, from the stage's own rule.
  */
 public final class OccurrenceBindings {
 
@@ -34,5 +35,6 @@ public final class OccurrenceBindings {
         OccurrenceColumns.sweep(dsl, graph, touchedAt);
         OccurrenceVouchers.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS);
     }
 }

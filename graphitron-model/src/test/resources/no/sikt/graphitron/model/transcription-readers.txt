@@ -52,9 +52,9 @@ graphitron_connection_carrier_rule graphql_field
 # fields is a scalar read off a column, so the expanded population would add rows they can only skip.
 graphitron_occurrence_depth_entry_defect_rule graphql_field
 
-# graphitron_entry_defect_rule's id defects, an id: ID written with neither @nodeId nor @field where
-# its table is several nodes' or has a column of that name, judge what the author wrote and report
-# at the field's own line, which a minted field does not have.
+# graphitron_entry_defect_rule's NODE_ID_SHADOWS_COLUMN, an id: ID written with neither @nodeId nor
+# @field over a table with a column of that name, judges what the author wrote and reports at the
+# field's own line, which a minted field does not have.
 graphitron_entry_defect_rule graphql_field
 
 # Adjudicated and kept: the tags the configuration applies.

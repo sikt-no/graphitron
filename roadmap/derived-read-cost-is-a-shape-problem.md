@@ -1237,11 +1237,6 @@ before `generate` does.
 * **Each rule the walk enforces is a located defect** `open`. Every walk rejection becomes a code
   written by the stage whose facts it judges, and the walk's hand-built validation test for it
   becomes a fact document or goes with its rule.
-  * **The `NODE_ID_TARGET_*` family is owned by the occurrence build** `open`. Its arms read the
-    absence of a `graphitron_occurrence_node_id` binding, which the occurrence build writes, but
-    stay in `graphitron_entry_defect_rule`; the input field arm reads `graphql_field` and
-    `graphql_field_element`, which the expanded-population reader gate refuses in a new view, so it
-    moves once that arm reads the `graphitron_field` anchors.
   * **A DELETE payload's `ID` carrier binds against the written table** `open`. The carrier's
     `ID` element under a write takes the written table's one node as a write's bare `ID` return
     does, so `NODE_ID_TARGET_UNRESOLVED` and `NODE_ID_TARGET_AMBIGUOUS` state its refusals and the
