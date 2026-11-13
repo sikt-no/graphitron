@@ -278,6 +278,46 @@ class ResultKeyScopeExecutionTest {
                 .contains("Result key 'k' selects two different fields"));
     }
 
+    // ===== The same fold, lifted from a @service's records =====
+
+    @Test
+    void serviceFold_participantsSplicingTheSameLeafNameReadTheirOwn() {
+        var items = list(execute("""
+            { fanItemsByService(ids: [1, 2, 3, 4]) { label
+                ... on FanAlpha { alphaPlacement { target { targetLabel } } }
+                ... on FanBeta { betaPlacement { target { targetLabel } } } } }
+            """), "fanItemsByService");
+        assertThat(items).extracting(i -> i.get("label"), i -> map(map(i,
+                i.containsKey("alphaPlacement") ? "alphaPlacement" : "betaPlacement"), "target").get("targetLabel"))
+            .containsExactly(
+                tuple("Alpha one", "Alpha target"), tuple("Beta one", "Beta target"),
+                tuple("Alpha two", "Alpha target"), tuple("Beta two", "Beta target"));
+    }
+
+    @Test
+    void serviceFold_eachParticipantReadsItsOwnPathUnderOneName() {
+        // Both participants declare 'target', each over its own FK out of fan_base.
+        var items = list(execute("""
+            { fanItemsByService(ids: [1, 2]) { __typename
+                ... on FanAlpha { target { targetLabel } }
+                ... on FanBeta { target { targetLabel } } } }
+            """), "fanItemsByService");
+        assertThat(items).extracting(i -> i.get("__typename"), i -> map(i, "target").get("targetLabel"))
+            .containsExactly(tuple("FanAlpha", "Alpha target"), tuple("FanBeta", "Beta target"));
+    }
+
+    @Test
+    void serviceFold_oneKeyForTwoParticipantsNestingFields_staysRejected() {
+        var result = executeRaw("""
+            { fanItemsByService(ids: [1, 2]) {
+                ... on FanAlpha { k: alphaPlacement { target { targetLabel } } }
+                ... on FanBeta { k: betaPlacement { target { targetLabel } } } } }
+            """);
+        assertThat(result.getErrors()).isNotEmpty()
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .contains("Result key 'k' selects two different fields"));
+    }
+
     // ===== helpers =====
 
     /**

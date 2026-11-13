@@ -77,7 +77,10 @@ class EmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(134);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(135);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED))
+            .as("a single-table discriminated row whose participants nest objects and read their own paths")
+            .contains("Query.fanItemsByService");
         assertThat(byVerdict.get(ServiceEmission.EMITTED))
             .as("a node id decoded through a converter-backed key column")
             .contains("Query.converterIdChangeValue");

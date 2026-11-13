@@ -898,7 +898,23 @@ static method needs no holder.
   Both go with the last classified service, deleted in the flip's commit. Before the flip, every
   refusal the store-fed emitters raise in Java becomes a stored defect, one rule per code at the
   stage whose facts it reads; among them `BuildQuery.place`'s refusal of an id of several node types
-  in an input built into a jOOQ record, a slot the store states no decode shape for.
+  in an input built into a jOOQ record, a slot the store states no decode shape for. Three are
+  `DiscriminatedQuery`'s, at the participant field's written position under the discriminated
+  `@service`, each with a diagnostics-glossary entry: a scalar read more than one step off the shared
+  table shares F's `SCALAR_PATH` code, owned where that rule is; an object with no table of its own
+  read down a path rather than off the row, and a participant on a table of its own, are codes of
+  basis `UNSUPPORTED`, owned by the stage writing `graphitron_occurrence_participant`. That
+  commit deletes `DiscriminatedQuery.Row.refusal` and the `IllegalArgumentException` in
+  `LiftEmitter.discriminatedLift`. opptak's `settMeldingLest`/`settMeldingUlest` lift through their
+  participants' projection units, where the nullable `avsender` is a nesting field whose null contract
+  "A single child's null contract is stated" decides: the flip leaves them emitted only once that node
+  lands, or they go back to refused.
+  The fold's shared-alias set (`DiscriminatedQuery.Row.sharedAliasFieldNames` and the selective
+  `restrictTo` in `LiftEmitter.discriminatedLift`) exists because the walk's projection units alias a
+  nesting field's or an interface-declared field's terms with no owner. F's store-fed units stamp
+  each alias with the occurrence's declaring type (Alf, 2026-11-13), so once the lift calls those
+  units the set and the selective `restrictTo` are deleted and each participant restricts with
+  `Set.of()`.
   * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
     At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
     `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and

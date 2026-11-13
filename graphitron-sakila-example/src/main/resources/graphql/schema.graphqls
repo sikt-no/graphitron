@@ -1070,6 +1070,12 @@ type Query {
     # and the single fetch must return that row rather than raising TooManyRowsException. Both
     # would fail if the value were read through a join into the row-producing statement.
     allFanItems: [FanItem!]!
+    # The same rows answered by a @service: each lifted and projected as the participant its
+    # fan_kind names, through the fold the store-emitted fetcher builds.
+    fanItemsByService(ids: [Int!]!): [FanItem!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FanItemService",
+        method: "byIds"
+    })
     fanItem(fanBaseId: Int! @field(name: "fan_base_id")): FanItem
 
     # An @externalField may share its name with a column on its parent table: the computed term is

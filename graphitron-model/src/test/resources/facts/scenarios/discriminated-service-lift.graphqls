@@ -1,0 +1,42 @@
+"A @service answering rows of a single-table discriminated interface's table, lifted as whichever participant each row's column names. Each participant nests an object off the row, both declare a same-named child over different paths, and the interface declares a child of its own: the lift's fold is read off these facts."
+
+interface FanItem @table(name: "fan_base") @discriminate(on: "fan_kind") {
+  fanBaseId: Int! @field(name: "fan_base_id")
+  details: [FanDetail!]! @reference(path: [{key: "fan_detail_fan_base_id_fkey"}])
+}
+
+type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: "ALPHA") {
+  fanBaseId: Int! @field(name: "fan_base_id")
+  details: [FanDetail!]! @reference(path: [{key: "fan_detail_fan_base_id_fkey"}])
+  "A scalar one step off the shared table."
+  note: String @reference(path: [{key: "fan_detail_fan_base_id_fkey"}]) @field(name: "note")
+  target: FanTarget @reference(path: [{key: "fan_base_alpha_target_id_fkey"}])
+  alphaPlacement: FanAlphaPlacement
+}
+
+type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "BETA") {
+  fanBaseId: Int! @field(name: "fan_base_id")
+  details: [FanDetail!]! @reference(path: [{key: "fan_detail_fan_base_id_fkey"}])
+  target: FanTarget @reference(path: [{key: "fan_base_beta_target_id_fkey"}])
+  betaPlacement: FanBetaPlacement
+}
+
+type FanAlphaPlacement { target: FanTarget @reference(path: [{key: "fan_base_alpha_target_id_fkey"}]) }
+
+type FanBetaPlacement { target: FanTarget @reference(path: [{key: "fan_base_beta_target_id_fkey"}]) }
+
+type FanTarget @table(name: "fan_target") { targetLabel: String! @field(name: "target_label") }
+
+type FanDetail @table(name: "fan_detail") { note: String! @field(name: "note") }
+
+type Query {
+  fanItemsByService(ids: [Int!]!): [FanItem!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FanItemService", method: "byIds"})
+}
+
+# The rows the service hands back may be either participant, told apart by fan_kind.
+extend schema @expectEquals(relation: "graphitron_occurrence_participant", rows: """
+  coordinate,              participant_type, recognized_by, table_name, base_name, discriminator_column, discriminator_value
+  Query.fanItemsByService, FanAlpha,         DISCRIMINATOR, fan_base,   fan_base,  fan_kind,             ALPHA
+  Query.fanItemsByService, FanBeta,          DISCRIMINATOR, fan_base,   fan_base,  fan_kind,             BETA
+  """)

@@ -13,6 +13,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -60,13 +61,20 @@ public final class DiscriminatedQuery {
 
     /**
      * One occurrence the column tells apart: its coordinate, the column by its SQL name, the
-     * participants in name order, or why it is not lifted here.
+     * participants in name order, the names of the fields whose terms land under an alias no
+     * participant qualifies, or why it is not lifted here.
+     *
+     * <p>Every participant's projection lands in one select list, where an aliased field compares
+     * equal on its alias alone, so each participant's selection keeps every occurrence of those
+     * names: a nesting field, whose spliced fields write unqualified aliases, and a field the
+     * interface declares that is read by alias rather than by column identity.
      */
     public record Row(String coordinate, String discriminatorColumn, List<Participant> participants,
-                      Optional<String> refusal) {
+                      List<String> sharedAliasFieldNames, Optional<String> refusal) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             participants = List.copyOf(participants);
+            sharedAliasFieldNames = List.copyOf(sharedAliasFieldNames);
             Objects.requireNonNull(refusal, "refusal");
         }
     }
@@ -95,25 +103,30 @@ public final class DiscriminatedQuery {
         // the polymorphic lift's.
         byCoordinate.values().removeIf(rows -> rows.stream().noneMatch(s -> "DISCRIMINATOR".equals(s.recognizedBy())));
         var fields = fields(store);
+        // The participants' fields that are nesting fields, read off their parent's row.
+        var ns = GRAPHITRON_OCCURRENCE_NESTING;
+        var nesting = java.util.Set.copyOf(store.dsl().select(ns.COORDINATE).from(ns)
+            .where(ns.GRAPH_NAME.eq(graph)).fetch(ns.COORDINATE));
         var out = new LinkedHashMap<String, Row>();
         byCoordinate.forEach((coordinate, stated) -> out.put(coordinate,
-            row(store, coordinate, Optional.ofNullable(targets.get(coordinate)), stated, fields)));
+            row(store, coordinate, Optional.ofNullable(targets.get(coordinate)), stated, fields, nesting)));
         return out;
     }
 
+    /**
+     * The lift of one occurrence. Each participant's fields reach the select through its projection
+     * unit: a column on the row, a nesting field spliced from the row, a table-bound child down any
+     * path under an alias its owner qualifies. What the unit does not carry is a scalar off the shared
+     * table, read through its one step for that participant's rows alone; one read further off is
+     * refused.
+     */
     private static Row row(StoreHandle store, String coordinate, Optional<String> target, List<Stated> stated,
-                           Map<String, List<FieldFact>> fields) {
+                           Map<String, List<FieldFact>> fields, java.util.Set<String> nesting) {
         var first = stated.getFirst();
         String base = first.base();
-        if (target.isPresent()) {
-            for (var f : fields.getOrDefault(target.get(), List.of())) {
-                boolean off = f.reaches() != null && !f.reaches().equals(base);
-                if (off || "OBJECT".equals(f.targetKind()) && !f.tableBound()) {
-                    return refused(coordinate, first, "the interface declares " + target.get() + "."
-                        + f.fieldName() + " off " + base);
-                }
-            }
-        }
+        var declared = target.map(t -> fields.getOrDefault(t, List.of()).stream().map(FieldFact::fieldName)
+            .collect(java.util.stream.Collectors.toSet())).orElse(java.util.Set.of());
+        var shared = new java.util.TreeSet<String>();
         var participants = new ArrayList<Participant>();
         for (var s : stated) {
             if (!"DISCRIMINATOR".equals(s.recognizedBy()) || !s.table().equals(base)) {
@@ -121,10 +134,20 @@ public final class DiscriminatedQuery {
             }
             var crossFields = new ArrayList<CrossField>();
             for (var f : fields.getOrDefault(s.type(), List.of())) {
-                if ("OBJECT".equals(f.targetKind()) && !f.tableBound()) {
-                    return refused(coordinate, first, s.type() + "." + f.fieldName() + " nests an object");
+                if (nesting.contains(s.type() + "." + f.fieldName())) {
+                    shared.add(f.fieldName());
+                    continue;
                 }
-                if (f.reaches() == null || f.reaches().equals(base)) {
+                boolean sameRowColumn = !"OBJECT".equals(f.targetKind()) && !f.tableBound()
+                    && (f.reaches() == null || f.reaches().equals(base));
+                if (declared.contains(f.fieldName()) && !sameRowColumn) {
+                    shared.add(f.fieldName());
+                }
+                if ("OBJECT".equals(f.targetKind()) && !f.tableBound()) {
+                    return refused(coordinate, first, s.type() + "." + f.fieldName()
+                        + " reads an object with no table of its own off another row");
+                }
+                if (f.tableBound() || f.reaches() == null || f.reaches().equals(base)) {
                     continue;
                 }
                 var cross = crossField(store, s.type(), f.fieldName(), base);
@@ -136,11 +159,11 @@ public final class DiscriminatedQuery {
             }
             participants.add(new Participant(s.type(), s.value(), crossFields));
         }
-        return new Row(coordinate, first.column(), participants, Optional.empty());
+        return new Row(coordinate, first.column(), participants, List.copyOf(shared), Optional.empty());
     }
 
     private static Row refused(String coordinate, Stated first, String reason) {
-        return new Row(coordinate, first.column(), List.of(), Optional.of(reason));
+        return new Row(coordinate, first.column(), List.of(), List.of(), Optional.of(reason));
     }
 
     /**

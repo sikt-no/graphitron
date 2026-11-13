@@ -281,9 +281,9 @@ public final class LiftEmitter {
      * row is gone, is null at its position.
      *
      * <pre>{@code
-     * List<SelectField<?>> fields = new ArrayList<>();
+     * Set<SelectField<?>> fields = new LinkedHashSet<>();
      * fields.add(DSL.field(target.getQualifiedName().append(DSL.name("content_type")), Object.class).as("__discriminator__"));
-     * fields.addAll(FilmContent.$project(SelectionOccurrences.restrictTo(selection, "FilmContent", Set.of()), target, env));
+     * fields.addAll(FilmContent.$project(SelectionOccurrences.restrictTo(selection, "FilmContent", Set.of("credits")), target, env));
      * if (<the selection asks FilmContent's rating>) {
      *     Film hop0 = Tables.FILM.as("target_hop0");
      *     fields.add(DSL.field(DSL.select(hop0.RATING).from(hop0)
@@ -326,18 +326,23 @@ public final class LiftEmitter {
         }
         builder.addStatement("$T $L = $L.as($S)", tableType, TARGET, constants(table), TARGET)
             .addStatement("$T selection = $T.ownFields(env.getSelectionSet())", grouped, selectionOccurrences)
-            .addStatement("$T<$T> fields = new $T<>()", LIST, selectField, ArrayList.class)
+            .addStatement("$T<$T> fields = new $T<>()", ClassName.get("java.util", "Set"), selectField,
+                java.util.LinkedHashSet.class)
             // The type resolver reads the column back as the participant's value; untyped, so an enum
             // column comes back as its literal.
             .addStatement("fields.add($L.as($S))", column, DISCRIMINATOR);
+        // The names whose terms land under an alias no participant qualifies: every participant keeps
+        // their occurrences, so each arm writing one such alias projects it from one occurrence set.
+        var shared = CodeBlock.join(discriminated.sharedAliasFieldNames().stream()
+            .map(name -> CodeBlock.of("$S", name)).toList(), ", ");
         int hop = 0;
         var values = new ArrayList<CodeBlock>();
         for (var participant : discriminated.participants()) {
             var value = CodeBlock.of("$T.inline($S)", DSL, participant.value());
             values.add(value);
-            builder.addStatement("fields.addAll($T.$$project($T.restrictTo(selection, $S, $T.of()), $L, env))",
+            builder.addStatement("fields.addAll($T.$$project($T.restrictTo(selection, $S, $T.of($L)), $L, env))",
                 projectionOf.apply(participant.typeName()), selectionOccurrences, participant.typeName(),
-                ClassName.get("java.util", "Set"), TARGET);
+                ClassName.get("java.util", "Set"), shared, TARGET);
             for (var cross : participant.crossFields()) {
                 String alias = TARGET + "_hop" + hop++;
                 var on = new ArrayList<CodeBlock>();
