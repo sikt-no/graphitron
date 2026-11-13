@@ -114,13 +114,13 @@ The existing single-graph tests ("a document the author deleted loses its rows a
 "an entry gone from disk is forgotten, and every row read from it goes with it") must stay green
 unchanged: with one graph, its own claim drop precedes its own reclaim, so nothing about them moves.
 
-## Open question for Alf and Filip
+## The ruling this implements
 
-No page says which gatherer owns which rows of `store_source`, or that every owner's sweep must spare
-a source another graph still claims; today it lives only in the `store_graph_source` table comment
-and in javadoc. If that rule is worth stating, it belongs on `fact-model.adoc` or
-`modeling-discipline.adoc`, as a ruling. This item does not need the ruling to land, and lands the
-code either way.
+`docs/architecture/explanation/fact-model.adoc`, the paragraph after "A source is shared by every
+graph that reads it" (ruled 2026-11-13): each gatherer owns the `store_source` rows of the kinds it
+reads, its sweep forgets a source only when the file is gone and no graph's `store_graph_source`
+claims it, and the foreign key is a backstop rather than the mechanism. This item makes the code
+say what that paragraph says.
 
 ## Other solutions we've considered
 
