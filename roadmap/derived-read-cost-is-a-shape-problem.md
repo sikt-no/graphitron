@@ -213,9 +213,9 @@ census it replaced is gone.
       release against a reactor build) share one source, and the last capture's sweep deletes the
       other's rows. Keyed by the entry `code_graph_class` names for the package's classes, plus the
       package, two builds are two sources and nothing is left to detect; the jooq gatherer reads the
-      code gatherer upstream, never the loader. Whether a catalog's facts also depend on what its
-      classes resolve to on the graph's classpath (the jOOQ runtime, converters, bindings) is open
-      for Alf and Filip.
+      code gatherer upstream, never the loader. Entry plus package first (Alf, 2026-11-13): one
+      build reachable at two paths is stored twice, and keying by content instead is the refinement
+      if that turns out common.
     * **Every read of `sql_table` by record class goes through the graph's sources** `done`. The
       key-row and result-shape defect arms and the emitters' `BuildQuery` and `NodeIdDecodeQuery`
       catalog reads join the graph's sources; every other `sql_table` read already did.
