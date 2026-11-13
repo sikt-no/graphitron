@@ -111,7 +111,9 @@ public final class OccurrenceCallParameters {
                     r.FILL, inline(PARAMETER), val(touchedAt, p.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.CALL_KIND.eq(callKind)))
-            .onConflict(p.GRAPH_NAME, p.COORDINATE, p.BOUND)
+            // The parameter's own key, every column of it inserted: the primary key's bound is
+            // generated, so a conflict on it never matches and a second reading would insert again.
+            .onConflict(p.GRAPH_NAME, p.CALL_COORDINATE, p.CALL, p.POSITION)
             .doUpdate()
             .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))
             .execute();
