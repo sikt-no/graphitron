@@ -251,6 +251,14 @@ class SupertypeSignatureGateTest {
         // roster together on the day that derivation lands.
         // @node's two list arguments, the current key and the legacy one, decoded as twins.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry"),
+        // The two voucher markers' claims, each parsed on the same terms. Siblings by decision: each
+        // references its own marker's entry, so a claim cannot hang off an application that is not
+        // that marker, which one relation keyed on the bare directive application could not say.
+        Set.of("graphitron_ast_issue_claim_entry", "graphitron_ast_accept_claim_entry"),
+        // And each resolved: an @issue's claim to the member it names, an @accept's to the field of
+        // its type. Siblings by decision: a member is no field and a field no member, so one relation
+        // would carry a foreign key null on every row of the other marker.
+        Set.of("graphitron_voucher_claim", "graphitron_accept_claim"),
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and
@@ -281,7 +289,12 @@ class SupertypeSignatureGateTest {
         // The carriers' tags, authored or configured: the union graphitron_directive_application_arg
         // makes for every coordinate, made here for carriers alone, and stored for the reason the
         // set above gives.
-        "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg");
+        "graphitron_carrier_directive_rule|graphitron_configured_tag,graphql_directive_application_arg",
+        // The voucher stage's refusals, which judge both markers' claims by the rules they share,
+        // an empty or repeated claim, and resolve each against its own marker's claim relation. The
+        // supertype it reconstructs is the sibling pair recorded above, kept apart by decision.
+        "graphitron_voucher_entry_defect_rule|graphitron_ast_accept_claim_entry,graphitron_ast_issue_claim_entry",
+        "graphitron_voucher_entry_defect_rule|graphitron_accept_claim,graphitron_voucher_claim");
 
 
 

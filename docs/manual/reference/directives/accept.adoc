@@ -1,0 +1,73 @@
+= @accept
+:description: Mark the voucher field of a table-bound entity, so this subgraph grants access to its rows on another subgraph's voucher.
+:!toc:
+
+Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on a connection of its own, told the voucher's *claims*, so your database's row-level security decides what the claims unlock. The voucher is not a column and is never selected.
+
+NOTE: Generation does not verify vouchers yet, so a schema using `@accept` is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @accept(scope: String!, key: String, claims: String!) on FIELD_DEFINITION
+----
+
+[cols="1,1,3"]
+|===
+| Parameter | Type | Meaning
+
+| `scope`
+| `String!`
+| What the voucher is for. Names the scope of the issuing subgraph's `@issue(scope:)`.
+
+| `key`
+| `String`
+| The field set of the authored `@key` the voucher's lookup part decodes to, as `@key(fields:)` spells it. Leave it out when the type has exactly one authored resolvable key.
+
+| `claims`
+| `String!`
+| The fields of this type the voucher's claims parse into, a field set as `@key(fields:)` spells one: whose rows are vouched for. Names the same fields as the issuing subgraph's `@issue(claims:)`. A claims field may be `@inaccessible`, so the owner is not published to clients.
+|===
+
+== Canonical example
+
+[source,graphql]
+----
+type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
+  id: ID!
+  eierId: String! @inaccessible
+  voucher: String! @accept(scope: "vgs-resultater", claims: "eierId")
+  fag: String!
+  karakter: Int!
+}
+----
+
+The voucher's lookup part decodes to `id`, the type's one authored key, and its claims parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields.
+
+== Constraints
+
+Each refusal below is reported at the `@accept`.
+
+[cols="1,3"]
+|===
+| Code | Rule
+
+| `VOUCHER_FIELD_REPEATED`
+| A type carries one voucher field, `@issue` or `@accept`: refused at each after the first.
+
+| `VOUCHER_WITHOUT_SESSION_STATE`
+| The build configures `<sessionState>`, whose `SessionState` carries the caller each voucher is checked against.
+
+| `VOUCHER_CLAIMS_EMPTY`
+| `claims` selects at least one field.
+
+| `VOUCHER_CLAIM_NOT_A_FIELD`
+| Each claim names a field of the type: not a name the type does not declare, not the voucher field, not a nested selection.
+
+| `VOUCHER_CLAIM_REPEATED`
+| No claim is named twice.
+
+| `VOUCHER_ACCEPT_NOT_GENERATED`
+| Generation does not verify vouchers yet. Removed when it does.
+|===

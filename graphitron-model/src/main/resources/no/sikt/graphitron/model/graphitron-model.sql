@@ -2733,6 +2733,57 @@ COMMENT ON COLUMN graphitron_ast_issue_claim_entry.touched_at IS 'when the readi
 COMMENT ON COLUMN graphitron_ast_issue_claim_entry.field_name IS 'the selection''s first segment, the field it names on the issuing type';
 COMMENT ON COLUMN graphitron_ast_issue_claim_entry.nested IS 'whether the selection goes on into a nested selection, which a claim cannot';
 
+CREATE TABLE graphitron_ast_accept_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  scope         VARCHAR,
+  key_fields    VARCHAR,
+  claims        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_accept_entry IS 'What an @accept application says: the scope of the vouchers it accepts, the authored key they decode to and the claims they carry, as written. For example voucher: String! @accept(scope: "results", claims: "ownerId") gives one row with no key.';
+COMMENT ON COLUMN graphitron_ast_accept_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN graphitron_ast_accept_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_accept_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_accept_entry.source_column IS 'source column of the same; the four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_directive_application_entry';
+COMMENT ON COLUMN graphitron_ast_accept_entry.touched_at IS 'when the reading that produced this row ran; the reading finishes by deleting its file''s rows carrying an older instant';
+COMMENT ON COLUMN graphitron_ast_accept_entry.scope IS 'the scope argument as written, or NULL where it is missing';
+COMMENT ON COLUMN graphitron_ast_accept_entry.key_fields IS 'the key argument, the field set of the authored @key the vouchers decode to, as written, or NULL where the author left it out; which key it names is decided by the entity key stage';
+COMMENT ON COLUMN graphitron_ast_accept_entry.claims IS 'the claims argument, the field set as written, or NULL where it is missing; which fields it names is decided by the voucher stage';
+
+CREATE TABLE graphitron_ast_accept_claim_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  nested        BOOLEAN NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_accept_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_ast_accept_claim_entry IS 'One selection an @accept''s claims field set parsed into, at its index in that parse. For example claims: "eierId" gives one row, eierId at position 0, not nested.';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.source_name IS 'the @accept''s file';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.source_line IS 'the @accept''s line';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.source_column IS 'the @accept''s column';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.position IS 'the selection''s place in the field set as written, numbered from zero';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.touched_at IS 'when the reading that produced this row ran';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.field_name IS 'the selection''s first segment, the field it names on the accepting type';
+COMMENT ON COLUMN graphitron_ast_accept_claim_entry.nested IS 'whether the selection goes on into a nested selection, which a claim cannot';
+
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
 -- relation below keyed by the position of the @ token, which is
@@ -5113,7 +5164,7 @@ CREATE TABLE graphitron_binding_claim (
 COMMENT ON TABLE graphitron_binding_claim IS 'What one binding claim names: one row per binding claim in graphitron_claim. For example a field carrying @field(name: "title") has a COLUMN row naming title, and an input field carrying @nodeId(typeName: "Film") @field(name: "film") a NODE_ID row naming Film with film as its target.';
 COMMENT ON COLUMN graphitron_binding_claim.graph_name IS 'the owning graph''s partition, carried from the claim';
 COMMENT ON COLUMN graphitron_binding_claim.coordinate IS 'the declared element claiming, as graphitron_element spells it: Film.title, FilmInput.title or Query.films(title:)';
-COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_binding kind claimed: COLUMN from @field(name:), NODE_ID from @nodeId, EXPRESSION from @externalField, VOUCHER from @issue';
+COMMENT ON COLUMN graphitron_binding_claim.kind IS 'the graphitron_occurrence_binding kind claimed: COLUMN from @field(name:), NODE_ID from @nodeId, EXPRESSION from @externalField, VOUCHER from @issue or @accept';
 COMMENT ON COLUMN graphitron_binding_claim.claimer IS 'the element whose fact implies the claim, the element itself for every claim written today; with the three columns before it, graphitron_claim''s key';
 COMMENT ON COLUMN graphitron_binding_claim.named IS 'what the claim names, as written: the column for COLUMN, the node type for NODE_ID. Null for a bare @nodeId, whose node type the binding infers, and for EXPRESSION';
 COMMENT ON COLUMN graphitron_binding_claim.target_name IS 'where a NODE_ID claim''s decoded value goes, as a @field(name:) beside the @nodeId writes it: the member of the class an occurrence binds into. Whether a target is meaningful depends on the occurrence''s source, so the claim states it and the reader judges it; null where no @field is written and on every other kind';
@@ -5171,13 +5222,14 @@ SELECT e.graph_name, e.coordinate, 'EXPRESSION', CAST(NULL AS VARCHAR), CAST(NUL
    AND da.directive_name = 'externalField' AND da.ordinal = 0
  WHERE e.element_kind = 'FIELD'
 UNION ALL
--- @issue, the voucher field: its value is the voucher Graphitron computes, never a column.
+-- @issue or @accept, the voucher field: its value is the voucher, which Graphitron computes on the
+-- issuing side and the representation carries on the accepting side, never a column.
 SELECT e.graph_name, e.coordinate, 'VOUCHER', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
        da.source_name, da.source_line, da.source_column
   FROM graphitron_element e
   JOIN graphitron_directive_application da
     ON da.graph_name = e.graph_name AND da.coordinate = e.coordinate
-   AND da.directive_name = 'issue' AND da.ordinal = 0
+   AND da.directive_name IN ('issue', 'accept') AND da.ordinal = 0
  WHERE e.element_kind = 'FIELD'
 )
 SELECT graph_name, coordinate, kind, coordinate, named, target_name, source_name, source_line,
@@ -14350,23 +14402,93 @@ COMMENT ON VIEW graphitron_voucher_claim_rule IS 'One voucher claim the claim ru
 -- COMMENT ON COLUMN graphitron_voucher_claim_rule.type_name IS 'the issuing type';
 -- COMMENT ON COLUMN graphitron_voucher_claim_rule.field_name IS 'the member it names';
 
+-- An @accept's claims name fields of its own type, which the voucher's claims parse into: ordinary
+-- fields of the emitted population, unlike an @issue's, which are members withheld from it.
+CREATE TABLE graphitron_accept_claim (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  field_name    VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
+  UNIQUE (graph_name, source_name, source_line, source_column, field_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_accept_claim_entry (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_accept_claim IS 'One claim of an @accept, resolved to the field of its type it names. For example claims: "eierId" on a VgsResultat''s voucher gives one row naming the field VgsResultat.eierId.';
+COMMENT ON COLUMN graphitron_accept_claim.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_accept_claim.source_name IS 'the @accept''s file';
+COMMENT ON COLUMN graphitron_accept_claim.source_line IS 'the @accept''s line';
+COMMENT ON COLUMN graphitron_accept_claim.source_column IS 'the @accept''s column';
+COMMENT ON COLUMN graphitron_accept_claim.position IS 'the claim''s place in the field set as written';
+COMMENT ON COLUMN graphitron_accept_claim.type_name IS 'the accepting type';
+COMMENT ON COLUMN graphitron_accept_claim.field_name IS 'the field the claim names; unique per application, a field named twice being refused';
+
+CREATE VIEW graphitron_accept_claim_rule
+  (graph_name, source_name, source_line, source_column, position, type_name, field_name) AS
+SELECT c.graph_name, c.source_name, c.source_line, c.source_column, c.position, f.type_name,
+       f.field_name
+  FROM graphitron_ast_accept_claim_entry c
+  JOIN graphql_directive_application d
+    ON d.graph_name = c.graph_name AND d.source_name = c.source_name
+   AND d.source_line = c.source_line AND d.source_column = c.source_column
+  JOIN graphitron_field i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+  JOIN graphitron_field f
+    ON f.graph_name = i.graph_name AND f.type_name = i.type_name AND f.field_name = c.field_name
+ WHERE c.nested = FALSE
+   -- A voucher field is not a claims field: its value is the voucher itself.
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application m
+                    WHERE m.graph_name = f.graph_name AND m.coordinate = f.coordinate
+                      AND m.directive_name IN ('issue', 'accept'))
+   -- The first of a field named twice, the second refused.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_accept_claim_entry e
+                    WHERE e.graph_name = c.graph_name AND e.source_name = c.source_name
+                      AND e.source_line = c.source_line AND e.source_column = c.source_column
+                      AND e.position < c.position AND e.field_name = c.field_name);
+COMMENT ON VIEW graphitron_accept_claim_rule IS 'One accept claim the claim rule computes, in the shape graphitron_accept_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the vouchers stage writes this view''s rows for one graph into graphitron_accept_claim, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.source_name IS 'the @accept''s file';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.position IS 'the claim''s place';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.type_name IS 'the accepting type';
+-- COMMENT ON COLUMN graphitron_accept_claim_rule.field_name IS 'the field it names';
+
 -- The voucher stage's refusals, decided from the transcription, the capture entries, the members and
--- what the stage just wrote, each reported at the @issue or at the member it is about.
+-- what the stage just wrote, each reported at the marker or at the member it is about. A rule either
+-- marker can break is one code for both.
 CREATE VIEW graphitron_voucher_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
-WITH issue (graph_name, source_name, source_line, source_column, type_name, field_name, coordinate) AS (
-  SELECT d.graph_name, d.source_name, d.source_line, d.source_column, i.type_name, i.field_name,
-         d.coordinate
+WITH marker (graph_name, source_name, source_line, source_column, directive_name, type_name, field_name,
+             coordinate) AS (
+  SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.directive_name, i.type_name,
+         i.field_name, d.coordinate
     FROM graphql_directive_application d
     JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
-   WHERE d.directive_name = 'issue'
+   WHERE d.directive_name IN ('issue', 'accept')
+),
+issue AS (SELECT * FROM marker WHERE directive_name = 'issue'),
+-- Each selection either marker's claims parsed into, the two parses read alike.
+claim_entry (graph_name, source_name, source_line, source_column, position, field_name) AS (
+  SELECT graph_name, source_name, source_line, source_column, position, field_name
+    FROM graphitron_ast_issue_claim_entry
+  UNION ALL
+  SELECT graph_name, source_name, source_line, source_column, position, field_name
+    FROM graphitron_ast_accept_claim_entry
 )
--- A second @issue on one type, at each but the first.
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ISSUE_TWICE', s.type_name
-  FROM issue s
- WHERE EXISTS (SELECT 1 FROM issue o
+-- A type carries one voucher field, whichever marker each carries: refused at each but the first, by
+-- field name and then by marker where one field carries both.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_FIELD_REPEATED', s.type_name
+  FROM marker s
+ WHERE EXISTS (SELECT 1 FROM marker o
                 WHERE o.graph_name = s.graph_name AND o.type_name = s.type_name
-                  AND o.field_name < s.field_name)
+                  AND (o.field_name < s.field_name
+                       OR (o.field_name = s.field_name AND o.directive_name < s.directive_name)))
 UNION ALL
 -- An authored @key would let a router reach the other subgraph's entity without the voucher.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ISSUE_ON_KEYED_TYPE',
@@ -14390,7 +14512,7 @@ UNION ALL
 -- The caller a voucher is bound to rides on SessionState.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_WITHOUT_SESSION_STATE',
        s.coordinate
-  FROM issue s
+  FROM marker s
  WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied ss WHERE ss.graph_name = s.graph_name)
 UNION ALL
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_TTL_INVALID',
@@ -14403,8 +14525,8 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_TTL
     OR NOT REGEXP_LIKE(e.ttl, '^PT([0-9]+H)?([0-9]+M)?([0-9]+S)?$')
 UNION ALL
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_CLAIMS_EMPTY', s.coordinate
-  FROM issue s
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_issue_claim_entry c
+  FROM marker s
+ WHERE NOT EXISTS (SELECT 1 FROM claim_entry c
                     WHERE c.graph_name = s.graph_name AND c.source_name = s.source_name
                       AND c.source_line = s.source_line AND c.source_column = s.source_column
                       AND c.position = 0)
@@ -14424,13 +14546,29 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLA
                       AND e.position < c.position AND e.field_name = c.field_name)
  GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
 UNION ALL
+-- A claims field named twice, on either marker.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_REPEATED',
        MIN(c.field_name)
-  FROM graphitron_ast_issue_claim_entry c
- WHERE EXISTS (SELECT 1 FROM graphitron_ast_issue_claim_entry e
+  FROM claim_entry c
+ WHERE EXISTS (SELECT 1 FROM claim_entry e
                 WHERE e.graph_name = c.graph_name AND e.source_name = c.source_name
                   AND e.source_line = c.source_line AND e.source_column = c.source_column
                   AND e.position < c.position AND e.field_name = c.field_name)
+ GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
+UNION ALL
+-- An @accept claim that names no field of the accepting type: a name the type does not declare, a
+-- voucher field, or a nested selection. One row per @accept, the detail the first such name written.
+SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_NOT_A_FIELD',
+       MIN(c.field_name)
+  FROM graphitron_ast_accept_claim_entry c
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_accept_claim v
+                    WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
+                      AND v.source_line = c.source_line AND v.source_column = c.source_column
+                      AND v.position = c.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_accept_claim_entry e
+                    WHERE e.graph_name = c.graph_name AND e.source_name = c.source_name
+                      AND e.source_line = c.source_line AND e.source_column = c.source_column
+                      AND e.position < c.position AND e.field_name = c.field_name)
  GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
 UNION ALL
 -- A member the voucher cannot carry as one scalar value: a list, or an object, interface or union,
@@ -14471,7 +14609,7 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEM
                       AND c.field_name = m.field_name);
 COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an @issue whose claims name a field the type does not declare gives one VOUCHER_CLAIM_NOT_ABSORBED row at the @issue.';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_name IS 'the file of the @issue or the member';
+-- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_name IS 'the file of the marker or the member';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_voucher_entry_defect_rule.code IS 'the rule broken';
@@ -17309,7 +17447,15 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISS
    AND EXISTS (SELECT 1 FROM graphql_root_operation ro
                  JOIN graphitron_field rf
                    ON rf.graph_name = ro.graph_name AND rf.type_name = ro.type_name
-                WHERE ro.graph_name = i.graph_name AND rf.named_type = i.type_name);
+                WHERE ro.graph_name = i.graph_name AND rf.named_type = i.type_name)
+UNION ALL
+-- @accept until its dispatch is generated: B's facts and published shape are derived, but nothing
+-- verifies a voucher yet, so a valid schema is refused here rather than reaching an emitter that does
+-- not exist.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
+       d.coordinate
+  FROM graphql_directive_application d
+ WHERE d.directive_name = 'accept';
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
@@ -20655,6 +20801,7 @@ INSERT INTO meta_stage_write VALUES
   ('voucher-members', 'graphitron_voucher_member'),
   ('vouchers', 'graphitron_voucher_component'),
   ('vouchers', 'graphitron_voucher_claim'),
+  ('vouchers', 'graphitron_accept_claim'),
   ('vouchers', 'graphitron_entry_defect'),
   ('federation-link', 'graphitron_federation_link'),
   ('macro-expansion', 'graphitron_argument'),
@@ -21207,6 +21354,9 @@ INSERT INTO meta_grain VALUES
    'graph_name, type_name, field_name', 'sdl'),
   ('voucher-claim',
    'one claim one @issue makes, at its place in the claims field set, in one graph',
+   'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('accept-claim',
+   'one claim one @accept makes, at its place in the claims field set, in one graph',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
   ('synthesized-node-type-id',
    'one node type whose wire type id the emitted schema publishes, in one graph',
@@ -21861,8 +22011,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.', 'entry-defects'),
   ('VOUCHER_WITHOUT_FEDERATION_LINK', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_FEDERATION_LINK',
    '@issue needs a federation @link: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.', 'minted-keys'),
-  ('VOUCHER_ISSUE_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_TWICE',
-   'A type carries @issue on two fields, and a type issues one voucher: keep one.', 'vouchers'),
+  ('VOUCHER_FIELD_REPEATED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_FIELD_REPEATED',
+   'A type carries more than one voucher field, @issue or @accept, and a type issues or accepts one voucher: keep one.', 'vouchers'),
   ('VOUCHER_ISSUE_ON_KEYED_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_KEYED_TYPE',
    '@issue is on a type with an authored @key, which would let a router reach the other subgraph''s entity without the voucher: remove the @key.', 'vouchers'),
   ('VOUCHER_ISSUE_ON_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_NODE',
@@ -21870,15 +22020,17 @@ INSERT INTO graphitron_defect_type VALUES
   ('VOUCHER_ISSUE_ABSORBS_NOTHING', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ABSORBS_NOTHING',
    '@issue is on a type with no other field, so the voucher would carry nothing: add the fields the other subgraph''s key and claims are.', 'vouchers'),
   ('VOUCHER_WITHOUT_SESSION_STATE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_SESSION_STATE',
-   '@issue binds each voucher to the caller on the request''s SessionState, and the build configures no <sessionState>: configure one.', 'vouchers'),
+   'A voucher marker binds each voucher to the caller on the request''s SessionState, and the build configures no <sessionState>: configure one.', 'vouchers'),
   ('VOUCHER_TTL_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_TTL_INVALID',
    '@issue''s ttl is not an ISO-8601 duration of hours, minutes and seconds, such as PT5M.', 'vouchers'),
   ('VOUCHER_CLAIMS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIMS_EMPTY',
-   '@issue''s claims selects no field, and a voucher says whose rows it vouches for through its claims: name them.', 'vouchers'),
+   'A voucher marker''s claims selects no field, and a voucher says whose rows it vouches for through its claims: name them.', 'vouchers'),
   ('VOUCHER_CLAIM_NOT_ABSORBED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_NOT_ABSORBED',
    '@issue''s claims names something that is no absorbed field of the type: a name the type does not declare, the voucher field itself, or a nested selection.', 'vouchers'),
   ('VOUCHER_CLAIM_REPEATED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_REPEATED',
-   '@issue''s claims names a field twice: name it once.', 'vouchers'),
+   'A voucher marker''s claims names a field twice: name it once.', 'vouchers'),
+  ('VOUCHER_CLAIM_NOT_A_FIELD', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_NOT_A_FIELD',
+   '@accept''s claims names something that is no field of the type for the voucher''s claims to parse into: a name the type does not declare, a voucher field, or a nested selection.', 'vouchers'),
   ('VOUCHER_MEMBER_NOT_SCALAR', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_NOT_SCALAR',
    'A field @issue absorbs is a list, an object or an enum, and the voucher carries each absorbed field as one scalar value: absorb scalar fields only.', 'vouchers'),
   ('VOUCHER_MEMBER_COMPUTED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_COMPUTED',
@@ -21887,6 +22039,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field @issue absorbs reads no column of the issuing type''s table: name its column with @field(name:).', 'vouchers'),
   ('VOUCHER_ISSUE_ON_ROOT_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_ROOT_TYPE',
    'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.', 'entry-defects'),
+  ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
+   '@accept is captured and B''s published shape derived, but graphitron does not generate the dispatch that verifies vouchers yet.', 'entry-defects'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.', 'entry-defects'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
@@ -22974,6 +23128,14 @@ INSERT INTO meta_relation VALUES
    'One selection an @issue''s claims field set parsed into, at its index in that parse.',
    'For example claims: "eierId" gives one row, eierId at position 0, not nested.',
    'The parse of the claims argument, on the federation key selection''s terms, keyed by the application and the index: what the author wrote, each selection''s first name and whether it nests. Which member a claim names is the voucher stage''s decision, read into graphitron_voucher_claim.'),
+  ('graphitron_ast_accept_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @accept application says: the scope of the vouchers it accepts, the authored key they decode to and the claims they carry, as written.',
+   'For example voucher: String! @accept(scope: "results", claims: "ownerId") gives one row with no key.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on is one join away rather than a column here. The arguments are kept as written: the claims are resolved to fields by the voucher stage and the key to an authored key by the entity key stage, where a malformed value can be a defect at the application. An omitted key is a null, not the one authored key filled in: which key a bare @accept decodes to is the entity key stage''s decision.'),
+  ('graphitron_ast_accept_claim_entry', 'sdl-parsed-selection', 'graphitron',
+   'One selection an @accept''s claims field set parsed into, at its index in that parse.',
+   'For example claims: "eierId" gives one row, eierId at position 0, not nested.',
+   'The parse of the claims argument, on graphitron_ast_issue_claim_entry''s terms: what the author wrote, each selection''s first name and whether it nests. Which field a claim names is the voucher stage''s decision. A relation of its own rather than a marker column on the issue''s parse, since each references its own application entry.'),
   ('graphitron_voucher_component', 'voucher-component', 'graphitron',
    'One voucher member whose column and scalar resolved, the value the voucher carries for it.',
    'For example VgsResultat.id over @field(name: "vgs_resultat_id") reads vgs_resultat_id on the issuing table and serializes as an ID.',
@@ -22989,6 +23151,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_voucher_claim_rule', 'voucher-claim', 'graphitron',
    'One voucher claim the claim rule computes, in the shape graphitron_voucher_claim stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the vouchers stage writes this view''s rows for one graph into graphitron_voucher_claim, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_accept_claim', 'accept-claim', 'graphitron',
+   'One claim of an @accept, resolved to the field of its type it names.',
+   'For example claims: "eierId" on a VgsResultat''s voucher gives one row naming the field VgsResultat.eierId.',
+   'The claims are decided into rows rather than re-parsed by each reader: the connection key''s typing, the mount''s typed claims and the refusals all read which field a claim names. Keyed by the application and the claim''s place, referencing the field''s graphitron_field row, so a claim is a field of the accepting type by construction and a claim naming anything else draws no row, which is the refusal. Not graphitron_voucher_claim with a marker column: an @issue''s claim references a member, which is no field, and an @accept''s a field, which is no member, so one relation would carry a foreign key null on every row of the other marker. Whether the field reads a column is not decided here: that is how the field binds, which the entity key stage reads.'),
+  ('graphitron_accept_claim_rule', 'accept-claim', 'graphitron',
+   'One accept claim the claim rule computes, in the shape graphitron_accept_claim stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the vouchers stage writes this view''s rows for one graph into graphitron_accept_claim, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_voucher_member', 'voucher-member', 'graphitron',
    'One field declaration an @issue absorbs into its voucher, withheld from the emitted population.',

@@ -68,10 +68,10 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   VOUCHER_CLAIM_NOT_ABSORBED,       Empty,      x
   VOUCHER_CLAIM_NOT_ABSORBED,       Unabsorbed, filmId
   VOUCHER_CLAIM_REPEATED,           Repeated,   categoryId
+  VOUCHER_FIELD_REPEATED,           Twice,      Twice
   VOUCHER_ISSUE_ABSORBS_NOTHING,    Empty,      Empty
   VOUCHER_ISSUE_ON_KEYED_TYPE,      Keyed,      Keyed
   VOUCHER_ISSUE_ON_ROOT_TYPE,       BadTtl,     BadTtl.v
-  VOUCHER_ISSUE_TWICE,              Twice,      Twice
   VOUCHER_MEMBER_COLUMN_UNRESOLVED, Members,    Members.nosuch
   VOUCHER_MEMBER_COMPUTED,          Members,    Members.extra
   VOUCHER_MEMBER_NOT_SCALAR,        Members,    Members.owner

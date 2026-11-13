@@ -5,6 +5,7 @@
 
 The rewrite generator declares and supports the following directives. Each is documented in the architecture chapter:
 
+* `@accept`
 * `@asConnection`
 * `@asFacet`
 * `@condition`

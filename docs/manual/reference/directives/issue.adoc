@@ -65,8 +65,8 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 | `VOUCHER_WITHOUT_FEDERATION_LINK`
 | The schema has a federation `@link`: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.
 
-| `VOUCHER_ISSUE_TWICE`
-| A type issues one voucher: one field per type carries `@issue`.
+| `VOUCHER_FIELD_REPEATED`
+| A type carries one voucher field, `@issue` or `@accept`: refused at each after the first.
 
 | `VOUCHER_ISSUE_ON_KEYED_TYPE`
 | The issuing type carries no authored `@key`, which would let a router reach the other subgraph's entity without the voucher.

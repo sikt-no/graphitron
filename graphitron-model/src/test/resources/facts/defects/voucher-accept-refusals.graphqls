@@ -1,0 +1,62 @@
+extend schema @withConfiguration(sessionState: true)
+
+"The accepting side's refusals the voucher stage decides, each at the @accept. A type carries one voucher field, whichever marker it carries; the claims name fields of the accepting type, once each, never the voucher field or a nested selection, and name at least one."
+# Refused at the @accept, the second voucher field by name; and as the @issue absorbs every other
+# field, the accept's claim names a member, which is no field of the type.
+type Both @table(name: "film") {
+  filmId: ID @field(name: "film_id")
+  a: String @issue(scope: "s", ttl: "PT5M", claims: "filmId")
+  v: String @accept(scope: "s", claims: "filmId")
+}
+
+type TwoAccepts @table(name: "language") @key(fields: "languageId") {
+  languageId: Int @field(name: "language_id")
+  name: String
+  a: String @accept(scope: "s", claims: "name")
+  b: String @accept(scope: "s", claims: "name")
+}
+
+type NoClaims @table(name: "country") @key(fields: "countryId") {
+  countryId: Int @field(name: "country_id")
+  v: String @accept(scope: "s", claims: "")
+}
+
+type Repeated @table(name: "category") @key(fields: "categoryId") {
+  categoryId: Int @field(name: "category_id")
+  name: String
+  v: String @accept(scope: "s", claims: "name name")
+}
+
+# A name the type does not declare, the voucher field itself, and a nested selection: one row, naming the
+# first by name.
+type NotAField @table(name: "city") @key(fields: "cityId") {
+  cityId: Int @field(name: "city_id")
+  city: String
+  v: String @accept(scope: "s", claims: "v nosuch city { x }")
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  cities: [NotAField!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('VOUCHER_FIELD_REPEATED', 'VOUCHER_CLAIMS_EMPTY', 'VOUCHER_CLAIM_REPEATED',
+           'VOUCHER_CLAIM_NOT_A_FIELD')
+  """, rows: """
+  code,                      type_name,  detail
+  VOUCHER_CLAIMS_EMPTY,      NoClaims,   NoClaims.v
+  VOUCHER_CLAIM_NOT_A_FIELD, Both,       filmId
+  VOUCHER_CLAIM_NOT_A_FIELD, NotAField,  city
+  VOUCHER_CLAIM_REPEATED,    Repeated,   name
+  VOUCHER_FIELD_REPEATED,    Both,       Both
+  VOUCHER_FIELD_REPEATED,    TwoAccepts, TwoAccepts
+  """)
+
+# The repeated field's first naming still resolves; a claim naming no field draws no row.
+extend schema @assertAbsent(relation: "graphitron_accept_claim", rows: """
+  type_name, field_name
+  NotAField, city
+  NotAField, v
+  """)

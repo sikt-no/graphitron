@@ -19,7 +19,7 @@ class DeclaredDirectivesTest {
     @Test
     void pinsTheDeclaredDirectiveNames() {
         assertThat(DeclaredDirectives.names()).containsExactlyInAnyOrder(
-            "asConnection", "asFacet", "condition", "defaultOrder", "defaultTenant", "discriminate",
+            "accept", "asConnection", "asFacet", "condition", "defaultOrder", "defaultTenant", "discriminate",
             "discriminator", "enum", "error", "experimental_constructType", "externalField",
             "field", "globalData", "index", "issue", "lookupKey", "multitableReference", "mutation", "node",
             "nodeId", "notGenerated", "order", "orderBy", "outbox", "pivot", "record", "reference",

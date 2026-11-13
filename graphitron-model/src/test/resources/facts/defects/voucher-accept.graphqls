@@ -1,0 +1,76 @@
+extend schema @withConfiguration(sessionState: true)
+
+"A field marked @accept is the voucher field of an entity another subgraph vouches for: its application is captured as written, its claims parsed one selection per row, and it binds by the voucher kind, so the column rule never looks for a voucher column. Until the dispatch that verifies vouchers is generated, @accept is refused at the application."
+type Film @table(name: "film") @key(fields: "filmId") {
+  filmId: ID! @field(name: "film_id")
+  languageId: Int @field(name: "language_id")
+  title: String
+  voucher: String! @accept(scope: "films", claims: "languageId")
+}
+
+# A node may accept: its node key and its voucher key are both minted, numbered once after the key its
+# author wrote.
+type Store implements Node @table(name: "store") @node @key(fields: "managerStaffId") {
+  id: ID!
+  managerStaffId: Int @field(name: "manager_staff_id")
+  addressId: Int @field(name: "address_id")
+  voucher: String @accept(scope: "stores", claims: "addressId")
+}
+
+interface Node {
+  id: ID!
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query {
+  films: [Film!]!
+  stores: [Store!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_accept_entry", rows: """
+  scope,  claims
+  films,  languageId
+  stores, addressId
+  """)
+
+# key: was left out, which is a null, not the one authored key filled in.
+extend schema @assertEmpty(relation: "graphitron_ast_accept_entry", where: "key_fields IS NOT NULL")
+
+extend schema @expectEquals(relation: "graphitron_ast_accept_claim_entry", rows: """
+  position, field_name, nested
+  0,        addressId,  FALSE
+  0,        languageId, FALSE
+  """)
+
+# Each claim resolved to the field of the accepting type it names.
+extend schema @expectEquals(relation: "graphitron_accept_claim", rows: """
+  position, type_name, field_name
+  0,        Film,      languageId
+  0,        Store,     addressId
+  """)
+
+# The accepting type's other fields are fields like any other: an @accept absorbs nothing.
+extend schema @assertEmpty(relation: "graphitron_voucher_member")
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: """
+  kind = 'VOUCHER'
+  """, rows: """
+  kind,    bound
+  VOUCHER, public.film
+  VOUCHER, public.store
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,              detail
+  COLUMN_UNRESOLVED, Film.voucher
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code = 'VOUCHER_ACCEPT_NOT_GENERATED'
+  """, rows: """
+  code,                         type_name, detail
+  VOUCHER_ACCEPT_NOT_GENERATED, Film,      Film.voucher
+  VOUCHER_ACCEPT_NOT_GENERATED, Store,     Store.voucher
+  """)
+

@@ -9,6 +9,7 @@ Authoritative descriptions of every directive in the rewrite's `directives.graph
 a|
 == Alphabetical
 
+* xref:accept.adoc[`@accept`] _(refused until generated)_
 * xref:asConnection.adoc[`@asConnection`]
 * xref:asFacet.adoc[`@asFacet`]
 * xref:condition.adoc[`@condition`]
@@ -72,7 +73,7 @@ xref:discriminate.adoc[`@discriminate`], xref:discriminator.adoc[`@discriminator
 xref:node.adoc[`@node`], xref:nodeId.adoc[`@nodeId`]
 
 *Federation* +
-xref:issue.adoc[`@issue`]
+xref:issue.adoc[`@issue`], xref:accept.adoc[`@accept`] (`@accept` refused until generated)
 
 *Rejected by the rewrite* +
 xref:notGenerated.adoc[`@notGenerated`], xref:multitableReference.adoc[`@multitableReference`] (remove from the schema)

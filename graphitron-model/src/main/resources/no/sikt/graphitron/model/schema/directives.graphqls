@@ -655,6 +655,33 @@ directive @issue(
 ) on FIELD_DEFINITION
 
 """
+Marks the voucher field of a table-bound entity in a federated subgraph that grants access to its rows
+on another subgraph's voucher. The field is the voucher a router hands over from the issuing subgraph's
+`@issue` field: it is not a column and is never selected. The type gains a resolvable key on the
+voucher, beside the key the author wrote, and the voucher is `@inaccessible`. Graphitron verifies each
+voucher and reads the vouched row on a connection of its own, told the voucher's claims, so the
+database's row-level security decides what the claims unlock. Requires a federation `@link`.
+Generation does not verify vouchers yet, so a schema using `@accept` is refused for now.
+"""
+directive @accept(
+  """
+  What the voucher is for. Must name the scope of the issuing subgraph's `@issue(scope:)`.
+  """
+  scope: String!
+  """
+  The field set of the authored `@key` the voucher's lookup part decodes to, as `@key(fields:)` spells
+  it. May be left out when the type has exactly one authored resolvable key.
+  """
+  key: String
+  """
+  The fields of this type the voucher's claims parse into, a field set as `@key(fields:)` spells one:
+  whose rows are vouched for. Must name the same fields as the issuing subgraph's `@issue(claims:)`,
+  and may be `@inaccessible`.
+  """
+  claims: String!
+) on FIELD_DEFINITION
+
+"""
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
 """
 directive @experimental_constructType(
