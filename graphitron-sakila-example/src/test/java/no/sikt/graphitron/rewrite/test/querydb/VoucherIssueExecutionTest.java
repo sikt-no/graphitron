@@ -94,6 +94,13 @@ class VoucherIssueExecutionTest {
         return verifier.verify("FilmVoucher", voucher, "films", Set.of("title"), Set.of("filmId"));
     }
 
+    /** The last of sakila's seeded film ids, 1 to 5; other execution tests write films of their own above it. */
+    private static final int LAST_SEEDED_FILM = 5;
+
+    /**
+     * Judged on the seeded films: a film another test writes can change or go between the query and
+     * the titles read beside it, so its voucher is verified and its claim left unjudged.
+     */
     @Test
     void everyFilmGetsAVoucherCarryingItsTitleAsTheClaimAndItsIdAsTheLookup() {
         var before = Instant.now().minusSeconds(1);
@@ -107,7 +114,10 @@ class VoucherIssueExecutionTest {
             assertThat(token.keyId()).isEqualTo("k1");
             var filmId = token.lookup().get("filmId");
             assertThat(filmId).as("an ID serializes as a string").isInstanceOf(String.class);
-            assertThat(token.claims()).containsExactly(Map.entry("title", titles.get(Integer.valueOf((String) filmId))));
+            if (Integer.valueOf((String) filmId) <= LAST_SEEDED_FILM) {
+                assertThat(token.claims())
+                    .containsExactly(Map.entry("title", titles.get(Integer.valueOf((String) filmId))));
+            }
             assertThat(token.expires()).isBetween(before.plus(Duration.ofMinutes(5)).minusSeconds(1),
                 Instant.now().plus(Duration.ofMinutes(5)));
         }
