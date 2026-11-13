@@ -190,8 +190,9 @@ reach every capture. The ruling is in `docs/architecture/how-to/testing.adoc`. I
 - a structural guard, in the style of `StoreClientBoundaryTest`, fails `graphitron`'s build when its
   main or test code captures directly.
 
-Whether `GraphitronStore.captured`, the call a run starts from, counts as capturing directly is with
-Alf.
+`GraphitronStore.captured`, the call a run starts from, counts as capturing directly (Alf,
+2026-11-13): a test driving a whole run takes its captured graph from `CapturedGraphs.open`, a lease
+whose store the `FactGraphs` population owns.
 
 ### Track B: use the machine
 
