@@ -199,19 +199,31 @@ public final class LauncherCommands {
             Map.entry(LaunchSource.ProjectedReentry.class, Invocation.ReturningKeyed.class),
             Map.entry(LaunchSource.DiscriminatedReentry.class, Invocation.ReturningKeyed.class));
 
+    /**
+     * The launcher relation of a run whose graph {@code store} captured. The rows decide nothing
+     * about the class a connection row builds: that is the store's answer
+     * ({@link no.sikt.graphitron.emit.ConnectionsQuery#byField}), read here once and carried on the
+     * relation for the renderers ({@link LauncherRelation#connections()}). {@code null} for a caller
+     * with no store, whose relation carries no answer, so rendering a connection over it fails by
+     * name.
+     */
     public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
-            String outputPackage) {
-        return produce(schema, conditions, outputPackage, java.util.Set.of());
+            String outputPackage, no.sikt.graphitron.model.read.StoreHandle store) {
+        return produce(schema, conditions, outputPackage, java.util.Set.of(), store);
     }
 
     /**
-     * {@link #produce(GraphitronSchema, ConditionRelation, String)} over a plan whose projection
-     * relation found units taking {@code dsl} ({@link ProjectionRelation#dslProjections()}): every
-     * row carries that set, so the {@code $project} calls it renders append the argument for
-     * exactly those callees.
+     * {@link #produce(GraphitronSchema, ConditionRelation, String, no.sikt.graphitron.model.read.StoreHandle)}
+     * over a plan whose projection relation found units taking {@code dsl}
+     * ({@link ProjectionRelation#dslProjections()}): every row carries that set, so the
+     * {@code $project} calls it renders append the argument for exactly those callees.
      */
     public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
-            String outputPackage, java.util.Set<no.sikt.graphitron.command.UnitRef> dslProjections) {
+            String outputPackage, java.util.Set<no.sikt.graphitron.command.UnitRef> dslProjections,
+            no.sikt.graphitron.model.read.StoreHandle store) {
+        var connections = store == null
+            ? no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty()
+            : no.sikt.graphitron.emit.ConnectionsQuery.byField(store);
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
@@ -236,7 +248,7 @@ public final class LauncherCommands {
         if (!dslProjections.isEmpty()) {
             rows.replaceAll(row -> row.withDslProjections(dslProjections));
         }
-        return new LauncherRelation(rows, carrierDsl);
+        return new LauncherRelation(rows, carrierDsl, connections);
     }
 
     /**
@@ -253,7 +265,7 @@ public final class LauncherCommands {
                 if (qtf.routine() instanceof RoutineResolution.Chain chain) {
                     yield routineRow(qtf, chain, whereOf(qtf, conditions),
                         facetPlanOf(schema, qtf, conditions, units), units,
-                        RootPresence.of(schema, conditions), schema);
+                        RootPresence.of(schema, conditions));
                 }
                 var mapping = keyedLookupOf(
                     schema.operationMembersOf(qtf.parentTypeName(), qtf.name()));
@@ -262,12 +274,12 @@ public final class LauncherCommands {
                         RootPresence.of(schema, conditions))
                     : row(qtf, whereOf(qtf, conditions), units,
                         facetPlanOf(schema, qtf, conditions, units),
-                        tenancyOf(schema, qtf, units), RootPresence.of(schema, conditions), schema);
+                        tenancyOf(schema, qtf, units), RootPresence.of(schema, conditions));
             }
             case QueryField.QueryTableInterfaceField qtif -> interfaceRow(qtif,
                 schema.joinedTableReprojectionOf(qtif.returnType().returnTypeName()),
                 schema::fieldsOf,
-                whereOf(qtif.parentTypeName(), qtif.name(), conditions), units, schema);
+                whereOf(qtif.parentTypeName(), qtif.name(), conditions), units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
                 + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
@@ -297,7 +309,7 @@ public final class LauncherCommands {
             case ChildField.BatchedTableInterfaceField btif -> batchedInterfaceChildRow(btif,
                 schema.joinedTableReprojectionOf(btif.returnType().returnTypeName()),
                 schema::fieldsOf,
-                whereOf(btif.parentTypeName(), btif.name(), conditions), units, schema);
+                whereOf(btif.parentTypeName(), btif.name(), conditions), units);
             default -> throw new IllegalStateException(
                 "Graphitron generator bug (launcher production): coordinate '"
                 + field.qualifiedName() + "' (" + field.getClass().getSimpleName()
@@ -510,7 +522,8 @@ public final class LauncherCommands {
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage, CarrierDsl carrierDsl) {
-        return produceWithoutSchema(fields, outputPackage, carrierDsl, null);
+        return produceWithoutSchema(fields, outputPackage, carrierDsl, null,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty());
     }
 
     /**
@@ -519,10 +532,14 @@ public final class LauncherCommands {
      * contract ({@link GraphitronSchema#nullContractOf}), the one fact the rows need that the
      * fields alone cannot give, since it reads the child's return type. {@code null} for a
      * schema-free assembly, whose batched children then carry no presence check, the same answer
-     * the fetcher emitter reaches without a schema.
+     * the fetcher emitter reaches without a schema. {@code connections} is the run's own store
+     * answer for its connection fields ({@link LauncherRelation#connections()}), carried onto the
+     * relation for the renderers; empty for a schema-free assembly, whose connection fields then
+     * fail by name when rendered.
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
-            String outputPackage, CarrierDsl carrierDsl, GraphitronSchema presenceSchema) {
+            String outputPackage, CarrierDsl carrierDsl, GraphitronSchema presenceSchema,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         // The schema view's stand-in for the alias-owner projection: a schema-free assembly's own
@@ -551,21 +568,20 @@ public final class LauncherCommands {
             rows.add(switch (field) {
                 case QueryField.QueryTableField qtf -> {
                     if (qtf.routine() instanceof RoutineResolution.Chain chain) {
-                        yield routineRow(qtf, chain, glueFromFilters(qtf, units), null, units, rootPresence,
-                            presenceSchema);
+                        yield routineRow(qtf, chain, glueFromFilters(qtf, units), null, units, rootPresence);
                     }
                     var mapping = keyedLookupOf(OperationMembers.membersOf(qtf));
                     yield mapping != null
                         ? lookupRow(qtf, mapping, glueFromFilters(qtf, units), units, rootPresence)
                         : row(qtf, glueFromFilters(qtf, units), units, null, new TenantStrategy.Single(),
-                            rootPresence, presenceSchema);
+                            rootPresence);
                 }
                 // The residence split is a classified-schema fact; a schema-free assembly's
                 // joined participants carry no base slice and no detail fields, the same
                 // fallback the retired inline assembly took on a null schema.
                 case QueryField.QueryTableInterfaceField qtif ->
                     interfaceRow(qtif, no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
-                        fieldsOfType, glueFromInterfaceFilters(qtif, units), units, presenceSchema);
+                        fieldsOfType, glueFromInterfaceFilters(qtif, units), units);
                 case ChildField.BatchedTableField btf -> {
                     var mapping = keyedLookupOf(OperationMembers.membersOf(btf));
                     var glue = glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units);
@@ -574,8 +590,7 @@ public final class LauncherCommands {
                         : batchedRow(btf, glue, new TenantStrategy.Single(), units,
                             presenceSchema == null ? NO_PRESENCE : presenceOf(btf, presenceSchema,
                                 probe -> glueFromFilters(probe.field().parentTypeName(),
-                                    probe.field().name(), probe.filters(), units)),
-                            presenceSchema);
+                                    probe.field().name(), probe.filters(), units)));
                 }
                 case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
                 // The residence split is a classified-schema fact, the root interface arm's
@@ -584,7 +599,7 @@ public final class LauncherCommands {
                     no.sikt.graphitron.rewrite.JoinedTableReprojection.EMPTY,
                     fieldsOfType,
                     glueFromFilters(btif.parentTypeName(), btif.name(), btif.filters(), units),
-                    units, presenceSchema);
+                    units);
                 case ChildField.ServiceTableField stf -> serviceTableRow(stf, units);
                 case ChildField.ServiceRecordField srf -> serviceRecordRow(srf, units);
                 // Unlike the DML companions, the root service companion is served here: its
@@ -599,7 +614,7 @@ public final class LauncherCommands {
                     + " payload dispatch have drifted");
             });
         }
-        return new LauncherRelation(rows, carrierDsl);
+        return new LauncherRelation(rows, carrierDsl, connections);
     }
 
     /**
@@ -667,7 +682,7 @@ public final class LauncherCommands {
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
-            FacetPlan facets, TenantStrategy tenancy, RootPresence presence, GraphitronSchema schema) {
+            FacetPlan facets, TenantStrategy tenancy, RootPresence presence) {
         return new LauncherCommand(
             units.launcherMethod(qtf.parentTypeName(), qtf.name()),
             FieldCoordinates.coordinates(qtf.parentTypeName(), qtf.name()),
@@ -676,7 +691,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             tenancy,
-            resultShapeOf(qtf, units, facets, presence, schema),
+            resultShapeOf(qtf, units, facets, presence),
             units.selectionOccurrences());
     }
 
@@ -692,7 +707,7 @@ public final class LauncherCommands {
      */
     private static LauncherCommand routineRow(QueryField.QueryTableField qtf,
             RoutineResolution.Chain chain, GlueCall where, FacetPlan facets, GeneratedUnits units,
-            RootPresence presence, GraphitronSchema schema) {
+            RootPresence presence) {
         if (facets != null && facets.hasReachedGrouping()) {
             throw new IllegalStateException(
                 "routine-sourced coordinate '" + qtf.qualifiedName() + "' carries a @reference"
@@ -710,7 +725,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            resultShapeOf(qtf, units, facets, presence, schema),
+            resultShapeOf(qtf, units, facets, presence),
             units.selectionOccurrences());
     }
 
@@ -729,7 +744,7 @@ public final class LauncherCommands {
     private static LauncherCommand interfaceRow(QueryField.QueryTableInterfaceField qtif,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
             java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType,
-            GlueCall where, GeneratedUnits units, GraphitronSchema schema) {
+            GlueCall where, GeneratedUnits units) {
         var ordering = orderingOf(qtif.orderBy(), qtif.parentTypeName(), qtif.name(), units);
         return new LauncherCommand(
             units.launcherMethod(qtif.parentTypeName(), qtif.name()),
@@ -743,15 +758,15 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            interfaceResultOf(qtif, ordering, units, schema),
+            interfaceResultOf(qtif, ordering, units),
             units.selectionOccurrences());
     }
 
     /** The discriminated root's payload shape, forked on the coordinate's wrapper. */
     private static ResultShape interfaceResultOf(QueryField.QueryTableInterfaceField qtif,
-            Ordering ordering, GeneratedUnits units, GraphitronSchema schema) {
+            Ordering ordering, GeneratedUnits units) {
         if (qtif.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
-            return connectionShape(conn, ordering, qtif.parentTypeName(), qtif.name(), null, units, schema);
+            return connectionShape(conn, ordering, qtif.qualifiedName(), null, units);
         }
         return qtif.returnType().wrapper().isList()
             ? new ResultShape.RecordList(ordering)
@@ -895,8 +910,7 @@ public final class LauncherCommands {
             GraphitronSchema schema, ConditionRelation conditions, GeneratedUnits units) {
         return batchedRow(btf, whereOf(btf.parentTypeName(), btf.name(), conditions),
             tenancyOf(schema, btf.parentTypeName(), btf.name(), units), units,
-            presenceOf(btf, schema, probe -> whereOf(probe.field().parentTypeName(), probe.field().name(), conditions)),
-            schema);
+            presenceOf(btf, schema, probe -> whereOf(probe.field().parentTypeName(), probe.field().name(), conditions)));
     }
 
     /** A batched child's presence slots: the columns its fetcher checks and its probe. */
@@ -921,8 +935,7 @@ public final class LauncherCommands {
 
     private static LauncherCommand batchedRow(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf,
-            GlueCall where, TenantStrategy tenancy, GeneratedUnits units, ChainPresence presence,
-            GraphitronSchema schema) {
+            GlueCall where, TenantStrategy tenancy, GeneratedUnits units, ChainPresence presence) {
         return new LauncherCommand(
             units.rowsMethod(btf.parentTypeName(), btf.name()),
             FieldCoordinates.coordinates(btf.parentTypeName(), btf.name()),
@@ -932,7 +945,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
             tenancy,
-            batchedResultOf(btf, units, schema),
+            batchedResultOf(btf, units),
             units.selectionOccurrences());
     }
 
@@ -955,7 +968,7 @@ public final class LauncherCommands {
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField btif,
             no.sikt.graphitron.rewrite.JoinedTableReprojection reprojection,
             java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType,
-            GlueCall where, GeneratedUnits units, GraphitronSchema schema) {
+            GlueCall where, GeneratedUnits units) {
         return new LauncherCommand(
             units.rowsMethod(btif.parentTypeName(), btif.name()),
             FieldCoordinates.coordinates(btif.parentTypeName(), btif.name()),
@@ -970,7 +983,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(btif.sourceKey(), btif.loaderRegistration()),
             new TenantStrategy.Single(),
-            interfaceChildResultOf(btif, units, schema),
+            interfaceChildResultOf(btif, units),
             units.selectionOccurrences());
     }
 
@@ -984,11 +997,10 @@ public final class LauncherCommands {
      */
     private static ResultShape interfaceChildResultOf(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField btif,
-            GeneratedUnits units, GraphitronSchema schema) {
+            GeneratedUnits units) {
         var ordering = orderingOf(btif.orderBy(), btif.parentTypeName(), btif.name(), units);
         if (btif.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
-            return connectionShape(conn, ordering, btif.parentTypeName(), btif.name(), null, units,
-                schema);
+            return connectionShape(conn, ordering, btif.qualifiedName(), null, units);
         }
         return new ResultShape.RecordList(ordering);
     }
@@ -1143,13 +1155,12 @@ public final class LauncherCommands {
      * unordered, where "no ordering" is the honest shape for one row.
      */
     private static ResultShape batchedResultOf(
-            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf, GeneratedUnits units,
-            GraphitronSchema schema) {
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf, GeneratedUnits units) {
         if (btf.returnType().wrapper()
                 instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection conn) {
             return connectionShape(conn,
                 orderingOf(btf.orderBy(), btf.parentTypeName(), btf.name(), units),
-                btf.parentTypeName(), btf.name(), null, units, schema);
+                btf.qualifiedName(), null, units);
         }
         return btf.emitsSingleRecordPerKey()
             ? new ResultShape.SingleRecord(new NullCheck.None())
@@ -1165,10 +1176,9 @@ public final class LauncherCommands {
      * coordinate carries facets.
      */
     private static ResultShape resultShapeOf(QueryField.QueryTableField qtf, GeneratedUnits units,
-            FacetPlan facets, RootPresence presence, GraphitronSchema schema) {
+            FacetPlan facets, RootPresence presence) {
         if (qtf.returnType().wrapper() instanceof FieldWrapper.Connection conn) {
-            return connectionShape(conn, orderingOf(qtf, units), qtf.parentTypeName(), qtf.name(), facets,
-                units, schema);
+            return connectionShape(conn, orderingOf(qtf, units), qtf.qualifiedName(), facets, units);
         }
         if (facets != null) {
             throw new IllegalStateException(
@@ -1269,43 +1279,13 @@ public final class LauncherCommands {
      * derive the same shape differently.
      */
     private static ResultShape.Connection connectionShape(FieldWrapper.Connection conn,
-            Ordering ordering, String parentTypeName, String fieldName, FacetPlan facets,
-            GeneratedUnits units, GraphitronSchema schema) {
-        String coordinate = parentTypeName + "." + fieldName;
+            Ordering ordering, String coordinate, FacetPlan facets, GeneratedUnits units) {
         if (ordering == null) {
             throw new IllegalStateException(
                 "connection coordinate '" + coordinate + "' has no resolvable ordering;"
                 + " the validator rejects pagination without ordering before production");
         }
-        return new ResultShape.Connection(ordering, conn.defaultPageSize(),
-            units.connectionHelper(), connectionClassAt(schema, parentTypeName, fieldName), facets);
-    }
-
-    /**
-     * The generated connection class the connection field at the coordinate builds: its type,
-     * read off the connection synthesis relation (which holds a row for every connection carrier,
-     * authored or synthesised), whether that type declares {@code totalCount}, and whether it
-     * carries facets. Public so the polymorphic connection emitters, which build the class
-     * without a launcher row, read the same derivation.
-     *
-     * <p>A schema-free assembly (the unit tier's, with no classified schema to read) names the
-     * class the way {@code @asConnection} names a connection it synthesises, counting and
-     * unfaceted, the same kind of fallback its other schema facts take.
-     */
-    public static no.sikt.graphitron.command.ConnectionClass connectionClassAt(GraphitronSchema schema,
-            String parentTypeName, String fieldName) {
-        if (schema == null) {
-            return new no.sikt.graphitron.command.ConnectionClass(
-                no.sikt.graphitron.model.grammar.ConnectionNaming.defaultConnectionName(parentTypeName, fieldName),
-                true, false);
-        }
-        var type = schema.connectionSynthesis().connectionTypeAt(parentTypeName, fieldName);
-        if (type == null) {
-            throw new IllegalStateException("Graphitron generator bug: connection field '" + parentTypeName
-                + "." + fieldName + "' has no connection type in the classified schema to build");
-        }
-        return new no.sikt.graphitron.command.ConnectionClass(type.name(),
-            type.schemaType().getFieldDefinition("totalCount") != null, !type.facets().isEmpty());
+        return new ResultShape.Connection(ordering, conn.defaultPageSize(), units.connectionHelper(), facets);
     }
 
     /**

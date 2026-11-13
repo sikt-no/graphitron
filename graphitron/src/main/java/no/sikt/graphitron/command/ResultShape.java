@@ -66,19 +66,19 @@ public sealed interface ResultShape {
      * the slot, so the model never holds them). {@link #helper} is the generated connection
      * runtime's unit ({@code ConnectionHelper}), copied off the naming vocabulary by the producer
      * so the launcher's edge to it is data, the same handshake shape the WHERE slot uses against
-     * the condition relation. {@link #connection} is the class the producer builds.
+     * the condition relation. The class the producer builds is not a component: it is the store's
+     * answer for the coordinate, the one the class itself is rendered from, which the renderer
+     * reads beside the row.
      *
      * <p>{@link #facets} is the faceted carrier's plan (the base and per-facet fragment refs
      * plus decode specs and groupings), absent exactly when the coordinate carries no facets; the
      * facets closure forks on that absence.
      */
-    record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, ConnectionClass connection,
-            FacetPlan facets)
+    record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, FacetPlan facets)
             implements ResultShape {
         public Connection {
             Objects.requireNonNull(ordering, "a connection composition is ordered by construction");
             Objects.requireNonNull(helper, "helper");
-            Objects.requireNonNull(connection, "connection");
         }
     }
 }

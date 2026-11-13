@@ -95,7 +95,7 @@ class TableChildNullContractPipelineTest {
     void splitQueryChild_correlatedSourceCarriesThePresenceColumnsAndProbe() {
         var schema = TestSchemaHelper.buildSchema(SDL);
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Film", "languageSplit").orElseThrow();
         var chain = (LaunchSource.CorrelatedChain) row.source();
         assertThat(chain.presence()).extracting(c -> c.sqlName()).containsExactly("name");
@@ -158,7 +158,7 @@ class TableChildNullContractPipelineTest {
         });
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var chain = (LaunchSource.CorrelatedChain) LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var chain = (LaunchSource.CorrelatedChain) LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Inventory", "filmSplit").orElseThrow().source();
         assertThat(chain.presence()).extracting(c -> c.sqlName()).containsExactly("title");
         assertThat(chain.probe()).hasValueSatisfying(p -> {

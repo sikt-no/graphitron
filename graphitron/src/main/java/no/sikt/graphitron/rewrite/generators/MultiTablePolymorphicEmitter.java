@@ -669,7 +669,7 @@ public final class MultiTablePolymorphicEmitter {
             int defaultPageSize,
             Optional<PolymorphicOrdering> ordering,
             String outputPackage,
-            no.sikt.graphitron.command.ConnectionClass connection) {
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
@@ -716,7 +716,7 @@ public final class MultiTablePolymorphicEmitter {
             ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage,
-            no.sikt.graphitron.command.ConnectionClass connection) {
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
         var tableBoundParticipants = participants.stream()
             .filter(p -> p instanceof ParticipantRef.TableBound)
             .map(p -> (ParticipantRef.TableBound) p)
@@ -1076,7 +1076,7 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, List<WhereFilter>> participantFilters,
             List<NodeIdArgDispatch> nodeIdArgDispatches, CompositeDecodeHelperRegistry registry,
             int defaultPageSize, Optional<PolymorphicOrdering> ordering, String outputPackage,
-            no.sikt.graphitron.command.ConnectionClass connection) {
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
 
         var connectionHelperClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
@@ -1666,7 +1666,7 @@ public final class MultiTablePolymorphicEmitter {
             ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage,
-            no.sikt.graphitron.command.ConnectionClass connection) {
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
 
         String fieldName = batchKey.name();
         TypeName valueType = no.sikt.graphitron.render.ConnectionConstruction.classOf(
@@ -1858,7 +1858,7 @@ public final class MultiTablePolymorphicEmitter {
             List<ParticipantRef.TableBound> participants,
             Map<String, ParticipantCorrelation> participantJoinPaths,
             int defaultPageSize, SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
-            String outputPackage, no.sikt.graphitron.command.ConnectionClass connection) {
+            String outputPackage, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connection) {
 
         var connectionHelperClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);

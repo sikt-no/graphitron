@@ -91,7 +91,7 @@ class RootNullContractPipelineTest {
     private static LauncherRelation produce(String sdl) {
         var schema = TestSchemaHelper.buildSchema(sdl);
         return LauncherCommands.produce(schema, ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE),
-            DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE, null);
     }
 
     private static NullCheck checkOf(LauncherRelation relation, String type, String field) {

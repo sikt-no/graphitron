@@ -24,7 +24,9 @@ import java.util.List;
  * <p>The routine-write rows and the error channels are empty because a fixture holding no store
  * cannot read them. A {@code @routine}-writing coordinate, or a producer catching into an outcome,
  * reaching here therefore fails its drift guard by name rather than emitting something plausible;
- * such a fixture wants the store-backed plan.
+ * such a fixture wants the store-backed plan. The same holds for a connection field: the class its
+ * producer builds is the store's answer, which a fixture with no store has none of, so rendering
+ * one fails by name.
  */
 public final class TypeFetcherRenderTestSupport {
 
@@ -36,7 +38,7 @@ public final class TypeFetcherRenderTestSupport {
         var typeUnits = new TypeUnitRelation(FetchersPlanner.produce(schema, outputPackage));
         return TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             LauncherCommands.produce(schema,
-                ConditionCommands.produce(schema, outputPackage), outputPackage),
+                ConditionCommands.produce(schema, outputPackage), outputPackage, null),
             typeUnits.fetchers(),
             typeUnits.errorFetchers(),
             RoutineWriteQuery.Rows.empty(),

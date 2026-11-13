@@ -148,7 +148,7 @@ class RootLauncherRendererTest {
     @Test
     void connectionShape_returnsTheConnectionClassAndKeepsTheLauncherSignature() {
         var m = render(filmsRow(null, new ResultShape.Connection(
-            pkDesc(), 100, UNITS.connectionHelper(), FILMS_CONNECTION, null)));
+            pkDesc(), 100, UNITS.connectionHelper(), null)));
         assertThat(m.name()).isEqualTo("rowsFilms");
         assertThat(m.returnType().toString())
             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.Connections.FilmsConnection");
@@ -161,7 +161,7 @@ class RootLauncherRendererTest {
         // A connection's unit fields sit at its node level; reading its own immediate fields
         // (edges/nodes/pageInfo) would match no arm and project only the row-present sentinel.
         assertThat(ProjectionCall.SelectionScope.of(new ResultShape.Connection(
-            pkDesc(), 100, UNITS.connectionHelper(), FILMS_CONNECTION, null)))
+            pkDesc(), 100, UNITS.connectionHelper(), null)))
             .isEqualTo(ProjectionCall.SelectionScope.CONNECTION_NODES);
         assertThat(ProjectionCall.SelectionScope.of(list(null)))
             .isEqualTo(ProjectionCall.SelectionScope.OWN_FIELDS);
@@ -394,7 +394,7 @@ class RootLauncherRendererTest {
         // Signature only, per this class's convention for the connection arm; the body's
         // seam ordering and its SQL are the execution tier's baselines.
         var m = render(discriminatedRow(null, new ResultShape.Connection(pkDesc(), 100,
-            UNITS.connectionHelper(), FILMS_CONNECTION, null),
+            UNITS.connectionHelper(), null),
             List.of(), List.of(filmContentBranch())));
         assertThat(m.returnType().toString())
             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.Connections.FilmsConnection");
@@ -457,16 +457,25 @@ class RootLauncherRendererTest {
                     lookupRow(null).source(),
                     null, new Invocation.Direct(), new TenantStrategy.Single(),
                     new ResultShape.Connection(pkDesc(), 100,
-                        UNITS.connectionHelper(), FILMS_CONNECTION, null), UNITS.selectionOccurrences()))
+                        UNITS.connectionHelper(), null), UNITS.selectionOccurrences()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("never paginates");
     }
 
-    private static final no.sikt.graphitron.command.ConnectionClass FILMS_CONNECTION =
-        new no.sikt.graphitron.command.ConnectionClass("FilmsConnection", true, false);
+    /**
+     * The store's answer for the two connection coordinates these rows render, stated as the value
+     * the renderer reads; which answer the store gives a field is pinned over a fact document by
+     * {@link ConnectionClassPipelineTest}.
+     */
+    private static final no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections CONNECTIONS =
+        new no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections(java.util.Map.of(
+            "Query.films", new no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection(
+                "Query", "films", "FilmsConnection", java.util.Set.of("EDGES", "PAGE_INFO", "TOTAL_COUNT")),
+            "Query.allContent", new no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection(
+                "Query", "allContent", "FilmsConnection", java.util.Set.of("EDGES", "PAGE_INFO", "TOTAL_COUNT"))));
 
     private static MethodSpec render(LauncherCommand row) {
-        return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED,
+        return RootLauncherRenderer.render(row, CarrierDsl.ENV_ACQUIRED, CONNECTIONS,
             new no.sikt.graphitron.render.ArgPathHelperRegistry(),
             // No projected key reads in these rows: the cases here are about launcher topology, and
             // the projected read has its own emission tier.

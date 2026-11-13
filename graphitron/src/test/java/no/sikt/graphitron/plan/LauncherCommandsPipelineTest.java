@@ -41,7 +41,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
 
         assertThat(relation.rows()).hasSize(2);
         assertThat(relation.carrierDsl()).isEqualTo(CarrierDsl.ENV_ACQUIRED);
@@ -82,7 +82,7 @@ class LauncherCommandsPipelineTest {
             """.formatted(STUB));
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "seen").orElseThrow();
         assertThat(row.where().takesEnv()).isTrue();
     }
@@ -97,7 +97,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "language").orElseThrow();
         assertThat(row.result()).isInstanceOf(ResultShape.SingleRecord.class);
     }
@@ -122,7 +122,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
 
         assertThat(relation.rows()).hasSize(2);
         assertThat(relation.rows())
@@ -148,7 +148,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "films").orElseThrow();
         var helper = (Ordering.Helper) ((ResultShape.RecordList) row.result()).ordering();
         assertThat(helper.method().owner().fqcn())
@@ -167,14 +167,12 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "films").orElseThrow();
         var connection = (ResultShape.Connection) row.result();
         assertThat(connection.ordering()).isInstanceOf(Ordering.Columns.class);
         assertThat(connection.defaultPageSize()).isPositive();
         assertThat(connection.helper().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionHelper");
-        assertThat(connection.connection().typeName()).isEqualTo("QueryFilmsConnection");
-        assertThat(connection.connection().counts()).isTrue();
     }
 
     @Test
@@ -189,7 +187,7 @@ class LauncherCommandsPipelineTest {
                 .withTenantColumn("film_id"));
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
 
         // The fanned coordinate mints a row (no dial entry left for it); its strategy arm
         // carries the scatter carrier's ref, and the run's carrier fact is ROUTED.
@@ -221,7 +219,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "recent").orElseThrow();
         var chain = (no.sikt.graphitron.command.LaunchSource.RoutineChain) row.source();
         assertThat(chain.hops()).hasSize(1);
@@ -260,7 +258,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "recent").orElseThrow();
         assertThat(row.source()).isInstanceOf(no.sikt.graphitron.command.LaunchSource.RoutineChain.class);
         assertThat(row.where()).isNotNull();
@@ -283,14 +281,13 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "recent").orElseThrow();
         assertThat(row.source()).isInstanceOf(no.sikt.graphitron.command.LaunchSource.RoutineChain.class);
         var connection = (ResultShape.Connection) row.result();
         assertThat(connection.ordering()).isInstanceOf(Ordering.Columns.class);
         assertThat(connection.defaultPageSize()).isPositive();
         assertThat(connection.helper().fqcn()).isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".util.ConnectionHelper");
-        assertThat(connection.connection().counts()).isTrue();
     }
 
     @Test
@@ -312,7 +309,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
         var row = relation.rowFor("Query", "allContent").orElseThrow();
 
         var source = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable) row.source();
@@ -376,7 +373,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
 
         var plain = relation.rowFor("Film", "actorsSplit").orElseThrow();
         assertThat(plain.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Batched.class);
@@ -426,7 +423,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var row = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "allParties").orElseThrow();
         var source = (no.sikt.graphitron.command.LaunchSource.DiscriminatedTable) row.source();
 
@@ -479,7 +476,7 @@ class LauncherCommandsPipelineTest {
             """);
 
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
 
         // Every covered coordinate mints a row (the migration dial is gone; the one
         // membership-and-production switch is total); the fact-excluded polymorphic root
@@ -525,7 +522,7 @@ class LauncherCommandsPipelineTest {
     private static no.sikt.graphitron.command.FacetPlan facetPlanOf(String sdl, String field) {
         var schema = TestSchemaHelper.buildSchema(sdl);
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
         return ((ResultShape.Connection) relation.rowFor("Query", field).orElseThrow().result()).facets();
     }
 
@@ -634,7 +631,7 @@ class LauncherCommandsPipelineTest {
             .findFirst().orElseThrow();
         assertThat(own.term()).isEmpty();
 
-        var plan = ((ResultShape.Connection) LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+        var plan = ((ResultShape.Connection) LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Query", "films").orElseThrow().result()).facets();
         assertThat(plan.facets().getFirst().grouping())
             .isInstanceOfSatisfying(no.sikt.graphitron.command.FacetPlan.Grouping.CarrierColumn.class,

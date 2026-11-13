@@ -67,6 +67,12 @@ final class TypeFetcherEmissionContext {
     private no.sikt.graphitron.emit.OutboxQuery.Rows outboxes =
         no.sikt.graphitron.emit.OutboxQuery.Rows.empty();
 
+    // The store's answer for the run's connection fields, the class each connection producer on this
+    // class builds and what its constructor takes. Empty by default, so a context with no store
+    // renders no connection: one rendered over it fails by name rather than guessing a class.
+    private no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections =
+        no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty();
+
     // The store's record accessors, for the VALIDATION pre-step's per-column check on a jOOQ record.
     // Empty by default, so a context with no store checks no record column.
     private no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors =
@@ -188,6 +194,25 @@ final class TypeFetcherEmissionContext {
 
     void setRecordAccessors(no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         this.recordAccessors = recordAccessors;
+    }
+
+    /** Installs the store's answer for the run's connection fields for this class's emission. */
+    void setConnections(no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
+        this.connections = connections;
+    }
+
+    /**
+     * The connection the field at the coordinate returns, as the store states it: the class its
+     * producer builds and the closures that class's constructor takes.
+     */
+    no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection connectionAt(String parentTypeName,
+            String fieldName) {
+        return connections.at(parentTypeName, fieldName);
+    }
+
+    /** The store's answer for the run's connection fields, for the renderers this class calls. */
+    no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections() {
+        return connections;
     }
 
     /**

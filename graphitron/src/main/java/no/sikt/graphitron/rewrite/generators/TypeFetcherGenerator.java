@@ -222,7 +222,7 @@ public class TypeFetcherGenerator {
             List<GraphitronField> nestedFields, String outputPackage,
             no.sikt.graphitron.plan.LauncherRelation runLaunchers, GraphitronSchema schema) {
         return no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage,
-            runLaunchers.carrierDsl(), schema);
+            runLaunchers.carrierDsl(), schema, runLaunchers.connections());
     }
 
     /**
@@ -579,6 +579,7 @@ public class TypeFetcherGenerator {
         ctx.setOutboxes(outboxes);
         ctx.setRecordAccessors(recordAccessors);
         ctx.setServices(services);
+        ctx.setConnections(launchers.connections());
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
@@ -685,7 +686,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, qtf, launcherRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(launcherRow, launchers.carrierDsl(), CodeBlock.of(""), CodeBlock.of(""),
+                        .render(launcherRow, launchers.carrierDsl(), ctx.connections(), CodeBlock.of(""), CodeBlock.of(""),
                             TenantDslEmitter.fanOutNarrowing(ctx, launcherRow, outputPackage),
                             ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The keyed-lookup row additionally owns a VALUES-building input-rows
@@ -728,7 +729,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildServiceDataFetcher(ctx, stf.name(), stf, stf.returnType(), stf.keySource(), RECORD, outputPackage, stf.errorChannel(), liftRow.unit().methodName()));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(liftRow, launchers.carrierDsl(),
+                        .render(liftRow, launchers.carrierDsl(), ctx.connections(),
                             TenantDslEmitter.resolve(ctx, stf, outputPackage).declaration(),
                             stfServiceCall, ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
@@ -746,7 +747,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildServiceDataFetcher(ctx, srf.name(), srf, srf.returnType(), srf.keySource(), srf.elementType(), outputPackage, srf.errorChannel(), delegateRow.unit().methodName()));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(delegateRow, launchers.carrierDsl(),
+                        .render(delegateRow, launchers.carrierDsl(), ctx.connections(),
                             TenantDslEmitter.resolve(ctx, srf, outputPackage).declaration(),
                             srfServiceCall, ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
@@ -766,7 +767,7 @@ public class TypeFetcherGenerator {
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
                         : com.palantir.javapoet.CodeBlock.of("");
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(batchedRow, launchers.carrierDsl(), dslDeclaration, CodeBlock.of(""),
+                        .render(batchedRow, launchers.carrierDsl(), ctx.connections(), dslDeclaration, CodeBlock.of(""),
                             TenantDslEmitter.fanOutNarrowing(ctx, batchedRow, outputPackage),
                             ctx.argPathHelpers(), ctx.projectedKeyHost()));
                     // The correlated-lookup row additionally owns the VALUES-building
@@ -812,7 +813,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildQueryTableFetcher(ctx, f, interfaceRow, outputPackage));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(interfaceRow, launchers.carrierDsl(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
+                        .render(interfaceRow, launchers.carrierDsl(), ctx.connections(), ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
                 case QueryField.QueryInterfaceField f -> {
                     var participantFilters = participantFiltersByTypename(f.participantFilters());
@@ -820,7 +821,7 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
                                 f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage,
-                                connectionClassAt(ctx, f))
+                                ctx.connectionAt(f.parentTypeName(), f.name()))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -836,7 +837,7 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), participantFilters,
                                 f.nodeIdArgDispatches(), registry, conn.defaultPageSize(), f.ordering(), outputPackage,
-                                connectionClassAt(ctx, f))
+                                ctx.connectionAt(f.parentTypeName(), f.name()))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -898,7 +899,7 @@ public class TypeFetcherGenerator {
                         f.lift(), parentTable, resultType, parentSource, outputPackage,
                         interfaceBatchedRow, CodeBlock.of("")));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
-                        interfaceBatchedRow, launchers.carrierDsl(),
+                        interfaceBatchedRow, launchers.carrierDsl(), ctx.connections(),
                         TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
                         ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
@@ -923,7 +924,7 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(),
                                 List.of(), registry, conn.defaultPageSize(), java.util.Optional.empty(), outputPackage,
-                                connectionClassAt(ctx, f))
+                                ctx.connectionAt(f.parentTypeName(), f.name()))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -939,7 +940,7 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitRootConnectionMethods(ctx, f.parentTypeName(), f.name(), f.participants(), Map.of(),
                                 List.of(), registry, conn.defaultPageSize(), java.util.Optional.empty(), outputPackage,
-                                connectionClassAt(ctx, f))
+                                ctx.connectionAt(f.parentTypeName(), f.name()))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -962,7 +963,7 @@ public class TypeFetcherGenerator {
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), ErrorArmAnswer.of(f.returnType().wrapper()), parentSource,
-                                outputPackage, connectionClassAt(ctx, f))
+                                outputPackage, ctx.connectionAt(f.parentTypeName(), f.name()))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -980,7 +981,7 @@ public class TypeFetcherGenerator {
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
                                 f.parentResultType(), ErrorArmAnswer.of(f.returnType().wrapper()), parentSource,
-                                outputPackage, connectionClassAt(ctx, f))
+                                outputPackage, ctx.connectionAt(f.parentTypeName(), f.name()))
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
@@ -1005,7 +1006,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildPivotBatchedDataFetcher(ctx, f, parentTable, outputPackage, pivotRow.unit().methodName()));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
-                        .render(pivotRow, launchers.carrierDsl(),
+                        .render(pivotRow, launchers.carrierDsl(), ctx.connections(),
                             TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
                             ctx.argPathHelpers(), ctx.projectedKeyHost()));
                 }
@@ -1325,7 +1326,7 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryTableFetcher(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.OutputField field,
             no.sikt.graphitron.command.LauncherCommand row, String outputPackage) {
-        var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row);
+        var valueType = no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(row, ctx.connections());
         var launcherClass = ClassName.get(row.unit().owner().packageName(), row.unit().owner().simpleName());
 
         var builder = MethodSpec.methodBuilder(field.name())
@@ -1905,7 +1906,7 @@ public class TypeFetcherGenerator {
         // for a @table-bound return), which the root service validator arm pins at the build boundary.
         TypeName liftedValueType = lift == null
             ? valueType
-            : no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(lift.row());
+            : no.sikt.graphitron.render.RootLauncherRenderer.valueTypeOf(lift.row(), ctx.connections());
         TypeName payloadType = wrap ? outcomeOf(liftedValueType, outputPackage) : liftedValueType;
 
         var builder = MethodSpec.methodBuilder(fieldName)
@@ -2005,7 +2006,7 @@ public class TypeFetcherGenerator {
         // The companion runs only from the service fetcher below, which rendered the field's
         // empty answer ahead of the call.
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
-            row, lift.carrierDsl(),
+            row, lift.carrierDsl(), ctx.connections(),
             TenantDslEmitter.resolve(ctx, lift.field(), outputPackage,
                 TenantDslEmitter.EmptyAnswerSite.Gated.INSTANCE).declaration(),
             ctx.argPathHelpers(), ctx.projectedKeyHost()));
@@ -5382,7 +5383,7 @@ public class TypeFetcherGenerator {
         String rowsName = row.unit().methodName();
         // The companion runs only from buildDmlFetcher, below its hoisted empty-input guard.
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
-            row, carrierDsl, TenantDslEmitter.resolve(ctx, field, outputPackage,
+            row, carrierDsl, ctx.connections(), TenantDslEmitter.resolve(ctx, field, outputPackage,
                 TenantDslEmitter.EmptyAnswerSite.Gated.INSTANCE).declaration(),
             ctx.argPathHelpers(), ctx.projectedKeyHost()));
 
@@ -7057,12 +7058,13 @@ public class TypeFetcherGenerator {
         boolean fanned = row.tenancy() instanceof no.sikt.graphitron.command.TenantStrategy.Fanned;
         String rowsMethodName = row.unit().methodName();
 
-        TypeName valueType = no.sikt.graphitron.render.BatchedRowsFragments.perKeyValueTypeOf(row);
+        TypeName valueType = no.sikt.graphitron.render.BatchedRowsFragments.perKeyValueTypeOf(row, ctx.connections());
         TypeName resultValueType = fanned
             ? ParameterizedTypeName.get(LIST, ClassName.get(Object.class))
             : row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn
                 ? no.sikt.graphitron.render.ConnectionConstruction.classOf(
-                    ClassName.get(conn.helper().packageName(), conn.helper().simpleName()), conn.connection())
+                    ClassName.get(conn.helper().packageName(), conn.helper().simpleName()),
+                    ctx.connectionAt(row.coordinate().getTypeName(), row.coordinate().getFieldName()))
                 : isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
 
         TypeName keyType = sourceKey.keyElementType();
@@ -7087,7 +7089,7 @@ public class TypeFetcherGenerator {
                 ctx, GeneratorUtils.keyColumnLocal(slotIndex), outputPackage);
             keyExtraction = CodeBlock.builder()
                 .add(GeneratorUtils.buildKeyExtractionThroughLocals(sourceKey, parentTable,
-                    GeneratorUtils.SOURCE_FROM_ENV, emptyBatchedResult(row, resultValueType)))
+                    GeneratorUtils.SOURCE_FROM_ENV, emptyBatchedResult(ctx, row, resultValueType)))
                 .add(handDown.declaration())
                 .build();
             return DataLoaderFetcherEmitter.buildKeyFirst(
@@ -7168,22 +7170,13 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The connection class a polymorphic connection field builds, read off the classified schema
-     * the way the launcher producer reads it for every other connection producer.
-     */
-    private static no.sikt.graphitron.command.ConnectionClass connectionClassAt(TypeFetcherEmissionContext ctx,
-            GraphitronField field) {
-        return no.sikt.graphitron.plan.LauncherCommands.connectionClassAt(ctx.graphitronSchema(),
-            field.parentTypeName(), field.name());
-    }
-
-    /**
      * The completed future a batched fetcher answers when its key cannot match: the field's empty
      * value, read off the launcher row's result shape. {@code null} for a single record, an empty
      * list for a record list, and an empty page for a connection, whose {@code totalCount} is 0: the
      * parent's result set is provably empty, as it is for a parent whose query found nothing.
      */
-    private static CodeBlock emptyBatchedResult(no.sikt.graphitron.command.LauncherCommand row,
+    private static CodeBlock emptyBatchedResult(TypeFetcherEmissionContext ctx,
+                                                no.sikt.graphitron.command.LauncherCommand row,
                                                 TypeName resultValueType) {
         CodeBlock empty = switch (row.result()) {
             case no.sikt.graphitron.command.ResultShape.SingleRecord ignored -> null;
@@ -7192,7 +7185,8 @@ public class TypeFetcherGenerator {
             // page counts 0 without a statement, so it needs no context.
             case no.sikt.graphitron.command.ResultShape.Connection conn ->
                 no.sikt.graphitron.render.ConnectionConstruction.empty(
-                    ClassName.get(conn.helper().packageName(), conn.helper().simpleName()), conn.connection());
+                    ClassName.get(conn.helper().packageName(), conn.helper().simpleName()),
+                    ctx.connectionAt(row.coordinate().getTypeName(), row.coordinate().getFieldName()));
             case no.sikt.graphitron.command.ResultShape.LoaderDelegated ignored ->
                 throw new IllegalStateException(
                     "Graphitron generator bug (batched fetcher): a table-batched launcher row"

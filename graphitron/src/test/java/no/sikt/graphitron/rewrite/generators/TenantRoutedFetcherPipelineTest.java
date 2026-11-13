@@ -428,7 +428,7 @@ class TenantRoutedFetcherPipelineTest {
                                                                              String nestingType) {
         var run = no.sikt.graphitron.plan.LauncherCommands.produce(schema,
             no.sikt.graphitron.plan.ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE),
-            DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE, null);
         java.util.List<no.sikt.graphitron.rewrite.model.GraphitronField> nested =
             java.util.List.copyOf(schema.nestingReach().wiringFor(nestingType).nestedFields());
         return TypeFetcherGenerator.nestingReachedLaunchers(nested, DEFAULT_OUTPUT_PACKAGE, run, null);
@@ -468,21 +468,16 @@ class TenantRoutedFetcherPipelineTest {
 
     /**
      * The nested class reads the run's one carrier-routing fact, so a nesting type's rows method
-     * builds its connections with a count closure over the routed source it paged on, as a class
-     * of a {@code @table} type does in the same build.
+     * builds its connections over the routed source it paged on, as a class of a {@code @table}
+     * type does in the same build. That the count closure then aggregates on that source is
+     * execution's: TenantDivinedRoutingExecutionTest's
+     * nestedInheritedConnection_totalCountAggregatesOnTheDivinedTenantSource.
      */
     @Test
     void aNestingTypesClassRoutesItsCarriersExactlyAsTheRunDoes() {
         var routed = multiTenant(FILM_STOCK);
         assertThat(nestedLaunchers(routed, "FilmStock").carrierDsl())
             .isEqualTo(no.sikt.graphitron.command.CarrierDsl.ROUTED);
-        var rows = TypeFetcherRenderTestSupport.generate(routed, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> "FilmStockFetchers".equals(t.name()))
-            .findFirst().orElseThrow()
-            .methodSpecs().stream()
-            .filter(m -> "rowsInventoriesConnection".equals(m.name()))
-            .findFirst().orElseThrow();
-        assertThat(rows.code().toString()).contains("countEnv -> pageCount.count(dsl)");
 
         var single = TestSchemaHelper.buildSchema(FILM_STOCK);
         assertThat(nestedLaunchers(single, "FilmStock").carrierDsl())

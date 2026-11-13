@@ -186,7 +186,7 @@ public final class ClassifiedHarness {
                         schema, TestConfiguration.DEFAULT_OUTPUT_PACKAGE);
                     outcome = new LauncherProduction.Produced(
                         no.sikt.graphitron.plan.LauncherCommands.produce(
-                            schema, conditions, TestConfiguration.DEFAULT_OUTPUT_PACKAGE));
+                            schema, conditions, TestConfiguration.DEFAULT_OUTPUT_PACKAGE, null));
                 } catch (IllegalStateException e) {
                     outcome = new LauncherProduction.Failed(e.getMessage());
                 }

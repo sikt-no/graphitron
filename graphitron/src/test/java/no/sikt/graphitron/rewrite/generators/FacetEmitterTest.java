@@ -63,14 +63,6 @@ class FacetEmitterTest {
     }
 
     @Test
-    void connectionClass_takesAFacetsClosureOnlyWhenFaceted() {
-        assertThat(no.sikt.graphitron.plan.LauncherCommands.connectionClassAt(
-            TestSchemaHelper.buildSchema(FACETED), "Query", "films").faceted()).isTrue();
-        assertThat(no.sikt.graphitron.plan.LauncherCommands.connectionClassAt(
-            TestSchemaHelper.buildSchema(UNFACETED), "Query", "films").faceted()).isFalse();
-    }
-
-    @Test
     void connectionHelper_resolvesNoFacetColumnByNameAtRuntime() {
         // The launcher binds each facet's typed column, source and count key; the helper keeps its
         // facet bucketing and declares no runtime by-name column lookup.

@@ -1,0 +1,56 @@
+"The class a connection field's producer builds, one field per kind of connection field. The connection type the field returns names the class, and the positions that type fills decide what its constructor takes beyond the page: a count where the type fills TOTAL_COUNT, facets where it fills FACETS. Query.languages is a connection @asConnection synthesises, which counts and carries no facets; Query.filmsByTitle is one whose filter declares a facet, so it also carries facets; Query.filmsPage is an authored connection declaring no totalCount, so it takes no count; Query.films is an authored connection sharing its edge with filmsPage, two classes over one edge; Query.people is a union connection and Film.actors a connection batched over its parents, which name their classes the same way."
+type Film @table(name: "film") {
+  title: String
+  actors(first: Int, last: Int, after: String, before: String): ActorsConnection! @splitQuery @reference(path: [
+    {key: "film_actor_film_id_fkey"},
+    {key: "film_actor_actor_id_fkey"}
+  ]) @defaultOrder(primaryKey: true)
+}
+type Actor @table(name: "actor") { actorId: Int! @field(name: "actor_id") }
+type Language @table(name: "language") { name: String }
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+union Person = Customer | Staff
+
+input FilmFilter { title: [String!] @field(name: "title") @asFacet }
+
+type FilmsConnection { edges: [FilmsEdge!]! pageInfo: PageInfo! totalCount: Int }
+type FilmsPage { edges: [FilmsEdge!]! pageInfo: PageInfo! }
+type FilmsEdge { cursor: String! node: Film! }
+type ActorsConnection { edges: [ActorsEdge!]! pageInfo: PageInfo! totalCount: Int }
+type ActorsEdge { cursor: String! node: Actor! }
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+
+type Query {
+  languages: [Language!]! @asConnection @defaultOrder(primaryKey: true)
+  filmsByTitle(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+  filmsPage(first: Int, last: Int, after: String, before: String): FilmsPage @defaultOrder(primaryKey: true)
+  films(first: Int, last: Int, after: String, before: String): FilmsConnection @defaultOrder(primaryKey: true)
+  people: [Person!]! @asConnection
+}
+
+extend schema @expectEquals(relation: "graphitron_field_target", where: "wrapper_type_name IS NOT NULL", rows: """
+  type_name, field_name,   target_type_name, wrapper_type_name
+  Film,      actors,       Actor,            ActorsConnection
+  Query,     languages,    Language,         QueryLanguagesConnection
+  Query,     filmsByTitle, Film,             QueryFilmsByTitleConnection
+  Query,     filmsPage,    Film,             FilmsPage
+  Query,     films,        Film,             FilmsConnection
+  Query,     people,       Person,           QueryPeopleConnection
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_position", where: "position IN ('TOTAL_COUNT', 'FACETS')", rows: """
+  type_name,                   field_name, position
+  ActorsConnection,            totalCount, TOTAL_COUNT
+  QueryLanguagesConnection,    totalCount, TOTAL_COUNT
+  QueryFilmsByTitleConnection, totalCount, TOTAL_COUNT
+  QueryFilmsByTitleConnection, facets,     FACETS
+  FilmsConnection,             totalCount, TOTAL_COUNT
+  QueryPeopleConnection,       totalCount, TOTAL_COUNT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_connection", where: "type_name IN ('FilmsConnection', 'FilmsPage')", rows: """
+  type_name,       edge_type_name
+  FilmsConnection, FilmsEdge
+  FilmsPage,       FilmsEdge
+  """)

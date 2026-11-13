@@ -2,8 +2,8 @@ package no.sikt.graphitron.render;
 
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
-import no.sikt.graphitron.command.ConnectionClass;
 import no.sikt.graphitron.emit.ConnectionsEmitter;
+import no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection;
 
 /**
  * How a producer builds the generated connection class its field's type names, one spelling for
@@ -14,6 +14,10 @@ import no.sikt.graphitron.emit.ConnectionsEmitter;
  *
  * <p>Every expression reads a {@code page} local, the {@code ConnectionHelper.PageRequest} the
  * producer paged with.
+ *
+ * <p>The class and the constructor's arity are the store's answer for the producer's field
+ * ({@link FieldConnection}), the facts the class itself is rendered from, so the constructor called
+ * here and the one rendered are one decision.
  */
 public final class ConnectionConstruction {
 
@@ -28,9 +32,18 @@ public final class ConnectionConstruction {
 
     private ConnectionConstruction() {}
 
+    /**
+     * The store's answer for the connection the launcher {@code row} produces, out of the run's
+     * {@code connections}: a connection row the store states no connection for is a generator bug.
+     */
+    public static FieldConnection of(no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            no.sikt.graphitron.command.LauncherCommand row) {
+        return connections.at(row.coordinate().getTypeName(), row.coordinate().getFieldName());
+    }
+
     /** The class a producer of {@code connection} builds, beside {@code helper} in the util package. */
-    public static ClassName classOf(ClassName helper, ConnectionClass connection) {
-        return ConnectionsEmitter.className(helper.packageName(), connection.typeName());
+    public static ClassName classOf(ClassName helper, FieldConnection connection) {
+        return ConnectionsEmitter.className(helper.packageName(), connection.connectionTypeName());
     }
 
     /**
@@ -39,7 +52,7 @@ public final class ConnectionConstruction {
      * the facets closure, or {@code null} for a producer with no facet plan, whose facets field
      * then resolves to {@code null}, as it does on every connection a batched producer builds.
      */
-    public static CodeBlock build(ClassName helper, ConnectionClass connection, String rowsLocal,
+    public static CodeBlock build(ClassName helper, FieldConnection connection, String rowsLocal,
             CodeBlock countOf, CodeBlock facetsOf) {
         var code = CodeBlock.builder()
             .add("new $T(\n", classOf(helper, connection))
@@ -56,7 +69,7 @@ public final class ConnectionConstruction {
      * The empty page: no rows, no further page either way, and a count of 0 where the class
      * counts, which is what a parent whose query found nothing counts too.
      */
-    public static CodeBlock empty(ClassName helper, ConnectionClass connection) {
+    public static CodeBlock empty(ClassName helper, FieldConnection connection) {
         var code = CodeBlock.builder()
             .add("new $T($T.of(), false, false, $T.cursorOf($T.of())", classOf(helper, connection),
                 ClassName.get("java.util", "List"), helper, ClassName.get("java.util", "List"));
@@ -79,11 +92,11 @@ public final class ConnectionConstruction {
      * {@code specs} order, each bucket a record of the facet's value type. A facet the client did
      * not select has no buckets and its component stays {@code null}, unread.
      */
-    public static CodeBlock facetsOf(ClassName helper, ConnectionClass connection,
+    public static CodeBlock facetsOf(ClassName helper, FieldConnection connection,
             java.util.List<no.sikt.graphitron.rewrite.model.FacetSpec> specs, boolean routed) {
         var facets = ClassName.get(helper.packageName(), FACETS_CLASS_NAME);
         var record = facets.nestedClass(
-            no.sikt.graphitron.model.grammar.FacetNaming.facetsTypeName(connection.typeName()));
+            no.sikt.graphitron.model.grammar.FacetNaming.facetsTypeName(connection.connectionTypeName()));
         var components = CodeBlock.builder();
         for (int i = 0; i < specs.size(); i++) {
             var spec = specs.get(i);
@@ -119,7 +132,7 @@ public final class ConnectionConstruction {
         return routed ? CodeBlock.of("dsl") : CodeBlock.of("$T.dsl($L)", helper, envName);
     }
 
-    private static void tail(CodeBlock.Builder code, ConnectionClass connection, CodeBlock countOf,
+    private static void tail(CodeBlock.Builder code, FieldConnection connection, CodeBlock countOf,
             CodeBlock facetsOf) {
         if (connection.counts()) {
             code.add(",\n$L", countOf);

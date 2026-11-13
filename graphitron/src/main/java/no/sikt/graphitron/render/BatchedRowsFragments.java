@@ -68,7 +68,8 @@ public final class BatchedRowsFragments {
      */
     static CodeBlock body(LauncherCommand row, LaunchSource.Correlated.Projected chain,
             CodeBlock dslDeclaration, CodeBlock fanOutNarrowing,
-            no.sikt.graphitron.command.CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers) {
+            no.sikt.graphitron.command.CarrierDsl carrierDsl, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
@@ -85,7 +86,8 @@ public final class BatchedRowsFragments {
         var prelude = prelude(body, fieldName, batched.sourceKey(), chain, argHelpers);
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            connectionTail(body, row, chain, prelude, conn, carrierDsl);
+            connectionTail(body, row, chain, prelude, conn, ConnectionConstruction.of(connections, row),
+                carrierDsl);
             return body.build();
         }
 
@@ -277,7 +279,8 @@ public final class BatchedRowsFragments {
      */
     static CodeBlock discriminatedBody(LauncherCommand row,
             LaunchSource.DiscriminatedCorrelatedChain chain, CodeBlock dslDeclaration,
-            no.sikt.graphitron.command.CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers) {
+            no.sikt.graphitron.command.CarrierDsl carrierDsl, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            ArgPathHelperRegistry argHelpers) {
         var batched = (no.sikt.graphitron.command.Invocation.Batched) row.invocation();
         String fieldName = row.coordinate().getFieldName();
         var body = CodeBlock.builder();
@@ -296,7 +299,8 @@ public final class BatchedRowsFragments {
             chain.discriminated(), List.of(), baseLocal, ProjectionCall.SelectionScope.of(row.result())));
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            discriminatedConnectionTail(body, chain, prelude, conn, carrierDsl);
+            discriminatedConnectionTail(body, chain, prelude, conn, ConnectionConstruction.of(connections, row),
+                carrierDsl);
             return body.build();
         }
 
@@ -340,7 +344,7 @@ public final class BatchedRowsFragments {
      */
     private static void discriminatedConnectionTail(CodeBlock.Builder body,
             LaunchSource.DiscriminatedCorrelatedChain chain, PreludeBindings prelude,
-            no.sikt.graphitron.command.ResultShape.Connection conn,
+            no.sikt.graphitron.command.ResultShape.Connection conn, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection built,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         pageRequestLocals(body, conn, prelude.terminalAlias(),
             CodeBlock.of("new $T<>($L)", ARRAY_LIST, DiscriminatedTableFragments.FIELDS_LOCAL));
@@ -366,7 +370,7 @@ public final class BatchedRowsFragments {
             prelude.firstAlias(), chain.correlation(), prelude.joinOnAlias(),
             prelude.joinOnCols(), prelude.joinOnParentCols());
 
-        windowedPageTail(body, stepDeclaration, countFrom.build(), "condition", conn, carrierDsl);
+        windowedPageTail(body, stepDeclaration, countFrom.build(), "condition", conn, built, carrierDsl);
     }
 
     /**
@@ -378,12 +382,12 @@ public final class BatchedRowsFragments {
      * lift and the entry-point emitter reads this method, so the launcher's batch container
      * and the loader's value type cannot disagree.
      */
-    public static TypeName perKeyValueTypeOf(LauncherCommand row) {
+    public static TypeName perKeyValueTypeOf(LauncherCommand row, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
         if (row.tenancy() instanceof TenantStrategy.Fanned) {
             return ParameterizedTypeName.get(LIST_CN, ClassName.get(Object.class));
         }
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
-            return ConnectionConstruction.classOf(className(conn.helper()), conn.connection());
+            return ConnectionConstruction.classOf(className(conn.helper()), ConnectionConstruction.of(connections, row));
         }
         return row.result() instanceof no.sikt.graphitron.command.ResultShape.SingleRecord
             ? RECORD
@@ -394,8 +398,8 @@ public final class BatchedRowsFragments {
      * The rendered payload for a batched row, read by the launcher renderer: one
      * {@link #perKeyValueTypeOf} element per batch key.
      */
-    static TypeName valueTypeOf(LauncherCommand row) {
-        return ParameterizedTypeName.get(LIST_CN, perKeyValueTypeOf(row));
+    static TypeName valueTypeOf(LauncherCommand row, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
+        return ParameterizedTypeName.get(LIST_CN, perKeyValueTypeOf(row, connections));
     }
 
     /**
@@ -406,7 +410,7 @@ public final class BatchedRowsFragments {
      */
     private static void connectionTail(CodeBlock.Builder body, LauncherCommand row,
             LaunchSource.Correlated.Projected chain, PreludeBindings prelude,
-            no.sikt.graphitron.command.ResultShape.Connection conn,
+            no.sikt.graphitron.command.ResultShape.Connection conn, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection built,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         pageRequestLocals(body, conn, prelude.terminalAlias(),
             ProjectionCall.fromLauncher(className(chain.projection()), prelude.terminalAlias(), row));
@@ -428,7 +432,7 @@ public final class BatchedRowsFragments {
         fromBridgeAndParentJoin(countFrom, chain.joinPath(), prelude.aliases(), prelude.firstAlias(),
             chain.correlation(), prelude.joinOnAlias(), prelude.joinOnCols(), prelude.joinOnParentCols());
 
-        windowedPageTail(body, step.build(), countFrom.build(), "where", conn, carrierDsl);
+        windowedPageTail(body, step.build(), countFrom.build(), "where", conn, built, carrierDsl);
     }
 
     /**
@@ -482,7 +486,7 @@ public final class BatchedRowsFragments {
      */
     private static void windowedPageTail(CodeBlock.Builder body, CodeBlock stepDeclaration,
             CodeBlock countFromTopology, String whereLocal,
-            no.sikt.graphitron.command.ResultShape.Connection conn,
+            no.sikt.graphitron.command.ResultShape.Connection conn, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection built,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         body.addStatement("$T<Integer> idxField = parentInput.field(0, $T.class)",
             FIELD, Integer.class);
@@ -528,7 +532,7 @@ public final class BatchedRowsFragments {
             ConnectionConstruction.closureDsl(helper,
                 carrierDsl == no.sikt.graphitron.command.CarrierDsl.ROUTED, ConnectionConstruction.COUNT_ENV)));
         body.addStatement("return scatterConnectionByIdx(flat, keys.size(), countSource, (pageRows, pageCount) -> $L)",
-            ConnectionConstruction.build(helper, conn.connection(), "pageRows", countOf, null));
+            ConnectionConstruction.build(helper, built, "pageRows", countOf, null));
     }
 
     /**

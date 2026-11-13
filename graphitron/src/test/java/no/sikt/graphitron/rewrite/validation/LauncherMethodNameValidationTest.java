@@ -61,7 +61,7 @@ class LauncherMethodNameValidationTest {
         var schema = TestSchemaHelper.buildSchema(COLLIDING_SDL);
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
 
-        assertThatThrownBy(() -> LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE))
+        assertThatThrownBy(() -> LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("minted twice")
             .hasMessageContaining("rowsFooBar");

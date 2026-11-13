@@ -31,6 +31,12 @@ import java.util.Optional;
  * carried on the family view that renders carriers rather than copied onto every row; it moves
  * up to the plan if a second family ever reads it.
  *
+ * <p>{@link #connections} is the store's answer for the run's connection fields, the connection
+ * type each returns and the positions it fills, read once by the producer and carried here, beside
+ * {@link #carrierDsl}, for the renderers: every connection producer names the class it builds and
+ * the constructor it calls from this one answer, the one the class itself is rendered from, so the
+ * rows carry no connection class of their own.
+ *
  * <p><b>Method-name census.</b> Coordinate uniqueness does not imply method-name uniqueness:
  * the {@code rows} / {@code load} / {@code lookup} formulas upper-camel a field name, which is
  * not injective, and several naming schemes mint onto one fetchers class. This relation
@@ -50,16 +56,19 @@ import java.util.Optional;
  * already rejects two case-equivalent stems upstream, so two fetchers owners cannot differ only in
  * case by the time a producer runs.
  */
-public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDsl carrierDsl) {
+public record LauncherRelation(CoordinateIndex<LauncherCommand> index, CarrierDsl carrierDsl,
+        no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
 
     /** The relation over {@code rows}, indexed on the coordinate key it is declared to have. */
-    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl) {
-        this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl);
+    public LauncherRelation(List<LauncherCommand> rows, CarrierDsl carrierDsl,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
+        this(CoordinateIndex.of(rows, LauncherCommand::coordinate, "launcher"), carrierDsl, connections);
     }
 
     public LauncherRelation {
         Objects.requireNonNull(index, "index");
         Objects.requireNonNull(carrierDsl, "carrierDsl");
+        Objects.requireNonNull(connections, "connections");
         var byMethod = new LinkedHashMap<UnitMethodRef, LauncherCommand>();
         for (var row : index.rows()) {
             var existing = byMethod.putIfAbsent(row.unit(), row);

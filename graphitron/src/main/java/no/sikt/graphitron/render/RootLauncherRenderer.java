@@ -65,10 +65,13 @@ public final class RootLauncherRenderer {
         LIST, ParameterizedTypeName.get(SORT_FIELD,
             com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)));
 
-    /** Renders one launcher method from its row and the run's carrier-routing fact. */
+    /**
+     * Renders one launcher method from its row, the run's carrier-routing fact and the store's
+     * answer for the run's connection fields, which names the class a connection row builds.
+     */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
-        return render(row, carrierDsl, CodeBlock.of(""), argHelpers, keyHost);
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+        return render(row, carrierDsl, connections, CodeBlock.of(""), argHelpers, keyHost);
     }
 
     /**
@@ -78,9 +81,10 @@ public final class RootLauncherRenderer {
      * not hold). Ignored by every non-batched row.
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            CodeBlock batchedDslDeclaration, ArgPathHelperRegistry argHelpers,
-            ProjectedKeyHost keyHost) {
-        return render(row, carrierDsl, batchedDslDeclaration, CodeBlock.of(""), argHelpers, keyHost);
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, CodeBlock batchedDslDeclaration,
+            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+        return render(row, carrierDsl, connections, batchedDslDeclaration, CodeBlock.of(""), argHelpers,
+            keyHost);
     }
 
     /**
@@ -91,9 +95,9 @@ public final class RootLauncherRenderer {
      * every non-service row.
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            CodeBlock batchedDslDeclaration, CodeBlock serviceCall,
-            ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
-        return render(row, carrierDsl, batchedDslDeclaration, serviceCall, CodeBlock.of(""),
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, CodeBlock batchedDslDeclaration,
+            CodeBlock serviceCall, ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
+        return render(row, carrierDsl, connections, batchedDslDeclaration, serviceCall, CodeBlock.of(""),
             argHelpers, keyHost);
     }
 
@@ -106,7 +110,8 @@ public final class RootLauncherRenderer {
      * its slots is a generator bug.
      */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
-            CodeBlock batchedDslDeclaration, CodeBlock serviceCall, CodeBlock fanOutNarrowing,
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, CodeBlock batchedDslDeclaration,
+            CodeBlock serviceCall, CodeBlock fanOutNarrowing,
             ArgPathHelperRegistry argHelpers, ProjectedKeyHost keyHost) {
         if (row.tenancy() instanceof TenantStrategy.Fanned fanned
                 && fanned.narrowing().isEmpty() != fanOutNarrowing.isEmpty()) {
@@ -117,7 +122,7 @@ public final class RootLauncherRenderer {
         }
         var builder = MethodSpec.methodBuilder(row.unit().methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(valueTypeOf(row));
+            .returns(valueTypeOf(row, connections));
         // The parameter list is a derived view over (invocation, tenancy), total over the
         // delivery axis so a new arm is a compile error here rather than a silent default: a
         // direct single-tenant launcher takes the one resolved DSLContext its entry point
@@ -157,8 +162,9 @@ public final class RootLauncherRenderer {
                                 builder.addCode(directReturn(selectChain(anchor, row, tableLocal, true, ordered)));
                             }
                             case ResultShape.Connection connection -> builder.addCode(
-                                connectionBody(anchor.projection(), row, connection, tableLocal,
-                                    tableLocal, carrierDsl));
+                                connectionBody(anchor.projection(), row, connection,
+                                    ConnectionConstruction.of(connections, row), tableLocal, tableLocal,
+                                    carrierDsl));
                             case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
                                 "the LoaderDelegated result belongs to the service arms; the"
                                 + " command constructor rejects the pair before rendering");
@@ -169,16 +175,16 @@ public final class RootLauncherRenderer {
                 }
             }
             case LaunchSource.RoutineChain chain ->
-                builder.addCode(routineBody(row, chain, carrierDsl, argHelpers,
+                builder.addCode(routineBody(row, chain, carrierDsl, connections, argHelpers,
                     keyHost.at(row.coordinate())));
             // Ahead of the Correlated arm below, which its sibling seal dominates: the topology
             // is shared, only the select list forks.
             case LaunchSource.DiscriminatedCorrelatedChain chain ->
                 builder.addCode(BatchedRowsFragments.discriminatedBody(row, chain,
-                    batchedDslDeclaration, carrierDsl, argHelpers));
+                    batchedDslDeclaration, carrierDsl, connections, argHelpers));
             case LaunchSource.Correlated.Projected chain ->
                 builder.addCode(BatchedRowsFragments.body(row, chain, batchedDslDeclaration,
-                    fanOutNarrowing, carrierDsl, argHelpers));
+                    fanOutNarrowing, carrierDsl, connections, argHelpers));
             case LaunchSource.PivotAggregate pivot ->
                 builder.addCode(BatchedRowsFragments.pivotBody(row, pivot, batchedDslDeclaration, argHelpers));
             case LaunchSource.ServiceCall sc ->
@@ -218,7 +224,8 @@ public final class RootLauncherRenderer {
                         builder.addCode(directReturn(stepChain(true, ordered)));
                     }
                     case ResultShape.Connection connection -> builder.addCode(
-                        discriminatedConnectionBody(disc, connection, tableLocal, carrierDsl));
+                        discriminatedConnectionBody(disc, connection,
+                            ConnectionConstruction.of(connections, row), tableLocal, carrierDsl));
                     case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
                         "the LoaderDelegated result belongs to the service arms; the"
                         + " command constructor rejects the pair before rendering");
@@ -232,17 +239,18 @@ public final class RootLauncherRenderer {
      * The launcher's rendered payload, a derived view over {@code (invocation, tenancy,
      * result)}: the fanned strategy returns the scatter's marker-bearing transport ({@code List<Object>},
      * entailed by the strategy, collapsed by the entry point), everything else the shape's own
-     * type (the connection arm's is its connection class). Read by this renderer and the entry-point
-     * emitter, so the two ends cannot disagree.
+     * type (the connection arm's is its connection class, named by the store's answer in
+     * {@code connections}). Read by this renderer and the entry-point emitter, so the two ends
+     * cannot disagree.
      */
-    public static TypeName valueTypeOf(LauncherCommand row) {
+    public static TypeName valueTypeOf(LauncherCommand row, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections) {
         if (row.source() instanceof LaunchSource.ServiceCall
                 || row.source() instanceof LaunchSource.ServiceTableLift) {
             return ServiceRowsFragments.valueTypeOf(row);
         }
         // Total over the delivery axis, so a new arm is a compile error at this view too.
         return switch (row.invocation()) {
-            case Invocation.Batched ignored -> BatchedRowsFragments.valueTypeOf(row);
+            case Invocation.Batched ignored -> BatchedRowsFragments.valueTypeOf(row, connections);
             case Invocation.ReturningKeyed ignored -> ReentryRowsFragments.valueTypeOf(row);
             case Invocation.Direct ignored -> {
                 if (row.tenancy() instanceof TenantStrategy.Fanned) {
@@ -258,7 +266,8 @@ public final class RootLauncherRenderer {
                             : RESULT_OF_RECORD;
                     case ResultShape.SingleRecord ignored2 -> RECORD;
                     case ResultShape.Connection connection ->
-                        ConnectionConstruction.classOf(className(connection.helper()), connection.connection());
+                        ConnectionConstruction.classOf(className(connection.helper()),
+                            ConnectionConstruction.of(connections, row));
                     case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
                         "the LoaderDelegated result belongs to the service arms, whose value type"
                         + " derives in ServiceRowsFragments; the command constructor rejects the pair");
@@ -398,8 +407,8 @@ public final class RootLauncherRenderer {
      * its terminus alias.
      */
     private static CodeBlock connectionBody(no.sikt.graphitron.command.UnitRef projection,
-            LauncherCommand row, ResultShape.Connection connection, String fromLocal, String aliasLocal,
-            CarrierDsl carrierDsl) {
+            LauncherCommand row, ResultShape.Connection connection, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection built, String fromLocal,
+            String aliasLocal, CarrierDsl carrierDsl) {
         var code = CodeBlock.builder();
         code.add(OrderingBlock.declareBothViews(connection.ordering(), aliasLocal));
         code.addStatement("Integer first = env.getArgument($S)", "first");
@@ -424,12 +433,12 @@ public final class RootLauncherRenderer {
         CodeBlock facetsOf = null;
         if (connection.facets() != null) {
             code.add(facetBindings(connection, fromLocal, aliasLocal));
-            facetsOf = ConnectionConstruction.facetsOf(helperClass, connection.connection(),
+            facetsOf = ConnectionConstruction.facetsOf(helperClass, built,
                 connection.facets().facets().stream().map(FacetPlan.Entry::spec).toList(),
                 carrierDsl == CarrierDsl.ROUTED);
         }
         code.addStatement("$T pageCondition = condition", CONDITION);
-        code.addStatement("return $L", ConnectionConstruction.build(helperClass, connection.connection(),
+        code.addStatement("return $L", ConnectionConstruction.build(helperClass, built,
             "result", scopedCount(helperClass, fromLocal, carrierDsl), facetsOf));
         return code.build();
     }
@@ -462,7 +471,8 @@ public final class RootLauncherRenderer {
      * discriminator restriction the projection half ANDed in, so the count agrees with the page.
      */
     private static CodeBlock discriminatedConnectionBody(LaunchSource.DiscriminatedTable disc,
-            ResultShape.Connection connection, String tableLocal, CarrierDsl carrierDsl) {
+            ResultShape.Connection connection, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection built, String tableLocal,
+            CarrierDsl carrierDsl) {
         var code = CodeBlock.builder();
         code.add(DiscriminatedTableFragments.projection(disc, java.util.List.of(), tableLocal,
             ProjectionCall.SelectionScope.of(connection)));
@@ -489,7 +499,7 @@ public final class RootLauncherRenderer {
         // No facet plan: an interface-element carrier is rejected at the SDL boundary, so the
         // producer never lands a plan on this coordinate.
         code.addStatement("$T pageCondition = condition", CONDITION);
-        code.addStatement("return $L", ConnectionConstruction.build(helperClass, connection.connection(),
+        code.addStatement("return $L", ConnectionConstruction.build(helperClass, built,
             "result", scopedCount(helperClass, tableLocal, carrierDsl), null));
         return code.build();
     }
@@ -657,7 +667,8 @@ public final class RootLauncherRenderer {
      * about the read surface composed over it.
      */
     private static CodeBlock routineBody(LauncherCommand row, LaunchSource.RoutineChain chain,
-            CarrierDsl carrierDsl, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
+            CarrierDsl carrierDsl, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections,
+            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
         var code = CodeBlock.builder();
         var startTable = chain.start().resultTable();
         String startLocal = chain.hops().isEmpty() ? TableLocal.name(startTable) : "source";
@@ -711,7 +722,8 @@ public final class RootLauncherRenderer {
                 code.add(directReturn(selectChain(projection, fromLocal, true, ordered)));
             }
             case ResultShape.Connection connection -> code.add(
-                connectionBody(chain.projection(), row, connection, fromLocal, terminal, carrierDsl));
+                connectionBody(chain.projection(), row, connection, ConnectionConstruction.of(connections, row),
+                    fromLocal, terminal, carrierDsl));
             case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
                 "the LoaderDelegated result belongs to the service arms; the"
                 + " command constructor rejects the pair before rendering");

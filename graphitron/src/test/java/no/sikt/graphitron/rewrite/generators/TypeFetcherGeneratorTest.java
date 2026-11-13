@@ -27,7 +27,6 @@ import no.sikt.graphitron.rewrite.model.LookupMapping;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
-import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
@@ -548,77 +547,14 @@ class TypeFetcherGeneratorTest {
         assertThat(spec.methodSpecs()).extracting(MethodSpec::name).doesNotContain("filmsOrderBy");
     }
 
-    // ===== QueryTableField with FieldWrapper.Connection → connection fetcher =====
-
-    private static PaginationSpec forwardPagination() {
-        return new PaginationSpec(
-            new PaginationSpec.PaginationArg("Int", false),
-            null,
-            new PaginationSpec.PaginationArg("String", false),
-            null);
-    }
-
-    private static QueryField.QueryTableField connectionField(String name) {
-        var orderBy = new OrderBySpec.Fixed(
-            List.of(new OrderBySpec.ColumnOrderEntry(TestFixtures.filmIdCol(), null, OrderBySpec.SortDirection.ASC, false)), true);
-        return new QueryField.QueryTableField("Query", name, null,
-            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
-            List.of(), orderBy, forwardPagination(), LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE);
-    }
-
-    private static QueryField.QueryTableField connectionFieldWithArgOrderBy(String name) {
-        var filmIdCol = TestFixtures.filmIdCol();
-        var base = new OrderBySpec.Fixed(
-            List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null, OrderBySpec.SortDirection.ASC, false)), true);
-        var namedOrder = new OrderBySpec.NamedOrder(
-            "TITLE",
-            new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(filmIdCol, null, OrderBySpec.SortDirection.ASC, false)), true));
-        var orderBy = new OrderBySpec.Argument(
-            "order", "FilmOrder", false, new OrderBySpec.Composition.Single(List.of(namedOrder)),
-            "field", "direction", base);
-        return new QueryField.QueryTableField("Query", name, null,
-            TestFixtures.tableBoundFilm(new FieldWrapper.Connection(true, 100)),
-            List.of(), orderBy, forwardPagination(), LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE);
-    }
-
-    @Test
-    void connectionField_returnsTheConnectionTypesClass() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, List.of(connectionField("films")));
-        // Wrapped in DataFetcherResult<...>.
-        assertThat(method(spec, "films").returnType().toString()).endsWith("Connections.QueryFilmsConnection>");
-    }
-
-    @Test
-    void connectionField_withOrderByArg_emitsHelperMethod() {
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
-            List.of(connectionFieldWithArgOrderBy("films")));
-        assertThat(spec.methodSpecs()).extracting(MethodSpec::name).contains("filmsOrderBy");
-    }
-
-    // Custom pagination arg names are unsupported: PaginationResolver.isPaginationArg accepts
-    // only first/last/after/before, so the slot fixes the name and PaginationArg carries none.
-
-    // ===== Backward pagination and Relay validation =====
+    // ===== Connection fetchers =====
     //
-    // No body assertions here. Backward pagination (last/before), the first+last conflict
-    // rejection, and cursor decode + seek semantics are covered end-to-end by the
-    // filmsConnection_* execution tests in graphitron-sakila-example's GraphQLQueryTest.
-    // reverseOrderBy derivation lives in ConnectionHelper.pageRequest, not on the fetcher class.
-
-    @Test
-    void connectionField_withOrderByArg_extraFieldsComeFromOrderingResult() {
-        // Intentional body-content assertion; no structural equivalent. Both orderBy (for SQL)
-        // and extraFields (for cursor) must derive from the same OrderByResult dispatch, the
-        // same "ordering" local. If they diverge, SQL ORDER BY and cursor columns get out of
-        // sync, which execution tier only catches on a specific multi-column ordering query
-        // with cursor pagination. The composition lives in the rows<Field> launcher unit; the
-        // entry point is thin.
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null,
-            List.of(connectionFieldWithArgOrderBy("films")));
-        var code = method(spec, "rowsFilms").code().toString();
-        assertThat(code).contains("ordering.sortFields()");
-        assertThat(code).contains("ordering.columns()");
-    }
+    // None here. A connection producer names the class its field's type builds from the store's
+    // answer for the field, which a hand-built field list has none of, so every connection shape
+    // is pinned where it is generated from a captured graph: the class each producer builds by
+    // ConnectionClassPipelineTest over the connection-classes fact document, and the producers'
+    // paging, cursors, counts and batching by ConnectionProducersExecutionTest and the
+    // *Connection_* execution tests in graphitron-sakila-example's GraphQLQueryTest.
 
     // ===== Service root fetchers =====
 
@@ -1637,150 +1573,6 @@ class TypeFetcherGeneratorTest {
             .doesNotContainKeys(QueryField.QueryInterfaceField.class, QueryField.QueryUnionField.class);
     }
 
-    // ===== Connection pagination on QueryInterfaceField / QueryUnionField =====
-    //
-    // The connection emit path mirrors the list path but: (a) returns
-    // a DataFetcherResult of the field's connection class, (b) wraps stage 1's UNION ALL in a derived table
-    // 'pages' so .orderBy/.seek/.limit apply uniformly across the union, (c) calls
-    // ConnectionHelper.pageRequest to derive PageRequest. The order itself (key columns, then
-    // __typename) is pinned by the execution tier's paging tests, not by body text here.
-
-    private static QueryField.QueryInterfaceField queryInterfaceConnectionField(String name,
-                                                                                 List<ParticipantRef> participants,
-                                                                                 int defaultPageSize) {
-        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
-        var returnType = new ReturnTypeRef.PolymorphicReturnType("Searchable", wrapper);
-        return new QueryField.QueryInterfaceField("Query", name, null, returnType, participants, List.of(), List.of(), java.util.Optional.empty());
-    }
-
-    private static QueryField.QueryUnionField queryUnionConnectionField(String name,
-                                                                        List<ParticipantRef> participants,
-                                                                        int defaultPageSize) {
-        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
-        var returnType = new ReturnTypeRef.PolymorphicReturnType("Document", wrapper);
-        return new QueryField.QueryUnionField("Query", name, null, returnType, participants, List.of(), List.of(), java.util.Optional.empty());
-    }
-
-    @Test
-    void queryInterfaceField_connection_returnsDataFetcherResultOfTheConnectionClass() {
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        assertThat(method(spec, "searchConnection").returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<" + DEFAULT_OUTPUT_PACKAGE
-                + ".util.Connections.QuerySearchConnectionConnection>");
-    }
-
-    @Test
-    void queryInterfaceField_connection_callsConnectionHelperPageRequest() {
-        // ConnectionHelper.pageRequest derives PageRequest (limit, effectiveOrderBy, seekFields,
-        // selectFields) from (first, last, after, before, defaultPageSize, orderBy, extraFields,
-        // selection). The default page size threads from FieldWrapper.Connection.defaultPageSize().
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "searchConnection").code().toString();
-        assertThat(body).contains("ConnectionHelper.pageRequest(first, last, after, before, 5,");
-    }
-
-    @Test
-    void queryInterfaceField_connection_stage1WrapsUnionAllAsDerivedTable() {
-        // Stage 1 in connection mode wraps the per-branch UNION ALL in .asTable("pages") so the
-        // outer query can apply seek/limit uniformly. The list path emits a flat
-        // dsl.select(...).from(...).unionAll(...).orderBy(...).fetch() chain instead; this test
-        // pins the divergence.
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "searchConnection").code().toString();
-        assertThat(body).contains(".asTable(\"pages\")");
-        assertThat(body).contains(".unionAll(");
-    }
-
-    @Test
-    void queryInterfaceField_connection_appliesSeekAndLimit() {
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "searchConnection").code().toString();
-        assertThat(body)
-            .contains(".orderBy(page.effectiveOrderBy())")
-            .contains(".seek(page.seekFields())")
-            .contains(".limit(page.limit())");
-    }
-
-    @Test
-    void queryInterfaceField_connection_countsTheUnionAsItsConnectionsCount() {
-        // The connection's count closure counts (pagesTable, DSL.noCondition()), so totalCount runs
-        // SELECT count(*) FROM (UNION ALL) AS pages lazily on selection. Per-branch WHEREs (when
-        // wired for child connections) live inside the union, so the outer condition is a no-op.
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "searchConnection").code().toString();
-        assertThat(body).contains("ConnectionHelper.Scoped(pagesTable, org.jooq.impl.DSL.noCondition())");
-    }
-
-    @Test
-    void queryInterfaceField_connection_liftsUnionAllAsTableLocal() {
-        // The UNION-ALL derived table is lifted to a local Table<?> pagesTable variable so the
-        // same reference backs both the page query (.from(pagesTable)) and the connection's count closure
-        // for totalCount. Without the local, totalCount would have to re-emit the entire
-        // UNION ALL, doubling the emission size.
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "searchConnection").code().toString();
-        assertThat(body)
-            .as("UNION-ALL is materialized as a local Table<?>")
-            .contains("Table<?> pagesTable")
-            .contains(".asTable(\"pages\")");
-        assertThat(body)
-            .as("the page query references the local pagesTable")
-            .contains(".from(pagesTable)");
-    }
-
-    @Test
-    void queryInterfaceField_connection_compositePkParticipant_stage1ProjectsAllPkColumns() {
-        // Stage-1 outer SELECT projects every __pk_i__ column so the dispatch loop has the full
-        // PK tuple for ValuesJoinRowBuilder. With pkArity > 1, the loop emits an Object[] of all
-        // PK slots; with pkArity == 1, it stays at __pk0__.
-        var compositeTable = TestFixtures.tableRef("paged_a", "PAGED_A", "PagedA",
-            List.of(
-                new ColumnRef("k1", "K1", "java.lang.Integer"),
-                new ColumnRef("k2", "K2", "java.lang.Integer")));
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("PagedA", compositeTable, null));
-        var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "compositeConnection").code().toString();
-        assertThat(body)
-            .as("stage-1 outer SELECT projects __pk0__ and __pk1__")
-            .contains("name(\"__pk0__\")")
-            .contains("name(\"__pk1__\")");
-        assertThat(body)
-            .as("dispatch loop reads all PK slots into Object[]")
-            .contains("r.get(\"__pk0__\")")
-            .contains("r.get(\"__pk1__\")");
-    }
-
-    @Test
-    void queryUnionField_connection_emitsSameShapeAsInterfaceField() {
-        // Union variant parity: same emitter, same body shape. Ratchet against drift between
-        // QueryInterfaceField and QueryUnionField on the connection path the same way the
-        // list path does in queryUnionField_emitsTwoStageStructure_likeInterfaceField.
-        var field = queryUnionConnectionField("documentsConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "documentsConnection").code().toString();
-        assertThat(body)
-            .contains(".asTable(\"pages\")")
-            .contains("ConnectionHelper.pageRequest(")
-            .contains(".seek(page.seekFields())")
-            .contains("ConnectionHelper.Scoped(pagesTable, org.jooq.impl.DSL.noCondition())");
-    }
-
     // ===== ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====
     //
     // Same two-stage emission as the Query-rooted case, plus parent correlation: the fetcher
@@ -1791,10 +1583,9 @@ class TypeFetcherGeneratorTest {
         // film_actor → film via film_actor_film_id_fkey: source columns sit on film_actor side.
         // film_actor → actor via film_actor_actor_id_fkey: same shape. The FK source columns on
         // the parent (FilmActor) side must coincide with FilmActor's PK by sqlName so the
-        // batched-connection emitter can resolve each parent PK slot to a real FK target column;
-        // the synthetic batched parent PK is a single-column [last_update] (see
-        // filmActorParentTableForBatched), so both FKs source from last_update on the parent
-        // side. The participant-side targetColumns name and type are immaterial to the unit test
+        // batched emitter can resolve each parent PK slot to a real FK target column; the
+        // synthetic parent PK is a single-column [last_update] (see filmActorParentTableForList),
+        // so both FKs source from last_update on the parent side. The participant-side targetColumns name and type are immaterial to the unit test
         // (the emitter does not consume them for the parent-input lookup).
         // FK direction: film_actor (source/FK holder) → film (target/PK side) and similarly for actor.
         return java.util.Map.of(
@@ -1952,19 +1743,13 @@ class TypeFetcherGeneratorTest {
     void childInterfaceField_listForm_routesParentKeyExtractionThroughBuildRecordParentKeyExtraction() {
         // Structural pin: the emitted key extraction uses the canonical four-shape helper
         // (DSL.row(((Record) env.getSource()).get(...))) rather than an inline cast-then-read
-        // path that bypasses the helper. Mirrors the connection-arm assertion below.
+        // path that bypasses the helper. The connection arm's key extraction is pinned by
+        // execution, GraphQLQueryTest's addressOccupantsConnection_* and projectItemsConnection_*.
         var listSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForList(), null,
             List.of(childInterfaceField("FilmActor", "related", true)), DEFAULT_OUTPUT_PACKAGE);
         assertThat(method(listSpec, "related").code().toString())
             .as("DSL.row(...) is the canonical helper's emit shape")
-            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
-
-        var connSpec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(), null,
-            List.of(childInterfaceConnectionField("FilmActor", "relatedConnection", 5)), DEFAULT_OUTPUT_PACKAGE);
-        assertThat(method(connSpec, "relatedConnection").code().toString())
-            .as("Connection arm shares the canonical helper pattern; same key shape")
             .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row(((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
     }
 
@@ -1999,231 +1784,12 @@ class TypeFetcherGeneratorTest {
                 ChildField.BatchedInterfaceField.class, ChildField.BatchedUnionField.class);
     }
 
-    // ===== Connection pagination on ChildField.InterfaceField / ChildField.UnionField =====
-    //
-    // DataLoader-batched: one polymorphic UNION ALL JOINed to a parentInput VALUES table, ranked
-    // per parent with ROW_NUMBER() OVER (PARTITION BY __idx__), then scattered into per-parent
-    // buckets. Each bucket's connection counts through slot i of one BatchCounts over the shared
-    // pagesTable, so totalCount counts each parent's occupants with one grouped statement.
-
-    private static ChildField.BatchedInterfaceField childInterfaceConnectionField(
-            String parentType, String name, int defaultPageSize) {
-        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
-        var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
-            new ParticipantRef.TableBound("Actor",
-                TestFixtures.tableRef("actor", "ACTOR", "Actor",
-                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
-                null));
-        return new ChildField.BatchedInterfaceField(parentType, name, null,
-            returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
-            filmActorParentTableForList(), filmActorParentResultType(),
-            polymorphicRowRegistration(false));
-    }
-
-    private static ChildField childUnionConnectionField(
-            String parentType, String name, int defaultPageSize) {
-        var wrapper = new FieldWrapper.Connection(false, defaultPageSize);
-        var returnType = new ReturnTypeRef.PolymorphicReturnType("FilmOrActor", wrapper);
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Film", filmTableWithPk(), null),
-            new ParticipantRef.TableBound("Actor",
-                TestFixtures.tableRef("actor", "ACTOR", "Actor",
-                    List.of(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"))),
-                null));
-        return new ChildField.BatchedUnionField(parentType, name, null,
-            returnType, participants, filmActorChildJoinPaths(),
-            filmActorParentSourceKey(), TestFixtures.fkColumnsLift(),
-            filmActorParentTableForList(), filmActorParentResultType(),
-            polymorphicRowRegistration(false));
-    }
-
-    /**
-     * Parent table fixture with a synthetic single-column PK on film_actor, exercising the
-     * DataLoader-batched windowed CTE path. The actual sakila.film_actor PK is composite
-     * (film_id, actor_id), but the unit tests don't run real SQL; they only assert generator
-     * output, and a single-column PK keeps the batched path engaged.
-     */
-    private static TableRef filmActorParentTableForBatched() {
-        return TestFixtures.tableRef("film_actor", "FILM_ACTOR", "FilmActor",
-            List.of(new ColumnRef("last_update", "LAST_UPDATE", "java.sql.Timestamp")));
-    }
-
-    /**
-     * The per-branch {@code parentInput} JOIN predicate for the fixture above, spelled once because
-     * it carries a {@code coerce} that needs explaining. The fixture invents a single-column
-     * {@code Timestamp} primary key on {@code film_actor} to reach the arity-1 DataLoader path,
-     * while the participant columns it is compared against are {@code Integer}. Those two types
-     * disagree, so {@code ColumnComparison} reconciles them exactly as it would for a
-     * converter-diverged key. That is the mint working, not the fixture drifting: a real catalog
-     * cannot produce this pair, because both ends of a foreign key share a SQL type.
-     */
-    private static String parentInputJoinOn(String branchAlias, String participantColumn) {
-        String receiver = branchAlias + "." + participantColumn;
-        return receiver + ".eq(parentInput.field(\"last_update\", "
-            + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE.getDataType())"
-            + ".coerce(" + receiver + "))";
-    }
-
-    @Test
-    void childInterfaceField_connection_emitsDataLoaderRegisteringFetcher() {
-        // Child connection fetcher registers a DataLoader keyed on the parent table's
-        // single-column PK (Row1<Timestamp> here) and delegates to a rows<Field>(keys, env)
-        // batch loader.
-        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "relatedConnection").code().toString();
-        assertThat(body)
-            .as("DataLoader name is built from the response path (no tenant prefix)")
-            .contains("env.getExecutionStepInfo().getPath().getKeysOnly()");
-        assertThat(body)
-            .as("DataLoader<Row1<Timestamp>, connection class> registration")
-            .contains("org.jooq.Row1<java.sql.Timestamp>")
-            .contains("DataLoaderFactory.newDataLoader");
-        assertThat(body)
-            .as("Parent PK extraction delegated to GeneratorUtils.buildRecordParentKeyExtraction "
-                + "(inline DSL.row over env.getSource() reads — no fk0/fk1 locals)")
-            .contains("org.jooq.Row1<java.sql.Timestamp> key = org.jooq.impl.DSL.row("
-                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE))");
-        assertThat(body)
-            .as("Async tail: thenApply lifts the connection into DataFetcherResult, exceptionally "
-                + "routes through the no-channel disposition (surfaceClientErrorOrRedact, R415)")
-            .contains("loader.load(key, env)")
-            .contains(".thenApply(payload -> graphql.execution.DataFetcherResult.")
-            .contains(".exceptionally(t -> ")
-            .contains("ErrorRouter.surfaceClientErrorOrRedact(t, env)");
-    }
-
-    @Test
-    void childInterfaceField_connection_emitsBatchedRowsMethod() {
-        // The rows method takes List<Row1<PK>> + env and returns a list of the connection class;
-        // one connection per parent in the batch.
-        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var rows = method(spec, "rowsRelatedConnection").code().toString();
-        assertThat(rows)
-            .as("empty-input short-circuit")
-            .contains("if (keys.isEmpty())")
-            .contains("return java.util.List.of();");
-        assertThat(rows)
-            .as("typed parentInput VALUES table")
-            .contains("org.jooq.Row2<java.lang.Integer, java.sql.Timestamp>[] parentRows")
-            .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"last_update\")");
-        assertThat(rows)
-            .as("each parent row rebinds the RowN key cell at the owner column's Converter DataType (R413)")
-            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), "
-                + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field1()), "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM_ACTOR.LAST_UPDATE.getDataType()))");
-    }
-
-    @Test
-    void childInterfaceField_connection_appliesParentFkJoinPerBranch() {
-        // Each stage-1 branch JOINs parentInput on the participant FK column. Both branches
-        // must JOIN independently; without per-branch JOIN the union would return
-        // cross-product noise.
-        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var rows = method(spec, "rowsRelatedConnection").code().toString();
-        assertThat(rows)
-            .as("Film branch JOINs parentInput on FILM_ID")
-            .contains(parentInputJoinOn("stage1_Film", "FILM_ID"));
-        assertThat(rows)
-            .as("Actor branch JOINs parentInput on ACTOR_ID")
-            .contains(parentInputJoinOn("stage1_Actor", "ACTOR_ID"));
-        assertThat(rows)
-            .as("each branch projects parentInput.field(0) as __idx__")
-            .contains("parentInput.field(0, java.lang.Integer.class).as(\"__idx__\")");
-    }
-
-    @Test
-    void childInterfaceField_connection_emitsRankedCteWithRowNumber() {
-        // The windowed CTE wraps pagesTable in a ROW_NUMBER() OVER (PARTITION BY __idx__
-        // ORDER BY effectiveOrderBy) envelope; the outer SELECT filters __rn__ <= page.limit()
-        // for per-partition limit.
-        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var rows = method(spec, "rowsRelatedConnection").code().toString();
-        assertThat(rows)
-            .as("pagesTable derived table")
-            .contains(".asTable(\"pages\")");
-        assertThat(rows)
-            .as("ranked CTE with ROW_NUMBER over PARTITION BY __idx__")
-            .contains("org.jooq.impl.DSL.rowNumber().over(org.jooq.impl.DSL.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as(\"__rn__\")")
-            .contains(".asTable(\"ranked\")");
-        assertThat(rows)
-            .as("ranked CTE applies orderBy + seek BEFORE rn is computed")
-            .contains(".orderBy(page.effectiveOrderBy())")
-            .contains(".seek(page.seekFields())");
-        assertThat(rows)
-            .as("outer SELECT filters __rn__ <= page.limit()")
-            .contains("ranked.field(\"__rn__\", java.lang.Integer.class).le(org.jooq.impl.DSL.val(page.limit()))");
-    }
-
-    @Test
-    void childInterfaceField_connection_perParentConnectionsCountThroughABatchCountSlot() {
-        // The scatter loop builds each per-parent connection over its bucket, counting through
-        // counts.slot(i) of one BatchCounts(pagesTable, idxField, keys.size()). totalCount runs
-        // SELECT __idx__, count(*) FROM pages GROUP BY __idx__ once for the batch.
-        var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var rows = method(spec, "rowsRelatedConnection").code().toString();
-        assertThat(rows)
-            .as("parallel parentIdxByOuter array populated from stage1's __idx__")
-            .contains("int[] parentIdxByOuter = new int[stage1.size()]")
-            .contains("parentIdxByOuter[outerIdx] = r.get(\"__idx__\", java.lang.Integer.class)");
-        assertThat(rows)
-            .as("scatter into per-parent buckets keyed by parentIdxByOuter")
-            .contains("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
-        assertThat(rows)
-            .as("per-parent connection counts through its BatchCounts slot")
-            .contains("pageCount = counts.slot(i)")
-            .contains("countEnv -> pageCount.count(");
-    }
-
-    @Test
-    void childUnionField_connection_emitsSameShapeAsChildInterface() {
-        // Union variant parity: same emitter, same body shape under the batched connection path.
-        var field = childUnionConnectionField("FilmActor", "relatedConnection", 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
-            filmActorParentTableForBatched(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var fetcher = method(spec, "relatedConnection").code().toString();
-        var rows = method(spec, "rowsRelatedConnection").code().toString();
-        assertThat(fetcher)
-            .as("union variant: same DataLoader-registering main fetcher")
-            .contains("DataLoaderFactory.newDataLoader")
-            .contains("loader.load(key, env)");
-        assertThat(rows)
-            .as("union variant: same JOIN parentInput per branch")
-            .contains(parentInputJoinOn("stage1_Film", "FILM_ID"))
-            .contains(parentInputJoinOn("stage1_Actor", "ACTOR_ID"));
-        assertThat(rows)
-            .as("union variant: same per-parent connection with its BatchCounts slot")
-            .contains("pageCount = counts.slot(i)")
-            .contains("countEnv -> pageCount.count(");
-    }
-
     // ===== Composite-PK parent (RowN widening) =====
     //
     // Synthetic fixture: parent type "Project" backed by table "project" with a 2-column PK
     // (org_id, project_id). Two participants with FKs pointing back to that composite key,
-    // each with single-column PK so the connection-mode validator (single-PK participant)
-    // remains satisfied. Exercises Row1<...> → RowN<...> widening: DataLoader key element
-    // becomes Row2<Integer, Integer>; parentInput VALUES becomes Row3<Integer, Integer,
-    // Integer> (idx + parent PK arity 2); per-branch JOIN ON has an AND-chain across the
-    // composite FK.
+    // each with a single-column PK. Exercises Row1<...> → RowN<...> widening: the DataLoader key
+    // element becomes Row2<Integer, Integer>.
 
     private static TableRef compositePkParentTable() {
         return TestFixtures.tableRef("project", "PROJECT", "Project",
@@ -2246,93 +1812,6 @@ class TypeFetcherGeneratorTest {
         return java.util.Map.of(
             "ProjectNote", TestFixtures.participantFkPath(pair, pair),
             "ProjectEvent", TestFixtures.participantFkPath(pair, pair));
-    }
-
-    private static ChildField.BatchedInterfaceField compositePkChildInterfaceConnectionField() {
-        var wrapper = new FieldWrapper.Connection(false, 5);
-        var returnType = new ReturnTypeRef.PolymorphicReturnType("ProjectItem", wrapper);
-        var note = compositeFkParticipant("project_note", "PROJECT_NOTE", "ProjectNote", "note_id", "NOTE_ID");
-        var event = compositeFkParticipant("project_event", "PROJECT_EVENT", "ProjectEvent", "event_id", "EVENT_ID");
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("ProjectNote", note, null),
-            new ParticipantRef.TableBound("ProjectEvent", event, null));
-        var parentTable = compositePkParentTable();
-        var parentSourceKey = TestFixtures.polymorphicRowParentSourceKey(parentTable.primaryKeyColumns());
-        var parentResultType = (no.sikt.graphitron.rewrite.model.GraphitronType.ResultType)
-            new no.sikt.graphitron.rewrite.model.GraphitronType.JooqTableRecordType(
-                "Project", null, null, parentTable);
-        return new ChildField.BatchedInterfaceField("Project", "itemsConnection", null,
-            returnType, participants, compositePkParentJoinPaths(),
-            parentSourceKey, TestFixtures.fkColumnsLift(), parentTable, parentResultType,
-            polymorphicRowRegistration(false));
-    }
-
-    @Test
-    void childInterfaceField_connection_compositePkParent_widensKeyToRowN() {
-        // The DataLoader key element is Row2<Integer, Integer> (parent PK arity 2). The
-        // computeIfAbsent and load(key, env) shape is unchanged; only the type widens.
-        var field = compositePkChildInterfaceConnectionField();
-        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
-            compositePkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var fetcher = method(spec, "itemsConnection").code().toString();
-        assertThat(fetcher)
-            .as("DataLoader<Row2<Integer, Integer>, connection class>")
-            .contains("org.dataloader.DataLoader<org.jooq.Row2<java.lang.Integer, java.lang.Integer>");
-        assertThat(fetcher)
-            .as("Composite parent-PK extraction emits an inline DSL.row over both columns "
-                + "(no fk0/fk1 locals — buildRecordParentKeyExtraction emits a single statement)")
-            .contains("org.jooq.Row2<java.lang.Integer, java.lang.Integer> key = org.jooq.impl.DSL.row("
-                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID), "
-                + "((org.jooq.Record) env.getSource()).get(no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID))");
-    }
-
-    @Test
-    void childInterfaceField_connection_compositePkParent_widensParentInputToRowN() {
-        // parentInput VALUES table widens to Row3<Integer, Integer, Integer> (idx + parent PK
-        // arity 2) and aliases ("parentInput", "idx", "org_id", "project_id"). Each parent row
-        // is built via DSL.row(DSL.inline(i), k.field1(), k.field2()).
-        var field = compositePkChildInterfaceConnectionField();
-        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
-            compositePkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var rows = method(spec, "rowsItemsConnection").code().toString();
-        assertThat(rows)
-            .as("Row3<Integer, Integer, Integer>[] parentRows for idx + 2 parent PK columns")
-            .contains("org.jooq.Row3<java.lang.Integer, java.lang.Integer, java.lang.Integer>[] parentRows");
-        assertThat(rows)
-            .as("DSL.row rebinds each composite key cell at the owner column's Converter DataType (R413)")
-            .contains("org.jooq.impl.DSL.row(org.jooq.impl.DSL.inline(i), "
-                + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field1()), "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID.getDataType()), "
-                + "org.jooq.impl.DSL.val(parentKeyCellValue(k.field2()), "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID.getDataType()))");
-        assertThat(rows)
-            .as("parentInput.as carries both parent PK column SQL names")
-            .contains("org.jooq.impl.DSL.values(parentRows).as(\"parentInput\", \"idx\", \"org_id\", \"project_id\")");
-    }
-
-    @Test
-    void childInterfaceField_connection_compositePkParent_widensJoinPredicateToAndChain() {
-        // Per-branch JOIN ON predicate is an AND-chain across parent PK slots: each composite
-        // FK column on the participant equals its position-paired parentInput VALUES column.
-        var field = compositePkChildInterfaceConnectionField();
-        var spec = TypeFetcherGenerator.generateTypeSpec("Project",
-            compositePkParentTable(),
-            null, List.of(field), DEFAULT_OUTPUT_PACKAGE);
-        var rows = method(spec, "rowsItemsConnection").code().toString();
-        assertThat(rows)
-            .as("ProjectNote branch JOINs on (org_id AND project_id)")
-            .contains("stage1_ProjectNote.ORG_ID.eq(parentInput.field(\"org_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID.getDataType()))"
-                + ".and(stage1_ProjectNote.PROJECT_ID.eq(parentInput.field(\"project_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID.getDataType())))");
-        assertThat(rows)
-            .as("ProjectEvent branch JOINs on (org_id AND project_id) — same AND-chain shape")
-            .contains("stage1_ProjectEvent.ORG_ID.eq(parentInput.field(\"org_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.ORG_ID.getDataType()))"
-                + ".and(stage1_ProjectEvent.PROJECT_ID.eq(parentInput.field(\"project_id\", "
-                + "no.sikt.graphitron.rewrite.test.jooq.public_.Tables.PROJECT.PROJECT_ID.getDataType())))");
     }
 
     // ===== InputBean helper emission =====

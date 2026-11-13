@@ -118,7 +118,7 @@ class BatchedDiscriminatedInterfaceChildPipelineTest {
         var conditions = no.sikt.graphitron.plan.ConditionCommands.produce(
             schema, no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE);
         var row = no.sikt.graphitron.plan.LauncherCommands.produce(
-                schema, conditions, no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE)
+                schema, conditions, no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE, null)
             .rowFor("Film", "contentsConnection").orElseThrow();
         assertThat(row.source())
             .isInstanceOf(no.sikt.graphitron.command.LaunchSource.DiscriminatedCorrelatedChain.class);

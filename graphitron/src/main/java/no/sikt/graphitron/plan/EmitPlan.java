@@ -213,7 +213,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
-            projectionRelation.dslProjections());
+            projectionRelation.dslProjections(), store);
         var keyProjections = KeyProjectionCommands.produce(projections);
         requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
         LauncherCommands.requireResolvedOrderingsAreLowered(launchers, projectionRelation);

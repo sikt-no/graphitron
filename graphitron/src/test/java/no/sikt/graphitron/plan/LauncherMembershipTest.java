@@ -107,7 +107,7 @@ class LauncherMembershipTest {
 
     private static LauncherRelation produce(GraphitronSchema schema) {
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
-        return LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        return LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE, null);
     }
 
     /**

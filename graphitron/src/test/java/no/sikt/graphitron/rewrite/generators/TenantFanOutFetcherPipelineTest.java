@@ -121,7 +121,7 @@ class TenantFanOutFetcherPipelineTest {
                                                                       String type, String field) {
         var launchers = no.sikt.graphitron.plan.LauncherCommands.produce(schema,
             no.sikt.graphitron.plan.ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE),
-            DEFAULT_OUTPUT_PACKAGE);
+            DEFAULT_OUTPUT_PACKAGE, null);
         return launchers.rowFor(type, field).orElseThrow().tenancy();
     }
 
