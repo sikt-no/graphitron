@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-12
+last-updated: 2026-11-13
 ---
 
 # A clean build runs in under five minutes
@@ -178,6 +178,20 @@ same documents again. This step goes beyond R1160: the model's run writes its sh
 under `graphitron-model/target`, published with the test jar, and the downstream populations and
 `generate-test-schemas` open those instead of capturing. A file whose DDL hash or document set does
 not match is refused and captured afresh.
+
+**A4. Capture code lives in the model, and `graphitron` captures only through its harnesses (Alf,
+2026-11-13).** The test stores are then managed in one place, so A2a's pool and A3's shared files
+reach every capture. The ruling is in `docs/architecture/how-to/testing.adoc`. In small commits:
+- `TestSchemaHelper` captures through `FactGraphs.inline()`, the pool `readInline` uses;
+- the tests of what capture writes move to `graphitron-model`, about 31 classes and parts of four
+  more. A test that compares a store relation with the walk stays in `graphitron` and retires with
+  the walk;
+- the generator tests and helpers that still capture take their store from a model harness;
+- a structural guard, in the style of `StoreClientBoundaryTest`, fails `graphitron`'s build when its
+  main or test code captures directly.
+
+Whether `GraphitronStore.captured`, the call a run starts from, counts as capturing directly is with
+Alf.
 
 ### Track B: use the machine
 
