@@ -149,7 +149,7 @@ public final class Diagnostics {
         /** A method name, against the overloads its sibling class declares. */
         record MethodName(Range range, String classFqn, String methodName) implements Finding {}
 
-        /** A {@code @nodeId(typeName:)} value, against the graph's {@code @node} declarations. */
+        /** A {@code @nodeId(typeName:)} value, against the graph's nodes and node containers. */
         record NodeTypeName(Range range, String typeName) implements Finding {}
 
         /**
@@ -857,8 +857,9 @@ public final class Diagnostics {
     ) {
         if (answers.nodeTypeName(typeName) != DiagnosticFacts.Resolution.UNKNOWN) return;
         out.add(diagnostic(range,
-            "Unknown @node type '" + typeName + "' on @nodeId(typeName:). The type must be "
-            + "declared in the schema and carry the @node directive."));
+            "Unknown node type '" + typeName + "' on @nodeId(typeName:). The type must be a node: a "
+            + "@table type carrying @node, or implementing Node over a table whose class publishes "
+            + "node metadata; or an interface or union over nodes."));
     }
 
     private static void judgeMethodName(

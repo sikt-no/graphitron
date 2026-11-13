@@ -99,9 +99,9 @@ class DiagnosticsTest {
             ClasspathCorpus.entries());
         withBackingClasses = StoreFixture.held().ofCatalog(backingRoot, BACKED_SDL,
             StoreFixture.testClasses());
-        withNodes = StoreFixture.held().of(nodesRoot, """
+        withNodes = StoreFixture.held().ofCatalog(nodesRoot, """
             type Query { x: Int }
-            type Film @node(typeId: "Film") { id: ID }
+            type Film @table(name: "film") @node(typeId: "Film") { id: ID }
             """);
         // Captured with the fixture catalog: the membership relation reads a member's resolved table
         // binding rather than its directive, so a container is a legal typeName: value only where the

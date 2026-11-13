@@ -120,8 +120,10 @@ final class SchemaView {
         if (!type.implementors().isEmpty()) entry.put("implementors", type.implementors());
         type.node().ifPresent(node -> {
             var map = new LinkedHashMap<String, Object>();
-            McpWire.putIfNotNull(map, "typeId", node.typeId());
+            map.put("typeId", node.typeId());
+            map.put("typeIdOrigin", node.typeIdOrigin());
             if (!node.keyColumns().isEmpty()) map.put("keyColumns", node.keyColumns());
+            McpWire.putIfNotNull(map, "keyColumnsOrigin", node.keyColumnsOrigin());
             entry.put("node", map);
         });
         putList(entry, "declarations", type.declarations(), SchemaView::mapDeclaration);

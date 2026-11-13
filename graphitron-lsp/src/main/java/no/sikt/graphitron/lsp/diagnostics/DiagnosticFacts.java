@@ -41,7 +41,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -442,11 +441,11 @@ final class DiagnosticFacts {
         }
 
         /**
-         * What the graph says about a type a {@code @nodeId(typeName:)} names: a {@code @node}
-         * declaration, or a polymorphic container with at least one table-bound node-type member,
+         * What the graph says about a type a {@code @nodeId(typeName:)} names: a node, or a
+         * polymorphic container with at least one table-bound node-type member,
          * which a {@code @service} slot may name to take the id of any implementation. The census
          * this arm defers on is the store itself rather than a population: a capture writes every
-         * {@code @node} and every membership in the graph, so no row means the schema offers neither
+         * node and every membership in the graph, so no row means the schema offers neither
          * and the reference is wrong, while no store at all means nothing has been captured yet.
          *
          * <p>The answer is about the <em>name</em> and not about the coordinate. A container is a
@@ -975,8 +974,9 @@ final class DiagnosticFacts {
     }
 
     /**
-     * What a {@code @nodeId(typeName:)} may legally name: the graph's {@code @node} declarations, and
-     * the polymorphic containers with at least one table-bound node-type member, which a
+     * What a {@code @nodeId(typeName:)} may legally name: the graph's nodes as {@code graphitron_node}
+     * resolves them, a node by {@code @node} and one inferred from published catalog metadata alike,
+     * and the polymorphic containers with at least one table-bound node-type member, which a
      * {@code @service} slot may name to take the id of any implementation.
      *
      * <p>A union of two populations rather than the node declarations alone, the container half
@@ -991,12 +991,11 @@ final class DiagnosticFacts {
     private static org.jooq.Field<List<String>> nodeTypeBindingArm(
             StoreHandle store, java.util.Set<String> asked) {
         var m = no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-        var a = GRAPHQL_DIRECTIVE_APPLICATION;
-        return multiset(selectDistinct(a.COORDINATE)
-            .from(a)
-            .where(a.GRAPH_NAME.eq(store.graphName()))
-            .and(a.DIRECTIVE_NAME.eq("node"))
-            .and(a.COORDINATE.in(asked))
+        var n = no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+        return multiset(selectDistinct(n.TYPE_NAME)
+            .from(n)
+            .where(n.GRAPH_NAME.eq(store.graphName()))
+            .and(n.TYPE_NAME.in(asked))
             .union(selectDistinct(m.CONTAINER_NAME)
                 .from(m)
                 .where(m.GRAPH_NAME.eq(store.graphName()))

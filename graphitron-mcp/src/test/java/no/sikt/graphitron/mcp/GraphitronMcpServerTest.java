@@ -1289,14 +1289,18 @@ class GraphitronMcpServerTest {
             .doesNotContainKey("implementors");
     }
 
-    /** Two @node types, one naming its id and key, one bare, and a table type that is no node. */
+    /**
+     * Two @node types, one naming its id and key, one bare, a node inferred from the metadata its
+     * table's class publishes, and a table type that is no node.
+     */
     private static final String NODE_SDL = """
         interface Node { id: ID! }
         type FilmCategory implements Node @table(name: "film_category")
             @node(typeId: "FC", keyColumns: ["category_id", "film_id"]) { id: ID! }
         type Actor implements Node @table(name: "actor") @node { id: ID! }
+        type BazNode implements Node @table(name: "baz") { id: ID! }
         type Store @table(name: "store") { id: ID! }
-        type Query { categories: [FilmCategory!]! actors: [Actor!]! stores: [Store!]! }
+        type Query { categories: [FilmCategory!]! actors: [Actor!]! bazes: [BazNode!]! stores: [Store!]! }
         """;
 
     @RegisterExtension
@@ -1304,14 +1308,21 @@ class GraphitronMcpServerTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void schemaReportsANodesWrittenTypeIdAndKeyColumnsInWrittenOrder() {
+    void schemaReportsANodesResolvedTypeIdAndKeyColumnsWithWhereEachCameFrom() {
         assertThat((Map<String, Object>) onlyType(NODES, "FilmCategory").get("node"))
             .as("the id and the columns as written, in the order the id takes them")
-            .containsExactly(Map.entry("typeId", "FC"),
-                Map.entry("keyColumns", List.of("category_id", "film_id")));
+            .containsExactly(Map.entry("typeId", "FC"), Map.entry("typeIdOrigin", "SDL_DECLARED"),
+                Map.entry("keyColumns", List.of("category_id", "film_id")),
+                Map.entry("keyColumnsOrigin", "SDL_PINNED"));
         assertThat((Map<String, Object>) onlyType(NODES, "Actor").get("node"))
-            .as("a bare @node is a node that wrote neither")
-            .isEmpty();
+            .as("a bare @node answers to its own name, keyed by its table's primary key")
+            .containsExactly(Map.entry("typeId", "Actor"), Map.entry("typeIdOrigin", "TYPE_NAME"),
+                Map.entry("keyColumns", List.of("actor_id")),
+                Map.entry("keyColumnsOrigin", "CATALOG_PRIMARY_KEY"));
+        assertThat((Map<String, Object>) onlyType(NODES, "BazNode").get("node"))
+            .as("a node by inference reports what its table's class publishes")
+            .containsEntry("typeId", "Baz").containsEntry("typeIdOrigin", "JOOQ_METADATA")
+            .containsEntry("keyColumnsOrigin", "JOOQ_METADATA");
         assertThat(onlyType(NODES, "Store")).doesNotContainKey("node");
     }
 

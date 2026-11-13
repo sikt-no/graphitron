@@ -65,7 +65,7 @@ class CompletionTextEditTest {
     static void capture() {
         store = StoreFixture.held().ofCatalog(tmp, """
             type Query { x: Int }
-            type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
+            type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
             type Foo @table(name: "film") { bar: Int }
             """,
             ClasspathCorpus.entries());

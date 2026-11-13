@@ -11,35 +11,31 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 
 /**
  * Catalog GraphQL-type-name completions for any coordinate the
  * {@link LspVocabulary} overlay declares as a
- * {@link Behavior.NodeTypeBinding}: every GraphQL type in this graph whose SDL
- * carries {@code @node}, read off its first {@code @node} application,
- * plus every polymorphic container with at least one table-bound node-type
- * member, which a {@code @service} slot may name to take the id of any
- * implementation.
+ * {@link Behavior.NodeTypeBinding}: every node of this graph as
+ * {@code graphitron_node} resolves it, a node by {@code @node} and one inferred
+ * from published catalog metadata alike, detailed with the type id it answers
+ * to, plus every polymorphic container with at least one node member, which a
+ * {@code @service} slot may name to take the id of any implementation.
  *
- * <p>The container half reads {@code graphql_poly_member} under
- * {@link NodeContainerMember#tableBoundNodeType}, the condition the diagnostic
- * judges a written value by, so completion and the diagnostic move together
- * rather than one offering a value the other refuses. What the keyset
- * says is that a container is a legal <em>value</em> for {@code typeName:}; it
- * says nothing about whether the polymorphic rule reaches the coordinate the
- * directive was written at, which is the store's
- * {@code CONTAINER_NOT_AT_A_SLOT} verdict's answer and reaches the editor as a
- * diagnostic. Completing a container at a read-side argument and then
- * diagnosing it there is the division the incumbent family already runs.
+ * <p>Both halves are what the diagnostic judges a written value by, the node
+ * half {@code graphitron_node} and the container half {@code graphql_poly_member}
+ * under {@link NodeContainerMember#tableBoundNodeType}, so completion and the
+ * diagnostic move together rather than one offering a value the other refuses.
+ * A container is offered as a legal <em>value</em> for {@code typeName:};
+ * whether the polymorphic rule reaches the coordinate the directive was written
+ * at is the store's {@code CONTAINER_NOT_AT_A_SLOT} verdict, which reaches the
+ * editor as a diagnostic.
  *
  * <p>Graph-keyed all the way down, so the scope is each relation's own
- * {@code graph_name} rather than a membership join: a {@code @node} declaration
- * and a container's membership are both facts about one graph's SDL, and a
- * sibling module's nodes are not candidates here however much of a store they
- * share.
+ * {@code graph_name} rather than a membership join: a node and a container's
+ * membership are both facts about one graph, and a sibling module's nodes are
+ * not candidates here however much of a store they share.
  */
 public final class NodeTypeCompletions {
 
@@ -55,23 +51,17 @@ public final class NodeTypeCompletions {
             return List.of();
         }
         var items = new ArrayList<CompletionItem>();
-        var a = GRAPHQL_DIRECTIVE_APPLICATION;
-        var n = GRAPHITRON_AST_NODE_ENTRY;
+        var n = GRAPHITRON_NODE;
         var nodes = store.dsl()
-            .select(a.COORDINATE, n.TYPE_ID)
-            .from(a)
-            .leftJoin(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
-                n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-            .where(a.GRAPH_NAME.eq(store.graphName()))
-            .and(a.DIRECTIVE_NAME.eq("node"))
-            .and(a.ORDINAL.eq(0))
-            .orderBy(a.COORDINATE)
+            .select(n.TYPE_NAME, n.TYPE_ID)
+            .from(n)
+            .where(n.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(n.TYPE_NAME)
             .fetch();
         for (var row : nodes) {
-            String typeId = row.value2();
             items.add(CompletionItems.replacing(
                 row.value1(), CompletionItemKind.Class, context.replaceRange(),
-                typeId != null ? "typeId: " + typeId : "@node"));
+                "typeId: " + row.value2()));
         }
         // The containers, each detailed with the implementations an id at such a slot may belong to,
         // which is the fact an author reaching for this value is choosing on. Table-bound node-type

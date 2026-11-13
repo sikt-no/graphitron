@@ -254,6 +254,17 @@ final class StoreFixture implements AutoCloseable {
             Lifetime.CASE);
     }
 
+    /**
+     * {@link #ofFiles} against the fixture module's generated jOOQ catalog, for a case whose answer
+     * comes from the other file and is a fact the catalog takes part in, such as which types are
+     * nodes.
+     */
+    static StoreFixture ofCatalogFiles(Path directory, String firstName, String firstSdl,
+                                       String secondName, String secondSdl) {
+        return new StoreFixture(CapturedStore.ofFiles(directory, firstName, firstSdl, secondName,
+            secondSdl, CatalogInput.of(JOOQ_PACKAGE)), directory, Lifetime.CASE);
+    }
+
     static StoreFixture of(Path directory, String graphName, String sdl,
                            List<ClasspathEntry> classpath) {
         return open(Lifetime.CASE, directory, graphName, sdl, classpath);

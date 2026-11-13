@@ -9,9 +9,9 @@ import static org.jooq.impl.DSL.selectOne;
 
 /**
  * Which members of a union or an interface make it a legal {@code @nodeId(typeName:)} value: a
- * member that binds a table, so an id has a record to decode into, and is a node type, so it has
- * an id at all. Read off {@code graphql_poly_member} by both the completion that offers a container
- * and the diagnostic that judges one, through this one condition so the two cannot disagree.
+ * member that is a node, which binds a table so an id has a record to decode into, and has an id at
+ * all. Read off {@code graphql_poly_member} by both the completion that offers a container and the
+ * diagnostic that judges one, through this one condition so the two cannot disagree.
  */
 public final class NodeContainerMember {
 

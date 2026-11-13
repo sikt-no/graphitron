@@ -45,12 +45,12 @@ class NodeTypeCompletionsTest {
 
     @BeforeAll
     static void capture() {
-        // One @node with both arguments filled in and one with neither: both are candidates, which is
-        // what the relation says by keying on the type alone.
-        nodes = StoreFixture.held().of(tmp, """
+        // One @node with both arguments filled in and one with neither, each over a table of the
+        // fixture catalog: both are nodes, and a @node over no table would be none.
+        nodes = StoreFixture.held().ofCatalog(tmp, "nodes", """
             type Query { x: Int }
-            type Film @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
-            type Actor @node { id: ID }
+            type Film @table(name: "film") @node(typeId: "Film", keyColumns: ["film_id"]) { id: ID }
+            type Actor @table(name: "actor") @node { id: ID }
             """);
         noNodes = StoreFixture.held().of(tmp, "unnoded", "type Query { x: Int }\n", List.of());
         // A union whose two members are node types over tables of their own, plus one whose members

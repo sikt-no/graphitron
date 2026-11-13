@@ -119,9 +119,9 @@ class CompletionStoreWiringTest {
      */
     @Test
     void aBufferThatWillNotParseCompletesAgainstWhatTheOtherFileDeclares(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofFiles(tmp,
+        try (var fixture = StoreFixture.ofCatalogFiles(tmp,
                 "queries", "type Query { x(id: ID): Int }\n",
-                "nodes", "type Film @node(typeId: \"Film\") { id: ID }\n");
+                "nodes", "type Film @table(name: \"film\") @node(typeId: \"Film\") { id: ID }\n");
              var access = fixture.access()) {
 
             var workspace = new Workspace();
@@ -143,7 +143,7 @@ class CompletionStoreWiringTest {
             var cursor = new Point(line, broken.split("\n")[line].indexOf("\"\"") + 1);
 
             assertThat(completionAt(workspace, uri, broken, cursor)).extracting(CompletionItem::getLabel)
-                .as("the candidate is the sibling file's @node type, which this buffer never mentions")
+                .as("the candidate is the sibling file's node, which this buffer never mentions")
                 .containsExactly("Film");
         }
     }

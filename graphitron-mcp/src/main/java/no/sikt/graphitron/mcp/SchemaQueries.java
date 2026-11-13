@@ -3,11 +3,11 @@ package no.sikt.graphitron.mcp;
 import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.derive.AuthoredClaim;
-import no.sikt.graphitron.model.tables.GraphqlDirectiveApplication;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Record1;
+import org.jooq.Record2;
 import org.jooq.OrderField;
 import org.jooq.Records;
 
@@ -29,9 +29,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_SITE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
@@ -230,15 +229,19 @@ final class SchemaQueries {
     record BackingConflict(int candidates) {}
 
     /**
-     * An {@code @node}'s identity as the author wrote it.
+     * A node's identity as the store resolved it, from {@code graphitron_node} and
+     * {@code graphitron_node_keycolumn}: a node by {@code @node} and one inferred from published
+     * catalog metadata alike, each value with the tier that answered for it, which is the way back to
+     * the source that set it rather than a precedence a client re-derives.
      *
-     * @param typeId {@code null} where the argument was omitted; the generator's type-name fallback is
-     *     a derivation no view resolves, so nothing stands in for it here
-     * @param keyColumns empty where {@code keyColumns} was omitted, on the same terms: the
-     *     catalog-primary-key fallback is a rule of the generator's and reading it would mean
-     *     re-implementing one here
+     * @param typeId the wire type id the node's ids carry; never {@code null}
+     * @param typeIdOrigin {@code SDL_DECLARED}, {@code JOOQ_METADATA} or {@code TYPE_NAME}
+     * @param keyColumns the key columns in key order
+     * @param keyColumnsOrigin {@code SDL_PINNED}, {@code JOOQ_METADATA} or
+     *     {@code CATALOG_PRIMARY_KEY}, one tier answering for the whole key; {@code null} only where no
+     *     key column resolved, which the store refuses
      */
-    record Node(String typeId, List<String> keyColumns) {}
+    record Node(String typeId, String typeIdOrigin, List<String> keyColumns, String keyColumnsOrigin) {}
 
     /**
      * One declaration site of a type: its base definition or one extension.
@@ -611,31 +614,21 @@ final class SchemaQueries {
             .convertFrom(r -> r.map(Record1::value1));
     }
 
-    /** The type's {@code @node} identity, with its key columns in the order the author wrote them. */
+    /** The type's resolved node identity, with its key columns in key order. */
     private static Field<Optional<Node>> node() {
-        var a = GRAPHQL_DIRECTIVE_APPLICATION.as("node_application");
-        var n = GRAPHITRON_AST_NODE_ENTRY;
+        var n = GRAPHITRON_NODE;
+        var k = GRAPHITRON_NODE_KEYCOLUMN;
         return multiset(
-            select(n.TYPE_ID, nodeKeyColumns(a))
-                .from(a)
-                .leftJoin(n).on(n.GRAPH_NAME.eq(a.GRAPH_NAME), n.SOURCE_NAME.eq(a.SOURCE_NAME),
-                    n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-                .where(ofType(a.GRAPH_NAME, a.COORDINATE))
-                .and(a.DIRECTIVE_NAME.eq("node"))
-                .and(a.ORDINAL.eq(0)))
-            .convertFrom(r -> r.map(Records.mapping(Node::new)).stream().findFirst());
-    }
-
-    /** One {@code @node}'s authored key columns, correlated to the application being projected. */
-    private static Field<List<String>> nodeKeyColumns(GraphqlDirectiveApplication a) {
-        var k = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-        return multiset(
-            select(k.COLUMN_REF)
-                .from(k)
-                .where(k.GRAPH_NAME.eq(a.GRAPH_NAME), k.SOURCE_NAME.eq(a.SOURCE_NAME),
-                    k.APPLICATION_LINE.eq(a.SOURCE_LINE), k.APPLICATION_COLUMN.eq(a.SOURCE_COLUMN))
-                .orderBy(k.POSITION.asc()))
-            .convertFrom(r -> r.map(Record1::value1));
+            select(n.TYPE_ID, n.TYPE_ID_ORIGIN,
+                multiset(select(k.COLUMN_NAME, k.COLUMN_ORIGIN)
+                    .from(k)
+                    .where(k.GRAPH_NAME.eq(n.GRAPH_NAME), k.TYPE_NAME.eq(n.TYPE_NAME))
+                    .orderBy(k.POSITION.asc())))
+                .from(n)
+                .where(ofType(n.GRAPH_NAME, n.TYPE_NAME)))
+            .convertFrom(r -> r.map(row -> new Node(row.value1(), row.value2(),
+                row.value3().map(Record2::value1),
+                row.value3().isEmpty() ? null : row.value3().getFirst().value2())).stream().findFirst());
     }
 
     /**
