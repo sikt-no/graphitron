@@ -21,6 +21,7 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_LANDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
@@ -895,20 +896,26 @@ public final class Steps {
             + c.toType().replaceAll(packages, "") + ")";
     }
 
-    /** One parameter of a routine step, with what its name reads. */
+    /**
+     * One parameter of a routine step, with what its name reads: whether an argMapping entry of the
+     * {@code @routine} at {@code ordinal} names it, the argument that name heads, and the column.
+     */
     private record Parameter(int position, String name, String boundTo, String argument,
-                             Tbl column, String columnName) {}
+                             Tbl column, String columnName, Integer ordinal, boolean written) {}
 
     /**
      * Where each routine step's parameters take their values: a column of the table the step departs
-     * where its argMapping entry is {@code $source.<column>}, else the field's argument its entry, or
-     * its own name where no entry names it, heads. A parameter binding neither is
-     * {@code ROUTINE_PARAMETER_UNBOUND} at the {@code @routine}; one binding both binds nothing.
+     * where its argMapping entry is {@code $source.<column>}, else the field occurrence's argument or
+     * input field its entry lands on, or its own name where no entry names it. A parameter binding
+     * neither is {@code ROUTINE_PARAMETER_UNBOUND} at the {@code @routine}; one binding both binds
+     * nothing, and one whose entry lands nowhere is the entry's defect and binds nothing either.
      */
     private static void parameters(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<RoutineStep> routines, Map<DefectKey, String> defects) {
         var rows = new ArrayList<Object[]>();
         var bound = new LinkedHashMap<List<Object>, List<Parameter>>();
+        var landed = landings(dsl, graph);
+        var named = arguments(dsl, graph);
         for (var call : routines) {
             var step = call.step();
             var key = List.<Object>of(step.element(), call.routine(), step.from(), step.claimCoordinate());
@@ -924,12 +931,18 @@ public final class Steps {
                 if (column == argument) {
                     continue;
                 }
+                String occurrence = column ? null : p.written()
+                    ? landed.get(List.of(step.need().coordinate(), p.ordinal(), p.name()))
+                    : named.get(List.of(step.need().coordinate(), p.name()));
+                if (!column && occurrence == null) {
+                    continue;
+                }
                 var t = column ? p.column() : null;
                 rows.add(new Object[] {graph, step.need().coordinate(), step.need().targetType(),
                     step.position(), p.position(), p.name(),
                     t == null ? null : t.source(), t == null ? null : t.schema(),
                     t == null ? null : t.name(), column ? p.columnName() : null,
-                    column ? null : p.boundTo(), touchedAt,
+                    occurrence, touchedAt,
                     t == null ? null : t.source(), t == null ? null : t.schema(),
                     t == null ? null : t.name(), column ? p.columnName() : null});
             }
@@ -938,9 +951,32 @@ public final class Steps {
         upsert(dsl, pp, List.of(pp.GRAPH_NAME, pp.COORDINATE, pp.TARGET_TYPE, pp.POSITION,
                 pp.PARAMETER_POSITION),
             List.of(pp.PARAMETER_NAME, pp.FROM_SOURCE_NAME, pp.FROM_SCHEMA, pp.FROM_TABLE,
-                pp.FROM_COLUMN, pp.ARGUMENT, pp.TOUCHED_AT, pp.FROM_SOURCE_REF, pp.FROM_SCHEMA_REF,
+                pp.FROM_COLUMN, pp.ARGUMENT_COORDINATE, pp.TOUCHED_AT, pp.FROM_SOURCE_REF, pp.FROM_SCHEMA_REF,
                 pp.FROM_TABLE_REF, pp.FROM_COLUMN_REF),
             rows);
+    }
+
+    /**
+     * The argument or input-field occurrence each written {@code @routine} entry lands on, keyed by the
+     * call's occurrence, the application's ordinal and the parameter it names.
+     */
+    private static Map<List<Object>, String> landings(DSLContext dsl, String graph) {
+        var l = GRAPHITRON_ARGMAPPING_LANDING;
+        var out = new java.util.HashMap<List<Object>, String>();
+        dsl.select(l.CALL_COORDINATE, l.ORDINAL, l.TARGET_NAME, l.LANDING_COORDINATE).from(l)
+            .where(l.GRAPH_NAME.eq(graph), l.DIRECTIVE_NAME.eq("routine"), l.TARGET_KIND.eq("NAME"))
+            .forEach(r -> out.put(List.of(r.value1(), r.value2(), r.value3()), r.value4()));
+        return out;
+    }
+
+    /** Each argument occurrence, keyed by the field occurrence it is under and its name. */
+    private static Map<List<Object>, String> arguments(DSLContext dsl, String graph) {
+        var o = GRAPHITRON_OCCURRENCE;
+        var out = new java.util.HashMap<List<Object>, String>();
+        dsl.select(o.PARENT_COORDINATE, o.NAME, o.COORDINATE).from(o)
+            .where(o.GRAPH_NAME.eq(graph), o.KIND.eq("FIELD_ARGUMENT"))
+            .forEach(r -> out.put(List.of(r.value1(), r.value2()), r.value3()));
+        return out;
     }
 
     /**
@@ -958,7 +994,7 @@ public final class Steps {
         var a = GRAPHQL_ARGUMENT.as("a");
         var c = SQL_COLUMN.as("c");
         return dsl.select(sp.POSITION, sp.JOOQ_NAME, coalesce(am.BOUND_TO, sp.JOOQ_NAME),
-                a.ARGUMENT_NAME, c.COLUMN_NAME)
+                a.ARGUMENT_NAME, c.COLUMN_NAME, da.ORDINAL, am.BOUND_TO.isNotNull())
             .from(sp)
             .leftJoin(da).on(da.GRAPH_NAME.eq(graph), da.SOURCE_NAME.eq(element.source()),
                 da.SOURCE_LINE.eq(element.line()), da.SOURCE_COLUMN.eq(element.column()),
@@ -976,7 +1012,8 @@ public final class Steps {
                 c.COLUMN_NAME_UPPER.eq(am.TAIL_NAME_UPPER))
             .where(sp.SOURCE_NAME.eq(routine.source()), sp.TABLE_SCHEMA.eq(routine.schema()),
                 sp.ROUTINE_NAME.eq(routine.name()))
-            .fetch(r -> new Parameter(r.value1(), r.value2(), r.value3(), r.value4(), from, r.value5()));
+            .fetch(r -> new Parameter(r.value1(), r.value2(), r.value3(), r.value4(), from, r.value5(),
+                r.value6(), Boolean.TRUE.equals(r.value7())));
     }
 
     /**

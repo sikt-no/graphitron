@@ -9695,7 +9695,7 @@ CREATE TABLE graphitron_join_path_step_parameter (
   from_schema        VARCHAR,
   from_table         VARCHAR,
   from_column        VARCHAR,
-  argument           VARCHAR,
+  argument_coordinate VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
   from_source_ref    VARCHAR,
   from_schema_ref    VARCHAR,
@@ -9713,11 +9713,14 @@ CREATE TABLE graphitron_join_path_step_parameter (
   CHECK (from_schema_ref IS NULL OR from_schema_ref = from_schema),
   CHECK (from_table_ref IS NULL OR from_table_ref = from_table),
   CHECK (from_column_ref IS NULL OR from_column_ref = from_column),
+  -- The argument or input field it reads, so a place the corpus no longer reaches takes it along.
+  FOREIGN KEY (graph_name, argument_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   -- A parameter is bound from one place: a column of the table the step departs, or an argument.
-  CHECK ((from_column IS NULL) <> (argument IS NULL)),
+  CHECK ((from_column IS NULL) <> (argument_coordinate IS NULL)),
   CHECK (parameter_position >= 0)
 );
-COMMENT ON TABLE graphitron_join_path_step_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
+COMMENT ON TABLE graphitron_join_path_step_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from Actor.films(minLength:).';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.graph_name IS 'the owning graph''s partition, carried from the step';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.coordinate IS 'the occurrence, as on the step';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.target_type IS 'the need''s target type, as on the step';
@@ -9728,7 +9731,7 @@ COMMENT ON COLUMN graphitron_join_path_step_parameter.from_source_name IS 'where
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_schema IS 'where the parameter is a column: that table''s SQL schema';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_table IS 'where the parameter is a column: the table the step departs';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_column IS 'where the parameter is a column: the column, so the call is made once per row of that table; NULL where it is an argument';
-COMMENT ON COLUMN graphitron_join_path_step_parameter.argument IS 'where the parameter is an argument: the argument path its name reads, an argument''s name or a dot path into an input, the parameter''s own name where nothing was written for it; NULL where it is a column';
+COMMENT ON COLUMN graphitron_join_path_step_parameter.argument_coordinate IS 'where the parameter is an argument: the argument or input-field occurrence under the field occurrence it reads, the one its argMapping entry lands on, or the argument of the parameter''s own name where nothing was written for it; NULL where it is a column';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.touched_at IS 'when the reading that last took the step ran, as on the step';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_source_ref IS 'the catalog half of the column''s sql_column key, nullable so the column''s removal sets the reference null rather than cascading; NULL where the parameter is an argument';
 COMMENT ON COLUMN graphitron_join_path_step_parameter.from_schema_ref IS 'the schema half of that key, equal to from_schema while the column stands';
@@ -24004,7 +24007,7 @@ INSERT INTO meta_relation VALUES
    'A @routine is a step like any other, from the table the path stands at to its function''s result; what the step calls is this row, and how it is called its parameter rows.'),
   ('graphitron_join_path_step_parameter', 'path-step-parameter', 'graphitron',
    'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field.',
-   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.',
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from Actor.films(minLength:).',
    'The routine step''s join, as a key step''s is its column pairs: a parameter bound from a column correlates the call with the row the path stands at, one bound from an argument does not.'),
   ('graphitron_join_path_stop', 'path-need', 'graphitron',
    'One need whose join path stopped short: one row per need whose path met a step it could not take, with where and how many moves it found there.',

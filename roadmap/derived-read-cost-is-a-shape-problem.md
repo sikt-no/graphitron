@@ -1031,8 +1031,10 @@ static method needs no holder.
   producer but a join step of the path; under `@splitQuery` the producer is the split's derived source
   lookup. Then the routine decode, which writes only the spelling, goes.
   * **A child `@routine` is a lateral step of the path** `open`, F's. The step and its parameters
-    are stated, `graphitron_join_path_step_parameter`; what is left is the editor, whose `argMapping`
-    completion at a path routine offers the field's arguments and not yet the standing table's columns.
+    are stated, `graphitron_join_path_step_parameter`, each naming the argument occurrence it reads;
+    what is left is the editor, whose `argMapping` completion at a path routine offers the field's
+    arguments and not yet the standing table's columns. Emitting the call needs the step parameter's
+    pair link to its argMapping landing, for key-column projection through a node id.
   * **A split child `@routine` is a path routine** `blocked`, F's, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
     `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
     the walk's first step from the parent's keys.

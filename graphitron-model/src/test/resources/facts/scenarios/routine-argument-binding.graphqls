@@ -34,6 +34,14 @@ type Query {
     @defaultOrder(fields: [{name: "film_id"}])
 }
 
+# A child routine's parameters are its step's, each naming the argument occurrence it reads.
+extend schema @expectEquals(relation: "graphitron_join_path_step_parameter",
+    where: "argument_coordinate IS NOT NULL", rows: """
+  coordinate,                   parameter_name, argument_coordinate
+  Actor.filmsWithId,            pMinLength,     Actor.filmsWithId(film_id:)
+  Film.castRecentFilmsByLength, pMinLength,     Film.castRecentFilmsByLength(length:)
+  """)
+
 # The root routine is the call; its parameters are its call-surface list, in position order.
 extend schema @expectEquals(relation: "graphitron_occurrence_call", where: "call_kind = 'ROUTINE'", rows: """
   coordinate,        call,     call_kind

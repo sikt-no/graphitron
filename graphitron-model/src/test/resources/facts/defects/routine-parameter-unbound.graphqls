@@ -33,9 +33,9 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   """)
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_parameter", rows: """
-  coordinate,            position, parameter_name, from_table, from_column, argument
-  Actor.filmsMisnamed,   0,        pMinLength,     ,           ,            minLength
-  Actor.filmsBareColumn, 0,        pMinLength,     ,           ,            minLength
+  coordinate,            position, parameter_name, from_table, from_column, argument_coordinate
+  Actor.filmsMisnamed,   0,        pMinLength,     ,           ,            Actor.filmsMisnamed(minLength:)
+  Actor.filmsBareColumn, 0,        pMinLength,     ,           ,            Actor.filmsBareColumn(minLength:)
   Actor.filmsUnmapped,   0,        pActorId,       actor,      actor_id,
   """)
 
