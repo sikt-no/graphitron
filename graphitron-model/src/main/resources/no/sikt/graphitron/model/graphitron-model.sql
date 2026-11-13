@@ -11329,13 +11329,12 @@ SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_nam
                            AND (EXISTS (SELECT 1 FROM graphitron_node tn
                                          WHERE tn.graph_name = pn.graph_name
                                            AND tn.type_name = pn.target_type)
-                                OR (SELECT COUNT(*) FROM graphitron_tabletype bt
-                                      JOIN graphitron_node n2
-                                        ON n2.graph_name = bt.graph_name AND n2.type_name = bt.type_name
-                                     WHERE bt.graph_name = pn.graph_name
-                                       AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-                                       AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
-                                       AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) = 1)));
+                                OR EXISTS (SELECT 1 FROM graphitron_node_table nt
+                                            WHERE nt.graph_name = pn.graph_name
+                                              AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                              AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                              AND nt.table_name = COALESCE(jp.target_table, pn.landing_table)
+                                              AND nt.node_count = 1))));
 COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence column rule computes, in the shape graphitron_occurrence_column stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_column, which are the names every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
