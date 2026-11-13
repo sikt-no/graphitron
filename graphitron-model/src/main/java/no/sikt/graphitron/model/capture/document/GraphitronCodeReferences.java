@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.derive.EntryDefects;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -26,7 +27,8 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>Keyed by the reference's names, its application and what it was written under in it, so an
  * edit above it in the file changes no row; where it was written rides along for a defect to point
- * at.
+ * at. Last, the stage writes its own defects, a resolution the directive cannot call, from
+ * {@code graphitron_code_reference_entry_defect_rule}.
  *
  * <p>Only a settled resolution is a row: the class is the one the graph resolves the name to in
  * {@code code_graph_class}, the first entry on its classpath declaring it, and the count is per
@@ -97,5 +99,8 @@ final class GraphitronCodeReferences {
             .where(t.GRAPH_NAME.eq(graph))
             .and(t.TOUCHED_AT.ne(touchedAt))
             .execute();
+
+        // Last, the stage's own codes: a resolution its directive cannot call.
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.CODE_REFERENCES);
     }
 }

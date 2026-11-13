@@ -1,0 +1,92 @@
+# An @externalField binds an expression at its occurrence: an EXPRESSION binding at the table its
+# values are rows of, and a call on that table whose method is the one the reference resolves to and
+# whose one parameter the table fills. On a table-bound type the table is the type's own; on a nesting
+# type, an object type with no @table read off its parent's row, it is the parent's, the chain's
+# anchor. The refusals sit beside them: a reference resolving to a method @externalField cannot
+# call, at the code-references stage; a method typed on a table the field's values are not rows of,
+# at the occurrence-bindings stage; and a written @reference path beside it, which that stage defers.
+# A method typed on any table is the near miss.
+
+type Film @table(name: "film") {
+  "A table-bound type's field: isEnglish(Film) takes film by its own class."
+  isEnglish: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  "A nesting field, its fields read off the film row."
+  labels: FilmLabels
+  "The near miss: titleByName(Table<?>) takes any table, film among them."
+  titleByName: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+  "helper(Film) returns a String, not a Field."
+  helper: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmFields"})
+  "combine(Film, Film) takes two tables."
+  combine: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmFields"})
+  "A written path beside it: deferred, and still bound at film, the table the method takes."
+  englishByLanguage: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions", method: "isEnglish"})
+    @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+"No @table: read off the film row it is nested under."
+type FilmLabels {
+  "lowerTitle(Film) takes film, the nesting chain's anchor, not the nesting type."
+  lowerTitle: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+}
+
+type Actor @table(name: "actor") {
+  "isEnglish(Film) takes film, and an actor's values are rows of actor."
+  isEnglish: Boolean
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+}
+
+type Query {
+  films: [Film!]!
+  actors: [Actor!]!
+}
+
+# Every @externalField occurrence on a table binds there, whether or not a method could be called.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding", where: "kind = 'EXPRESSION'", rows: """
+  coordinate, bound
+  Actor.isEnglish,        public.actor
+  Film.combine,           public.film
+  Film.englishByLanguage, public.film
+  Film.helper,            public.film
+  Film.isEnglish,         public.film
+  Film.labels.lowerTitle, public.film
+  Film.titleByName,       public.film
+  """)
+
+# The expression, where a call was pinned: the method is the call's, and the table fills its one parameter.
+extend schema @expectEquals(relation: "graphitron_occurrence_expression", rows: """
+  coordinate, bound, call
+  Film.englishByLanguage, public.film, expression:public.film
+  Film.isEnglish,         public.film, expression:public.film
+  Film.labels.lowerTitle, public.film, expression:public.film
+  Film.titleByName,       public.film, expression:public.film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_method", where: "call_kind = 'EXPRESSION'", rows: """
+  coordinate, call, method_class_name, method_name
+  Film.englishByLanguage, expression:public.film, no.sikt.graphitron.rewrite.test.extensions.FilmExtensions, isEnglish
+  Film.isEnglish,         expression:public.film, no.sikt.graphitron.rewrite.test.extensions.FilmExtensions, isEnglish
+  Film.labels.lowerTitle, expression:public.film, no.sikt.graphitron.rewrite.test.extensions.FilmExtensions, lowerTitle
+  Film.titleByName,       expression:public.film, no.sikt.graphitron.rewrite.test.extensions.FilmExtensions, titleByName
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter", where: "call_kind = 'EXPRESSION'", rows: """
+  coordinate, call, position, parameter_name, fill
+  Film.englishByLanguage, expression:public.film, 0, table, TABLE
+  Film.isEnglish,         expression:public.film, 0, table, TABLE
+  Film.labels.lowerTitle, expression:public.film, 0, table, TABLE
+  Film.titleByName,       expression:public.film, 0, table, TABLE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code, type_name, field_name, detail
+  CODE_REFERENCE_METHOD_UNFIT,    Film,  combine,   takes 2 parameters
+  CODE_REFERENCE_METHOD_UNFIT,    Film,  helper,    returns java.lang.String
+  EXTERNAL_FIELD_PATH_UNSUPPORTED, Film, englishByLanguage, Film.englishByLanguage
+  EXTERNAL_FIELD_TABLE_NOT_TAKEN, Actor, isEnglish, public.actor
+  """)
