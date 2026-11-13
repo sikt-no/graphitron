@@ -15007,7 +15007,8 @@ SELECT pj.graph_name, site.source_name, site.source_line, site.source_column,
        'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
        MIN('key column ' || c.column_name || ' is ' || c.binding_type
            || ', and the parameter it binds to is declared ' || s.declared_type || ': Declare it '
-           || REGEXP_REPLACE(c.binding_type, '^.*[.]', ''))
+           || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
+                   ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END)
   FROM graphitron_occurrence_node_id_slot_projection pj
   JOIN graphitron_occurrence_node_id_slot_parameter sp
     ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call

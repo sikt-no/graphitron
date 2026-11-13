@@ -44,6 +44,9 @@ type Query {
   # ... which a pair projecting the column into the parameter takes as the column's value.
   filmByProjection(ref: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ref.film_id"})
+  # A projected key column is refused at an element of another type.
+  rateFilmsByProjection(ratings: [ID!] @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "rateFilms", argMapping: "ratings: ratings.film_id"})
   # The node type's own record takes the whole tuple, at any arity.
   filmActorRecord(in: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmActorRecord"})
@@ -104,7 +107,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
 }
 
-# Each refusal is a defect at the @nodeId, the parameter it lands in as its detail.
+# Each refusal is a defect at the @nodeId, the parameter it lands in as its detail; a projected key
+# column no shape fits is refused at the reference, naming the declaration that would take it.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_ID_SLOT_SHAPE_MISMATCH', 'NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
            'NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT')
@@ -125,6 +129,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.filmActorByIds(ids:),     NODE_ID_SLOT_SHAPE_MISMATCH,          ids
   Query.untyped(ids:),            NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.untypedPairing(ids:),     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
+  Query.rateFilmsByProjection,    NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT, "key column film_id is java.lang.Integer, and the parameter it binds to is declared java.util.List<no.sikt.graphitron.rewrite.test.services.FilmRating>: Declare it List<Integer>"
   """)
 
 # What the decode lands in at each slot the verdicts read.
