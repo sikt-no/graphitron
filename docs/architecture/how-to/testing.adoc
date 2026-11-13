@@ -373,7 +373,7 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 
 | A generator run driven end to end over a captured graph
 | `CapturedGraphs` (`graphitron-model` test-jar)
-| `CapturedGraphs.open(ctx)` captures the run's graph as a goal does and lends it as a lease, whose `graph()` is what `GraphQLRewriteGenerator` takes. A run naming a store directory gets a store of its own there; any other run's store is the `FactGraphs` population's to lend, so a module outside the model never calls `GraphitronStore.captured` itself.
+| `CapturedGraphs.open(ctx)` captures the run's graph as a goal does and lends it as a lease, whose `graph()` is what `GraphQLRewriteGenerator` takes. The lease comes from the `FactGraphs` population, which captures each run into a fresh store closed with the lease. A run naming a store directory captures into a store of its own there, and a fixture keeping that store past the run, as `BuiltStore` does, takes it with `CapturedGraphs.own(ctx)`. A module outside the model never calls `GraphitronStore.captured` itself.
 
 | The dev loop's own wiring, over rows only a pipeline run can produce
 | `BuiltStore` (`graphitron` test-jar)

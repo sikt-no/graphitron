@@ -15,7 +15,6 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.schema.AttributedRegistry;
 
@@ -24,6 +23,9 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  * loading Graphitron directive definitions from rewrite's own classpath resource.
  */
 public final class TestSchemaHelper {
+
+    /** The name of the schema file an inline capture writes. */
+    private static final String STEM = "fixture";
 
     private static final String DIRECTIVES = loadDirectives();
 
@@ -135,7 +137,7 @@ public final class TestSchemaHelper {
     private static graphql.schema.GraphQLSchema deriveEmittedSchema(String captured) {
         // Into the population's pooled inline stores, never the thread's: a fixture that holds a
         // CapturedStore across its cases would have the rows it captured cleared out from under it.
-        var assembly = FactGraphs.inline().read(CapturedStore.GRAPH, captured, null,
+        var assembly = FactGraphs.inline().read(STEM, captured, null,
             java.util.List.of(), graph -> no.sikt.graphitron.model.schema.SchemaAssembly.of(
                 no.sikt.graphitron.model.schema.EmittedRegistry.derive(graph.registry(),
                     graph.handle()).registry()));
@@ -154,7 +156,7 @@ public final class TestSchemaHelper {
     public static <T> T withStoreOver(String schemaText,
             java.util.function.Function<no.sikt.graphitron.model.read.StoreHandle, T> body) {
         String captured = (schemaText.contains("interface Node") ? "" : NODE_INTERFACE) + schemaText;
-        return FactGraphs.inline().read(CapturedStore.GRAPH, captured, null, java.util.List.of(),
+        return FactGraphs.inline().read(STEM, captured, null, java.util.List.of(),
             graph -> body.apply(graph.handle()));
     }
 
@@ -209,7 +211,7 @@ public final class TestSchemaHelper {
                 ctx.sessionStateConfig(), java.util.OptionalInt.empty(),
                 ctx.outboxConfig())
             : no.sikt.graphitron.model.run.SubjectConfig.none();
-        return FactGraphs.inline().read(CapturedStore.GRAPH, schemaText,
+        return FactGraphs.inline().read(STEM, schemaText,
             no.sikt.graphitron.model.test.CatalogInput.of(ctx), testClasspath(), configuration,
             graph -> new StoreBacked(no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(),
                 bundle.federationLink(), bundle.usesOneOf(), ctx.outputPackage(), projections,

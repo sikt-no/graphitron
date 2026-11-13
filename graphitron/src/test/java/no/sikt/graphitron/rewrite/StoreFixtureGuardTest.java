@@ -13,7 +13,6 @@ import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.test.FactWriters;
-import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
  * Structural guard: a test does not stand a fact store up for itself. It takes one from the
@@ -225,9 +224,12 @@ class StoreFixtureGuardTest {
             writer cadence are different facts about the store, so a captured fixture is the wrong \
             shape for this.
 
-              A crawler, or agreement between a store-native relation and the walk?
-                Capture. CapturedStore hands you the fixture file, the graph identity and the walk, \
-            and its named arms say what each capture's inputs are instead of leaving it to a flag.
+              A crawler, or what a capture writes?
+                That test lives in graphitron-model, where CapturedStore hands you a capture of \
+            your own and its named arms say what each capture's inputs are.
+
+              A whole generator run over a captured graph?
+                Take the graph from CapturedGraphs.open, a lease on a store the population owns.
 
               The dev loop's own wiring, over rows only a pipeline run can produce?
                 Run a build. BuiltStore leaves its facts in a store on disk that outlives the run.

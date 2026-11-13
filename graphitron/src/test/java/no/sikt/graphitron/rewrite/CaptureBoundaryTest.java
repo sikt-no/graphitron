@@ -22,7 +22,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Calls rather than mentions: comments and string literals are blanked before the scan, so a
  * javadoc naming the capture entry points, or a guard's own needles, is not a finding.
- * {@code CapturedStore.GRAPH} names a graph and captures nothing, so it is not one either.
  */
 @UnitTier
 class CaptureBoundaryTest {
@@ -31,7 +30,7 @@ class CaptureBoundaryTest {
     private static final List<Pattern> CAPTURE_CALLS = List.of(
         Pattern.compile("\\bGraphitronStore\\s*(?:\\.|::)\\s*(?:captured\\w*|capture)\\b"),
         Pattern.compile("\\bModelCapture\\b"),
-        Pattern.compile("\\bCapturedStore\\s*(?:\\.|::)\\s*(?!GRAPH\\b)\\w+"),
+        Pattern.compile("\\bCapturedStore\\b"),
         Pattern.compile("\\bInlineCaptures\\b"));
 
     /** {@code InlineCaptureGateTest} counts inline captures with {@code InlineCaptures}; it runs none. */

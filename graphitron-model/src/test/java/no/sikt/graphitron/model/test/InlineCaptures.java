@@ -18,7 +18,7 @@ import java.util.stream.Stream;
  * {@link FactGraphs}, or captures one into a store of its own through {@link CapturedStore#captureFolder}
  * where the store is its subject. A capture through any other arm states its schema inline, so this
  * counts the calls of those arms: the capturing arms of {@link CapturedStore}, the generator's own
- * {@code GraphitronStore} capture and {@link CapturedGraphs#open} in front of it, the fixtures above
+ * {@code GraphitronStore} capture and {@link CapturedGraphs} in front of it, the fixtures above
  * them in the modules that consume this one, and
  * {@link FactGraphs.Reader#readInline} and {@link FactGraphs#inline()}, which take inline SDL into
  * the population and are still inline until the SDL is a document.
@@ -40,7 +40,7 @@ public final class InlineCaptures {
         + "|ownStore|ownStoreWith|ownStoreOfCatalog|ownStoreOfCatalogWith|ownLongLivedStoreOfCatalog"
         + "|ownStoreOfFiles|tagged|configured|ofRefusedSchema|withCapturedStore|capture|captured"
         + "|capturedInMemory|buildBundle|storeBackedPlan|storeBackedFetchers|withStoreOver|run"
-        + "|ofClasspath|ofOtherCatalog|withoutCatalog|ofCodeFixtures|ofSchema|open";
+        + "|ofClasspath|ofOtherCatalog|withoutCatalog|ofCodeFixtures|ofSchema|open|own";
 
     private static final Pattern THROUGH_A_FIXTURE =
         Pattern.compile("\\b(?:" + FIXTURES + ")\\.(?:held\\(\\)\\.)?(?:" + ARMS + ")\\s*\\(");

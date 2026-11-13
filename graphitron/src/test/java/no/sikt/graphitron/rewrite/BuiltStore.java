@@ -22,7 +22,6 @@ import java.util.function.Function;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.test.CapturedGraphs;
-import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
  * A fact store filled by a real generator run: the build-level population, for the tests whose
@@ -35,9 +34,8 @@ import no.sikt.graphitron.model.test.CapturedStore;
  * The two build the identical context and differ only in the entry point, so a test comparing their
  * stores is comparing the projections and nothing else.
  *
- * <p><b>Which harness is this.</b> {@link CapturedStore} beside it drives {@link
- * no.sikt.graphitron.model.run.ModelCapture} directly, which is what a test wants when its
- * subject is a crawler or a relation the capture walk writes. This one runs the whole generator,
+ * <p><b>Which harness is this.</b> A test whose subject is a crawler or a relation capture writes
+ * lives in graphitron-model, beside the capture it tests. This one runs the whole generator,
  * which is what a test wants when the rows it reads are written by loaders that consume the walk's
  * own streams: those rows cannot be arranged, only produced. Paying for a build to reach a fact
  * capture already writes is the mistake in the other direction, and the reason this level is
@@ -129,9 +127,9 @@ public final class BuiltStore implements AutoCloseable {
             // The fixture opens the store and captures into it, which is what a goal does and
             // what a test is allowed to do. The generator is handed a reader over it and captures
             // nothing: a pass that could open a store would make "reads facts, writes none" a
-            // property of what its code happens to call. The store lives under storeHome, so the
-            // fixture owns it past the lease and close() closes it.
-            var captured = CapturedGraphs.open(ctx).graph();
+            // property of what its code happens to call. The store lives under storeHome and is
+            // the fixture's own, so close() closes it.
+            var captured = CapturedGraphs.own(ctx);
             var output = pass == null ? null
                 : pass.apply(new GraphQLRewriteGenerator(ctx, captured));
             return new BuiltStore(captured.store(), graphName, schemaFile, storeHome, output);

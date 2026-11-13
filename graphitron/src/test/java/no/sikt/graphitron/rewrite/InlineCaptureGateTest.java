@@ -12,9 +12,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * This module's tests capture fewer schemas inline over time, never more: every schema a test
- * captures is, or should be, a fact document, read from {@code FactGraphs} or captured into a store
- * of the test's own through {@code FactDocuments.capture}. {@link InlineCaptures} counts the capture
- * calls that state their schema some other way.
+ * reads is, or should be, a fact document read from {@code FactGraphs}; this module captures nothing
+ * of its own. {@link InlineCaptures} counts the reads that state their schema some other way.
  *
  * <p>A ceiling rather than a roster, so conversions in several sessions do not collide. It may be
  * stale on the low side; what it may not do is rise. Lower it when you convert a site.

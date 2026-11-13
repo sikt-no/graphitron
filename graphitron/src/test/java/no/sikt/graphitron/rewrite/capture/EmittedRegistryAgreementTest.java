@@ -10,7 +10,6 @@ import no.sikt.graphitron.model.schema.DeclaredDirectives;
 import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
@@ -157,7 +156,7 @@ class EmittedRegistryAgreementTest {
                 continue;
             }
 
-            var assembly = FACTS.readInline(CapturedStore.GRAPH, sdl, jooq, classpath,
+            var assembly = FACTS.readInline("fixture", sdl, jooq, classpath,
                 graph -> SchemaAssembly.of(EmittedRegistry.derive(graph.registry(), graph.handle())
                     .registry()));
             if (!(assembly instanceof SchemaAssembly.Assembled assembled)) {

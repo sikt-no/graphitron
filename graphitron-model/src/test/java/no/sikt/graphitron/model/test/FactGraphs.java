@@ -232,12 +232,16 @@ public final class FactGraphs implements AutoCloseable {
         return new Inline(shared());
     }
 
+    /** The JVM's population, for a harness beside this one that lends from it. */
+    static FactGraphs population() {
+        return shared();
+    }
+
     /**
-     * A run's graph captured as a goal captures it, for {@link CapturedGraphs#open}. Each run is
-     * captured into a store of its own for now; the lease is what lets the population lend pooled
-     * stores here later without its callers changing.
+     * A run's graph captured as a goal captures it, lent to {@link CapturedGraphs#open}. Each run
+     * is captured into a fresh store, closed with the lease.
      */
-    static CapturedGraphs.Lease lendRun(RunContext ctx) {
+    CapturedGraphs.Lease lend(RunContext ctx) {
         return new CapturedGraphs.Lease(GraphitronStore.captured(ctx), CapturedGraph::close);
     }
 

@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.derive;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.test.FactGraphs;
 import org.junit.jupiter.api.extension.RegisterExtension;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -37,7 +36,7 @@ import no.sikt.graphitron.model.derive.ArgmappingProjectionDefects;
 @PipelineTier
 class ArgmappingProjectionDefectsTest {
 
-    private static final String GRAPH = CapturedStore.GRAPH;
+    private static final String GRAPH = "fixture";
     private static final String SERVICE_STUB = "no.sikt.graphitron.rewrite.TestServiceStub";
 
     @RegisterExtension
