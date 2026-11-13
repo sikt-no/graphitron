@@ -809,6 +809,13 @@ static method needs no holder.
     parameter: an id filling a bean member is never compared. Widened to member slots, the emitter
     dispatches on the type id over the member decodes it already groups, and the three
     `BUILD_REFUSED` services leave the census's exclusions.
+  * **A list of node ids projects its key column through `argMapping`** `open`, E's. A `@service`
+    parameter taking the key column's values of a list of node ids, as opptak's
+    `tilstandForAlleUtdanningstilbud(larestedIder:)` takes `List<String>`, asks for the column with an
+    `argMapping` projection, and the emitter decodes each id and hands over the list of columns. Until it
+    lands, no Graphitron release carries a13964b51d's removal of the single-column unwrap (Alf,
+    2026-11-13): opptak, at FS-plattform main 946fc4aa20, draws `NODE_ID_KEY_ARITY_EXCEEDS_SLOT` there and
+    has no other way through, unless its method changes to take the node's record.
   * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
     At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
     `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and
@@ -2832,8 +2839,11 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   record supertype for an id of several node types, or a `RecordN` or `RowN` of the key's columns'
   types. A parameter of the one key column's type, which used to receive that column's value, is
   `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`; ask for the column with an `argMapping` entry projecting it, as
-  `id: key.film_id`. Unused in FS-plattform: its two `@service` fields taking a `@nodeId` argument take
-  the node's record.
+  `id: key.film_id`. Used in FS-plattform after all: opptak's
+  `Opptak.tilstandForAlleUtdanningstilbud(larestedIder: [ID!] @nodeId(typeName: "URegOrganisasjon"))`
+  (added 2026-11-09, after the check this entry first rested on) takes `List<String>`, and a list has no
+  projection yet. No release carries this change until "A list of node ids projects its key column through `argMapping`" lands, or opptak's method
+  takes the node's record (Alf, 2026-11-13).
 * **Breaking: a node id lands in a built record through one path step at most** ("record landings are
   stated"). A `@nodeId` field of an input object built into a jOOQ record lands its key in the record's
   own key columns, or in the columns one foreign key carries back to it; a written path of several
