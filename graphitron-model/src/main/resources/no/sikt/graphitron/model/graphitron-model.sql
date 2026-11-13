@@ -14898,7 +14898,97 @@ UNION ALL
 -- are graphitron_entry_defect_member's.
 SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
        CAST(NULL AS VARCHAR)
-  FROM graphitron_occurrence_build_entry_defect_member_rule m;
+  FROM graphitron_occurrence_build_entry_defect_member_rule m
+UNION ALL
+-- A named node id whose written or inferred path ends on a table other than the node's: the key the
+-- id packs or unpacks is not on the rows the path reaches, an argument's or input field's own path
+-- included. Reported once per @nodeId, the detail the table reached.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_node n
+    ON n.graph_name = cl.graph_name AND n.type_name = cl.named
+  JOIN graphitron_tabletype nt
+    ON nt.graph_name = n.graph_name AND nt.type_name = n.type_name
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+  JOIN graphitron_path p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+   AND p.origin IN ('WRITTEN', 'INHERITED', 'INFERRED')
+  JOIN graphitron_join_path jp
+    ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+   AND jp.target_type = p.target_type
+ WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
+   AND NOT (jp.target_source_name = nt.table_source_name AND jp.target_schema = nt.table_schema
+            AND jp.target_table = nt.table_name)
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- A named node id with no route written, at a slot on a table other than the node's, where no one
+-- foreign key joins the two, in either direction, a branch a @referenceFor names having its own
+-- written path and the others none. An id that binds no table
+-- predicate owes no route: one an argMapping entry hands to a call, itself, the input value holding
+-- it or its whole argument; one under a @service, whose arguments all go to the method; and one
+-- whose own @condition(override: true) takes the predicate on itself. An id whose input value is
+-- built into a jOOQ record is decoded into that record's columns, so it owes a route however the
+-- record reaches its call. Reported once per @nodeId, the detail the slot's table.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_node n
+    ON n.graph_name = cl.graph_name AND n.type_name = cl.named
+  JOIN graphitron_tabletype nt
+    ON nt.graph_name = n.graph_name AND nt.type_name = n.type_name
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+  JOIN graphitron_path p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'EMPTY'
+  JOIN graphitron_join_path jp
+    ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+   AND jp.target_type = p.target_type
+ WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
+   AND NOT (jp.target_source_name = nt.table_source_name AND jp.target_schema = nt.table_schema
+            AND jp.target_table = nt.table_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application dc
+                     JOIN graphitron_ast_input_value_condition_entry ce
+                       ON ce.graph_name = dc.graph_name AND ce.source_name = dc.source_name
+                      AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
+                    WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
+                      AND dc.directive_name = 'condition' AND ce.override)
+   AND (EXISTS (SELECT 1 FROM graphitron_occurrence_built_class b
+                 WHERE b.graph_name = o.graph_name AND b.coordinate = o.parent_coordinate
+                   AND b.record_table IS NOT NULL)
+        OR NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                        WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                        WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                        WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
+                         JOIN graphitron_producer_claim pc
+                           ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
+                          AND pc.kind = 'SERVICE'
+                        WHERE o.kind <> 'FIELD' AND fo.graph_name = o.graph_name
+                          AND fo.coordinate = o.field_coordinate))
+   AND COALESCE((SELECT tr.constraints FROM sql_table_reference tr
+                  WHERE tr.source_name = jp.target_source_name AND tr.table_schema = jp.target_schema
+                    AND tr.table_name = jp.target_table
+                    AND tr.referenced_source_name = nt.table_source_name
+                    AND tr.referenced_schema = nt.table_schema
+                    AND tr.referenced_table = nt.table_name), 0)
+       + COALESCE((SELECT tr.constraints FROM sql_table_reference tr
+                    WHERE tr.source_name = nt.table_source_name
+                      AND tr.table_schema = nt.table_schema
+                      AND tr.table_name = nt.table_name
+                      AND tr.referenced_source_name = jp.target_source_name
+                      AND tr.referenced_schema = jp.target_schema
+                      AND tr.referenced_table = jp.target_table), 0) <> 1
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
 
 -- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:
@@ -16852,96 +16942,6 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
                       AND x.kind IN ('NODE_ID', 'COLUMN'))
  GROUP BY COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
           COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column)
-UNION ALL
--- A named node id whose written or inferred path ends on a table other than the node's: the key the
--- id packs or unpacks is not on the rows the path reaches, an argument's or input field's own path
--- included. Reported once per @nodeId, the detail the table reached.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_node n
-    ON n.graph_name = cl.graph_name AND n.type_name = cl.named
-  JOIN graphitron_tabletype nt
-    ON nt.graph_name = n.graph_name AND nt.type_name = n.type_name
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-  JOIN graphitron_path p
-    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
-   AND p.origin IN ('WRITTEN', 'INHERITED', 'INFERRED')
-  JOIN graphitron_join_path jp
-    ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
-   AND jp.target_type = p.target_type
- WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
-   AND NOT (jp.target_source_name = nt.table_source_name AND jp.target_schema = nt.table_schema
-            AND jp.target_table = nt.table_name)
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
-UNION ALL
--- A named node id with no route written, at a slot on a table other than the node's, where no one
--- foreign key joins the two, in either direction, a branch a @referenceFor names having its own
--- written path and the others none. An id that binds no table
--- predicate owes no route: one an argMapping entry hands to a call, itself, the input value holding
--- it or its whole argument; one under a @service, whose arguments all go to the method; and one
--- whose own @condition(override: true) takes the predicate on itself. An id whose input value is
--- built into a jOOQ record is decoded into that record's columns, so it owes a route however the
--- record reaches its call. Reported once per @nodeId, the detail the slot's table.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_node n
-    ON n.graph_name = cl.graph_name AND n.type_name = cl.named
-  JOIN graphitron_tabletype nt
-    ON nt.graph_name = n.graph_name AND nt.type_name = n.type_name
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-  JOIN graphitron_path p
-    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'EMPTY'
-  JOIN graphitron_join_path jp
-    ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
-   AND jp.target_type = p.target_type
- WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
-   AND NOT (jp.target_source_name = nt.table_source_name AND jp.target_schema = nt.table_schema
-            AND jp.target_table = nt.table_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application dc
-                     JOIN graphitron_ast_input_value_condition_entry ce
-                       ON ce.graph_name = dc.graph_name AND ce.source_name = dc.source_name
-                      AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
-                    WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
-                      AND dc.directive_name = 'condition' AND ce.override)
-   AND (EXISTS (SELECT 1 FROM graphitron_occurrence_built_class b
-                 WHERE b.graph_name = o.graph_name AND b.coordinate = o.parent_coordinate
-                   AND b.record_table IS NOT NULL)
-        OR NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                        WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
-       AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                        WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
-       AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                        WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
-       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
-                         JOIN graphitron_producer_claim pc
-                           ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
-                          AND pc.kind = 'SERVICE'
-                        WHERE o.kind <> 'FIELD' AND fo.graph_name = o.graph_name
-                          AND fo.coordinate = o.field_coordinate))
-   AND COALESCE((SELECT tr.constraints FROM sql_table_reference tr
-                  WHERE tr.source_name = jp.target_source_name AND tr.table_schema = jp.target_schema
-                    AND tr.table_name = jp.target_table
-                    AND tr.referenced_source_name = nt.table_source_name
-                    AND tr.referenced_schema = nt.table_schema
-                    AND tr.referenced_table = nt.table_name), 0)
-       + COALESCE((SELECT tr.constraints FROM sql_table_reference tr
-                    WHERE tr.source_name = nt.table_source_name
-                      AND tr.table_schema = nt.table_schema
-                      AND tr.table_name = nt.table_name
-                      AND tr.referenced_source_name = jp.target_source_name
-                      AND tr.referenced_schema = jp.target_schema
-                      AND tr.referenced_table = jp.target_table), 0) <> 1
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
 -- A named node id at an argument or input field with no route written, whose path to the node's
 -- table is inferred over its one foreign key and lands every key column on a column of the slot's
@@ -20675,7 +20675,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_SHADOWS_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SHADOWS_COLUMN',
    'An id with no directive is read as a node''s id, and the node''s table also has a column of that name: the encoded id and the raw column are different values and the SDL has not said which is meant. Write @nodeId to select the node id, or @field(name:) to select the column.', 'entry-defects'),
   ('NODE_ID_LANDS_ON_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_LANDS_ON_TABLE',
-   'A @nodeId(typeName:) reaches a table other than the node''s: a written path ending elsewhere, or no path where no one foreign key joins the slot''s table to the node''s, so the key the id carries is not on the rows read, nor on the columns of the jOOQ record it is decoded into. Write or correct the @reference path to end on the node''s table.', 'entry-defects'),
+   'A @nodeId(typeName:) reaches a table other than the node''s: a written path ending elsewhere, or no path where no one foreign key joins the slot''s table to the node''s, so the key the id carries is not on the rows read, nor on the columns of the jOOQ record it is decoded into. Write or correct the @reference path to end on the node''s table.', 'occurrence-builds'),
   ('NODE_ID_LANDING_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_LANDING_TYPE_DISAGREES',
    'A @nodeId(typeName:) decodes into a key column of the node''s table that jOOQ binds as another Java type than the column of the slot''s table it lands on, so no predicate compares the two: give both columns the same binding, or write a @reference path to the node''s own table.', 'entry-defects'),
   ('NODE_ID_SLOT_SHAPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_SHAPE_MISMATCH',
