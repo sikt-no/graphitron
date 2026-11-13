@@ -703,14 +703,29 @@ static method needs no holder.
     keys and non-null nesting fields inline, the census over the example and
     `scenarios/projection-unit` run against PostgreSQL; utdanningsregisteret's shape is
     `scenarios/node-nesting-field-named-like-a-range`, its refusal pinned until its null contract and
-    expressions are stated. Left: a scalar's column down a path (`SCALAR_PATH`), its steps rendered as
-    a correlated subselect, the first arm to write a result-key alias. A child read inline is its own
+    expressions are stated. A scalar's column down a path is a correlated subselect over its steps'
+    column pairs, capped at one row, named by today's result-key formula with its owner stamped from
+    the declaring type, so a discriminated participant writes an interface's field under the
+    interface's name and a lift can pass no shared fields. Left (`SCALAR_PATH`): a path stepping by a
+    condition method or a routine, and a node id down a path. A child read inline is its own
     node below, and a polymorphic field's parent-row columns close with "A child producer states the parent columns it is handed".
   * **A child read inline is emitted from the store** `blocked`, on "An inline list's ordering is resolved at its occurrence" and "An inline list states how it is narrowed". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
     it has one; the census's `INLINE_CHILD` line closes with it.
+  * **A projection's SQL names read like the schema** `open`, off the critical path. The generated
+    SQL is to be easy to read; a hashed name is hostile to that (Alf, 2026-11-13). Today an aliased
+    term is named `__rk_`, an owner, and the response keys from its row's owner down to it, so a deep
+    selection under long client aliases passes Postgres's 63 bytes and is truncated, two such names
+    able to meet. Instead the generator names each aliased occurrence of a unit from the store by its
+    field names below the row's owner (`languageName`, `facts_languageName`), with no prefix, checking
+    at generation time against the unit's other names, its table's columns and the length limit, and
+    adjusting a name readably where one would clash; a second selection of a field under another
+    response key takes a suffix by its position in the selection set, which writer and reader compute
+    alike, and a nesting field selected twice merges, the consistent-argument check failing where the
+    arguments beneath differ. The unit and the readers keep today's names until the readers move,
+    so this lands with them, backwards compatible until then (Alf, 2026-11-13).
   * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.

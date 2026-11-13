@@ -1,10 +1,12 @@
-"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs and, through the non-null nesting field facts, the length and release_year columns of the same film row. Language.spoken is a nullable nesting field, whose null contract the store does not state yet."
+"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs, its language's name down a path and, through the non-null nesting field facts, the length and release_year columns of the same film row and the language's name again. The participants of a discriminated interface write an interface field under the interface's name. Language.spoken is a nullable nesting field, whose null contract the store does not state yet."
 
 interface Node { id: ID! }
 
 type Film implements Node @table(name: "film") @node {
   id: ID! @nodeId
   title: String!
+  "A column down a path, read by a subselect from the film row."
+  languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
   "Non-null, so it is the film row's whatever its columns hold."
   facts: FilmFacts!
 }
@@ -13,6 +15,25 @@ type Film implements Node @table(name: "film") @node {
 type FilmFacts {
   length: Int
   releaseYear: Int @field(name: "release_year")
+  "Down a path from the nesting level, named within the nesting field's result key."
+  languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
+}
+
+"A discriminated interface over one table: a field it declares is written under its name by every participant, a field a participant declares under the participant's."
+interface Item @table(name: "content") @discriminate(on: "content_type") {
+  contentId: Int! @field(name: "content_id")
+  filmDescription: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "description")
+}
+
+type FilmItem implements Item @table(name: "content") @discriminator(value: "FILM") {
+  contentId: Int! @field(name: "content_id")
+  filmDescription: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "description")
+  filmReleaseYear: Int @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "release_year")
+}
+
+type ShortItem implements Item @table(name: "content") @discriminator(value: "SHORT") {
+  contentId: Int! @field(name: "content_id")
+  filmDescription: String @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "description")
 }
 
 type Language @table(name: "language") {
@@ -27,14 +48,17 @@ type LanguageNote { name: String }
 type Query {
   films: [Film!]!
   languages: [Language!]!
+  items: [Item!]!
 }
 
 # The columns each occurrence binds on its unit's table, nested ones on the same row.
 extend schema @expectEquals(relation: "graphitron_occurrence_column", where: "coordinate LIKE 'Film.%'", rows: """
   coordinate,               table_name, column_name
   Film.title,               film,       title
+  Film.languageName,        language,   name
   Film.facts.length,        film,       length
   Film.facts.releaseYear,   film,       release_year
+  Film.facts.languageName,  language,   name
   """)
 
 # The node id packs the film's key column.

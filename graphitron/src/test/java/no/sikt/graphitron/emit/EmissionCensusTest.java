@@ -290,12 +290,13 @@ class EmissionCensusTest {
         java.util.Collections.sort(emitted);
         refused.values().forEach(java.util.Collections::sort);
         assertThat(emitted).as("the units the store emits").containsExactly("ActorCondMember", "ActorNode",
-            "Catalogue", "CatalogueItem", "CatalogueShelf", "CategoryLabel", "CategoryNode", "Content",
-            "ConverterCampusTerm", "ConverterIdChange", "ConverterSite", "DisplayAccount", "DisplayPerson",
+            "AppAccount", "Catalogue", "CatalogueItem", "CatalogueShelf", "CategoryLabel", "CategoryNode", "Company",
+            "Content", "ConverterCampusTerm", "ConverterIdChange", "ConverterSite", "DisplayAccount", "DisplayPerson",
             "DivergedCampusRef", "DivergedChildRef", "DivergedLabelSide", "DivergedOrgSide", "Email", "FanDetail",
-            "FanMark", "FanTarget", "FilmBookmark", "FilmCategoryNode", "FilmEndorsement", "FilmEndorsementNode",
-            "HostLabelsRow", "InvCondMember", "InventoryItem", "InventoryUnit", "KeyedNode", "LanguageAlias",
-            "LanguageNode", "LevelInterval", "Mailbox", "PagedA", "PagedB", "Party", "PaymentLegacyProbe",
+            "FanMark", "FanTarget", "FilmBookmark", "FilmCategoryNode", "FilmContent", "FilmEndorsement",
+            "FilmEndorsementNode", "HostLabelsRow", "Individual", "InvCondMember", "InventoryItem", "InventoryUnit",
+            "KeyedNode", "LanguageAlias", "LanguageNode", "LevelInterval", "Mailbox", "PagedA", "PagedB", "Party",
+            "PaymentLegacyProbe", "Person",
             "PresenceDetail", "PresenceDetailNode", "PresenceItem", "ProjectEvent", "ProjectNote", "Rental",
             "RoleAssignment", "SecureNote", "SessionCustomer", "ShortContent", "SplitFilterTarget", "SplitKeyChild",
             "SplitKeyParent", "SplitParentTag", "SquadMember", "Staff", "StockFilm", "StockInventory", "StorageBin",
@@ -354,10 +355,8 @@ class EmissionCensusTest {
                 "Store.customersByFirstName", "Store.customersByNodeId", "Store.customersFirstN"))
             .containsEntry("PIVOT", List.of("Film.prices", "Film.pricesSplit", "Film.taglineTranslations",
                 "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
-            .containsEntry("SCALAR_PATH", List.of("AppAccount.displayName", "Company.displayName",
-                "Customer.addressNodeId", "Customer.districtByCondition", "FanAlpha.note", "Film.languageName",
-                "Film.soleActorFirstName", "FilmContent.rating", "FilmSameRow.languageName", "Individual.displayName",
-                "Inventory.filmTextRating", "Person.displayName"))
+            .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
+                "Film.soleActorFirstName"))
             .containsOnlyKeys("CHILD_PRODUCER_COLUMNS", "EXPRESSION", "INLINE_CHILD", "NULL_CONTRACT", "PIVOT",
                 "SCALAR_PATH");
     }

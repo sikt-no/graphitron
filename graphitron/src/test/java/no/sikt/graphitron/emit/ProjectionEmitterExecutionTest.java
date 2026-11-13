@@ -83,6 +83,39 @@ class ProjectionEmitterExecutionTest {
     }
 
     @Test
+    @DisplayName("a column down a path is read by the name its reader composes, within a nesting field's key below it")
+    void aColumnDownAPath() throws Exception {
+        var row = film(1, grouped(
+            field("languageName"),
+            aliased("spoken", "languageName"),
+            field("facts", field("languageName"))));
+        var language = TestDatabase.dsl().select(Tables.LANGUAGE.NAME).from(Tables.LANGUAGE)
+            .join(FILM).on(FILM.LANGUAGE_ID.eq(Tables.LANGUAGE.LANGUAGE_ID)).where(FILM.FILM_ID.eq(1))
+            .fetchOne(Tables.LANGUAGE.NAME);
+        assertThat(row.get("__rk_languageName")).as("languageName").isEqualTo(language);
+        assertThat(row.get("__rk_spoken")).as("languageName aliased spoken").isEqualTo(language);
+        assertThat(row.get("__rk_facts/languageName")).as("facts.languageName").isEqualTo(language);
+    }
+
+    @Test
+    @DisplayName("a discriminated participant names an interface's field for the interface and its own for itself")
+    void aliasOwners() {
+        var owners = FACTS.read("scenarios/projection-unit", graph -> {
+            var read = ProjectionQuery.read(graph.handle());
+            var byCoordinate = new java.util.TreeMap<String, String>();
+            for (var type : List.of("FilmItem", "ShortItem", "Film")) {
+                for (var arm : read.get(type).arms()) byCoordinate.put(arm.coordinate(), String.valueOf(arm.aliasOwner()));
+            }
+            return byCoordinate;
+        });
+        assertThat(owners)
+            .containsEntry("FilmItem.filmDescription", "Item")
+            .containsEntry("ShortItem.filmDescription", "Item")
+            .containsEntry("FilmItem.filmReleaseYear", "FilmItem")
+            .containsEntry("Film.languageName", "null");
+    }
+
+    @Test
     @DisplayName("a field selected under two response keys projects its column once")
     void aliasedTwice() throws Exception {
         var fields = fields(grouped(field("title"), aliased("again", "title")));

@@ -52,7 +52,11 @@ public final class ProjectionEmitter {
          * non-null one is rendered.
          */
         NULL_CONTRACT,
-        /** A scalar whose column lies down a path, whose steps are not rendered yet. */
+        /**
+         * A scalar whose column lies down a path that is not one subselect of column-pair joins
+         * from the unit's row: a step joining by a condition method or a routine, or a node id down
+         * a path.
+         */
         SCALAR_PATH,
         /**
          * A {@code @pivot}: deferred past the flip, where it becomes the stored defect
@@ -96,6 +100,18 @@ public final class ProjectionEmitter {
     /** The alias a unit projecting nothing selects, so its statement stays one column wide. */
     private static final String ROW_PRESENT = "__row_present__";
 
+    /** What a nesting level's result key is followed by in the names written beneath it. */
+    static final String PATH_DELIMITER = "/";
+
+    /**
+     * What a written name starts with: a marker, then the owner and its delimiter where the name is
+     * owned. The field readers compose the same prefix, so the two are held equal by a test until
+     * both read their names from one place.
+     */
+    static String aliasPrefix(String owner) {
+        return owner == null ? "__rk_" : "__rk_" + owner + "$";
+    }
+
     /**
      * The unit's class in {@code outputPackage}, its fields read through the selection adapters in
      * {@code <outputPackage>.util}, or the occurrences that keep it from being emitted.
@@ -118,7 +134,7 @@ public final class ProjectionEmitter {
                 .addParameter(table, "table")
                 .addParameter(ENV, "env")
                 .addStatement("$T<$T> fields = new $T<>()", SET, fieldWildcard(), LINKED_HASH_SET)
-                .addStatement("$L(fields, grouped, table, env)", levelName(List.of()))
+                .addStatement("$L(fields, grouped, table, env, $S)", levelName(List.of()), "")
                 .beginControlFlow("if (fields.isEmpty())")
                 .addStatement("fields.add($T.inline(1).as($S))", DSL, ROW_PRESENT)
                 .endControlFlow()
@@ -149,9 +165,28 @@ public final class ProjectionEmitter {
             case "EXPRESSION" -> Reason.EXPRESSION;
             case "NESTED" -> !nesting(arm) ? Reason.INLINE_CHILD
                 : arm.nonNull() ? null : Reason.NULL_CONTRACT;
-            case "COLUMN" -> sameRow(arm) && !projected(arm, unitTable).isEmpty() ? null : Reason.SCALAR_PATH;
+            case "COLUMN" -> sameRow(arm) && !projected(arm, unitTable).isEmpty() || terminal(arm, unitTable) != null
+                ? null : Reason.SCALAR_PATH;
             default -> Reason.UNSTATED;
         };
+    }
+
+    /**
+     * The column a scalar down a path reads where its steps land, or null where they cannot be
+     * rendered as one correlated subselect: no steps, a step joining on no column pair, steps not
+     * chained from the unit's table, a node id, or not one column on the last step's table.
+     */
+    private static ProjectionQuery.Column terminal(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable) {
+        var steps = arm.steps();
+        if (steps.isEmpty() || !arm.nodeKeys().isEmpty()) return null;
+        var from = unitTable;
+        for (var step : steps) {
+            if (step.pairs().isEmpty() || !step.from().equals(from)) return null;
+            from = step.to();
+        }
+        var landing = from;
+        var columns = arm.columns().stream().filter(c -> c.table().equals(landing)).toList();
+        return columns.size() == 1 ? columns.get(0) : null;
     }
 
     /** A nesting field, its fields read off its parent's row; anything else nested is read down a path. */
@@ -181,7 +216,8 @@ public final class ProjectionEmitter {
             .addParameter(ParameterizedTypeName.get(SET, fieldWildcard()), "fields")
             .addParameter(groupedType(), "grouped")
             .addParameter(table, "table")
-            .addParameter(ENV, "env");
+            .addParameter(ENV, "env")
+            .addParameter(String.class, "rkPath");
         method.beginControlFlow("for ($T entry : grouped.entrySet())", entryType());
         method.addStatement("$T sf = $T.canonical(entry.getKey(), entry.getValue())", SELECTED_FIELD, occurrences);
         method.beginControlFlow("switch (sf.getName())");
@@ -200,11 +236,20 @@ public final class ProjectionEmitter {
         }
     }
 
-    /** The statements one rendered arm adds its fields with. */
+    /**
+     * The statements one rendered arm adds its fields with. A nesting level takes the result keys
+     * from the row's owner down to it, each followed by the path delimiter, which a name it writes
+     * puts between the prefix and its own key, so every selection set nested into one row gets a
+     * name space of its own; the readers compose the same name.
+     */
     private static CodeBlock armBody(ProjectionQuery.Arm arm, ClassName occurrences, ProjectionQuery.TableKey unitTable) {
         if (nesting(arm)) {
-            return CodeBlock.of("$L(fields, $T.mergeByResultKey(entry.getValue()), table, env);\n",
-                levelName(arm.chain()), occurrences);
+            return CodeBlock.of("$L(fields, $T.mergeByResultKey(entry.getValue()), table, env, rkPath + entry.getKey() + $S);\n",
+                levelName(arm.chain()), occurrences, PATH_DELIMITER);
+        }
+        var terminal = terminal(arm, unitTable);
+        if (terminal != null && !sameRow(arm)) {
+            return subselect(arm, terminal);
         }
         var columns = projected(arm, unitTable);
         var body = CodeBlock.builder().add("{\n").indent();
@@ -212,6 +257,42 @@ public final class ProjectionEmitter {
             body.addStatement("fields.add(table.$L)", column.javaName());
         }
         return body.unindent().add("}\n").build();
+    }
+
+    /**
+     * A scalar down a path as one correlated subselect: the steps joined in order, each on its
+     * column pairs, the first correlated to the unit's row, selecting the column the last step
+     * lands on, at most one row of it, named for the field's result key under its owner.
+     */
+    private static CodeBlock subselect(ProjectionQuery.Arm arm, ProjectionQuery.Column terminal) {
+        var steps = arm.steps();
+        var body = CodeBlock.builder().add("{\n").indent();
+        for (int i = 0; i < steps.size(); i++) {
+            var step = steps.get(i);
+            body.addStatement("var x$L = $T.$L.as($S)", i, ClassName.bestGuess(step.constantsClassName()),
+                step.javaFieldName(), "x" + i);
+        }
+        var select = CodeBlock.builder().add("$T.select(x$L.$L).from(x0)", DSL, steps.size() - 1, terminal.javaName());
+        for (int i = 1; i < steps.size(); i++) {
+            select.add(".join(x$L).on($L)", i, pairs(steps.get(i).pairs(), "x" + (i - 1), "x" + i));
+        }
+        // One row, as a scalar takes: a path that fans out reads its first row rather than failing
+        // the statement it is selected into.
+        select.add(".where($L).limit(1)", pairs(steps.get(0).pairs(), "table", "x0"));
+        body.addStatement("fields.add($T.field($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),
+            aliasPrefix(arm.aliasOwner()));
+        return body.unindent().add("}\n").build();
+    }
+
+    /** A step's column pairs as one condition, each pair's from column on {@code from} equal to its to column on {@code to}. */
+    private static CodeBlock pairs(List<ProjectionQuery.Pair> pairs, String from, String to) {
+        var condition = CodeBlock.builder();
+        for (int i = 0; i < pairs.size(); i++) {
+            if (i > 0) condition.add(".and(");
+            condition.add("$L.$L.eq($L.$L)", to, pairs.get(i).toJavaName(), from, pairs.get(i).fromJavaName());
+            if (i > 0) condition.add(")");
+        }
+        return condition.build();
     }
 
     /** The method projecting the fields of the nesting level {@code chain} reaches, the unit's own at the empty chain. */
