@@ -785,6 +785,18 @@ static method needs no holder.
     condition reads anything but its own field's value is decided with it.
   * **A list element compares any number of fields** `blocked`. The walk's cap of 22, jOOQ's typed
     `Row1` to `Row22`, is not the store-fed emitter's, which writes a `RowN`; the cap's refusal goes.
+* **An `@outbox` payload key takes a node id whole, and decodes a key column named past it** `open`,
+  A's, a regression first (sikt-no/graphitron#580). A path that goes past the slot it opens onto a
+  `@nodeId` projects one key column, and the key column rule and `ARGMAPPING_KEY_COLUMN_UNRESOLVED`
+  apply it whatever the pair fills. So since 10.0.0-RC49 an `@outbox(argMapping: "booking:
+  input.bookingId")` over a composite-key node fails the build, where RC48 put the encoded id in the
+  payload, and a list of them an array. The landing states what it hands over, the whole id or one
+  key column, decided once in `graphitron_argmapping_landing_rule`: at a call parameter as today, at
+  a payload key the id whole unless a key column is named. Both key column rules and
+  `graphitron_outbox_key_rule` read that. Then a payload key naming a key column,
+  `input.bookingId.customer_id`, gets the column's decoded value, a list of ids an array of them,
+  where today the emitter walks into the id's text and drops the key (Alf, 2026-11-13: decode, not
+  refuse). `$result.x.id` and `$result.xs.id`, refused before RC49 too, are not this node's.
 * **A joined participant's re-read reads its join from the base** `open`, E's.
   `graphitron_occurrence_participant` states a participant on a detail table with that table, its
   container's table and column beside it; the re-read reads it through the join from the base, a
