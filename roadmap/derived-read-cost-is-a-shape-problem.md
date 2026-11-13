@@ -2935,6 +2935,18 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   (added 2026-11-09, after the check this entry first rested on) takes `List<String>`: it asks for the
   column with `argMapping: "larestedIder: larestedIder.<key column>"`, which a `@service` parameter
   takes as a list since the entry below. Alf held releases until it could (2026-11-13).
+* **Breaking: the generated node-id decode takes no parse classes or label** ("a node id decodes
+  through a converter-backed key column, its text parsed as the column says"). The generated
+  `NodeIdEncoder.decodeColumns(typeId, id, columns...)`, `decodeInto(record, typeId, id, columns...)` and
+  `ColumnValues.exact(type, text)`/`folded(type, text)` lose their `parseClasses` and `label` arguments:
+  each key column's text is parsed as the column says, as its converter's user type where jOOQ reads
+  that type from text and through the column's own coercion otherwise, the time of day a
+  `LocalDateTime` over a date-only column carries kept as before. `decodeInto` throws its nested
+  `ColumnConflict` where a column another writer set disagrees, for the caller to name the input
+  field. A node id over a converter-backed key now decodes at a `@service` parameter or member and a
+  `@condition` filter emitted from the store, where it was refused. Unused in FS-plattform: no
+  hand-written code there calls these methods (main 946fc4aa20), and utdanningsregisteret's 14
+  mutations over converter-backed keys are what it unblocks.
 * **New: an id of several node types builds into a `@service` bean member** ("an id of several node
   types decodes at a @service parameter or bean member"). A `@nodeId(typeName:)` naming a union or
   interface of node types now builds into an input bean's member as it does into a parameter: typed as

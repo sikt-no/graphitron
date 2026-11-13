@@ -33,8 +33,9 @@ import static org.jooq.impl.DSL.coalesce;
  * each column's generated name. One decode at a time: the id's binding on one node table, an id of
  * several node types being decoded once per table it binds. A decode the store cannot state is
  * refused with the reason: a table the id does not bind, a class that is no table's record, a record
- * of another table with no path from it to the node's, a key column the path does not carry back to
- * the record, and a column carrying a converter.
+ * of another table with no path from it to the node's, and a key column the path does not carry back
+ * to the record. A column carrying a converter decodes as any other, the generated decode parsing its
+ * text as the column says.
  */
 public final class NodeIdDecodeQuery {
 
@@ -66,8 +67,8 @@ public final class NodeIdDecodeQuery {
     private record Binding(String bound, String source, String schema, String table, String nodeTypeName,
                            String typeId, List<String> columns) {}
 
-    /** One column's generated name, and whether a converter sits on it. */
-    private record Column(String javaName, boolean converted) {}
+    /** One column's generated name. */
+    private record Column(String javaName) {}
 
     /** One column pair of a step: the column on the side the step leaves and on the side it reaches. */
     private record Pair(String from, String to) {}
@@ -148,11 +149,10 @@ public final class NodeIdDecodeQuery {
 
         var c = SQL_COLUMN;
         var columns = new HashMap<String, Column>();
-        store.dsl().select(c.SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME,
-                c.BINDING_TYPE, c.DATABASE_TYPE)
+        store.dsl().select(c.SOURCE_NAME, c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME)
             .from(c)
             .forEach(r -> columns.put(key(r.value1(), r.value2(), r.value3()) + "." + r.value4(),
-                new Column(r.value5(), !r.value6().equals(r.value7()))));
+                new Column(r.value5())));
         return new NodeIdDecodeQuery(bindings, tables, paths, columns);
     }
 
@@ -216,10 +216,6 @@ public final class NodeIdDecodeQuery {
             var known = columns.get(targetKey + "." + column);
             if (known == null) {
                 return new Resolution.Refused("column " + column + " of " + target.name() + " is not in the catalog");
-            }
-            if (known.converted()) {
-                return new Resolution.Refused(
-                    "column " + column + " carries a converter, which a node id decode does not build yet");
             }
             javaNames.add(known.javaName());
         }

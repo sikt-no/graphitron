@@ -62,9 +62,9 @@ class NodeIdLegacyConversionLogTest {
     void aConversionLogsItsTypeIdOnceAtInfoThenAtDebug_andNoClientValue() {
         String legacy = NodeIdEncoder.encode(TYPE_ID, 31337, 271828);
 
-        Object[] decoded = NodeIdEncoder.decodeColumns(TYPE_ID, legacy, null, Tables.PAYMENT.PAYMENT_ID);
+        Object[] decoded = NodeIdEncoder.decodeColumns(TYPE_ID, legacy, Tables.PAYMENT.PAYMENT_ID);
         assertThat(decoded).containsExactly(31337);
-        assertThat(NodeIdEncoder.decodeColumns(TYPE_ID, legacy, null, Tables.PAYMENT.PAYMENT_ID))
+        assertThat(NodeIdEncoder.decodeColumns(TYPE_ID, legacy, Tables.PAYMENT.PAYMENT_ID))
             .containsExactly(31337);
 
         assertThat(events(INFO)).hasSize(1);

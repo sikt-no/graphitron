@@ -11,7 +11,6 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.emit.NodeIdEncoderQuery;
 import no.sikt.graphitron.emit.NodeIdHelperNames;
 import no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.LegacyKeyShape;
@@ -38,7 +37,7 @@ import java.util.stream.Collectors;
  * }</pre>
  * Commas inside values are escaped as {@code %2C}. Each value is written as its column's Java
  * type's {@code toString()} and parsed back as that type, so a converter-backed key round-trips
- * through its user type (see {@link SlotParse}). The generic {@code encode} returns
+ * through its user type (see {@code ColumnValues.exact}). The generic {@code encode} returns
  * {@code null} when any value is {@code null}, so the GraphQL field resolves to {@code null}
  * rather than emitting a malformed ID.
  *
@@ -163,28 +162,23 @@ public class NodeIdEncoderClassGenerator {
             .build();
 
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(ClassName.OBJECT));
-        var classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
-            WildcardTypeName.subtypeOf(ClassName.OBJECT));
         var decodeColumns = MethodSpec.methodBuilder("decodeColumns")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object[].class)
             .addParameter(String.class, "expectedTypeId")
             .addParameter(String.class, "base64Id")
-            .addParameter(com.palantir.javapoet.ArrayTypeName.of(classWildcard), "parseClasses")
             .addParameter(com.palantir.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
             .varargs(true)
             .addJavadoc("The id's key values as values of {@code columns}, in key order, or {@code null} when\n"
                 + "the id is malformed, names another type, has the wrong arity, or carries a value that\n"
-                + "is not exactly what {@link #encode} writes for a value of its column.\n"
-                + "{@code parseClasses[i]}, when the array and the element are non-null, is the user type\n"
-                + "of a converter on {@code columns[i]}, which that slot's text is parsed as.\n")
+                + "is not exactly what {@link #encode} writes for a value of its column.\n")
             .addCode("// An id of a type id with a legacy key shape is read in the current shape.\n")
             .beginControlFlow("if (LEGACY_KEY_SHAPES.containsKey(expectedTypeId) && expectedTypeId.equals(peekTypeId(base64Id)))")
                 .addStatement("base64Id = toCurrentId(base64Id)")
             .endControlFlow()
             .addStatement("$T values = decodeValues(expectedTypeId, base64Id)", String[].class)
             .addStatement("if (values == null || values.length != columns.length) return null")
-            .addStatement("return checkSlots(values, parseClasses, columns)")
+            .addStatement("return checkSlots(values, columns)")
             .build();
 
         // The per-slot check every decoded value passes, the current shape's and a legacy one's alike.
@@ -192,14 +186,12 @@ public class NodeIdEncoderClassGenerator {
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(Object[].class)
             .addParameter(String[].class, "values")
-            .addParameter(ArrayTypeName.of(classWildcard), "parseClasses")
             .addParameter(ArrayTypeName.of(fieldWildcard), "columns")
             .addStatement("Object[] decoded = new Object[values.length]")
             .beginControlFlow("for (int i = 0; i < values.length; i++)")
-                .addStatement("$T parseClass = parseClasses == null ? null : parseClasses[i]", classWildcard)
-                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(), parseClass, values[i])", columnValues)
+                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(), values[i])", columnValues)
                 .beginControlFlow("if (decoded[i] == null)")
-                    .addStatement("if (parseClass != null) reportFold(columns[i], parseClass, values[i])")
+                    .addStatement("reportFold(columns[i], values[i])")
                     .addStatement("return null")
                 .endControlFlow()
             .endControlFlow()
@@ -210,17 +202,13 @@ public class NodeIdEncoderClassGenerator {
         var legacyShapeType = TypeSpec.classBuilder(LEGACY_SHAPE_CLASS)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("A type id's legacy key shape: its columns in the order old ids carry their values,\n"
-                + "their parse classes as {@code decodeColumns} takes them, and for each current key\n"
-                + "position the legacy position its value is read from.\n")
+                + "and for each current key position the legacy position its value is read from.\n")
             .addField(ArrayTypeName.of(fieldWildcard), "columns", Modifier.FINAL)
-            .addField(ArrayTypeName.of(classWildcard), "parseClasses", Modifier.FINAL)
             .addField(int[].class, "keptAt", Modifier.FINAL)
             .addMethod(MethodSpec.constructorBuilder()
                 .addParameter(ArrayTypeName.of(fieldWildcard), "columns")
-                .addParameter(ArrayTypeName.of(classWildcard), "parseClasses")
                 .addParameter(int[].class, "keptAt")
                 .addStatement("this.columns = columns")
-                .addStatement("this.parseClasses = parseClasses")
                 .addStatement("this.keptAt = keptAt")
                 .build())
             .build();
@@ -235,10 +223,9 @@ public class NodeIdEncoderClassGenerator {
             .returns(shapeMap)
             .addStatement("$T shapes = new $T<>()", shapeMap, HashMap.class);
         for (LegacyKeyShape shape : legacyKeyShapes) {
-            legacyShapesBuilder.addStatement("shapes.put($S, new $T(new $T { $L }, $L, new int[] { $L }))",
+            legacyShapesBuilder.addStatement("shapes.put($S, new $T(new $T { $L }, new int[] { $L }))",
                 shape.typeId(), legacyShapeClass, ArrayTypeName.of(fieldWildcard),
                 columnReferences(shape),
-                SlotParse.parseClasses(shape.columns()),
                 shape.keptAt().stream().map(String::valueOf).collect(Collectors.joining(", ")));
         }
         var legacyShapes = legacyShapesBuilder
@@ -261,7 +248,7 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("if (shape == null) return base64Id")
             .addStatement("$T values = decodeValues(typeId, base64Id)", String[].class)
             .addStatement("if (values == null || values.length != shape.columns.length) return base64Id")
-            .addStatement("if (checkSlots(values, shape.parseClasses, shape.columns) == null) return null")
+            .addStatement("if (checkSlots(values, shape.columns) == null) return null")
             .addStatement("Object[] current = new Object[shape.keptAt.length]")
             .beginControlFlow("for (int i = 0; i < current.length; i++)")
                 .addStatement("current[i] = values[shape.keptAt[i]]")
@@ -289,9 +276,8 @@ public class NodeIdEncoderClassGenerator {
         var reportFold = MethodSpec.methodBuilder("reportFold")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addParameter(fieldWildcard, "column")
-            .addParameter(classWildcard, "parseClass")
             .addParameter(String.class, "text")
-            .addStatement("Object folded = $T.folded(column.getDataType(), parseClass, text)", columnValues)
+            .addStatement("Object folded = $T.folded(column.getDataType(), text)", columnValues)
             .addStatement("if (folded == null) return")
             .addStatement("$T name = column.getQualifiedName().toString()", String.class)
             .addStatement("$T message = $S\n+ $S\n+ $S", String.class,
@@ -345,6 +331,18 @@ public class NodeIdEncoderClassGenerator {
             .addField(legacyShapesField)
             .addField(convertedTypeIdsField)
             .addType(legacyShapeType)
+            .addType(TypeSpec.classBuilder(NodeIdHelperNames.COLUMN_CONFLICT)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .superclass(RuntimeException.class)
+                .addJavadoc("A node id's key value disagreeing with a value another writer already set on the\n"
+                    + "same column of a record {@code decodeInto} is handed.\n")
+                .addField(FieldSpec.builder(long.class, "serialVersionUID", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .addAnnotation(java.io.Serial.class).initializer("1L").build())
+                .addMethod(MethodSpec.constructorBuilder()
+                    .addModifiers(Modifier.PUBLIC)
+                    .addStatement("super(null, null, false, false)")
+                    .build())
+                .build())
             .addMethod(privateCtor)
             .addMethod(encode)
             .addMethod(peekTypeId)
@@ -402,16 +400,15 @@ public class NodeIdEncoderClassGenerator {
      * {@code null} where {@link #buildRequireColumnAgreement() decodeColumns} refuses the id.
      *
      * <p>A record several writers fill is passed to each, and its dirty flags, jOOQ's
-     * {@code touched}, are the agreement check: a column no writer has set takes the value, and a column one already has, its flag raised
-     * by a plain field or an earlier decode, keeps it where the values agree and fails the request
-     * where they do not, naming the input field {@code label} rather than the column. So the caller
-     * writes plain fields first and decodes last.
+     * {@code touched}, are the agreement check: a column no writer has set takes the value, and a
+     * column one already has, its flag raised by a plain field or an earlier decode, keeps it where
+     * the values agree and throws {@code ColumnConflict} where they do not, which the caller names
+     * the input field in. So the caller writes plain fields first and decodes last. Each slot's text
+     * is parsed as its column says, through {@code ColumnValues.exact}.
      */
     private static MethodSpec buildDecodeInto() {
         var r = com.palantir.javapoet.TypeVariableName.get("R", ClassName.get("org.jooq", "Record"));
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(ClassName.OBJECT));
-        var classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
-            WildcardTypeName.subtypeOf(ClassName.OBJECT));
         var fieldOfObject = ParameterizedTypeName.get(FIELD, ClassName.OBJECT);
         return MethodSpec.methodBuilder("decodeInto")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -422,16 +419,16 @@ public class NodeIdEncoderClassGenerator {
             .addParameter(r, "into")
             .addParameter(String.class, "expectedTypeId")
             .addParameter(String.class, "base64Id")
-            .addParameter(String.class, "label")
-            .addParameter(com.palantir.javapoet.ArrayTypeName.of(classWildcard), "parseClasses")
             .addParameter(com.palantir.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
             .varargs(true)
-            .addStatement("$T values = decodeColumns(expectedTypeId, base64Id, parseClasses, columns)", Object[].class)
+            .addStatement("$T values = decodeColumns(expectedTypeId, base64Id, columns)", Object[].class)
             .addStatement("if (values == null) return null")
             .beginControlFlow("for (int i = 0; i < columns.length; i++)")
                 .addStatement("$T column = ($T) columns[i]", fieldOfObject, fieldOfObject)
                 .beginControlFlow("if (into.touched(column))")
-                    .addStatement("requireColumnAgreement(label, column.getDataType(), into.get(column), values[i])")
+                    .beginControlFlow("if (!$T.equals(column.getDataType().convert(into.get(column)), column.getDataType().convert(values[i])))", OBJECTS)
+                        .addStatement("throw new $L()", NodeIdHelperNames.COLUMN_CONFLICT)
+                    .endControlFlow()
                 .nextControlFlow("else")
                     .addStatement("into.set(column, values[i])")
                 .endControlFlow()
@@ -501,11 +498,10 @@ public class NodeIdEncoderClassGenerator {
         Object[] tablesRefs = new Object[n];
         for (int i = 0; i < n; i++) tablesRefs[i] = tablesClass;
 
-        Object[] decodeArgs = new Object[n + 2];
+        Object[] decodeArgs = new Object[n + 1];
         decodeArgs[0] = node.typeId();
-        decodeArgs[1] = SlotParse.parseClasses(key);
-        System.arraycopy(tablesRefs, 0, decodeArgs, 2, n);
-        b.addStatement("Object[] values = decodeColumns($S, base64Id, $L, " + fieldsList + ")", decodeArgs);
+        System.arraycopy(tablesRefs, 0, decodeArgs, 1, n);
+        b.addStatement("Object[] values = decodeColumns($S, base64Id, " + fieldsList + ")", decodeArgs);
         b.addStatement("if (values == null) return null");
 
         // Declared with the explicit record type rather than `var`; generated sources avoid `var`

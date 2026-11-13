@@ -35,20 +35,21 @@ import java.util.Objects;
  * fail at bind time.
  *
  * <ul>
- *   <li>{@code exact(type, parseClass, text)} is the inverse of {@code NodeIdEncoder.encode}, for
+ *   <li>{@code exact(type, text)} is the inverse of {@code NodeIdEncoder.encode}, for
  *       server-minted text: the trip succeeds, the canonical value's {@code toString()} is the
  *       text, and the value fits the column's declared precision. It refuses a wrapped number, a
- *       padded or reformatted one, and any text the encoder never writes. A non-null
- *       {@code parseClass} is the converter's user type, and the trip's first step then parses the
- *       text as that type rather than through {@code convert}, which on a converted type parses as
- *       the database type and can drop what the user type's text carries (see
- *       {@link no.sikt.graphitron.render.SlotParse}).</li>
+ *       padded or reformatted one, and any text the encoder never writes. On a converted column
+ *       whose user type jOOQ has a text form for, the trip's first step parses the text as that
+ *       type rather than through {@code convert}, which on a converted type parses as the database
+ *       type and can drop what the user type's text carries: the time of day of a date-only
+ *       database type bound to {@code LocalDateTime}. Any other converted column parses as the
+ *       database type, the converter's {@code from} giving the value.</li>
  *   <li>{@code coerce(type, value)} is the documented wire coercion for authored values (a tenant
  *       argument, a federation {@code @key} field): the trip succeeds, a value that reads as a
  *       number lands on that number or its integral part (so {@code "1.5"} binds as {@code 1} on an
  *       integer column but a number that wraps is refused), and the value fits the declared
  *       precision.</li>
- *   <li>{@code folded(type, parseClass, text)} names what {@code exact} cannot: for a slot over a
+ *   <li>{@code folded(type, text)} names what {@code exact} cannot: for a slot over a
  *       converter's user type, the value the trip came back as when the converter did not give the
  *       parsed value back ({@code from(to(parsed))} is not {@code parsed}), else {@code null}. It
  *       compares values, not text, so a padded or reformatted number is no fold, and it answers
@@ -126,14 +127,13 @@ public class ColumnValuesClassGenerator {
             .addTypeVariable(t)
             .returns(t)
             .addParameter(dataTypeOfT, "type")
-            .addParameter(classWildcard, "parseClass")
             .addParameter(String.class, "text")
             .addJavadoc("The value server-minted {@code text} names in a column of {@code type}, or {@code null}\n"
                 + "when it names none: the text must be exactly what {@code NodeIdEncoder.encode} writes for\n"
-                + "that value, and the value must fit the column. A non-null {@code parseClass} is the\n"
-                + "converter's user type, which the text is parsed as before the converter runs on it.\n")
+                + "that value, and the value must fit the column. The text is parsed as {@code parseClass}\n"
+                + "says before the converter runs on it.\n")
             .addStatement("if (text == null) return null")
-            .addStatement("$T trip = trip(type, parseClass, text)", tripOfT)
+            .addStatement("$T trip = trip(type, parseClass(type), text)", tripOfT)
             .addStatement("if (trip == null || !trip.canonical.toString().equals(text)) return null")
             .addStatement("return fitsPrecision(type, numericValue(trip)) ? trip.canonical : null")
             .build();
@@ -165,11 +165,11 @@ public class ColumnValuesClassGenerator {
             .addTypeVariable(t)
             .returns(t)
             .addParameter(dataTypeOfT, "type")
-            .addParameter(classWildcard, "parseClass")
             .addParameter(String.class, "text")
-            .addJavadoc("What the column's converter gives back for {@code text} parsed as its user type\n"
-                + "{@code parseClass}, when that is not the parsed value; {@code null} when the converter gives\n"
-                + "the value back, the text does not parse, or there is no parse class.\n")
+            .addJavadoc("What the column's converter gives back for {@code text} parsed as its user type,\n"
+                + "when that is not the parsed value; {@code null} when the converter gives the value back,\n"
+                + "the text does not parse, or the column's text is not parsed as its user type.\n")
+            .addStatement("$T parseClass = parseClass(type)", classWildcard)
             .addStatement("if (text == null || parseClass == null) return null")
             .addStatement("$T trip = trip(type, parseClass, text)", tripOfT)
             .addStatement("return trip == null || $T.deepEquals(trip.parsed, trip.canonical) ? null : trip.canonical",
@@ -306,6 +306,43 @@ public class ColumnValuesClassGenerator {
                 String.class, String.class)
             .build();
 
+        // Which class a key slot's text is parsed as, off the column alone: the decision the
+        // generator made per slot before, now made where the column is.
+        var parseClass = MethodSpec.methodBuilder("parseClass")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(classWildcard)
+            .addParameter(dataTypeWildcard, "type")
+            .addJavadoc("The class text over a column of {@code type} is parsed as: the converter's user type,\n"
+                + "where a converter sits on the column and jOOQ has a text form for that type, else\n"
+                + "{@code null}, the column's own coercion parsing it.\n")
+            .addStatement("$T user = type.getType()", classWildcard)
+            .addStatement("$T database = type.getConverter().fromType()", classWildcard)
+            .addStatement("return !user.equals(database) && TEXT_FORM_CLASSES.contains(user) ? user : null")
+            .build();
+
+        var textFormClasses = MethodSpec.methodBuilder("textFormClasses")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(ClassName.get(java.util.Set.class), classWildcard))
+            .addJavadoc("The classes jOOQ has a built-in text form for: the type of every public static\n"
+                + "{@code DataType} constant on {@code SQLDataType}, less {@code Object}, the {@code OTHER}\n"
+                + "type, whose parse would accept any text. Read off the constants rather than asked per\n"
+                + "class, because jOOQ answers an unknown class by logging a warning and throwing.\n")
+            .addStatement("$T classes = new $T<>()", ParameterizedTypeName.get(ClassName.get(java.util.Set.class), classWildcard),
+                java.util.HashSet.class)
+            .beginControlFlow("for ($T field : $T.class.getFields())", java.lang.reflect.Field.class, SQL_DATA_TYPE)
+            .beginControlFlow("if ($T.isStatic(field.getModifiers()) && $T.class.isAssignableFrom(field.getType()))",
+                java.lang.reflect.Modifier.class, DATA_TYPE)
+            .beginControlFlow("try")
+            .addStatement("classes.add((($T) field.get(null)).getType())", dataTypeWildcard)
+            .nextControlFlow("catch ($T e)", IllegalAccessException.class)
+            .addStatement("throw new $T(e)", IllegalStateException.class)
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("classes.remove($T.class)", Object.class)
+            .addStatement("return $T.copyOf(classes)", java.util.Set.class)
+            .build();
+
         var trip = MethodSpec.methodBuilder("trip")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addTypeVariable(t)
@@ -440,6 +477,9 @@ public class ColumnValuesClassGenerator {
             .addJavadoc("Whether a decoded value is a value of its column, and which one, and the cursor text a\n"
                 + "database value is written as. Static, non-extendable; see {@code ColumnValuesClassGenerator}\n"
                 + "for the contract.\n")
+            .addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(java.util.Set.class), classWildcard),
+                    "TEXT_FORM_CLASSES", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("textFormClasses()").build())
             .addField(FieldSpec.builder(DATE_TIME_FORMATTER, SECONDS, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.ofPattern($S)", DATE_TIME_FORMATTER, "uuuu-MM-dd'T'HH:mm:ss")
                 .build())
@@ -453,6 +493,8 @@ public class ColumnValuesClassGenerator {
             .addMethod(toText)
             .addMethod(coerced)
             .addMethod(fraction)
+            .addMethod(parseClass)
+            .addMethod(textFormClasses)
             .addMethod(trip)
             .addMethod(roundTrip)
             .addMethod(numericValue)

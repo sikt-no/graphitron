@@ -281,8 +281,7 @@ public final class BuildEmitter {
         if (member.decoded().isPresent()) {
             // Decoded as a parameter is: a list of node ids each into a record of its own.
             var helperName = name + "_" + member.slot().slotName();
-            out.add(NodeIdDecodeEmitter.parameterHelper(helperName, slotType, member.decoded().get(),
-                String.join(".", member.path()), runtime));
+            out.add(NodeIdDecodeEmitter.parameterHelper(helperName, slotType, member.decoded().get(), runtime));
             made = CodeBlock.of("$L($L)", helperName, read);
         } else if (member.nested().isPresent()) {
             var helperName = name + "_" + member.slot().slotName();

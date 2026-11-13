@@ -77,7 +77,10 @@ class EmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(133);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(134);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED))
+            .as("a node id decoded through a converter-backed key column")
+            .contains("Query.converterIdChangeValue");
         assertThat(byVerdict.get(ServiceEmission.EMITTED))
             .as("a key column projected out of each of a list of node ids, one key and a composite's second")
             .contains("Query.filmsByProjectedIds", "Film.copiesAtStores");
@@ -176,8 +179,11 @@ class EmissionCensusTest {
             "Query.addressesByCountryName address", "Query.addressesByCustomerIds address",
             "Query.addressesByCustomerIdsInferred address", "Query.citiesByCountryFilter city",
             "Query.citiesByCountryName city", "Query.citiesFaceted city", "Query.computedTitleFilm film",
+            "Query.converterCampusTermByNodeId converter_campus_term",
+            "Query.converterCampusTermsByNodeIds converter_campus_term",
             "Query.converterCampusesByOrgCode converter_campus",
-            "Query.converterCampusesByOrgCodes converter_campus", "Query.customerByPk customer",
+            "Query.converterCampusesByOrgCodes converter_campus",
+            "Query.converterIdChangeByNodeId converter_id_change", "Query.customerByPk customer",
             "Query.customers customer", "Query.customersByAddresses customer",
             "Query.customersByCityFilter customer", "Query.customersByCityId customer",
             "Query.customersByConditionDistrict customer", "Query.customersByDistrictBean customer",
@@ -235,9 +241,6 @@ class EmissionCensusTest {
                 "Query.projectNotesByProject project_note", "Query.stockByLanguageOverride film",
                 "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
                 "Store.customersByAddressDistrictSplit customer"))
-            .containsEntry("NODE_ID", List.of("Query.converterCampusTermByNodeId converter_campus_term",
-                "Query.converterCampusTermsByNodeIds converter_campus_term",
-                "Query.converterIdChangeByNodeId converter_id_change"))
             .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
                 "Query.occupantByOptionalId staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
                 "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",
@@ -251,7 +254,7 @@ class EmissionCensusTest {
                 "Query.languageByKey language", "Query.languageBySingleKey language",
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
-            .containsOnlyKeys("AUTHORED_NODE_ID", "CONSUMED", EMITTED, "NODE_ID", "NODE_ID_PARTICIPANT", "NOTHING");
+            .containsOnlyKeys("AUTHORED_NODE_ID", "CONSUMED", EMITTED, "NODE_ID_PARTICIPANT", "NOTHING");
     }
 
     /**

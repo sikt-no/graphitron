@@ -24,9 +24,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * column exposes, and a converter that wraps on its way to the database are pinned here.
  *
  * <p>{@code exact} is the inverse of the node-id encoder, so it accepts only the text the encoder
- * writes for a value of the column. Its parse class is the one the generator hands it for a slot
- * ({@code SlotParse}): {@code null} for a column with no converter or a converter to a class jOOQ
- * has no text form for, the converter's user type otherwise. {@code coerce} is the documented
+ * writes for a value of the column. It parses the text as the column says: as the converter's user
+ * type where jOOQ has a text form for it, through the column's own coercion otherwise, so a
+ * converter-backed slot keeps what its user type's text carries. {@code coerce} is the documented
  * coercion of an authored value, minus a wrap. {@code folded} names the value a converter gave back
  * in place of the parsed one, which the node-id decode logs when it refuses such a slot.
  */
@@ -54,51 +54,51 @@ class ColumnValuesTest {
 
     @Test
     void exact_acceptsTheEncodersImage() {
-        assertThat(ColumnValues.exact(SMALLINT, null, "1234")).isEqualTo((short) 1234);
-        assertThat(ColumnValues.exact(INTEGER, null, "99999")).isEqualTo(99999);
-        assertThat(ColumnValues.exact(BIGINT, null, "99999999999")).isEqualTo(99999999999L);
-        assertThat(ColumnValues.exact(NUMERIC_4, null, "9999")).isEqualByComparingTo("9999");
-        assertThat(ColumnValues.exact(NUMERIC_4_1, null, "999.9")).isEqualByComparingTo("999.9");
-        assertThat(ColumnValues.exact(ORG_CODE, String.class, "186")).isEqualTo("186");
-        assertThat(ColumnValues.exact(TRUNCATING, Long.class, "1234")).isEqualTo(1234L);
+        assertThat(ColumnValues.exact(SMALLINT, "1234")).isEqualTo((short) 1234);
+        assertThat(ColumnValues.exact(INTEGER, "99999")).isEqualTo(99999);
+        assertThat(ColumnValues.exact(BIGINT, "99999999999")).isEqualTo(99999999999L);
+        assertThat(ColumnValues.exact(NUMERIC_4, "9999")).isEqualByComparingTo("9999");
+        assertThat(ColumnValues.exact(NUMERIC_4_1, "999.9")).isEqualByComparingTo("999.9");
+        assertThat(ColumnValues.exact(ORG_CODE, "186")).isEqualTo("186");
+        assertThat(ColumnValues.exact(TRUNCATING, "1234")).isEqualTo(1234L);
     }
 
     @Test
     void exact_refusesTextTheEncoderNeverWrites() {
         for (String text : new String[] {"abc", "", " 1234", "01", "1.5"}) {
-            assertThat(ColumnValues.exact(SMALLINT, null, text)).as("smallint '%s'", text).isNull();
-            assertThat(ColumnValues.exact(INTEGER, null, text)).as("integer '%s'", text).isNull();
-            assertThat(ColumnValues.exact(BIGINT, null, text)).as("bigint '%s'", text).isNull();
+            assertThat(ColumnValues.exact(SMALLINT, text)).as("smallint '%s'", text).isNull();
+            assertThat(ColumnValues.exact(INTEGER, text)).as("integer '%s'", text).isNull();
+            assertThat(ColumnValues.exact(BIGINT, text)).as("bigint '%s'", text).isNull();
         }
-        assertThat(ColumnValues.exact(SMALLINT, null, (String) null)).isNull();
+        assertThat(ColumnValues.exact(SMALLINT, (String) null)).isNull();
     }
 
     @Test
     void exact_refusesAWrappedNumber() {
-        assertThat(ColumnValues.exact(SMALLINT, null, "99999")).as("wraps to -31073").isNull();
-        assertThat(ColumnValues.exact(SMALLINT, null, "99999999999")).isNull();
-        assertThat(ColumnValues.exact(INTEGER, null, "99999999999")).as("wraps to 1215752191").isNull();
-        assertThat(ColumnValues.exact(INTEGER, null, "4294967297")).as("wraps to 1").isNull();
+        assertThat(ColumnValues.exact(SMALLINT, "99999")).as("wraps to -31073").isNull();
+        assertThat(ColumnValues.exact(SMALLINT, "99999999999")).isNull();
+        assertThat(ColumnValues.exact(INTEGER, "99999999999")).as("wraps to 1215752191").isNull();
+        assertThat(ColumnValues.exact(INTEGER, "4294967297")).as("wraps to 1").isNull();
     }
 
     @Test
     void exact_refusesANumberOutsideTheDeclaredPrecisionOrScale() {
-        assertThat(ColumnValues.exact(NUMERIC_4, null, "99999")).as("five integer digits in NUMERIC(4)").isNull();
-        assertThat(ColumnValues.exact(NUMERIC_4, null, "1.5")).as("a fraction in NUMERIC(4)").isNull();
-        assertThat(ColumnValues.exact(NUMERIC_4_1, null, "1000.0")).as("four integer digits in NUMERIC(4,1)").isNull();
-        assertThat(ColumnValues.exact(NUMERIC_4_1, null, "1.55")).as("two fraction digits in NUMERIC(4,1)").isNull();
+        assertThat(ColumnValues.exact(NUMERIC_4, "99999")).as("five integer digits in NUMERIC(4)").isNull();
+        assertThat(ColumnValues.exact(NUMERIC_4, "1.5")).as("a fraction in NUMERIC(4)").isNull();
+        assertThat(ColumnValues.exact(NUMERIC_4_1, "1000.0")).as("four integer digits in NUMERIC(4,1)").isNull();
+        assertThat(ColumnValues.exact(NUMERIC_4_1, "1.55")).as("two fraction digits in NUMERIC(4,1)").isNull();
     }
 
     @Test
     void exact_followsAConverterBackedValueToItsDatabaseValue() {
-        assertThat(ColumnValues.exact(ORG_CODE, String.class, "abc")).as("Long.valueOf refuses it").isNull();
-        assertThat(ColumnValues.exact(ORG_CODE, String.class, "99999999999999999999")).as("outside bigint").isNull();
-        assertThat(ColumnValues.exact(ORG_CODE, String.class, "0186")).as("the canonical value is \"186\"").isNull();
+        assertThat(ColumnValues.exact(ORG_CODE, "abc")).as("Long.valueOf refuses it").isNull();
+        assertThat(ColumnValues.exact(ORG_CODE, "99999999999999999999")).as("outside bigint").isNull();
+        assertThat(ColumnValues.exact(ORG_CODE, "0186")).as("the canonical value is \"186\"").isNull();
     }
 
     @Test
     void exact_refusesAConverterSideWrapThatFromDoesNotGiveBack() {
-        assertThat(ColumnValues.exact(TRUNCATING, Long.class, "70000")).isNull();
+        assertThat(ColumnValues.exact(TRUNCATING, "70000")).isNull();
     }
 
     // ===== The parse step: a converter-backed slot is parsed as the type it was encoded from =====
@@ -133,37 +133,31 @@ class ColumnValuesTest {
 
     @Test
     void exact_userTypeSlot_keepsTheTimeADateOnlyParseWouldDrop() {
-        assertThat(ColumnValues.exact(DATE_WITH_TIME, LocalDateTime.class, SMALL_HOURS))
+        assertThat(ColumnValues.exact(DATE_WITH_TIME, SMALL_HOURS))
             .isEqualTo(SMALL_HOURS_VALUE);
-        assertThat(ColumnValues.exact(DATE_WITH_TIME, null, SMALL_HOURS))
-            .as("parsed as java.sql.Date, the time is gone and the trip lands on 00:00")
-            .isNull();
     }
 
     @Test
     void exact_userTypeSlot_overADatabaseTypeThatCannotHoldTheTime_isRefused() {
-        assertThat(ColumnValues.exact(DATE_ONLY, LocalDateTime.class, SMALL_HOURS))
+        assertThat(ColumnValues.exact(DATE_ONLY, SMALL_HOURS))
             .as("the trip comes back at 00:00, never another row")
             .isNull();
-        assertThat(ColumnValues.exact(DATE_ONLY, LocalDateTime.class, "2007-08-22T00:00"))
+        assertThat(ColumnValues.exact(DATE_ONLY, "2007-08-22T00:00"))
             .isEqualTo(LocalDateTime.of(2007, 8, 22, 0, 0));
     }
 
     @Test
     void exact_roundTripsEachUserTypeTheFixturesUse() {
-        assertThat(ColumnValues.exact(CHANGE_INSTANT, LocalDateTime.class, SMALL_HOURS)).isEqualTo(SMALL_HOURS_VALUE);
-        assertThat(ColumnValues.exact(CHANGE_INSTANT, null, SMALL_HOURS))
-            .as("OffsetDateTime does not parse text without an offset")
-            .isNull();
-        assertThat(ColumnValues.exact(ORG_CODE, String.class, "1120")).isEqualTo("1120");
-        assertThat(ColumnValues.exact(ORG_CODE, String.class, "abc")).as("Long.valueOf refuses it").isNull();
-        assertThat(ColumnValues.exact(TRUNCATING, Long.class, "-12")).isEqualTo(-12L);
+        assertThat(ColumnValues.exact(CHANGE_INSTANT, SMALL_HOURS)).isEqualTo(SMALL_HOURS_VALUE);
+        assertThat(ColumnValues.exact(ORG_CODE, "1120")).isEqualTo("1120");
+        assertThat(ColumnValues.exact(ORG_CODE, "abc")).as("Long.valueOf refuses it").isNull();
+        assertThat(ColumnValues.exact(TRUNCATING, "-12")).isEqualTo(-12L);
     }
 
     @Test
     void exact_databaseTypeSlot_decodesOnlyWhenTheConvertersTextAgrees() {
-        assertThat(ColumnValues.exact(PLAIN_CODE, null, "186")).isEqualTo(new PlainCode(186));
-        assertThat(ColumnValues.exact(WRAPPED_CODE, null, "186"))
+        assertThat(ColumnValues.exact(PLAIN_CODE, "186")).isEqualTo(new PlainCode(186));
+        assertThat(ColumnValues.exact(WRAPPED_CODE, "186"))
             .as("WrappedCode[value=186] is not the slot text")
             .isNull();
     }
@@ -172,18 +166,18 @@ class ColumnValuesTest {
 
     @Test
     void folded_namesWhatALossyConverterGivesBack() {
-        assertThat(ColumnValues.folded(DATE_ONLY, LocalDateTime.class, SMALL_HOURS))
+        assertThat(ColumnValues.folded(DATE_ONLY, SMALL_HOURS))
             .as("the time part the database type cannot hold")
             .isEqualTo(LocalDateTime.of(2007, 8, 22, 0, 0));
     }
 
     @Test
     void folded_isNullWhereNoConverterLostAnything() {
-        assertThat(ColumnValues.folded(DATE_ONLY, LocalDateTime.class, "2007-08-22T00:00")).as("round-trips").isNull();
-        assertThat(ColumnValues.folded(DATE_WITH_TIME, LocalDateTime.class, SMALL_HOURS)).as("lossless").isNull();
-        assertThat(ColumnValues.folded(INTEGER, null, "01")).as("a padded number, no converter").isNull();
-        assertThat(ColumnValues.folded(WRAPPED_CODE, null, "186")).as("a database-type slot").isNull();
-        assertThat(ColumnValues.folded(ORG_CODE, String.class, "abc")).as("does not parse").isNull();
+        assertThat(ColumnValues.folded(DATE_ONLY, "2007-08-22T00:00")).as("round-trips").isNull();
+        assertThat(ColumnValues.folded(DATE_WITH_TIME, SMALL_HOURS)).as("lossless").isNull();
+        assertThat(ColumnValues.folded(INTEGER, "01")).as("a padded number, no converter").isNull();
+        assertThat(ColumnValues.folded(WRAPPED_CODE, "186")).as("a database-type slot").isNull();
+        assertThat(ColumnValues.folded(ORG_CODE, "abc")).as("does not parse").isNull();
     }
 
     @Test

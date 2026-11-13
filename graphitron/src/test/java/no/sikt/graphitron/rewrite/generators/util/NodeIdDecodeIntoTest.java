@@ -23,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The generated {@code NodeIdEncoder.decodeInto}, compiled and run against the sakila catalog's own
  * records: an id's key decoded into its node type's key column and, as readily, into a column of
  * another table referencing it; an id of another type refused; and a record two writers fill agreeing
- * on a column both set, and failing the request where they do not.
+ * on a column both set, and throwing {@code ColumnConflict} where they do not, which the caller names
+ * the input field in.
  */
 @UnitTier
 class NodeIdDecodeIntoTest {
@@ -47,7 +48,7 @@ class NodeIdDecodeIntoTest {
         var encoder = harness.load(PACKAGE + ".util." + NodeIdEncoderClassGenerator.CLASS_NAME);
         encode = encoder.getMethod("encode", String.class, Object[].class);
         decodeInto = encoder.getMethod("decodeInto", org.jooq.Record.class, String.class, String.class,
-            String.class, Class[].class, Field[].class);
+            Field[].class);
     }
 
     @AfterAll
@@ -61,7 +62,7 @@ class NodeIdDecodeIntoTest {
 
     private static Object decode(org.jooq.Record into, String typeId, String id, Field<?>... columns) throws Throwable {
         try {
-            return decodeInto.invoke(null, into, typeId, id, "filmId", null, columns);
+            return decodeInto.invoke(null, into, typeId, id, columns);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -95,11 +96,11 @@ class NodeIdDecodeIntoTest {
     }
 
     @Test
-    void writersThatDisagreeOnAColumnFailTheRequest() {
+    void writersThatDisagreeOnAColumnConflict() {
         var inventory = new InventoryRecord();
         inventory.setFilmId(8);
         assertThatThrownBy(() -> decode(inventory, "Film", id("Film", 7), Tables.INVENTORY.FILM_ID))
-            .hasMessageContaining("filmId");
+            .extracting(e -> e.getClass().getSimpleName()).isEqualTo(no.sikt.graphitron.emit.NodeIdHelperNames.COLUMN_CONFLICT);
         assertThat(inventory.getFilmId()).isEqualTo(8);
     }
 }

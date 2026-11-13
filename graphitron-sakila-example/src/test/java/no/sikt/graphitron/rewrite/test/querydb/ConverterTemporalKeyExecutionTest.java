@@ -83,6 +83,15 @@ class ConverterTemporalKeyExecutionTest {
         assertThat(rows).extracting(row -> row.get("newValue")).containsExactly("small hours");
     }
 
+    @Test
+    void serviceParameter_decodesEachIdIntoItsOwnRowsRecord() {
+        for (var value : List.of("midnight", "small hours")) {
+            assertThat(execute("{ converterIdChangeValue(change: \"" + idOf(value) + "\") }"))
+                .as("the %s row's id, decoded into its record at a @service parameter", value)
+                .containsEntry("converterIdChangeValue", value);
+        }
+    }
+
     /** The node id the server minted for the row with the given value, read off the listing root. */
     private String idOf(String newValue) {
         var rows = (List<Map<String, Object>>) execute("{ converterIdChanges { id newValue } }")

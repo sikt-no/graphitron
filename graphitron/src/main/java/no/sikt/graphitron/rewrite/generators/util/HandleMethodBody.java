@@ -5,7 +5,6 @@ import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.emit.EntityKeyQuery;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -178,9 +177,8 @@ final class HandleMethodBody {
                 // key value that is not a value of its column (a wrapped number would resolve
                 // another row). Each becomes a skipped rep (null slot), matching the
                 // null-not-error contract.
-                b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L, $L)",
-                    nodeIdEncoder, nodeId.typeId(), SlotParse.parseClasses(EntityKeys.columns(nodeId)),
-                    columnRefs(entity, EntityKeys.columns(nodeId)));
+                b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L)",
+                    nodeIdEncoder, nodeId.typeId(), columnRefs(entity, EntityKeys.columns(nodeId)));
                 b.addStatement("if (cols == null) continue");
             }
             case EntityKeyQuery.Alternative.Direct direct -> {

@@ -84,7 +84,7 @@ class NodeIdFoldWarningTest {
         Field<LocalDateTime> column = DSL.field(DSL.name("fold", "lossy_date"), DATE_ONLY);
         String id = NodeIdEncoder.encode(TYPE_ID, LocalDateTime.of(2007, 8, 22, 2, 24));
 
-        assertThat(decode(id, LocalDateTime.class, column)).isNull();
+        assertThat(decode(id, column)).isNull();
         var warns = events("lossy_date", WARN);
         assertThat(warns).hasSize(1);
         assertThat(warns.getFirst().getMessage())
@@ -92,7 +92,7 @@ class NodeIdFoldWarningTest {
             .contains("2007-08-22T02:24")
             .contains("2007-08-22T00:00");
 
-        assertThat(decode(id, LocalDateTime.class, column)).isNull();
+        assertThat(decode(id, column)).isNull();
         assertThat(events("lossy_date", WARN)).as("no second WARN for the same column").hasSize(1);
         assertThat(events("lossy_date", DEBUG)).as("the repeat drops to DEBUG").hasSize(1);
     }
@@ -102,7 +102,7 @@ class NodeIdFoldWarningTest {
         Field<LocalDateTime> column = DSL.field(DSL.name("fold", "midnight_date"), DATE_ONLY);
         String id = NodeIdEncoder.encode(TYPE_ID, LocalDateTime.of(2007, 8, 22, 0, 0));
 
-        assertThat(decode(id, LocalDateTime.class, column)).containsExactly(LocalDateTime.of(2007, 8, 22, 0, 0));
+        assertThat(decode(id, column)).containsExactly(LocalDateTime.of(2007, 8, 22, 0, 0));
         assertThat(events("midnight_date", null)).isEmpty();
     }
 
@@ -111,7 +111,7 @@ class NodeIdFoldWarningTest {
         Field<Integer> column = DSL.field(DSL.name("fold", "padded_integer"), SQLDataType.INTEGER);
         String id = NodeIdEncoder.encode(TYPE_ID, "01");
 
-        assertThat(decode(id, null, column)).isNull();
+        assertThat(decode(id, column)).isNull();
         assertThat(events("padded_integer", null)).isEmpty();
     }
 
@@ -120,7 +120,7 @@ class NodeIdFoldWarningTest {
         Field<String> column = DSL.field(DSL.name("fold", "stripping_code"), STRIPPING_CODE);
         String id = NodeIdEncoder.encode(TYPE_ID, "7\n");
 
-        assertThat(decode(id, String.class, column)).isNull();
+        assertThat(decode(id, column)).isNull();
         var warns = events("stripping_code", WARN);
         assertThat(warns).hasSize(1);
         assertThat(warns.getFirst().getMessage())
@@ -128,8 +128,8 @@ class NodeIdFoldWarningTest {
             .doesNotContain("\n");
     }
 
-    private static Object[] decode(String id, Class<?> parseClass, Field<?> column) {
-        return NodeIdEncoder.decodeColumns(TYPE_ID, id, new Class<?>[] {parseClass}, column);
+    private static Object[] decode(String id, Field<?> column) {
+        return NodeIdEncoder.decodeColumns(TYPE_ID, id, column);
     }
 
     /** The records naming {@code columnName}, at {@code level} or at any level when it is {@code null}. */

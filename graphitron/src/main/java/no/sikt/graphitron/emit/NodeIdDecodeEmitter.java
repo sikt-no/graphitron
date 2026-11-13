@@ -17,7 +17,7 @@ import java.util.Optional;
  * for the input it came from.
  *
  * <pre>{@code
- * if (NodeIdEncoder.decodeInto(out, "Film", id1, "filmId", null, Tables.INVENTORY.FILM_ID) == null) {
+ * if (NodeIdEncoder.decodeInto(out, "Film", id1, Tables.INVENTORY.FILM_ID) == null) {
  *     String peeked = NodeIdEncoder.peekTypeId(id1);
  *     throw new GraphitronClientException(...);
  * }
@@ -59,13 +59,19 @@ public final class NodeIdDecodeEmitter {
 
     /**
      * Decodes the {@code String} local {@code id} into {@code target}, a record of the decode's table
-     * the caller has made, refusing an id {@code decodeInto} answers null for.
+     * the caller has made, refusing an id {@code decodeInto} answers null for. A column another
+     * writer already set to another value fails the request naming the input field {@code label}.
      */
     public static void into(MethodSpec.Builder method, CodeBlock target, NodeIdDecodeQuery.Decode d, String id,
                             String label, Runtime runtime) {
-        method.beginControlFlow("if ($T.decodeInto($L, $S, $L, $S, null, $L) == null)",
-                runtime.nodeIdEncoder(), target, d.typeId(), id, label, columns(d))
+        method.beginControlFlow("try")
+            .beginControlFlow("if ($T.decodeInto($L, $S, $L, $L) == null)",
+                runtime.nodeIdEncoder(), target, d.typeId(), id, columns(d))
             .addCode(refuse(d, id, runtime))
+            .endControlFlow()
+            .nextControlFlow("catch ($T e)", runtime.nodeIdEncoder().nestedClass(NodeIdHelperNames.COLUMN_CONFLICT))
+            .addStatement("throw $T.newErrorException().message($S).build()",
+                ClassName.get("graphql", "GraphqlErrorException"), "Conflicting values supplied for " + label)
             .endControlFlow();
     }
 
@@ -73,11 +79,10 @@ public final class NodeIdDecodeEmitter {
      * Decodes the {@code String} local {@code id} into a new record of the decode's table, declared
      * as {@code decoded}, refusing an id {@code decodeInto} answers null for.
      */
-    private static void fresh(MethodSpec.Builder method, NodeIdDecodeQuery.Decode d, String id, String label,
-                              Runtime runtime) {
+    private static void fresh(MethodSpec.Builder method, NodeIdDecodeQuery.Decode d, String id, Runtime runtime) {
         var record = SessionIdentityRows.classOf(d.recordClass());
-        method.addStatement("$T decoded = $T.decodeInto(new $T(), $S, $L, $S, null, $L)",
-                record, runtime.nodeIdEncoder(), record, d.typeId(), id, label, columns(d))
+        method.addStatement("$T decoded = $T.decodeInto(new $T(), $S, $L, $L)",
+                record, runtime.nodeIdEncoder(), record, d.typeId(), id, columns(d))
             .beginControlFlow("if (decoded == null)")
             .addCode(refuse(d, id, runtime))
             .endControlFlow();
@@ -90,15 +95,15 @@ public final class NodeIdDecodeEmitter {
      * {@code wire} is the {@code Object} local the id was read from, which the refusal peeks.
      */
     private static void dispatched(MethodSpec.Builder method, TypeName type, java.util.List<NodeIdDecodeQuery.Decode> ds,
-                                   String id, String wire, String label, Runtime runtime) {
+                                   String id, String wire, Runtime runtime) {
         method.addStatement("$T peeked = $T.peekTypeId($L)", STRING, runtime.nodeIdEncoder(), id)
             .addStatement("$T decoded = null", type);
         for (int i = 0; i < ds.size(); i++) {
             var d = ds.get(i);
             var record = SessionIdentityRows.classOf(d.recordClass());
             method.beginControlFlow(i == 0 ? "if ($S.equals(peeked))" : "else if ($S.equals(peeked))", d.typeId())
-                .addStatement("decoded = $T.decodeInto(new $T(), $S, $L, $S, null, $L)",
-                    runtime.nodeIdEncoder(), record, d.typeId(), id, label, columns(d))
+                .addStatement("decoded = $T.decodeInto(new $T(), $S, $L, $L)",
+                    runtime.nodeIdEncoder(), record, d.typeId(), id, columns(d))
                 .endControlFlow();
         }
         method.beginControlFlow("if (decoded == null)")
@@ -117,7 +122,7 @@ public final class NodeIdDecodeEmitter {
      * ({@code SUPERTYPE}). An absent id is null.
      */
     public static MethodSpec parameterHelper(String name, TypeName type, BuildQuery.Result.Decoded decoded,
-                                             String label, Runtime runtime) {
+                                             Runtime runtime) {
         var d = decoded.decodes().getFirst();
         var columns = columns(d);
         var taken = switch (decoded.shape()) {
@@ -139,9 +144,9 @@ public final class NodeIdDecodeEmitter {
                 .addStatement("return null")
                 .endControlFlow();
             if (supertype) {
-                dispatched(method, type, decoded.decodes(), "id", "wire", label, runtime);
+                dispatched(method, type, decoded.decodes(), "id", "wire", runtime);
             } else {
-                fresh(method, d, "id", label, runtime);
+                fresh(method, d, "id", runtime);
             }
             return method.addStatement("return $L", taken).build();
         }
@@ -158,9 +163,9 @@ public final class NodeIdDecodeEmitter {
             .addStatement("continue")
             .endControlFlow();
         if (supertype) {
-            dispatched(method, element, decoded.decodes(), "id", "element", label, runtime);
+            dispatched(method, element, decoded.decodes(), "id", "element", runtime);
         } else {
-            fresh(method, d, "id", label, runtime);
+            fresh(method, d, "id", runtime);
         }
         return method.addStatement("out.add($L)", taken)
             .endControlFlow()

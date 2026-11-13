@@ -170,8 +170,7 @@ public final class FillEmitter {
                     }
                     if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Decoded decoded) {
                         var helper = "decode" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
-                        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decoded,
-                            String.join(".", landing.path()), runtime.decode()));
+                        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decoded, runtime.decode()));
                         statements.add(argument(ClassName.get(Object.class), local + "Wire", landing.path()));
                         statements.add(CodeBlock.of("$T $L = $L($LWire)", type, local, helper, local));
                         arguments.add(CodeBlock.of("$L", local));

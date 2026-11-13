@@ -596,7 +596,7 @@ public final class ConditionEmitter {
         helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type,
             new BuildQuery.Result.Decoded(List.of(decode), "RECORD", Optional.empty(),
                 term.list() ? "java.util.List" : decode.recordClass()),
-            term.names().getLast(), runtime));
+            runtime));
         method.addStatement("$T $L = $L($L)", type, local, helper, read(term.names(), counter));
         var tables = SessionIdentityRows.classOf(decode.tablesClass());
         var keys = decode.columnJavaNames().stream()

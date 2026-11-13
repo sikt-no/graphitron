@@ -7,7 +7,6 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.NodeIdDecodeFailure;
-import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.rewrite.model.ColumnOverlap.OverlapColumn;
@@ -226,7 +225,6 @@ final class JooqRecordInstantiationEmitter {
     private static void emitKeyDecode(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
             ClassName tablesClass, String tableField, ClassName clientException) {
         CodeBlock cols = targetColumnsExpr(kd, tablesClass, tableField);
-        CodeBlock parse = SlotParse.parseClasses(kd.targetColumns());
         String base = localBase(kd.path());
         String leaf = kd.leaf();
         String keyVar = base + "Keys";
@@ -234,8 +232,8 @@ final class JooqRecordInstantiationEmitter {
         String parentMap = openDescent(b, kd.path());
         if (kd.nonNull()) {
             b.addStatement("$T $L = $L.get($S)", Object.class, rawVar, parentMap, leaf);
-            b.addStatement("$T $L = $T.decodeColumns($S, $L, $L, $L)",
-                Object[].class, keyVar, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+            b.addStatement("$T $L = $T.decodeColumns($S, $L, $L)",
+                Object[].class, keyVar, kd.encoderClass(), kd.typeId(), narrowedWire(base), cols);
             emitDecodeThrow(b, kd, base, clientException);
             b.addStatement("rec.fromArray($L, $L)", keyVar, cols);
             closeDescent(b, kd.path());
@@ -250,8 +248,8 @@ final class JooqRecordInstantiationEmitter {
             b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName());
         }
         b.nextControlFlow("else");
-        b.addStatement("$T $L = $T.decodeColumns($S, $L, $L, $L)",
-            Object[].class, keyVar, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+        b.addStatement("$T $L = $T.decodeColumns($S, $L, $L)",
+            Object[].class, keyVar, kd.encoderClass(), kd.typeId(), narrowedWire(base), cols);
         emitDecodeThrow(b, kd, base, clientException);
         b.addStatement("rec.fromArray($L, $L)", keyVar, cols);
         b.endControlFlow();
@@ -364,14 +362,13 @@ final class JooqRecordInstantiationEmitter {
         }
         var kd = w.decode();
         CodeBlock cols = targetColumnsExpr(kd, tablesClass, tableField);
-        CodeBlock parse = SlotParse.parseClasses(kd.targetColumns());
         if (kd.nonNull()) {
             if (path.size() == 1) {
                 // Top-level non-null id is always present (graphql-java enforces ID! at the boundary).
                 b.addStatement("boolean $LPresent = true", base);
                 b.addStatement("$T $LRaw = raw.get($S)", Object.class, base, leaf);
-                b.addStatement("$T $LKeys = $T.decodeColumns($S, $L, $L, $L)",
-                    Object[].class, base, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+                b.addStatement("$T $LKeys = $T.decodeColumns($S, $L, $L)",
+                    Object[].class, base, kd.encoderClass(), kd.typeId(), narrowedWire(base), cols);
                 emitDecodeThrow(b, kd, base, clientException);
             } else {
                 // Nested non-null id: present iff the enclosing group is present (an absent group skips
@@ -381,8 +378,8 @@ final class JooqRecordInstantiationEmitter {
                 String parentMap = openDescent(b, path);
                 b.addStatement("$LPresent = true", base);
                 b.addStatement("$T $LRaw = $L.get($S)", Object.class, base, parentMap, leaf);
-                b.addStatement("$LKeys = $T.decodeColumns($S, $L, $L, $L)",
-                    base, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+                b.addStatement("$LKeys = $T.decodeColumns($S, $L, $L)",
+                    base, kd.encoderClass(), kd.typeId(), narrowedWire(base), cols);
                 emitDecodeThrow(b, kd, base, clientException);
                 closeDescent(b, path);
             }
@@ -399,8 +396,8 @@ final class JooqRecordInstantiationEmitter {
         b.beginControlFlow("if ($LRaw == null)", base);
         b.addStatement("$LPresentNull = true", base);
         b.nextControlFlow("else");
-        b.addStatement("$LKeys = $T.decodeColumns($S, $L, $L, $L)",
-            base, kd.encoderClass(), kd.typeId(), narrowedWire(base), parse, cols);
+        b.addStatement("$LKeys = $T.decodeColumns($S, $L, $L)",
+            base, kd.encoderClass(), kd.typeId(), narrowedWire(base), cols);
         emitDecodeThrow(b, kd, base, clientException);
         b.endControlFlow();
         b.endControlFlow();

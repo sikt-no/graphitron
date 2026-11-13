@@ -566,6 +566,12 @@ type Query {
     converterIdChangesConnection(first: Int, after: String, last: Int, before: String): [ConverterIdChange!]!
         @asConnection @defaultOrder(primaryKey: true)
     converterIdChangeByNodeId(filter: ConverterIdChangeNodeIdFilter): [ConverterIdChange!]!
+    # The same id decoded into the node's own record at a @service parameter: the record finds its
+    # row only where the decode kept the time the converter-backed key column carries.
+    converterIdChangeValue(change: ID! @nodeId(typeName: "ConverterIdChange")): String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.ConverterIdChangeService",
+        method: "newValueOf"
+    })
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
