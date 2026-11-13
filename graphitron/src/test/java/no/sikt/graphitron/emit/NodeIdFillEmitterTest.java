@@ -13,6 +13,9 @@ import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ConverterOrgRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StaffRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.InventoryRecord;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
@@ -73,11 +76,21 @@ class NodeIdFillEmitterTest {
     private record Case(String name, FillQuery.Row row, BuildQuery.Result.Decoded decoded) {}
 
     private static Case stated(String name, String type, NodeIdDecodeQuery.Decode decode, String shape) {
+        return stated(name, type, List.of(decode), shape, Optional.empty());
+    }
+
+    private static Case stated(String name, String type, List<NodeIdDecodeQuery.Decode> decodes, String shape,
+                               Optional<String> column) {
         var row = new FillQuery.Row("Query." + name, "Query." + name, List.of(new FillQuery.Fill(0, "id",
             type, type, "ARGUMENT", null, null, Optional.of(new FillQuery.Landing(List.of("id"), "SCALAR", true)))),
             true);
-        return new Case(name, row, new BuildQuery.Result.Decoded(List.of(decode), shape, Optional.empty(),
+        return new Case(name, row, new BuildQuery.Result.Decoded(decodes, shape, column,
             type.contains("<") ? type.substring(0, type.indexOf('<')) : type));
+    }
+
+    /** The decode of the id at {@code coordinate} as the node on {@code bound}, into its own record. */
+    private static NodeIdDecodeQuery.Decode own(NodeIdDecodeQuery decodes, String coordinate, String bound) {
+        return ((NodeIdDecodeQuery.Resolution.Resolved) decodes.resolve(coordinate, bound, Optional.empty())).decode();
     }
 
     @BeforeAll
@@ -87,7 +100,21 @@ class NodeIdFillEmitterTest {
             decodes.resolve("Query.inventories(filmId:)", "public.film", Optional.of(FILM_RECORD))).decode();
         var inventoryFilm = ((NodeIdDecodeQuery.Resolution.Resolved)
             decodes.resolve("Query.inventories(filmId:)", "public.film", Optional.of(InventoryRecord.class.getName()))).decode();
+        var occupants = FACTS.read("defects/polymorphic-node-id-decode-containers",
+            graph -> NodeIdDecodeQuery.read(graph.handle()));
+        var customer = own(occupants, "Query.occupant(occupant:)", "public.customer");
+        var staff = own(occupants, "Query.occupant(occupant:)", "public.staff");
+        var orgs = FACTS.read("defects/node-id-decode-landing-defect-verdicts",
+            graph -> NodeIdDecodeQuery.read(graph.handle()));
+        var org = own(orgs, "Query.divergedChildren(ofOrg:)", "public.converter_org");
         var cases = List.of(
+            stated("occupant", "org.jooq.UpdatableRecord<?>", List.of(customer, staff), "SUPERTYPE", Optional.empty()),
+            stated("occupants", "java.util.List<org.jooq.UpdatableRecord<?>>", List.of(customer, staff), "SUPERTYPE",
+                Optional.empty()),
+            stated("filmIds", "java.util.List<java.lang.Integer>", List.of(film), "KEY_VALUE", Optional.of("FILM_ID")),
+            stated("filmId", "java.lang.Integer", List.of(film), "KEY_VALUE", Optional.of("FILM_ID")),
+            stated("org", ConverterOrgRecord.class.getName(), org, "RECORD"),
+            stated("orgCodes", "java.util.List<java.lang.String>", List.of(org), "KEY_VALUE", Optional.of("ORG_CODE")),
             stated("film", FILM_RECORD, film, "RECORD"),
             stated("inventory", InventoryRecord.class.getName(), inventoryFilm, "RECORD"),
             stated("key", "org.jooq.Record1<java.lang.Integer>", film, "RECORD_N"),
@@ -129,8 +156,8 @@ class NodeIdFillEmitterTest {
         if (harness != null) harness.close();
     }
 
-    private static String id(String typeId, int value) throws Exception {
-        return (String) encode.invoke(null, typeId, new Object[] {value});
+    private static String id(String typeId, Object... values) throws Exception {
+        return (String) encode.invoke(null, typeId, values);
     }
 
     private static Object run(String probe, Object id) throws Throwable {
@@ -182,5 +209,68 @@ class NodeIdFillEmitterTest {
         assertThatThrownBy(() -> run("film", id("Actor", 7)))
             .satisfies(e -> assertThat(e.getClass().getSimpleName()).isEqualTo("GraphitronClientException"))
             .hasMessageEndingWith("decodes to type \"Actor\", expected a Film id");
+    }
+
+    // ===== An id of several node types, decoded into whichever member's record it names =====
+
+    @Test
+    void anIdOfEitherMemberDecodesIntoThatMembersRecord() throws Throwable {
+        assertThat(run("occupant", id("Customer", 4))).isInstanceOfSatisfying(CustomerRecord.class,
+            c -> assertThat(c.getCustomerId()).isEqualTo(4));
+        assertThat(run("occupant", id("Staff", 2))).isInstanceOfSatisfying(StaffRecord.class,
+            s -> assertThat(s.getStaffId()).isEqualTo(2));
+    }
+
+    @Test
+    void anIdOfNoMemberTypeIsRefusedNamingEveryMember() throws Throwable {
+        assertThatThrownBy(() -> run("occupant", id("Film", 7)))
+            .hasMessageContaining("decodes to type \"Film\"").hasMessageContaining("Customer, Staff");
+        assertThatThrownBy(() -> run("occupant", "not-a-node-id"))
+            .hasMessageContaining("not a valid id").hasMessageContaining("Customer, Staff");
+        assertThatThrownBy(() -> run("occupant", id("Customer", 4, 9)))
+            .as("a member's type id with the wrong arity").hasMessageContaining("not a valid id");
+        assertThatThrownBy(() -> run("occupant", id("Customer", "x")))
+            .as("a member's type id carrying a value that is no key value").hasMessageContaining("not a valid id");
+    }
+
+    @Test
+    void aListOfIdsOfMixedMembersDecodesEachAndKeepsANullElement() throws Throwable {
+        var decoded = (List<?>) run("occupants", new ArrayList<>(Arrays.asList(id("Staff", 1), null, id("Customer", 3))));
+        assertThat(decoded).hasSize(3);
+        assertThat(decoded.get(0)).isInstanceOf(StaffRecord.class);
+        assertThat(decoded.get(1)).isNull();
+        assertThat(decoded.get(2)).isInstanceOf(CustomerRecord.class);
+        assertThatThrownBy(() -> run("occupants", List.of(id("Customer", 3), id("Film", 1))))
+            .as("one bad element fails the whole argument").hasMessageContaining("decodes to type \"Film\"");
+    }
+
+    // ===== One key column projected out of each id =====
+
+    @Test
+    void aProjectedColumnIsTakenOffEachIdKeepingANullElement() throws Throwable {
+        assertThat(new ArrayList<Object>((List<?>) run("filmIds", new ArrayList<>(Arrays.asList(id("F", 8), null, id("F", 7))))))
+            .containsExactly(8, null, 7);
+        assertThat(run("filmId", id("F", 9))).isEqualTo(9);
+        assertThat((List<?>) run("filmIds", List.of())).isEmpty();
+        assertThatThrownBy(() -> run("filmIds", List.of(id("Actor", 1))))
+            .hasMessageEndingWith("decodes to type \"Actor\", expected a Film id");
+    }
+
+    // ===== A key column carrying a converter =====
+
+    @Test
+    void aConverterBackedKeyDecodesAsTheConvertersUserType() throws Throwable {
+        assertThat(run("org", id("ConverterOrg", "1120"))).isInstanceOfSatisfying(ConverterOrgRecord.class,
+            o -> assertThat(o.getOrgCode()).isEqualTo("1120"));
+        assertThat(new ArrayList<Object>((List<?>) run("orgCodes", List.of(id("ConverterOrg", "1120"), id("ConverterOrg", "186")))))
+            .containsExactly("1120", "186");
+    }
+
+    @Test
+    void aConverterBackedKeyRefusesTextTheEncoderNeverWrites() throws Throwable {
+        assertThatThrownBy(() -> run("org", id("ConverterOrg", "0186")))
+            .as("the canonical value is \"186\"").hasMessageContaining("not a valid ConverterOrg id");
+        assertThatThrownBy(() -> run("org", id("ConverterOrg", "abc")))
+            .as("not a value of the bigint below the converter").hasMessageContaining("not a valid ConverterOrg id");
     }
 }
