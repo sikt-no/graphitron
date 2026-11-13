@@ -724,6 +724,14 @@ static method needs no holder.
     codes. Pinned by
     `defects/external-field-expression`, with the outbox nesting case in
     `scenarios/nesting-field-named-like-a-column`.
+    * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
+      tables a parameter fits is `code_method_parameter_table`, keyed by the method's classpath entry
+      and the table's catalog: its generated class, or a public jOOQ table type in `code_jooq_class`
+      whose record argument is the table's (Alf, 2026-11-13: jOOQ's internal `TableImpl`, a consumer's
+      own table base and `Object` fit nothing), and the `@condition` and `@externalField` candidates and fills read it, pinned by
+      `scenarios/call-parameter-table-fit`. Left: the other table-fit sites and `role`'s
+      `TABLE_CONCRETE`/`TABLE_ANY` split onto it, then the record side, then `@service`, writes and
+      `@routine` as calls reading the same rule (Alf: one rule for every Java call).
   * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on
     "A `@condition` is a call per table its occurrence binds". The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure

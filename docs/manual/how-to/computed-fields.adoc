@@ -149,7 +149,7 @@ The wrapper types in the two lift forms above are class-backed: the `@externalFi
 == Constraints
 
 * The parent type must be `@table`-bound. The static method's sole formal parameter is the parent table's jOOQ class; without that anchor, reflection has no shape to bind.
-* The sole parameter must be the parent table's own jOOQ class or a supertype of it (`org.jooq.Table<?>`). A helper typed on a different table is rejected at build time with the parent table named, so a single helper cannot be shared across two `@table` parents on different tables; write one per table, or widen the parameter and address columns by name.
+* The sole parameter must be the parent table's own jOOQ class or one of jOOQ's public table types that accepts it (`org.jooq.Table<?>`, `Table<FilmRecord>`); jOOQ's internal `TableImpl` and a table base class of your own are not supported. A helper typed on a different table is rejected at build time as `PARAMETER_MISMATCH`, with the parent table named, so a single helper cannot be shared across two `@table` parents on different tables; write one per table, or widen the parameter and address columns by name.
 * `className:` is required on the reference. A bare `@externalField` (no `reference:`, or a reference with no `className:`) surfaces with the diagnostic `external field reference could not be resolved -- missing className`.
 * `method:` is optional. When omitted, the rewrite uses the GraphQL field name as the static-method name. Set `method:` only when the two diverge.
 * `argMapping:` on the reference is structurally inert and is rejected at parse time. `@externalField` consumes no GraphQL-argument-bound parameters, the method's only formal parameter is the parent table.

@@ -6499,6 +6499,116 @@ COMMENT ON COLUMN code_external_field_method.method_name IS 'the method, as on c
 COMMENT ON COLUMN code_external_field_method.descriptor IS 'the method''s descriptor, completing the key. The table the lifter lifts from was a column here and is code_method_parameter''s role at position 0: a parameter''s type is the parameter''s fact, and a reader asking which table a lifter takes asks the position rather than the arm';
 COMMENT ON COLUMN code_external_field_method.touched_at IS 'when the reading that produced this row ran; swept with the method it hangs on';
 
+-- jOOQ's own public types a method may declare where it takes a table or a record, with what each
+-- accepts. Whether a parameter fits a table is Java assignability, and above a generated table class
+-- and its generated record jOOQ's public hierarchy is fixed: a generated table is a Table of its record
+-- and a TableLike; a generated record is a TableRecord, and an UpdatableRecord where its table has a
+-- primary key, both of them Records. So the catalog states the two generated classes and these rows
+-- state the rest. jOOQ's internal classes in org.jooq.impl, TableImpl among them, are not rows: they
+-- are no contract a consumer's method may lean on. Nor is a class of the consumer's own between a
+-- generated class and these, a table base or a record interface, nor Object or QueryPart, which every
+-- table is but which name no table type: each fits nothing.
+CREATE TABLE code_jooq_class (
+  class_name        VARCHAR NOT NULL,
+  accepts           VARCHAR NOT NULL,
+  needs_primary_key BOOLEAN NOT NULL,
+  PRIMARY KEY (class_name),
+  CHECK (accepts IN ('TABLE', 'RECORD')),
+  CHECK (accepts = 'RECORD' OR NOT needs_primary_key)
+);
+COMMENT ON TABLE code_jooq_class IS 'One of jOOQ''s own types a declaration may name for a table or a record, with which of the two it accepts. For example org.jooq.Table accepts any table, and org.jooq.UpdatableRecord any table''s record where the table has a primary key.';
+COMMENT ON COLUMN code_jooq_class.class_name IS 'the fully-qualified binary name of the jOOQ type, spelled as the census spells an erased class';
+COMMENT ON COLUMN code_jooq_class.accepts IS 'TABLE, a table of any catalog table; RECORD, a record of one, as a table type''s argument or a declaration of its own';
+COMMENT ON COLUMN code_jooq_class.needs_primary_key IS 'whether the table must have a primary key for its record to be one of these, which UpdatableRecord asks and no other does';
+INSERT INTO code_jooq_class VALUES
+  ('org.jooq.Table', 'TABLE', FALSE),
+  ('org.jooq.TableLike', 'TABLE', FALSE),
+  ('org.jooq.Record', 'RECORD', FALSE),
+  ('org.jooq.TableRecord', 'RECORD', FALSE),
+  ('org.jooq.UpdatableRecord', 'RECORD', TRUE);
+
+-- Which catalog tables a method's parameter can be handed: its own generated class, or one of jOOQ's
+-- table types whose record argument, where it names one, the table's record is. One rule for every
+-- call that takes a table, keyed by the method's classpath entry and the table's catalog, since both
+-- sides are facts of their own source and of nothing a graph says. A graph only scopes the pairs: the
+-- rule is evaluated over one graph's classpath entries and catalogs, and every graph reaching a pair
+-- computes the same rows for it. Each leg starts from what is small, a catalog's tables or jOOQ's
+-- table types, and looks the parameters up by their declared class.
+CREATE VIEW code_method_parameter_table_rule
+  (graph_name, source_name, class_name, method_name, descriptor, position, table_source_name,
+   table_schema, table_name, fit) AS
+SELECT ts.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor, p.position,
+       t.source_name, t.table_schema, t.table_name, 'CLASS'
+  FROM store_graph_source ts
+  JOIN sql_table t ON t.source_name = ts.source_name
+  JOIN code_method_parameter p ON p.erased_class = t.class_fqn
+  JOIN store_graph_source ms ON ms.graph_name = ts.graph_name AND ms.source_name = p.source_name
+UNION ALL
+SELECT ts.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor, p.position,
+       t.source_name, t.table_schema, t.table_name, 'JOOQ_TYPE'
+  FROM store_graph_source ts
+  JOIN sql_table t ON t.source_name = ts.source_name
+  JOIN code_jooq_class j ON j.accepts = 'TABLE'
+  JOIN code_method_parameter p ON p.erased_class = j.class_name
+ WHERE EXISTS (SELECT 1 FROM store_graph_source ms
+                WHERE ms.graph_name = ts.graph_name AND ms.source_name = p.source_name)
+   AND (p.first_argument_class IS NULL OR p.first_argument_class = t.record_class_fqn
+        OR EXISTS (SELECT 1 FROM code_jooq_class r
+                    WHERE r.class_name = p.first_argument_class AND r.accepts = 'RECORD'
+                      AND (NOT r.needs_primary_key
+                           OR EXISTS (SELECT 1 FROM sql_primary_key k
+                                       WHERE k.source_name = t.source_name
+                                         AND k.table_schema = t.table_schema
+                                         AND k.table_name = t.table_name))));
+COMMENT ON VIEW code_method_parameter_table_rule IS 'One row the parameter table rule computes, in the shape code_method_parameter_table stores: the rule itself, evaluated on demand rather than read off disk. For example the method-parameter-tables stage writes this view''s rows for one graph into code_method_parameter_table, which is the name every reader spells.';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.graph_name IS 'the graph whose classpath entries and catalogs scope the pair';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.source_name IS 'the method''s classpath entry';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.class_name IS 'the class declaring the method';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.method_name IS 'the method';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.descriptor IS 'the method''s descriptor';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.position IS 'the parameter''s position';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.table_source_name IS 'the table''s catalog';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.table_schema IS 'the table''s schema';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.table_name IS 'the table';
+-- COMMENT ON COLUMN code_method_parameter_table_rule.fit IS 'CLASS or JOOQ_TYPE';
+
+CREATE TABLE code_method_parameter_table (
+  source_name       VARCHAR   NOT NULL,
+  class_name        VARCHAR   NOT NULL,
+  method_name       VARCHAR   NOT NULL,
+  descriptor        VARCHAR   NOT NULL,
+  position          INT       NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  fit               VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, method_name, descriptor, position, table_source_name,
+               table_schema, table_name),
+  -- A derivation goes with what it was derived from: a reread method or a recrawled table takes the
+  -- row with it, and the next reading writes it again.
+  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
+    REFERENCES code_method_parameter (source_name, class_name, method_name, descriptor, position)
+    ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (fit IN ('CLASS', 'JOOQ_TYPE'))
+);
+COMMENT ON TABLE code_method_parameter_table IS 'A catalog table a parameter of a method can be handed: one row per parameter position and table it fits. For example position 0 of FilmExtensions#isEnglish(Film) fits public.film by its class, and position 0 of FilmExtensions#titleByName(Table<?>) fits every table as a jOOQ type.';
+COMMENT ON COLUMN code_method_parameter_table.source_name IS 'the method''s classpath entry; with the class, the name, the descriptor and the position, the parameter';
+COMMENT ON COLUMN code_method_parameter_table.class_name IS 'the class declaring the method';
+COMMENT ON COLUMN code_method_parameter_table.method_name IS 'the method';
+COMMENT ON COLUMN code_method_parameter_table.descriptor IS 'the method''s descriptor';
+COMMENT ON COLUMN code_method_parameter_table.position IS 'the parameter''s position';
+COMMENT ON COLUMN code_method_parameter_table.table_source_name IS 'the table''s catalog; with the schema and the name, the table, completing the key';
+COMMENT ON COLUMN code_method_parameter_table.table_schema IS 'the table''s schema';
+COMMENT ON COLUMN code_method_parameter_table.table_name IS 'the table';
+COMMENT ON COLUMN code_method_parameter_table.fit IS 'how it fits: CLASS, declared as the table''s own generated class; JOOQ_TYPE, declared as one of jOOQ''s table types in code_jooq_class, its record argument absent, the table''s record, or one of jOOQ''s record types the record is. A reader preferring the closer declaration where both fit prefers CLASS';
+COMMENT ON COLUMN code_method_parameter_table.touched_at IS 'the reading that last wrote this row; the stage sweeps the rows of its graph''s entries and catalogs an older reading wrote';
+
+CREATE INDEX ix_code_method_parameter_erased_class ON code_method_parameter (erased_class, source_name);
+COMMENT ON INDEX ix_code_method_parameter_erased_class IS 'Serves code_method_parameter_table_rule, which looks the parameters declared as a table type up by that class, from a catalog''s generated table classes and from code_jooq_class: without it each table or jOOQ type reads every parameter of the classpath.';
+
 CREATE TABLE code_scalar_constant (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -18125,19 +18235,18 @@ offered (graph_name, coordinate, bound, method_source_name, method_class_name, m
   -- Each overload of the name with a table parameter taking the bound table, and whether it takes
   -- it by the table's own class rather than as any table.
   SELECT b.graph_name, b.coordinate, b.bound, cm.source_name, cm.class_name, cm.method_name,
-         cm.descriptor, MAX(CASE WHEN p.role = 'TABLE_CONCRETE' THEN 1 ELSE 0 END)
+         cm.descriptor, MAX(CASE WHEN pt.fit = 'CLASS' THEN 1 ELSE 0 END)
     FROM bound_table b
     JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
     JOIN written w ON w.graph_name = o.graph_name AND w.element_coordinate = o.element_coordinate
     JOIN code_graph_class m ON m.graph_name = o.graph_name AND m.class_name = w.class_name
     JOIN code_condition_method cm
       ON cm.source_name = m.source_name AND cm.class_name = m.class_name AND cm.method_name = w.method_name
-    JOIN sql_table st
-      ON st.source_name = b.source_name AND st.table_schema = b.schema_name AND st.table_name = b.table_name
-    JOIN code_method_parameter p
-      ON p.source_name = cm.source_name AND p.class_name = cm.class_name
-     AND p.method_name = cm.method_name AND p.descriptor = cm.descriptor
-   WHERE p.role = 'TABLE_ANY' OR (p.role = 'TABLE_CONCRETE' AND p.erased_class = st.class_fqn)
+    JOIN code_method_parameter_table pt
+      ON pt.source_name = cm.source_name AND pt.class_name = cm.class_name
+     AND pt.method_name = cm.method_name AND pt.descriptor = cm.descriptor
+     AND pt.table_source_name = b.source_name AND pt.table_schema = b.schema_name
+     AND pt.table_name = b.table_name
    GROUP BY b.graph_name, b.coordinate, b.bound, cm.source_name, cm.class_name, cm.method_name,
             cm.descriptor
 )
@@ -18237,8 +18346,8 @@ COMMENT ON VIEW graphitron_occurrence_expression_binding_rule IS 'One row the oc
 -- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.bound IS 'the table its values are rows of, schema-qualified';
 
 -- The method an expression's call could be: the one its reference resolves to, where that method is
--- one @externalField may name and its table parameter takes the bound table, by the table's own
--- class, or as any table whose record type, where it names one, the table's record is.
+-- one @externalField may name and its parameter fits the bound table, by code_method_parameter_table,
+-- the rule every call taking a table reads.
 CREATE VIEW graphitron_occurrence_expression_candidate_rule
   (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
    method_descriptor) AS
@@ -18249,25 +18358,18 @@ SELECT DISTINCT o.graph_name, o.coordinate, 'expression:' || st.table_schema || 
     ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
   JOIN graphitron_occurrence_source_table st
     ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
-  JOIN sql_table t
-    ON t.source_name = st.table_source_name AND t.table_schema = st.table_schema
-   AND t.table_name = st.table_name
   JOIN graphitron_code_reference r
     ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
    AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
   JOIN code_external_field_method m
     ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
    AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
-  JOIN code_method_parameter p
-    ON p.source_name = m.source_name AND p.class_name = m.class_name
-   AND p.method_name = m.method_name AND p.descriptor = m.descriptor
- WHERE o.kind = 'FIELD'
-   AND (p.role <> 'TABLE_CONCRETE' OR p.erased_class = t.class_fqn)
-   AND (p.first_argument_class IS NULL OR p.first_argument_class = t.record_class_fqn
-        OR EXISTS (SELECT 1 FROM sql_table_record_supertype rs
-                    WHERE rs.source_name = t.source_name AND rs.table_schema = t.table_schema
-                      AND rs.table_name = t.table_name
-                      AND rs.supertype_name = p.first_argument_class));
+  JOIN code_method_parameter_table pt
+    ON pt.source_name = m.source_name AND pt.class_name = m.class_name
+   AND pt.method_name = m.method_name AND pt.descriptor = m.descriptor
+   AND pt.table_source_name = st.table_source_name AND pt.table_schema = st.table_schema
+   AND pt.table_name = st.table_name
+ WHERE o.kind = 'FIELD';
 COMMENT ON VIEW graphitron_occurrence_expression_candidate_rule IS 'One row the expression candidate rule computes, in the shape graphitron_occurrence_call_candidate stores for an @externalField''s call: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage writes this view''s rows for one graph into graphitron_occurrence_call_candidate, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_expression_candidate_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_call_candidate.coordinate';
@@ -18497,7 +18599,10 @@ parameter (graph_name, coordinate, call, call_kind, method_descriptor, position,
     JOIN code_method_parameter p
       ON p.source_name = c.method_source_name AND p.class_name = c.method_class_name
      AND p.method_name = c.method_name AND p.descriptor = c.method_descriptor
-   WHERE p.role NOT IN ('TABLE_CONCRETE', 'TABLE_ANY')
+   WHERE NOT EXISTS (SELECT 1 FROM code_method_parameter_table pt
+                      WHERE pt.source_name = p.source_name AND pt.class_name = p.class_name
+                        AND pt.method_name = p.method_name AND pt.descriptor = p.descriptor
+                        AND pt.position = p.position)
 ),
 -- The parameters by type may pair: named, and nothing written, no element and no key named for them.
 open_parameter (graph_name, coordinate, call, call_kind, method_descriptor, position, parameter_name,
@@ -18622,7 +18727,10 @@ SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_descriptor, p.p
   JOIN code_method_parameter p
     ON p.source_name = c.method_source_name AND p.class_name = c.method_class_name
    AND p.method_name = c.method_name AND p.descriptor = c.method_descriptor
- WHERE p.role IN ('TABLE_CONCRETE', 'TABLE_ANY')
+ WHERE EXISTS (SELECT 1 FROM code_method_parameter_table pt
+                WHERE pt.source_name = p.source_name AND pt.class_name = p.class_name
+                  AND pt.method_name = p.method_name AND pt.descriptor = p.descriptor
+                  AND pt.position = p.position)
 UNION ALL
 -- $session, or one member of it, named by a pair.
 SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
@@ -20625,6 +20733,10 @@ INSERT INTO meta_stated_relation VALUES
    'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many.',
    'For example java.util.List delivers its argument at position 0, many.',
    'The vocabulary the code capture peels a declared type with, stated here because no classpath it reads declares it: nothing ships the JDK as a classpath entry, so java.util.List declares nothing the census holds and a container cannot be recognised through a closure over the declared supertypes. The set is closed by what a generator meets rather than by what Java offers, so a consumer returning its own collection type is not a container here and delivers itself; widening it is adding a row.'),
+  ('code_jooq_class',
+   'One of jOOQ''s own types a declaration may name for a table or a record, with which of the two it accepts.',
+   'For example org.jooq.Table accepts any table, and org.jooq.UpdatableRecord any table''s record where the table has a primary key.',
+   'The vocabulary whether a parameter fits a table is decided with: above a generated table class and its generated record jOOQ''s public hierarchy is fixed, so the catalog states the two generated classes and these rows state the rest, and fitting is a join rather than a walk over supertypes. jOOQ''s internal org.jooq.impl classes are not rows, being no public contract, and neither is a consumer''s own class between them, nor Object and QueryPart, which name no table type.'),
   ('code_tuple_class',
    'One class jOOQ types a tuple of values with, by its degree.',
    'For example org.jooq.Row3 holds three values, typed by its three type arguments in order.',
@@ -21359,7 +21471,8 @@ INSERT INTO meta_stage VALUES
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
 -- dependency, beside the code rows its own reading has just written.
 INSERT INTO meta_stage VALUES
-  ('graph-classes', 'code', 0, 'no.sikt.graphitron.model.capture.code.GraphClasses');
+  ('graph-classes', 'code', 0, 'no.sikt.graphitron.model.capture.code.GraphClasses'),
+  ('method-parameter-tables', 'code', 1, 'no.sikt.graphitron.model.capture.code.MethodParameterTables');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -21551,7 +21664,8 @@ INSERT INTO meta_stage_write VALUES
   ('entry-defects', 'graphitron_entry_defect_key_column'),
   ('entry-defects', 'graphitron_entry_defect_path_step'),
   ('entry-defects', 'graphitron_entry_defect_table'),
-  ('graph-classes', 'code_graph_class');
+  ('graph-classes', 'code_graph_class'),
+  ('method-parameter-tables', 'code_method_parameter_table');
 
 CREATE TABLE store_graph_progress (
   graph_name     VARCHAR   NOT NULL,
@@ -21737,6 +21851,9 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- source reading records. ModelCapture runs it first.
   ('graphitron', 'graphql-source'),
   ('code', 'classpath-source'),
+  -- Which catalog table a method's table parameter fits pairs the method with the catalog's tables,
+  -- which the jooq gatherer read first.
+  ('code', 'jooq'),
   -- The handle class a graph names for its session identity is read for its members whatever
   -- package or origin it is in, and the name is a row the store gatherer wrote first.
   ('code', 'store'),
@@ -22348,6 +22465,9 @@ INSERT INTO meta_grain VALUES
   ('method-parameter',
    'one position in one method''s parameter list',
    'source_name, class_name, method_name, descriptor, position', 'classpath'),
+  ('method-parameter-table',
+   'one catalog table one position in one method''s parameter list can be handed',
+   'source_name, class_name, method_name, descriptor, position, table_source_name, table_schema, table_name', 'classpath'),
   ('scalar-type-field',
    'one static field of one class holding a GraphQL scalar type',
    'source_name, class_name, field_name', 'classpath'),
@@ -24542,6 +24662,14 @@ INSERT INTO meta_relation VALUES
    'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from.',
    'For example filmsByRating(DSLContext, String) on a consumer''s FilmService.',
    'The shared half of the family, and the correction that makes the arms mean one thing each. Whether a method may be named at @service and whether it may be named at @condition are two questions and two relations; what it returns, what it takes and what it throws are properties of the declaration and do not vary by the coordinate somebody reached it through, so holding them per arm held one fact twice and let two copies disagree. The population is the reactor''s public methods, which is what keeps this from being the census it would otherwise resemble: a census answers for the whole classpath and has to, because it does not know who is asking; this answers for the code a build compiles, because nothing else may be named.'),
+  ('code_method_parameter_table', 'method-parameter-table', 'code',
+   'A catalog table a parameter of a method can be handed: one row per parameter position and table it fits.',
+   'For example position 0 of FilmExtensions#isEnglish(Film) fits public.film by its class, and position 0 of FilmExtensions#titleByName(Table<?>) fits every table as a jOOQ type.',
+   'The one rule every call taking a table reads, the @condition and @externalField candidates and fills among them, so two kinds of call cannot disagree on what a parameter accepts. Keyed by the method''s classpath entry and the table''s catalog rather than a graph, the fit being a fact of those two sources alone; written by the code gatherer''s anchor, which declares jooq upstream, from the generated classes the catalog states and code_jooq_class.'),
+  ('code_method_parameter_table_rule', 'method-parameter-table', 'code',
+   'One row the parameter table rule computes, in the shape code_method_parameter_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the method-parameter-tables stage writes this view''s rows for one graph into code_method_parameter_table, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('code_method_parameter', 'method-parameter', 'code',
    'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of filmTitleContains, named film and playing the TABLE_CONCRETE role.',

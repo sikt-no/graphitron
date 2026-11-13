@@ -1,0 +1,72 @@
+# Which catalog tables a method's table parameter can be handed is one rule for every call taking a
+# table: its own generated class fits its table, and one of jOOQ's public table types fits each table
+# whose record its argument, where it names one, is or is a subtype of. A Table of film's record fits
+# film for an @externalField lifter and a @condition alike, a Table of actor's record fits actor, and a
+# Table of any updatable record fits every table with a primary key.
+
+type Film @table(name: "film") {
+  "Table<FilmRecord>: fits film by its record argument, though it is not film's generated class."
+  titleOfFilm: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits"})
+  "Table<? extends UpdatableRecord<?>>: fits film, which has a primary key."
+  keyedTitle: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits"})
+}
+
+type Actor @table(name: "actor") {
+  "Table<ActorRecord>: fits actor by its record argument."
+  nameOfActor: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits"})
+}
+
+type Query {
+  films: [Film!]!
+  actors: [Actor!]!
+  "The condition's Table<FilmRecord> takes film, the table the field filters; title takes the argument."
+  filmsByTitle(title: String): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits", method: "titleIs"})
+}
+
+extend schema @assertContains(relation: "code_method_parameter_table",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits' AND table_name IN ('film', 'actor')", rows: """
+  method_name, position, table_name, fit
+  keyedTitle,  0,        actor,      JOOQ_TYPE
+  keyedTitle,  0,        film,       JOOQ_TYPE
+  nameOfActor, 0,        actor,      JOOQ_TYPE
+  titleIs,     0,        film,       JOOQ_TYPE
+  titleOfFilm, 0,        film,       JOOQ_TYPE
+  """)
+
+# The wildcard's bound is what the record argument names, so the updatable record's rule decides it.
+extend schema @assertContains(relation: "code_method_parameter",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits'", rows: """
+  method_name, position, erased_class,   first_argument_class
+  keyedTitle,  0,        org.jooq.Table, org.jooq.UpdatableRecord
+  """)
+
+# Neither record argument fits a table whose record it is not, and jOOQ's internal TableImpl fits none.
+extend schema @assertAbsent(relation: "code_method_parameter_table",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits'", rows: """
+  method_name,  position, table_name
+  nameOfActor,  0,        film
+  titleIs,      0,        actor
+  titleOfFilm,  0,        actor
+  titleViaImpl, 0,        film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_expression", rows: """
+  coordinate, bound
+  Actor.nameOfActor, public.actor
+  Film.keyedTitle,   public.film
+  Film.titleOfFilm,  public.film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
+    where: "call_kind IN ('CONDITION', 'EXPRESSION')", rows: """
+  coordinate, call, position, parameter_name, fill
+  Actor.nameOfActor,  expression:public.actor, 0, table, TABLE
+  Film.keyedTitle,    expression:public.film,  0, table, TABLE
+  Film.titleOfFilm,   expression:public.film,  0, table, TABLE
+  Query.filmsByTitle, condition:public.film,   0, table, TABLE
+  Query.filmsByTitle, condition:public.film,   1, title, ARGUMENT
+  """)
