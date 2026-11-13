@@ -742,8 +742,9 @@ static method needs no holder.
     direction and collation or an order-field method, read by the multiset's `orderBy`. The walk's
     row identity for a list over a table with no primary key, a node's key standing in, goes with it.
   * **An inline list states how it is narrowed** `open`. Its `@lookupKey` arguments in key order,
-    which today claim `LOOKUP` only at a root or a split, and whether `first` limits it, which only a
-    connection carrier says today.
+    which today claim `LOOKUP` only at a root or a split; FS-plattform writes `@lookupKey` on child
+    fields, so the flip needs it. A `first` limiting an inline list is not stated and not needed:
+    pagination is a connection's (Alf, 2026-11-13).
   * **A `@pivot` is resolved against the catalog** `open`, off the critical path. The attribute table, its on and value
     columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
