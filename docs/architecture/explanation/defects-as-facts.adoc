@@ -30,7 +30,10 @@ MCP server and does not stop a build.
 `graphitron_entry_defect` holds one row per defect at its written position: the position, the
 code, the stage that raised it, and a detail string a message quotes. Its key is the position, the
 code and the stage (Alf, 2026-11-13), so one directive breaking two rules is two rows, and so is one
-rule raised by two stages.
+rule raised by two stages. An author sees one finding for each position and code all the same: what reports
+defects reads them collapsed over the stage, so two stages raising one rule word it alike, the
+detail a function of the position and code, and keep what is particular to each in a detail
+relation (Alf, 2026-11-13).
 
 A code names the rule broken, stated once; the position says where, and so in what context, it was
 broken. A rule is not given a code of its own for each place it can be broken: a name claimed that
