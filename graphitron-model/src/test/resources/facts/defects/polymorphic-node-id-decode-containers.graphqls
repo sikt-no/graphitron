@@ -49,6 +49,10 @@ input OccupantRecordAssignmentInput {
 input OccupantRecordListAssignmentInput {
   occupants: [ID!] @nodeId(typeName: "AddressOccupant")
 }
+# The same id at a member typed as one member's own record, which the other member's is not.
+input OccupantCustomerAssignmentInput {
+  occupant: ID! @nodeId(typeName: "AddressOccupant")
+}
 
 type Query {
   # The container ids inside a @service's input, decoded at the bean's member.
@@ -56,6 +60,9 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecord"})
   assignOccupantRecordList(in: OccupantRecordListAssignmentInput!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantRecordList"})
+  # A bean's member is judged as a parameter is: Staff's record is no CustomerRecord.
+  assignOccupantCustomer(in: OccupantCustomerAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantCustomer"})
   # A slot typed as a record supertype every member's record has.
   occupant(occupant: ID @nodeId(typeName: "AddressOccupant")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
@@ -114,6 +121,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.occupants(occupant:),   NODE_ID_CONTAINER_NOT_AT_A_SLOT
   Query.titleTitlecase(films:), NODE_ID_SLOT_SHAPE_MISMATCH
   Query.withRental(occupant:),  NODE_ID_MEMBER_NOT_NODE_TYPE
+  OccupantCustomerAssignmentInput.occupant, NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER
   """)
 
 # The members a per-member defect names, beneath it; the members sharing a table name none.
@@ -144,6 +152,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", r
   Query.assignOccupantRecord(in.occupant:),      public.staff,    SUPERTYPE
   Query.assignOccupantRecordList(in.occupants:), public.customer, SUPERTYPE
   Query.assignOccupantRecordList(in.occupants:), public.staff,    SUPERTYPE
+  Query.assignOccupantCustomer(in.occupant:),    public.customer, OWN_RECORD
   Query.occupant(occupant:),                     public.customer, SUPERTYPE
   """)
 
@@ -167,6 +176,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot", wher
      OR coordinate LIKE 'Query.assignOccupant%'
   """, rows: """
   coordinate,                                    kind,      slot_shape, landing_class
+  Query.assignOccupantCustomer(in.occupant:),    MEMBER,    SINGLE,     no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord
   Query.assignOccupantRecord(in.occupant:),      MEMBER,    SINGLE,     org.jooq.UpdatableRecord
   Query.assignOccupantRecordList(in.occupants:), MEMBER,    LIST,       org.jooq.UpdatableRecord
   Query.greet(userId:),                          PARAMETER, SINGLE,     java.lang.String

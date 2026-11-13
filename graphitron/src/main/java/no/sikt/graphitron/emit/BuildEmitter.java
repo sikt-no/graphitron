@@ -278,11 +278,11 @@ public final class BuildEmitter {
         var maps = maps(member.path(), counter);
         var read = CodeBlock.of("$L.get($S)", maps.last(), member.path().getLast());
         CodeBlock made;
-        if (member.decode().isPresent()) {
-            // A list of node ids: each decoded into a record of its own, as a list parameter's are.
+        if (member.decoded().isPresent()) {
+            // Decoded as a parameter is: a list of node ids each into a record of its own.
             var helperName = name + "_" + member.slot().slotName();
-            out.add(NodeIdDecodeEmitter.parameterHelper(helperName, slotType, member.decode().get(), "RECORD",
-                Optional.empty(), String.join(".", member.path()), runtime));
+            out.add(NodeIdDecodeEmitter.parameterHelper(helperName, slotType, member.decoded().get(),
+                String.join(".", member.path()), runtime));
             made = CodeBlock.of("$L($L)", helperName, read);
         } else if (member.nested().isPresent()) {
             var helperName = name + "_" + member.slot().slotName();

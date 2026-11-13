@@ -7,6 +7,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
@@ -29,10 +30,11 @@ import static org.jooq.impl.DSL.coalesce;
  *
  * <p>Read once per graph: each occurrence's node id binding with the node's type id and key columns,
  * the table each record class is a row of, each occurrence's join paths with their column pairs, and
- * each column's generated name. A decode the store cannot state is refused with the reason: an id
- * bound to no node or to several, a class that is no table's record, a record of another table with
- * no path from it to the node's, a key column the path does not carry back to the record, and a
- * column carrying a converter.
+ * each column's generated name. One decode at a time: the id's binding on one node table, an id of
+ * several node types being decoded once per table it binds. A decode the store cannot state is
+ * refused with the reason: a table the id does not bind, a class that is no table's record, a record
+ * of another table with no path from it to the node's, a key column the path does not carry back to
+ * the record, and a column carrying a converter.
  */
 public final class NodeIdDecodeQuery {
 
@@ -57,9 +59,12 @@ public final class NodeIdDecodeQuery {
     /** A table as the generated code names it. */
     private record Table(String source, String schema, String name, String tablesClass, String tableField) {}
 
-    /** One node id binding: the node's table, its type and type id, and the key columns in key order. */
-    private record Binding(String source, String schema, String table, String nodeTypeName, String typeId,
-                           List<String> columns) {}
+    /**
+     * One node id binding: the node's table, by its bound name and its parts, its type and type id,
+     * and the key columns in key order.
+     */
+    private record Binding(String bound, String source, String schema, String table, String nodeTypeName,
+                           String typeId, List<String> columns) {}
 
     /** One column's generated name, and whether a converter sits on it. */
     private record Column(String javaName, boolean converted) {}
@@ -96,10 +101,12 @@ public final class NodeIdDecodeQuery {
             .orderBy(n.COORDINATE, n.TABLE_SCHEMA, n.TABLE_NAME, n.POSITION)
             .forEach(r -> bindingRows.computeIfAbsent(r.value1(), k -> new LinkedHashMap<>())
                 .computeIfAbsent(key(r.value2(), r.value3(), r.value4()),
-                    k -> new Binding(r.value2(), r.value3(), r.value4(), r.value7(), r.value5(), new ArrayList<>()))
+                    k -> new Binding(r.value3() + "." + r.value4(), r.value2(), r.value3(), r.value4(), r.value7(),
+                        r.value5(), new ArrayList<>()))
                 .columns().add(r.value6()));
         var bindings = new HashMap<String, List<Binding>>();
-        bindingRows.forEach((coordinate, byTable) -> bindings.put(coordinate, List.copyOf(byTable.values())));
+        bindingRows.forEach((coordinate, byTable) -> bindings.put(coordinate, byTable.values().stream()
+            .sorted(java.util.Comparator.comparing(Binding::nodeTypeName)).toList()));
 
         var t = SQL_TABLE;
         var sc = SQL_SCHEMA;
@@ -153,35 +160,37 @@ public final class NodeIdDecodeQuery {
         return source + "/" + schema + "." + table;
     }
 
-    /** The decode of the node id at {@code coordinate} into a record of the node type's own table. */
-    public Resolution resolveOwn(String coordinate) {
-        var bound = bindings.getOrDefault(coordinate, List.of());
-        if (bound.size() != 1) {
-            return refusedFor(bound);
-        }
-        var binding = bound.getFirst();
-        var nodeKey = key(binding.source(), binding.schema(), binding.table());
-        return tables.entrySet().stream()
-            .filter(e -> key(e.getValue().source(), e.getValue().schema(), e.getValue().name()).equals(nodeKey))
-            .map(e -> resolve(coordinate, e.getKey()))
-            .findFirst()
-            .orElse(new Resolution.Refused("the node type's table " + binding.table() + " has no record class"));
+    /**
+     * The node tables the id at {@code coordinate} binds, by their bound names, in node type name
+     * order: one for an id of one node type, one per member node for an id of several.
+     */
+    public List<String> bounds(String coordinate) {
+        return bindings.getOrDefault(coordinate, List.of()).stream().map(Binding::bound).toList();
     }
 
-    /** The decode of the node id at {@code coordinate} into a record of {@code recordClass}. */
-    public Resolution resolve(String coordinate, String recordClass) {
-        var bound = bindings.getOrDefault(coordinate, List.of());
-        if (bound.size() != 1) {
-            return refusedFor(bound);
+    /**
+     * The decode of the node id at {@code coordinate}, as the node on table {@code bound}'s, into a
+     * record of {@code recordClass}, or of that node's own table where none is given.
+     */
+    public Resolution resolve(String coordinate, String bound, Optional<String> recordClass) {
+        var binding = bindings.getOrDefault(coordinate, List.of()).stream()
+            .filter(b -> b.bound().equals(bound)).findFirst().orElse(null);
+        if (binding == null) {
+            return new Resolution.Refused("the id binds no node on " + bound);
         }
-        var binding = bound.getFirst();
-        var target = tables.get(recordClass);
+        var nodeKey = key(binding.source(), binding.schema(), binding.table());
+        var className = recordClass.or(() -> tables.entrySet().stream()
+            .filter(e -> key(e.getValue().source(), e.getValue().schema(), e.getValue().name()).equals(nodeKey))
+            .map(Map.Entry::getKey).findFirst());
+        if (className.isEmpty()) {
+            return new Resolution.Refused("the node type's table " + binding.table() + " has no record class");
+        }
+        var target = tables.get(className.get());
         if (target == null) {
             return new Resolution.Refused(
-                "member type " + recordClass + " is not a jOOQ record a node id can decode into");
+                "member type " + className.get() + " is not a jOOQ record a node id can decode into");
         }
         var targetKey = key(target.source(), target.schema(), target.name());
-        var nodeKey = key(binding.source(), binding.schema(), binding.table());
         var path = paths.getOrDefault(coordinate, List.of()).stream()
             .filter(steps -> steps.getFirst().from().equals(targetKey) && steps.getLast().to().equals(nodeKey))
             .findFirst();
@@ -216,7 +225,7 @@ public final class NodeIdDecodeQuery {
         }
         return new Resolution.Resolved(
             new Decode(binding.nodeTypeName(), binding.typeId(), target.tablesClass(), target.tableField(),
-                recordClass, javaNames));
+                className.get(), javaNames));
     }
 
     /**
@@ -235,10 +244,5 @@ public final class NodeIdDecodeQuery {
             column = pair.get().from();
         }
         return column;
-    }
-
-    private static Resolution.Refused refusedFor(List<Binding> bound) {
-        return new Resolution.Refused(bound.isEmpty() ? "no node type is bound to the id"
-            : "the id is one of several node types, which is not built here yet");
     }
 }

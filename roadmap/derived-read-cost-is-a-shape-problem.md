@@ -847,21 +847,17 @@ static method needs no holder.
   the generator's unit tests and sakila's execution tests pass unchanged; the generated code's shape
   changes on purpose, its behaviour does not, save a behaviour ruled a defect. It goes field by
   field as the parts land: `ServiceEmission` emits a field the store states whole, the classified
-  emitters the rest, and `EmissionCensusTest` pins the count, 124 of the example schema's services
-  on 2026-11-10, the 3 left being the polymorphic node ids on the `BUILD_REFUSED` line. Two Java
+  emitters the rest, and `EmissionCensusTest` pins the count: all 133 of the example schema's
+  services on 2026-11-13. In FS-plattform at main 946fc4aa20 what is left is opptak's two
+  `settMeldingLest`/`settMeldingUlest` (a discriminated lift reading an interface-declared field) and
+  utdanningsregisteret's 14 mutations decoding a node id through a converter-backed key column. Two Java
   refusals stand in for the store until then, transitional (Alf, 2026-11-13: "as long as we shed it
   very soon"): `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes`, refusing a
   key-column projection and an `@outbox` at a `@service` whose fetcher is not emitted from the store.
-  Both go with the last classified service, deleted in the flip's commit.
-  * **A built argument decodes what `BuildQuery` refuses today** `open`. `NodeIdDecodeQuery` follows
-    the id's stated path. A list of node ids into a class member, a decode into one key value and a
-    record's groupings are built; what is left is an id of several node types into a supertype of
-    their records (`assignOccupantRecord`, `assignOccupantRecordList`, `assignOccupantByArgument`).
-    Whether each member's record fits is captured already (`sql_table_record_supertype`), and
-    `NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER` refuses one that does not, but only at a root argument's
-    parameter: an id filling a bean member is never compared. Widened to member slots, the emitter
-    dispatches on the type id over the member decodes it already groups, and the three
-    `BUILD_REFUSED` services leave the census's exclusions.
+  Both go with the last classified service, deleted in the flip's commit. Before the flip, every
+  refusal the store-fed emitters raise in Java becomes a stored defect, one rule per code at the
+  stage whose facts it reads; among them `BuildQuery.place`'s refusal of an id of several node types
+  in an input built into a jOOQ record, a slot the store states no decode shape for.
   * **A node id's decode shape is decided once, in the store** `open`, E's, off the critical path.
     At a root argument's parameter it is: `graphitron_occurrence_node_id_shape` states the shape, a
     `RecordN` or `RowN` matching the key on its degree and its column types, and the slot defects and
@@ -2896,6 +2892,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   (added 2026-11-09, after the check this entry first rested on) takes `List<String>`: it asks for the
   column with `argMapping: "larestedIder: larestedIder.<key column>"`, which a `@service` parameter
   takes as a list since the entry below. Alf held releases until it could (2026-11-13).
+* **New: an id of several node types builds into a `@service` bean member** ("an id of several node
+  types decodes at a @service parameter or bean member"). A `@nodeId(typeName:)` naming a union or
+  interface of node types now builds into an input bean's member as it does into a parameter: typed as
+  a supertype of every member's record, the member receives the record of whichever node type the id
+  names, one per element of a list. A member that some member's record is not is
+  `NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER`, as a parameter is. Unused in FS-plattform: none of its six
+  graphs at main 946fc4aa20 names a union or interface in a `@nodeId`.
 * **New: a `@service` parameter takes a key column of each of a list of node ids** ("a list of node ids
   projects its key column at a @service parameter"). An `argMapping` entry projecting a key column out
   of a `[ID]` `@nodeId` argument, as `storeIds: units.store_id`, hands the parameter a `List` of that

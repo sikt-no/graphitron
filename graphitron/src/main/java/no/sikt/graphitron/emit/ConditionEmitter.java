@@ -562,7 +562,9 @@ public final class ConditionEmitter {
     private static Optional<NodeIdDecodeQuery.Decode> decodeOnto(ConditionQuery.Row row, ConditionQuery.Term term,
                                                                  NodeIdDecodeQuery decodes) {
         if (term.steps().size() <= 1 && term.steps().stream().allMatch(step -> step.method() == null && !step.routine())
-                && decodes.resolve(term.coordinate(), row.table().recordClassName())
+                && decodes.bounds(term.coordinate()).size() == 1
+                && decodes.resolve(term.coordinate(), decodes.bounds(term.coordinate()).getFirst(),
+                        Optional.of(row.table().recordClassName()))
                     instanceof NodeIdDecodeQuery.Resolution.Resolved own) {
             return Optional.of(own.decode());
         }
@@ -570,7 +572,11 @@ public final class ConditionEmitter {
                 || term.steps().stream().anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null)) {
             return Optional.empty();
         }
-        return decodes.resolve(term.coordinate(), term.landingRecordClass())
+        if (decodes.bounds(term.coordinate()).size() != 1) {
+            return Optional.empty();
+        }
+        return decodes.resolve(term.coordinate(), decodes.bounds(term.coordinate()).getFirst(),
+                Optional.of(term.landingRecordClass()))
             instanceof NodeIdDecodeQuery.Resolution.Resolved landed ? Optional.of(landed.decode()) : Optional.empty();
     }
 
@@ -585,7 +591,9 @@ public final class ConditionEmitter {
                                     int[] counter, NodeIdDecodeEmitter.Runtime runtime) {
         var record = SessionIdentityRows.classOf(decode.recordClass());
         var type = term.list() ? ParameterizedTypeName.get(LIST, record) : record;
-        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decode, "RECORD", Optional.empty(),
+        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type,
+            new BuildQuery.Result.Decoded(List.of(decode), "RECORD", Optional.empty(),
+                term.list() ? "java.util.List" : decode.recordClass()),
             term.names().getLast(), runtime));
         method.addStatement("$T $L = $L($L)", type, local, helper, read(term.names(), counter));
         var tables = SessionIdentityRows.classOf(decode.tablesClass());

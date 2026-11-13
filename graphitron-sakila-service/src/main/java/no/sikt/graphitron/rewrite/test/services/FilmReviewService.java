@@ -178,6 +178,14 @@ public final class FilmReviewService {
     }
 
     /**
+     * {@link #assignOccupantRecord} with the bean's member typed as one member's own record, which
+     * the other member's id cannot be.
+     */
+    public static String assignOccupantCustomer(OccupantCustomerAssignment in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * The list shape of {@link #assignOccupantRecord}: one request carrying ids of both members, each
      * element decoded on its own prefix.
      */

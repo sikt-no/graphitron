@@ -56,11 +56,13 @@ class NodeIdBuildEmitterTest {
                                               String field) {
         var slot = new BuildQuery.Slot("<init>", "()V", position, slotName, decode.recordClass(),
             decode.recordClass(), null);
-        return new BuildQuery.Member(slot, List.of(field), "SCALAR", false, Optional.empty(), Optional.of(decode));
+        return new BuildQuery.Member(slot, List.of(field), "SCALAR", false, Optional.empty(),
+            Optional.of(new BuildQuery.Result.Decoded(List.of(decode), "RECORD", Optional.empty(), decode.recordClass())));
     }
 
     private static NodeIdDecodeQuery.Decode resolved(NodeIdDecodeQuery decodes, String coordinate, String record) {
-        return ((NodeIdDecodeQuery.Resolution.Resolved) decodes.resolve(coordinate, record)).decode();
+        return ((NodeIdDecodeQuery.Resolution.Resolved) decodes.resolve(coordinate, decodes.bounds(coordinate).getFirst(),
+            Optional.of(record))).decode();
     }
 
     @BeforeAll

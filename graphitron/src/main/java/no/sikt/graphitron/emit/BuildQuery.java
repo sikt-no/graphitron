@@ -24,6 +24,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_MEMBER;
@@ -67,15 +69,20 @@ public final class BuildQuery {
 
     /**
      * What fills a member: the input field read along {@code path} from the build's own input map,
-     * a grouping's names first; the kind of type it is; whether it is a list; and, for an input
-     * object, the construction of the member's class.
+     * a grouping's names first; the kind of type it is; whether it is a list; for an input object,
+     * the construction of the member's class; and for a node id, how it is decoded.
      */
     public record Member(Slot slot, List<String> path, String typeKind, boolean list, Optional<Build> nested,
-                         Optional<NodeIdDecodeQuery.Decode> decode) {
+                         Optional<Result.Decoded> decoded) {
         public Member {
             path = List.copyOf(path);
             Objects.requireNonNull(nested, "nested");
-            Objects.requireNonNull(decode, "decode");
+            Objects.requireNonNull(decoded, "decoded");
+        }
+
+        /** The decode of a node id of one node type, where the member takes one. */
+        public Optional<NodeIdDecodeQuery.Decode> decode() {
+            return decoded.filter(d -> d.decodes().size() == 1).map(d -> d.decodes().getFirst());
         }
     }
 
@@ -119,13 +126,20 @@ public final class BuildQuery {
         record Refused(String reason) implements Result {}
 
         /**
-         * A node id argument decoded straight into its parameter: into the parameter's own jOOQ
-         * record ({@code RECORD}), or into the node type's record and taken from it as the key's
-         * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or the value of the one
-         * key column a pair projects ({@code KEY_VALUE}), whose generated name {@code column} is.
+         * A node id decoded straight into its parameter or member: into the slot's own jOOQ record
+         * ({@code RECORD}), into the record of whichever member node type the id names, the slot
+         * taking a supertype of them all ({@code SUPERTYPE}, one decode per member in node type name
+         * order), or into the node type's record and taken from it as the key's {@code RecordN}
+         * ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or the value of the one key column a pair
+         * projects ({@code KEY_VALUE}), whose generated name {@code column} is. {@code erasedClass}
+         * is the slot's class, a {@code List} or {@code Set} where it takes one per id.
          */
-        record Decoded(NodeIdDecodeQuery.Decode decode, String shape, Optional<String> column)
-            implements Result {}
+        record Decoded(List<NodeIdDecodeQuery.Decode> decodes, String shape, Optional<String> column,
+                       String erasedClass) implements Result {
+            public Decoded {
+                decodes = List.copyOf(decodes);
+            }
+        }
 
         /** An input object made into a table's jOOQ record on the column axis. */
         record Columns(RecordBuild build) implements Result {}
@@ -186,7 +200,7 @@ public final class BuildQuery {
             : build(root.landingCoordinate(), rooted.className(), children, constructions, catalog, builds,
                 new ArrayList<>())));
         nodeIdRoots(store).forEach((root, shapes) -> out.put(root,
-            decodeParameter(root.landingCoordinate(), shapes, catalog)));
+            decodeSlot(root.landingCoordinate(), shapes, catalog)));
         return out;
     }
 
@@ -221,8 +235,14 @@ public final class BuildQuery {
                 r.value6(), r.value7()));
     }
 
-    /** A node id parameter's decode shape at one node table, with the key column a pair projects. */
-    private record SlotShape(String shape, Optional<String> projectedColumn) {}
+    /**
+     * A node id slot's decode shape at one node table, by its bound name, with the key column a pair
+     * projects into it.
+     */
+    private record SlotShape(String shape, String bound, Optional<String> projectedColumn) {}
+
+    /** A node id slot's class and its decode shape per node table; no shape where none fits. */
+    private record SlotShapes(String erasedClass, List<SlotShape> shapes) {}
 
     /**
      * Each @service call's parameter a node id lands on, with its decode shape per node table as
@@ -230,19 +250,22 @@ public final class BuildQuery {
      * of the one key column a pair projects into it, where one does. A parameter no shape fits has
      * none, and is the slot defects' to refuse.
      */
-    private static Map<Root, List<SlotShape>> nodeIdRoots(StoreHandle store) {
+    private static Map<Root, SlotShapes> nodeIdRoots(StoreHandle store) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         var sp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+        var sl = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
         var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
         var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
         var kp = GRAPHITRON_OCCURRENCE_NODE_ID;
         var col = SQL_COLUMN;
-        var out = new HashMap<Root, List<SlotShape>>();
-        store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, d.DECODE_SHAPE, col.JOOQ_NAME)
+        var out = new HashMap<Root, SlotShapes>();
+        store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, d.DECODE_SHAPE, d.BOUND, col.JOOQ_NAME,
+                sl.ERASED_CLASS)
             .from(sp)
             // The service call's parameter, so another kind's fills stay out.
             .join(c).on(c.GRAPH_NAME.eq(sp.GRAPH_NAME), c.COORDINATE.eq(sp.CALL_COORDINATE), c.CALL.eq(sp.CALL),
                 c.POSITION.eq(sp.POSITION), c.CALL_KIND.eq("SERVICE"))
+            .join(sl).on(sl.GRAPH_NAME.eq(sp.GRAPH_NAME), sl.COORDINATE.eq(sp.COORDINATE), sl.SLOT.eq(sp.SLOT))
             .leftJoin(d).on(d.GRAPH_NAME.eq(sp.GRAPH_NAME), d.COORDINATE.eq(sp.COORDINATE), d.SLOT.eq(sp.SLOT))
             .leftJoin(pj).on(pj.GRAPH_NAME.eq(sp.GRAPH_NAME), pj.CALL_COORDINATE.eq(sp.CALL_COORDINATE),
                 pj.CALL.eq(sp.CALL), pj.POSITION.eq(sp.POSITION), pj.BOUND.eq(d.BOUND))
@@ -253,49 +276,49 @@ public final class BuildQuery {
             .where(sp.GRAPH_NAME.eq(store.graphName()))
             .forEach(r -> {
                 var shapes = out.computeIfAbsent(new Root(r.value1(), r.value2(), r.value3()),
-                    k -> new ArrayList<>());
+                    k -> new SlotShapes(r.value7(), new ArrayList<>()));
                 if (r.value4() != null) {
-                    shapes.add(new SlotShape(r.value4(), Optional.ofNullable(r.value5())));
+                    shapes.shapes().add(new SlotShape(r.value4(), r.value5(), Optional.ofNullable(r.value6())));
                 }
             });
         return out;
     }
 
     /**
-     * How a node id argument fills its parameter, in the decode shape
-     * {@code graphitron_occurrence_node_id_shape} states at the parameter's slot: the node type's own
-     * record decodes it directly, and a {@code RecordN}, a {@code RowN} or the projected key column's
-     * value is taken off that record. A parameter no shape fits is the slot defects' to refuse, and
-     * one with a shape per member table is an id of several node types.
+     * How a node id fills its parameter or member, in the decode shape
+     * {@code graphitron_occurrence_node_id_shape} states at the slot: the node type's own record
+     * decodes it directly, and a {@code RecordN}, a {@code RowN} or the projected key column's value
+     * is taken off that record; an id of several node types decodes into whichever member's record it
+     * names. A slot no shape fits is the slot defects' to refuse.
      */
-    private static Result decodeParameter(String coordinate, List<SlotShape> shapes, Catalog catalog) {
+    private static Result decodeSlot(String coordinate, SlotShapes slot, Catalog catalog) {
+        var shapes = slot.shapes();
         if (shapes.isEmpty()) {
             return new Result.Refused("a node id cannot be decoded into the parameter");
         }
-        if (shapes.size() > 1) {
-            return new Result.Refused("the id is one of several node types, which is not built here yet");
-        }
         var decodeShape = shapes.getFirst().shape();
-        NodeIdDecodeQuery.Resolution resolution;
-        String shape;
-        switch (decodeShape) {
-            case "OWN_RECORD" -> {
-                resolution = catalog.decodes().resolveOwn(coordinate);
-                shape = "RECORD";
-            }
-            case "RECORD_N", "ROW_N", "KEY_VALUE" -> {
-                resolution = catalog.decodes().resolveOwn(coordinate);
-                shape = decodeShape;
-            }
-            default -> {
-                return new Result.Refused("the id is one of several node types, which is not built here yet");
+        if (shapes.stream().anyMatch(s -> !s.shape().equals(decodeShape))
+                || shapes.size() > 1 && !decodeShape.equals("SUPERTYPE")) {
+            throw new IllegalStateException("Graphitron generator bug (node id decode): " + coordinate
+                + " states the shapes " + shapes + ", and only a record supertype takes an id of several node types");
+        }
+        var shape = switch (decodeShape) {
+            case "OWN_RECORD" -> "RECORD";
+            case "SUPERTYPE", "RECORD_N", "ROW_N", "KEY_VALUE" -> decodeShape;
+            default -> throw new IllegalStateException("Graphitron generator bug (node id decode): " + coordinate
+                + " states the shape " + decodeShape + ", which a parameter or member does not take");
+        };
+        var decodes = new ArrayList<NodeIdDecodeQuery.Decode>();
+        for (var bound : shapes) {
+            switch (catalog.decodes().resolve(coordinate, bound.bound(), Optional.empty())) {
+                case NodeIdDecodeQuery.Resolution.Resolved resolved -> decodes.add(resolved.decode());
+                case NodeIdDecodeQuery.Resolution.Refused refused -> {
+                    return new Result.Refused(refused.reason());
+                }
             }
         }
-        return switch (resolution) {
-            case NodeIdDecodeQuery.Resolution.Resolved resolved ->
-                new Result.Decoded(resolved.decode(), shape, shapes.getFirst().projectedColumn());
-            case NodeIdDecodeQuery.Resolution.Refused refused -> new Result.Refused(refused.reason());
-        };
+        decodes.sort(java.util.Comparator.comparing(NodeIdDecodeQuery.Decode::nodeTypeName));
+        return new Result.Decoded(decodes, shape, shapes.getFirst().projectedColumn(), slot.erasedClass());
     }
 
     /** The class an input object's parameter takes, and whether a {@code @condition}'s call takes it. */
@@ -400,9 +423,9 @@ public final class BuildQuery {
         }
         var bound = new HashMap<String, String>();
         for (var m : members) {
-            boolean sharedDecode = m.decode().isPresent() && members.stream()
+            boolean sharedDecode = m.decoded().isPresent() && members.stream()
                 .filter(o -> o.slot().slotName().equals(m.slot().slotName()))
-                .allMatch(o -> o.decode().isPresent());
+                .allMatch(o -> o.decoded().isPresent());
             var earlier = bound.put(m.slot().slotName(), String.join(".", m.path()));
             if (earlier != null && !sharedDecode) {
                 return new Result.Refused(earlier + " and " + String.join(".", m.path())
@@ -470,13 +493,18 @@ public final class BuildQuery {
                 if (field.list()) {
                     return "input field " + named + " is a list of node ids, which is not built here yet";
                 }
-                var resolution = catalog.decodes().resolve(field.coordinate(), recordClass);
+                var bounds = catalog.decodes().bounds(field.coordinate());
+                if (bounds.size() != 1) {
+                    return "input field " + named + " is an id of several node types, which a jOOQ record does not take";
+                }
+                var resolution = catalog.decodes().resolve(field.coordinate(), bounds.getFirst(), Optional.of(recordClass));
                 if (resolution instanceof NodeIdDecodeQuery.Resolution.Refused refused) {
                     return "input field " + named + ": " + refused.reason();
                 }
                 var decode = ((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode();
                 var slot = new Slot(null, null, 0, field.boundName(), recordClass, recordClass, null);
-                decodes.add(new Member(slot, path, field.typeKind(), false, Optional.empty(), Optional.of(decode)));
+                decodes.add(new Member(slot, path, field.typeKind(), false, Optional.empty(),
+                    Optional.of(new Result.Decoded(List.of(decode), "RECORD", Optional.empty(), recordClass))));
                 continue;
             }
             if ("INPUT_OBJECT".equals(field.typeKind())) {
@@ -535,14 +563,16 @@ public final class BuildQuery {
             }
             var memberClass = slot.get().elementClass() != null ? slot.get().elementClass() : slot.get().erasedClass();
             Optional<Build> nested = Optional.empty();
-            Optional<NodeIdDecodeQuery.Decode> decode = Optional.empty();
+            Optional<Result.Decoded> decode = Optional.empty();
             if (field.nodeId()) {
-                // A list of node ids decodes each into a record of its own, the member's element.
-                var resolution = catalog.decodes().resolve(field.coordinate(), memberClass);
-                if (resolution instanceof NodeIdDecodeQuery.Resolution.Refused refused) {
+                // Decoded as the member's slot states, a list of node ids each into a record of its own.
+                var shapes = catalog.memberShapes().get(field.coordinate() + "|" + className);
+                var decoded = shapes == null ? new Result.Refused("a node id cannot be decoded into the member")
+                    : decodeSlot(field.coordinate(), shapes, catalog);
+                if (decoded instanceof Result.Refused refused) {
                     return "input field " + String.join(".", path) + ": " + refused.reason();
                 }
-                decode = Optional.of(((NodeIdDecodeQuery.Resolution.Resolved) resolution).decode());
+                decode = Optional.of((Result.Decoded) decoded);
             } else if ("INPUT_OBJECT".equals(field.typeKind())) {
                 var result = build(field.coordinate(), memberClass, children, constructions, catalog, builds,
                     List.of());
@@ -571,7 +601,7 @@ public final class BuildQuery {
      * a row of and each column's generated name, and the node id decodes its fields resolve through.
      */
     private record Catalog(Map<String, Table> tables, Map<String, Column> occurrenceColumns,
-                           NodeIdDecodeQuery decodes) {
+                           Map<String, SlotShapes> memberShapes, NodeIdDecodeQuery decodes) {
 
         static Catalog read(StoreHandle store) {
             var t = SQL_TABLE;
@@ -602,7 +632,26 @@ public final class BuildQuery {
                 .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
                     new Column(r.value5(), Optional.ofNullable(r.value6()))));
 
-            return new Catalog(tables, columns, NodeIdDecodeQuery.read(store));
+            // Each bean member a node id fills, by the id's occurrence and the member's class: its class
+            // and its decode shape per node table.
+            var sl = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+            var sm = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_MEMBER;
+            var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+            var memberShapes = new HashMap<String, SlotShapes>();
+            store.dsl().select(sl.COORDINATE, sm.BOUND, sl.ERASED_CLASS, d.DECODE_SHAPE, d.BOUND)
+                .from(sl)
+                .join(sm).on(sm.GRAPH_NAME.eq(sl.GRAPH_NAME), sm.COORDINATE.eq(sl.COORDINATE), sm.BOUND.eq(sl.SLOT))
+                .leftJoin(d).on(d.GRAPH_NAME.eq(sl.GRAPH_NAME), d.COORDINATE.eq(sl.COORDINATE), d.SLOT.eq(sl.SLOT))
+                .where(sl.GRAPH_NAME.eq(store.graphName()))
+                .forEach(r -> {
+                    var shapes = memberShapes.computeIfAbsent(
+                        r.value1() + "|" + r.value2().substring(0, r.value2().indexOf('#')),
+                        k -> new SlotShapes(r.value3(), new ArrayList<>()));
+                    if (r.value4() != null) {
+                        shapes.shapes().add(new SlotShape(r.value4(), r.value5(), Optional.empty()));
+                    }
+                });
+            return new Catalog(tables, columns, memberShapes, NodeIdDecodeQuery.read(store));
         }
 
         static String key(String source, String schema, String table) {

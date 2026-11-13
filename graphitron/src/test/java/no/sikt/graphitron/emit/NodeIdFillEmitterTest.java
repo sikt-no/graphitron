@@ -76,16 +76,17 @@ class NodeIdFillEmitterTest {
         var row = new FillQuery.Row("Query." + name, "Query." + name, List.of(new FillQuery.Fill(0, "id",
             type, type, "ARGUMENT", null, null, Optional.of(new FillQuery.Landing(List.of("id"), "SCALAR", true)))),
             true);
-        return new Case(name, row, new BuildQuery.Result.Decoded(decode, shape, Optional.empty()));
+        return new Case(name, row, new BuildQuery.Result.Decoded(List.of(decode), shape, Optional.empty(),
+            type.contains("<") ? type.substring(0, type.indexOf('<')) : type));
     }
 
     @BeforeAll
     static void compile() throws Exception {
         var decodes = FACTS.read("scenarios/node-id-decode-record", graph -> NodeIdDecodeQuery.read(graph.handle()));
         var film = ((NodeIdDecodeQuery.Resolution.Resolved)
-            decodes.resolve("Query.inventories(filmId:)", FILM_RECORD)).decode();
+            decodes.resolve("Query.inventories(filmId:)", "public.film", Optional.of(FILM_RECORD))).decode();
         var inventoryFilm = ((NodeIdDecodeQuery.Resolution.Resolved)
-            decodes.resolve("Query.inventories(filmId:)", InventoryRecord.class.getName())).decode();
+            decodes.resolve("Query.inventories(filmId:)", "public.film", Optional.of(InventoryRecord.class.getName()))).decode();
         var cases = List.of(
             stated("film", FILM_RECORD, film, "RECORD"),
             stated("inventory", InventoryRecord.class.getName(), inventoryFilm, "RECORD"),

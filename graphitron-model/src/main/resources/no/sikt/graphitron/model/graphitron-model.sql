@@ -12494,11 +12494,16 @@ CREATE VIEW graphitron_occurrence_node_id_shape_rule
 -- Each parameter, bean member and built record a node id lands on, under any call, against each node
 -- table the id binds. One key column a pair projects is that column's value. The whole key lands only on its own
 -- record, a record supertype for an id of several node types, or a jOOQ tuple whose degree is the
--- key's and whose type arguments are its columns' types in key order.
+-- key's and whose type arguments are its columns' types in key order. An id of several node types
+-- lands only on a record: a column value or a tuple names one node's key.
 SELECT graph_name, coordinate, slot, bound, decode_shape
   FROM (SELECT s.graph_name, s.coordinate, s.slot, k.bound,
                CASE WHEN pj.bound IS NOT NULL
-                    THEN CASE WHEN s.landing_class = pc.binding_type THEN 'KEY_VALUE' END
+                    THEN CASE WHEN s.landing_class = pc.binding_type
+                               AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                                                WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                                                  AND k2.bound <> k.bound)
+                              THEN 'KEY_VALUE' END
                     WHEN s.landing_class = NULLIF(t.record_class_fqn, 'org.jooq.Record') THEN 'OWN_RECORD'
                     WHEN EXISTS (SELECT 1 FROM graphitron_binding_claim_container kc
                                   WHERE kc.graph_name = o.graph_name AND kc.coordinate = o.element_coordinate)
@@ -12509,6 +12514,9 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
                     WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_node_id x
                                   WHERE x.graph_name = k.graph_name AND x.coordinate = k.coordinate
                                     AND x.bound = k.bound AND x.position = tc.degree - 1)
+                     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                                      WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                                        AND k2.bound <> k.bound)
                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id x
                                       WHERE x.graph_name = k.graph_name AND x.coordinate = k.coordinate
                                         AND x.bound = k.bound AND x.position >= tc.degree)
@@ -12716,17 +12724,17 @@ COMMENT ON VIEW graphitron_entry_defect_member_rule IS 'One member a @discrimina
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.member_type_name IS 'the member the defect names';
 
 -- The members a polymorphic @nodeId's per-member defects name, at the @nodeId: a table-bound
--- member that is no node, and a member the id binds whose record the parameter cannot take. A
--- member binds where it is a node and the only member on its table among the container's, which
--- is graphitron_occurrence_node_id_rule's own predicate, so a member with no node-id row and a
--- member defect agree. occurrence-builds' rule, beside the slots it judges.
+-- member that is no node, and a member the id binds whose record the parameter or bean member
+-- cannot take, which is a member graphitron_occurrence_node_id_shape states no shape for at the
+-- slot. occurrence-builds' rule, beside the slots it judges.
 CREATE VIEW graphitron_occurrence_build_entry_defect_member_rule
   (graph_name, source_name, source_line, source_column, code, member_type_name) AS
 -- A container id's places under a @service: a parameter of its call, or a member or record its input
 -- object is built into where the root argument goes to one.
-WITH container_slot (graph_name, element_coordinate, site, container_name, landing_type,
+WITH container_slot (graph_name, coordinate, slot, kind, element_coordinate, container_name, landing_type,
                      slot_shape) AS (
-  SELECT DISTINCT s.graph_name, o.element_coordinate, o.kind, cl.named, s.landing_class, s.slot_shape
+  SELECT DISTINCT s.graph_name, s.coordinate, s.slot, s.kind, o.element_coordinate, cl.named, s.landing_class,
+         s.slot_shape
     FROM graphitron_occurrence_node_id_slot s
     JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
     JOIN graphitron_binding_claim_container k
@@ -12748,22 +12756,9 @@ WITH container_slot (graph_name, element_coordinate, site, container_name, landi
      AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype ct
                       WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
 ),
-member (graph_name, container_name, member_type_name, is_table, is_node, binds,
-        table_source_name, table_schema, table_name) AS (
+member (graph_name, container_name, member_type_name, is_table, is_node) AS (
   SELECT pm.graph_name, pm.container_name, pm.member_type_name, tt.type_name IS NOT NULL,
-         n.type_name IS NOT NULL,
-         n.type_name IS NOT NULL AND tt.type_name IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphql_poly_member pm2
-                             JOIN graphitron_tabletype tt2
-                               ON tt2.graph_name = pm2.graph_name
-                              AND tt2.type_name = pm2.member_type_name
-                            WHERE pm2.graph_name = pm.graph_name
-                              AND pm2.container_name = pm.container_name
-                              AND pm2.member_type_name <> pm.member_type_name
-                              AND tt2.table_source_name = tt.table_source_name
-                              AND tt2.table_schema = tt.table_schema
-                              AND tt2.table_name = tt.table_name),
-         tt.table_source_name, tt.table_schema, tt.table_name
+         n.type_name IS NOT NULL
     FROM graphql_poly_member pm
     LEFT JOIN graphitron_tabletype tt
       ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
@@ -12781,27 +12776,24 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
  WHERE da.source_line IS NOT NULL
 UNION ALL
+-- A member the id binds whose record the slot cannot take: no decode shape lands it there.
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER', m.member_type_name
+       'NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER', n.node_type_name
   FROM container_slot s
-  JOIN member m
-    ON m.graph_name = s.graph_name AND m.container_name = s.container_name AND m.binds
-  JOIN sql_table r
-    ON r.source_name = m.table_source_name AND r.table_schema = m.table_schema
-   AND r.table_name = m.table_name
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate AND n.position = 0
   JOIN graphitron_directive_application da
     ON da.graph_name = s.graph_name AND da.coordinate = s.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
- WHERE da.source_line IS NOT NULL AND s.site = 'FIELD_ARGUMENT' AND s.landing_type IS NOT NULL
-   AND s.slot_shape IS DISTINCT FROM 'MISMATCH'
+ WHERE da.source_line IS NOT NULL AND s.kind IN ('PARAMETER', 'MEMBER') AND s.landing_type IS NOT NULL
+   AND s.slot_shape <> 'MISMATCH'
    -- A container with a table-bound member that is no node is refused on that member first.
    AND NOT EXISTS (SELECT 1 FROM member x
                     WHERE x.graph_name = s.graph_name AND x.container_name = s.container_name
                       AND x.is_table AND NOT x.is_node)
-   AND s.landing_type <> r.record_class_fqn
-   AND NOT EXISTS (SELECT 1 FROM sql_table_record_supertype st
-                    WHERE st.source_name = r.source_name AND st.table_schema = r.table_schema
-                      AND st.table_name = r.table_name AND st.supertype_name = s.landing_type);
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                    WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot
+                      AND d.bound = n.bound);
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_member_rule IS 'One member a polymorphic @nodeId''s defect names, in the shape graphitron_entry_defect_member stores: the rule itself, evaluated on demand rather than read off disk. For example a union of two node types whose @nodeId lands on a parameter taking one of their records draws a NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER row for the other.';
 -- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_member_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_build_entry_defect_member_rule.source_name IS 'the defect''s file';
@@ -22287,7 +22279,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_MEMBER_NOT_NODE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_MEMBER_NOT_NODE_TYPE',
    'A @nodeId(typeName:) names an interface or union with a table-bound member that is not a @node type, so an id of that member cannot be decoded: annotate the member with @node.', 'occurrence-builds'),
   ('NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER',
-   'A @nodeId(typeName:) naming an interface or union decodes into a @service parameter that a member''s record is not, so that member''s id cannot be handed over: declare the parameter as a type every member''s record is, such as org.jooq.Record or TableRecord<?>.', 'occurrence-builds'),
+   'A @nodeId(typeName:) naming an interface or union decodes into a @service parameter or bean member that a member''s record is not, so that member''s id cannot be handed over: declare it as a type every member''s record is, such as org.jooq.Record or TableRecord<?>.', 'occurrence-builds'),
   ('NODE_ID_NOT_ID_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_NOT_ID_TYPE',
    'A @nodeId sits on a slot whose type is not ID, and every encode and decode is an ID''s, so the directive would bind the wire value undecoded: change the type to ID or remove the directive.', 'entry-defects'),
   ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',

@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
+import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,23 +49,24 @@ class NodeIdDecodeQueryTest {
 
     @Test
     void aRecordOfTheNodesTableLoadsItsKey() {
-        assertThat(query.resolve("Query.inventories(filmId:)", FilmRecord.class.getName()))
+        assertThat(query.resolve("Query.inventories(filmId:)", "public.film", Optional.of(FilmRecord.class.getName())))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Resolved(new NodeIdDecodeQuery.Decode(
                 "Film", "F", TABLES, "FILM", FilmRecord.class.getName(), List.of("FILM_ID"))));
-        assertThat(query.resolveOwn("Query.inventories(filmId:)"))
-            .isEqualTo(query.resolve("Query.inventories(filmId:)", FilmRecord.class.getName()));
+        assertThat(query.resolve("Query.inventories(filmId:)", "public.film", Optional.empty()))
+            .isEqualTo(query.resolve("Query.inventories(filmId:)", "public.film", Optional.of(FilmRecord.class.getName())));
     }
 
     @Test
     void aRecordReferencingTheNodeLoadsItsForeignKey() {
-        assertThat(query.resolve("Query.inventories(filmId:)", InventoryRecord.class.getName()))
+        assertThat(query.resolve("Query.inventories(filmId:)", "public.film", Optional.of(InventoryRecord.class.getName())))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Resolved(new NodeIdDecodeQuery.Decode(
                 "Film", "F", TABLES, "INVENTORY", InventoryRecord.class.getName(), List.of("FILM_ID"))));
     }
 
     @Test
     void aWrittenPathOntoTheNodesOwnTableLoadsTheColumnsItCarriesTheKeyBackTo() {
-        assertThat(replies.resolve("Query.describeEmailReply(in.inReplyTo:)", EmailRecord.class.getName()))
+        assertThat(replies.resolve("Query.describeEmailReply(in.inReplyTo:)",
+                replies.bounds("Query.describeEmailReply(in.inReplyTo:)").getFirst(), Optional.of(EmailRecord.class.getName())))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Resolved(new NodeIdDecodeQuery.Decode(
                 "Email", "Email", TABLES, "EMAIL", EmailRecord.class.getName(),
                 List.of("MAILBOX_ID", "IN_REPLY_TO_NO"))));
@@ -72,19 +74,26 @@ class NodeIdDecodeQueryTest {
 
     @Test
     void whatTheStoreDoesNotStateIsRefused() {
-        assertThat(query.resolve("Language.id", FilmRecord.class.getName()))
+        assertThat(query.resolve("Language.id", query.bounds("Language.id").getFirst(), Optional.of(FilmRecord.class.getName())))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Refused(
                 "no path from film to language is stated at the id, so nothing says which columns it fills"));
-        assertThat(query.resolve("Query.rentals(filmId:)", RentalRecord.class.getName()))
+        assertThat(query.resolve("Query.rentals(filmId:)", "public.film", Optional.of(RentalRecord.class.getName())))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Refused(
                 "the path from rental to film does not carry key column film_id back to a column of rental"));
-        assertThat(severalTypes.resolve("Query.occupant(occupant:)", InventoryRecord.class.getName()))
-            .isEqualTo(new NodeIdDecodeQuery.Resolution.Refused(
-                "the id is one of several node types, which is not built here yet"));
-        assertThat(query.resolve("Inventory.inventoryId", InventoryRecord.class.getName()))
-            .isEqualTo(new NodeIdDecodeQuery.Resolution.Refused("no node type is bound to the id"));
-        assertThat(query.resolve("Query.inventories(filmId:)", String.class.getName()))
+        assertThat(query.resolve("Inventory.inventoryId", "public.inventory", Optional.of(InventoryRecord.class.getName())))
+            .isEqualTo(new NodeIdDecodeQuery.Resolution.Refused("the id binds no node on public.inventory"));
+        assertThat(query.resolve("Query.inventories(filmId:)", "public.film", Optional.of(String.class.getName())))
             .isEqualTo(new NodeIdDecodeQuery.Resolution.Refused(
                 "member type java.lang.String is not a jOOQ record a node id can decode into"));
+    }
+
+    /** An id of several node types decodes once per table it binds, each into that member's own record. */
+    @Test
+    void anIdOfSeveralNodeTypesDecodesPerMember() {
+        assertThat(severalTypes.bounds("Query.occupant(occupant:)")).containsExactly("public.customer", "public.staff");
+        assertThat(severalTypes.resolve("Query.occupant(occupant:)", "public.staff", Optional.empty()))
+            .isInstanceOfSatisfying(NodeIdDecodeQuery.Resolution.Resolved.class, r -> assertThat(r.decode())
+                .extracting(NodeIdDecodeQuery.Decode::nodeTypeName, NodeIdDecodeQuery.Decode::tableField)
+                .containsExactly("Staff", "STAFF"));
     }
 }

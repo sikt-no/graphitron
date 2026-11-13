@@ -32,8 +32,6 @@ public final class NodeIdDecodeEmitter {
 
     private NodeIdDecodeEmitter() {}
 
-    private static final ClassName LIST = ClassName.get("java.util", "List");
-    private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName STRING = ClassName.get("java.lang", "String");
 
     /**
@@ -86,47 +84,84 @@ public final class NodeIdDecodeEmitter {
     }
 
     /**
-     * The helper decoding a node id argument, or a list or set of them, into a parameter of
-     * {@code type}: each id into a new record of the decode's table, its key taken off the record as a
-     * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or the value of
-     * {@code column}, the key column a pair projects ({@code KEY_VALUE}), where the parameter wants
-     * that and the record itself otherwise, an absent one null.
+     * Decodes the {@code String} local {@code id} into a new record of whichever member's node type it
+     * names, declared as {@code decoded} of {@code type}, a supertype of every member's record; an id
+     * of no member's type, or one its type's decode answers null for, is refused naming every member.
+     * {@code wire} is the {@code Object} local the id was read from, which the refusal peeks.
      */
-    public static MethodSpec parameterHelper(String name, TypeName type, NodeIdDecodeQuery.Decode d, String shape,
-                                             Optional<String> column, String label, Runtime runtime) {
+    private static void dispatched(MethodSpec.Builder method, TypeName type, java.util.List<NodeIdDecodeQuery.Decode> ds,
+                                   String id, String wire, String label, Runtime runtime) {
+        method.addStatement("$T peeked = $T.peekTypeId($L)", STRING, runtime.nodeIdEncoder(), id)
+            .addStatement("$T decoded = null", type);
+        for (int i = 0; i < ds.size(); i++) {
+            var d = ds.get(i);
+            var record = SessionIdentityRows.classOf(d.recordClass());
+            method.beginControlFlow(i == 0 ? "if ($S.equals(peeked))" : "else if ($S.equals(peeked))", d.typeId())
+                .addStatement("decoded = $T.decodeInto(new $T(), $S, $L, $S, null, $L)",
+                    runtime.nodeIdEncoder(), record, d.typeId(), id, label, columns(d))
+                .endControlFlow();
+        }
+        method.beginControlFlow("if (decoded == null)")
+            .addCode(NodeIdDecodeFailure.multiCandidateThrowStatement(runtime.outputPackage(), runtime.nodeIdEncoder(),
+                ds.stream().map(NodeIdDecodeQuery.Decode::typeId).toList(),
+                String.join(", ", ds.stream().map(NodeIdDecodeQuery.Decode::nodeTypeName).toList()), wire))
+            .endControlFlow();
+    }
+
+    /**
+     * The helper decoding a node id argument or member, or a list or set of them, into a parameter of
+     * {@code type} as {@code decoded} states: each id into a new record of the decode's table, its key
+     * taken off the record as a {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or the
+     * value of the projected key column ({@code KEY_VALUE}) where the parameter wants that, and the
+     * record itself otherwise; an id of several node types into whichever member's record it names
+     * ({@code SUPERTYPE}). An absent id is null.
+     */
+    public static MethodSpec parameterHelper(String name, TypeName type, BuildQuery.Result.Decoded decoded,
+                                             String label, Runtime runtime) {
+        var d = decoded.decodes().getFirst();
         var columns = columns(d);
-        var taken = switch (shape) {
+        var taken = switch (decoded.shape()) {
             case "RECORD_N" -> CodeBlock.of("decoded.into($L)", columns);
             case "ROW_N" -> CodeBlock.of("decoded.into($L).valuesRow()", columns);
             case "KEY_VALUE" -> CodeBlock.of("decoded.get($T.$L.$L)", SessionIdentityRows.classOf(d.tablesClass()),
-                d.tableField(), column.orElseThrow());
+                d.tableField(), decoded.column().orElseThrow());
             default -> CodeBlock.of("decoded");
         };
+        boolean supertype = decoded.shape().equals("SUPERTYPE");
         var method = MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(type)
             .addParameter(Object.class, "wire");
-        var collection = type instanceof ParameterizedTypeName p
-            && (LIST.equals(p.rawType()) || SET.equals(p.rawType())) ? (ParameterizedTypeName) type : null;
-        if (collection == null) {
+        var container = decoded.erasedClass();
+        boolean collection = "java.util.List".equals(container) || "java.util.Set".equals(container);
+        if (!collection) {
             method.beginControlFlow("if (!(wire instanceof $T id))", STRING)
                 .addStatement("return null")
                 .endControlFlow();
-            fresh(method, d, "id", label, runtime);
+            if (supertype) {
+                dispatched(method, type, decoded.decodes(), "id", "wire", label, runtime);
+            } else {
+                fresh(method, d, "id", label, runtime);
+            }
             return method.addStatement("return $L", taken).build();
         }
+        var element = ((ParameterizedTypeName) type).typeArguments().getFirst();
         method.beginControlFlow("if (!(wire instanceof $T<?> ids))", ClassName.get("java.util", "Collection"))
             .addStatement("return null")
             .endControlFlow()
             .addStatement("$T out = new $T<>()", type,
-                LIST.equals(collection.rawType()) ? ClassName.get("java.util", "ArrayList")
+                "java.util.List".equals(container) ? ClassName.get("java.util", "ArrayList")
                     : ClassName.get("java.util", "LinkedHashSet"))
             .beginControlFlow("for (Object element : ids)")
             .beginControlFlow("if (!(element instanceof $T id))", STRING)
             .addStatement("out.add(null)")
             .addStatement("continue")
             .endControlFlow();
-        fresh(method, d, "id", label, runtime);
+        if (supertype) {
+            dispatched(method, element, decoded.decodes(), "id", "element", label, runtime);
+        } else {
+            fresh(method, d, "id", label, runtime);
+        }
         return method.addStatement("out.add($L)", taken)
             .endControlFlow()
             .addStatement("return out")
