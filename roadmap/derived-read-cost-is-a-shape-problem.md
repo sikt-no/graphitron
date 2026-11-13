@@ -443,7 +443,12 @@ preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the
     `TypeFetcherEmissionContext`; `command.ConnectionClass`, `LauncherCommands.connectionClassAt`
     and the classified `totalCount` probe went. The truth table (synthesised, authored without
     `totalCount`, faceted, union, batched child, two connections sharing an edge) is
-    `scenarios/connection-classes`, read by `ConnectionClassPipelineTest`. The schema-free emitted-
+    `scenarios/connection-classes`, read by `ConnectionClassPipelineTest`. Whether a type counts or
+    carries facets is not restated at the field's grain for the claim's sake (Alf, 2026-11-13): it
+    is the positions the type fills, so the document claims the wrappers and the positions and the
+    pipeline test the join; a field's wrapper now has the foreign key to `graphitron_connection`.
+    `ConnectionProducersExecutionTest` calls the generated root, batched and union producers
+    directly over `scenarios/connection-producers`. The schema-free emitted-
     text tests of connection fetchers went, each named covering test recorded in the commit.
   * **The runtime connection vocabulary goes** `open`.
     `RESULT_EXPRESSION` and `ResultShape.Connection` go, with the retirement sweep, as does the
