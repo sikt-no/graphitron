@@ -136,6 +136,17 @@ extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: """
   code IN ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT')
   """)
 
+# A container id at a bean's member decodes into each member's own record as the member's record
+# supertype, as it does at a parameter.
+extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
+  coordinate,                                    bound,           decode_shape
+  Query.assignOccupantRecord(in.occupant:),      public.customer, SUPERTYPE
+  Query.assignOccupantRecord(in.occupant:),      public.staff,    SUPERTYPE
+  Query.assignOccupantRecordList(in.occupants:), public.customer, SUPERTYPE
+  Query.assignOccupantRecordList(in.occupants:), public.staff,    SUPERTYPE
+  Query.occupant(occupant:),                     public.customer, SUPERTYPE
+  """)
+
 # Which claims name a container, an interface or union that is no node itself: at an argument and at
 # an input field alike, and not where the same element shape names a node type.
 extend schema @assertContains(relation: "graphitron_binding_claim_container", rows: """

@@ -12543,11 +12543,10 @@ COMMENT ON VIEW graphitron_occurrence_node_id_slot_projection_rule IS 'The key c
 -- key columns in key order, or the one key column's value. A landing nothing fits has no row.
 CREATE VIEW graphitron_occurrence_node_id_shape_rule
   (graph_name, coordinate, slot, bound, decode_shape) AS
--- Each parameter a @service hands an argument's id to, and each a pair projects a key column into
--- under any call, against each node table the id binds. One key column a pair projects is that
--- column's value. The whole key lands only on its own record, a
--- record supertype for an id of several node types, or a jOOQ tuple whose degree is the key's and
--- whose type arguments are its columns' types in key order.
+-- Each parameter and bean member a node id lands on, under any call, against each node table the id
+-- binds. One key column a pair projects is that column's value. The whole key lands only on its own
+-- record, a record supertype for an id of several node types, or a jOOQ tuple whose degree is the
+-- key's and whose type arguments are its columns' types in key order.
 SELECT graph_name, coordinate, slot, bound, decode_shape
   FROM (SELECT s.graph_name, s.coordinate, s.slot, k.bound,
                CASE WHEN pj.bound IS NOT NULL
@@ -12578,13 +12577,10 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
                                                            AND a.argument_class = xc.binding_type))
                     THEN tc.kind || '_N'
                END AS decode_shape
-          FROM graphitron_occurrence_node_id_slot_parameter sp
-          JOIN graphitron_occurrence_node_id_slot s
-            ON s.graph_name = sp.graph_name AND s.coordinate = sp.coordinate AND s.slot = sp.slot
+          FROM graphitron_occurrence_node_id_slot s
           JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-          JOIN graphitron_occurrence_call_parameter cp
-            ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
-           AND cp.position = sp.position
+          LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
+            ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
           JOIN graphitron_occurrence_node_id k
             ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate AND k.position = 0
           JOIN sql_table t
@@ -12600,8 +12596,7 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
             ON pc.source_name = kp.table_source_name AND pc.table_schema = kp.table_schema
            AND pc.table_name = kp.table_name AND pc.column_name = kp.column_name
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
-         WHERE s.landing_class IS NOT NULL AND s.slot_shape <> 'MISMATCH'
-           AND (pj.bound IS NOT NULL OR o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE')) shaped
+         WHERE s.kind <> 'RECORD' AND s.landing_class IS NOT NULL AND s.slot_shape <> 'MISMATCH') shaped
  WHERE decode_shape IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id lands at a place it is handed to, where it fits: one row per slot and node table, in the shape graphitron_occurrence_node_id_shape stores. For example Query.filmByTuple(key:) lands on a Record1<Integer> parameter as a tuple of the key''s one column, RECORD_N, and a pair projecting film_id into an Integer parameter lands as that column''s value, KEY_VALUE.';
 
