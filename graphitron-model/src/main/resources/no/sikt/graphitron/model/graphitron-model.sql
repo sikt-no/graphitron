@@ -12449,6 +12449,41 @@ COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.bound IS 'the no
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.key_position IS 'that column''s position in the node''s key';
 COMMENT ON COLUMN graphitron_occurrence_node_id_slot_projection.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The column of a built jOOQ record each key position of a node id lands in: one path step from the
+-- record's table to the node's carries it back, or the record is of the node's own table with no
+-- path and takes the key's own columns. A landing some position finds no column for takes no key.
+CREATE TABLE graphitron_occurrence_node_id_slot_record_column (
+  graph_name         VARCHAR   NOT NULL,
+  coordinate         VARCHAR   NOT NULL,
+  class_name         VARCHAR   NOT NULL,
+  bound              VARCHAR   NOT NULL,
+  key_position       INT       NOT NULL,
+  column_source_name VARCHAR   NOT NULL,
+  column_schema      VARCHAR   NOT NULL,
+  column_table       VARCHAR   NOT NULL,
+  column_name        VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, class_name, bound, key_position),
+  FOREIGN KEY (graph_name, coordinate, class_name)
+    REFERENCES graphitron_occurrence_node_id_slot_record (graph_name, coordinate, class_name)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound, key_position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE,
+  FOREIGN KEY (column_source_name, column_schema, column_table, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_slot_record_column IS 'The column of a built jOOQ record a key position of a node id lands in: one row per record landing, node table and key position. For example Query.countFilmRecordDatedDrafts(in.filmId:) lands film_id in the FilmRecord its input object is built into, and an actor id inside an input built into a FilmActorRecord lands in film_actor.actor_id, which film_actor_actor_id_fkey carries back from actor.actor_id.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.coordinate IS 'the node id occurrence';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.class_name IS 'the record class its parent is built into; with the coordinate, the record slot';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.bound IS 'the node table whose key it is, as on graphitron_occurrence_node_id';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.key_position IS 'the key column''s position in the node''s key';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.column_source_name IS 'the record table''s source; with the schema, table and name, the column the position lands in';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.column_schema IS 'the record table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.column_table IS 'the record''s table';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.column_name IS 'the record column the key position lands in';
+COMMENT ON COLUMN graphitron_occurrence_node_id_slot_record_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- How a node id lands at each place it is handed to, per node table, where a shape fits.
 CREATE TABLE graphitron_occurrence_node_id_shape (
   graph_name   VARCHAR   NOT NULL,
@@ -12462,14 +12497,14 @@ CREATE TABLE graphitron_occurrence_node_id_shape (
     REFERENCES graphitron_occurrence_node_id_slot (graph_name, coordinate, slot) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, coordinate, bound)
     REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound) ON DELETE CASCADE,
-  CHECK (decode_shape IN ('OWN_RECORD', 'SUPERTYPE', 'RECORD_N', 'ROW_N', 'KEY_VALUE'))
+  CHECK (decode_shape IN ('OWN_RECORD', 'REFERENCING_RECORD', 'SUPERTYPE', 'RECORD_N', 'ROW_N', 'KEY_VALUE'))
 );
 COMMENT ON TABLE graphitron_occurrence_node_id_shape IS 'How a node id lands at a place it is handed to, where it fits: one row per slot and node table. For example Query.filmByTuple(key:) lands on a Record1<Integer> parameter as a tuple of the key''s one column, RECORD_N, and a pair projecting film_id into an Integer parameter lands as that column''s value, KEY_VALUE.';
 COMMENT ON COLUMN graphitron_occurrence_node_id_shape.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_node_id_shape.coordinate IS 'the occurrence carrying the node id';
 COMMENT ON COLUMN graphitron_occurrence_node_id_shape.slot IS 'the place it lands, as graphitron_occurrence_node_id_slot states it, whose landing_class is the class one decoded id meets';
 COMMENT ON COLUMN graphitron_occurrence_node_id_shape.bound IS 'the node table the binding decodes for, as on graphitron_occurrence_node_id: one per member table where the id is one of several node types';
-COMMENT ON COLUMN graphitron_occurrence_node_id_shape.decode_shape IS 'OWN_RECORD, the node table''s generated record taking the whole key; SUPERTYPE, a type that record is, for an id of several node types decoded into each member''s own record; RECORD_N or ROW_N, a jOOQ tuple whose type arguments are the key columns'' types in key order; KEY_VALUE, the value of the one key column a pair projects into the parameter, a whole key never landing as a value. A landing no shape fits has no row, which is what the slot defects read';
+COMMENT ON COLUMN graphitron_occurrence_node_id_shape.decode_shape IS 'OWN_RECORD, the node table''s generated record taking the whole key, a built record of that table its own key columns; REFERENCING_RECORD, a built record of another table, or of the same one through a path, taking the key in the columns one path step carries back to it; SUPERTYPE, a type that record is, for an id of several node types decoded into each member''s own record; RECORD_N or ROW_N, a jOOQ tuple whose type arguments are the key columns'' types in key order; KEY_VALUE, the value of the one key column a pair projects into the parameter, a whole key never landing as a value. A landing no shape fits has no row, which is what the slot defects read';
 COMMENT ON COLUMN graphitron_occurrence_node_id_shape.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The rule each subtype is written from, its supertype row with it.
@@ -12538,13 +12573,54 @@ SELECT sp.graph_name, sp.call_coordinate, sp.call, sp.position, sp.coordinate, k
    AND kc.landing_coordinate = sp.coordinate;
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_projection_rule IS 'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table, in the shape graphitron_occurrence_node_id_slot_projection stores. For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.';
 
+CREATE VIEW graphitron_occurrence_node_id_slot_record_column_rule
+  (graph_name, coordinate, class_name, bound, key_position, column_source_name, column_schema,
+   column_table, column_name) AS
+-- Carried back by a path of one step from the record's table to the node's: the pair reaching the
+-- key column names the record column. A longer path lands nothing.
+SELECT DISTINCT sr.graph_name, sr.coordinate, sr.class_name, n.bound, n.position,
+       bc.record_source_name, bc.record_schema, bc.record_table, pc.from_column
+  FROM graphitron_occurrence_node_id_slot_record sr
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = sr.graph_name AND bc.coordinate = sr.parent_coordinate
+   AND bc.class_name = sr.class_name
+  JOIN graphitron_occurrence_node_id n ON n.graph_name = sr.graph_name AND n.coordinate = sr.coordinate
+  JOIN graphitron_join_path_step st
+    ON st.graph_name = sr.graph_name AND st.coordinate = sr.coordinate AND st.position = 0
+   AND st.from_source_name = bc.record_source_name AND st.from_schema = bc.record_schema
+   AND st.from_table = bc.record_table AND st.to_source_name = n.table_source_name
+   AND st.to_schema = n.table_schema AND st.to_table = n.table_name
+  JOIN graphitron_join_path_step_column pc
+    ON pc.graph_name = st.graph_name AND pc.coordinate = st.coordinate
+   AND pc.target_type = st.target_type AND pc.position = 0 AND pc.to_column = n.column_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s1
+                    WHERE s1.graph_name = st.graph_name AND s1.coordinate = st.coordinate
+                      AND s1.target_type = st.target_type AND s1.position = 1)
+UNION ALL
+-- A record of the node's own table, with no path from it: the key's own columns.
+SELECT sr.graph_name, sr.coordinate, sr.class_name, n.bound, n.position,
+       bc.record_source_name, bc.record_schema, bc.record_table, n.column_name
+  FROM graphitron_occurrence_node_id_slot_record sr
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = sr.graph_name AND bc.coordinate = sr.parent_coordinate
+   AND bc.class_name = sr.class_name
+  JOIN graphitron_occurrence_node_id n
+    ON n.graph_name = sr.graph_name AND n.coordinate = sr.coordinate
+   AND n.table_source_name = bc.record_source_name AND n.table_schema = bc.record_schema
+   AND n.table_name = bc.record_table
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step st
+                    WHERE st.graph_name = sr.graph_name AND st.coordinate = sr.coordinate
+                      AND st.position = 0 AND st.from_source_name = bc.record_source_name
+                      AND st.from_schema = bc.record_schema AND st.from_table = bc.record_table);
+COMMENT ON VIEW graphitron_occurrence_node_id_slot_record_column_rule IS 'The column of a built jOOQ record a key position of a node id lands in: one row per record landing, node table and key position, in the shape graphitron_occurrence_node_id_slot_record_column stores. For example Query.countFilmRecordDatedDrafts(in.filmId:) lands film_id in the FilmRecord its input object is built into, and an actor id inside an input built into a FilmActorRecord lands in film_actor.actor_id, which film_actor_actor_id_fkey carries back from actor.actor_id.';
+
 -- Which shape each node id binding lands in at a root argument's parameter, judged once: the node
 -- table's own record, a supertype of it for an id of several node types, a jOOQ tuple typed by the
 -- key columns in key order, or the one key column's value. A landing nothing fits has no row.
 CREATE VIEW graphitron_occurrence_node_id_shape_rule
   (graph_name, coordinate, slot, bound, decode_shape) AS
--- Each parameter and bean member a node id lands on, under any call, against each node table the id
--- binds. One key column a pair projects is that column's value. The whole key lands only on its own
+-- Each parameter, bean member and built record a node id lands on, under any call, against each node
+-- table the id binds. One key column a pair projects is that column's value. The whole key lands only on its own
 -- record, a record supertype for an id of several node types, or a jOOQ tuple whose degree is the
 -- key's and whose type arguments are its columns' types in key order.
 SELECT graph_name, coordinate, slot, bound, decode_shape
@@ -12597,7 +12673,35 @@ SELECT graph_name, coordinate, slot, bound, decode_shape
            AND pc.table_name = kp.table_name AND pc.column_name = kp.column_name
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
          WHERE s.kind <> 'RECORD' AND s.landing_class IS NOT NULL AND s.slot_shape <> 'MISMATCH') shaped
- WHERE decode_shape IS NOT NULL;
+ WHERE decode_shape IS NOT NULL
+UNION ALL
+-- A single node's id inside an input object built into a jOOQ record, where every key position lands
+-- in a column of it: its own key columns with no path, or the columns a path carries back to it.
+SELECT s.graph_name, s.coordinate, s.slot, k.bound,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_join_path_step st
+                          WHERE st.graph_name = s.graph_name AND st.coordinate = s.coordinate
+                            AND st.position = 0 AND st.from_source_name = bc.record_source_name
+                            AND st.from_schema = bc.record_schema AND st.from_table = bc.record_table)
+            THEN 'REFERENCING_RECORD' ELSE 'OWN_RECORD' END
+  FROM graphitron_occurrence_node_id_slot s
+  JOIN graphitron_occurrence_node_id_slot_record sr
+    ON sr.graph_name = s.graph_name AND sr.coordinate = s.coordinate AND sr.class_name = s.slot
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = sr.graph_name AND bc.coordinate = sr.parent_coordinate
+   AND bc.class_name = sr.class_name
+  JOIN graphitron_occurrence_node_id k
+    ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate AND k.position = 0
+ WHERE s.slot_shape <> 'MISMATCH'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                    WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                      AND k2.bound <> k.bound)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id x
+                    WHERE x.graph_name = k.graph_name AND x.coordinate = k.coordinate
+                      AND x.bound = k.bound
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_record_column rc
+                                       WHERE rc.graph_name = sr.graph_name AND rc.coordinate = sr.coordinate
+                                         AND rc.class_name = sr.class_name AND rc.bound = x.bound
+                                         AND rc.key_position = x.position));
 COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id lands at a place it is handed to, where it fits: one row per slot and node table, in the shape graphitron_occurrence_node_id_shape stores. For example Query.filmByTuple(key:) lands on a Record1<Integer> parameter as a tuple of the key''s one column, RECORD_N, and a pair projecting film_id into an Integer parameter lands as that column''s value, KEY_VALUE.';
 
 -- The member of its parent's built class each input field fills, matched on the name the parent's
@@ -14932,8 +15036,8 @@ UNION ALL
 -- predicate owes no route: one an argMapping entry hands to a call, itself, the input value holding
 -- it or its whole argument; one under a @service, whose arguments all go to the method; and one
 -- whose own @condition(override: true) takes the predicate on itself. An id whose input value is
--- built into a jOOQ record is decoded into that record's columns, so it owes a route however the
--- record reaches its call. Reported once per @nodeId, the detail the slot's table.
+-- built into a jOOQ record is judged at the record, below. Reported once per @nodeId, the detail the
+-- slot's table.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
        'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
   FROM graphitron_binding_claim cl
@@ -14960,10 +15064,9 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
                     WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
                       AND dc.directive_name = 'condition' AND ce.override)
-   AND (EXISTS (SELECT 1 FROM graphitron_occurrence_built_class b
-                 WHERE b.graph_name = o.graph_name AND b.coordinate = o.parent_coordinate
-                   AND b.record_table IS NOT NULL)
-        OR NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_record sr
+                    WHERE sr.graph_name = o.graph_name AND sr.coordinate = o.coordinate)
+   AND (NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
                         WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
        AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
                         WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
@@ -14988,6 +15091,40 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND tr.referenced_source_name = jp.target_source_name
                       AND tr.referenced_schema = jp.target_schema
                       AND tr.referenced_table = jp.target_table), 0) <> 1
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- A single node's id inside an input object built into a jOOQ record whose columns take no whole key:
+-- the record is not the node's own table, nor is there one path step from it that carries every key
+-- column back, a longer path landing nothing. A written path ending off the node's table is the arm
+-- above's. Once per @nodeId, the detail the record's table.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_LANDS_ON_TABLE', MIN(bc.record_schema || '.' || bc.record_table)
+  FROM graphitron_occurrence_node_id_slot s
+  JOIN graphitron_occurrence_node_id_slot_record sr
+    ON sr.graph_name = s.graph_name AND sr.coordinate = s.coordinate AND sr.class_name = s.slot
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = sr.graph_name AND bc.coordinate = sr.parent_coordinate
+   AND bc.class_name = sr.class_name
+  JOIN graphitron_occurrence_node_id k
+    ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate AND k.position = 0
+  JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+  JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+ WHERE da.source_line IS NOT NULL AND s.slot_shape <> 'MISMATCH'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                    WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                      AND k2.bound <> k.bound)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                    WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path p
+                     JOIN graphitron_join_path jp
+                       ON jp.graph_name = p.graph_name AND jp.coordinate = p.coordinate
+                      AND jp.target_type = p.target_type
+                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+                      AND p.origin IN ('WRITTEN', 'INHERITED', 'INFERRED')
+                      AND NOT (jp.target_source_name = k.table_source_name
+                               AND jp.target_schema = k.table_schema AND jp.target_table = k.table_name))
  GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
 
@@ -19672,6 +19809,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_parameter'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_projection'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record'),
+  ('occurrence-builds', 'graphitron_occurrence_node_id_slot_record_column'),
   ('occurrence-depth-defects', 'graphitron_entry_defect'),
   ('occurrence-depth-defects', 'graphitron_occurrence_list_element_defect'),
   ('occurrence-depths', 'graphitron_join_path'),
@@ -20190,6 +20328,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-node-id-slot-projection',
    'one node table''s key column a pair projects into one parameter, in one graph',
    'graph_name, call_coordinate, call, position, bound', 'sdl'),
+  ('occurrence-node-id-slot-record-column',
+   'one key position of one node table a node id lands in a built record''s column at, in one graph',
+   'graph_name, coordinate, class_name, bound, key_position', 'sdl'),
   ('occurrence-node-id-shape',
    'one place one occurrence''s node id lands at, for one node table, in one graph',
    'graph_name, coordinate, slot, bound', 'sdl'),
@@ -20932,6 +21073,14 @@ INSERT INTO meta_relation VALUES
    'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table, in the shape graphitron_occurrence_node_id_slot_projection stores.',
    'For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.',
    'The rule graphitron_occurrence_node_id_slot_projection is written from, after the parameter slots it hangs under.'),
+  ('graphitron_occurrence_node_id_slot_record_column', 'occurrence-node-id-slot-record-column', 'graphitron',
+   'The column of a built jOOQ record a key position of a node id lands in: one row per record landing, node table and key position.',
+   'For example Query.countFilmRecordDatedDrafts(in.filmId:) lands film_id in the FilmRecord its input object is built into, and an actor id inside an input built into a FilmActorRecord lands in film_actor.actor_id, which film_actor_actor_id_fkey carries back from actor.actor_id.',
+   'What a record landing receives of the id, position by position, a fact of the landing as a projection is (Alf, 2026-11-12): the decode shape and the record''s defect read it, where each would otherwise follow the path again. One step only, none of FS-plattform''s record landings writing a longer one (Alf, 2026-11-13).'),
+  ('graphitron_occurrence_node_id_slot_record_column_rule', 'occurrence-node-id-slot-record-column', 'graphitron',
+   'The column of a built jOOQ record a key position of a node id lands in: one row per record landing, node table and key position, in the shape graphitron_occurrence_node_id_slot_record_column stores.',
+   'For example Query.countFilmRecordDatedDrafts(in.filmId:) lands film_id in the FilmRecord its input object is built into, and an actor id inside an input built into a FilmActorRecord lands in film_actor.actor_id, which film_actor_actor_id_fkey carries back from actor.actor_id.',
+   'The rule graphitron_occurrence_node_id_slot_record_column is written from, after the record slots it hangs under and the paths it reads.'),
   ('graphitron_occurrence_node_id_shape', 'occurrence-node-id-shape', 'graphitron',
    'How a node id lands at a place it is handed to, where it fits: one row per slot and node table.',
    'For example Query.filmByTuple(key:) lands on a Record1<Integer> parameter as a tuple of the key''s one column, RECORD_N, and a pair projecting film_id into an Integer parameter lands as that column''s value, KEY_VALUE.',

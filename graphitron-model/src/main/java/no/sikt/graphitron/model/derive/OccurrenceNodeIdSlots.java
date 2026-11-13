@@ -14,6 +14,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_RULE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.inline;
@@ -107,6 +109,25 @@ public final class OccurrenceNodeIdSlots {
             .set(sr.PARENT_COORDINATE, excluded(sr.PARENT_COORDINATE))
             .set(sr.TOUCHED_AT, excluded(sr.TOUCHED_AT))
             .execute();
+        var rc = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN;
+        var rcr = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN_RULE;
+        dsl.insertInto(rc)
+            .columns(rc.GRAPH_NAME, rc.COORDINATE, rc.CLASS_NAME, rc.BOUND, rc.KEY_POSITION,
+                rc.COLUMN_SOURCE_NAME, rc.COLUMN_SCHEMA, rc.COLUMN_TABLE, rc.COLUMN_NAME, rc.TOUCHED_AT)
+            .select(dsl
+                .select(rcr.GRAPH_NAME, rcr.COORDINATE, rcr.CLASS_NAME, rcr.BOUND, rcr.KEY_POSITION,
+                    rcr.COLUMN_SOURCE_NAME, rcr.COLUMN_SCHEMA, rcr.COLUMN_TABLE, rcr.COLUMN_NAME,
+                    val(touchedAt, rc.TOUCHED_AT))
+                .from(rcr)
+                .where(rcr.GRAPH_NAME.eq(graph)))
+            .onConflict(rc.GRAPH_NAME, rc.COORDINATE, rc.CLASS_NAME, rc.BOUND, rc.KEY_POSITION)
+            .doUpdate()
+            .set(rc.COLUMN_SOURCE_NAME, excluded(rc.COLUMN_SOURCE_NAME))
+            .set(rc.COLUMN_SCHEMA, excluded(rc.COLUMN_SCHEMA))
+            .set(rc.COLUMN_TABLE, excluded(rc.COLUMN_TABLE))
+            .set(rc.COLUMN_NAME, excluded(rc.COLUMN_NAME))
+            .set(rc.TOUCHED_AT, excluded(rc.TOUCHED_AT))
+            .execute();
     }
 
     /**
@@ -135,13 +156,18 @@ public final class OccurrenceNodeIdSlots {
 
     /**
      * Deletes the slots this reading did not mark, their subtype rows by the cascade, and the
-     * projections it did not mark under a parameter it did.
+     * projections and record columns it did not mark under a slot it did.
      */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
         dsl.deleteFrom(pj)
             .where(pj.GRAPH_NAME.eq(graph))
             .and(pj.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        var rc = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_RECORD_COLUMN;
+        dsl.deleteFrom(rc)
+            .where(rc.GRAPH_NAME.eq(graph))
+            .and(rc.TOUCHED_AT.ne(touchedAt))
             .execute();
         var s = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
         dsl.deleteFrom(s)

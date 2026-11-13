@@ -2822,6 +2822,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`; ask for the column with an `argMapping` entry projecting it, as
   `id: key.film_id`. Unused in FS-plattform: its two `@service` fields taking a `@nodeId` argument take
   the node's record.
+* **Breaking: a node id lands in a built record through one path step at most** ("record landings are
+  stated"). A `@nodeId` field of an input object built into a jOOQ record lands its key in the record's
+  own key columns, or in the columns one foreign key carries back to it; a written path of several
+  steps is `NODE_ID_LANDS_ON_TABLE`, as is one that does not carry every key column back. Unused in
+  FS-plattform: its twelve `@nodeId` input fields writing a longer path are all on filter inputs, never
+  built into a record.
 
 ## Retired vocabulary
 

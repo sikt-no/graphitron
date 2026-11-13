@@ -125,7 +125,11 @@ without saying so is dropped; an author wanting one column projects it with `arg
 `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT` only ever judges a projected column against its parameter, at
 the `@service` or `@condition` reference. What a parameter receives of the id, the whole key or one
 key column, is a fact of the landing, stated once beside the parameter the id lands on, and not of
-the decode shape, which keeps a row only where a shape fits. And the node-id slot defects go to
+the decode shape, which keeps a row only where a shape fits. A record landing is the same: which column of a
+built jOOQ record each key position lands in is stated beside the record slot, the record's own key columns
+where it is the node's table and no path is written, or the columns one path step carries back
+(`OWN_RECORD` and `REFERENCING_RECORD`, Alf, 2026-11-13). A longer path lands nothing, none of
+FS-plattform's record landings writing one, and a record nothing lands in is `NODE_ID_LANDS_ON_TABLE`. And the node-id slot defects go to
 `occurrence-builds`, whose rule view already reports the build's defects, rather than to a stage of
 their own: the stage is cheap, and one rule view per stage reads simplest.
 

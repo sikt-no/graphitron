@@ -36,6 +36,8 @@ type Inventory implements Node @table(name: "inventory") @node {
 
 type Category implements Node @table(name: "category") @node { id: ID! }
 
+type Store implements Node @table(name: "store") @node { id: ID! }
+
 input FilmFilter {
   "Two keys to language."
   languageId: ID @nodeId(typeName: "Language")
@@ -50,6 +52,15 @@ input LanguageFilter { languageId: ID @nodeId(typeName: "Language") }
 
 "Two keys to language, and the id is decoded into the film record a @service takes."
 input FilmRecordLanguageInput { title: String @field(name: "title"), languageId: ID @nodeId(typeName: "Language") }
+
+"Ids built into a film record: its own key, a key one path step carries back, and one two steps away."
+input FilmRecordRefsInput {
+  title: String @field(name: "title")
+  filmId: ID @nodeId(typeName: "Film")
+  languageRef: ID @nodeId(typeName: "Language") @reference(path: [{key: "film_language_id_fkey"}])
+  storeId: ID @nodeId(typeName: "Store")
+    @reference(path: [{key: "inventory_film_id_fkey"}, {key: "inventory_store_id_fkey"}])
+}
 
 type FilmDraftsCountedPayload { count: Int }
 
@@ -75,6 +86,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
   countRecordLanguages(in: [FilmRecordLanguageInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  countRecordRefs(in: [FilmRecordRefsInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
   languages: [Language!]!
   actors: [Actor!]!
 }
@@ -88,6 +101,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Film.wrongLanding,         NODE_ID_LANDS_ON_TABLE, public.language
   FilmFilter.languageId,     NODE_ID_LANDS_ON_TABLE, public.film
   FilmRecordLanguageInput.languageId, NODE_ID_LANDS_ON_TABLE, public.film
+  FilmRecordRefsInput.storeId,    NODE_ID_LANDS_ON_TABLE, public.film
   Query.films(languageId:),  NODE_ID_LANDS_ON_TABLE, public.film
   Query.filmsByActor(actorId:), NODE_ID_LANDS_ON_TABLE, public.language
   Query.filmsByActorId(actorId:), NODE_ID_LANDS_ON_TABLE, public.film
@@ -137,4 +151,21 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key", 
   Query.filmsByInventoryId(inventoryId:), Film,       0,        inventory_film_id_fkey
   Query.inventories(filmId:),            Inventory,   0,        inventory_film_id_fkey
   Query.inventoriesWhere(where.filmId:), Inventory,   0,        inventory_film_id_fkey
+  """)
+
+# Where each key position of an id built into a film record lands: its own key with no path, the
+# column one step carries back; and nothing for the store two steps away, which is refused above.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_slot_record_column", where: """
+  coordinate LIKE 'Query.countRecordRefs%'
+  """, rows: """
+  coordinate,                            bound,           key_position, column_name
+  Query.countRecordRefs(in.filmId:),      public.film,     0,            film_id
+  Query.countRecordRefs(in.languageRef:), public.language, 0,            language_id
+  """)
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id_shape", where: """
+  coordinate LIKE 'Query.countRecordRefs%'
+  """, rows: """
+  coordinate,                            decode_shape
+  Query.countRecordRefs(in.filmId:),      OWN_RECORD
+  Query.countRecordRefs(in.languageRef:), REFERENCING_RECORD
   """)
