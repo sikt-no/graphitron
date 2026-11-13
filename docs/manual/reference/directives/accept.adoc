@@ -45,6 +45,11 @@ type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
 
 The voucher's lookup part decodes to `id`, the type's one authored key, and its claims parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields.
 
+== What the subgraph publishes
+
+* `@key(fields: "voucher")` on the accepting type, resolvable, after every key you wrote, so a router hands this subgraph the voucher it fetched from the issuing one. Your own keys are untouched, so the type still resolves by them under the caller's own access.
+* The voucher field, marked `@inaccessible` so clients never see it. The link imports `@inaccessible` for you.
+
 == Constraints
 
 Each refusal below is reported at the `@accept`.
@@ -52,6 +57,9 @@ Each refusal below is reported at the `@accept`.
 [cols="1,3"]
 |===
 | Code | Rule
+
+| `VOUCHER_WITHOUT_FEDERATION_LINK`
+| The schema has a federation `@link`: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.
 
 | `VOUCHER_FIELD_REPEATED`
 | A type carries one voucher field, `@issue` or `@accept`: refused at each after the first.

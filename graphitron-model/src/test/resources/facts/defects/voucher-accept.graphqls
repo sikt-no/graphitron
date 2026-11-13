@@ -74,3 +74,29 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   VOUCHER_ACCEPT_NOT_GENERATED, Store,     Store.voucher
   """)
 
+# The voucher keys its type as a key this subgraph resolves, beside the one its author wrote, and is
+# kept from clients.
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name, role,   fields,  resolvable, ordinal
+  Film,      ACCEPT, voucher, TRUE,       1
+  Store,     ACCEPT, voucher, TRUE,       2
+  Store,     NODE,   id,      TRUE,       1
+  """)
+
+extend schema @expectEquals(relation: "graphitron_directive_application", where: """
+  origin = 'MINTED' AND directive_name IN ('key', 'inaccessible')
+  """, rows: """
+  coordinate,    directive_name, ordinal
+  Film,          key,            1
+  Film.voucher,  inaccessible,   0
+  Store,         key,            1
+  Store,         key,            2
+  Store.voucher, inaccessible,   0
+  """)
+
+extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """
+  coordinate = 'Film' AND directive_name = 'key' AND ordinal = 1 AND directive_argument_name = 'resolvable'
+  """, rows: """
+  value_sdl
+  true
+  """)
