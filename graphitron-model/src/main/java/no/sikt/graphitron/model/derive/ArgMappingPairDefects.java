@@ -4,6 +4,7 @@ import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_DEFECT_RULE;
+import static org.jooq.impl.DSL.val;
 
 /**
  * The capture-cadence writer of {@code graphitron_argmapping_pair_defect}: the entry-grain detail
@@ -19,19 +20,22 @@ public final class ArgMappingPairDefects {
 
     private ArgMappingPairDefects() {}
 
+    /** The stage that raises the defects these detail, the one this runs in. */
+    private static final String STAGE = EntryDefects.GRAPHITRON.stage();
+
     /** Reconciles the graph's entry-grain defects: clears the partition, then re-derives it. */
     public static void derive(DSLContext dsl, String graphName) {
         var target = GRAPHITRON_ARGMAPPING_PAIR_DEFECT;
         var rule = GRAPHITRON_ARGMAPPING_PAIR_DEFECT_RULE;
 
-        dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName)).execute();
+        dsl.deleteFrom(target).where(target.GRAPH_NAME.eq(graphName), target.STAGE.eq(STAGE)).execute();
 
         dsl.insertInto(target)
             .columns(target.GRAPH_NAME, target.SOURCE_NAME, target.SOURCE_LINE,
-                target.SOURCE_COLUMN, target.POSITION, target.CODE, target.DETAIL)
+                target.SOURCE_COLUMN, target.POSITION, target.CODE, target.STAGE, target.DETAIL)
             .select(dsl
                 .select(rule.GRAPH_NAME, rule.SOURCE_NAME, rule.SOURCE_LINE, rule.SOURCE_COLUMN,
-                    rule.POSITION, rule.CODE, rule.DETAIL)
+                    rule.POSITION, rule.CODE, val(STAGE, target.STAGE), rule.DETAIL)
                 .from(rule)
                 .where(rule.GRAPH_NAME.eq(graphName)))
             .execute();

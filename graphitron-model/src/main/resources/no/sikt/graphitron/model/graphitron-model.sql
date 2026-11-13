@@ -7146,7 +7146,6 @@ CREATE TABLE graphitron_defect_type (
   basis     VARCHAR NOT NULL,
   lsp_code  VARCHAR,
   statement VARCHAR NOT NULL,
-  owner_stage VARCHAR NOT NULL,
   PRIMARY KEY (code),
   CHECK (severity IN ('error', 'warning')),
   CHECK (basis IN ('SPECIFICATION', 'GRAPHITRON', 'UNSUPPORTED'))
@@ -7157,7 +7156,6 @@ COMMENT ON COLUMN graphitron_defect_type.severity IS 'whether a build stops on i
 COMMENT ON COLUMN graphitron_defect_type.basis IS 'what the verdict rests on, which is also what an author does about it: SPECIFICATION where the GraphQL specification forbids the schema, GRAPHITRON where graphitron''s directives give it no meaning and changing them removes the defect, UNSUPPORTED where it means something under both and graphitron does not do it yet, so an author works around it rather than fixing it. A function of the code exactly as the severity is; never the generator''s fault, the generator running only on a schema that validates';
 COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an editor shows and filters by, null where none is published. The one part of a defect''s name a consumer reads as data rather than as prose, which is what keeps the code column load-bearing rather than a label';
 COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
-COMMENT ON COLUMN graphitron_defect_type.owner_stage IS 'the stage that writes the code''s graphitron_entry_defect rows, a meta_stage key: the step of its gatherer''s anchor phase whose facts the rule judges, which writes the rows as its last statement and marks them with the reading''s instant. Its gatherer, read through meta_stage, sweeps the rows of its stages'' codes that reading did not mark. Stated per code because a code is the grain at which ownership splits, so two stages, or two gatherers, write the one relation without either sweeping the other''s rows';
 
 CREATE TABLE federation_version (
   source_name VARCHAR   NOT NULL,
@@ -8309,9 +8307,10 @@ CREATE TABLE graphitron_entry_defect (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   code          VARCHAR NOT NULL,
+  stage         VARCHAR NOT NULL,
   detail        VARCHAR,
   touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code),
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   -- The written position, so a defect is always somewhere an editor can point, and goes when the
   -- document stops writing it. What the position concerns is not stored beside it:
@@ -8324,14 +8323,15 @@ CREATE TABLE graphitron_entry_defect (
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code)
 );
 
-COMMENT ON TABLE graphitron_entry_defect IS 'A defect a schema has, one row per defect at the written position an author edits to fix it under the code that names the rule: the supertype, which a gatherer is encouraged to extend with subtype and other detail relations where a defect has more to say than its code and detail. For example an @orderBy on a @routine mutation field draws one row at the @orderBy''s line, reading READ_SURFACE_ON_WRITE; a detail relation such as graphitron_argmapping_pair_defect is keyed by this key, with a foreign key to it ON DELETE CASCADE, so a swept defect takes its details with it.';
+COMMENT ON TABLE graphitron_entry_defect IS 'A defect a schema has, one row per defect at the written position an author edits to fix it, under the code naming the rule and the stage raising it: the supertype, which a gatherer is encouraged to extend with subtype and detail relations where a defect has more to say than its code and detail. For example an @orderBy on a @routine mutation field draws one row at the @orderBy''s line, reading READ_SURFACE_ON_WRITE; a detail relation such as graphitron_argmapping_pair_defect is keyed by this key, with a foreign key to it ON DELETE CASCADE, so a swept defect takes its details with it.';
 COMMENT ON COLUMN graphitron_entry_defect.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_entry_defect.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position';
 COMMENT ON COLUMN graphitron_entry_defect.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_entry_defect.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
-COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_defect_type key and a foreign key into it. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect.code IS 'which defect, a graphitron_defect_type key and a foreign key into it: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect.stage IS 'the stage that raised it, a meta_stage key, completing the key: a rule two stages raise at one entry is two rows, nobody owning a code, and a stage sweeps the rows it raised';
 COMMENT ON COLUMN graphitron_entry_defect.detail IS 'the specific a rendered message quotes back, null where the code says everything';
-COMMENT ON COLUMN graphitron_entry_defect.touched_at IS 'when the reading that last found this defect ran: the mark the sweep reads. The gatherer of the stage owning the row''s code, graphitron_defect_type.owner_stage through meta_stage, deletes its own codes'' rows a reading did not mark, so a defect the schema no longer has goes and another owner''s rows stay';
+COMMENT ON COLUMN graphitron_entry_defect.touched_at IS 'when the reading that last found this defect ran: the mark the sweep reads. The stage that raised a row deletes its own rows a reading did not mark, so a defect the schema no longer has goes and another stage''s rows stay';
 
 -- The claims a claim defect is about, one row per claim the rule weighed and found in conflict: the
 -- defect names the element, and each claim where it was written.
@@ -8341,15 +8341,16 @@ CREATE TABLE graphitron_entry_defect_claim (
   source_line   INT       NOT NULL,
   source_column INT       NOT NULL,
   code          VARCHAR   NOT NULL,
+  stage         VARCHAR   NOT NULL,
   coordinate    VARCHAR   NOT NULL,
   kind          VARCHAR   NOT NULL,
   claimer       VARCHAR   NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, coordinate, kind,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage, coordinate, kind,
                claimer),
   -- The defect it details, so a swept defect takes its claims with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
     ON DELETE CASCADE,
   -- The claim, so a claim the reading no longer makes is named by nothing.
   FOREIGN KEY (graph_name, coordinate, kind, claimer)
@@ -8361,6 +8362,7 @@ COMMENT ON COLUMN graphitron_entry_defect_claim.source_name IS 'the defect''s fi
 COMMENT ON COLUMN graphitron_entry_defect_claim.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_claim.source_column IS 'the defect''s column, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_claim.code IS 'the defect''s code, CLAIMS_CONFLICT or ROUTINE_LOOKUP_DEFERRED; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_claim.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_entry_defect_claim.coordinate IS 'the element the claim is for, the one the defect sits at';
 COMMENT ON COLUMN graphitron_entry_defect_claim.kind IS 'the claim''s kind';
 COMMENT ON COLUMN graphitron_entry_defect_claim.claimer IS 'the element that makes the claim; with the two columns before it, the claim''s key';
@@ -8374,12 +8376,13 @@ CREATE TABLE graphitron_entry_defect_member (
   source_line      INT       NOT NULL,
   source_column    INT       NOT NULL,
   code             VARCHAR   NOT NULL,
+  stage            VARCHAR   NOT NULL,
   member_type_name VARCHAR   NOT NULL,
   touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, member_type_name),
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage, member_type_name),
   -- The defect it details, so a swept defect takes its members with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
     ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_entry_defect_member IS 'One member a polymorphic @nodeId''s defect names: one row per defect and member. For example a union of Film and Actor whose @nodeId lands on a parameter taking FilmRecord draws a NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER defect with an Actor row under it.';
@@ -8388,6 +8391,7 @@ COMMENT ON COLUMN graphitron_entry_defect_member.source_name IS 'the defect''s f
 COMMENT ON COLUMN graphitron_entry_defect_member.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_member.source_column IS 'the defect''s column, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_member.code IS 'the defect''s code, NODE_ID_MEMBER_NOT_NODE_TYPE, NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER, DISCRIMINATOR_MISSING or TABLE_INTERFACE_PARTICIPANT_UNBOUND; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_member.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_entry_defect_member.member_type_name IS 'the member the defect names';
 COMMENT ON COLUMN graphitron_entry_defect_member.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
@@ -8397,15 +8401,16 @@ CREATE TABLE graphitron_entry_defect_table (
   source_line       INT       NOT NULL,
   source_column     INT       NOT NULL,
   code              VARCHAR   NOT NULL,
+  stage             VARCHAR   NOT NULL,
   table_source_name VARCHAR   NOT NULL,
   table_schema      VARCHAR   NOT NULL,
   table_name        VARCHAR   NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage,
                table_source_name, table_schema, table_name),
   -- The defect it details, so a swept defect takes its tables with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
     ON DELETE CASCADE,
   -- The table, so a table the catalog no longer has is named by nothing.
   FOREIGN KEY (table_source_name, table_schema, table_name)
@@ -8418,6 +8423,7 @@ COMMENT ON COLUMN graphitron_entry_defect_table.source_name IS 'the defect''s fi
 COMMENT ON COLUMN graphitron_entry_defect_table.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_table.source_column IS 'the defect''s column, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_table.code IS 'the defect''s code, TABLE_AMBIGUOUS';
+COMMENT ON COLUMN graphitron_entry_defect_table.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_entry_defect_table.table_source_name IS 'the catalog source of a table the defect names';
 COMMENT ON COLUMN graphitron_entry_defect_table.table_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_entry_defect_table.table_name IS 'that table''s name';
@@ -8431,15 +8437,16 @@ CREATE TABLE graphitron_entry_defect_path_step (
   source_line        INT       NOT NULL,
   source_column      INT       NOT NULL,
   code               VARCHAR   NOT NULL,
+  stage              VARCHAR   NOT NULL,
   step_source_name   VARCHAR   NOT NULL,
   step_source_line   INT       NOT NULL,
   step_source_column INT       NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, step_source_name,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage, step_source_name,
                step_source_line, step_source_column),
   -- The defect it details, so a swept defect takes its steps with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
     ON DELETE CASCADE,
   -- The step's written @routine, so one the document stops writing is named by nothing.
   FOREIGN KEY (graph_name, step_source_name, step_source_line, step_source_column)
@@ -8452,6 +8459,7 @@ COMMENT ON COLUMN graphitron_entry_defect_path_step.source_name IS 'the defect''
 COMMENT ON COLUMN graphitron_entry_defect_path_step.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_path_step.source_column IS 'the defect''s column, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_path_step.code IS 'the defect''s code, CLAIMS_CONFLICT; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_path_step.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_entry_defect_path_step.step_source_name IS 'the file the @routine is written in';
 COMMENT ON COLUMN graphitron_entry_defect_path_step.step_source_line IS 'the @routine''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_path_step.step_source_column IS 'the @routine''s column, 1-based';
@@ -8468,7 +8476,10 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code, d.de
        el.coordinate,
        CASE WHEN ef.coordinate IS NULL THEN el.coordinate ELSE ef.type_name END,
        ef.field_name
-  FROM graphitron_entry_defect d
+  -- One finding per position and code however many stages raised it, two stages raising one rule
+  -- wording it alike, so the stage is all that is collapsed.
+  FROM (SELECT DISTINCT graph_name, source_name, source_line, source_column, code, detail
+          FROM graphitron_entry_defect) d
   JOIN graphql_ast_entry n
     ON n.graph_name = d.graph_name AND n.source_name = d.source_name
    AND n.source_line = d.source_line AND n.source_column = d.source_column
@@ -8497,7 +8508,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code, d.de
    AND el.source_column = COALESCE(a.parent_column, h.source_column, n.source_column)
   LEFT JOIN graphql_element_field ef
     ON ef.graph_name = el.graph_name AND ef.coordinate = el.coordinate;
-COMMENT ON VIEW graphitron_entry_defect_site IS 'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by. For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.';
+COMMENT ON VIEW graphitron_entry_defect_site IS 'One finding an author reads, with the element its position is about: one row per position and code over the stages that raised it, and the coordinate, type and field an editor or a report names it by. For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.graph_name IS 'the owning graph''s partition, carried from the defect';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.source_name IS 'the file of the defect''s written position, carried from the defect';
 -- COMMENT ON COLUMN graphitron_entry_defect_site.source_line IS 'the line of that position, carried from the defect';
@@ -10600,15 +10611,16 @@ CREATE TABLE graphitron_argmapping_pair_defect (
   source_column INT     NOT NULL,
   position      INT     NOT NULL,
   code          VARCHAR NOT NULL,
+  stage         VARCHAR NOT NULL,
   detail        VARCHAR,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, code),
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, code, stage),
   FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
     REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
     ON DELETE CASCADE,
   -- The string's own verdict, so an entry defect cannot outlive the string's row in
   -- graphitron_entry_defect and goes with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
     ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_argmapping_pair_defect IS 'One written argMapping entry a rule refuses, under the code that names the rule: the entry-grain detail of the defect graphitron_entry_defect states once for the whole string. For example brukerId: $session.nope on a handle with no such member is one row reading SESSION_MEMBER_UNKNOWN and the member written, under the string''s one row.';
@@ -10618,6 +10630,7 @@ COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_line IS 'source line 
 COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_column IS 'source column of the mapping string, part of the entry''s key and, with the two above, the position of the string''s row in graphitron_entry_defect';
 COMMENT ON COLUMN graphitron_argmapping_pair_defect.position IS 'the entry''s 0-based position within its own argMapping list, completing its key';
 COMMENT ON COLUMN graphitron_argmapping_pair_defect.code IS 'which defect, a graphitron_defect_type key reached through the string''s row; an entry may offend two rules and then carries two rows';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_argmapping_pair_defect.detail IS 'the specific one entry''s message quotes back: the spelling, the member, or the parameter against what it should be';
 
 
@@ -11299,15 +11312,16 @@ CREATE TABLE graphitron_entry_defect_key_column (
   source_line        INT       NOT NULL,
   source_column      INT       NOT NULL,
   code               VARCHAR   NOT NULL,
+  stage              VARCHAR   NOT NULL,
   landing_coordinate VARCHAR   NOT NULL,
   bound              VARCHAR   NOT NULL,
   position           INT       NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, landing_coordinate, bound,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, code, stage, landing_coordinate, bound,
                position),
   -- The defect it details, so a swept defect takes its key columns with it.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
-    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code, stage)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code, stage)
     ON DELETE CASCADE,
   -- The key column it names, of the node binding at the landing.
   FOREIGN KEY (graph_name, landing_coordinate, bound, position)
@@ -11319,6 +11333,7 @@ COMMENT ON COLUMN graphitron_entry_defect_key_column.source_name IS 'the defect'
 COMMENT ON COLUMN graphitron_entry_defect_key_column.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.source_column IS 'the defect''s column, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.code IS 'the defect''s code, ARGMAPPING_KEY_COLUMN_UNRESOLVED; with the four columns before it, the defect''s key';
+COMMENT ON COLUMN graphitron_entry_defect_key_column.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.landing_coordinate IS 'the node id occurrence the projecting path lands on';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.bound IS 'the node binding at the landing whose key the column is of';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.position IS 'the key column''s position in that binding''s key, completing the key';
@@ -12923,20 +12938,21 @@ COMMENT ON VIEW graphitron_occurrence_build_entry_defect_member_rule IS 'One mem
 -- so its candidates are that spelling's rows and agree with the defect by construction. This reads
 -- the detail as the spelling: a change to what that rule writes there changes what this names.
 CREATE VIEW graphitron_entry_defect_table_rule
-  (graph_name, source_name, source_line, source_column, code,
+  (graph_name, source_name, source_line, source_column, code, stage,
    table_source_name, table_schema, table_name) AS
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code,
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code, d.stage,
        sp.table_source_name, sp.table_schema, sp.table_name
   FROM graphitron_entry_defect d
   JOIN graphitron_spelled_table sp
     ON sp.graph_name = d.graph_name AND sp.spelling = d.detail
- WHERE d.code = 'TABLE_AMBIGUOUS';
+ WHERE d.code = 'TABLE_AMBIGUOUS' AND d.stage = 'entry-defects';
 COMMENT ON VIEW graphitron_entry_defect_table_rule IS 'One table a defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk. For example a TABLE_AMBIGUOUS defect whose spelling two schemas answer draws a row for each schema''s table.';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_name IS 'the @table''s file';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.code IS 'TABLE_AMBIGUOUS';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.stage IS 'entry-defects, the stage raising it and writing its tables';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_source_name IS 'the catalog source of a candidate table';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_schema IS 'its schema';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_name IS 'its name';
@@ -14134,7 +14150,7 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
 COMMENT ON VIEW graphitron_outbox_key_rule IS 'One row the outbox key rule computes, in the shape graphitron_outbox_key stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_key, which is the name every reader spells.';
 
 CREATE VIEW graphitron_outbox_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- The configured table name split into its parts and folded, as the target rule splits it, so the
 -- table it names is found through the catalog's folded-name index.
 WITH named (graph_name, name_upper, schema_upper) AS (
@@ -14149,7 +14165,7 @@ WITH named (graph_name, name_upper, schema_upper) AS (
 -- An @outbox that is not on a field writing a table with @mutation, nor on a mutation field a
 -- @service answers: no write, no message. A field no occurrence reaches writes nothing either.
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_NOT_A_WRITE',
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'outbox'
   FROM graphitron_outbox_message m
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_write w
                     WHERE w.graph_name = m.graph_name AND w.coordinate = m.occurrence_coordinate_ref)
@@ -14165,7 +14181,7 @@ UNION ALL
 -- An @outbox in a build that configures no outbox target. The configuration has no SDL position, so
 -- the fault is reported at every @outbox it leaves without one.
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_NO_TARGET',
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'outbox'
   FROM graphitron_outbox_message m
  WHERE NOT EXISTS (SELECT 1 FROM store_graph_outbox b
                     WHERE b.graph_name = m.graph_name
@@ -14230,7 +14246,7 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_TARG
                                               AND x.role = 'payload'), 'payload'))))
                    || ' is NOT NULL with no default, and graphitron fills only the type and the payload'
             ELSE '<table> ' || b.table_name || ' is not one table of the jOOQ catalog with a type column'
-                 || ' and a payload column that is JSON, JSONB or text' END
+                 || ' and a payload column that is JSON, JSONB or text' END, 'outbox'
   FROM graphitron_outbox_message m
   JOIN store_graph_outbox b ON b.graph_name = m.graph_name
   -- The first role the configuration binds that graphitron does not fill.
@@ -14258,7 +14274,7 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_TARG
                              WHERE t.graph_name = m.graph_name)))
 UNION ALL
 -- Two @outbox with one event, at each of the two.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPLICATE_EVENT', m.event
+SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPLICATE_EVENT', m.event, 'outbox'
   FROM graphitron_outbox_message m
  WHERE EXISTS (SELECT 1 FROM graphitron_outbox_message o
                 WHERE o.graph_name = m.graph_name AND o.event = m.event
@@ -14266,7 +14282,7 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPL
 UNION ALL
 -- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
 -- first offending key as written; the author fixes it and the next one is reported.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT', d.key_name
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT', d.key_name, 'outbox'
   FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.param_name AS key_name,
                ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
                                                m.source_column ORDER BY p.position) AS rn
@@ -14288,7 +14304,7 @@ UNION ALL
 -- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
 -- entry no message could carry.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYLOAD_INVALID',
-       d.key_name || ': ' || d.bound_to
+       d.key_name || ': ' || d.bound_to, 'outbox'
   FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, c.key_name, c.bound_to,
                ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
                                                m.source_column ORDER BY c.position) AS rn
@@ -14692,7 +14708,7 @@ COMMENT ON VIEW graphitron_accept_claim_rule IS 'One accept claim the claim rule
 -- what the stage just wrote, each reported at the marker or at the member it is about. A rule either
 -- marker can break is one code for both.
 CREATE VIEW graphitron_voucher_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 WITH marker (graph_name, source_name, source_line, source_column, directive_name, type_name, field_name,
              coordinate) AS (
   SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.directive_name, i.type_name,
@@ -14712,7 +14728,7 @@ claim_entry (graph_name, source_name, source_line, source_column, position, fiel
 )
 -- A type carries one voucher field, whichever marker each carries: refused at each but the first, by
 -- field name and then by marker where one field carries both.
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_FIELD_REPEATED', s.type_name
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_FIELD_REPEATED', s.type_name, 'vouchers'
   FROM marker s
  WHERE EXISTS (SELECT 1 FROM marker o
                 WHERE o.graph_name = s.graph_name AND o.type_name = s.type_name
@@ -14721,31 +14737,31 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_FIE
 UNION ALL
 -- An authored @key would let a router reach the other subgraph's entity without the voucher.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ISSUE_ON_KEYED_TYPE',
-       s.type_name
+       s.type_name, 'vouchers'
   FROM issue s
  WHERE EXISTS (SELECT 1 FROM graphql_directive_application k
                 WHERE k.graph_name = s.graph_name AND k.coordinate = s.type_name
                   AND k.directive_name = 'key')
 UNION ALL
 -- A node is keyed by its id, which the voucher would absorb.
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ISSUE_ON_NODE', s.type_name
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ISSUE_ON_NODE', s.type_name, 'vouchers'
   FROM issue s
   JOIN graphitron_node n ON n.graph_name = s.graph_name AND n.type_name = s.type_name
 UNION ALL
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ISSUE_ABSORBS_NOTHING',
-       s.type_name
+       s.type_name, 'vouchers'
   FROM issue s
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_voucher_member m
                     WHERE m.graph_name = s.graph_name AND m.type_name = s.type_name)
 UNION ALL
 -- The caller a voucher is bound to rides on SessionState.
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_WITHOUT_SESSION_STATE',
-       s.coordinate
+       s.coordinate, 'vouchers'
   FROM marker s
  WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied ss WHERE ss.graph_name = s.graph_name)
 UNION ALL
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_TTL_INVALID',
-       COALESCE(e.ttl, '')
+       COALESCE(e.ttl, ''), 'vouchers'
   FROM issue s
   JOIN graphitron_ast_issue_entry e
     ON e.graph_name = s.graph_name AND e.source_name = s.source_name
@@ -14753,7 +14769,7 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_TTL
  WHERE e.ttl IS NULL OR e.ttl = 'PT'
     OR NOT REGEXP_LIKE(e.ttl, '^PT([0-9]+H)?([0-9]+M)?([0-9]+S)?$')
 UNION ALL
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_CLAIMS_EMPTY', s.coordinate
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_CLAIMS_EMPTY', s.coordinate, 'vouchers'
   FROM marker s
  WHERE NOT EXISTS (SELECT 1 FROM claim_entry c
                     WHERE c.graph_name = s.graph_name AND c.source_name = s.source_name
@@ -14763,7 +14779,7 @@ UNION ALL
 -- A claim that names no absorbed field: a name the type does not declare, the voucher field itself,
 -- or a nested selection. One row per @issue, the detail the first such name written.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_NOT_ABSORBED',
-       MIN(c.field_name)
+       MIN(c.field_name), 'vouchers'
   FROM graphitron_ast_issue_claim_entry c
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_voucher_claim v
                     WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
@@ -14777,7 +14793,7 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLA
 UNION ALL
 -- A claims field named twice, on either marker.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_REPEATED',
-       MIN(c.field_name)
+       MIN(c.field_name), 'vouchers'
   FROM claim_entry c
  WHERE EXISTS (SELECT 1 FROM claim_entry e
                 WHERE e.graph_name = c.graph_name AND e.source_name = c.source_name
@@ -14788,7 +14804,7 @@ UNION ALL
 -- An @accept claim that names no field of the accepting type: a name the type does not declare, a
 -- voucher field, or a nested selection. One row per @accept, the detail the first such name written.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_NOT_A_FIELD',
-       MIN(c.field_name)
+       MIN(c.field_name), 'vouchers'
   FROM graphitron_ast_accept_claim_entry c
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_accept_claim v
                     WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
@@ -14803,7 +14819,7 @@ UNION ALL
 -- A member the voucher cannot carry as one scalar value: a list, or an object, interface or union,
 -- or an enum, whose wire value the voucher's issuer has no scalar to serialize by.
 SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEMBER_NOT_SCALAR',
-       m.coordinate
+       m.coordinate, 'vouchers'
   FROM graphitron_voucher_member m
   JOIN graphql_field f
     ON f.graph_name = m.graph_name AND f.type_name = m.type_name AND f.field_name = m.field_name
@@ -14814,14 +14830,14 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEM
 UNION ALL
 -- A member given a value of its own, which the voucher would not read off the row.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_MEMBER_COMPUTED',
-       m.coordinate
+       m.coordinate, 'vouchers'
   FROM graphitron_voucher_member m
   JOIN graphql_directive_application d ON d.graph_name = m.graph_name AND d.coordinate = m.coordinate
  WHERE d.directive_name IN ('nodeId', 'service', 'routine', 'reference', 'externalField', 'pivot')
 UNION ALL
 -- A scalar member read off no column of the issuing table: it stays withheld, and is refused.
 SELECT f.graph_name, f.source_name, f.source_line, f.source_column, 'VOUCHER_MEMBER_COLUMN_UNRESOLVED',
-       m.coordinate
+       m.coordinate, 'vouchers'
   FROM graphitron_voucher_member m
   JOIN graphql_field f
     ON f.graph_name = m.graph_name AND f.type_name = m.type_name AND f.field_name = m.field_name
@@ -14854,9 +14870,9 @@ COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher sta
 -- an @accept's refusals that read which key its vouchers decode to and how its claims fields bind,
 -- both decided here, reported at the @accept.
 CREATE VIEW graphitron_entity_key_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TYPE_NOT_TABLE_BOUND',
-       d.coordinate
+       d.coordinate, 'entity-key-alternatives'
   FROM graphql_directive_application d
   JOIN graphitron_type t
     ON t.graph_name = d.graph_name AND t.type_name = d.coordinate AND t.kind = 'OBJECT'
@@ -14868,14 +14884,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TYPE_NO
                     WHERE b.graph_name = d.graph_name AND b.coordinate = d.coordinate
                       AND b.directive_name = 'table')
 UNION ALL
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_ON_INTERFACE', d.coordinate
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_ON_INTERFACE', d.coordinate, 'entity-key-alternatives'
   FROM graphql_directive_application d
   JOIN graphitron_tabletype tt
     ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'INTERFACE'
  WHERE d.directive_name = 'key'
 UNION ALL
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_SELECTS_NOTHING',
-       d.coordinate
+       d.coordinate, 'entity-key-alternatives'
   FROM graphql_directive_application d
   JOIN graphitron_tabletype tt
     ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
@@ -14892,7 +14908,7 @@ UNION ALL
 -- does not declare: the fields a key selects are fields of its type. The detail is the first such
 -- name as written.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_MISSING',
-       MIN(g.segment_name)
+       MIN(g.segment_name), 'entity-key-alternatives'
   FROM graphql_directive_application d
   JOIN graphitron_ast_federation_key_selection_entry p
     ON p.graph_name = d.graph_name AND p.source_name = d.source_name
@@ -14912,7 +14928,7 @@ UNION ALL
 -- there, the node's own id alone excepted. A name the type does not declare is KEY_FIELD_MISSING
 -- above. The detail is the selection's first segment, the name the author wrote.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_FIELD_NOT_A_COLUMN',
-       MIN(g.segment_name)
+       MIN(g.segment_name), 'entity-key-alternatives'
   FROM graphql_directive_application d
   JOIN graphitron_tabletype tt
     ON tt.graph_name = d.graph_name AND tt.type_name = d.coordinate AND tt.named_type_kind = 'OBJECT'
@@ -14936,7 +14952,7 @@ UNION ALL
 -- An @accept's vouchers decode to an authored key this subgraph resolves the type by, and a type with
 -- none has nothing for the lookup part to fill. Reported at the @accept.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_WITHOUT_KEY',
-       i.type_name
+       i.type_name, 'entity-key-alternatives'
   FROM graphitron_ast_accept_entry e
   JOIN graphql_directive_application d
     ON d.graph_name = e.graph_name AND d.source_name = e.source_name
@@ -14952,7 +14968,7 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
 UNION ALL
 -- key: left out, and more than one authored resolvable key to choose from.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_KEY_AMBIGUOUS',
-       i.type_name
+       i.type_name, 'entity-key-alternatives'
   FROM graphitron_ast_accept_entry e
   JOIN graphql_directive_application d
     ON d.graph_name = e.graph_name AND d.source_name = e.source_name
@@ -14969,7 +14985,7 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
 UNION ALL
 -- key: with a nested selection, which the voucher's lookup part, top-level scalars, cannot fill.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_KEY_NESTED',
-       e.key_fields
+       e.key_fields, 'entity-key-alternatives'
   FROM graphitron_ast_accept_entry e
   JOIN graphql_directive_application d
     ON d.graph_name = e.graph_name AND d.source_name = e.source_name
@@ -14981,7 +14997,7 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
 UNION ALL
 -- key: names no authored resolvable key of the type, field set for field set, where the type has one.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACCEPT_KEY_UNKNOWN',
-       e.key_fields
+       e.key_fields, 'entity-key-alternatives'
   FROM graphitron_ast_accept_entry e
   JOIN graphql_directive_application d
     ON d.graph_name = e.graph_name AND d.source_name = e.source_name
@@ -15005,7 +15021,7 @@ UNION ALL
 -- A claims field that is also a field of the key the vouchers decode to: the claims and the lookup
 -- part never share a value. One row per @accept, the detail the first such field by name.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_IN_KEY',
-       MIN(c.field_name)
+       MIN(c.field_name), 'entity-key-alternatives'
   FROM graphitron_accept_claim c
   JOIN graphitron_accept_key ak
     ON ak.graph_name = c.graph_name AND ak.source_name = c.source_name
@@ -15020,7 +15036,7 @@ UNION ALL
 -- field passes: the voucher's claims parse into it as one scalar value, as a key field's value does.
 -- One row per @accept, the detail the first such field by name.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_CLAIM_NOT_A_COLUMN',
-       MIN(c.field_name)
+       MIN(c.field_name), 'entity-key-alternatives'
   FROM graphitron_accept_claim c
   JOIN graphitron_field f
     ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
@@ -15042,9 +15058,9 @@ COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity k
 -- voucher only makes sense where a router plans across subgraphs and the key it is reached by needs
 -- the link. Reported at the marker.
 CREATE VIEW graphitron_minted_key_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_WITHOUT_FEDERATION_LINK',
-       d.coordinate
+       d.coordinate, 'minted-keys'
   FROM graphql_directive_application d
  WHERE d.directive_name IN ('issue', 'accept')
    AND NOT EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = d.graph_name);
@@ -15306,12 +15322,12 @@ COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMappin
 -- The defects judging the node ids occurrence-bindings writes: a node id the generator would bind
 -- against the one node over a table, where no node or several are, so no binding was written.
 CREATE VIEW graphitron_occurrence_binding_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A bare @nodeId at an argument or input field whose needs land where no node is: no target type a
 -- node and no node over any table they land on. A slot with no need at all is not judged here, its
 -- table being one a need has yet to state. Reported once per @nodeId, an occurrence in the detail.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TARGET_UNRESOLVED', MIN(o.coordinate)
+       'NODE_ID_TARGET_UNRESOLVED', MIN(o.coordinate), 'occurrence-bindings'
   FROM graphitron_binding_claim cl
   JOIN graphitron_occurrence o
     ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
@@ -15346,7 +15362,7 @@ UNION ALL
 -- several nodes declare themselves over, or participants that disagree where the manual lets no
 -- one id stand for all. Reported once per @nodeId, an occurrence in the detail.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate)
+       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate), 'occurrence-bindings'
   FROM graphitron_binding_claim cl
   JOIN graphitron_occurrence o
     ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
@@ -15378,7 +15394,7 @@ UNION ALL
 -- since what is missing is a directive there, at its declaration as the author wrote it: a field the
 -- macro expansion minted has none, so the join to the entry is what leaves a minted field out.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate)
+       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate), 'occurrence-bindings'
   FROM graphitron_occurrence o
   JOIN graphitron_field f
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -15407,7 +15423,7 @@ UNION ALL
 -- A write's ID return with neither @nodeId nor @field over a table no node declares itself over: the
 -- id the write hands back is no node's. Reported at the @mutation, the occurrence in the detail.
 SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
-       'NODE_ID_TARGET_UNRESOLVED', o.coordinate
+       'NODE_ID_TARGET_UNRESOLVED', o.coordinate, 'occurrence-bindings'
   FROM graphitron_occurrence o
   JOIN graphitron_field f
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
@@ -15423,7 +15439,7 @@ UNION ALL
 -- The same over a table several nodes declare themselves over: the write names no node its id is.
 -- Reported at the @mutation, the occurrence in the detail.
 SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
-       'NODE_ID_TARGET_AMBIGUOUS', o.coordinate
+       'NODE_ID_TARGET_AMBIGUOUS', o.coordinate, 'occurrence-bindings'
   FROM graphitron_occurrence o
   JOIN graphitron_field f
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
@@ -15442,7 +15458,7 @@ COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the 
 -- classes and member bindings occurrence-builds writes, by that stage: a rule of its own, as the
 -- outbox's and the entity keys' are.
 CREATE VIEW graphitron_occurrence_build_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 WITH
 -- A node id's places under a @service: a parameter of its call, or a member or record its input
 -- object is built into where the root argument goes to one; the parameter is the call's, or the
@@ -15466,7 +15482,7 @@ service_slot (graph_name, element_coordinate, parameter_name, slot_shape) AS (
 -- constructor the code census can call, or a class no entry of the graph declares. At the argument or
 -- input field built into it, the detail the class. A jOOQ record is built on the column axis instead.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'BUILT_CLASS_UNBUILDABLE', MIN(b.class_name)
+       'BUILT_CLASS_UNBUILDABLE', MIN(b.class_name), 'occurrence-builds'
   FROM graphitron_occurrence_built_class b
   JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
@@ -15479,7 +15495,7 @@ UNION ALL
 -- delivered map or a bean, a record being a row to write rather than a filter's values. At the
 -- argument, the detail the record class.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'CONDITION_PARAMETER_RECORD', MIN(b.class_name)
+       'CONDITION_PARAMETER_RECORD', MIN(b.class_name), 'occurrence-builds'
   FROM graphitron_occurrence_built_class b
   JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
@@ -15497,7 +15513,7 @@ UNION ALL
 -- built class matches on, and does not group onto it: the value would reach nothing. A list of input
 -- objects is GROUPING_LIST's. At the input field, the detail the class.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MEMBER_UNKNOWN', MIN(pr.class_name)
+       'MEMBER_UNKNOWN', MIN(pr.class_name), 'occurrence-builds'
   FROM graphitron_occurrence o
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
@@ -15520,7 +15536,7 @@ UNION ALL
 -- enclosing object once, and a list has no one value to fill it with. Under a jOOQ record always,
 -- its fields writing columns. At the input field, the detail the class.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'GROUPING_LIST', MIN(pr.class_name)
+       'GROUPING_LIST', MIN(pr.class_name), 'occurrence-builds'
   FROM graphitron_occurrence o
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_type t
@@ -15541,7 +15557,7 @@ UNION ALL
 -- parent's. Node ids decoding into one record member are one record, and allowed. At the later
 -- field by coordinate, the detail the member.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MEMBER_FILLED_TWICE', MIN(m2.bound)
+       'MEMBER_FILLED_TWICE', MIN(m2.bound), 'occurrence-builds'
   FROM graphitron_occurrence_binding_member m1
   JOIN graphitron_occurrence_built_class p1
     ON p1.graph_name = m1.graph_name AND p1.coordinate = m1.parent_coordinate AND p1.class_name = m1.class_name
@@ -15569,7 +15585,7 @@ SELECT pj.graph_name, site.source_name, site.source_line, site.source_column,
        MIN('key column ' || c.column_name || ' is ' || c.binding_type
            || ', and the parameter it binds to is declared ' || s.declared_type || ': Declare it '
            || CASE WHEN s.list_depth > 0 THEN 'List<' || REGEXP_REPLACE(c.binding_type, '^.*[.]', '') || '>'
-                   ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END)
+                   ELSE REGEXP_REPLACE(c.binding_type, '^.*[.]', '') END), 'occurrence-builds'
   FROM graphitron_occurrence_node_id_slot_projection pj
   JOIN graphitron_occurrence_node_id_slot_parameter sp
     ON sp.graph_name = pj.graph_name AND sp.call_coordinate = pj.call_coordinate AND sp.call = pj.call
@@ -15602,7 +15618,7 @@ UNION ALL
 -- on its record or a tuple of it. The parameter or member is the detail, the least where uses
 -- differ.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
-       MIN(v.place_name)
+       MIN(v.place_name), 'occurrence-builds'
   FROM (SELECT s.graph_name, o.element_coordinate,
                COALESCE(cp.parameter_name, SUBSTRING(sm.bound, POSITION('#', sm.bound) + 1))
                  AS place_name,
@@ -15660,7 +15676,7 @@ UNION ALL
 -- runs an @externalField or a @routine, whose parameters are not stated here, and where its
 -- @service resolved to no method, whose own defect says why.
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_CONTAINER_NOT_AT_A_SLOT', cl.named
+       'NODE_ID_CONTAINER_NOT_AT_A_SLOT', cl.named, 'occurrence-builds'
   FROM graphitron_binding_claim_container k
   JOIN graphitron_binding_claim cl
     ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
@@ -15690,7 +15706,7 @@ UNION ALL
 -- container carrying @table itself, which binds one table and no members, a container none of
 -- whose members binds a table, or a parameter whose shape is not the argument's.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
-       MIN(v.parameter_name)
+       MIN(v.parameter_name), 'occurrence-builds'
   FROM (SELECT cl.graph_name, cl.coordinate AS element_coordinate, s.parameter_name,
                CASE WHEN EXISTS (SELECT 1 FROM graphitron_tabletype ct
                                   WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
@@ -15721,14 +15737,14 @@ UNION ALL
 -- A polymorphic id's per-member defects, one at the @nodeId whichever members it names; the members
 -- are graphitron_entry_defect_member's.
 SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'occurrence-builds'
   FROM graphitron_occurrence_build_entry_defect_member_rule m
 UNION ALL
 -- A named node id whose written or inferred path ends on a table other than the node's: the key the
 -- id packs or unpacks is not on the rows the path reaches, an argument's or input field's own path
 -- included. Reported once per @nodeId, the detail the table reached.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
+       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table), 'occurrence-builds'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -15759,7 +15775,7 @@ UNION ALL
 -- built into a jOOQ record is judged at the record, below. Reported once per @nodeId, the detail the
 -- slot's table.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table)
+       'NODE_ID_LANDS_ON_TABLE', MIN(jp.target_schema || '.' || jp.target_table), 'occurrence-builds'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -15818,7 +15834,7 @@ UNION ALL
 -- column back, a longer path landing nothing. A written path ending off the node's table is the arm
 -- above's. Once per @nodeId, the detail the record's table.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDS_ON_TABLE', MIN(bc.record_schema || '.' || bc.record_table)
+       'NODE_ID_LANDS_ON_TABLE', MIN(bc.record_schema || '.' || bc.record_table), 'occurrence-builds'
   FROM graphitron_occurrence_node_id_slot s
   JOIN graphitron_occurrence_node_id_slot_record sr
     ON sr.graph_name = s.graph_name AND sr.coordinate = s.coordinate AND sr.class_name = s.slot
@@ -15870,12 +15886,12 @@ COMMENT ON COLUMN graphitron_occurrence_list_element_defect.touched_at IS 'when 
 
 
 CREATE VIEW graphitron_occurrence_depth_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A list over one value, at the field: a service whose method hands back one value, or a write
 -- returning an object, which it hands back once however many rows it writes, under a field
 -- declaring a list. A list of what the producer delivers once has nothing to list.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
+       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
   FROM graphitron_producer_service ps
   JOIN graphitron_field f
     ON f.graph_name = ps.graph_name AND f.type_name = ps.type_name AND f.field_name = ps.field_name
@@ -15887,7 +15903,7 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
  WHERE f.is_list AND m.result_delivery IS NOT NULL AND m.result_delivery <> 'MANY'
 UNION ALL
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR)
+       'LIST_OVER_ONE_VALUE', CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
   FROM graphitron_producer p
   JOIN graphql_root_operation ro
     ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
@@ -15906,7 +15922,7 @@ UNION ALL
 -- Many keys into one, at the field: its fill takes many keys off what its parent holds, a write
 -- yielding many or a member delivering a collection, and the field declares one.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MANY_KEYS_INTO_ONE', CAST(NULL AS VARCHAR)
+       'MANY_KEYS_INTO_ONE', CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
   FROM graphitron_occurrence_producer_lift l
   JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -15926,7 +15942,7 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
        -- Ambiguous as the fill judges it: an occurrence with more than one candidate, a candidate
        -- being one member by its whole slot key.
        CASE WHEN amb.class_name IS NOT NULL THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
-       amb.class_name
+       amb.class_name, 'occurrence-depth-defects'
   FROM graphitron_producer p
   JOIN graphitron_result r
     ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
@@ -15958,7 +15974,7 @@ UNION ALL
 -- An outcome in a list, at the field: a producer catching into an outcome hands back one, its
 -- value or its errors, and a list of them would need one catch per element.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'OUTCOME_IN_A_LIST', CAST(NULL AS VARCHAR)
+       'OUTCOME_IN_A_LIST', CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
   FROM graphitron_producer_outcome po
   JOIN graphitron_field f
     ON f.graph_name = po.graph_name AND f.type_name = po.type_name AND f.field_name = po.field_name
@@ -15978,7 +15994,7 @@ UNION ALL
 -- and one consumed any other way by what consumes it.
 SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
        COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
-       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name))
+       'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-depth-defects'
   FROM graphitron_occurrence o
   JOIN graphitron_field f
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -16033,7 +16049,7 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
 UNION ALL
 SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
        COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
-       'COLUMN_AMBIGUOUS', MIN(COALESCE(cl.named, o.name))
+       'COLUMN_AMBIGUOUS', MIN(COALESCE(cl.named, o.name)), 'occurrence-depth-defects'
   FROM graphitron_occurrence o
   JOIN graphitron_field f
     ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -16094,7 +16110,7 @@ UNION ALL
 -- NO_KEY_FROM_PARENT's arm above, and one taking many keys into one MANY_KEYS_INTO_ONE's.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        CASE WHEN c.found > 1 THEN 'KEY_ROW_AMBIGUOUS' ELSE 'NO_KEY_FROM_PARENT' END,
-       c.class_name
+       c.class_name, 'occurrence-depth-defects'
   FROM (SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
                (SELECT COUNT(*) FROM code_read_slot s
                  WHERE s.class_name = rc.class_name AND s.delivery = 'DIRECT' AND s.element_class IN (
@@ -16145,7 +16161,7 @@ UNION ALL
 -- table's primary key, so there is nothing to key it by. The detail is the table.
 -- One row per field however many occurrences fill it, the detail the first such table by name.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'KEY_TABLE_WITHOUT_PRIMARY_KEY', MIN(l.key_table)
+       'KEY_TABLE_WITHOUT_PRIMARY_KEY', MIN(l.key_table), 'occurrence-depth-defects'
   FROM graphitron_occurrence_producer_lift l
   JOIN graphitron_occurrence o ON o.graph_name = l.graph_name AND o.coordinate = l.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -16158,7 +16174,7 @@ UNION ALL
 -- batch's keys reach, at the field's definition: it is fetched for many parents at once, and its keys
 -- have nowhere to go. The detail is the method.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SOURCE_PARAMETER_MISSING',
-       ps.method_name
+       ps.method_name, 'occurrence-depth-defects'
   FROM graphitron_occurrence_producer op
   JOIN graphitron_occurrence o ON o.graph_name = op.graph_name AND o.coordinate = op.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -16182,7 +16198,7 @@ UNION ALL
 -- the record is a row of, as an output field's is on the table it reads, by the spelling's reach. A
 -- node id decodes into the record instead, and an input object groups onto it. Reported at the
 -- @field where one is written and at the field otherwise, the detail the spelling.
-SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code, MIN(v.spelling)
+SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code, MIN(v.spelling), 'occurrence-depth-defects'
   FROM (SELECT o.graph_name, COALESCE(da.source_name, el.source_name) AS source_name,
                COALESCE(da.source_line, el.source_line) AS source_line,
                COALESCE(da.source_column, el.source_column) AS source_column,
@@ -16226,7 +16242,7 @@ UNION ALL
 -- A @service's or a @condition's method with a parameter no fill or two fills reach, under some
 -- occurrence of the call, at the reference: once per code, the parameters being
 -- graphitron_entry_defect_parameter_rule's under it.
-SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.code, MIN(d.detail)
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.code, MIN(d.detail), 'occurrence-depth-defects'
   FROM graphitron_entry_defect_parameter_rule p
   JOIN graphitron_occurrence_call_parameter_defect d
     ON d.graph_name = p.graph_name AND d.coordinate = p.coordinate AND d.call = p.call
@@ -16237,7 +16253,7 @@ UNION ALL
 -- its element is, at the field's declaration: once per rule it breaks, however many occurrences
 -- graphitron_occurrence_list_element_defect states it breaks it at.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column, d.code,
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
   FROM graphitron_occurrence_list_element_defect d
   JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
@@ -16245,7 +16261,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
 UNION ALL
 -- A list field's @condition taking a value read per element of the list, at the @condition.
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column, d.code,
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
   FROM graphitron_occurrence_list_element_defect d
   JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
   JOIN graphitron_directive_application da
@@ -16256,7 +16272,7 @@ COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the oc
 
 
 CREATE VIEW graphitron_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
 -- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
 WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
@@ -16345,7 +16361,7 @@ claim_conflict (graph_name, coordinate, code) AS (
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
 SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'MULTIPLE_ROUTINE_NODES', NULL
+       'MULTIPLE_ROUTINE_NODES', NULL, 'entry-defects'
   FROM head h
  WHERE 1 < (SELECT COUNT(*) FROM graphql_directive_application r2
                JOIN graphitron_ast_routine_entry re2
@@ -16358,7 +16374,7 @@ UNION ALL
 -- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
 -- so a coordinate the seat would have answered about its carrier says this as well.
 SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'CONNECTION_RETURN', NULL
+       'CONNECTION_RETURN', NULL, 'entry-defects'
   FROM head h
   JOIN graphitron_field cf
     ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
@@ -16369,7 +16385,7 @@ UNION ALL
 -- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
 -- by the keys it returned, which is not a page, as a @routine write's are.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'CONNECTION_RETURN', CAST(NULL AS VARCHAR)
+       'CONNECTION_RETURN', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_directive_application da
   JOIN graphitron_field f
     ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
@@ -16385,7 +16401,7 @@ UNION ALL
 -- it returns reads nothing there. A field re-reading the written rows by those keys, an id encoded
 -- from them and the errors field are what such a type holds.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'WRITE_RESULT_HOLDS_ONLY_KEYS', CAST(NULL AS VARCHAR)
+       'WRITE_RESULT_HOLDS_ONLY_KEYS', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_producer p
   JOIN graphql_root_operation ro
     ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
@@ -16411,7 +16427,7 @@ UNION ALL
 -- type a delete returns re-reading its rows by key, or the delete's own field returning a @table
 -- type. The rows are gone once the delete runs; what it hands back is their keys.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR)
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_occurrence_producer pp
   JOIN graphitron_occurrence o
     ON o.graph_name = pp.graph_name AND o.parent_coordinate = pp.coordinate
@@ -16427,7 +16443,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
  WHERE pp.kind = 'DELETE' AND cp.start = 'CHILD' AND cp.kind IN ('SELECT', 'LOOKUP')
 UNION ALL
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR)
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_producer p
   JOIN graphitron_field_target ft
     ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
@@ -16442,7 +16458,7 @@ UNION ALL
 -- A read surface written on a write. Three sites state one, and each row sits at its own.
 -- On the field or on one of its arguments, each at its own application.
 SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
+       'READ_SURFACE_ON_WRITE', 'condition', 'entry-defects'
   FROM graphql_directive_application dc
   JOIN graphql_element_field ef
     ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
@@ -16451,7 +16467,7 @@ SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
  WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
 UNION ALL
 SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
-       'READ_SURFACE_ON_WRITE', 'orderBy'
+       'READ_SURFACE_ON_WRITE', 'orderBy', 'entry-defects'
   FROM graphql_directive_application ob
   JOIN graphql_argument_element ae
     ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
@@ -16499,7 +16515,7 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                 ELSE u.landing_first END
                         || ' to ' || CASE WHEN u.landing_last IS NULL OR u.start_last >= u.landing_last
                                           THEN COALESCE(u.start_last, u.landing_last)
-                                          ELSE u.landing_last END END)
+                                          ELSE u.landing_last END END), 'entry-defects'
   FROM (SELECT x.graph_name, x.element_coordinate, x.start_schema, x.start_table,
                x.landing_source_name, x.landing_schema, x.landing_table, x.routes, x.missing_column, x.start_function,
                -- the first and last key by name declared on the start, and on the landing
@@ -16671,7 +16687,7 @@ UNION ALL
 -- implements whose same-named field has a claim covering the need, and that no other such interface
 -- extends, an extending interface's claim overriding the one it redeclares.
 SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITED_PATH_AMBIGUOUS',
-       MIN(a.first_interface) || ' and ' || MAX(a.last_interface)
+       MIN(a.first_interface) || ' and ' || MAX(a.last_interface), 'entry-defects'
   FROM (SELECT n.graph_name, o.element_coordinate, n.target_type,
                MIN(ii.interface_name) AS first_interface, MAX(ii.interface_name) AS last_interface
           FROM graphitron_path_need_table n
@@ -16712,7 +16728,7 @@ UNION ALL
 -- fields re-reading its written rows bind and the one @mutation(table:) names are not one table, so
 -- graphitron_producer_write states no table for it. A write read on no table at all is not this.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'WRITE_TABLES_DISAGREE', CAST(NULL AS VARCHAR)
+       'WRITE_TABLES_DISAGREE', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_directive_application da
   JOIN graphitron_field f
     ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
@@ -16749,7 +16765,7 @@ UNION ALL
 -- key in a statement of its own, which the function's result is not part of for a condition to
 -- join from; a later step's condition joins two tables of that statement and is no defect.
 SELECT ce.graph_name, ce.source_name, ce.source_line, ce.source_column,
-       'CONDITION_ON_WRITE_RESULT', CAST(NULL AS VARCHAR)
+       'CONDITION_ON_WRITE_RESULT', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_field gf
   JOIN graphql_root_operation ro
     ON ro.graph_name = gf.graph_name AND ro.type_name = gf.type_name AND ro.operation = 'MUTATION'
@@ -16771,7 +16787,7 @@ SELECT ce.graph_name, ce.source_name, ce.source_line, ce.source_column,
 UNION ALL
 -- A root field's path with nothing to depart from, at the @reference that starts it.
 SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
-       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR)
+       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM root_reference rr
 UNION ALL
 -- A claim on an output field whose target type has no one table to arrive at, at the claim's written
@@ -16782,7 +16798,7 @@ UNION ALL
 -- last table, so neither has a table to be missing; a path ending on a @routine lands on its
 -- function's derived table, which needs none. The detail is the target type.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
-       'REFERENCE_WITHOUT_TARGET_TABLE', c.target_type
+       'REFERENCE_WITHOUT_TARGET_TABLE', c.target_type, 'entry-defects'
   FROM graphitron_join_path_claim c
   JOIN graphitron_field f
     ON f.graph_name = c.graph_name AND f.coordinate = c.element_coordinate
@@ -16832,7 +16848,7 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
        CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
             WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
             ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
-       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
+       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END, 'entry-defects'
   FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
                c.type_name, c.field_name, c.class_name, c.method_name, c.directive_name,
                (SELECT COUNT(*) FROM code_graph_class k
@@ -16881,7 +16897,7 @@ SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
             WHEN y.statics > 1 THEN 'static modifier'
             WHEN y.results > 1 THEN 'return type'
             WHEN y.clauses > 1 THEN 'throws clause'
-            ELSE 'parameter ' || y.first_position END
+            ELSE 'parameter ' || y.first_position END, 'entry-defects'
   FROM (SELECT x.graph_name, x.source_name, x.source_line, x.source_column,
                x.arities, x.statics, x.results,
                -- Two throws clauses disagree where an exception one overload declares is missing
@@ -16943,7 +16959,7 @@ UNION ALL
 -- @routine binds its return type to the routine's result, so the directive names something a type
 -- cannot stand on. Reported at the @table, with the spelling as written.
 SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_NAMES_ROUTINE', COALESCE(te.table_ref, t.coordinate)
+       'TABLE_NAMES_ROUTINE', COALESCE(te.table_ref, t.coordinate), 'entry-defects'
   FROM graphql_directive_application t
   LEFT JOIN graphitron_ast_table_entry te
     ON te.graph_name = t.graph_name AND te.source_name = t.source_name
@@ -16963,7 +16979,7 @@ UNION ALL
 -- the directive. A root operation type is a root before it is anything else. The interface also
 -- holds the type to an id field, so a node without one is a schema problem rather than a defect.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
+       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphql_directive_application n
  WHERE n.directive_name = 'node' AND n.ordinal = 0
    AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
@@ -16977,7 +16993,7 @@ UNION ALL
 -- root operation type is a root before it is anything else. A type that also lacks the interface
 -- is both defects, each its own decision for the author.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR)
+       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphql_directive_application n
  WHERE n.directive_name = 'node' AND n.ordinal = 0
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application t
@@ -16993,7 +17009,7 @@ UNION ALL
 -- graphitron_ast_node_keycolumn_entry under their own key rather than a list in this one. A type
 -- whose @table did not resolve has no binding to judge against and is that defect instead.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref
+       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref, 'entry-defects'
   FROM graphql_directive_application n
   JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
   JOIN graphitron_ast_node_keycolumn_entry e
@@ -17022,7 +17038,7 @@ UNION ALL
 -- use is no row of sql_node_metadata, so such a table is judged here as well as warned about by
 -- NODE_METADATA_UNREADABLE. The detail is the table.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_KEY', b.table_name
+       'NODE_WITHOUT_KEY', b.table_name, 'entry-defects'
   FROM graphql_directive_application n
   JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
  WHERE n.directive_name = 'node' AND n.ordinal = 0
@@ -17041,7 +17057,7 @@ UNION ALL
 -- @table with the spelling as written. A graph captured with no catalog has said nothing about any
 -- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_UNRESOLVED', COALESCE(te.table_ref, t.coordinate)
+       'TABLE_UNRESOLVED', COALESCE(te.table_ref, t.coordinate), 'entry-defects'
   FROM graphql_directive_application t
   LEFT JOIN graphitron_ast_table_entry te
     ON te.graph_name = t.graph_name AND te.source_name = t.source_name
@@ -17058,7 +17074,7 @@ UNION ALL
 -- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
 -- settles it. Reported once per @table.
 SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_AMBIGUOUS', COALESCE(te.table_ref, t.coordinate)
+       'TABLE_AMBIGUOUS', COALESCE(te.table_ref, t.coordinate), 'entry-defects'
   FROM graphql_directive_application t
   LEFT JOIN graphitron_ast_table_entry te
     ON te.graph_name = t.graph_name AND te.source_name = t.source_name
@@ -17071,7 +17087,7 @@ UNION ALL
 -- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
 -- period, or nothing on one side of the last one. Reported with the reference as written.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref
+       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref, 'entry-defects'
   FROM graphql_directive_application a
   JOIN graphitron_ast_scalar_type_entry e
     ON e.graph_name = a.graph_name AND e.source_name = a.source_name
@@ -17083,7 +17099,7 @@ UNION ALL
 -- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
 -- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part
+       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part, 'entry-defects'
   FROM graphql_directive_application a
   JOIN graphitron_ast_scalar_type_entry e
     ON e.graph_name = a.graph_name AND e.source_name = a.source_name
@@ -17101,7 +17117,7 @@ UNION ALL
 -- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
 -- declared as some other type are one refusal, and the reference is what the author edits.
 SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref
+       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref, 'entry-defects'
   FROM graphql_directive_application a
   JOIN graphitron_ast_scalar_type_entry e
     ON e.graph_name = a.graph_name AND e.source_name = a.source_name
@@ -17122,7 +17138,7 @@ UNION ALL
 -- each type's @table, which every node carries where only some carry @node: a node the backing
 -- class publishes is a node without one. The detail is the shared id.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_TYPE_ID_SHARED', n.type_id
+       'NODE_TYPE_ID_SHARED', n.type_id, 'entry-defects'
   FROM graphitron_node n
   JOIN graphql_directive_application t
     ON t.graph_name = n.graph_name AND t.coordinate = n.type_name
@@ -17135,7 +17151,7 @@ UNION ALL
 -- ids from the fallback tiers. Reported at each bound type's @table, on NODE_TYPE_ID_SHARED's terms,
 -- and saying that the attempt failed rather than how. The detail is the table.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_METADATA_UNREADABLE', b.table_name
+       'NODE_METADATA_UNREADABLE', b.table_name, 'entry-defects'
   FROM graphitron_tabletype b
   JOIN graphql_directive_application t
     ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
@@ -17147,7 +17163,7 @@ UNION ALL
 -- A legacy key shape a @node states that breaks one of its rules, as NodeLegacyKeyShapes evaluated
 -- them: the stage that anchors the shapes wrote the verdict, so the rules are applied once and this
 -- arm only places the verdict at the application the author edits.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column, d.code, d.detail
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column, d.code, d.detail, 'entry-defects'
   FROM graphitron_node_legacy_key_defect d
   JOIN graphql_directive_application n
     ON n.graph_name = d.graph_name AND n.coordinate = d.type_name
@@ -17157,7 +17173,7 @@ UNION ALL
 -- The same for a shape a table class states, and for a type id a shape cannot belong to because
 -- two tables or two current keys answer to it: reported at each type's @table, which every
 -- contributor carries, on NODE_METADATA_UNREADABLE's terms.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column, d.code, d.detail
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column, d.code, d.detail, 'entry-defects'
   FROM graphitron_node_legacy_key_defect d
   JOIN graphql_directive_application t
     ON t.graph_name = d.graph_name AND t.coordinate = d.type_name
@@ -17169,7 +17185,7 @@ UNION ALL
 -- would otherwise fail to decode at runtime. Reported at each bound type's @table. The detail is the
 -- table.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_LEGACY_METADATA_UNREADABLE', b.table_name
+       'NODE_LEGACY_METADATA_UNREADABLE', b.table_name, 'entry-defects'
   FROM graphitron_tabletype b
   JOIN graphql_directive_application t
     ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
@@ -17187,7 +17203,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'TYPE_NAME_CASE_COLLISION',
        (SELECT MIN(o.type_name) FROM graphitron_type o
          WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
+           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name), 'entry-defects'
   FROM graphitron_type g
   JOIN graphql_type_declaration d
     ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
@@ -17205,7 +17221,7 @@ UNION ALL
 -- earlier route (@service, a Node named type, an argument @lookupKey, @routine). A new route ahead
 -- of that read owes a clause here.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
-       'ORDERING_ACROSS_PARTICIPANTS', o.detail
+       'ORDERING_ACROSS_PARTICIPANTS', o.detail, 'entry-defects'
   FROM (SELECT d.graph_name, fe.type_name, fe.field_name,
                d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
           FROM graphql_directive_application d
@@ -17280,7 +17296,7 @@ UNION ALL
 -- judged here; the runtime serves its oversized default at the maximum like any value a client
 -- sends.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
-       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail
+       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail, 'entry-defects'
   FROM (SELECT c.graph_name,
                COALESCE(el.source_name, c.source_name) AS source_name,
                COALESCE(el.source_line, c.source_line) AS source_line,
@@ -17301,7 +17317,7 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
  WHERE p.source_line IS NOT NULL
 UNION ALL
 -- Two claims a field cannot hold together, at the field's own declaration.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR)
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'entry-defects'
   FROM claim_conflict x
   JOIN graphitron_field f ON f.graph_name = x.graph_name AND f.coordinate = x.coordinate
   JOIN graphql_ast_field_definition_entry d
@@ -17309,7 +17325,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST
 UNION ALL
 -- Two claims a type cannot hold together, at its base declaration: an extension adds to the type
 -- it extends, and the author fixes the type where it is declared.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR)
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'entry-defects'
   FROM claim_conflict x
   JOIN graphql_ast_type_declaration_entry d
     ON d.graph_name = x.graph_name AND d.name = x.coordinate AND NOT d.is_extension
@@ -17319,7 +17335,7 @@ UNION ALL
 -- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
 -- handed; an object of a table's own record, or of no class, is not.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR)
+       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM (SELECT graph_name, type_name FROM graphitron_result
          GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
   JOIN graphql_ast_type_declaration_entry d
@@ -17345,7 +17361,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
               THEN 'ERRORS_FIELD_MIXED_MEMBERS'
             WHEN NOT f.is_list THEN 'ERRORS_FIELD_NOT_A_LIST'
             ELSE 'ERRORS_FIELD_NON_NULL' END,
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_field f
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
@@ -17363,7 +17379,7 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
 UNION ALL
 -- A type with two errors fields, at the first: an outcome has one place for its errors.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR)
+       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_errors_field e
   JOIN graphitron_field f
     ON f.graph_name = e.graph_name AND f.type_name = e.type_name AND f.field_name = e.field_name
@@ -17381,7 +17397,7 @@ UNION ALL
 -- failure the value is absent, and graphql-java would drop the errors with it. A non-null list is
 -- not one, answering an empty list when nothing was produced.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR)
+       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
           FROM graphitron_producer_outcome) o
   JOIN graphitron_field f
@@ -17394,7 +17410,7 @@ UNION ALL
 -- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
 -- is an exception a producer caught, and a row of a statement holds none.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR)
+       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_field_target ft
   JOIN graphitron_result r
     ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
@@ -17412,7 +17428,7 @@ UNION ALL
 -- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
 -- own defect instead.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR)
+       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_field f
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
@@ -17440,7 +17456,7 @@ UNION ALL
 -- a type's name, a schema block binding the subscription root under another name being the same
 -- schema.
 SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
-       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR)
+       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphql_ast_field_definition_entry f
   JOIN graphql_root_operation ro
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
@@ -17449,14 +17465,14 @@ UNION ALL
 -- An upsert, at its @mutation: meaningful under the directives, and graphitron generates no upsert
 -- yet, so an author works around it rather than fixing it. Its claim still conflicts with a @service.
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
-       'MUTATION_UPSERT', CAST(NULL AS VARCHAR)
+       'MUTATION_UPSERT', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_ast_mutation_entry m
  WHERE m.operation = 'UPSERT'
 UNION ALL
 -- A @mutation with no verb, at the @mutation as written: the verb is the write graphitron
 -- generates, so without one there is none. Its claim, WRITE, still conflicts with a @service.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'MUTATION_WITHOUT_VERB', CAST(NULL AS VARCHAR)
+       'MUTATION_WITHOUT_VERB', CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_directive_application da
  WHERE da.directive_name = 'mutation' AND da.origin = 'AUTHORED'
    AND NOT EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
@@ -17467,14 +17483,14 @@ UNION ALL
 -- string, once per code however many of its entries offend. Which entries, and what is wrong with
 -- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
 SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column, r.code,
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_argmapping_pair_defect_rule r
 UNION ALL
 -- A contextArguments element naming a parameter its call is also given a context key for
 -- elsewhere, at the element. A pair doing so is a pair defect, rolled up above. The detail is the
 -- parameter.
 SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY_DUPLICATE',
-       w.parameter_name
+       w.parameter_name, 'entry-defects'
   FROM graphitron_call_context_key_written w
  WHERE w.origin = 'CONTEXT_ARGUMENTS'
    AND EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
@@ -17488,7 +17504,7 @@ UNION ALL
 -- an abstract class or an interface has none, and one taking anything but the jOOQ context is not
 -- buildable. The detail is the class.
 SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
-       'SERVICE_HOLDER_UNBUILDABLE', cr.method_class_name
+       'SERVICE_HOLDER_UNBUILDABLE', cr.method_class_name, 'entry-defects'
   FROM graphitron_code_reference_site site
   JOIN graphitron_code_reference cr
     ON cr.graph_name = site.graph_name AND cr.coordinate = site.coordinate
@@ -17503,7 +17519,7 @@ UNION ALL
 -- A written argMapping path projecting out of a node id that resolves to no one key column, where the
 -- pair is written: once per string, the key columns it could have meant being
 -- graphitron_entry_defect_key_column's under it.
-SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(u.detail)
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(u.detail), 'entry-defects'
   FROM (SELECT k.graph_name, k.source_name, k.source_line, k.source_column, k.code,
                CASE WHEN COUNT(DISTINCT k.bound) > 1
                     THEN 'the id has a key per member of the interface or union it names'
@@ -17531,7 +17547,7 @@ UNION ALL
 -- what is applied to it being written together, reaching the siblings through the parent position;
 -- the first is the anchor kept. The detail is the type.
 SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column,
-       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref
+       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref, 'entry-defects'
   FROM graphitron_ast_reference_for_entry r
   JOIN graphql_ast_entry e
     ON e.graph_name = r.graph_name AND e.source_name = r.source_name
@@ -17551,7 +17567,7 @@ UNION ALL
 -- @node that did not resolve to one is no such type, its own defects saying why. Reported at the
 -- @nodeId, where the author either writes typeName: or makes the type a node.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_CONTAINING_TYPE_NOT_NODE', f.type_name
+       'NODE_ID_CONTAINING_TYPE_NOT_NODE', f.type_name, 'entry-defects'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -17575,7 +17591,7 @@ UNION ALL
 -- that did not resolve is left to its own defects, and a stub left undeclared to the arm below.
 -- Reported at the @nodeId, the detail the name as written.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TYPE_NAME_NOT_NODE', cl.named
+       'NODE_ID_TYPE_NAME_NOT_NODE', cl.named, 'entry-defects'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -17599,7 +17615,7 @@ UNION ALL
 -- subgraph's entity, which a @node(resolvable: false) makes a node for its id. Reported at the
 -- @nodeId, the detail the name as written.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TYPE_NAME_UNDECLARED_STUB', cl.named
+       'NODE_ID_TYPE_NAME_UNDECLARED_STUB', cl.named, 'entry-defects'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -17618,7 +17634,7 @@ UNION ALL
 -- A typeName: on a node type's own id: ID, which is that node's identity by construction, so the
 -- argument names what the type already answers. Reported at the @nodeId.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TYPE_NAME_ON_OWN_ID', f.type_name
+       'NODE_ID_TYPE_NAME_ON_OWN_ID', f.type_name, 'entry-defects'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -17637,7 +17653,7 @@ UNION ALL
 -- the encoded id and the raw column are different values and the SDL has not said which is meant.
 -- Reported at the field, the detail the column.
 SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
-       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name)
+       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name), 'entry-defects'
   FROM graphql_field f
   JOIN graphitron_node n
     ON n.graph_name = f.graph_name AND n.type_name = f.type_name
@@ -17660,7 +17676,7 @@ UNION ALL
 -- field's landing, rather than looked up by table for every need, which H2 drives from the needs.
 SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
        COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column),
-       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name)
+       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name), 'entry-defects'
   FROM graphitron_occurrence o
   JOIN graphitron_path_need_table pn
     ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
@@ -17710,7 +17726,7 @@ UNION ALL
 -- landed column is compared. The exclusions are the no-route rule's. Reported once per @nodeId, the
 -- detail the key column.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name)
+       'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name), 'entry-defects'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -17768,7 +17784,7 @@ UNION ALL
 -- A @nodeId on a slot whose type is not ID: every encode and decode is an ID's, so the directive
 -- would bind the wire value undecoded. Reported at the @nodeId, the detail the type written.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_NOT_ID_TYPE', COALESCE(f.named_type, a.named_type)
+       'NODE_ID_NOT_ID_TYPE', COALESCE(f.named_type, a.named_type), 'entry-defects'
   FROM graphitron_binding_claim cl
   JOIN graphitron_directive_application da
     ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
@@ -17783,7 +17799,7 @@ UNION ALL
 -- A @discriminate's per-member defects, one at the @discriminate whichever members it names; the
 -- members are graphitron_entry_defect_member's.
 SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_entry_defect_member_rule m
 UNION ALL
 -- A @discriminate on a container with no table, which has no shared table to branch on, and one
@@ -17791,7 +17807,7 @@ UNION ALL
 -- the name written.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        CASE WHEN tt.type_name IS NULL THEN 'DISCRIMINATE_WITHOUT_TABLE' ELSE 'DISCRIMINATE_UNKNOWN_COLUMN' END,
-       CASE WHEN tt.type_name IS NULL THEN CAST(NULL AS VARCHAR) ELSE d.on_column END
+       CASE WHEN tt.type_name IS NULL THEN CAST(NULL AS VARCHAR) ELSE d.on_column END, 'entry-defects'
   FROM graphitron_ast_discriminate_entry d
   JOIN graphql_directive_application da
     ON da.graph_name = d.graph_name AND da.source_name = d.source_name
@@ -17806,7 +17822,7 @@ UNION ALL
 -- A @discriminator on a type that is a member of no container writing @discriminate, so there is no
 -- column for the value to match.
 SELECT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_WITHOUT_DISCRIMINATE',
-       CAST(NULL AS VARCHAR)
+       CAST(NULL AS VARCHAR), 'entry-defects'
   FROM graphitron_ast_discriminator_entry v
   JOIN graphql_directive_application va
     ON va.graph_name = v.graph_name AND va.source_name = v.source_name
@@ -17820,7 +17836,7 @@ UNION ALL
 -- A @discriminator value another member of the same discriminated container also writes, at each
 -- application, the detail being the container.
 SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_DUPLICATE',
-       m.container_name
+       m.container_name, 'entry-defects'
   FROM graphitron_ast_discriminator_entry v
   JOIN graphql_directive_application va
     ON va.graph_name = v.graph_name AND va.source_name = v.source_name
@@ -17842,7 +17858,7 @@ UNION ALL
 -- A @discriminator value that is not among the literals of the enum its container's column binds,
 -- the detail being the database enum type, whose literals are sql_enum_binding_literal's.
 SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_NOT_IN_DOMAIN',
-       eb.type_name
+       eb.type_name, 'entry-defects'
   FROM graphitron_ast_discriminator_entry v
   JOIN graphql_directive_application va
     ON va.graph_name = v.graph_name AND va.source_name = v.source_name
@@ -17866,7 +17882,7 @@ UNION ALL
 -- @issue on a type a root operation field returns, directly or as a list: the vouched decision is
 -- the path from a parent A's rules admitted. A mutation payload's field is no root field.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISSUE_ON_ROOT_TYPE',
-       d.coordinate
+       d.coordinate, 'entry-defects'
   FROM graphql_directive_application d
   JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
  WHERE d.directive_name = 'issue'
@@ -17879,7 +17895,7 @@ UNION ALL
 -- verifies a voucher yet, so a valid schema is refused here rather than reaching an emitter that does
 -- not exist.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
-       d.coordinate
+       d.coordinate, 'entry-defects'
   FROM graphql_directive_application d
  WHERE d.directive_name = 'accept';
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
@@ -21214,9 +21230,9 @@ COMMENT ON COLUMN meta_stage.stage_name IS 'the stage''s name, the roster''s key
 COMMENT ON COLUMN meta_stage.position IS 'where the stage runs in its gatherer''s anchor phase, from zero; the gatherer runs its stages in this order, a gate in this module holding the list it runs to these rows, so a stage reading a relation a later stage writes can be refused from the roster rather than found by reading the code';
 COMMENT ON COLUMN meta_stage.gatherer_name IS 'the gatherer whose anchor phase runs the stage, a meta_gatherer key: what a stage owns, its gatherer owns, so the gatherer''s sweep reaches its stages'' rows';
 COMMENT ON COLUMN meta_stage.stage_class IS 'the fully qualified Java class whose code the stage runs; a class-loading gate in the graphitron module holds every value to a class that exists, and one class may run two stages, as FederationLinks runs the link and its imports. The entry-defects stage names EntryDefects, which writes every graphitron code no stage of its own writes yet, from graphitron_entry_defect_rule as the anchor phase''s last step';
--- graphitron_defect_type is declared ahead of the roster its owner column names, so the reference is
+-- graphitron_entry_defect is declared ahead of the roster its stage column names, so the reference is
 -- added here, where the roster exists.
-ALTER TABLE graphitron_defect_type ADD FOREIGN KEY (owner_stage)
+ALTER TABLE graphitron_entry_defect ADD FOREIGN KEY (stage)
   REFERENCES meta_stage (stage_name);
 
 -- The graphitron gatherer's anchor phase, in the order GraphitronAstCapture.STAGES runs it.
@@ -21844,7 +21860,7 @@ INSERT INTO meta_grain VALUES
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
   ('argmapping-pair-defect',
    'one argMapping entry a rule refuses, under the code that names the rule',
-   'graph_name, source_name, source_line, source_column, position, code', 'sdl'),
+   'graph_name, source_name, source_line, source_column, position, code, stage', 'sdl'),
   ('facet-binding',
    'one @asFacet application, at the input field it sits on, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -21877,13 +21893,13 @@ INSERT INTO meta_grain VALUES
    'graph_name, type_name', 'sdl'),
   ('entry-defect-claim',
    'one claim one defect is about, in one graph',
-   'graph_name, source_name, source_line, source_column, code, coordinate, kind, claimer', 'sdl'),
+   'graph_name, source_name, source_line, source_column, code, stage, coordinate, kind, claimer', 'sdl'),
   ('entry-defect-member',
    'one member one defect names, in one graph',
-   'graph_name, source_name, source_line, source_column, code, member_type_name', 'sdl'),
+   'graph_name, source_name, source_line, source_column, code, stage, member_type_name', 'sdl'),
   ('entry-defect-key-column',
    'one key column one defect names at one node id, in one graph',
-   'graph_name, source_name, source_line, source_column, code, landing_coordinate, bound, position', 'sdl'),
+   'graph_name, source_name, source_line, source_column, code, stage, landing_coordinate, bound, position', 'sdl'),
   ('occurrence-list-element-defect',
    'one rule an input-field occurrence read per element of a list breaks there, in one graph',
    'graph_name, coordinate, code', 'sdl'),
@@ -21892,13 +21908,16 @@ INSERT INTO meta_grain VALUES
    'graph_name, source_name, source_line, source_column, code, coordinate, call, position', 'sdl'),
   ('entry-defect-table',
    'one table one defect names, in one graph',
-   'graph_name, source_name, source_line, source_column, code, table_source_name, table_schema, table_name', 'sdl'),
+   'graph_name, source_name, source_line, source_column, code, stage, table_source_name, table_schema, table_name', 'sdl'),
   ('entry-defect-path-step',
    'one path step one defect is about, in one graph',
-   'graph_name, source_name, source_line, source_column, code, step_source_name, step_source_line, step_source_column', 'sdl'),
-  ('graphitron-entry-defect',
-   'one defect one written graphitron directive carries, in one graph',
+   'graph_name, source_name, source_line, source_column, code, stage, step_source_name, step_source_line, step_source_column', 'sdl'),
+  ('graphitron-entry-defect-finding',
+   'one rule one written graphitron directive breaks, however many stages raised it, in one graph',
    'graph_name, source_name, source_line, source_column, code', 'sdl'),
+  ('graphitron-entry-defect',
+   'one defect one written graphitron directive carries, as one stage raised it, in one graph',
+   'graph_name, source_name, source_line, source_column, code, stage', 'sdl'),
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -22297,305 +22316,305 @@ INSERT INTO graphitron_claim_inclusion VALUES
 
 INSERT INTO graphitron_defect_type VALUES
   ('WRITE_TABLES_DISAGREE', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_TABLES_DISAGREE',
-   'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.', 'entry-defects'),
+   'A @mutation writes one table, and the tables it is read on are not one: the table its return or the fields re-reading the written rows bind, and the one @mutation(table:) names, disagree, so nothing says which table is written.'),
   ('CONDITION_ON_WRITE_RESULT', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_ON_WRITE_RESULT',
-   'A condition on the step out of a @routine write''s result: the write''s statement holds its locks and joins nothing onward, so its result is re-read by its key in a statement of its own, which the function''s result is not part of for a condition to join from. Leave the result by a table or a key, and put the condition on a later step.', 'entry-defects'),
+   'A condition on the step out of a @routine write''s result: the write''s statement holds its locks and joins nothing onward, so its result is re-read by its key in a statement of its own, which the function''s result is not part of for a condition to join from. Leave the result by a table or a key, and put the condition on a later step.'),
   ('READ_SURFACE_ON_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_READ_SURFACE_ON_WRITE',
-   'A mutation field carrying @routine writes, and neither write shape has a filter or an ordering to resolve a @condition or an @orderBy against, so the generator emits nothing for one written here.', 'entry-defects'),
+   'A mutation field carrying @routine writes, and neither write shape has a filter or an ordering to resolve a @condition or an @orderBy against, so the generator emits nothing for one written here.'),
   ('MULTIPLE_ROUTINE_NODES', 'error', 'GRAPHITRON', 'GRAPHITRON_MULTIPLE_ROUTINE_NODES',
-   'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.', 'entry-defects'),
+   'A mutation field carrying more than one @routine writes more than once, and the generator emits one write per field.'),
   ('CONNECTION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_CONNECTION_RETURN',
-   'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.', 'entry-defects'),
+   'A write re-reads its committed rows by the keys it returned, which is not a page, so the generator emits nothing for a write @asConnection rewrote.'),
   ('LIST_OVER_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_OVER_ONE_VALUE',
-   'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.', 'occurrence-depth-defects'),
+   'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.'),
   ('LIST_ELEMENT_CONDITION', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_CONDITION',
-   'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.', 'occurrence-depth-defects'),
+   'An input field of a list of input objects a filter compares as rows carries @condition, whose value would be read through the list as one object: put @condition(override: true) on the list field to take the whole list instead.'),
   ('LIST_ELEMENT_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NODE_ID',
-   'An input field of a list of input objects a filter compares as rows is a node id, whose decoded key one cell of a row of plain values cannot hold: move it out of the element type.', 'occurrence-depth-defects'),
+   'An input field of a list of input objects a filter compares as rows is a node id, whose decoded key one cell of a row of plain values cannot hold: move it out of the element type.'),
   ('LIST_CONDITION_BELOW_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_CONDITION_BELOW_LIST',
-   'A @condition binds a parameter to a field read once per element of a list of input objects, which one call has no single value for: bind the whole list instead.', 'occurrence-depth-defects'),
+   'A @condition binds a parameter to a field read once per element of a list of input objects, which one call has no single value for: bind the whole list instead.'),
   ('LIST_ELEMENT_NOT_ONE_VALUE', 'error', 'GRAPHITRON', 'GRAPHITRON_LIST_ELEMENT_NOT_ONE_VALUE',
-   'An input field of a list of input objects a filter compares as rows is itself a list, and one cell of a row holds one value: declare one value, or move the field out of the element type.', 'occurrence-depth-defects'),
+   'An input field of a list of input objects a filter compares as rows is itself a list, and one cell of a row holds one value: declare one value, or move the field out of the element type.'),
   ('MANY_KEYS_INTO_ONE', 'error', 'GRAPHITRON', 'GRAPHITRON_MANY_KEYS_INTO_ONE',
-   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.', 'occurrence-depth-defects'),
+   'A field takes many rows off what its parent holds, a write yielding many or a member delivering a collection, and declares one: declare a list.'),
   ('NO_KEY_FROM_PARENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_KEY_FROM_PARENT',
-   'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.', 'occurrence-depth-defects'),
+   'A field fetches its own rows under a parent holding an object, and nothing the parent holds, no column of a record and no member returning one, keys those rows.'),
   ('OUTCOME_IN_A_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTCOME_IN_A_LIST',
-   'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.', 'occurrence-depth-defects'),
+   'A producer catching into an outcome hands back one, its value or its errors, and the field declares a list of them, which would need one catch per element: declare one.'),
   ('WRITE_RESULT_HOLDS_ONLY_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_WRITE_RESULT_HOLDS_ONLY_KEYS',
-   'A field under the object type a write returns reads a member off what the write hands back, and a write hands back the keys of its rows, not an object of a class: re-read the rows by those keys, or encode them as an id.', 'entry-defects'),
+   'A field under the object type a write returns reads a member off what the write hands back, and a write hands back the keys of its rows, not an object of a class: re-read the rows by those keys, or encode them as an id.'),
   ('BUILT_CLASS_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_BUILT_CLASS_UNBUILDABLE',
-   'An input object is built into a class nothing says how to make: no public canonical constructor or no-argument constructor with setters, or a class no classpath entry of the build declares. Give the class one, or take the delivered map.', 'occurrence-builds'),
+   'An input object is built into a class nothing says how to make: no public canonical constructor or no-argument constructor with setters, or a class no classpath entry of the build declares. Give the class one, or take the delivered map.'),
   ('CONDITION_PARAMETER_RECORD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_PARAMETER_RECORD',
-   'A @condition method takes an input object as a jOOQ record, and a condition takes the input''s values as a bean or the delivered map, a record being a row to write: declare the parameter as a bean or a Map.', 'occurrence-builds'),
+   'A @condition method takes an input object as a jOOQ record, and a condition takes the input''s values as a bean or the delivered map, a record being a row to write: declare the parameter as a bean or a Map.'),
   ('MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNKNOWN',
-   'An input field fills no member of the class its input object is built into, under the name it matches on, its @field(name:) for a @service and its own name for a @condition, and groups nothing onto it, so its value would reach nothing: name a member the class has, or give the class one.', 'occurrence-builds'),
+   'An input field fills no member of the class its input object is built into, under the name it matches on, its @field(name:) for a @service and its own name for a @condition, and groups nothing onto it, so its value would reach nothing: name a member the class has, or give the class one.'),
   ('GROUPING_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_GROUPING_LIST',
-   'A list of input objects fills no member of the class its parent is built into, or sits under a jOOQ record, and a grouping fills the enclosing object once, which a list has no one value for: give the class a member for the list, or make the field one input object.', 'occurrence-builds'),
+   'A list of input objects fills no member of the class its parent is built into, or sits under a jOOQ record, and a grouping fills the enclosing object once, which a list has no one value for: give the class a member for the list, or make the field one input object.'),
   ('MEMBER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_FILLED_TWICE',
-   'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.', 'occurrence-builds'),
+   'Two input fields fill one member of one object, and nothing says which value it takes: rename one, or remove one. Node ids decoding into one record member are one record and allowed.'),
   ('REREAD_OF_DELETED_ROWS', 'error', 'GRAPHITRON', 'GRAPHITRON_REREAD_OF_DELETED_ROWS',
-   'A field re-reads the rows a delete removed, and they are gone once it runs: a delete hands back the keys of its rows, so return their ids.', 'entry-defects'),
+   'A field re-reads the rows a delete removed, and they are gone once it runs: a delete hands back the keys of its rows, so return their ids.'),
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
-   'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.', 'occurrence-depths'),
+   'A step reaches its destination by more than one route, a chain link naming a table two keys reach or a field with no path written between two tables more than one foreign key joins, so the generator has a join to emit and nothing to pick it by; naming the foreign key settles it.'),
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
-   'Two @referenceFor applications on one field name the same type, and only the first one written is used.', 'entry-defects'),
+   'Two @referenceFor applications on one field name the same type, and only the first one written is used.'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
-   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all; a root field''s leading @routine naming no routine is the same name claimed in vain, and the field calls nothing.', 'occurrence-depths'),
+   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all; a root field''s leading @routine naming no routine is the same name claimed in vain, and the field calls nothing.'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
-   'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.', 'occurrence-depths'),
+   'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.'),
   ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',
-   'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.', 'entry-defects'),
+   'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
-   'A path does not arrive at the table the field''s rows were said to come from: a chain runs to its last link and arrives somewhere else, or a field with no path written starts on a table that shares no foreign key with its target''s, or on its target''s own table, so there is no join to infer and the path has to be written.', 'occurrence-depths'),
+   'A path does not arrive at the table the field''s rows were said to come from: a chain runs to its last link and arrives somewhere else, or a field with no path written starts on a table that shares no foreign key with its target''s, or on its target''s own table, so there is no join to infer and the path has to be written.'),
   ('INHERITED_PATH_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_INHERITED_PATH_AMBIGUOUS',
-   'A field with no path written implements the same-named field of two interfaces, neither extending the other, that each write a path for it, so nothing says which one it inherits: write the path on the field itself.', 'entry-defects'),
+   'A field with no path written implements the same-named field of two interfaces, neither extending the other, that each write a path for it, so nothing says which one it inherits: write the path on the field itself.'),
   ('CONDITION_NO_OVERLOAD_FOR_PAIR', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_NO_OVERLOAD_FOR_PAIR',
-   'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.', 'occurrence-depths'),
+   'A chain link''s condition method is called with the table the link departs and the table it arrives at, and no declaration of it takes both, so the generated call does not compile.'),
   ('CONDITION_OVERLOAD_SHAPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_SHAPE_DISAGREES',
-   'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.', 'entry-defects'),
+   'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.'),
   ('CONTEXT_KEY_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_DUPLICATE',
-   'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.', 'entry-defects'),
+   'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
-   'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.', 'entry-defects'),
+   'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.'),
   ('DISCRIMINATE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_WITHOUT_TABLE',
-   'A @discriminate is on an interface or union with no @table, so there is no shared table whose column tells its members apart: give the interface @table, or drop @discriminate for a multitable interface.', 'entry-defects'),
+   'A @discriminate is on an interface or union with no @table, so there is no shared table whose column tells its members apart: give the interface @table, or drop @discriminate for a multitable interface.'),
   ('DISCRIMINATE_UNKNOWN_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_UNKNOWN_COLUMN',
-   'A @discriminate(on:) names no column of the interface''s table, by its SQL name or its jOOQ name: name a column of that table.', 'entry-defects'),
+   'A @discriminate(on:) names no column of the interface''s table, by its SQL name or its jOOQ name: name a column of that table.'),
   ('DISCRIMINATOR_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_MISSING',
-   'A member of an interface writing @discriminate has no @discriminator, so no value tells its rows apart: give it @discriminator(value:).', 'entry-defects'),
+   'A member of an interface writing @discriminate has no @discriminator, so no value tells its rows apart: give it @discriminator(value:).'),
   ('DISCRIMINATOR_WITHOUT_DISCRIMINATE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_WITHOUT_DISCRIMINATE',
-   'A @discriminator is on a type that implements no interface writing @discriminate, so there is no column for its value to match: add @discriminate to the interface, or drop @discriminator.', 'entry-defects'),
+   'A @discriminator is on a type that implements no interface writing @discriminate, so there is no column for its value to match: add @discriminate to the interface, or drop @discriminator.'),
   ('DISCRIMINATOR_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_DUPLICATE',
-   'Two members of one interface writing @discriminate write the same @discriminator value, so the value tells neither apart: give each member its own.', 'entry-defects'),
+   'Two members of one interface writing @discriminate write the same @discriminator value, so the value tells neither apart: give each member its own.'),
   ('DISCRIMINATOR_NOT_IN_DOMAIN', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATOR_NOT_IN_DOMAIN',
-   'A @discriminator value is not among the literals of the database enum the discriminating column is, so it would match no row: write one of the enum''s literals, as the database spells it.', 'entry-defects'),
+   'A @discriminator value is not among the literals of the database enum the discriminating column is, so it would match no row: write one of the enum''s literals, as the database spells it.'),
   ('TABLE_INTERFACE_PARTICIPANT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_INTERFACE_PARTICIPANT_UNBOUND',
-   'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.', 'entry-defects'),
+   'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
-   'A method a @service or a @condition calls has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and nothing it could take by its type. Name it in argMapping or contextArguments, or rename it after the argument it takes.', 'occurrence-depth-defects'),
+   'A method a @service or a @condition calls has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and nothing it could take by its type. Name it in argMapping or contextArguments, or rename it after the argument it takes.'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',
-   'A parameter of a method a @service or a @condition calls could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.', 'occurrence-depth-defects'),
+   'A parameter of a method a @service or a @condition calls could take more than one of the call''s arguments by type, or an argument it could take could go to another parameter as well, so nothing says which: name it after its argument, or bind it in argMapping.'),
   ('PARAMETER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_FILLED_TWICE',
-   'A parameter of a method a @service or a @condition calls is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.', 'occurrence-depth-defects'),
+   'A parameter of a method a @service or a @condition calls is filled twice, by an argMapping pair and a contextArguments element, so nothing says which value it takes: write it once.'),
   ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
-   'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.', 'occurrence-depth-defects'),
+   'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
-   'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.', 'occurrence-depth-defects'),
+   'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
-   'A @service under an object type is fetched for many parents at once, and its method has no parameter taking their keys: add a Set or List parameter of the records the parents are keyed by, and return a Map by those keys or a List in their order.', 'occurrence-depth-defects'),
+   'A @service under an object type is fetched for many parents at once, and its method has no parameter taking their keys: add a Set or List parameter of the records the parents are keyed by, and return a Map by those keys or a List in their order.'),
   ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
-   'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.', 'entry-defects'),
+   'An instance @service method''s class has no public constructor the generated code can call, one taking nothing or only a DSLContext: add one, or make the method static.'),
   ('ARGMAPPING_PATH_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_PATH_UNRESOLVED',
-   'An argMapping right-hand side names a path that does not exist: through the call''s arguments and input fields, on a field beginning with one of the field''s arguments, on an argument or an input field with a field of what that opens into, and each further name a field of the input type before it; or, after $result, through the fields of what the field returns.', 'entry-defects'),
+   'An argMapping right-hand side names a path that does not exist: through the call''s arguments and input fields, on a field beginning with one of the field''s arguments, on an argument or an input field with a field of what that opens into, and each further name a field of the input type before it; or, after $result, through the fields of what the field returns.'),
   ('SCOPE_MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_SCOPE_MEMBER_UNKNOWN',
-   'An argMapping entry reads a member of $scope that the field''s scope does not have: it offers coordinate, operationName and alias.', 'entry-defects'),
+   'An argMapping entry reads a member of $scope that the field''s scope does not have: it offers coordinate, operationName and alias.'),
   ('ARGMAPPING_SOURCE_MISFIT', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_SOURCE_MISFIT',
-   'An argMapping entry reads a source that exists but cannot fill the place it binds. A payload key holds one value JSON can carry: text, a number, a boolean, a character, a UUID or a java.time value, a node id, or a column of the row the write wrote. Bind a member or a field that is one, not the whole session handle, an object or record, or a path through a list.', 'entry-defects'),
+   'An argMapping entry reads a source that exists but cannot fill the place it binds. A payload key holds one value JSON can carry: text, a number, a boolean, a character, a UUID or a java.time value, a node id, or a column of the row the write wrote. Bind a member or a field that is one, not the whole session handle, an object or record, or a path through a list.'),
   ('ARGMAPPING_PATH_PAST_CYCLE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ARGMAPPING_PATH_PAST_CYCLE',
-   'An argMapping right-hand side follows an input type that nests itself further than its first repetition, which is not supported yet: bind the parameter at a shallower depth.', 'entry-defects'),
+   'An argMapping right-hand side follows an input type that nests itself further than its first repetition, which is not supported yet: bind the parameter at a shallower depth.'),
   ('CONDITION_OVERLOAD_TIE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_OVERLOAD_TIE',
-   'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.', 'occurrence-depths'),
+   'A chain link''s condition method has more than one declaration taking the table the link departs and the table it arrives at, and none of them is more specific than the others, so the generated call is ambiguous and does not compile.'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
-   'A @routine parameter binds nothing: its name is no argument of the field, or its $source.<column> names no column of the table the routine is applied to, so the call has no value for it.', 'occurrence-depths'),
+   'A @routine parameter binds nothing: its name is no argument of the field, or its $source.<column> names no column of the table the routine is applied to, so the call has no value for it.'),
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
-   'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.', 'entry-defects'),
+   'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.'),
   ('REFERENCE_WITHOUT_TARGET_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_WITHOUT_TARGET_TABLE',
-   'A path written on an output field, or a @referenceFor naming a member, reaches a type with no one table, an object type without @table, a union or an interface with no table of its own, so the path has nowhere to arrive and no catalog could make it resolve.', 'entry-defects'),
+   'A path written on an output field, or a @referenceFor naming a member, reaches a type with no one table, an object type without @table, a union or an interface with no table of its own, so the path has nowhere to arrive and no catalog could make it resolve.'),
   ('CODE_REFERENCE_CLASS_NOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_CLASS_NOT_READ',
-   'A code reference names a class the classpath reading did not read, so no method of it can be called: the name is misspelt, or the class sits in an entry the build does not hand the generator.', 'entry-defects'),
+   'A code reference names a class the classpath reading did not read, so no method of it can be called: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
   ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
-   'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.', 'entry-defects'),
+   'A code reference names a class the classpath reading read and a method that class does not declare publicly, an @externalField that names none meaning the field''s own name.'),
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
-   'A code reference where the generator calls exactly one method, a @service, an @externalField or a FieldSort.method, names a method the classpath declares as several overloads, and nothing says which of them is meant.', 'entry-defects'),
+   'A code reference where the generator calls exactly one method, a @service, an @externalField or a FieldSort.method, names a method the classpath declares as several overloads, and nothing says which of them is meant.'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
-   'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.', 'entry-defects'),
+   'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
-   'A @nodeId(typeName:) names a type that is neither a node nor an interface or union over nodes, so there is no key to encode or decode the id against.', 'entry-defects'),
+   'A @nodeId(typeName:) names a type that is neither a node nor an interface or union over nodes, so there is no key to encode or decode the id against.'),
   ('NODE_ID_TYPE_NAME_UNDECLARED_STUB', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_UNDECLARED_STUB',
-   'A @nodeId(typeName:) names a @table type that is no node, over a table whose class publishes node metadata, the shape of an entity another subgraph owns: declare it @node(resolvable: false), which makes it a node for its id that this subgraph does not fetch.', 'entry-defects'),
+   'A @nodeId(typeName:) names a @table type that is no node, over a table whose class publishes node metadata, the shape of an entity another subgraph owns: declare it @node(resolvable: false), which makes it a node for its id that this subgraph does not fetch.'),
   ('NODE_ID_TYPE_NAME_ON_OWN_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_ON_OWN_ID',
-   'A @nodeId(typeName:) sits on a node type''s own id field, which is that node''s identity by construction, so the argument names what the type already answers: remove it.', 'entry-defects'),
+   'A @nodeId(typeName:) sits on a node type''s own id field, which is that node''s identity by construction, so the argument names what the type already answers: remove it.'),
   ('NODE_ID_TARGET_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TARGET_UNRESOLVED',
-   'A node id inferred from a table binds against a table no node type declares itself over, so there is no node to infer: name the node type, or declare @node on a type over the table.', 'occurrence-bindings'),
+   'A node id inferred from a table binds against a table no node type declares itself over, so there is no node to infer: name the node type, or declare @node on a type over the table.'),
   ('NODE_ID_TARGET_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TARGET_AMBIGUOUS',
-   'A node id inferred from a table binds against a table several node types declare themselves over, or under participants that resolve different nodes where one id cannot stand for all, so which node the id names is not said: name the node type.', 'occurrence-bindings'),
+   'A node id inferred from a table binds against a table several node types declare themselves over, or under participants that resolve different nodes where one id cannot stand for all, so which node the id names is not said: name the node type.'),
   ('NODE_ID_SHADOWS_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SHADOWS_COLUMN',
-   'An id with no directive is read as a node''s id, and the node''s table also has a column of that name: the encoded id and the raw column are different values and the SDL has not said which is meant. Write @nodeId to select the node id, or @field(name:) to select the column.', 'entry-defects'),
+   'An id with no directive is read as a node''s id, and the node''s table also has a column of that name: the encoded id and the raw column are different values and the SDL has not said which is meant. Write @nodeId to select the node id, or @field(name:) to select the column.'),
   ('NODE_ID_LANDS_ON_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_LANDS_ON_TABLE',
-   'A @nodeId(typeName:) reaches a table other than the node''s: a written path ending elsewhere, or no path where no one foreign key joins the slot''s table to the node''s, so the key the id carries is not on the rows read, nor on the columns of the jOOQ record it is decoded into. Write or correct the @reference path to end on the node''s table.', 'occurrence-builds'),
+   'A @nodeId(typeName:) reaches a table other than the node''s: a written path ending elsewhere, or no path where no one foreign key joins the slot''s table to the node''s, so the key the id carries is not on the rows read, nor on the columns of the jOOQ record it is decoded into. Write or correct the @reference path to end on the node''s table.'),
   ('NODE_ID_LANDING_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_LANDING_TYPE_DISAGREES',
-   'A @nodeId(typeName:) decodes into a key column of the node''s table that jOOQ binds as another Java type than the column of the slot''s table it lands on, so no predicate compares the two: give both columns the same binding, or write a @reference path to the node''s own table.', 'entry-defects'),
+   'A @nodeId(typeName:) decodes into a key column of the node''s table that jOOQ binds as another Java type than the column of the slot''s table it lands on, so no predicate compares the two: give both columns the same binding, or write a @reference path to the node''s own table.'),
   ('NODE_ID_SLOT_SHAPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_SHAPE_MISMATCH',
-   'A @nodeId''s decoded value goes to a @service parameter whose shape is not the argument''s, a list where one id arrives, one value where a list does, or a collection other than java.util.List: declare the parameter in the argument''s shape.', 'occurrence-builds'),
+   'A @nodeId''s decoded value goes to a @service parameter whose shape is not the argument''s, a list where one id arrives, one value where a list does, or a collection other than java.util.List: declare the parameter in the argument''s shape.'),
   ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_ARITY_EXCEEDS_SLOT',
-   'A @nodeId''s decoded key goes whole to a @service parameter, or each element of one, that is neither the node''s record nor a tuple of its key, and a whole key lands only on those: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or take one key column with argMapping.', 'occurrence-builds'),
+   'A @nodeId''s decoded key goes whole to a @service parameter, or each element of one, that is neither the node''s record nor a tuple of its key, and a whole key lands only on those: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or take one key column with argMapping.'),
   ('NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT',
-   'A @nodeId''s decoded key goes to a @service parameter typed as a jOOQ RecordN or RowN of the key''s degree whose type arguments are not the key columns'' types in key order: declare the tuple with the columns'' own types.', 'occurrence-builds'),
+   'A @nodeId''s decoded key goes to a @service parameter typed as a jOOQ RecordN or RowN of the key''s degree whose type arguments are not the key columns'' types in key order: declare the tuple with the columns'' own types.'),
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
-   'The key column an argMapping path projects out of a @nodeId''s node has a jOOQ type that is not the type of the parameter of the @service or @condition method it goes to: declare the parameter with the column''s own type, boxed.', 'occurrence-builds'),
+   'The key column an argMapping path projects out of a @nodeId''s node has a jOOQ type that is not the type of the parameter of the @service or @condition method it goes to: declare the parameter with the column''s own type, boxed.'),
   ('ARGMAPPING_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGMAPPING_KEY_COLUMN_UNRESOLVED',
-   'An argMapping path past a @nodeId reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column after the id, or end the path on the id: a parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.', 'entry-defects'),
+   'An argMapping path past a @nodeId reaches no one key column of its node: the key has several columns and the path names none, the name it gives is no key column, or the id is an interface''s or a union''s, one key per member. Name a key column after the id, or end the path on the id: a parameter then takes the whole decoded key, an @outbox payload key the id as clients see it.'),
   ('NODE_ID_CONTAINER_NOT_AT_A_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINER_NOT_AT_A_SLOT',
-   'A @nodeId(typeName:) names an interface or union, which an id decodes per member only into a @service parameter, and here the value reaches none: name one node type, or move the polymorphic id to the @service input.', 'occurrence-builds'),
+   'A @nodeId(typeName:) names an interface or union, which an id decodes per member only into a @service parameter, and here the value reaches none: name one node type, or move the polymorphic id to the @service input.'),
   ('NODE_ID_SINGLE_TABLE_CONTAINER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SINGLE_TABLE_CONTAINER',
-   'A @nodeId(typeName:) names an interface or union that carries @table itself, so its id has one table and no members to decode against: name one of its node types, or make it a @node type.', 'occurrence-builds'),
+   'A @nodeId(typeName:) names an interface or union that carries @table itself, so its id has one table and no members to decode against: name one of its node types, or make it a @node type.'),
   ('NODE_ID_NO_TABLE_MEMBERS', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_NO_TABLE_MEMBERS',
-   'A @nodeId(typeName:) names an interface or union none of whose members carries @table, so no member has a key to decode its id against: name a node type, or give its members tables.', 'occurrence-builds'),
+   'A @nodeId(typeName:) names an interface or union none of whose members carries @table, so no member has a key to decode its id against: name a node type, or give its members tables.'),
   ('NODE_ID_MEMBER_NOT_NODE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_MEMBER_NOT_NODE_TYPE',
-   'A @nodeId(typeName:) names an interface or union with a table-bound member that is not a @node type, so an id of that member cannot be decoded: annotate the member with @node.', 'occurrence-builds'),
+   'A @nodeId(typeName:) names an interface or union with a table-bound member that is not a @node type, so an id of that member cannot be decoded: annotate the member with @node.'),
   ('NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER',
-   'A @nodeId(typeName:) naming an interface or union decodes into a @service parameter or bean member that a member''s record is not, so that member''s id cannot be handed over: declare it as a type every member''s record is, such as org.jooq.Record or TableRecord<?>.', 'occurrence-builds'),
+   'A @nodeId(typeName:) naming an interface or union decodes into a @service parameter or bean member that a member''s record is not, so that member''s id cannot be handed over: declare it as a type every member''s record is, such as org.jooq.Record or TableRecord<?>.'),
   ('NODE_ID_NOT_ID_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_NOT_ID_TYPE',
-   'A @nodeId sits on a slot whose type is not ID, and every encode and decode is an ID''s, so the directive would bind the wire value undecoded: change the type to ID or remove the directive.', 'entry-defects'),
+   'A @nodeId sits on a slot whose type is not ID, and every encode and decode is an ID''s, so the directive would bind the wire value undecoded: change the type to ID or remove the directive.'),
   ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',
-   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, a node this subgraph does not resolve included, so the type cannot be promoted to a node: add implements Node.', 'entry-defects'),
+   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, a node this subgraph does not resolve included, so the type cannot be promoted to a node: add implements Node.'),
   ('NODE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_TABLE',
-   'A type carries @node and no @table. A node is a row of a table, its id encoding that row''s key, so a type bound to no table has nothing to be a node of.', 'entry-defects'),
+   'A type carries @node and no @table. A node is a row of a table, its id encoding that row''s key, so a type bound to no table has nothing to be a node of.'),
   ('NODE_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_KEY_COLUMN_UNRESOLVED',
-   'A @node(keyColumns:) names a column the bound table does not have, or has twice under one name, so the node has no key the author can stand behind: a pinned key is a published wire format, and the generator will not quietly encode ids against another.', 'entry-defects'),
+   'A @node(keyColumns:) names a column the bound table does not have, or has twice under one name, so the node has no key the author can stand behind: a pinned key is a published wire format, and the generator will not quietly encode ids against another.'),
   ('NODE_WITHOUT_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_KEY',
-   'A @node pins no key columns, and its table publishes no node metadata and has no primary key, so there is nothing to build an id from: declare keyColumns on @node or give the table a primary key.', 'entry-defects'),
+   'A @node pins no key columns, and its table publishes no node metadata and has no primary key, so there is nothing to build an id from: declare keyColumns on @node or give the table a primary key.'),
   ('TABLE_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_UNRESOLVED',
-   'A @table names a table the catalog does not hold, so the type is bound to nothing: the name is misspelt, or the table is in a schema the build does not generate.', 'entry-defects'),
+   'A @table names a table the catalog does not hold, so the type is bound to nothing: the name is misspelt, or the table is in a schema the build does not generate.'),
   ('TABLE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_AMBIGUOUS',
-   'A @table names a table more than one schema declares, so nothing says which the type is bound to; qualifying the name with its schema settles it.', 'entry-defects'),
+   'A @table names a table more than one schema declares, so nothing says which the type is bound to; qualifying the name with its schema settles it.'),
   ('SCALAR_TYPE_REFERENCE_MALFORMED', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_REFERENCE_MALFORMED',
-   'A @scalarType reference is not of the form fully.qualified.Class.FIELD, so it names no constant at all.', 'entry-defects'),
+   'A @scalarType reference is not of the form fully.qualified.Class.FIELD, so it names no constant at all.'),
   ('SCALAR_TYPE_CLASS_NOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_CLASS_NOT_READ',
-   'A @scalarType names a class the classpath reading did not read: the name is misspelt, or the class sits in an entry the build does not hand the generator.', 'entry-defects'),
+   'A @scalarType names a class the classpath reading did not read: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
   ('SCALAR_TYPE_CONSTANT_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_SCALAR_TYPE_CONSTANT_NOT_FOUND',
-   'A @scalarType names a class the reading read and a constant it does not declare as a public static GraphQLScalarType, so there is no scalar to bind.', 'entry-defects'),
+   'A @scalarType names a class the reading read and a constant it does not declare as a public static GraphQLScalarType, so there is no scalar to bind.'),
   ('NODE_METADATA_UNREADABLE', 'warning', 'GRAPHITRON', 'GRAPHITRON_NODE_METADATA_UNREADABLE',
-   'The table''s generated class declares node metadata graphitron cannot use, so a node over it encodes its ids from what the schema declares, or from the type''s name and the table''s primary key; fix the generator configuration that writes __NODE_TYPE_ID and __NODE_KEY_COLUMNS.', 'entry-defects'),
+   'The table''s generated class declares node metadata graphitron cannot use, so a node over it encodes its ids from what the schema declares, or from the type''s name and the table''s primary key; fix the generator configuration that writes __NODE_TYPE_ID and __NODE_KEY_COLUMNS.'),
   ('NODE_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_TYPE_ID_SHARED',
-   'Two node types answer to one type id, so an id carrying it names either and Query.node cannot tell which to fetch; give one of them its own with @node(typeId:).', 'entry-defects'),
+   'Two node types answer to one type id, so an id carrying it names either and Query.node cannot tell which to fetch; give one of them its own with @node(typeId:).'),
   ('NODE_LEGACY_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_COLUMN_UNRESOLVED',
-   'A @node(legacyKeyColumns:) names a column the bound table does not have, or has twice under one name, so ids issued in the old shape cannot be read against it.', 'entry-defects'),
+   'A @node(legacyKeyColumns:) names a column the bound table does not have, or has twice under one name, so ids issued in the old shape cannot be read against it.'),
   ('NODE_LEGACY_KEY_MISSES_KEY_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_MISSES_KEY_COLUMN',
-   'A legacy key shape leaves out a column of the current key, so an id in the old shape cannot be converted without reading the row; list every current key column in it.', 'entry-defects'),
+   'A legacy key shape leaves out a column of the current key, so an id in the old shape cannot be converted without reading the row; list every current key column in it.'),
   ('NODE_LEGACY_KEY_REORDERS_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_REORDERS_KEY',
-   'A legacy key shape holds exactly the current key''s columns, so an old id and a current one cannot be told apart by how many values they carry; a legacy shape must be the current key plus at least one more column.', 'entry-defects'),
+   'A legacy key shape holds exactly the current key''s columns, so an old id and a current one cannot be told apart by how many values they carry; a legacy shape must be the current key plus at least one more column.'),
   ('NODE_LEGACY_KEY_REPEATS_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_REPEATS_COLUMN',
-   'A legacy key shape names one column twice, so the conversion cannot tell which of its values is the column''s.', 'entry-defects'),
+   'A legacy key shape names one column twice, so the conversion cannot tell which of its values is the column''s.'),
   ('NODE_LEGACY_KEY_DISAGREES_WITH_METADATA', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_DISAGREES_WITH_METADATA',
-   'A @node(legacyKeyColumns:) and the table class''s __NODE_LEGACY_KEY_COLUMNS state different lists; the order is the wire format of ids already issued, so they must be the same columns in the same order.', 'entry-defects'),
+   'A @node(legacyKeyColumns:) and the table class''s __NODE_LEGACY_KEY_COLUMNS state different lists; the order is the wire format of ids already issued, so they must be the same columns in the same order.'),
   ('NODE_LEGACY_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_TYPE_ID_SHARED',
-   'A type id with a legacy key shape is answered to by types over different tables or with different current keys, so converting an id of it would rewrite ids another type owns; give the types their own type ids.', 'entry-defects'),
+   'A type id with a legacy key shape is answered to by types over different tables or with different current keys, so converting an id of it would rewrite ids another type owns; give the types their own type ids.'),
   ('NODE_LEGACY_METADATA_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_METADATA_UNREADABLE',
-   'The table''s generated class declares __NODE_LEGACY_KEY_COLUMNS graphitron cannot use, and no fallback reads ids issued in the old shape; fix the generator configuration that writes it.', 'entry-defects'),
+   'The table''s generated class declares __NODE_LEGACY_KEY_COLUMNS graphitron cannot use, and no fallback reads ids issued in the old shape; fix the generator configuration that writes it.'),
   ('TYPE_NAME_CASE_COLLISION', 'error', 'GRAPHITRON', 'GRAPHITRON_TYPE_NAME_CASE_COLLISION',
-   'Two types the generator writes a file for have names that differ only in case, which on a filesystem that folds case is one file; rename one of them.', 'entry-defects'),
+   'Two types the generator writes a file for have names that differ only in case, which on a filesystem that folds case is one file; rename one of them.'),
   ('KEY_TYPE_NOT_TABLE_BOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TYPE_NOT_TABLE_BOUND',
-   'A resolvable federation @key is on a type with no @table, and this subgraph resolves an entity by selecting its row from its table: bind the type to a table, or mark every key resolvable: false if another subgraph resolves it.', 'entity-key-alternatives'),
+   'A resolvable federation @key is on a type with no @table, and this subgraph resolves an entity by selecting its row from its table: bind the type to a table, or mark every key resolvable: false if another subgraph resolves it.'),
   ('KEY_ON_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ON_INTERFACE',
-   'A federation @key is on a table-bound interface, and an entity is resolved by one table: declare the key on each implementing type instead.', 'entity-key-alternatives'),
+   'A federation @key is on a table-bound interface, and an entity is resolved by one table: declare the key on each implementing type instead.'),
   ('KEY_SELECTS_NOTHING', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_SELECTS_NOTHING',
-   'A federation @key''s fields: selects no field, so nothing identifies the entity: name the fields of its key.', 'entity-key-alternatives'),
+   'A federation @key''s fields: selects no field, so nothing identifies the entity: name the fields of its key.'),
   ('KEY_FIELD_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_MISSING',
-   'A federation @key selects a field its type does not declare. The fields a key selects are fields of its type, whatever the type is bound to: declare the field, or name one the type has.', 'entity-key-alternatives'),
+   'A federation @key selects a field its type does not declare. The fields a key selects are fields of its type, whatever the type is bound to: declare the field, or name one the type has.'),
   ('VOUCHER_ACCEPT_WITHOUT_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_WITHOUT_KEY',
-   '@accept is on a type with no authored @key this subgraph resolves it by, and a voucher''s lookup part decodes to such a key: write the key.', 'entity-key-alternatives'),
+   '@accept is on a type with no authored @key this subgraph resolves it by, and a voucher''s lookup part decodes to such a key: write the key.'),
   ('VOUCHER_ACCEPT_KEY_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_AMBIGUOUS',
-   '@accept leaves key: out on a type with more than one authored resolvable @key, so which one the voucher decodes to is unsaid: name it with key:.', 'entity-key-alternatives'),
+   '@accept leaves key: out on a type with more than one authored resolvable @key, so which one the voucher decodes to is unsaid: name it with key:.'),
   ('VOUCHER_ACCEPT_KEY_NESTED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_NESTED',
-   '@accept''s key: has a nested selection, and a voucher''s lookup part carries top-level scalar fields: name a key of top-level fields.', 'entity-key-alternatives'),
+   '@accept''s key: has a nested selection, and a voucher''s lookup part carries top-level scalar fields: name a key of top-level fields.'),
   ('VOUCHER_ACCEPT_KEY_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_KEY_UNKNOWN',
-   '@accept''s key: names no authored resolvable @key of the type, field set for field set: name the fields of one.', 'entity-key-alternatives'),
+   '@accept''s key: names no authored resolvable @key of the type, field set for field set: name the fields of one.'),
   ('VOUCHER_CLAIM_IN_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_IN_KEY',
-   '@accept''s claims names a field of the key the voucher decodes to, and the claims and the lookup part never share a value: claim fields outside the key.', 'entity-key-alternatives'),
+   '@accept''s claims names a field of the key the voucher decodes to, and the claims and the lookup part never share a value: claim fields outside the key.'),
   ('VOUCHER_CLAIM_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_NOT_A_COLUMN',
-   '@accept''s claims names a field that does not read one column of the type''s own table, a list or a field read some other way, and the voucher''s claims parse into each as one scalar value, as a key field''s value does: claim fields that read the table''s columns.', 'entity-key-alternatives'),
+   '@accept''s claims names a field that does not read one column of the type''s own table, a list or a field read some other way, and the voucher''s claims parse into each as one scalar value, as a key field''s value does: claim fields that read the table''s columns.'),
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
-   'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.', 'entity-key-alternatives'),
+   'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
-   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, so there is nothing to select or write: the name is misspelt, or the column lives on another table.', 'occurrence-depth-defects'),
+   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, so there is nothing to select or write: the name is misspelt, or the column lives on another table.'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
-   'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.', 'occurrence-depth-defects'),
+   'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
-   'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.', 'entry-defects'),
+   'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
   ('DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', 'error', 'GRAPHITRON', 'GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM',
-   'A connection''s default page size is larger than the build''s <maxAllowedPageSize>, so the schema advertises a default no request can receive, every page being served at the maximum: lower the default, or raise the maximum.', 'entry-defects'),
+   'A connection''s default page size is larger than the build''s <maxAllowedPageSize>, so the schema advertises a default no request can receive, every page being served at the maximum: lower the default, or raise the maximum.'),
   ('OUTBOX_NOT_A_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NOT_A_WRITE',
-   'An @outbox writes a message when a write succeeds, so it belongs on a mutation field that writes a table with @mutation (INSERT, UPDATE or DELETE), or on a mutation field a @service answers: move it onto one, or remove it.', 'outbox'),
+   'An @outbox writes a message when a write succeeds, so it belongs on a mutation field that writes a table with @mutation (INSERT, UPDATE or DELETE), or on a mutation field a @service answers: move it onto one, or remove it.'),
   ('OUTBOX_NO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NO_TARGET',
-   'An @outbox needs somewhere to write its message, and the build configures no <outbox> block naming a <table> or a <function>: add one to the plugin configuration.', 'outbox'),
+   'An @outbox needs somewhere to write its message, and the build configures no <outbox> block naming a <table> or a <function>: add one to the plugin configuration.'),
   ('OUTBOX_TARGET_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_TARGET_INVALID',
-   'The <outbox> block cannot be used as written: fix the configuration the detail names.', 'outbox'),
+   'The <outbox> block cannot be used as written: fix the configuration the detail names.'),
   ('OUTBOX_DUPLICATE_EVENT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_DUPLICATE_EVENT',
-   'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate, so a consumer could not tell their messages apart: give each its own event.', 'outbox'),
+   'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate, so a consumer could not tell their messages apart: give each its own event.'),
   ('OUTBOX_KEY_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_KEY_CONFLICT',
-   'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.', 'outbox'),
+   'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.'),
   ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',
-   'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.', 'outbox'),
+   'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members and $session members only, and every key is its own.'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
-   'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.', 'entry-defects'),
+   'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.'),
   ('CLAIMS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_CLAIMS_CONFLICT',
-   'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.', 'entry-defects'),
+   'An element''s directives claim two things it cannot be at once, such as a @service, whose author provides the code, beside a @mutation, whose code graphitron generates.'),
   ('VOUCHER_WITHOUT_FEDERATION_LINK', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_FEDERATION_LINK',
-   'A voucher marker needs a federation @link: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.', 'minted-keys'),
+   'A voucher marker needs a federation @link: a voucher only makes sense where a router plans across subgraphs, and the key it is reached by needs the link.'),
   ('VOUCHER_FIELD_REPEATED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_FIELD_REPEATED',
-   'A type carries more than one voucher field, @issue or @accept, and a type issues or accepts one voucher: keep one.', 'vouchers'),
+   'A type carries more than one voucher field, @issue or @accept, and a type issues or accepts one voucher: keep one.'),
   ('VOUCHER_ISSUE_ON_KEYED_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_KEYED_TYPE',
-   '@issue is on a type with an authored @key, which would let a router reach the other subgraph''s entity without the voucher: remove the @key.', 'vouchers'),
+   '@issue is on a type with an authored @key, which would let a router reach the other subgraph''s entity without the voucher: remove the @key.'),
   ('VOUCHER_ISSUE_ON_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_NODE',
-   '@issue is on a node type, whose node key would name an id the voucher absorbs: issue from a type that is no node.', 'vouchers'),
+   '@issue is on a node type, whose node key would name an id the voucher absorbs: issue from a type that is no node.'),
   ('VOUCHER_ISSUE_ABSORBS_NOTHING', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ABSORBS_NOTHING',
-   '@issue is on a type with no other field, so the voucher would carry nothing: add the fields the other subgraph''s key and claims are.', 'vouchers'),
+   '@issue is on a type with no other field, so the voucher would carry nothing: add the fields the other subgraph''s key and claims are.'),
   ('VOUCHER_WITHOUT_SESSION_STATE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_SESSION_STATE',
-   'A voucher marker binds each voucher to the caller on the request''s SessionState, and the build configures no <sessionState>: configure one.', 'vouchers'),
+   'A voucher marker binds each voucher to the caller on the request''s SessionState, and the build configures no <sessionState>: configure one.'),
   ('VOUCHER_TTL_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_TTL_INVALID',
-   '@issue''s ttl is not an ISO-8601 duration of hours, minutes and seconds, such as PT5M.', 'vouchers'),
+   '@issue''s ttl is not an ISO-8601 duration of hours, minutes and seconds, such as PT5M.'),
   ('VOUCHER_CLAIMS_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIMS_EMPTY',
-   'A voucher marker''s claims selects no field, and a voucher says whose rows it vouches for through its claims: name them.', 'vouchers'),
+   'A voucher marker''s claims selects no field, and a voucher says whose rows it vouches for through its claims: name them.'),
   ('VOUCHER_CLAIM_NOT_ABSORBED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_NOT_ABSORBED',
-   '@issue''s claims names something that is no absorbed field of the type: a name the type does not declare, the voucher field itself, or a nested selection.', 'vouchers'),
+   '@issue''s claims names something that is no absorbed field of the type: a name the type does not declare, the voucher field itself, or a nested selection.'),
   ('VOUCHER_CLAIM_REPEATED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_REPEATED',
-   'A voucher marker''s claims names a field twice: name it once.', 'vouchers'),
+   'A voucher marker''s claims names a field twice: name it once.'),
   ('VOUCHER_CLAIM_NOT_A_FIELD', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_CLAIM_NOT_A_FIELD',
-   '@accept''s claims names something that is no field of the type for the voucher''s claims to parse into: a name the type does not declare, a voucher field, or a nested selection.', 'vouchers'),
+   '@accept''s claims names something that is no field of the type for the voucher''s claims to parse into: a name the type does not declare, a voucher field, or a nested selection.'),
   ('VOUCHER_MEMBER_NOT_SCALAR', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_NOT_SCALAR',
-   'A field @issue absorbs is a list, an object or an enum, and the voucher carries each absorbed field as one scalar value: absorb scalar fields only.', 'vouchers'),
+   'A field @issue absorbs is a list, an object or an enum, and the voucher carries each absorbed field as one scalar value: absorb scalar fields only.'),
   ('VOUCHER_MEMBER_COMPUTED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_COMPUTED',
-   'A field @issue absorbs carries a directive that gives it a value of its own, and the voucher reads each absorbed field off the issuing row: absorb fields that read a column.', 'vouchers'),
+   'A field @issue absorbs carries a directive that gives it a value of its own, and the voucher reads each absorbed field off the issuing row: absorb fields that read a column.'),
   ('VOUCHER_MEMBER_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_MEMBER_COLUMN_UNRESOLVED',
-   'A field @issue absorbs reads no column of the issuing type''s table: name its column with @field(name:).', 'vouchers'),
+   'A field @issue absorbs reads no column of the issuing type''s table: name its column with @field(name:).'),
   ('VOUCHER_ISSUE_ON_ROOT_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_ROOT_TYPE',
-   'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.', 'entry-defects'),
+   'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.'),
   ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
-   '@accept is captured and B''s published shape derived, but graphitron does not generate the dispatch that verifies vouchers yet.', 'entry-defects'),
+   '@accept is captured and B''s published shape derived, but graphitron does not generate the dispatch that verifies vouchers yet.'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
-   '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.', 'entry-defects'),
+   '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
-   '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.', 'entry-defects'),
+   '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.'),
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
-   '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.', 'entry-defects'),
+   '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
-   'A type is reached both as a row of a statement and as an object in memory that is not a class graphitron reads by accessor, so its fields would be fetched two ways; give each its own type.', 'entry-defects'),
+   'A type is reached both as a row of a statement and as an object in memory that is not a class graphitron reads by accessor, so its fields would be fetched two ways; give each its own type.'),
   ('FIELD_WITHOUT_FETCHER', 'error', 'GRAPHITRON', 'GRAPHITRON_FIELD_WITHOUT_FETCHER',
-   'A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with.', 'entry-defects'),
+   'A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with.'),
   ('ERRORS_FIELD_MIXED_MEMBERS', 'error', 'GRAPHITRON', 'graphitron.error-channel.mixed-members',
-   'A field lists a union or an interface with an @error member and a member that is no @error, so it is neither a list of errors nor a result: make every member @error, or none.', 'entry-defects'),
+   'A field lists a union or an interface with an @error member and a member that is no @error, so it is neither a list of errors nor a result: make every member @error, or none.'),
   ('ERRORS_FIELD_NOT_A_LIST', 'error', 'GRAPHITRON', 'graphitron.error-channel.errors-field-not-a-list',
-   'A field returns a single value of a union or an interface of @error types, and errors arrive as a list: declare it as a list.', 'entry-defects'),
+   'A field returns a single value of a union or an interface of @error types, and errors arrive as a list: declare it as a list.'),
   ('ERRORS_FIELD_NON_NULL', 'error', 'GRAPHITRON', 'graphitron.error-channel.non-nullable-errors-field',
-   'A list of errors may not be null, and on success there are no errors to hand it: make the list nullable.', 'entry-defects'),
+   'A list of errors may not be null, and on success there are no errors to hand it: make the list nullable.'),
   ('MULTIPLE_ERRORS_FIELDS', 'error', 'GRAPHITRON', 'graphitron.error-channel.multiple-errors-fields',
-   'A type has more than one list of errors, and what a producer catches arrives at one: keep one.', 'entry-defects'),
+   'A type has more than one list of errors, and what a producer catches arrives at one: keep one.'),
   ('OUTCOME_FIELD_NON_NULL', 'error', 'GRAPHITRON', 'graphitron.error-channel.non-nullable-success-field',
-   'A field of a type a service, write or routine hands back with its errors may not be null unless it is a list, which answers an empty list, and when the producer fails there is no value to read it from, so graphql-java would drop the errors with it: make the field nullable.', 'entry-defects'),
+   'A field of a type a service, write or routine hands back with its errors may not be null unless it is a list, which answers an empty list, and when the producer fails there is no value to read it from, so graphql-java would drop the errors with it: make the field nullable.'),
   ('ERRORS_IN_A_ROW', 'error', 'GRAPHITRON', 'GRAPHITRON_ERRORS_IN_A_ROW',
-   'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.', 'entry-defects'),
+   'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.'),
   ('SESSION_BINDING_WITHOUT_IDENTITY', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_BINDING_WITHOUT_IDENTITY',
-   'An argMapping entry reads $session, and the build configures no <sessionState>, so no session is mounted for the sigil to read: add <sessionState> to the build or bind the parameter another way.', 'entry-defects'),
+   'An argMapping entry reads $session, and the build configures no <sessionState>, so no session is mounted for the sigil to read: add <sessionState> to the build or bind the parameter another way.'),
   ('SESSION_HANDLE_UNNAMED', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_HANDLE_UNNAMED',
-   'An argMapping entry reads $session, and <sessionState> names no <handle>, so the mount returns nothing the sigil could read: name the class the mount callback returns in <handle>.', 'entry-defects'),
+   'An argMapping entry reads $session, and <sessionState> names no <handle>, so the mount returns nothing the sigil could read: name the class the mount callback returns in <handle>.'),
   ('SESSION_MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_MEMBER_UNKNOWN',
-   'An argMapping entry reads a member of $session that the handle class does not offer, as a record component or a get or is accessor it declares itself: name one it does.', 'entry-defects'),
+   'An argMapping entry reads a member of $session that the handle class does not offer, as a record component or a get or is accessor it declares itself: name one it does.'),
   ('SESSION_MEMBER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_MEMBER_AMBIGUOUS',
-   'An argMapping entry reads a member of $session that two accessors of the handle class offer, a getX and an isX for one property, so there is no single thing to read: remove one accessor.', 'entry-defects'),
+   'An argMapping entry reads a member of $session that two accessors of the handle class offer, a getX and an isX for one property, so there is no single thing to read: remove one accessor.'),
   ('SESSION_BINDING_TYPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SESSION_BINDING_TYPE_MISMATCH',
-   'An argMapping entry reads $session or one of its members into a parameter that is not declared as what the handle or the member yields, so the generated call would not compile: declare the parameter as that type, a primitive member being allowed its boxed type.', 'entry-defects');
+   'An argMapping entry reads $session or one of its members into a parameter that is not declared as what the handle or the member yields, so the generated call would not compile: declare the parameter as that type, a primitive member being allowed its boxed type.');
 
 INSERT INTO meta_relation VALUES
   ('graphitron_join_path_claim', 'path-claim', 'graphitron',
@@ -23492,9 +23511,9 @@ INSERT INTO meta_relation VALUES
    'For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_field_target_rule''s terms and for its reasons. Stored at all because the read that matters is interactive: the editor asks for one file''s diagnostics, and the chain arms of this rule once reached a relation whose two recursive walks ran over every chain in the graph. A per-file predicate cannot push into a recursion behind a view boundary, so as a view the whole walk ran on every keystroke''s worth of diagnostics, and the LSP''s scan-count gate is what caught it. What the gate measured is not the argument, and the measurement is recorded where measurements live rather than here, because a ceiling moves and a rationale that cites one goes stale the day it does. The argument is that the walk already runs once per capture, Steps storing every step it takes and every place it stops, so a chain defect is read off that record and computing it again per read is a second evaluation of a rule the capture has already performed. The write arms are cheap and are stored with the rest rather than split out, one relation being the name every consumer already spells and the split buying a second relation to keep in agreement with this one.'),
   ('graphitron_entry_defect', 'graphitron-entry-defect', 'graphitron',
-   'A defect a schema has, one row per defect at the written position an author edits to fix it under the code that names the rule: the supertype, which a gatherer is encouraged to extend with subtype and other detail relations where a defect has more to say than its code and detail.',
+   'A defect a schema has, one row per defect at the written position an author edits to fix it, under the code naming the rule and the stage raising it: the supertype, which a gatherer is encouraged to extend with subtype and detail relations where a defect has more to say than its code and detail.',
    'For example an @orderBy on a @routine mutation field draws one row at the @orderBy''s line, reading READ_SURFACE_ON_WRITE; a detail relation such as graphitron_argmapping_pair_defect is keyed by this key, with a foreign key to it ON DELETE CASCADE, so a swept defect takes its details with it.',
-   'The key is the entry, not the coordinate. A coordinate is an aggregate over the sites that declare it, so keying a defect there loses which of two offending applications to fix and reintroduces by the key the ranking this relation exists without. The entry is what the author edits. One relation and not one per defect: eleven sibling relations differed almost only in payload, and every payload column went into a rendered sentence, a prose coordinate or a file position, with nothing computing on them. The family follows the grain rather than being chosen: a defect registers at an entry, this family owns those entries, so it is filed here. A defect at a grain this family does not own belongs with whoever owns it, which is why a generated class publishing malformed constants is not in this population. What the position is about is not stored: graphitron_entry_defect_site reaches the element in fixed hops. Several gatherers write it, each its own codes, and what one defect has to say beyond its code and detail is a relation of its writer''s keyed by this key, whose foreign key collects it when the owner sweeps the defect.'),
+   'The key is the entry, not the coordinate. A coordinate is an aggregate over the sites that declare it, so keying a defect there loses which of two offending applications to fix and reintroduces by the key the ranking this relation exists without. The entry is what the author edits. One relation and not one per defect: eleven sibling relations differed almost only in payload, and every payload column went into a rendered sentence, a prose coordinate or a file position, with nothing computing on them. The family follows the grain rather than being chosen: a defect registers at an entry, this family owns those entries, so it is filed here. A defect at a grain this family does not own belongs with whoever owns it, which is why a generated class publishing malformed constants is not in this population. What the position is about is not stored: graphitron_entry_defect_site reaches the element in fixed hops. Many stages write it, each the rows it raised and under its own name, nobody owning a code, and what one defect has to say beyond its code and detail is a relation of its writer''s keyed by this key, whose foreign key collects it when the stage sweeps the defect.'),
   ('graphitron_entry_defect_claim', 'entry-defect-claim', 'graphitron',
    'One claim a claim defect is about: one row per defect and claim in conflict.',
    'For example a field carrying both @service and @mutation draws a CLAIMS_CONFLICT at the field with a SERVICE row and an INSERT row under it, each claim pointing at where it was written.',
@@ -23543,10 +23562,10 @@ INSERT INTO meta_relation VALUES
    'One @routine a field''s written path steps through, under the claim defect it conflicts in: one row per defect and step.',
    'For example a field carrying @service and a @routine below a root without @splitQuery draws a CLAIMS_CONFLICT with a SERVICE claim and this row for the routine.',
    'A routine below a root and not split is a step of the field''s path and no claim, yet no claim can share a field with it, so the conflict it is in names it beside the claims. Keyed by the defect and the step''s written position, with a foreign key to each.'),
-  ('graphitron_entry_defect_site', 'graphitron-entry-defect', 'graphitron',
-   'One located defect with the element its position is about: the entry defect''s own row, and the coordinate, type and field an editor or a report names it by.',
+  ('graphitron_entry_defect_site', 'graphitron-entry-defect-finding', 'graphitron',
+   'One finding an author reads, with the element its position is about: one row per position and code over the stages that raised it, and the coordinate, type and field an editor or a report names it by.',
    'For example a READ_SURFACE_ON_WRITE row at the @orderBy written on Mutation.rentFilm reads Mutation.rentFilm, Mutation and rentFilm here.',
-   'A view and not columns on the defect, the element being a fact of the position: a declaration is its own element, a directive application''s is its parent, and a value''s is reached through the node holding it, the climb graphitron_code_reference_site already takes. Every hop is a key the transcription declares, so the view states no decision of its own and a reader that wants the element joins it rather than the rule restating it per arm.'),
+   'A view and not columns on the defect, the element being a fact of the position: a declaration is its own element, a directive application''s is its parent, and a value''s is reached through the node holding it, the climb graphitron_code_reference_site already takes. Every hop is a key the transcription declares, so the view states no decision of its own and a reader that wants the element joins it rather than the rule restating it per arm. It collapses the stage (Alf, 2026-11-13): an author sees one finding per position and code, two stages raising one rule wording it alike.'),
   ('graphitron_outbox_key', 'outbox-message-key', 'graphitron',
    'One key of one @outbox message''s payload, as the parameter of the message''s call it is, by what fills it.',
    'For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two keys, filmId filled by the result''s node id and title by the argument path in.title, and a configured common payload entry adds its own key to every message.',

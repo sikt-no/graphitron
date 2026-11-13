@@ -67,6 +67,9 @@ class FactExpectationTest {
     private static final List<String> divergences = new ArrayList<>();
     private static final List<String> unstated = new ArrayList<>();
     private static final List<String> misplaced = new ArrayList<>();
+
+    /** Findings two stages raised and worded differently, which an author would read twice. */
+    private static final List<String> wordedApart = new ArrayList<>();
     private static final List<String> untargeted = new ArrayList<>();
     private static final List<String> wholeStore = new ArrayList<>();
     private static final List<String> refusedAssertions = new ArrayList<>();
@@ -145,6 +148,7 @@ class FactExpectationTest {
         }
         FACTS.eachStore((dsl, held) -> fingerprints(dsl, held, scenarios.keySet()))
             .forEach(fingerprints::putAll);
+        FACTS.eachStore(FactExpectationTest::wordedApart).forEach(wordedApart::addAll);
         // An assertion file pins for the document it names, on the final reading it is checked against.
         FACTS.eachStore((dsl, held) -> {
             var byDocument = new TreeMap<String, Map<String, java.util.Set<Pins.Pin>>>();
@@ -201,7 +205,8 @@ class FactExpectationTest {
                 return;
             }
             var stored = new ArrayList<String>();
-            dsl.select(defect.CODE, site.COORDINATE, defect.SOURCE_LINE, defect.SOURCE_COLUMN,
+            // One finding per position and code, however many stages raised it.
+            dsl.selectDistinct(defect.CODE, site.COORDINATE, defect.SOURCE_LINE, defect.SOURCE_COLUMN,
                     defect.DETAIL)
                 .from(defect)
                 .leftJoin(site).on(site.GRAPH_NAME.eq(defect.GRAPH_NAME),
@@ -279,6 +284,30 @@ class FactExpectationTest {
     @DisplayName("every scenario stores no defect, and every defect document stores one")
     void everyFolderHoldsWhatItClaims() {
         assertThat(misplaced).as("documents whose folder claims what the store does not hold").isEmpty();
+    }
+
+    /**
+     * Two stages raising one rule at one position word it alike: the detail is a function of the
+     * position and the code, so the site an author reads shows one finding, and what a stage has to
+     * add is a detail relation of its own.
+     */
+    @Test
+    @DisplayName("a rule two stages raise at one position carries one detail")
+    void aFindingIsWordedOnce() {
+        assertThat(wordedApart).as("positions and codes whose stages give different details").isEmpty();
+    }
+
+    /** The findings in {@code dsl}'s store whose raising stages give different details. */
+    private static List<String> wordedApart(DSLContext dsl, java.util.Set<String> held) {
+        var d = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+        var detail = org.jooq.impl.DSL.coalesce(d.DETAIL, org.jooq.impl.DSL.inline(""));
+        return dsl.select(d.GRAPH_NAME, d.CODE, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
+            .from(d)
+            .where(d.GRAPH_NAME.in(held))
+            .groupBy(d.GRAPH_NAME, d.CODE, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN)
+            .having(org.jooq.impl.DSL.countDistinct(detail).gt(1))
+            .fetch(r -> r.value1() + " " + r.value2() + " at " + r.value3() + ":" + r.value4() + ":"
+                + r.value5());
     }
 
     /**

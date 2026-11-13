@@ -31,8 +31,11 @@ public final class EntryDefectMembers {
     /** entry-defects' member rule, the {@code @discriminate}'s members. */
     public static final Table<?> GRAPHITRON = GRAPHITRON_ENTRY_DEFECT_MEMBER_RULE;
 
-    /** Writes the members {@code rule} names under each of the graph's defects the reading marked. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime readAt, Table<?> rule) {
+    /**
+     * Writes the members {@code rule} names under each of the graph's defects {@code stage} raised that
+     * the reading marked, under that stage, the one this runs in.
+     */
+    public static void derive(DSLContext dsl, String graph, LocalDateTime readAt, Table<?> rule, String stage) {
         var d = GRAPHITRON_ENTRY_DEFECT;
         var t = GRAPHITRON_ENTRY_DEFECT_MEMBER;
         Field<String> graphName = rule.field(t.GRAPH_NAME.getName(), String.class);
@@ -42,14 +45,16 @@ public final class EntryDefectMembers {
         Field<String> code = rule.field(t.CODE.getName(), String.class);
         Field<String> member = rule.field(t.MEMBER_TYPE_NAME.getName(), String.class);
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE,
+            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.MEMBER_TYPE_NAME, t.TOUCHED_AT)
-            .select(select(graphName, file, line, column, code, member, val(readAt, t.TOUCHED_AT))
+            .select(select(graphName, file, line, column, code, val(stage, t.STAGE), member,
+                    val(readAt, t.TOUCHED_AT))
                 .from(rule)
                 .join(d).on(d.GRAPH_NAME.eq(graphName), d.SOURCE_NAME.eq(file),
-                    d.SOURCE_LINE.eq(line), d.SOURCE_COLUMN.eq(column), d.CODE.eq(code))
+                    d.SOURCE_LINE.eq(line), d.SOURCE_COLUMN.eq(column), d.CODE.eq(code),
+                    d.STAGE.eq(stage))
                 .where(graphName.eq(graph), d.TOUCHED_AT.eq(readAt)))
-            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE,
+            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.MEMBER_TYPE_NAME)
             .doUpdate()
             .set(t.TOUCHED_AT, val(readAt, t.TOUCHED_AT))

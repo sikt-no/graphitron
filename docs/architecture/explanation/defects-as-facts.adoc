@@ -1,8 +1,8 @@
 = Defects as facts
 
 A schema that breaks a rule should say so in one place, at the spot the author edits to fix it, and
-every tool should read the same verdict. So a defect is a fact in the store: a row, written once by
-the stage whose facts it judges, at the written position of the offending directive. This page
+every tool should read the same verdict. So a defect is a fact in the store: a row, written by the
+stage whose facts it judges and keyed by it, at the written position of the offending directive. This page
 says how that relation is shaped, who writes it, and how to add a defect.
 
 == Why a defect is a fact
@@ -64,9 +64,10 @@ shed when the generator learns the shape, its code going with it.
 graphitron does not support yet: `UNSUPPORTED`, a deferral.
 | `lsp_code` | The code the editor shows.
 | `statement` | One sentence an author reads to understand the rule.
-| `owner_stage` | Today, the stage that writes the code's rows, which its gatherer sweeps. It goes
-when the stage enters the defect's key: nobody owns a code (Alf, 2026-11-13).
 |===
+
+No column names a stage: nobody owns a code (Alf, 2026-11-13), so which stage raised a row is on the
+row.
 
 == Ownership
 
@@ -84,9 +85,10 @@ would read the previous reading's rows. A rule reading several stages' facts bel
 them. A stage whose own run has to stay lean writes no defects: its codes go to a stage of their own
 straight after it, which writes nothing but those defects, as `occurrence-depth-defects` does for the
 depth loop's `occurrence-depths` (Alf, 2026-11-12). Every row carries `touched_at`, the instant of the
-reading that found it. Each stage sweeps the rows it raised that the reading did not mark, and
-another stage's rows are never touched. Until the stage is in the key, the gatherer sweeps instead
-by `owner_stage`, the codes its stages own, once its stages have run.
+reading that found it. Each stage's rows are swept by the stage they name: the gatherer, once its
+stages have run, deletes the rows its stages raised that the reading did not mark, and another
+gatherer's rows are never touched. A detail row names the stage that wrote it, which is the stage
+that raised its defect, and is swept the same way.
 
 The split is under way. `graphitron_entry_defect_rule` takes no new arm: a new code goes to the
 stage whose facts it judges, and an existing one leaves with its family. `occurrence-bindings`,
@@ -94,15 +96,17 @@ stage whose facts it judges, and an existing one leaves with its family. `occurr
 own, `occurrence-bindings` the `NODE_ID_TARGET_*` family of a node id no binding could be written
 for; the
 `entry-defects` stage, `EntryDefects` itself as the graphitron anchor phase's last step, owns every
-graphitron code no earlier stage writes yet, from `graphitron_entry_defect_rule`. A stage takes its
-codes by writing them and moving their `owner_stage`, and the members a per-member defect names go
-with it: `occurrence-builds` writes the node-id slot and container defects with the members a
+graphitron code no earlier stage raises yet, from `graphitron_entry_defect_rule`. A stage takes a
+rule by raising it, and the members a per-member defect names go with it: `occurrence-builds` writes the node-id slot and container defects with the members a
 polymorphic id's names, from `graphitron_occurrence_build_entry_defect_member_rule`, and
 `entry-defects` the `@discriminate`'s, from `graphitron_entry_defect_member_rule`.
 
-`DefectOwnerGateTest` holds this together: every code names a stage of a gatherer, a stage owns
-exactly the codes it writes, every stage's rule view emits only that stage's codes and its gatherer
-owns the view, the gatherer may read what the view reaches, and each Java writer runs in a stage.
+`DefectStageGateTest` holds this together: every stage raising defects has one rule view, whose rows
+name that stage and no other, or a Java writer stating its stage; every such stage declares the
+write; every declared code is raised by some stage; and the gatherer owning a rule view may read
+what it reaches. An author reads one finding per position and code: `graphitron_entry_defect_site`
+collapses the stages, two stages raising one rule word it alike, and `FactExpectationTest` holds
+every fact document to that.
 `StageRosterGateTest` holds the order: the gatherer runs the stages its roster states, and no
 stage's rule view reaches a relation a later stage writes. `StageWriteGateTest` holds the writes:
 every relation a stage wrote in a fact document's capture, as `store_graph_write_stage` records it,
@@ -123,7 +127,7 @@ so they went, and the declarations stand in the detail string until a reader nee
 
 The call parameter defects are the example. `PARAMETER_UNFILLED`, `PARAMETER_AMBIGUOUS` and
 `PARAMETER_FILLED_TWICE` are stated for every call, a `@service` method's and a `@condition`'s alike,
-and worded to hold for both. A defect's key is its position and code, so one written directive that
+and worded to hold for both. A finding is its position and code, so one written directive that
 leaves parameters unfilled in several calls, a field binding two tables or an input field consumed
 under several fields, is one defect; which call, which bound table and which parameter is a row of
 `graphitron_entry_defect_parameter_rule`, keyed by the defect plus the occurrence, the call and the
@@ -171,10 +175,10 @@ neither judges a payload key's id against a parameter's arity.
 
 . Declare the code in `graphitron_defect_type`: severity, basis, `lsp_code`, a one-sentence
   statement.
-. Choose its owner: the stage whose facts the rule reads, the last of them where it reads several.
-  That stage's gatherer must own or declare a dependency on every relation the rule reads.
-. Write it as the stage's last statement, as a branch of the stage's rule view or directly, marked
-  with the reading's instant and swept by the gatherer.
+. Raise it from the first stage holding the facts the rule reads, the last of them where it reads
+  several. That stage's gatherer must own or declare a dependency on every relation the rule reads.
+. Write it as the stage's last statement, as a branch of the stage's rule view or directly, under
+  the stage's name and marked with the reading's instant; the gatherer sweeps it by that stage.
 . Add a detail relation where the defect has more to say, keyed and cascaded as above.
 . Pin it in a fact document: the schema, then the expected rows of each relation the case touches
   with the defect rows beside the fact rows, since the defect is half the answer for that field;

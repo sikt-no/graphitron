@@ -60,10 +60,8 @@ public class StageAnswerAgreementTest {
     /**
      * The defect table several stages write, each from a rule view of its own, beside the walk,
      * which writes its defects as it goes and has no view. Each rule's rows are held, and every held
-     * row of a code one of the rules' stages owns ({@code graphitron_defect_type.owner_stage}) is
-     * one some rule computes. Not each rule against its owner's codes alone: the graphitron rule
-     * also states the route codes the walk's stage owns, at the declaration of a field whose need no
-     * claim covers.
+     * row one of the rules' stages raised is one some rule computes, each row naming the stage that
+     * raised it.
      */
     public static final String DEFECTS = "graphitron_entry_defect";
 
@@ -188,13 +186,10 @@ public class StageAnswerAgreementTest {
                     .<org.jooq.Select<org.jooq.Record>>map(rule -> defectRule(dsl, graph, rule))
                     .reduce((left, right) -> left.union(right)).orElseThrow();
                 dsl.selectFrom(defectTable(dsl, graph)
-                        .and(field(name("CODE"), String.class).in(
-                            select(field(name("CODE"), String.class))
-                                .from(table(name("GRAPHITRON_DEFECT_TYPE")))
-                                .where(field(name("OWNER_STAGE"), String.class).in(DEFECT_RULES.values()))))
+                        .and(field(name("STAGE"), String.class).in(DEFECT_RULES.values()))
                         .except(computed))
-                    .fetch().forEach(row -> disagreements.add(DEFECTS + " holds a row of a code the"
-                        + " rules' stages own that no rule computes (" + graph + "): " + row));
+                    .fetch().forEach(row -> disagreements.add(DEFECTS + " holds a row the rules'"
+                        + " stages raised that no rule computes (" + graph + "): " + row));
             }
         });
         assertThat(disagreements)

@@ -122,6 +122,9 @@ public final class Steps {
     private static final String NO_ROUTE_TO_TARGET = "NO_ROUTE_TO_TARGET";
     private static final String ROUTINE_PARAMETER_UNBOUND = "ROUTINE_PARAMETER_UNBOUND";
 
+    /** The stage raising the walk's defects, the one this runs in. */
+    public static final String STAGE = "occurrence-depths";
+
     /** The {@code graphitron_entry_defect} codes this stage writes. */
     public static final List<String> ENTRY_DEFECT_CODES = List.of(NO_OVERLOAD_FOR_PAIR, OVERLOAD_TIE,
         ROUTE_AMBIGUOUS, NO_ROUTE_FROM_DEPARTURE, ELEMENT_UNRESOLVED, NO_ROUTE_TO_TARGET,
@@ -842,7 +845,8 @@ public final class Steps {
         var d = GRAPHITRON_ENTRY_DEFECT;
         String marked = dsl.select(d.DETAIL).from(d)
             .where(d.GRAPH_NAME.eq(graph), d.SOURCE_NAME.eq(pos.source()), d.SOURCE_LINE.eq(pos.line()),
-                d.SOURCE_COLUMN.eq(pos.column()), d.CODE.eq(code), d.TOUCHED_AT.eq(touchedAt))
+                d.SOURCE_COLUMN.eq(pos.column()), d.CODE.eq(code), d.STAGE.eq(STAGE),
+                d.TOUCHED_AT.eq(touchedAt))
             .fetchOne(d.DETAIL);
         if (marked != null) {
             parts.addAll(List.of(marked.split("; ")));
@@ -1066,9 +1070,9 @@ public final class Steps {
                                      Map<DefectKey, String> defects) {
         var rows = new ArrayList<Object[]>();
         defects.forEach((k, detail) -> rows.add(new Object[] {graph, k.pos().source(), k.pos().line(),
-            k.pos().column(), k.code(), detail, touchedAt}));
+            k.pos().column(), k.code(), STAGE, detail, touchedAt}));
         var d = GRAPHITRON_ENTRY_DEFECT;
-        upsert(dsl, d, List.of(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE),
+        upsert(dsl, d, List.of(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE, d.STAGE),
             List.of(d.DETAIL, d.TOUCHED_AT), rows);
     }
 

@@ -51,7 +51,7 @@ class PinsTest {
     void defectFamily() {
         assertThat(pins(UNRESOLVED, "graphitron_entry_defect_site", List.of("code", "coordinate"),
                 List.of("ELEMENT_UNRESOLVED", "Query.missingFilms"), Mode.CONTAINS))
-            .containsExactly(new Pin(Family.DEFECT, "graphitron_entry_defect",
+            .containsExactly(new Pin(Family.DEFECT, "graphitron_entry_defect_site",
                 "ELEMENT_UNRESOLVED|FIELD_DIRECTIVE|routine"));
         assertThat(pins(UNRESOLVED, "graphitron_entry_defect_site", List.of("code", "coordinate"),
                 List.of("ELEMENT_UNRESOLVED", "Query.recentFilmsForActor"), Mode.CONTAINS))
@@ -84,8 +84,9 @@ class PinsTest {
     void membersShareTheGrain() {
         var members = FACTS.read(SERVICES, graph -> Pins.membersOf(graph.handle().dsl()));
         assertThat(members.get(Pins.Anchor.DEFECT)).contains("GRAPHITRON_ENTRY_DEFECT_SITE")
-            .as("a detail keying one parameter of a defect is a grain of its own")
-            .doesNotContain("GRAPHITRON_ENTRY_DEFECT_PARAMETER_RULE");
+            .as("a detail keying one parameter of a defect is a grain of its own, and a defect as one"
+                + " stage raised it is finer than the finding an author reads")
+            .doesNotContain("GRAPHITRON_ENTRY_DEFECT_PARAMETER_RULE", "GRAPHITRON_ENTRY_DEFECT_RULE");
         assertThat(members.get(Pins.Anchor.OCCURRENCE)).contains("GRAPHITRON_OCCURRENCE_PRODUCER_RESULT")
             .as("a step of an occurrence's path keys something finer than the occurrence")
             .doesNotContain("GRAPHITRON_JOIN_PATH_STEP", "GRAPHITRON_FIELD");

@@ -43,13 +43,17 @@ public final class EntryDefectClaims {
     /** The codes whose claims this writes. */
     public static final List<String> CODES = List.of("CLAIMS_CONFLICT", "ROUTINE_LOOKUP_DEFERRED");
 
+    /** The stage that raised those defects and writes their details, the one this runs in. */
+    private static final String STAGE = EntryDefects.GRAPHITRON.stage();
+
     /** Writes the claims and steps under each of the graph's claim defects the reading marked. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime readAt) {
         var d = GRAPHITRON_ENTRY_DEFECT;
         var fe = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
         var f = GRAPHITRON_FIELD;
         var te = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        Condition marked = d.GRAPH_NAME.eq(graph).and(d.CODE.in(CODES)).and(d.TOUCHED_AT.eq(readAt));
+        Condition marked = d.GRAPH_NAME.eq(graph).and(d.CODE.in(CODES)).and(d.STAGE.eq(STAGE))
+            .and(d.TOUCHED_AT.eq(readAt));
         var fieldSites = select(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE,
                 f.COORDINATE)
             .from(d)
@@ -77,11 +81,11 @@ public final class EntryDefectClaims {
         var strongerKind = GRAPHITRON_CLAIM_KIND.as("stronger_kind");
         var t = GRAPHITRON_ENTRY_DEFECT_CLAIM;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE,
+            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.COORDINATE, t.KIND, t.CLAIMER, t.TOUCHED_AT)
             .select(select(site(s, "GRAPH_NAME"), site(s, "SOURCE_NAME"), line(s, "SOURCE_LINE"),
-                    line(s, "SOURCE_COLUMN"), site(s, "CODE"), c.COORDINATE, c.KIND, c.CLAIMER,
-                    val(readAt, t.TOUCHED_AT))
+                    line(s, "SOURCE_COLUMN"), site(s, "CODE"), val(STAGE, t.STAGE), c.COORDINATE, c.KIND,
+                    c.CLAIMER, val(readAt, t.TOUCHED_AT))
                 .from(s)
                 .join(c).on(c.GRAPH_NAME.eq(site(s, "GRAPH_NAME")),
                     c.COORDINATE.eq(site(s, "COORDINATE")))
@@ -91,7 +95,7 @@ public final class EntryDefectClaims {
                     .join(strongerKind).on(strongerKind.KIND.eq(stronger.KIND))
                     .where(stronger.GRAPH_NAME.eq(c.GRAPH_NAME), stronger.COORDINATE.eq(c.COORDINATE),
                         strongerKind.FAMILY.eq(k.FAMILY), stronger.PRIORITY.lt(c.PRIORITY)))))
-            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE,
+            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.COORDINATE, t.KIND, t.CLAIMER)
             .doUpdate()
             .set(t.TOUCHED_AT, val(readAt, t.TOUCHED_AT))
@@ -106,10 +110,10 @@ public final class EntryDefectClaims {
         var r = GRAPHITRON_CLAIM;
         var t = GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE,
+            .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.STEP_SOURCE_NAME, t.STEP_SOURCE_LINE, t.STEP_SOURCE_COLUMN, t.TOUCHED_AT)
             .select(selectDistinct(site(s, "GRAPH_NAME"), site(s, "SOURCE_NAME"),
-                    line(s, "SOURCE_LINE"), line(s, "SOURCE_COLUMN"), site(s, "CODE"),
+                    line(s, "SOURCE_LINE"), line(s, "SOURCE_COLUMN"), site(s, "CODE"), val(STAGE, t.STAGE),
                     re.SOURCE_NAME, re.SOURCE_LINE, re.SOURCE_COLUMN, val(readAt, t.TOUCHED_AT))
                 .from(s)
                 .join(pc).on(pc.GRAPH_NAME.eq(site(s, "GRAPH_NAME")),
@@ -122,7 +126,7 @@ public final class EntryDefectClaims {
                 .and(notExists(selectOne().from(r)
                     .where(r.GRAPH_NAME.eq(pc.GRAPH_NAME), r.COORDINATE.eq(pc.ELEMENT_COORDINATE),
                         r.KIND.eq("ROUTINE")))))
-            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE,
+            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.STEP_SOURCE_NAME, t.STEP_SOURCE_LINE, t.STEP_SOURCE_COLUMN)
             .doUpdate()
             .set(t.TOUCHED_AT, val(readAt, t.TOUCHED_AT))

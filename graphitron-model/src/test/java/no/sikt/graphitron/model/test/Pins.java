@@ -47,12 +47,13 @@ final class Pins {
              WHERE (k.graph_name, k.coordinate, k.kind, k.claimer) IN ({0})
             """),
         /**
-         * The defects a reading finds: the code, the kind of AST entry it sits at, and the directive
-         * applied there or around it, found in the hops {@code graphitron_entry_defect_site} takes.
+         * The findings a reading reports, one per position and code however many stages raised it:
+         * the code, the kind of AST entry it sits at, and the directive applied there or around it,
+         * found in the hops {@code graphitron_entry_defect_site} takes.
          */
-        DEFECT(Family.DEFECT, "graphitron_entry_defect",
+        DEFECT(Family.DEFECT, "graphitron_entry_defect_site",
             List.of("graph_name", "source_name", "source_line", "source_column", "code"),
-            List.of("graphitron_entry_defect_site"), """
+            List.of("graphitron_entry_defect"), """
             SELECT DISTINCT CONCAT_WS('|', k.code, n.entry_kind, COALESCE(a.directive_name, '-'))
               FROM graphitron_entry_defect k
               JOIN graphql_ast_entry n
@@ -140,7 +141,10 @@ final class Pins {
         for (var block : blocks) {
             var relation = block.relation().toUpperCase(Locale.ROOT);
             for (var anchor : Anchor.values()) {
-                if (!families.get(anchor).contains(relation)) {
+                // A projection reaches the anchor whatever its grain, as the defect relation reaches
+                // the finding the site states over its stages.
+                if (!families.get(anchor).contains(relation)
+                        && anchor.projections.stream().noneMatch(relation::equalsIgnoreCase)) {
                     continue;
                 }
                 var facet = relation.equalsIgnoreCase(anchor.anchor)

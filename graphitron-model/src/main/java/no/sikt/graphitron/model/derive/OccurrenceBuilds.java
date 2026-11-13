@@ -42,7 +42,7 @@ public final class OccurrenceBuilds {
         OccurrenceNodeIdShapes.write(dsl, graph, readAt);
         OccurrenceNodeIdShapes.sweep(dsl, graph, readAt);
         EntryDefects.derive(dsl, graph, readAt, EntryDefects.BUILDS);
-        EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.BUILDS);
+        EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.BUILDS, EntryDefects.BUILDS.stage());
     }
 
     /** States the built classes and member bindings of every depth of {@code graph}. */

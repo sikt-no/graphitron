@@ -83,7 +83,6 @@ The walk's read path is gone
 │   ├── The filter conditions are emitted from the store
 │   │   ├── An argument binds the call parameter it supplies
 │   │   └── A routine and a write state what they bind as call parameters
-│   │       └── A defect is keyed by the stage that raised it
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child producer states the parent columns it is handed
 │   ├── A child read inline is emitted from the store
@@ -825,14 +824,10 @@ static method needs no holder.
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
       then goes, after the flips.
-    * **A routine and a write state what they bind as call parameters** `blocked`, on "A defect is keyed by the stage that raised it". A write's and a root
+    * **A routine and a write state what they bind as call parameters** `open`. A write's and a root
       `@routine`'s fills are call parameters, and a child routine's step parameter names the
       argument occurrence it reads, so `ConditionQuery` excludes a term either binds and `CONSUMED`
       goes, a name shared with a column being no filter (Alf, 2026-11-13); a root `SELECT` or `LOOKUP`'s own call parameters wait for "The root query fetchers are emitted from the store".
-      * **A defect is keyed by the stage that raised it** `open`. `graphitron_entry_defect`'s key and
-        every detail relation's take the raising stage beside the position and the code, each stage
-        sweeps the rows it raised and `graphitron_defect_type.owner_stage` goes, nobody owning a code
-        (Alf, 2026-11-13); no code changes stage here, so nothing an author sees moves.
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence, and flips in the same pass as `$project` and the
@@ -1102,10 +1097,10 @@ pass and no stratum that clears and recomputes.
     code and detail, each keyed by the defect's key with a foreign key to it `ON DELETE CASCADE`, so
     a swept defect takes its details with it.
     * **A route defect has one writer** `open`. `ROUTE_AMBIGUOUS` and `NO_ROUTE_TO_TARGET` are
-      written by `Steps` for a route the walk takes from a written path and by the rule's
-      inferred-route arm for one no path is written for, two statements of one rule with nothing
-      comparing them; `occurrence-depths` owns them and the gate lists the arm as a second writer
-      until it moves to the walk.
+      raised by `occurrence-depths` for a route the walk takes from a written path and by
+      `graphitron_entry_defect_rule`'s inferred-route arm at `entry-defects` for one no path is
+      written for, each under its own stage now, two statements of one rule with nothing comparing
+      them until the arm moves into the depth loop.
     * **An arm belongs to the last stage whose facts it reads** `open`. Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
       that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
       fact document and sis write the same `graphitron_entry_defect` rows before and after. The
@@ -3004,6 +2999,15 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A defect is keyed by the stage that raised it** (2026-11-13). `graphitron_entry_defect` and the
+relations detailing it, `_claim`, `_member`, `_key_column`, `_table`, `_path_step` and
+`graphitron_argmapping_pair_defect`, take the raising stage into their key, each rule view naming
+its stage on its rows; nobody owns a code, so `graphitron_defect_type.owner_stage` is gone, and with
+it `DefectOwnerGateTest`, its `SHARED` carve-out and the sweep by owned codes: the gatherer sweeps
+its stages' rows by the stage each names, and `DefectStageGateTest` holds the shape.
+`graphitron_entry_defect_site` is one finding per position and code over the stages, at its own
+grain, `graphitron-entry-defect-finding`.
 
 **An `@outbox` payload key takes a node id whole, and decodes a key column named past it**
 (2026-11-13). What a node id at a landing hands over is `graphitron_argmapping_landing.receives`:
