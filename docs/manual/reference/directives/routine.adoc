@@ -68,15 +68,15 @@ So `@table` cannot name a function: `@table(name: "tilganger_for_feidebruker_med
 
 A `@routine` puts a function call in the FROM clause. `WHERE` and `ORDER BY` are different clauses of the same statement, so a routine-backed field filters and sorts like any other field: `@condition`, filter arguments, `@defaultOrder` and `@orderBy` all compose, at root and at child positions alike, and they resolve against the *terminus* of the field's table chain (the last node, which is the table the field's element type is bound to).
 
-=== What the call spends, and what filters its result
+=== What the call binds, and what filters its result
 
-An `argMapping` entry spends the input it names, and only that input. A leaf it binds feeds the routine parameter and never reaches the WHERE clause; every other input field of the same argument filters the result exactly as it would on a table-backed field, binding through `@field(name:)` or, absent that, by a case-insensitive match on its own name. So one input object can carry both halves, which is usually how an author wants to spell it:
+An `argMapping` entry binds the input it names to a routine parameter, and only that input. A leaf it binds feeds the routine parameter and never reaches the WHERE clause; every other input field of the same argument filters the result exactly as it would on a table-backed field, binding through `@field(name:)` or, absent that, by a case-insensitive match on its own name. So one input object can carry both halves, which is usually how an author wants to spell it:
 
 [source,graphql]
 ----
 input ActorFilmFilter {
-    actorRef:  ID! @nodeId(typeName: "Actor")   # spent: projects actor_id into pActorId
-    minLength: Int!                             # spent: feeds pMinLength
+    actorRef:  ID! @nodeId(typeName: "Actor")   # bound: projects actor_id into pActorId
+    minLength: Int!                             # bound: feeds pMinLength
     title:     String                           # filters the result: WHERE title = ?
 }
 
@@ -90,12 +90,12 @@ type Query {
 }
 ----
 
-The two spent leaves above are spent in two different ways: `actorRef` through the key projection, which hands `pActorId` a decoded `actor_id`, and `minLength` as a plain scalar read. `title` is left over, and what it resolves against is the chain terminus, here the function result itself.
+The two bound leaves above are bound in two different ways: `actorRef` through the key projection, which hands `pActorId` a decoded `actor_id`, and `minLength` as a plain scalar read. `title` is bound by nothing, and what it resolves against is the chain terminus, here the function result itself.
 
 Two consequences follow, and both are build errors rather than silence:
 
 * *A surviving leaf that binds nothing fails the build*, with the message it already gets on a table-backed field: it names no column of the terminus and carries no `@condition`. Nothing about being inside a routine argument exempts it.
-* *A spent leaf carrying `@field` or `@condition` is a directive conflict.* It asks for a predicate it will never get, the routine parameter having consumed it first. `@nodeId` on a spent leaf is not a conflict: there the directive is a decode instruction the key projection carries out, not a filter.
+* *A bound leaf carrying `@field` or `@condition` is a directive conflict.* It asks for a predicate it will never get, the routine parameter having bound it first. `@nodeId` on a bound leaf is not a conflict: there the directive is a decode instruction the key projection carries out, not a filter.
 
 One rule governs the ordering, and it is the rule every list field already lives under:
 
