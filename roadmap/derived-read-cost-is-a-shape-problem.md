@@ -199,10 +199,15 @@ census it replaced is gone.
       insert-or-ignore (`JooqFactCapture` around 929-939, and the early returns at 102-108), so a
       graph that changes or drops `jooqPackage` keeps reading the old sources; drop the memberships
       a pass did not claim, as `GraphQLSourceCapture.dropMembership` does.
-    * **Two graphs loading different builds of one jOOQ package are told so** `open`. The source is
-      keyed by package name and filled from the reading graph's loader, so the last capture wins
-      silently and its sweep deletes the other build's rows; stamp the source with its content and
-      refuse or report a disagreement.
+    * **A catalog source is the entry its classes were read from, not its package name** `blocked`,
+      on the two siblings beside it. The source is keyed by the jOOQ package and filled through the
+      reading graph's loader, so two graphs loading different builds of one package (a stale jar, a
+      release against a reactor build) share one source, and the last capture's sweep deletes the
+      other's rows. Keyed by the entry `code_graph_class` names for the package's classes, plus the
+      package, two builds are two sources and nothing is left to detect; the jooq gatherer reads the
+      code gatherer upstream, never the loader. Whether a catalog's facts also depend on what its
+      classes resolve to on the graph's classpath (the jOOQ runtime, converters, bindings) is open
+      for Alf and Filip.
     * **Every read of `sql_table` by record class goes through the graph's sources** `open`.
       `graphitron_occurrence_depth_entry_defect_rule` and `graphitron_entry_defect_rule` match a
       record class against any graph's catalog.
