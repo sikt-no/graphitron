@@ -9815,19 +9815,6 @@ class GraphitronSchemaBuilderTest {
                     .contains("'Boolean' is not yet supported");
             }),
 
-        DML_ID_RETURN_NON_NODE_TABLE_REJECTED(
-            "DML mutation returning ID without a matching @node SDL type → UnclassifiedField",
-            """
-            input FilmInput { title: String }
-            type Query { x: String }
-            type Mutation { createFilm(in: FilmInput!): ID @mutation(typeName: INSERT, table: "film") }
-            """,
-            schema -> {
-                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
-                assertThat(f.reason())
-                    .contains("no @node type is declared for table 'film'");
-            }),
-
         DML_TABLE_RETURN_NON_NODE_HAPPY(
             "DML mutation returning a @table type on a non-@node table → classified successfully (encodeReturn empty)",
             """

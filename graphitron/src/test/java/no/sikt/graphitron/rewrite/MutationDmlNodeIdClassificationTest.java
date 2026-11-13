@@ -57,37 +57,6 @@ class MutationDmlNodeIdClassificationTest {
     }
 
     @Test
-    void idReturnWithoutNodeDeclaration_rejected() {
-        // Bar's table has __NODE_TYPE_ID metadata but the SDL omits @node, so no NodeType is
-        // registered for it. The mutation classifier requires a NodeType match by table SQL
-        // name to wire encodeReturn; without one, returning ID has no per-type encoder to
-        // delegate to and the field is rejected at validate time.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Bar @table(name: "bar") { name: String }
-            input BarInput { name: String }
-            type Query { x: String }
-            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
-            """, NODEID_CTX);
-
-        var f = (UnclassifiedField) schema.field("Mutation", "createBar");
-        assertThat(f.reason()).contains("no @node type is declared for table 'bar'");
-    }
-
-    @Test
-    void idReturnOnNonNodeTable_rejected() {
-        var schema = TestSchemaHelper.buildSchema("""
-            type Qux @table(name: "qux") { name: String }
-            input QuxInput { name: String }
-            type Query { x: String }
-            type Mutation { createQux(in: QuxInput!): ID @mutation(typeName: INSERT, table: "qux") }
-            """, NODEID_CTX);
-
-        var f = (UnclassifiedField) schema.field("Mutation", "createQux");
-        assertThat(f.reason())
-            .contains("no @node type is declared for table 'qux'");
-    }
-
-    @Test
     void twoPlainFieldsOnOneColumn_rejected() {
         // Two plain @field leaves resolving to one column is a pure schema fact, so it rejects at
         // validate time instead of crashing in Postgres with "column specified more than once". The
@@ -142,37 +111,6 @@ class MutationDmlNodeIdClassificationTest {
             .contains("VALUES join cannot name one derived column twice")
             .contains("column 'name'")
             .contains("'alias'");
-    }
-
-    @Test
-    void idReturnOnMultiNodeTable_ambiguous_rejected() {
-        // A table may legitimately back several @node types (distinct node ids), so
-        // multiple-nodes-per-table is allowed at the type level. But a bare-ID mutation return uses
-        // the implicit "encoder for this table" form, which has no single answer when the input
-        // @table backs more than one node; the field is rejected at its use site with a
-        // disambiguation hint (return the specific @node type), not by a global type-level guard.
-        var schema = TestSchemaHelper.buildSchema("""
-            type Bar implements Node @table(name: "bar") @node(typeId: "Bar", keyColumns: ["id_1", "id_2"]) {
-                id: ID! @nodeId
-                name: String
-            }
-            type BarTwo implements Node @table(name: "bar") @node(typeId: "BarTwo", keyColumns: ["id_1", "id_2"]) {
-                id: ID! @nodeId
-                name: String
-            }
-            input BarInput { name: String }
-            type Query { bar: Bar barTwo: BarTwo }
-            type Mutation { createBar(in: BarInput!): ID @mutation(typeName: INSERT, table: "bar") }
-            """, NODEID_CTX);
-
-        // Both node types survive (allowed); the mutation field is the only thing rejected.
-        assertThat(schema.type("Bar")).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
-        assertThat(schema.type("BarTwo")).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronType.NodeType.class);
-        var f = (UnclassifiedField) schema.field("Mutation", "createBar");
-        assertThat(f.reason())
-            .contains("table 'bar'")
-            .contains("Bar, BarTwo")
-            .contains("ambiguous");
     }
 
     @Test

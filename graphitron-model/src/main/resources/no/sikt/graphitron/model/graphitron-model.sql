@@ -11013,7 +11013,7 @@ CREATE TABLE graphitron_occurrence_node_id (
     REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE CASCADE,
   CHECK (kind = 'NODE_ID'),
   CHECK (basis IN ('EXPLICIT_TYPE_NAME', 'CONTAINING_NODE_TYPE', 'TARGET_TABLE_NODE_TYPE',
-                   'OWN_ID_FIELD', 'TARGET_ID_NAME')),
+                   'OWN_ID_FIELD', 'TARGET_ID_NAME', 'WRITTEN_TABLE_NODE_TYPE')),
   CHECK (bound = table_schema || '.' || table_name),
   CHECK (position >= 0)
 );
@@ -11023,7 +11023,7 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.coordinate IS 'the occurrence ca
 COMMENT ON COLUMN graphitron_occurrence_node_id.bound IS 'the node''s table, schema-qualified, as the binding spells it; one per member table where the written type is an interface or union whose members are nodes';
 COMMENT ON COLUMN graphitron_occurrence_node_id.position IS 'the column''s place in the key tuple, numbered from zero, graphitron_node_keycolumn''s order, which is the order ids are built and read';
 COMMENT ON COLUMN graphitron_occurrence_node_id.kind IS 'always NODE_ID, carried so the foreign key into graphitron_occurrence_binding holds the kind as well as the place';
-COMMENT ON COLUMN graphitron_occurrence_node_id.basis IS 'which rule decided the node type: EXPLICIT_TYPE_NAME, @nodeId(typeName:) naming a node or an interface or union over nodes; CONTAINING_NODE_TYPE, a bare @nodeId on a field with no @reference whose declaring type is a node; TARGET_TABLE_NODE_TYPE, a bare @nodeId on a @reference field, an argument or an input field, the node each of its needs reaches; OWN_ID_FIELD, a node type''s id: ID with neither @nodeId nor @field; TARGET_ID_NAME, an argument''s or input field''s id: ID with neither, the node each of its needs reaches; neither where the node''s table has a column named id, which the manual makes an error. The same on every position of one binding, carried so a defect can say which form the author wrote';
+COMMENT ON COLUMN graphitron_occurrence_node_id.basis IS 'which rule decided the node type: EXPLICIT_TYPE_NAME, @nodeId(typeName:) naming a node or an interface or union over nodes; CONTAINING_NODE_TYPE, a bare @nodeId on a field with no @reference whose declaring type is a node; TARGET_TABLE_NODE_TYPE, a bare @nodeId on a @reference field, an argument or an input field, the node each of its needs reaches; OWN_ID_FIELD, a node type''s id: ID with neither @nodeId nor @field; TARGET_ID_NAME, an argument''s or input field''s id: ID with neither, the node each of its needs reaches; neither of those two where the node''s table has a column named id, which the manual makes an error; WRITTEN_TABLE_NODE_TYPE, a write''s ID return with neither, the one node over the table it mutates. The same on every position of one binding, carried so a defect can say which form the author wrote';
 COMMENT ON COLUMN graphitron_occurrence_node_id.node_type_name IS 'the node type the id belongs to, whose typeId the id carries';
 COMMENT ON COLUMN graphitron_occurrence_node_id.table_source_name IS 'the catalog source of the node''s table';
 COMMENT ON COLUMN graphitron_occurrence_node_id.table_schema IS 'the node table''s schema';
@@ -11179,273 +11179,6 @@ COMMENT ON COLUMN graphitron_entry_defect_key_column.bound IS 'the node binding 
 COMMENT ON COLUMN graphitron_entry_defect_key_column.position IS 'the key column''s position in that binding''s key, completing the key';
 COMMENT ON COLUMN graphitron_entry_defect_key_column.touched_at IS 'when the reading that last stated this row ran: the mark the sweep reads';
 
--- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
--- columns. A written typeName: decides at every site. An argument's or input field's bare @nodeId,
--- and its id: ID named for its target, take the node each of its needs reaches: the need's target
--- where that is a node, else the one node over the table the need lands on. A @reference field's
--- inference reads where its path lands, which a written path does not know until its steps say.
--- A slot whose needs reach several nodes decides only for a bare @nodeId on an argument, one node
--- per table; anywhere else which node the id names is the defect's.
-CREATE VIEW graphitron_occurrence_node_id_rule
-  (graph_name, coordinate, bound, position, basis, node_type_name, table_source_name,
-   table_schema, table_name, column_name) AS
--- One arm per rule, each joining the node's key columns itself and none wrapped in a WITH: H2 takes
--- the writer's graph into every branch of a union, and into nothing a WITH computes first.
--- @nodeId(typeName:) naming a node.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'EXPLICIT_TYPE_NAME', cl.named, k.table_source_name, k.table_schema, k.table_name,
-       k.column_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-   AND cl.kind = 'NODE_ID'
-  JOIN graphitron_node n
-    ON n.graph_name = cl.graph_name AND n.type_name = cl.named
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = n.graph_name AND k.type_name = n.type_name
-UNION ALL
--- @nodeId(typeName:) naming an interface or union that is no node itself: each member that is,
--- alone on its table among the members.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'EXPLICIT_TYPE_NAME', m.member_type_name, k.table_source_name, k.table_schema,
-       k.table_name, k.column_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_binding_claim_container kc
-    ON kc.graph_name = o.graph_name AND kc.coordinate = o.element_coordinate
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = kc.graph_name AND cl.coordinate = kc.coordinate AND cl.kind = kc.kind
-   AND cl.claimer = kc.claimer
-  JOIN graphql_poly_member m
-    ON m.graph_name = cl.graph_name AND m.container_name = cl.named
-  JOIN graphitron_tabletype bt
-    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-  JOIN graphitron_node n
-    ON n.graph_name = m.graph_name AND n.type_name = m.member_type_name
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = n.graph_name AND k.type_name = n.type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphql_poly_member m2
-                     JOIN graphitron_tabletype bt2
-                       ON bt2.graph_name = m2.graph_name AND bt2.type_name = m2.member_type_name
-                     JOIN graphitron_node n2
-                       ON n2.graph_name = m2.graph_name AND n2.type_name = m2.member_type_name
-                    WHERE m2.graph_name = m.graph_name AND m2.container_name = m.container_name
-                      AND m2.member_type_name <> m.member_type_name
-                      AND bt2.table_source_name = bt.table_source_name
-                      AND bt2.table_schema = bt.table_schema AND bt2.table_name = bt.table_name)
-UNION ALL
--- A bare @nodeId on an output field with no @reference: its declaring type, a node.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'CONTAINING_NODE_TYPE', f.type_name, k.table_source_name, k.table_schema, k.table_name,
-       k.column_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-   AND cl.kind = 'NODE_ID' AND cl.named IS NULL
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = f.graph_name AND k.type_name = f.type_name
- WHERE o.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                      AND d.directive_name = 'reference')
-UNION ALL
--- A bare @nodeId on an output field with a @reference: the one node over the table it lands on.
-SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
-       k.column_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
-   AND cl.kind = 'NODE_ID' AND cl.named IS NULL
-  JOIN graphitron_path_need_table pn
-    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-   AND jp.target_type = pn.target_type
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-   AND k.type_name = (SELECT bt.type_name FROM graphitron_tabletype bt
-                        JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-                       WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-                         AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
-                         AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
-                                           JOIN graphitron_node n2
-                                             ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
-                                          WHERE b2.graph_name = bt.graph_name
-                                            AND b2.table_source_name = bt.table_source_name
-                                            AND b2.table_schema = bt.table_schema
-                                            AND b2.table_name = bt.table_name
-                                            AND b2.type_name <> bt.type_name))
- WHERE o.kind = 'FIELD'
-   AND EXISTS (SELECT 1 FROM graphql_directive_application d
-                WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
-                  AND d.directive_name = 'reference')
-UNION ALL
--- A node type's own id: ID with neither @nodeId nor @field written, where its table has no column
--- of that name: the manual makes that collision an error, the SDL not having said which is meant.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'OWN_ID_FIELD', f.type_name, k.table_source_name, k.table_schema, k.table_name,
-       k.column_name
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = f.graph_name AND k.type_name = f.type_name
- WHERE o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'COLUMN'))
-   AND NOT EXISTS (SELECT 1 FROM sql_column c
-                    WHERE c.source_name = k.table_source_name AND c.table_schema = k.table_schema
-                      AND c.table_name = k.table_name
-                      AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID'))
-UNION ALL
--- An argument's or input field's bare @nodeId: the node its need reaches, the need's target where
--- that is a node, else the one node over the table it lands on. A slot with several needs decides
--- where they all reach that one node, as the generator reads a nested input whose participants
--- agree, and for an argument, which the manual lets stand for any implementation, one node per
--- table its needs land on.
-SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
-       k.column_name
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
-  JOIN graphitron_path_need_table pn
-    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-   AND jp.target_type = pn.target_type
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-   AND k.type_name = COALESCE(
-         (SELECT tn.type_name FROM graphitron_node tn
-           WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type),
-         (SELECT bt.type_name FROM graphitron_tabletype bt
-            JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-             AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
-             AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
-                               JOIN graphitron_node n2
-                                 ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
-                              WHERE b2.graph_name = bt.graph_name
-                                AND b2.table_source_name = bt.table_source_name
-                                AND b2.table_schema = bt.table_schema
-                                AND b2.table_name = bt.table_name
-                                AND b2.type_name <> bt.type_name)))
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
-                     LEFT JOIN graphitron_join_path jp2
-                       ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
-                      AND jp2.target_type = p2.target_type
-                    WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
-                      AND p2.target_type <> pn.target_type
-                      AND (o.kind <> 'FIELD_ARGUMENT'
-                           OR (COALESCE(jp2.target_source_name, p2.landing_source_name) = COALESCE(jp.target_source_name, pn.landing_source_name)
-                               AND COALESCE(jp2.target_schema, p2.landing_schema) = COALESCE(jp.target_schema, pn.landing_schema)
-                               AND COALESCE(jp2.target_table, p2.landing_table) = COALESCE(jp.target_table, pn.landing_table)))
-                      AND COALESCE(
-                            (SELECT t2.type_name FROM graphitron_node t2
-                              WHERE t2.graph_name = p2.graph_name AND t2.type_name = p2.target_type),
-                            (SELECT b3.type_name FROM graphitron_tabletype b3
-                               JOIN graphitron_node n3
-                                 ON n3.graph_name = b3.graph_name AND n3.type_name = b3.type_name
-                              WHERE b3.graph_name = p2.graph_name
-                                AND b3.table_source_name = COALESCE(jp2.target_source_name, p2.landing_source_name)
-                                AND b3.table_schema = COALESCE(jp2.target_schema, p2.landing_schema)
-                                AND b3.table_name = COALESCE(jp2.target_table, p2.landing_table)
-                                AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b4
-                                                  JOIN graphitron_node n4
-                                                    ON n4.graph_name = b4.graph_name
-                                                   AND n4.type_name = b4.type_name
-                                                 WHERE b4.graph_name = b3.graph_name
-                                                   AND b4.table_source_name = b3.table_source_name
-                                                   AND b4.table_schema = b3.table_schema
-                                                   AND b4.table_name = b3.table_name
-                                                   AND b4.type_name <> b3.type_name)))
-                          <> k.type_name)
-UNION ALL
--- An argument's or input field's id: ID with neither @nodeId nor @field written, named for its
--- target: the node its need reaches, on the terms above, all its needs reaching that one node, and
--- only where that node's table has no column of the name, as the own id.
-SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
-       'TARGET_ID_NAME', k.type_name, k.table_source_name, k.table_schema, k.table_name,
-       k.column_name
-  FROM graphitron_occurrence o
-  LEFT JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  LEFT JOIN graphitron_argument a
-    ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
-  JOIN graphitron_path_need_table pn
-    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-   AND jp.target_type = pn.target_type
-  JOIN graphitron_node_keycolumn k
-    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-   AND k.type_name = COALESCE(
-         (SELECT tn.type_name FROM graphitron_node tn
-           WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type),
-         (SELECT bt.type_name FROM graphitron_tabletype bt
-            JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
-           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-             AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
-             AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
-                               JOIN graphitron_node n2
-                                 ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
-                              WHERE b2.graph_name = bt.graph_name
-                                AND b2.table_source_name = bt.table_source_name
-                                AND b2.table_schema = bt.table_schema
-                                AND b2.table_name = bt.table_name
-                                AND b2.type_name <> bt.type_name)))
- WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
-   AND COALESCE(f.named_type, a.named_type) = 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'COLUMN'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
-                     LEFT JOIN graphitron_join_path jp2
-                       ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
-                      AND jp2.target_type = p2.target_type
-                    WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
-                      AND p2.target_type <> pn.target_type
-                      AND COALESCE(
-                            (SELECT t2.type_name FROM graphitron_node t2
-                              WHERE t2.graph_name = p2.graph_name AND t2.type_name = p2.target_type),
-                            (SELECT b3.type_name FROM graphitron_tabletype b3
-                               JOIN graphitron_node n3
-                                 ON n3.graph_name = b3.graph_name AND n3.type_name = b3.type_name
-                              WHERE b3.graph_name = p2.graph_name
-                                AND b3.table_source_name = COALESCE(jp2.target_source_name, p2.landing_source_name)
-                                AND b3.table_schema = COALESCE(jp2.target_schema, p2.landing_schema)
-                                AND b3.table_name = COALESCE(jp2.target_table, p2.landing_table)
-                                AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b4
-                                                  JOIN graphitron_node n4
-                                                    ON n4.graph_name = b4.graph_name
-                                                   AND n4.type_name = b4.type_name
-                                                 WHERE b4.graph_name = b3.graph_name
-                                                   AND b4.table_source_name = b3.table_source_name
-                                                   AND b4.table_schema = b3.table_schema
-                                                   AND b4.table_name = b3.table_name
-                                                   AND b4.type_name <> b3.type_name)))
-                          <> k.type_name)
-   AND NOT EXISTS (SELECT 1 FROM sql_column c
-                    WHERE c.source_name = k.table_source_name AND c.table_schema = k.table_schema
-                      AND c.table_name = k.table_name
-                      AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID'));
-COMMENT ON VIEW graphitron_occurrence_node_id_rule IS 'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.coordinate IS 'the occurrence carrying the id';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.bound IS 'the node''s table, schema-qualified';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.position IS 'the key position';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.basis IS 'which rule decided the node type';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.node_type_name IS 'the node type';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_source_name IS 'the node table''s catalog source';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_schema IS 'its schema';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_name IS 'the node''s table';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.column_name IS 'the key column';
 
 -- The column a scalar occurrence reads where its path lands: the COLUMN subtype of the binding,
 -- keyed as the binding is and pinned to its kind through the binding's unique key.
@@ -13167,6 +12900,302 @@ COMMENT ON COLUMN graphitron_occurrence_producer_write.table_source_name IS 'the
 COMMENT ON COLUMN graphitron_occurrence_producer_write.table_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_producer_write.table_name IS 'the table it writes';
 COMMENT ON COLUMN graphitron_occurrence_producer_write.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
+-- columns. A written typeName: decides at every site. An argument's or input field's bare @nodeId,
+-- and its id: ID named for its target, take the node each of its needs reaches: the need's target
+-- where that is a node, else the one node over the table the need lands on. A @reference field's
+-- inference reads where its path lands, which a written path does not know until its steps say.
+-- A slot whose needs reach several nodes decides only for a bare @nodeId on an argument, one node
+-- per table; anywhere else which node the id names is the defect's.
+CREATE VIEW graphitron_occurrence_node_id_rule
+  (graph_name, coordinate, bound, position, basis, node_type_name, table_source_name,
+   table_schema, table_name, column_name) AS
+-- One arm per rule, each joining the node's key columns itself and none wrapped in a WITH: H2 takes
+-- the writer's graph into every branch of a union, and into nothing a WITH computes first.
+-- @nodeId(typeName:) naming a node.
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'EXPLICIT_TYPE_NAME', cl.named, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+   AND cl.kind = 'NODE_ID'
+  JOIN graphitron_node n
+    ON n.graph_name = cl.graph_name AND n.type_name = cl.named
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = n.graph_name AND k.type_name = n.type_name
+UNION ALL
+-- @nodeId(typeName:) naming an interface or union that is no node itself: each member that is,
+-- alone on its table among the members.
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'EXPLICIT_TYPE_NAME', m.member_type_name, k.table_source_name, k.table_schema,
+       k.table_name, k.column_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim_container kc
+    ON kc.graph_name = o.graph_name AND kc.coordinate = o.element_coordinate
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = kc.graph_name AND cl.coordinate = kc.coordinate AND cl.kind = kc.kind
+   AND cl.claimer = kc.claimer
+  JOIN graphql_poly_member m
+    ON m.graph_name = cl.graph_name AND m.container_name = cl.named
+  JOIN graphitron_tabletype bt
+    ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
+  JOIN graphitron_node n
+    ON n.graph_name = m.graph_name AND n.type_name = m.member_type_name
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = n.graph_name AND k.type_name = n.type_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_poly_member m2
+                     JOIN graphitron_tabletype bt2
+                       ON bt2.graph_name = m2.graph_name AND bt2.type_name = m2.member_type_name
+                     JOIN graphitron_node n2
+                       ON n2.graph_name = m2.graph_name AND n2.type_name = m2.member_type_name
+                    WHERE m2.graph_name = m.graph_name AND m2.container_name = m.container_name
+                      AND m2.member_type_name <> m.member_type_name
+                      AND bt2.table_source_name = bt.table_source_name
+                      AND bt2.table_schema = bt.table_schema AND bt2.table_name = bt.table_name)
+UNION ALL
+-- A bare @nodeId on an output field with no @reference: its declaring type, a node.
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'CONTAINING_NODE_TYPE', f.type_name, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+   AND cl.kind = 'NODE_ID' AND cl.named IS NULL
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = f.graph_name AND k.type_name = f.type_name
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                      AND d.directive_name = 'reference')
+UNION ALL
+-- A bare @nodeId on an output field with a @reference: the one node over the table it lands on.
+SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+   AND cl.kind = 'NODE_ID' AND cl.named IS NULL
+  JOIN graphitron_path_need_table pn
+    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+   AND k.type_name = (SELECT bt.type_name FROM graphitron_tabletype bt
+                        JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
+                       WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                         AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
+                         AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
+                                           JOIN graphitron_node n2
+                                             ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
+                                          WHERE b2.graph_name = bt.graph_name
+                                            AND b2.table_source_name = bt.table_source_name
+                                            AND b2.table_schema = bt.table_schema
+                                            AND b2.table_name = bt.table_name
+                                            AND b2.type_name <> bt.type_name))
+ WHERE o.kind = 'FIELD'
+   AND EXISTS (SELECT 1 FROM graphql_directive_application d
+                WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                  AND d.directive_name = 'reference')
+UNION ALL
+-- A node type's own id: ID with neither @nodeId nor @field written, where its table has no column
+-- of that name: the manual makes that collision an error, the SDL not having said which is meant.
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'OWN_ID_FIELD', f.type_name, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = f.graph_name AND k.type_name = f.type_name
+ WHERE o.kind = 'FIELD' AND o.name = 'id' AND f.named_type = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'COLUMN'))
+   AND NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = k.table_source_name AND c.table_schema = k.table_schema
+                      AND c.table_name = k.table_name
+                      AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID'))
+UNION ALL
+-- An argument's or input field's bare @nodeId: the node its need reaches, the need's target where
+-- that is a node, else the one node over the table it lands on. A slot with several needs decides
+-- where they all reach that one node, as the generator reads a nested input whose participants
+-- agree, and for an argument, which the manual lets stand for any implementation, one node per
+-- table its needs land on.
+SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
+  JOIN graphitron_path_need_table pn
+    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+   AND k.type_name = COALESCE(
+         (SELECT tn.type_name FROM graphitron_node tn
+           WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type),
+         (SELECT bt.type_name FROM graphitron_tabletype bt
+            JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
+           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+             AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
+                               JOIN graphitron_node n2
+                                 ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
+                              WHERE b2.graph_name = bt.graph_name
+                                AND b2.table_source_name = bt.table_source_name
+                                AND b2.table_schema = bt.table_schema
+                                AND b2.table_name = bt.table_name
+                                AND b2.type_name <> bt.type_name)))
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
+                     LEFT JOIN graphitron_join_path jp2
+                       ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
+                      AND jp2.target_type = p2.target_type
+                    WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
+                      AND p2.target_type <> pn.target_type
+                      AND (o.kind <> 'FIELD_ARGUMENT'
+                           OR (COALESCE(jp2.target_source_name, p2.landing_source_name) = COALESCE(jp.target_source_name, pn.landing_source_name)
+                               AND COALESCE(jp2.target_schema, p2.landing_schema) = COALESCE(jp.target_schema, pn.landing_schema)
+                               AND COALESCE(jp2.target_table, p2.landing_table) = COALESCE(jp.target_table, pn.landing_table)))
+                      AND COALESCE(
+                            (SELECT t2.type_name FROM graphitron_node t2
+                              WHERE t2.graph_name = p2.graph_name AND t2.type_name = p2.target_type),
+                            (SELECT b3.type_name FROM graphitron_tabletype b3
+                               JOIN graphitron_node n3
+                                 ON n3.graph_name = b3.graph_name AND n3.type_name = b3.type_name
+                              WHERE b3.graph_name = p2.graph_name
+                                AND b3.table_source_name = COALESCE(jp2.target_source_name, p2.landing_source_name)
+                                AND b3.table_schema = COALESCE(jp2.target_schema, p2.landing_schema)
+                                AND b3.table_name = COALESCE(jp2.target_table, p2.landing_table)
+                                AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b4
+                                                  JOIN graphitron_node n4
+                                                    ON n4.graph_name = b4.graph_name
+                                                   AND n4.type_name = b4.type_name
+                                                 WHERE b4.graph_name = b3.graph_name
+                                                   AND b4.table_source_name = b3.table_source_name
+                                                   AND b4.table_schema = b3.table_schema
+                                                   AND b4.table_name = b3.table_name
+                                                   AND b4.type_name <> b3.type_name)))
+                          <> k.type_name)
+UNION ALL
+-- An argument's or input field's id: ID with neither @nodeId nor @field written, named for its
+-- target: the node its need reaches, on the terms above, all its needs reaching that one node, and
+-- only where that node's table has no column of the name, as the own id.
+SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'TARGET_ID_NAME', k.type_name, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_occurrence o
+  LEFT JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_argument a
+    ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  JOIN graphitron_path_need_table pn
+    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = pn.graph_name AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+   AND k.type_name = COALESCE(
+         (SELECT tn.type_name FROM graphitron_node tn
+           WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type),
+         (SELECT bt.type_name FROM graphitron_tabletype bt
+            JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
+           WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+             AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
+                               JOIN graphitron_node n2
+                                 ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
+                              WHERE b2.graph_name = bt.graph_name
+                                AND b2.table_source_name = bt.table_source_name
+                                AND b2.table_schema = bt.table_schema
+                                AND b2.table_name = bt.table_name
+                                AND b2.type_name <> bt.type_name)))
+ WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
+   AND COALESCE(f.named_type, a.named_type) = 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'COLUMN'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
+                     LEFT JOIN graphitron_join_path jp2
+                       ON jp2.graph_name = p2.graph_name AND jp2.coordinate = p2.coordinate
+                      AND jp2.target_type = p2.target_type
+                    WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
+                      AND p2.target_type <> pn.target_type
+                      AND COALESCE(
+                            (SELECT t2.type_name FROM graphitron_node t2
+                              WHERE t2.graph_name = p2.graph_name AND t2.type_name = p2.target_type),
+                            (SELECT b3.type_name FROM graphitron_tabletype b3
+                               JOIN graphitron_node n3
+                                 ON n3.graph_name = b3.graph_name AND n3.type_name = b3.type_name
+                              WHERE b3.graph_name = p2.graph_name
+                                AND b3.table_source_name = COALESCE(jp2.target_source_name, p2.landing_source_name)
+                                AND b3.table_schema = COALESCE(jp2.target_schema, p2.landing_schema)
+                                AND b3.table_name = COALESCE(jp2.target_table, p2.landing_table)
+                                AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b4
+                                                  JOIN graphitron_node n4
+                                                    ON n4.graph_name = b4.graph_name
+                                                   AND n4.type_name = b4.type_name
+                                                 WHERE b4.graph_name = b3.graph_name
+                                                   AND b4.table_source_name = b3.table_source_name
+                                                   AND b4.table_schema = b3.table_schema
+                                                   AND b4.table_name = b3.table_name
+                                                   AND b4.type_name <> b3.type_name)))
+                          <> k.type_name)
+   AND NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = k.table_source_name AND c.table_schema = k.table_schema
+                      AND c.table_name = k.table_name
+                      AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID'))
+UNION ALL
+-- A write's ID return with neither @nodeId nor @field: the id of the one node over the table the
+-- write mutates, which is what the write hands back.
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+       'WRITTEN_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
+       k.column_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_producer_write w
+    ON w.graph_name = o.graph_name AND w.coordinate = o.coordinate
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
+  JOIN graphitron_node_keycolumn k
+    ON k.graph_name = w.graph_name
+   AND k.type_name = (SELECT bt.type_name FROM graphitron_tabletype bt
+                        JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
+                       WHERE bt.graph_name = w.graph_name AND bt.table_source_name = w.table_source_name
+                         AND bt.table_schema = w.table_schema AND bt.table_name = w.table_name
+                         AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b2
+                                           JOIN graphitron_node n2
+                                             ON n2.graph_name = b2.graph_name AND n2.type_name = b2.type_name
+                                          WHERE b2.graph_name = bt.graph_name
+                                            AND b2.table_source_name = bt.table_source_name
+                                            AND b2.table_schema = bt.table_schema
+                                            AND b2.table_name = bt.table_name
+                                            AND b2.type_name <> bt.type_name))
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate);
+COMMENT ON VIEW graphitron_occurrence_node_id_rule IS 'One row the occurrence node id rule computes, in the shape graphitron_occurrence_node_id stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_node_id, which are the names every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.coordinate IS 'the occurrence carrying the id';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.bound IS 'the node''s table, schema-qualified';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.position IS 'the key position';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.basis IS 'which rule decided the node type';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.node_type_name IS 'the node type';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_source_name IS 'the node table''s catalog source';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_schema IS 'its schema';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.table_name IS 'the node''s table';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.column_name IS 'the key column';
 
 -- Each key of each @outbox message's payload, as the call it is fills a parameter: by an argument the
 -- path lands on, by what the call returns, by the field's scope, or by a session member.
@@ -17030,6 +17059,40 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
          WHERE bt.graph_name = pn.graph_name AND bt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
            AND bt.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND bt.table_name = COALESCE(jp.target_table, pn.landing_table)) > 1
  GROUP BY f.graph_name, f.source_name, f.source_line, f.source_column
+UNION ALL
+-- A write's ID return with neither @nodeId nor @field over a table no node declares itself over: the
+-- id the write hands back is no node's. Reported at the @mutation, the occurrence in the detail.
+SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
+       'NODE_ID_TARGET_UNRESOLVED', o.coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = f.graph_name AND pw.type_name = f.type_name AND pw.field_name = f.field_name
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype bt
+                     JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
+                    WHERE bt.graph_name = pw.graph_name AND bt.table_source_name = pw.table_source_name
+                      AND bt.table_schema = pw.table_schema AND bt.table_name = pw.table_name)
+UNION ALL
+-- The same over a table several nodes declare themselves over: the write names no node its id is.
+-- Reported at the @mutation, the occurrence in the detail.
+SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
+       'NODE_ID_TARGET_AMBIGUOUS', o.coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = f.graph_name AND pw.type_name = f.type_name AND pw.field_name = f.field_name
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
+   AND (SELECT COUNT(*) FROM graphitron_tabletype bt
+          JOIN graphitron_node nn ON nn.graph_name = bt.graph_name AND nn.type_name = bt.type_name
+         WHERE bt.graph_name = pw.graph_name AND bt.table_source_name = pw.table_source_name
+           AND bt.table_schema = pw.table_schema AND bt.table_name = pw.table_name) > 1
 UNION ALL
 -- A node type's own id: ID with neither @nodeId nor @field, over a table with a column of that name:
 -- the encoded id and the raw column are different values and the SDL has not said which is meant.
@@ -21730,9 +21793,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_TYPE_NAME_ON_OWN_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_ON_OWN_ID',
    'A @nodeId(typeName:) sits on a node type''s own id field, which is that node''s identity by construction, so the argument names what the type already answers: remove it.', 'entry-defects'),
   ('NODE_ID_TARGET_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TARGET_UNRESOLVED',
-   'A bare @nodeId at an argument or input field binds against a table no node type declares itself over, so there is no node to infer: write typeName:.', 'entry-defects'),
+   'A node id inferred from a table binds against a table no node type declares itself over, so there is no node to infer: name the node type, or declare @node on a type over the table.', 'entry-defects'),
   ('NODE_ID_TARGET_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TARGET_AMBIGUOUS',
-   'A bare @nodeId, or an input field id named for its target, binds against a table several node types declare themselves over, or under participants that resolve different nodes where one id cannot stand for all, so which node the id names is not said: write @nodeId(typeName:).', 'entry-defects'),
+   'A node id inferred from a table binds against a table several node types declare themselves over, or under participants that resolve different nodes where one id cannot stand for all, so which node the id names is not said: name the node type.', 'entry-defects'),
   ('NODE_ID_SHADOWS_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SHADOWS_COLUMN',
    'An id with no directive is read as a node''s id, and the node''s table also has a column of that name: the encoded id and the raw column are different values and the SDL has not said which is meant. Write @nodeId to select the node id, or @field(name:) to select the column.', 'entry-defects'),
   ('NODE_ID_LANDS_ON_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_LANDS_ON_TABLE',

@@ -84,7 +84,7 @@ public final class ScaledSchemaFixture {
         sdl.append("type Mutation {\n").append("""
               createFilm(in: FilmInput!): Film0 @mutation(typeName: INSERT)
               createFilms(in: [FilmInput!]!): [Film0!]! @mutation(typeName: INSERT)
-              deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+              deleteFilm(in: FilmKeyInput!): Boolean @mutation(typeName: DELETE, table: "film")
             """);
         IntStream.range(0, units).forEach(i -> sdl.append("""
               rentFilm%1$d(inventoryId: Int!, customerId: Int!): RentFilmPayload%1$d

@@ -54,6 +54,16 @@ type Query {
   languages: [Language!]!
 }
 
+input InventoryKey { inventoryId: Int @field(name: "inventory_id") }
+input FilmKey { filmId: Int @field(name: "film_id") }
+
+type Mutation {
+  "Returns the ID of a row of inventory, which no node declares itself over."
+  deleteInventory(in: InventoryKey!): ID @mutation(typeName: DELETE, table: "inventory")
+  "Returns the ID of a row of film, which two nodes declare themselves over."
+  deleteFilmCard(in: FilmKey!): ID @mutation(typeName: DELETE, table: "film")
+}
+
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code LIKE 'NODE_ID_%'
   """, rows: """
@@ -64,6 +74,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Inventory.nowhere,          NODE_ID_TYPE_NAME_NOT_NODE,       Nope
   Inventory.storeId,          NODE_ID_TYPE_NAME_NOT_NODE,       Store
   Language.id,                NODE_ID_TYPE_NAME_ON_OWN_ID,      Language
+  Mutation.deleteFilmCard,    NODE_ID_TARGET_AMBIGUOUS,         Mutation.deleteFilmCard
+  Mutation.deleteInventory,   NODE_ID_TARGET_UNRESOLVED,        Mutation.deleteInventory
   PlainFilter.id,             NODE_ID_SHADOWS_COLUMN,           id
   PlainNode.id,               NODE_ID_SHADOWS_COLUMN,           id
   Query.cards(filmId:),       NODE_ID_TARGET_AMBIGUOUS,         Query.cards(filmId:)

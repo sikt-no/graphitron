@@ -65,7 +65,7 @@ type Mutation {
 # decides at every site. A bare @nodeId at an output field takes its containing node; at an argument
 # or input field, as does an id named for its target, the node each need reaches. A DELETE returning
 # no table binds against @mutation(table:), the table its argument's need reaches, so deleteFilm's
-# filmId takes the film node.
+# filmId takes the film node; and the ID it returns is the one node over the table it deletes from.
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id", rows: """
   coordinate,                        bound,        position, basis,                  node_type_name, column_name
   Actor.id,                          public.actor, 0,        OWN_ID_FIELD,           Actor,          actor_id
@@ -74,6 +74,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id", rows: """
   Mutation.createActorByKey(in.id:), public.actor, 0,        TARGET_ID_NAME,         Actor,          actor_id
   Mutation.createFilm(in.filmId:),   public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id
   Mutation.createFilmByKey(in.id:),  public.film,  0,        TARGET_ID_NAME,         Film,           film_id
+  Mutation.deleteFilm,               public.film,  0,        WRITTEN_TABLE_NODE_TYPE, Film,          film_id
   Mutation.deleteFilm(in.filmId:),   public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id
   Mutation.updateFilm(in.id:),       public.film,  0,        TARGET_ID_NAME,         Film,           film_id
   Query.films(filmId:),              public.film,  0,        TARGET_TABLE_NODE_TYPE, Film,           film_id

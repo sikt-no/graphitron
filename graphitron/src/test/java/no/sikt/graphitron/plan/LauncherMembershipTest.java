@@ -36,7 +36,7 @@ class LauncherMembershipTest {
     // split, split lookup at list-per-key cardinality, split pivot, discriminated interface at
     // list cardinality), both @service child kinds
     // (table-returning and scalar), the root @service table return whose fetcher lifts the
-    // returned records' keys, and all four reentry-carrying DML return arms. The encoded
+    // returned records' keys, and all four reentry-carrying DML return arms. The Boolean
     // DELETE is the deliberate non-member witness: present in the model, no row.
     private static final String SDL = """
         interface Content @table(name: "content") @discriminate(on: "CONTENT_TYPE") {
@@ -92,7 +92,7 @@ class LauncherMembershipTest {
           createFilms(in: [FilmInput!]!): [Film!]! @mutation(typeName: INSERT)
           createContent(in: ContentInput!): Content @mutation(typeName: INSERT, table: "content")
           createContents(in: [ContentInput!]!): [Content!]! @mutation(typeName: INSERT, table: "content")
-          deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+          deleteFilm(in: FilmKeyInput!): Boolean @mutation(typeName: DELETE, table: "film")
         }
         """;
 

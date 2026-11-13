@@ -5828,16 +5828,19 @@ class FieldBuilder {
     }
 
     /**
-     * Diagnostic for a bare-{@code ID}-returning mutation whose input {@code @table} backs
-     * multiple {@code @node} types, so the implicit "encoder for this table" has no single answer.
-     * These direct-return sites carry no {@code @nodeId} disambiguator (unlike the carrier path),
-     * so the remedy is a typed {@code @node} return rather than a bare {@code ID}.
+     * The one node over the table a write's bare {@code ID} return encodes against. The store refuses
+     * a table with no node or several before the walk runs, as {@code NODE_ID_TARGET_UNRESOLVED} and
+     * {@code NODE_ID_TARGET_AMBIGUOUS}, binding the one it leaves in {@code graphitron_occurrence_node_id},
+     * so anything else here is the walk disagreeing with the store.
      */
-    private static String ambiguousImplicitNodeError(String fieldDesc, String tableSqlName, List<NodeType> nodes) {
-        String names = nodes.stream().map(NodeType::name).sorted().collect(Collectors.joining(", "));
-        return fieldDesc + " returns ID but table '" + tableSqlName + "' backs multiple @node types ("
-            + names + "), so the node-id encoder is ambiguous; return the specific @node type instead "
-            + "of a bare ID";
+    private NodeType writtenTableNode(String fieldName, String tableSqlName) {
+        var nodes = ctx.nodes.forTable(tableSqlName);
+        if (nodes.size() != 1) {
+            throw new IllegalStateException("@mutation field '" + fieldName + "' returns ID over table '"
+                + tableSqlName + "', which " + nodes.size() + " node types declare themselves over; the"
+                + " store refuses that before the walk runs");
+        }
+        return nodes.get(0);
     }
 
     /**
@@ -6437,19 +6440,8 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
-            // The by-table node index is one-to-many; the implicit ID encoder is
-            // well-defined only for a single-node table.
-            var nodesOnTable = ctx.nodes.forTable(tableSqlName);
-            if (nodesOnTable.isEmpty()) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                    "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
-                    + tableSqlName + "'; annotate the type with @node or use a @table return type"));
-            }
-            if (nodesOnTable.size() > 1) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                    ambiguousImplicitNodeError("@mutation field '" + name + "'", tableSqlName, nodesOnTable)));
-            }
-            encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
+            var writtenNode = writtenTableNode(name, tableSqlName);
+            encodeReturn = Optional.of(writtenNode.encodeMethod());
         }
 
         // UpdateRows walker: PK-or-UK identification + SET/WHERE partition over the already-classified
@@ -6767,19 +6759,7 @@ class FieldBuilder {
         var echoColumns = no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
-            // The by-table node index is one-to-many; the implicit ID encoder is
-            // well-defined only for a single-node table.
-            var nodesOnTable = ctx.nodes.forTable(tableSqlName);
-            if (nodesOnTable.isEmpty()) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                    "@mutation(typeName: DELETE) field '" + name + "' returns ID but no @node type is "
-                    + "declared for table '" + tableSqlName + "'; annotate the type with @node"));
-            }
-            if (nodesOnTable.size() > 1) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                    ambiguousImplicitNodeError("@mutation(typeName: DELETE) field '" + name + "'", tableSqlName, nodesOnTable)));
-            }
-            var nodeType = nodesOnTable.get(0);
+            var nodeType = writtenTableNode(name, tableSqlName);
             encodeReturn = Optional.of(nodeType.encodeMethod());
             echoColumns = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns(
                 nodeType.name(),
@@ -7198,17 +7178,8 @@ class FieldBuilder {
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
-            var nodesOnTable = ctx.nodes.forTable(tableSqlName);
-            if (nodesOnTable.isEmpty()) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                    "@mutation field '" + name + "' returns ID but no @node type is declared for table '"
-                    + tableSqlName + "'; annotate the type with @node or use a @table return type"));
-            }
-            if (nodesOnTable.size() > 1) {
-                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
-                    ambiguousImplicitNodeError("@mutation field '" + name + "'", tableSqlName, nodesOnTable)));
-            }
-            encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
+            var writtenNode = writtenTableNode(name, tableSqlName);
+            encodeReturn = Optional.of(writtenNode.encodeMethod());
         }
 
         var enc = encodeReturn;
