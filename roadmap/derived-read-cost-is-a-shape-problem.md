@@ -2866,6 +2866,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   (added 2026-11-09, after the check this entry first rested on) takes `List<String>`, and a list has no
   projection yet. No release carries this change until "A list of node ids projects its key column through `argMapping`" lands, or opptak's method
   takes the node's record (Alf, 2026-11-13).
+* **Breaking: a bean member holding one value no longer takes a node id's single key column**
+  ("a bean member is judged as a parameter is"). A `@nodeId` field of an input object built into a
+  class lands on its member as on a parameter: the node type's record, a record supertype for an id of
+  several node types, or a `RecordN` or `RowN` of the key; a member of the one key column's type is
+  `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`. Unused in FS-plattform: all 266 of its bean members taking a node
+  id are typed as their node's own record, and opptak captured at main 946fc4aa20 lands all 278 of its
+  members as the node's own record.
 * **Breaking: a node id lands in a built record through one path step at most** ("record landings are
   stated"). A `@nodeId` field of an input object built into a jOOQ record lands its key in the record's
   own key columns, or in the columns one foreign key carries back to it; a written path of several

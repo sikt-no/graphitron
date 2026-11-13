@@ -13,6 +13,14 @@ type FilmActor @table(name: "film_actor") @node { filmId: Int @field(name: "film
 # A pinned key column the table does not have, so the catalog cannot type it.
 type Pinned @table(name: "language") @node(keyColumns: ["not_a_column"]) { name: String }
 
+type FilmDraftsCountedPayload { count: Int }
+
+"A film id built into a setter bean's String member, which holds one value."
+input FilmSurveyNoteInput { note: ID @nodeId(typeName: "Film") }
+
+"A film id built into a record bean's FilmRecord member, the node's own record."
+input FilmRecordAssignmentInput { film: ID @nodeId(typeName: "Film") }
+
 input PairingInput {
   title: String
   pairingId: ID @nodeId(typeName: "FilmActor")
@@ -86,6 +94,11 @@ type Query {
   # ... and one of another degree as any class other than the key's.
   pairByWideTuple(key: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "pairByWideTuple"})
+  # A bean's member is judged as a parameter is: a String member refused, the node's record taken.
+  surveyByFilm(in: FilmSurveyNoteInput!): FilmDraftsCountedPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService", method: "count"})
+  assignByFilm(in: FilmRecordAssignmentInput!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
   # An input field whose root argument feeds a parameter: the value lands inside the bean.
   echo(by: PairingInput): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
@@ -101,6 +114,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.pairByWideTuple(key:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       key
   Query.film(id:),                NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
+  FilmSurveyNoteInput.note,       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       note
   Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.filmsByIds(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.greetings(userId:),       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
@@ -128,6 +142,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_node_id_slot", ro
 extend schema @assertContains(relation: "graphitron_occurrence_node_id_shape", rows: """
   coordinate,                 bound,             decode_shape
   Query.filmByProjection(ref:), public.film,      KEY_VALUE
+  Query.assignByFilm(in.film:), public.film,       OWN_RECORD
   Query.filmActorRecord(in:), public.film_actor, OWN_RECORD
   Query.filmByTuple(key:),    public.film,       RECORD_N
   Query.pairByTuple(key:),    public.film_actor, RECORD_N

@@ -155,7 +155,9 @@ Three ways to get this wrong, and the build names each:
   used to receive the base64 string. The build offers the remedies: the node type's own generated
   record, or a `RecordN` or `RowN` of the key's columns' types, takes the whole key, or an
   xref:service.adoc[`@service`] `argMapping` entry names the one key column you want. A parameter
-  whose class the classpath scan cannot name, a primitive or a type variable, is refused the same way.
+  whose class the classpath scan cannot name, a primitive or a type variable, is refused the same way,
+  and so is a member of a consumer bean the id is built into: a bean member takes the node's record or
+  a tuple of its key, as a parameter does.
 * *A tuple typed otherwise than the key.* A `RecordN` or `RowN` of the key's degree takes the key
   only where its type arguments are the key columns' types in key order. The build names the
   columns and their types and asks for the tuple typed with them; a tuple of another degree is
@@ -288,9 +290,6 @@ Decoding, on an argument or input field:
 | A projected key column
 | An `argMapping` entry opens the id with one of its key columns and hands that column to a
   parameter. See <<key-column-projection,Projecting one key column>>.
-| That column's own value, decoded.
-| A single-valued bean member
-| The value reaches a member of a consumer bean holding one value, and the node key is one column.
 | That column's own value, decoded.
 |===
 
