@@ -585,7 +585,8 @@ public final class ConditionEmitter {
                                     int[] counter, NodeIdDecodeEmitter.Runtime runtime) {
         var record = SessionIdentityRows.classOf(decode.recordClass());
         var type = term.list() ? ParameterizedTypeName.get(LIST, record) : record;
-        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decode, "RECORD", term.names().getLast(), runtime));
+        helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, type, decode, "RECORD", Optional.empty(),
+            term.names().getLast(), runtime));
         method.addStatement("$T $L = $L($L)", type, local, helper, read(term.names(), counter));
         var tables = SessionIdentityRows.classOf(decode.tablesClass());
         var keys = decode.columnJavaNames().stream()

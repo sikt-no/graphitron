@@ -22,7 +22,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -118,10 +119,11 @@ public final class BuildQuery {
         /**
          * A node id argument decoded straight into its parameter: into the parameter's own jOOQ
          * record ({@code RECORD}), or into the node type's record and taken from it as the key's
-         * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or, for a key of one
-         * column, that column's own value ({@code KEY_VALUE}).
+         * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or the value of the one
+         * key column a pair projects ({@code KEY_VALUE}), whose generated name {@code column} is.
          */
-        record Decoded(NodeIdDecodeQuery.Decode decode, String shape) implements Result {}
+        record Decoded(NodeIdDecodeQuery.Decode decode, String shape, Optional<String> column)
+            implements Result {}
 
         /** An input object made into a table's jOOQ record on the column axis. */
         record Columns(RecordBuild build) implements Result {}
@@ -181,42 +183,66 @@ public final class BuildQuery {
             ? new Result.Refused("a @condition parameter takes no jOOQ record: take the map or a bean")
             : build(root.landingCoordinate(), rooted.className(), children, constructions, catalog, builds,
                 new ArrayList<>())));
-        nodeIdRoots(store).forEach((root, className) -> out.put(root,
-            decodeParameter(root.landingCoordinate(), className, catalog)));
+        nodeIdRoots(store).forEach((root, shapes) -> out.put(root,
+            decodeParameter(root.landingCoordinate(), shapes, catalog)));
         return out;
     }
 
-    /** The argument fills that land on a node id, with the class the parameter or its elements take. */
-    private static Map<Root, String> nodeIdRoots(StoreHandle store) {
+    /** A node id parameter's decode shape at one node table, with the key column a pair projects. */
+    private record SlotShape(String shape, Optional<String> projectedColumn) {}
+
+    /**
+     * Each @service call's parameter a node id lands on, with its decode shape per node table as
+     * graphitron_occurrence_node_id_shape states it at the parameter's slot, and the generated name
+     * of the one key column a pair projects into it, where one does. A parameter no shape fits has
+     * none, and is the slot defects' to refuse.
+     */
+    private static Map<Root, List<SlotShape>> nodeIdRoots(StoreHandle store) {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
-        var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
-        var p = CODE_METHOD_PARAMETER;
-        var n = GRAPHITRON_OCCURRENCE_NODE_ID;
-        var out = new HashMap<Root, String>();
-        store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS))
-            .from(c)
-            // The service call's method, so another kind's fills stay out.
-            .join(s).on(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL),
-                s.CALL_KIND.eq("SERVICE"))
-            .join(p).on(p.SOURCE_NAME.eq(s.METHOD_SOURCE_NAME), p.CLASS_NAME.eq(s.METHOD_CLASS_NAME),
-                p.METHOD_NAME.eq(s.METHOD_NAME), p.DESCRIPTOR.eq(s.METHOD_DESCRIPTOR), p.POSITION.eq(c.POSITION))
-            .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"),
-                exists(selectOne().from(n).where(n.GRAPH_NAME.eq(c.GRAPH_NAME), n.COORDINATE.eq(c.LANDING_COORDINATE))))
-            .forEach(r -> out.put(new Root(r.value1(), r.value2(), r.value3()), r.value4()));
+        var sp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+        var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+        var pj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
+        var kp = GRAPHITRON_OCCURRENCE_NODE_ID;
+        var col = SQL_COLUMN;
+        var out = new HashMap<Root, List<SlotShape>>();
+        store.dsl().select(c.COORDINATE, c.POSITION, c.LANDING_COORDINATE, d.DECODE_SHAPE, col.JOOQ_NAME)
+            .from(sp)
+            // The service call's parameter, so another kind's fills stay out.
+            .join(c).on(c.GRAPH_NAME.eq(sp.GRAPH_NAME), c.COORDINATE.eq(sp.CALL_COORDINATE), c.CALL.eq(sp.CALL),
+                c.POSITION.eq(sp.POSITION), c.CALL_KIND.eq("SERVICE"))
+            .leftJoin(d).on(d.GRAPH_NAME.eq(sp.GRAPH_NAME), d.COORDINATE.eq(sp.COORDINATE), d.SLOT.eq(sp.SLOT))
+            .leftJoin(pj).on(pj.GRAPH_NAME.eq(sp.GRAPH_NAME), pj.CALL_COORDINATE.eq(sp.CALL_COORDINATE),
+                pj.CALL.eq(sp.CALL), pj.POSITION.eq(sp.POSITION), pj.BOUND.eq(d.BOUND))
+            .leftJoin(kp).on(kp.GRAPH_NAME.eq(pj.GRAPH_NAME), kp.COORDINATE.eq(pj.COORDINATE),
+                kp.BOUND.eq(pj.BOUND), kp.POSITION.eq(pj.KEY_POSITION))
+            .leftJoin(col).on(col.SOURCE_NAME.eq(kp.TABLE_SOURCE_NAME), col.TABLE_SCHEMA.eq(kp.TABLE_SCHEMA),
+                col.TABLE_NAME.eq(kp.TABLE_NAME), col.COLUMN_NAME.eq(kp.COLUMN_NAME))
+            .where(sp.GRAPH_NAME.eq(store.graphName()))
+            .forEach(r -> {
+                var shapes = out.computeIfAbsent(new Root(r.value1(), r.value2(), r.value3()),
+                    k -> new ArrayList<>());
+                if (r.value4() != null) {
+                    shapes.add(new SlotShape(r.value4(), Optional.ofNullable(r.value5())));
+                }
+            });
         return out;
     }
 
     /**
-     * How a node id argument fills a parameter of {@code className}, in the decode shape
-     * {@code graphitron_occurrence_node_id_shape} states for it: the node type's own record decodes
-     * it directly, and a {@code RecordN}, a {@code RowN} or the key's one column value is taken off
-     * that record. A class no shape fits is the slot defects' to refuse.
+     * How a node id argument fills its parameter, in the decode shape
+     * {@code graphitron_occurrence_node_id_shape} states at the parameter's slot: the node type's own
+     * record decodes it directly, and a {@code RecordN}, a {@code RowN} or the projected key column's
+     * value is taken off that record. A parameter no shape fits is the slot defects' to refuse, and
+     * one with a shape per member table is an id of several node types.
      */
-    private static Result decodeParameter(String coordinate, String className, Catalog catalog) {
-        var decodeShape = catalog.decodeShapes().get(coordinate + "|" + className);
-        if (decodeShape == null) {
-            return new Result.Refused("a node id cannot be decoded into " + className);
+    private static Result decodeParameter(String coordinate, List<SlotShape> shapes, Catalog catalog) {
+        if (shapes.isEmpty()) {
+            return new Result.Refused("a node id cannot be decoded into the parameter");
         }
+        if (shapes.size() > 1) {
+            return new Result.Refused("the id is one of several node types, which is not built here yet");
+        }
+        var decodeShape = shapes.getFirst().shape();
         NodeIdDecodeQuery.Resolution resolution;
         String shape;
         switch (decodeShape) {
@@ -233,7 +259,8 @@ public final class BuildQuery {
             }
         }
         return switch (resolution) {
-            case NodeIdDecodeQuery.Resolution.Resolved resolved -> new Result.Decoded(resolved.decode(), shape);
+            case NodeIdDecodeQuery.Resolution.Resolved resolved ->
+                new Result.Decoded(resolved.decode(), shape, shapes.getFirst().projectedColumn());
             case NodeIdDecodeQuery.Resolution.Refused refused -> new Result.Refused(refused.reason());
         };
     }
@@ -511,7 +538,7 @@ public final class BuildQuery {
      * a row of and each column's generated name, and the node id decodes its fields resolve through.
      */
     private record Catalog(Map<String, Table> tables, Map<String, Column> occurrenceColumns,
-                           Map<String, String> decodeShapes, NodeIdDecodeQuery decodes) {
+                           NodeIdDecodeQuery decodes) {
 
         static Catalog read(StoreHandle store) {
             var t = SQL_TABLE;
@@ -542,17 +569,7 @@ public final class BuildQuery {
                 .forEach(r -> columns.put(r.value1() + "|" + key(r.value2(), r.value3(), r.value4()),
                     new Column(r.value5(), Optional.ofNullable(r.value6()))));
 
-            // How each node id lands in each class it is handed to, by the occurrence and the class its
-            // slot meets.
-            var d = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
-            var sl = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
-            var shapes = new HashMap<String, String>();
-            store.dsl().select(d.COORDINATE, sl.LANDING_CLASS, d.DECODE_SHAPE)
-                .from(d)
-                .join(sl).on(sl.GRAPH_NAME.eq(d.GRAPH_NAME), sl.COORDINATE.eq(d.COORDINATE), sl.SLOT.eq(d.SLOT))
-                .where(d.GRAPH_NAME.eq(store.graphName()))
-                .forEach(r -> shapes.put(r.value1() + "|" + r.value2(), r.value3()));
-            return new Catalog(tables, columns, shapes, NodeIdDecodeQuery.read(store));
+            return new Catalog(tables, columns, NodeIdDecodeQuery.read(store));
         }
 
         static String key(String source, String schema, String table) {

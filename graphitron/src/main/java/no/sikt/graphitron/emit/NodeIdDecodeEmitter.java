@@ -9,6 +9,7 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.NodeIdDecodeFailure;
 
 import javax.lang.model.element.Modifier;
+import java.util.Optional;
 
 /**
  * Emits a node id's decode from one of {@link NodeIdDecodeQuery}'s decodes: the id loaded into a jOOQ
@@ -87,17 +88,18 @@ public final class NodeIdDecodeEmitter {
     /**
      * The helper decoding a node id argument, or a list or set of them, into a parameter of
      * {@code type}: each id into a new record of the decode's table, its key taken off the record as a
-     * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or its one column's value
-     * ({@code KEY_VALUE}) where the parameter wants that and the record itself otherwise, an absent
-     * one null.
+     * {@code RecordN} ({@code RECORD_N}), {@code RowN} ({@code ROW_N}) or the value of
+     * {@code column}, the key column a pair projects ({@code KEY_VALUE}), where the parameter wants
+     * that and the record itself otherwise, an absent one null.
      */
     public static MethodSpec parameterHelper(String name, TypeName type, NodeIdDecodeQuery.Decode d, String shape,
-                                             String label, Runtime runtime) {
+                                             Optional<String> column, String label, Runtime runtime) {
         var columns = columns(d);
         var taken = switch (shape) {
             case "RECORD_N" -> CodeBlock.of("decoded.into($L)", columns);
             case "ROW_N" -> CodeBlock.of("decoded.into($L).valuesRow()", columns);
-            case "KEY_VALUE" -> CodeBlock.of("decoded.get($L)", columns);
+            case "KEY_VALUE" -> CodeBlock.of("decoded.get($T.$L.$L)", SessionIdentityRows.classOf(d.tablesClass()),
+                d.tableField(), column.orElseThrow());
             default -> CodeBlock.of("decoded");
         };
         var method = MethodSpec.methodBuilder(name)

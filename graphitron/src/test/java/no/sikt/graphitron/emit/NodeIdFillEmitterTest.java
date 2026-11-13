@@ -76,7 +76,7 @@ class NodeIdFillEmitterTest {
         var row = new FillQuery.Row("Query." + name, "Query." + name, List.of(new FillQuery.Fill(0, "id",
             type, type, "ARGUMENT", null, null, Optional.of(new FillQuery.Landing(List.of("id"), "SCALAR", true)))),
             true);
-        return new Case(name, row, new BuildQuery.Result.Decoded(decode, shape));
+        return new Case(name, row, new BuildQuery.Result.Decoded(decode, shape, Optional.empty()));
     }
 
     @BeforeAll

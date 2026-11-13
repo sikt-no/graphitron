@@ -10,6 +10,7 @@ import com.palantir.javapoet.WildcardTypeName;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Emits how an input object is made into a class, from one of {@link BuildQuery}'s constructions:
@@ -281,7 +282,7 @@ public final class BuildEmitter {
             // A list of node ids: each decoded into a record of its own, as a list parameter's are.
             var helperName = name + "_" + member.slot().slotName();
             out.add(NodeIdDecodeEmitter.parameterHelper(helperName, slotType, member.decode().get(), "RECORD",
-                String.join(".", member.path()), runtime));
+                Optional.empty(), String.join(".", member.path()), runtime));
             made = CodeBlock.of("$L($L)", helperName, read);
         } else if (member.nested().isPresent()) {
             var helperName = name + "_" + member.slot().slotName();
