@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.code;
 
+import no.sikt.graphitron.model.sources.SourceClaims;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.classpath.ClassfileCensus;
 import no.sikt.graphitron.model.config.ClasspathEntry;
@@ -38,9 +39,9 @@ import static org.jooq.impl.DSL.val;
  * and cannot say whether <em>this</em> graph holds rows derived from those bytes. Two graphs on
  * one jar get the wrong answer from the global column and the right one from the claim.
  *
- * <p>An entry gone from disk is forgotten and its rows cascade away with the source row. An entry
- * this graph merely stopped reading is unclaimed, not forgotten; the claim's foreign key refuses
- * the delete while another graph holds one.
+ * <p>An entry gone from disk is forgotten and its rows cascade away with the source row, once no
+ * graph claims it. An entry this graph merely stopped reading is unclaimed, not forgotten, and one
+ * gone from disk that another graph still claims waits for that graph's next capture.
  */
 public final class ClasspathSourceCapture {
 
@@ -183,10 +184,10 @@ public final class ClasspathSourceCapture {
         reading.census().entries().forEach(at -> read.add(at.source()));
         read.addAll(unchanged);
         claim(dsl, graph, List.copyOf(read), stamps, readAt);
-        // After the claims this graph has let go, and never before them: the claim is what refuses
-        // the delete, so an entry still claimed here is one this reading would fail on rather than
-        // one it would keep. Every entry the configuration named counts as read, an entry left
-        // alone being one this reading vouched for rather than one it lost.
+        // After the claims this graph has let go, and never before them: an entry still claimed is
+        // skipped, so reclaiming first would leave this graph's own vanished entries for a capture
+        // that has already passed. Every entry the configuration named counts as read, an entry
+        // left alone being one this reading vouched for rather than one it lost.
         reclaim(dsl, claimed);
         // In classpath order, which is the order a class name two entries declare resolves in.
         var order = new java.util.HashMap<String, Integer>();
@@ -431,9 +432,9 @@ public final class ClasspathSourceCapture {
      *
      * <p>Not the entries this reading did not read: the relation is shared and ungraphed, so
      * absence from one run's classpath says nothing, and only absence from the filesystem says an
-     * entry has stopped being one. A source another graph still claims is refused by that claim's
-     * own foreign key rather than tested for here, and the rows read from a source this does
-     * delete go with it, the classpath families cascading from it.
+     * entry has stopped being one. A source another graph still claims is left for that graph's
+     * next capture, which drops its claim and then forgets it; the rows read from a source this
+     * does delete go with it, the classpath families cascading from it.
      */
     private static void reclaim(DSLContext dsl, LinkedHashSet<String> read) {
         var t = STORE_SOURCE;
@@ -444,7 +445,7 @@ public final class ClasspathSourceCapture {
             .filter(name -> !Files.exists(Path.of(name)))
             .toList();
         if (!vanished.isEmpty()) {
-            dsl.deleteFrom(t).where(t.SOURCE_NAME.in(vanished)).execute();
+            dsl.deleteFrom(t).where(t.SOURCE_NAME.in(vanished)).and(SourceClaims.unclaimed()).execute();
         }
     }
 

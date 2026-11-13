@@ -36,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -1045,6 +1046,70 @@ class CodeCaptureTest {
                 .as("while the entry that stays keeps its classes, so the reading ran")
                 .isPositive();
         }
+    }
+
+    /**
+     * An entry gone from disk that another graph still claims waits for that graph. Two graphs read
+     * one entry; it is deleted; the graph that runs next drops its own claim and its reclaim must
+     * leave the source alone, since the first graph still holds rows read from it. Before the
+     * reclaim asked about other graphs' claims, the foreign key from the first graph's claim failed
+     * the whole delete and the second graph's capture with it.
+     *
+     * <p>Then the first graph recaptures, lets go of its own claim, and the source goes with it:
+     * each graph sweeps its own, and the last one out forgets the entry.
+     */
+    @Test
+    @DisplayName("an entry gone from disk that another graph still claims is left for that graph")
+    void anEntryAnotherGraphClaimsWaitsForIt(@TempDir Path dir) throws IOException {
+        Path shared = fixtureEntry(dir.resolve("shared"), SLOT_RECORD);
+        Path stays = fixtureEntry(dir.resolve("stays"), SLOT_BEAN);
+        String sharedName = shared.toString();
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            for (String graph : List.of("first", "second")) {
+                ModelCapture.writeGraph(dsl, new GraphIdentity(graph, dir), FIRST);
+                CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, graph,
+                        List.of(ClasspathEntry.project(shared), ClasspathEntry.project(stays)), null, FIRST, null),
+                    null, FIRST);
+            }
+            assertThat(claimants(dsl, sharedName))
+                .as("both graphs claim the shared entry")
+                .containsExactly("first", "second");
+
+            deleteTree(shared);
+            CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "second",
+                    List.of(ClasspathEntry.project(stays)), null, SECOND, null),
+                null, SECOND);
+
+            assertThat(claimants(dsl, sharedName))
+                .as("the graph that ran let go of its own claim and only its own")
+                .containsExactly("first");
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(sharedName)))
+                .as("and left the source the other graph still claims")
+                .isOne();
+            assertThat(dsl.fetchCount(CODE_TYPE, CODE_TYPE.SOURCE_NAME.eq(sharedName)))
+                .as("along with the rows that graph read from it")
+                .isPositive();
+
+            CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "first",
+                    List.of(ClasspathEntry.project(stays)), null, SECOND, null),
+                null, SECOND);
+
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(sharedName)))
+                .as("the last graph to let go forgets the entry")
+                .isZero();
+            assertThat(rowsPerSourceTable(dsl, sharedName))
+                .as("and nothing read from it outlives it")
+                .allSatisfy((table, rows) -> assertThat(rows).as(table).isZero());
+        }
+    }
+
+    /** The graphs claiming one source, in name order. */
+    private static List<String> claimants(DSLContext dsl, String sourceName) {
+        return dsl.select(STORE_GRAPH_SOURCE.GRAPH_NAME).from(STORE_GRAPH_SOURCE)
+            .where(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(sourceName))
+            .orderBy(STORE_GRAPH_SOURCE.GRAPH_NAME)
+            .fetch(STORE_GRAPH_SOURCE.GRAPH_NAME);
     }
 
     /** A directory entry holding one compiled fixture class, at the path its package names. */

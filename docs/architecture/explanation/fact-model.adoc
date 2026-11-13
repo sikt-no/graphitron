@@ -182,8 +182,11 @@ letting the cascade win. So the key gives up its foreign key, and removing a fil
 nulls a column on every row that read it instead of deleting them or being refused. The attribution
 stays in the key; what the null withdraws is the registry's vouch, and one predicate,
 `source_ref IS NULL`, finds both a source removed under a reading and a write that left the column
-unset. The graph that owns the rows reaps its own on its next refresh, which is what keeps one process
-from reaching into another partition on a cadence its owner knows nothing about.
+unset. A graph's claim in `store_graph_source` keeps the registry row for as long as that graph
+holds rows read from it, so a source is removed under a reading only once its graph has let go of
+the claim and before the gatherers have swept what it said: a capture stopped between the two.
+The graph that owns the rows reaps its own on its next refresh, which is why the registry waits for
+that refresh rather than reaching into another partition on a cadence its owner knows nothing about.
 
 *The reader does not use graphql-java's `NodeTraverser`,* which is the obvious tool. It walks the
 untyped child list, so an interface named in an implements clause and a union's member arrive as the

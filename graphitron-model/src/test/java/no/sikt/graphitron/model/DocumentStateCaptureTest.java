@@ -44,6 +44,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class DocumentStateCaptureTest {
 
     private static final String GRAPH = "document-state";
+    private static final String OTHER_GRAPH = "document-state-other";
 
     private static final LocalDateTime FIRST = LocalDateTime.parse("2024-01-01T10:00:00");
     private static final LocalDateTime SECOND = LocalDateTime.parse("2024-01-02T10:00:00");
@@ -232,6 +233,54 @@ class DocumentStateCaptureTest {
         });
     }
 
+    /**
+     * A file the author deleted that another graph still reads. Two graphs read one directory; the
+     * file goes; the graph that runs next drops its own claim on it, and its reclaim must leave the
+     * source alone, since the other graph still holds rows read from it. Before the reclaim asked
+     * about other graphs' claims, the foreign key from that claim failed the whole delete and the
+     * capture of the graph that happened to run with it.
+     *
+     * <p>Then the other graph reads, lets go of its own claim, and the source goes with it: each
+     * graph sweeps its own, and the last one out forgets the file.
+     */
+    @Test
+    @DisplayName("a deleted document another graph still claims keeps its source row until that graph reads")
+    void aDeletedDocumentAnotherGraphClaimsWaitsForIt() {
+        ThreadConfinedStore.run(dsl -> {
+            Path directory = temporaryDirectory();
+            write(directory, "widget.graphqls", WIDGET);
+            write(directory, "query.graphqls", QUERY);
+            read(dsl, OTHER_GRAPH, directory, FIRST, "*.graphqls");
+            read(dsl, GRAPH, directory, FIRST, "*.graphqls");
+            String widget = name(directory, "widget.graphqls");
+
+            delete(directory, "widget.graphqls");
+            read(dsl, GRAPH, directory, SECOND, "*.graphqls");
+
+            assertThat(claimants(dsl, widget))
+                .as("the graph that read let go of its own claim and only its own")
+                .containsExactly(OTHER_GRAPH);
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(widget)))
+                .as("and left the source the other graph still claims")
+                .isOne();
+            assertThat(positions(dsl, OTHER_GRAPH, directory, "widget.graphqls"))
+                .as("along with the rows that graph read from it")
+                .isPositive();
+
+            read(dsl, OTHER_GRAPH, directory, THIRD, "*.graphqls");
+
+            assertThat(claimants(dsl, widget))
+                .as("the other graph lets go of its claim on its own reading")
+                .isEmpty();
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(widget)))
+                .as("and, the last one out, forgets the file")
+                .isZero();
+            assertThat(positions(dsl, OTHER_GRAPH, directory, "widget.graphqls"))
+                .as("with its rows")
+                .isZero();
+        });
+    }
+
     // ------------------------------------------------------------------------------- the reading
 
     /** One reading of everything the configuration names, which is what a run does. */
@@ -240,14 +289,19 @@ class DocumentStateCaptureTest {
     }
 
     private static void read(DSLContext dsl, Path baseDir, LocalDateTime readAt, String pattern) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
+        read(dsl, GRAPH, baseDir, readAt, pattern);
+    }
+
+    private static void read(DSLContext dsl, String graphName, Path baseDir, LocalDateTime readAt,
+                             String pattern) {
+        var graph = new GraphIdentity(graphName, baseDir);
         ModelCapture.writeGraph(dsl, graph, readAt);
         var reading = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, pattern), readAt);
         SchemaLoader.throwIfUnparsed(reading.failures());
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-        GraphQLSourceCapture.vouch(dsl, GRAPH, documents);
+        GraphQLSourceCapture.vouch(dsl, graphName, documents);
         GraphQLSourceCapture.reclaim(dsl, documents);
     }
 
@@ -266,8 +320,20 @@ class DocumentStateCaptureTest {
     // --------------------------------------------------------------------------- what it wrote
 
     private static int positions(DSLContext dsl, Path directory, String file) {
-        return dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH)
+        return positions(dsl, GRAPH, directory, file);
+    }
+
+    private static int positions(DSLContext dsl, String graph, Path directory, String file) {
+        return dsl.fetchCount(GRAPHQL_AST_ENTRY, GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(graph)
             .and(GRAPHQL_AST_ENTRY.SOURCE_NAME.eq(name(directory, file))));
+    }
+
+    /** The graphs claiming one source, in name order. */
+    private static List<String> claimants(DSLContext dsl, String sourceName) {
+        return dsl.select(STORE_GRAPH_SOURCE.GRAPH_NAME).from(STORE_GRAPH_SOURCE)
+            .where(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(sourceName))
+            .orderBy(STORE_GRAPH_SOURCE.GRAPH_NAME)
+            .fetch(STORE_GRAPH_SOURCE.GRAPH_NAME);
     }
 
     private static List<LocalDateTime> instants(DSLContext dsl, Path directory, String file) {

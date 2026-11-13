@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.sources.SourceClaims;
 import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceStamp;
@@ -46,10 +47,10 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * the claim rather than against {@code store_source}, which is store-global and cannot say whether
  * this graph holds rows derived from those bytes.
  *
- * <p>A source row goes when its file no longer exists, not when this reading did not read it: the
- * relation is shared by every kind and is not partitioned by graph. A claim this graph no longer
- * holds is dropped first, so the foreign key from a claim another graph still holds refuses the
- * delete.
+ * <p>A source row goes when its file no longer exists and no graph claims it, not when this reading
+ * did not read it: the relation is shared by every kind and is not partitioned by graph. A claim
+ * this graph no longer holds is dropped first; a source another graph still claims is left for that
+ * graph's next capture to let go of.
  */
 public final class GraphQLSourceCapture {
 
@@ -398,8 +399,9 @@ public final class GraphQLSourceCapture {
      *
      * <p>Deleted rather than cleared and rewritten, the row carrying a stamp: clearing would throw
      * away what this graph last transcribed and make every source look new next reading. Scoped to
-     * the kind this gatherer owns. Dropping the claim first is also what makes the reclamation
-     * below safe, a source another graph still claims keeping a reference that refuses the delete.
+     * the kind this gatherer owns. Dropping the claim first is also what lets the reclamation below
+     * forget a vanished file this graph was the last to read; one another graph still claims is
+     * skipped, and goes once that graph's own capture drops its claim.
      */
     private static void dropMembership(DSLContext dsl, String graph, Set<String> configured) {
         var m = STORE_GRAPH_SOURCE;
@@ -454,6 +456,10 @@ public final class GraphQLSourceCapture {
      * absence from the filesystem says a schema file has stopped being one; the two bundled
      * documents are sources with a row and no file, and a rule reading the filesystem alone would
      * reclaim them every run.
+     *
+     * <p>Nor a source another graph still claims: that graph holds rows read from it, and only its
+     * own next capture may let go of them. The source is left, and that capture's reclaim forgets
+     * it.
      */
     public static void reclaim(DSLContext dsl, List<SourceDocument> documents) {
         var t = STORE_SOURCE;
@@ -470,7 +476,7 @@ public final class GraphQLSourceCapture {
             .filter(name -> !Files.exists(Path.of(name)))
             .toList();
         if (!vanished.isEmpty()) {
-            dsl.deleteFrom(t).where(t.SOURCE_NAME.in(vanished)).execute();
+            dsl.deleteFrom(t).where(t.SOURCE_NAME.in(vanished)).and(SourceClaims.unclaimed()).execute();
         }
     }
 
