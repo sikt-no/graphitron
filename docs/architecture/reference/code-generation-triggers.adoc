@@ -236,7 +236,10 @@ argument any producer takes is stated by its fill, never inferred from the produ
 
 What follows from it (Alf, 2026-11-13). Every call is a Java method call, so a call's parameter list
 is one relation whatever its kind. A write takes each argument as one parameter, an input object
-whole as its record. A `@routine` producer composes with filters: an argument its call does not
+whole as its record: its input is bound against the record of the table the write goes against,
+its fields to the columns they set or key. That is how the store states it today; the direction is
+to emit the `INSERT`, `UPDATE` and `DELETE` statements directly, which is more powerful than going
+through a record. A `@routine` producer composes with filters: an argument its call does not
 bind filters its result, as on any field. A `@service` cannot: an argument it does not bind has
 nowhere to go and is a defect. A routine joined into a parent's query is a join, not a call, at least
 for now; its arguments are stated on the join path's step.
