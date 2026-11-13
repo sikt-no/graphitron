@@ -717,7 +717,7 @@ static method needs no holder.
     coordinate, bound, call, call_kind)` ties binding and call, keyed into both, so the arm has
     a reader. A resolution to a method `@externalField` cannot call is
     `CODE_REFERENCE_METHOD_UNFIT`, owned by `code-references`; a method typed on a table the
-    field's values are not rows of is `EXTERNAL_FIELD_TABLE_NOT_TAKEN`, owned by
+    field's values are not rows of is `PARAMETER_MISMATCH`, owned by
     `occurrence-bindings`; a written `@reference` beside it is `EXTERNAL_FIELD_PATH_UNSUPPORTED`,
     a deferral at `occurrence-bindings`, as the manual already states it; none touches
     `graphitron_entry_defect_rule`. The manual's constraints name the nesting case and the three

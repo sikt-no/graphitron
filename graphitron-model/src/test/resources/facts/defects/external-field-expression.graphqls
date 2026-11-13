@@ -88,5 +88,5 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   CODE_REFERENCE_METHOD_UNFIT,    Film,  combine,   takes 2 parameters
   CODE_REFERENCE_METHOD_UNFIT,    Film,  helper,    returns java.lang.String
   EXTERNAL_FIELD_PATH_UNSUPPORTED, Film, englishByLanguage, Film.englishByLanguage
-  EXTERNAL_FIELD_TABLE_NOT_TAKEN, Actor, isEnglish, public.actor
+  PARAMETER_MISMATCH, Actor, isEnglish, public.actor
   """)

@@ -15368,12 +15368,13 @@ SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
                   AND nt.node_count > 1)
 UNION ALL
 -- An @externalField whose reference resolved to a method it may name, at a table its values are rows
--- of that the method does not take: its parameter is typed on another table's class or record, so no
+-- of that the method does not accept: its parameter is typed on another table's class or record, so no
 -- call was pinned there. Read off the claim and the source table the binding is written from, not the
 -- binding, which later stages write other kinds of.
--- Reported once per reference, at the reference, the first table not taken in the detail.
+-- Reported once per reference, at the reference, the first table the parameter does not accept in
+-- the detail.
 SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
-       'EXTERNAL_FIELD_TABLE_NOT_TAKEN', MIN(st.table_schema || '.' || st.table_name)
+       'PARAMETER_MISMATCH', MIN(st.table_schema || '.' || st.table_name)
   FROM graphitron_occurrence o
   JOIN graphitron_binding_claim x
     ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
@@ -22502,8 +22503,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A code reference names a method the directive cannot call: an @externalField''s method must be static, take exactly one jOOQ table and return an org.jooq.Field.', 'code-references'),
   ('EXTERNAL_FIELD_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_EXTERNAL_FIELD_PATH_UNSUPPORTED',
    'An @externalField on a field that also writes a @reference path is not supported yet: the method takes the table the field''s values are rows of, and an expression at the path''s end is not bound. Remove the @reference and reach the joined table inside the method.', 'occurrence-bindings'),
-  ('EXTERNAL_FIELD_TABLE_NOT_TAKEN', 'error', 'GRAPHITRON', 'GRAPHITRON_EXTERNAL_FIELD_TABLE_NOT_TAKEN',
-   'An @externalField''s method takes a table its field''s values are not rows of: its parameter is typed on another table''s class or record, so the call does not compile. Type it as the parent''s table class, or widen it to org.jooq.Table<?>.', 'occurrence-bindings'),
+  ('PARAMETER_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_MISMATCH',
+   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile: an @externalField''s table parameter typed on a table its field''s values are not rows of. Type it as that table''s class, or widen it to org.jooq.Table<?>.', 'occurrence-bindings'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.', 'entry-defects'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
