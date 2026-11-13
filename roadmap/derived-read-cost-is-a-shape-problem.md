@@ -1221,12 +1221,23 @@ before `generate` does.
   configuration injected that the emitted schema's assembly refuses is recorded where the written
   schema's refusals are, and the log names it.
 * **Each rule the walk enforces is a located defect** `open`. Every walk rejection becomes a code
-  and a branch of `graphitron_entry_defect_rule`, and the walk's hand-built validation test for it
+  written by the stage whose facts it judges, and the walk's hand-built validation test for it
   becomes a fact document or goes with its rule.
-  * **A `@mutation` returning a bare `ID` is refused by the store where its table has no node or
-    several** `open`. The walk refuses both, a node this subgraph does not resolve counting, and the
-    store states neither: `NODE_ID_TARGET_UNRESOLVED` and `NODE_ID_TARGET_AMBIGUOUS` cover a
-    `@nodeId` at an argument or input field, not a mutation's return.
+  * **The `NODE_ID_TARGET_*` family is owned by the occurrence build** `open`. Its arms read the
+    absence of a `graphitron_occurrence_node_id` binding, which the occurrence build writes, but
+    stay in `graphitron_entry_defect_rule`; the input field arm reads `graphql_field` and
+    `graphql_field_element`, which the expanded-population reader gate refuses in a new view, so it
+    moves once that arm reads the `graphitron_field` anchors.
+  * **"The one node over a table" is stated once** `open`. The node id rule's four inferring arms,
+    both `NODE_ID_TARGET_*` defects and `outbox_key_rule`'s node table each count the nodes over a
+    table themselves. An anchored relation, one row per graph and table at least one node declares
+    itself over, with the count, is read by all of them; the two defects then key on a missing
+    binding and that count, and the outbox root arm can read the written table's binding instead.
+  * **A DELETE payload's `ID` carrier binds against the written table** `open`. The carrier's
+    `ID` element under a write takes the written table's one node as a write's bare `ID` return
+    does, so `NODE_ID_TARGET_UNRESOLVED` and `NODE_ID_TARGET_AMBIGUOUS` state its refusals and the
+    walk's `NoNodeForTable` and `Ambiguous` carrier arms go; `@nodeId(typeName:)` naming a node over
+    another table is a rule of its own and gets its own code.
   * **A select's condition, paging and ordering are keyed to its producer** `open`. The
     modifiers are stated over `graphitron_producer`, so the operation rules are written over them
     once.
