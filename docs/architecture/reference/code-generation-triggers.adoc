@@ -71,6 +71,15 @@ include::examples/_code-generation-triggers.adoc[tag=RunningExample-graphitron_o
 Everything below is stated per occurrence, not per declaration. A plain type reached under two
 fields is two sets of facts, because what its fields read can differ at each place.
 
+A developer who knows GraphQL's error `path` can read a chain as one: an occurrence is the response
+path from the chain's start with its list indices left out, `["films", 0, "details", "length"]`
+read from `Film` being `Film.details.length`. It is not an instance: an occurrence is a static place
+in the schema, worked out before anything runs, and one occurrence yields many result values. Where
+a coordinate is shown (a defect's message, the editor's hover, a fact document's output, this
+manual), each step that is a list is marked `[]`, `Query.films[]` or `Film.details[].length` when
+`details` is a list, one `[]` per list level; the key itself carries no marker, a field's list depth
+being a fact of its declaration that can change without the place changing (Alf, 2026-11-13).
+
 '''
 
 == Source

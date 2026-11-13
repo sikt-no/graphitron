@@ -140,6 +140,14 @@ A fact keyed by where it was written has to be re-matched by every reader, and a
 When this is done a directive application is identified by its position in the document, and a
 built-in directive means what graphql-java executes.
 
+* **An occurrence's shown coordinate marks its lists with `[]`** `open`. Where a coordinate is
+  shown, a defect's message, the editor's hover, a fact document's rendered output and the manual,
+  each step that is a list carries `[]`, one per list level: `Query.films[]`, `Film.details[].length`
+  (Alf, 2026-11-13; `code-generation-triggers.adoc` § "The occurrence"). The key stays as it is, a
+  field's list depth being a fact of its declaration (`graphitron_field.list_depth`) that can change
+  without the place changing. The marker reads other rows' list depth, so it is no generated column:
+  the occurrence stage writes it as a column of `graphitron_occurrence`, or each surface renders it
+  from the steps, one way for all of them.
 * **A redeclared `@skip` or `@include` loses to the specification, and says so** `open`. The
   anchor keeps the specification's declaration for those two whatever a document says, and the
   discarded redeclaration is a `graphql_schema_problem` row at its own position.
