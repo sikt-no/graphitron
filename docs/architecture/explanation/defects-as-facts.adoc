@@ -28,8 +28,9 @@ MCP server and does not stop a build.
 == The supertype
 
 `graphitron_entry_defect` holds one row per defect at its written position: the position, the
-code, and a detail string a message quotes. Its key is the position and the code, so one directive
-breaking two rules is two rows.
+code, the stage that raised it, and a detail string a message quotes. Its key is the position, the
+code and the stage (Alf, 2026-11-13), so one directive breaking two rules is two rows, and so is one
+rule raised by two stages.
 
 A code names the rule broken, stated once; the position says where, and so in what context, it was
 broken. A rule is not given a code of its own for each place it can be broken: a name claimed that
@@ -60,13 +61,15 @@ shed when the generator learns the shape, its code going with it.
 graphitron does not support yet: `UNSUPPORTED`, a deferral.
 | `lsp_code` | The code the editor shows.
 | `statement` | One sentence an author reads to understand the rule.
-| `owner_stage` | The stage that writes the code's rows, a `meta_stage` row naming its gatherer,
-which sweeps them.
+| `owner_stage` | Today, the stage that writes the code's rows, which its gatherer sweeps. It goes
+when the stage enters the defect's key: nobody owns a code (Alf, 2026-11-13).
 |===
 
 == Ownership
 
-Each code is owned by the stage whose facts it judges. A gatherer's anchor phase is a sequence of
+A defect is raised by the stage whose facts it judges, and nobody owns a code: two stages may raise
+one rule, each where its own facts are, and the stage that raised a row is part of its key (Alf,
+2026-11-13). A gatherer's anchor phase is a sequence of
 stages, and `meta_stage` rosters them, each with its gatherer, its position in that gatherer's order
 and its class; the gatherer runs its stages from that order, and `meta_stage_write` states the
 relations each one writes. A stage writes its codes as its last statement, once the facts they
@@ -78,9 +81,9 @@ would read the previous reading's rows. A rule reading several stages' facts bel
 them. A stage whose own run has to stay lean writes no defects: its codes go to a stage of their own
 straight after it, which writes nothing but those defects, as `occurrence-depth-defects` does for the
 depth loop's `occurrence-depths` (Alf, 2026-11-12). Every row carries `touched_at`, the instant of the
-reading that found it. When its stages have
-run, the gatherer sweeps the codes its stages own once, deleting the rows of
-those codes the reading did not mark. Another gatherer's rows are never touched.
+reading that found it. Each stage sweeps the rows it raised that the reading did not mark, and
+another stage's rows are never touched. Until the stage is in the key, the gatherer sweeps instead
+by `owner_stage`, the codes its stages own, once its stages have run.
 
 The split is under way. `graphitron_entry_defect_rule` takes no new arm: a new code goes to the
 stage whose facts it judges, and an existing one leaves with its family. `occurrence-bindings`,
