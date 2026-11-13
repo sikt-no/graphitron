@@ -731,13 +731,17 @@ static method needs no holder.
     Every reason closes before the flip, which keeps no fallback to the classified model per
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
-    The node-id reasons (`NODE_ID`, `AUTHORED_NODE_ID`, `NODE_ID_PARTICIPANT`) wait on E's decode
-    rows for `@condition` parameters: the emitter reads where an id lands off
-    `graphitron_occurrence_node_id_slot_parameter` and `graphitron_occurrence_node_id_slot`, how it
-    decodes off `graphitron_occurrence_node_id_shape`, which holds `@service` parameters only until
-    then, and a single column only through `graphitron_occurrence_node_id_slot_projection`, a whole id
-    going to the record or a tuple and never unwrapped to its sole column, so the condition
-    reference's arity-1 promise changes with E's commit (E, 2026-11-12).
+    The node-id reasons wait on three things. `AUTHORED_NODE_ID` waits on the record-or-tuple rule
+    holding at a `@condition` as at a `@service` (`defects-as-facts.adoc`, Alf 2026-11-12, applied to
+    `@condition` first, Alf 2026-11-13): a parameter of the sole key column's type draws
+    `NODE_ID_KEY_ARITY_EXCEEDS_SLOT` there too, the condition reference's arity-1 promise goes, and
+    sakila's `addressDistrictAlberta` takes its column through an `argMapping` projection; the emitter
+    then reads where an id lands off `graphitron_occurrence_node_id_slot_parameter` and
+    `graphitron_occurrence_node_id_slot`, how it decodes off `graphitron_occurrence_node_id_shape`,
+    which holds a `@condition`'s parameters since 2026-11-13, and a single column only through
+    `graphitron_occurrence_node_id_slot_projection`. `NODE_ID`, a generated term on a converter-backed
+    or composite key, waits on `NodeIdDecodeQuery` resolving a decode for it, which no parameter's
+    shape row answers. `NODE_ID_PARTICIPANT` waits on the not-this-participant decode policy.
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, is read off its occurrence and flips with `$project`, so the conditions' callers move
