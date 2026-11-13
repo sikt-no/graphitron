@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.boot.StoreUse;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.CapturedSchema;
+import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import graphql.schema.idl.TypeDefinitionRegistry;
@@ -96,8 +97,11 @@ import java.util.stream.Stream;
  * it. The system property {@value #INLINE_PROPERTY} set to {@code false} captures each inline schema
  * into a fresh store instead, for a measurement.
  *
- * <p><b>Lifetime.</b> The population lives in the root {@link ExtensionContext}'s store, so it is
- * one per run, and is closed with it.
+ * <p><b>Lifetime.</b> One population per test JVM, so a static helper with no extension context of
+ * its own reaches the same stores a class does, through {@link #inline()}. The first class that
+ * registers a {@link Reader} puts it in the root {@link ExtensionContext}'s store, which closes it
+ * when the run ends; a JVM where no class registers one leaves its in-memory stores to die with the
+ * fork.
  */
 public final class FactGraphs implements AutoCloseable {
 
@@ -149,6 +153,14 @@ public final class FactGraphs implements AutoCloseable {
     private record InlineKey(Optional<String> catalog, List<ClasspathEntry> classpath) {}
 
     /**
+     * How many graphs an inline store takes before it is closed and replaced. A store that never
+     * clears keeps about a megabyte a graph and captures more slowly as it grows, so a store is
+     * retired when it is given back holding this many, and the pool boots a fresh one on the next
+     * borrow. Each retirement costs one capture into an empty store.
+     */
+    static final int GRAPHS_PER_INLINE_STORE = 50;
+
+    /**
      * One catalog and classpath's inline stores: those lent out and those free. The most recently
      * returned is lent first, so sequential captures keep landing in one store, and a new store is
      * booted only when every existing one is lent.
@@ -167,6 +179,11 @@ public final class FactGraphs implements AutoCloseable {
         }
 
         synchronized void giveBack(Shard shard) {
+            if (shard.graphs().size() >= GRAPHS_PER_INLINE_STORE) {
+                all.remove(shard);
+                shard.close();
+                return;
+            }
             free.addFirst(shard);
         }
 
@@ -187,10 +204,29 @@ public final class FactGraphs implements AutoCloseable {
         this.directory = Path.of("target", "fact-scenarios").toAbsolutePath();
     }
 
-    /** The run's population, opened by the first class that asks for it. */
+    /** The JVM's population, while it is open. */
+    private static FactGraphs shared;
+
+    /** The JVM's population, opened by the first class or helper that asks for it. */
+    private static synchronized FactGraphs shared() {
+        if (shared == null) {
+            shared = new FactGraphs();
+        }
+        return shared;
+    }
+
+    /** The run's population, registered with the root context so the run's end closes it. */
     static FactGraphs of(ExtensionContext context) {
         return context.getRoot().getStore(NAMESPACE)
-            .computeIfAbsent(FactGraphs.class, key -> new FactGraphs(), FactGraphs.class);
+            .computeIfAbsent(FactGraphs.class, key -> shared(), FactGraphs.class);
+    }
+
+    /**
+     * The population's inline route for a caller with no extension context, a static test helper
+     * capturing the schema a test hands it: the same pooled stores {@link Reader#readInline} uses.
+     */
+    public static Inline inline() {
+        return new Inline(shared());
     }
 
     /** A class's handle on the population, to register as an extension. */
@@ -258,8 +294,80 @@ public final class FactGraphs implements AutoCloseable {
 
     @Override
     public void close() {
+        synchronized (FactGraphs.class) {
+            if (shared == this) {
+                shared = null;
+            }
+        }
         shards.values().forEach(Shard::close);
         inline.values().forEach(Pool::close);
+    }
+
+    /**
+     * Captures {@code sdl} into an inline store for {@code catalog} and {@code classpath} that no
+     * other capture holds, under a graph name of its own and the configuration {@code configuration}
+     * states, and runs {@code body} over it in one read transaction through that store's own
+     * select-only reader, which only the capture holding the store uses.
+     */
+    <T> T readInline(String stem, String sdl, CatalogInput catalog, List<ClasspathEntry> classpath,
+                     SubjectConfig configuration, Function<InlineGraph, T> body) {
+        var graphName = "inline-" + INLINE.incrementAndGet();
+        var folder = inlineDirectory(graphName);
+        if ("false".equals(System.getProperty(INLINE_PROPERTY))) {
+            try (var store = FactStores.inMemory(StoreUse.ONE_CAPTURE)) {
+                var schema = CapturedStore.captureInline(store.dsl(), folder, stem, graphName, sdl,
+                    catalog, classpath, configuration);
+                var registry = registryOf(folder, stem);
+                try (var reader = store.reader(new ReadBudget.Unbounded())) {
+                    return Reader.answer(reader.read(dsl -> body.apply(
+                        new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
+                }
+            }
+        }
+        var pool = inlinePoolOf(catalog, classpath);
+        var shard = pool.borrow();
+        try {
+            var schema = shard.ensureInline(graphName, folder, stem, sdl, catalog, classpath,
+                configuration, inlineDirectory(BALLAST + "-" + INLINE.incrementAndGet()));
+            var registry = registryOf(folder, stem);
+            return Reader.answer(shard.inlineReader().read(dsl -> body.apply(
+                new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
+        } finally {
+            pool.giveBack(shard);
+        }
+    }
+
+    private static TypeDefinitionRegistry registryOf(Path folder, String stem) {
+        return SchemaLoader.load(List.of(SchemaSource.file(CapturedStore.fixtureFile(folder, stem))));
+    }
+
+    /**
+     * The inline route as {@link #inline()} hands it out, for a static helper: each call captures
+     * the SDL it is given into a pooled store and reads it there.
+     */
+    public static final class Inline {
+
+        private final FactGraphs population;
+
+        private Inline(FactGraphs population) {
+            this.population = population;
+        }
+
+        /**
+         * {@code sdl} captured as {@link Reader#readInline(String, String, CatalogInput, List,
+         * Function)} captures it, under the configuration {@code configuration} states.
+         */
+        public <T> T read(String stem, String sdl, CatalogInput catalog,
+                          List<ClasspathEntry> classpath, SubjectConfig configuration,
+                          Function<InlineGraph, T> body) {
+            return population.readInline(stem, sdl, catalog, classpath, configuration, body);
+        }
+
+        /** The same with no configuration stated. */
+        public <T> T read(String stem, String sdl, CatalogInput catalog,
+                          List<ClasspathEntry> classpath, Function<InlineGraph, T> body) {
+            return read(stem, sdl, catalog, classpath, SubjectConfig.none(), body);
+        }
     }
 
     /** The pool of inline stores for {@code catalog} and {@code classpath}. */
@@ -364,7 +472,8 @@ public final class FactGraphs implements AutoCloseable {
          */
         synchronized CapturedSchema ensureInline(String graphName, Path folder, String stem,
                                                  String sdl, CatalogInput catalog,
-                                                 List<ClasspathEntry> classpath, Path ballastFolder) {
+                                                 List<ClasspathEntry> classpath,
+                                                 SubjectConfig configuration, Path ballastFolder) {
             if (store == null) {
                 store = FactStores.inMemory(StoreUse.LONG_LIVED);
                 BOOTS.incrementAndGet();
@@ -373,7 +482,7 @@ public final class FactGraphs implements AutoCloseable {
                 graphs.put(BALLAST, null);
             }
             var schema = CapturedStore.captureInline(store.dsl(), folder, stem, graphName, sdl,
-                catalog, classpath);
+                catalog, classpath, configuration);
             graphs.put(graphName, schema);
             captures.merge(graphName, 1, Integer::sum);
             return schema;
@@ -395,7 +504,20 @@ public final class FactGraphs implements AutoCloseable {
             return store.reader(new ReadBudget.Unbounded());
         }
 
+        /** An inline store's own reader, used only by the capture that has borrowed the store. */
+        private StoreReader inlineReader;
+
+        synchronized StoreReader inlineReader() {
+            if (inlineReader == null) {
+                inlineReader = reader();
+            }
+            return inlineReader;
+        }
+
         synchronized void close() {
+            if (inlineReader != null) {
+                inlineReader.close();
+            }
             if (store != null) {
                 store.close();
             }
@@ -463,41 +585,13 @@ public final class FactGraphs implements AutoCloseable {
          */
         public <T> T readInline(String stem, String sdl, CatalogInput catalog,
                                 List<ClasspathEntry> classpath, Function<InlineGraph, T> body) {
-            var population = population();
-            var graphName = "inline-" + INLINE.incrementAndGet();
-            var folder = population.inlineDirectory(graphName);
-            if ("false".equals(System.getProperty(INLINE_PROPERTY))) {
-                try (var store = FactStores.inMemory(StoreUse.ONE_CAPTURE)) {
-                    var schema = CapturedStore.captureInline(store.dsl(), folder, stem, graphName, sdl,
-                        catalog, classpath);
-                    var registry = registryOf(folder, stem);
-                    try (var reader = store.reader(new ReadBudget.Unbounded())) {
-                        return answer(reader.read(dsl -> body.apply(
-                            new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
-                    }
-                }
-            }
-            var pool = population.inlinePoolOf(catalog, classpath);
-            var shard = pool.borrow();
-            try {
-                var schema = shard.ensureInline(graphName, folder, stem, sdl, catalog, classpath,
-                    population.inlineDirectory(BALLAST + "-" + INLINE.incrementAndGet()));
-                var registry = registryOf(folder, stem);
-                return answer(readerOf(shard).read(dsl -> body.apply(
-                    new InlineGraph(new StoreHandle(dsl, graphName), schema, registry))));
-            } finally {
-                pool.giveBack(shard);
-            }
+            return population().readInline(stem, sdl, catalog, classpath, SubjectConfig.none(), body);
         }
 
         /** {@link #readInline(String, String, CatalogInput, List, Function)} with no classpath. */
         public <T> T readInline(String stem, String sdl, CatalogInput catalog,
                                 Function<InlineGraph, T> body) {
             return readInline(stem, sdl, catalog, List.of(), body);
-        }
-
-        private static TypeDefinitionRegistry registryOf(Path folder, String stem) {
-            return SchemaLoader.load(List.of(SchemaSource.file(CapturedStore.fixtureFile(folder, stem))));
         }
 
         /** Captures every graph in {@code paths} not yet captured, in parallel across stores. */
@@ -573,7 +667,7 @@ public final class FactGraphs implements AutoCloseable {
             return readers.computeIfAbsent(shard, Shard::reader);
         }
 
-        private static <T> T answer(StoreAnswer<T> answer) {
+        static <T> T answer(StoreAnswer<T> answer) {
             return switch (answer) {
                 case StoreAnswer.Answered<T> answered -> answered.value();
                 case StoreAnswer.OutOfBudget<T> out -> throw new IllegalStateException(

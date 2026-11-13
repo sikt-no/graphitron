@@ -19,8 +19,8 @@ import java.util.stream.Stream;
  * where the store is its subject. A capture through any other arm states its schema inline, so this
  * counts the calls of those arms: the capturing arms of {@link CapturedStore}, the generator's own
  * {@code GraphitronStore} capture, the fixtures above them in the modules that consume this one, and
- * {@link FactGraphs.Reader#readInline}, which takes inline SDL into the population and is still
- * inline until the SDL is a document.
+ * {@link FactGraphs.Reader#readInline} and {@link FactGraphs#inline()}, which take inline SDL into
+ * the population and are still inline until the SDL is a document.
  *
  * <p>A count rather than a roster, as {@code SeedingDissolutionGateTest} is, because conversions run
  * in several sessions at once and a roster collides on every one; the count may be stale on the low
@@ -46,7 +46,7 @@ public final class InlineCaptures {
 
     /** Arms reached without their class: a static import, or a further graph on an open fixture. */
     private static final Pattern WITHOUT_A_FIXTURE = Pattern.compile(
-        "(?<![\\w.])(?:withCapturedStore|buildBundle)\\s*\\(|\\.(?:readInline|andGraph|andGraphWith|andCatalogGraph"
+        "(?<![\\w.])(?:withCapturedStore|buildBundle)\\s*\\(|\\.(?:readInline|inline\\(\\)\\.read|andGraph|andGraphWith|andCatalogGraph"
             + "|andCatalogGraphWith|andGraphSharingTheFile|recapture"
             + "|recaptureCatalog)\\s*\\(");
 

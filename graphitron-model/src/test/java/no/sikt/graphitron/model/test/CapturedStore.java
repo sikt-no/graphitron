@@ -719,9 +719,21 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedSchema captureInline(DSLContext dsl, Path directory, String stem,
                                                String graphName, String sdl, CatalogInput jooq,
                                                List<ClasspathEntry> classpath) {
+        return captureInline(dsl, directory, stem, graphName, sdl, jooq, classpath,
+            SubjectConfig.none());
+    }
+
+    /**
+     * The same under a configuration the caller states, as {@link #ofCatalogWith(Path, String,
+     * String, CatalogInput, List, SubjectConfig)} takes one; the recipe is still the one file.
+     */
+    public static CapturedSchema captureInline(DSLContext dsl, Path directory, String stem,
+                                               String graphName, String sdl, CatalogInput jooq,
+                                               List<ClasspathEntry> classpath,
+                                               SubjectConfig configuration) {
         Path file = write(directory, stem, sdl);
         return captureFiles(dsl, List.of(file), directory, graphName, jooq, false, classpath,
-            LocalDateTime.now(), SubjectConfig.none());
+            LocalDateTime.now(), configuration);
     }
 
     /**
