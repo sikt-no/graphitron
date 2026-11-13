@@ -154,41 +154,92 @@ public final class FactGraphs implements AutoCloseable {
 
     /**
      * How many graphs an inline store takes before it is closed and replaced. A store that never
-     * clears keeps about a megabyte a graph and captures more slowly as it grows, so a store is
+     * clears keeps every graph's rows, and a graph's rows grow with its classpath, so a store is
      * retired when it is given back holding this many, and the pool boots a fresh one on the next
      * borrow. Each retirement costs one capture into an empty store.
      */
-    static final int GRAPHS_PER_INLINE_STORE = 50;
+    static final int GRAPHS_PER_INLINE_STORE = 20;
+
+    /**
+     * How many inline stores the whole population keeps open, over every catalog and classpath: the
+     * run's concurrency, so each test thread can hold one without a capture waiting. A pool that
+     * needs a store when this many are open closes the one idle longest, in whichever pool it is,
+     * and only exceeds the number when every open store is lent, which takes one inline read
+     * inside another. Each store holds two sessions with full statement caches and every graph it
+     * took, which is what a test fork's heap has to fit.
+     */
+    static final int INLINE_STORES = 4;
+
+    /** Open inline stores, over every pool; guarded by this population's monitor. */
+    private int openInline;
+
+    /**
+     * Closes the inline store given back longest ago, in any pool, so another can open in its
+     * place; false where every open store is lent. Called holding this population's monitor.
+     */
+    private boolean retireIdlest() {
+        Pool owner = null;
+        Shard idlest = null;
+        for (var pool : inline.values()) {
+            var last = pool.free.peekLast();
+            if (last != null && (idlest == null || last.returnedAt < idlest.returnedAt)) {
+                idlest = last;
+                owner = pool;
+            }
+        }
+        if (idlest == null) {
+            return false;
+        }
+        owner.free.remove(idlest);
+        owner.all.remove(idlest);
+        idlest.close();
+        openInline--;
+        return true;
+    }
 
     /**
      * One catalog and classpath's inline stores: those lent out and those free. The most recently
      * returned is lent first, so sequential captures keep landing in one store, and a new store is
-     * booted only when every existing one is lent.
+     * booted only when every existing one is lent. Every pool's state is guarded by the population's
+     * monitor, which also counts the open stores over all of them.
      */
     private final class Pool {
         private final java.util.ArrayDeque<Shard> free = new java.util.ArrayDeque<>();
         private final List<Shard> all = new ArrayList<>();
 
-        synchronized Shard borrow() {
-            var shard = free.pollFirst();
-            if (shard == null) {
+        Shard borrow() {
+            synchronized (FactGraphs.this) {
+                var shard = free.pollFirst();
+                if (shard != null) {
+                    return shard;
+                }
+                if (openInline >= INLINE_STORES) {
+                    retireIdlest();
+                }
+                openInline++;
                 shard = new Shard();
                 all.add(shard);
+                return shard;
             }
-            return shard;
         }
 
-        synchronized void giveBack(Shard shard) {
-            if (shard.graphs().size() >= GRAPHS_PER_INLINE_STORE) {
-                all.remove(shard);
-                shard.close();
-                return;
+        void giveBack(Shard shard) {
+            synchronized (FactGraphs.this) {
+                if (shard.graphs().size() >= GRAPHS_PER_INLINE_STORE) {
+                    all.remove(shard);
+                    shard.close();
+                    openInline--;
+                    return;
+                }
+                shard.returnedAt = System.nanoTime();
+                free.addFirst(shard);
             }
-            free.addFirst(shard);
         }
 
-        synchronized void close() {
-            all.forEach(Shard::close);
+        void close() {
+            synchronized (FactGraphs.this) {
+                all.forEach(Shard::close);
+            }
         }
     }
 
@@ -503,6 +554,9 @@ public final class FactGraphs implements AutoCloseable {
         synchronized StoreReader reader() {
             return store.reader(new ReadBudget.Unbounded());
         }
+
+        /** When an inline store was last given back, for retiring the one idle longest. */
+        long returnedAt;
 
         /** An inline store's own reader, used only by the capture that has borrowed the store. */
         private StoreReader inlineReader;
