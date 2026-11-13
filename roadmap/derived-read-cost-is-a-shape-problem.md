@@ -83,10 +83,11 @@ The walk's read path is gone
 │   ├── The filter conditions are emitted from the store
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child producer states the parent columns it is handed
-│   ├── An inline list's ordering is resolved at its occurrence
-│   ├── A single child's null contract is stated
-│   │   └── An `@externalField` binds an expression at its occurrence
-│   └── An inline list states how it is narrowed
+│   ├── A child read inline is emitted from the store
+│   │   ├── An inline list's ordering is resolved at its occurrence
+│   │   └── An inline list states how it is narrowed
+│   └── A single child's null contract is stated
+│       └── An `@externalField` binds an expression at its occurrence
 └── The walk's service path is gone
     └── The service fields are emitted from the store
         └── A producer's fetcher parts are emitted from the store
@@ -689,12 +690,20 @@ static method needs no holder.
   unit keeps today's alias formula or those readers flip in the same pass.
   * **A projection unit is emitted from the store, censused** `open`, F's. A `ProjectionQuery` and a
     `ProjectionEmitter`, additive and uncalled, render a type's unit from `graphitron_occurrence_column`,
-    `graphitron_occurrence_node_id` and the join path's steps, with a census beside the condition
-    census whose reasons are the facts below not yet landed, each closing as its fact lands. First
-    check `code-generation-triggers.adoc`'s claim that `Film.language`, `Film.actors` and
-    `Film.inventory` have no `TABLE` binding, which `graphitron_occurrence_binding_table_rule` seems to
-    cover. Its pins include utdanningsregisteret's shape: a node type whose nesting field is named like
-    a range column, with `@externalField` children (beside `nesting-field-named-like-a-column`).
+    `graphitron_occurrence_node_id`, each occurrence's path and, for a scalar down a path, its join
+    path's steps, with a census beside the condition census whose reasons are the facts below not yet
+    landed, each closing as its fact lands. Landed: the query, the emitter rendering columns, node id
+    keys and non-null nesting fields inline, the census over the example and
+    `scenarios/projection-unit` run against PostgreSQL; utdanningsregisteret's shape is
+    `scenarios/node-nesting-field-named-like-a-range`, its refusal pinned until its null contract and
+    expressions are stated. Left: a scalar's column down a path (`SCALAR_PATH`), its steps rendered as
+    a correlated subselect, the first arm to write a result-key alias. A child read inline is its own
+    node below, and a polymorphic field's parent-row columns close with "A child producer states the parent columns it is handed".
+  * **A child read inline is emitted from the store** `blocked`, on "An inline list's ordering is resolved at its occurrence" and "An inline list states how it is narrowed". A
+    `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
+    or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
+    join or a list multiset over the rows its path reaches, calling the child type's own unit where
+    it has one; the census's `INLINE_CHILD` line closes with it.
   * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.

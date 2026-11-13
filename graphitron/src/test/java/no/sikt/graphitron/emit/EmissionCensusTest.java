@@ -56,7 +56,9 @@ class EmissionCensusTest {
     static void capture() throws Exception {
         String sdl = Files.readString(Path.of("..", "graphitron-sakila-example", "src", "main",
             "resources", "graphql", "schema.graphqls"));
-        sakila = CapturedStore.ofCatalogWith(shared, CapturedStore.GRAPH, sdl,
+        // A store of the class's own: a case capturing a schema of its own borrows the thread's
+        // store, which would clear this capture under the censuses read after it.
+        sakila = CapturedStore.ownStoreOfCatalogWith(shared, CapturedStore.GRAPH, sdl,
             CatalogInput.of(testContext()), TestSchemaHelper.sakilaExampleClasspath());
     }
 
@@ -249,6 +251,108 @@ class EmissionCensusTest {
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
             .containsOnlyKeys("AUTHORED_NODE_ID", "CONSUMED", EMITTED, "NODE_ID", "NODE_ID_PARTICIPANT", "NOTHING");
+    }
+
+    /**
+     * Which of the example's table-bound types the store renders a projection unit for, and why
+     * each of the rest is not yet, by the occurrences that keep it back. Every unit emitted
+     * compiles beside the selection adapters it reads its fields through.
+     */
+    @Test
+    void theCensusOfTheExampleSchemasProjectionUnits() {
+        var units = new java.util.HashMap<String, TypeSpec>();
+        var emitted = new ArrayList<String>();
+        var refused = new TreeMap<String, List<String>>();
+        for (var unit : ProjectionQuery.read(handle()).values()) {
+            switch (ProjectionEmitter.emit(unit, "census")) {
+                case ProjectionEmitter.Result.Emitted e -> {
+                    emitted.add(unit.type());
+                    units.put("census." + e.unit().name(), e.unit());
+                }
+                case ProjectionEmitter.Result.NotYet n -> n.refusals().forEach(refusal ->
+                    refused.computeIfAbsent(refusal.reason().name(), k -> new ArrayList<>()).add(refusal.coordinate()));
+            }
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator.generate("census")) {
+            units.put("census.util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
+            units.put("census.schema." + spec.name(), spec);
+        }
+        EmittedCodeHarness.compileStrictly(units).close();
+        java.util.Collections.sort(emitted);
+        refused.values().forEach(java.util.Collections::sort);
+        assertThat(emitted).as("the units the store emits").containsExactly("ActorCondMember", "ActorNode",
+            "Catalogue", "CatalogueItem", "CatalogueShelf", "CategoryLabel", "CategoryNode", "Content",
+            "ConverterCampusTerm", "ConverterIdChange", "ConverterSite", "DisplayAccount", "DisplayPerson",
+            "DivergedCampusRef", "DivergedChildRef", "DivergedLabelSide", "DivergedOrgSide", "Email", "FanDetail",
+            "FanMark", "FanTarget", "FilmBookmark", "FilmCategoryNode", "FilmEndorsement", "FilmEndorsementNode",
+            "HostLabelsRow", "InvCondMember", "InventoryItem", "InventoryUnit", "KeyedNode", "LanguageAlias",
+            "LanguageNode", "LevelInterval", "Mailbox", "PagedA", "PagedB", "Party", "PaymentLegacyProbe",
+            "PresenceDetail", "PresenceDetailNode", "PresenceItem", "ProjectEvent", "ProjectNote", "Rental",
+            "RoleAssignment", "SecureNote", "SessionCustomer", "ShortContent", "SplitFilterTarget", "SplitKeyChild",
+            "SplitKeyParent", "SplitParentTag", "SquadMember", "Staff", "StockFilm", "StockInventory", "StorageBin",
+            "StoreLocation", "StoreManager", "StudyLevel", "Subject", "ValidityPeriod", "XlatChild", "XlatCompChild",
+            "XlatCompParent", "XlatParent");
+        // Each line goes as its fact lands; an occurrence moving between lines is a change to look at,
+        // not to re-pin.
+        assertThat(refused)
+            .containsEntry("EXPRESSION", List.of("ComputedTitleFilm.title", "FanLabelled.label",
+                "FanLabelledAlpha.label", "FanLabelledBeta.label", "Film.isEnglish", "Film.titleByName",
+                "HostLabelsComputedRow.nb", "HostLabelsComputedRow.nn", "HostLanguageNames.englishName",
+                "HostLanguageNames.italianName", "Inventory.filmCardData", "Inventory.filmCardDataMaybeMissing",
+                "Inventory.filmRef"))
+            .containsEntry("NULL_CONTRACT", List.of("Customer.location", "FanAlpha.alphaPlacement",
+                "FanBeta.betaPlacement", "Film.blurb", "Film.detailsForMethod", "Film.filmDetails", "Film.info",
+                "Film.inlineBundle", "Film.original", "Film.projected", "Film.sameRowNested", "Film.spoken",
+                "Film.summary", "PivotNestingHost.labels", "PivotNestingHost.labelsComputed",
+                "PivotNestingHost.labelsMixed", "PivotNestingHost.origin", "PivotNestingHost.texts",
+                "PresenceHost.detailRefs", "PresenceHost.holdings", "PresenceHost.holdingsSplit", "Store.location"))
+            .containsEntry("CHILD_PRODUCER_COLUMNS", List.of("Actor.filmsSplit", "Actor.recentFilmsSplit",
+                "ActorMember.films", "Address.occupants", "Address.occupantsConnection", "Category.childRefs",
+                "Category.parentRef", "City.cityLowercase", "City.cityUppercase", "ConverterCampus.organisation",
+                "ConverterOrg.campuses", "Customer.addressSplit", "Customer.storeAddressSplit",
+                "DivergedRefChild.polyOrg", "DivergedRefChild.splitOrganisation", "DivergedRefOrg.polyChildren",
+                "DivergedRefOrg.splitChildren", "FanAlpha.targetLoaded", "FanBeta.targetLoaded",
+                "FanOwner.fanItemsConnection", "Film.actorsByCondition", "Film.actorsBySplitLookup",
+                "Film.actorsBySplitLookupGenerated", "Film.actorsConnection", "Film.actorsOrderedBySplit",
+                "Film.actorsOrderedBySplitLookup", "Film.actorsOrderedConnection", "Film.actorsViaJunctionCondition",
+                "Film.castByCondition", "Film.castMembers", "Film.copiesAtStores", "Film.databaseError",
+                "Film.durabilityError", "Film.filmContent", "Film.filmContents", "Film.filmContentsByFilmTitle",
+                "Film.filmContentsConnection", "Film.firstByCondition", "Film.firstMemberViaJunction",
+                "Film.languageByService", "Film.membersViaJunction", "Film.membersViaJunctionConnection",
+                "Film.modifiedLanguage", "Film.sameRowSplit", "Film.sharedTranslations", "Film.titleCheck",
+                "Film.titleLowercase", "Film.titleTitlecase", "Film.titleUppercase", "FilmInventory.films",
+                "Language.films", "Language.filmsByLatestStock", "Language.filmsByMixedFilterSplit",
+                "Language.filmsByOriginalLanguage", "Language.filmsByRentalRate",
+                "Language.filmsListByOriginalLanguage", "Language.filmsListByOriginalLanguageDesc",
+                "Language.filmsSplitByOriginalLanguageList", "PivotNestingHost.languageNamesSplit",
+                "PresenceHost.detailSplit", "Project.items", "RoleHolder.roles", "RoleHolder.rolesByCode",
+                "SplitFilterParent.targetSplit", "SplitParent.tags", "Store.contact",
+                "Store.customersByAddressDistrictSplit", "Store.customersByFirstNameSplit",
+                "Store.customersByNodeIdSplit", "Store.customersSeenByUser", "Store.manager"))
+            .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Actor.recentFilms",
+                "Actor.recentFilmsInferred", "Category.children", "Category.parent", "Customer.address",
+                "Customer.addressByCondition", "Customer.storeAddress", "DivergedRefChild.organisation",
+                "DivergedRefOrg.children", "FanAlpha.details", "FanAlpha.marks", "FanAlpha.target", "FanBeta.details",
+                "FanBeta.marks", "FanBeta.target", "FanItem.details", "Film.Length", "Film.actors",
+                "Film.actorsGenerated", "Film.castActorsViaChain", "Film.castFilms", "Film.castRecentFilms",
+                "Film.sameRow", "FilmActor.actor", "FilmSameRow.film", "FilmSameRow.language",
+                "HostLabelsWithFilms.languageFilms", "Language.filmsByMixedFilter", "Language.filmsInlineByLatestStock",
+                "Language.filmsInlineByOriginalLanguage", "Language.filmsInlineByOriginalLanguageDesc",
+                "PivotNestingHost.labelsComputedRow", "PivotNestingHost.labelsRow", "PivotNestingHost.labelsWithFilms",
+                "PivotNestingHost.languageNames", "PresenceHost.detail", "PresenceHost.detailNode",
+                "PresenceHost.detailRequired", "PresenceHostRefs.detail", "SessionStore.customersOfPrincipal",
+                "SplitFilterParent.targetInline", "Store.customers", "Store.customersByAddressDistrict",
+                "Store.customersByFirstName", "Store.customersByNodeId", "Store.customersFirstN"))
+            .containsEntry("PIVOT", List.of("Film.prices", "Film.pricesSplit", "Film.taglineTranslations",
+                "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
+            .containsEntry("SCALAR_PATH", List.of("AppAccount.displayName", "Company.displayName",
+                "Customer.addressNodeId", "Customer.districtByCondition", "FanAlpha.note", "Film.languageName",
+                "Film.soleActorFirstName", "FilmContent.rating", "FilmSameRow.languageName", "Individual.displayName",
+                "Inventory.filmTextRating", "Person.displayName"))
+            .containsOnlyKeys("CHILD_PRODUCER_COLUMNS", "EXPRESSION", "INLINE_CHILD", "NULL_CONTRACT", "PIVOT",
+                "SCALAR_PATH");
     }
 
     /**

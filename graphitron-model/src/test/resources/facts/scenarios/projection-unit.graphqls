@@ -1,0 +1,44 @@
+"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs and, through the non-null nesting field facts, the length and release_year columns of the same film row. Language.spoken is a nullable nesting field, whose null contract the store does not state yet."
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String!
+  "Non-null, so it is the film row's whatever its columns hold."
+  facts: FilmFacts!
+}
+
+"Read off the film row it is nested under."
+type FilmFacts {
+  length: Int
+  releaseYear: Int @field(name: "release_year")
+}
+
+type Language @table(name: "language") {
+  name: String
+  "Nullable: when it is null is not stated yet."
+  spoken: LanguageNote
+}
+
+"Read off the language row it is nested under."
+type LanguageNote { name: String }
+
+type Query {
+  films: [Film!]!
+  languages: [Language!]!
+}
+
+# The columns each occurrence binds on its unit's table, nested ones on the same row.
+extend schema @expectEquals(relation: "graphitron_occurrence_column", where: "coordinate LIKE 'Film.%'", rows: """
+  coordinate,               table_name, column_name
+  Film.title,               film,       title
+  Film.facts.length,        film,       length
+  Film.facts.releaseYear,   film,       release_year
+  """)
+
+# The node id packs the film's key column.
+extend schema @expectEquals(relation: "graphitron_occurrence_node_id", where: "coordinate = 'Film.id'", rows: """
+  coordinate, node_type_name, table_name, column_name, position
+  Film.id,    Film,           film,       film_id,     0
+  """)

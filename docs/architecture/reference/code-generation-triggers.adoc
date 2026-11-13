@@ -244,8 +244,8 @@ bind filters its result, as on any field. A `@service` cannot: an argument it do
 nowhere to go and is a defect. A routine joined into a parent's query is a join, not a call, at least
 for now; its arguments are stated on the join path's step.
 
-The store does not state every binding yet. In the running example `Film.language`, `Film.actors`
-and `Film.inventory` have no `TABLE` row; their writers are still being moved onto the occurrence.
+The store does not state every binding yet: nothing writes an `@externalField`'s `EXPRESSION`
+binding, so such an occurrence has no row of that kind.
 
 '''
 
