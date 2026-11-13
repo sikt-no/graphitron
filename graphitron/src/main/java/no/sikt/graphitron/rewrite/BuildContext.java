@@ -3798,10 +3798,9 @@ class BuildContext {
     }
 
     /**
-     * Whether {@code typeName} names a node type, on the declaration-level terms the store's
-     * {@code graphitron_node_type} states: {@code @node} written on the declaration, whatever kind it is
-     * declared as, or a type the classified {@link NodeIndex} holds, which is where an inferred node
-     * lands. Read here to order the two arms of {@link #resolveNodeIdRecordDecode} and nowhere else;
+     * Whether {@code typeName} names a node type for the decode's ordering: {@code @node} written on
+     * the declaration, whatever kind it is declared as, so an interface or union carrying it meets the
+     * single-type path's message, or a classified node in {@link NodeIndex}. Read here to order the two arms of {@link #resolveNodeIdRecordDecode} and nowhere else;
      * the single-type path resolves its own key metadata through {@link #resolveTargetKeys}, which
      * has three arms of its own.
      */

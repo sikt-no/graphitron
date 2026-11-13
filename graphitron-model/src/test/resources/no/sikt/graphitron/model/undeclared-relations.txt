@@ -2,7 +2,6 @@ build_warning_no_rule
 diagnostic
 graphitron_argmapping_match
 graphitron_field_reference_entry
-graphitron_node_type
 graphitron_spelled_reference_entry
 graphql_poly_member
 intent_argmapping_bound_parameter_type

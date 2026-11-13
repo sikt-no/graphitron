@@ -3,8 +3,7 @@ package no.sikt.graphitron.lsp.facts;
 import org.jooq.Condition;
 import org.jooq.Field;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.selectOne;
 
@@ -18,13 +17,13 @@ public final class NodeContainerMember {
 
     private NodeContainerMember() {}
 
-    /** The member, in the caller's graph, binds a table and is a node type. */
+    /**
+     * The member, in the caller's graph, is a node: a type in {@code graphitron_node}, which binds a
+     * table by construction.
+     */
     public static Condition tableBoundNodeType(Field<String> graphName, Field<String> memberTypeName) {
-        return exists(selectOne().from(GRAPHITRON_TABLETYPE)
-                .where(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_TABLETYPE.TYPE_NAME.eq(memberTypeName)))
-            .and(exists(selectOne().from(GRAPHITRON_NODE_TYPE)
-                .where(GRAPHITRON_NODE_TYPE.GRAPH_NAME.eq(graphName),
-                    GRAPHITRON_NODE_TYPE.TYPE_NAME.eq(memberTypeName))));
+        return exists(selectOne().from(GRAPHITRON_NODE)
+            .where(GRAPHITRON_NODE.GRAPH_NAME.eq(graphName),
+                GRAPHITRON_NODE.TYPE_NAME.eq(memberTypeName)));
     }
 }

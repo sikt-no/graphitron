@@ -8,14 +8,17 @@ import graphql.schema.GraphQLObjectType;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 
 import java.util.Locale;
+import java.util.Set;
 
 import static no.sikt.graphitron.model.grammar.DirectiveArgs.argString;
 
 /**
- * The one place that answers "is this object type a node?". An object type is a node when it
- * declares {@code @node}, or when it publishes the Relay {@code Node} contract over a
- * {@code @table} whose backing jOOQ class carries {@code __NODE_TYPE_ID} /
- * {@code __NODE_KEY_COLUMNS} (see {@code docs/manual/reference/directives/node.adoc}).
+ * The one place in the walk that answers "is this object type a node?", on the terms the store's
+ * {@code graphitron_node} states: an object type is a node when its {@code @table} binds exactly one
+ * table of the catalog, and it declares {@code @node} or publishes the Relay {@code Node} contract
+ * over a table whose backing jOOQ class carries {@code __NODE_TYPE_ID} / {@code __NODE_KEY_COLUMNS}
+ * (see {@code docs/manual/reference/directives/node.adoc}). A {@code @node} with no table to take
+ * effect on is no node, and the store refuses it as {@code NODE_WITHOUT_TABLE}.
  *
  * <h3>Why this is a named predicate rather than a directive read</h3>
  * Before inference, {@code @node} presence and
@@ -40,11 +43,11 @@ import static no.sikt.graphitron.model.grammar.DirectiveArgs.argString;
  * its own probe. Sharing those helpers is what keeps the two from drifting on the inference path,
  * where they agree by construction.
  *
- * <p>{@code @node} without {@code implements Node} reads as a node here, because this is a
- * declaration-level question. The Relay interface requirement is the store's to enforce, as
+ * <p>{@code @node} without {@code implements Node} reads as a node here, as it does in
+ * {@code graphitron_node}. The Relay interface requirement is the store's to enforce, as
  * {@code NODE_WITHOUT_NODE_INTERFACE}, and a graph it refuses is never classified, so neither this
- * predicate nor the classifier has to. But widening this predicate does not on its own widen what
- * classifies as a node, nor the reverse; a change to the rule belongs in both places.
+ * predicate nor the classifier has to. A change to the rule belongs in the store and here, and
+ * {@code NodeTypeShadowTest} holds the two to the same set.
  *
  * <p>A node this subgraph does not resolve, {@code @node(resolvable: false)}, is a node here like
  * any other. Whether it is resolvable is a separate fact, {@link #isResolvable(GraphQLObjectType)},
@@ -72,30 +75,33 @@ public final class NodeDeclaration {
     public static final String ARG_RESOLVABLE = "resolvable";
 
 
+    /** The root operation types, which a {@code @table} binds no table on. */
+    private static final Set<String> ROOT_TYPES = Set.of("Query", "Mutation", "Subscription");
+
     private final JooqCatalog catalog;
 
     /**
-     * @param catalog the jOOQ catalog to probe for {@code __NODE_*} metadata, or {@code null} for a
-     *                context that has none (the same nullable-catalog {@code BuildContext} accepts
-     *                from tests that focus on the other half of the plumbing). A null catalog reads
-     *                as "no table publishes node metadata", so nodehood reduces to {@code @node}
-     *                presence, which is what the predicate answered before inference existed.
+     * @param catalog the jOOQ catalog the bound table resolves in and that is probed for
+     *                {@code __NODE_*} metadata, or {@code null} for a context that has none (the
+     *                nullable catalog {@code BuildContext} accepts from tests). With no catalog no
+     *                table resolves, so no type is a node, as the store answers with no catalog
+     *                captured.
      */
     public NodeDeclaration(JooqCatalog catalog) {
         this.catalog = catalog;
     }
 
     /**
-     * Whether {@code obj} is a node type: {@code @node} is declared, or nodehood is inferred from
-     * {@code implements Node} plus a {@code @table} whose backing class publishes node metadata.
+     * Whether {@code obj} is a node type: its {@code @table} binds one table of the catalog, and
+     * {@code @node} is declared or nodehood is inferred from {@code implements Node} over a table
+     * whose backing class publishes node metadata.
      */
     public boolean isNodeType(GraphQLObjectType obj) {
-        if (obj.hasAppliedDirective(DIR_NODE)) {
-            return true;
+        if (!obj.hasAppliedDirective(DIR_TABLE) || !bindsATable(obj.getName(), boundTableName(obj))) {
+            return false;
         }
-        return obj.hasAppliedDirective(DIR_TABLE)
-            && implementsNode(obj)
-            && hasNodeIdMetadata(boundTableName(obj));
+        return obj.hasAppliedDirective(DIR_NODE)
+            || implementsNode(obj) && hasNodeIdMetadata(boundTableName(obj));
     }
 
     /**
@@ -104,12 +110,22 @@ public final class NodeDeclaration {
      * read off the AST.
      */
     public boolean isNodeType(ObjectTypeDefinition obj) {
-        if (hasDirective(obj, DIR_NODE)) {
-            return true;
+        if (!hasDirective(obj, DIR_TABLE) || !bindsATable(obj.getName(), boundTableName(obj))) {
+            return false;
         }
-        return hasDirective(obj, DIR_TABLE)
-            && implementsNode(obj)
-            && hasNodeIdMetadata(boundTableName(obj));
+        return hasDirective(obj, DIR_NODE)
+            || implementsNode(obj) && hasNodeIdMetadata(boundTableName(obj));
+    }
+
+    /**
+     * Whether a type's {@code @table} binds exactly one table, as {@code graphitron_tabletype} binds
+     * it: a root operation type binds none, and a name the catalog does not hold, or holds in
+     * several schemas, binds none either.
+     */
+    private boolean bindsATable(String typeName, String tableSqlName) {
+        return catalog != null
+            && !ROOT_TYPES.contains(typeName)
+            && catalog.findTable(tableSqlName) instanceof JooqCatalog.TableResolution.Resolved;
     }
 
     /**

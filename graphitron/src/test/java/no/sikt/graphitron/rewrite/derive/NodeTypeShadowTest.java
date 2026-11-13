@@ -16,12 +16,12 @@ import java.util.Set;
 import java.util.function.BiConsumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The binder for the two live spellings of nodehood. {@link NodeDeclaration#isNodeType} answers it in
- * Java for four walk consumers, and {@code graphitron_node_type} answers it in the store; this compares
+ * Java for the walk consumers, and {@code graphitron_node} answers it in the store; this compares
  * them over the same schema against the same catalog and requires the same set.
  *
  * <p>It is here because nothing else binds the pair. The {@code intent_type_domain} shadow is not a
@@ -49,7 +49,7 @@ class NodeTypeShadowTest {
         String sdl = DIRECTIVES + """
             type Query { film: Film, pairing: Pairing, plain: Plain }
 
-            type Film implements Node @node {
+            type Film implements Node @table(name: "film") @node {
               id: ID!
               title: String
             }
@@ -94,25 +94,47 @@ class NodeTypeShadowTest {
     }
 
     /**
-     * With no catalog captured the derived arm has no metadata rows to conjoin, so it answers
-     * {@code @node} presence alone. That is the same set the predicate answers built on no catalog,
-     * and the case is what says the derivation's inference is over captured facts rather than over a
-     * probe that runs whether or not the catalog reached the store.
+     * With no catalog captured no {@code @table} binds a table, so neither spelling finds a node, a
+     * {@code @node} over a {@code @table} included: a node is a row of a table, and the derivation's
+     * answer is over captured facts rather than over the directive alone.
      */
     @Test
-    void withNoCatalogCapturedBothSpellingsFallToNodePresence(@TempDir Path tmp) {
+    void withNoCatalogCapturedNeitherSpellingFindsANode(@TempDir Path tmp) {
         String sdl = DIRECTIVES + """
             type Query { film: Film, pairing: Pairing }
 
-            type Film implements Node @node { id: ID! }
+            type Film implements Node @table(name: "film") @node { id: ID! }
 
             type Pairing implements Node @table(name: "film_actor") { id: ID! }
             """;
         try (var store = CapturedStore.of(tmp, sdl)) {
-            var predicate = nodeTypesBy(new NodeDeclaration(null), sdl);
-            assertThat(predicate).containsExactly("Film");
-            assertThat(derivedNodeTypes(store)).containsExactlyInAnyOrderElementsOf(predicate);
+            assertThat(nodeTypesBy(new NodeDeclaration(null), sdl)).isEmpty();
+            assertThat(derivedNodeTypes(store)).isEmpty();
         }
+    }
+
+    /**
+     * A {@code @node} whose {@code @table} binds no table is a node on neither spelling: one with no
+     * {@code @table}, one over a bare name two schemas declare, and a root operation type, which no
+     * {@code @table} binds.
+     */
+    @Test
+    void aNodeOverNoBoundTableIsANodeOnNeitherSpelling(@TempDir Path tmp) {
+        String sdl = DIRECTIVES + """
+            type Query { film: Film, floating: Floating, ev: Ev }
+
+            type Mutation @table(name: "film") @node { noop: String }
+
+            type Film implements Node @table(name: "film") @node { id: ID! }
+
+            type Floating implements Node @node { id: ID! }
+
+            type Ev implements Node @table(name: "event") @node { id: ID! }
+            """;
+        withBothSpellings(tmp, sdl, (derived, predicate) -> {
+            assertThat(derived).containsExactlyInAnyOrderElementsOf(predicate);
+            assertThat(derived).containsExactly("Film");
+        });
     }
 
     /**
@@ -131,9 +153,9 @@ class NodeTypeShadowTest {
     /** The store's answer: the membership relation's rows for the captured graph. */
     private static Set<String> derivedNodeTypes(CapturedStore store) {
         return new LinkedHashSet<>(store.dsl()
-            .select(GRAPHITRON_NODE_TYPE.TYPE_NAME)
-            .from(GRAPHITRON_NODE_TYPE)
-            .fetch(GRAPHITRON_NODE_TYPE.TYPE_NAME));
+            .select(GRAPHITRON_NODE.TYPE_NAME)
+            .from(GRAPHITRON_NODE)
+            .fetch(GRAPHITRON_NODE.TYPE_NAME));
     }
 
     /**

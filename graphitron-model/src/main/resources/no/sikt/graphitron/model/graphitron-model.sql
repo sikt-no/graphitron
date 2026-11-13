@@ -5871,14 +5871,6 @@ SELECT cl.graph_name, cl.coordinate, cl.kind, cl.claimer
                     WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named);
 COMMENT ON VIEW graphitron_binding_claim_container_rule IS 'A @nodeId naming an interface or union that is no node type itself: one row per NODE_ID binding claim naming one, the claim naming the type, in the shape graphitron_binding_claim_container stores. For example an argument carrying @nodeId(typeName: "AddressOccupant"), a union of Customer and Staff, has a row, and one naming Film has none.';
 
-CREATE VIEW graphitron_node_type (graph_name, type_name) AS
-SELECT graph_name, coordinate FROM graphql_directive_application WHERE directive_name = 'node'
- UNION
-SELECT graph_name, type_name FROM graphitron_node;
-COMMENT ON VIEW graphitron_node_type IS 'Which of a graph''s types are node types: the union of the authored @node population and the resolved one. The store''s answer to the question NodeDeclaration.isNodeType answers live, and the relation every reader of nodehood joins instead of restating the rule. A declaration-level answer, matching that predicate: @node without implements Node still reads as a node here, and rejecting that shape is the classifier''s job rather than this relation''s, since a membership relation that silently dropped a declared node would leave a detection with nothing to detect. The predicate''s declared-wins short-circuit needs no transcription: a UNION dedupes, so precedence dissolves along with the provenance column that would have asked for it, and a reader wanting to know which rule answered reads the arm, both arms being residents in their own right. Both arms are captured relations, which is this view''s whole cost argument: graphitron_node''s published arm computes the inferred conjunction at capture, so reading the derivation that restates it would re-evaluate a nodehood chain once per naming of this relation, where a captured table counts once and truncates the tree for every rule above it. Its declared arm is the @node applications intersected with the table binding, so the union absorbs it and the application arm above is what remains.';
--- COMMENT ON COLUMN graphitron_node_type.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
--- COMMENT ON COLUMN graphitron_node_type.type_name IS 'the node type; keyed with the graph, one row per node type however many arms answered for it';
-
 CREATE TABLE graphitron_node_keycolumn (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -20462,7 +20454,7 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('store_graph', 0), ('store_graph_source', 1), ('store_stamp', 2),
   ('graphql_type_element', 0), ('graphql_field', 1), ('graphql_directive_application', 2),
   ('graphitron_ast_table_entry', 0), ('graphitron_field_reference_entry', 1), 
-  ('graphitron_node_type', 2),
+  ('graphitron_node', 2),
   ('sql_table', 0), ('sql_column', 1), ('sql_referential_constraint', 2),
   ('java_file', 0), ('java_class_declaration', 1), ('java_method_declaration', 2),
   ('javac_diagnostic', 0),
