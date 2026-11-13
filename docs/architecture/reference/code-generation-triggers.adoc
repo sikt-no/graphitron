@@ -228,6 +228,12 @@ generate.
 An argument a call consumes binds no row here: the call's parameter is stated on the call, in
 `graphitron_occurrence_call_parameter`, whose fill names the occurrence it takes.
 
+Every producer is a call (Alf, 2026-11-13): a `@service` or `@condition` method, a `@routine`, a
+write, and a selection graphitron generates alike. Where graphitron generates the producer's body,
+that body is in effect a service method it could inline or extract, more or less identical to the
+code it emits; so a producer states what it takes as call parameters as a service does, and an
+argument any producer takes is stated by its fill, never inferred from the producer's kind.
+
 The store does not state every binding yet. In the running example `Film.language`, `Film.actors`
 and `Film.inventory` have no `TABLE` row; their writers are still being moved onto the occurrence.
 
