@@ -128,8 +128,13 @@ column, several columns and none named, a name matching none, or a node id namin
 union, is the written `argMapping` pair's, reported where the pair is written whichever directive
 wrote it. A parameter whose type is not the column's is the call's: `NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT`,
 one rule whether the parameter takes the whole decoded key or one projected column (Alf, 2026-11-10).
-The three parameter codes go to `occurrence-depth-defects`, straight after the depth loop that
-settles every fill. This one is `occurrence-builds'`, one rule over the node-id slots and their decode
+A defect is raised as early as possible, by the first stage that holds the facts it judges (Alf,
+2026-11-13). An unbound parameter is one rule whatever the parameter list, a method's, a root
+`@routine`'s or a child routine's step: `PARAMETER_UNFILLED`, which each stage raises where its fills
+are written, a service's and a root routine's at `occurrence-producers`, a child routine step's at
+`occurrence-depths`, a condition's at `occurrence-bindings`. The three parameter codes are written
+today by `occurrence-depth-defects`, straight after the depth loop that settles every fill, until
+each moves to where its facts are. This one is `occurrence-builds'`, one rule over the node-id slots and their decode
 shapes: a key column a pair projects into a parameter where no decode shape fits, its parameters
 `graphitron_occurrence_node_id_slot_projection`'s rows.
 
