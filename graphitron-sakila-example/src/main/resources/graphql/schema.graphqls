@@ -695,6 +695,9 @@ type Query {
     # spells the argMapping out. Both filter film.rental_rate into [fra, til] identically.
     filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
     filmsByRentalRateRangeExplicit(filter: FilmRentalRangeFilterExplicit): [Film!]!
+    # The same method over bounds whose fields are named apart from its parameters, so only the
+    # argMapping can say which field fills which: an input object reaches the call as its fields.
+    filmsByRentalRateBounds(filter: FilmRentalBoundsFilter): [Film!]!
     # Custom-scalar defaults: the argument default spells bounds 4/5 and the input fields default to
     # 0/1, so an omitted argument and an empty range select different films, each pinning its own
     # path. Both reach the runtime schema as authored literals the real GraphQLBigDecimal accepts.
@@ -3868,6 +3871,19 @@ input FilmRentalRangeFilterExplicit {
             className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
             method: "rentalRateRange",
             argMapping: "fra: rentalRateRange.fra, til: rentalRateRange.til"
+        }, override: true)
+}
+
+# The argMapping sibling whose input fields are named apart from rentalRateRange(table, fra, til)'s
+# parameters, as a range input written for one consumer is: only the argMapping binds them.
+input RentalRateBounds { fraVerdi: BigDecimal  tilVerdi: BigDecimal }
+
+input FilmRentalBoundsFilter {
+    bounds: RentalRateBounds
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "rentalRateRange",
+            argMapping: "fra: bounds.fraVerdi, til: bounds.tilVerdi"
         }, override: true)
 }
 

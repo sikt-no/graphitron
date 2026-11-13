@@ -19,6 +19,13 @@ input FilmRentalRangeFilter {
       method: "rentalRateRange"}, override: true)
 }
 input FilmPrefixInput { titlePrefix: String }
+# Bounds named apart from the parameters they fill, so only the argMapping can bind them.
+input RentalRateBounds { fraVerdi: BigDecimal  tilVerdi: BigDecimal }
+input FilmRentalBoundsFilter {
+  bounds: RentalRateBounds @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "rentalRateRange", argMapping: "fra: bounds.fraVerdi, til: bounds.tilVerdi"}, override: true)
+}
 
 type Query {
   # On the field: one call, on the field's own table.
@@ -57,6 +64,8 @@ type Query {
       method: "filmTitlePrefixCondition"}, override: true)
   # On an input field: one level into it by name and type, a custom scalar's class its @scalarType's.
   filmsByRentalRateRange(filter: FilmRentalRangeFilter): [Film!]!
+  # On an input field, its input object's fields through argMapping, the head the field's own name.
+  filmsByRentalRateBounds(filter: FilmRentalBoundsFilter): [Film!]!
   # A contextArguments key of the parameter's name.
   customersSeen: [Customer!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -71,6 +80,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_condition", rows: "
   Query.filmsByField,                           public.film,     condition:public.film,     TRUE
   Query.filmsByPath,                            public.film,     condition:public.film,     TRUE
   Query.filmsByPrefix(titlePrefix:),            public.film,     condition:public.film,     TRUE
+  Query.filmsByRentalRateBounds(filter.bounds:), public.film,    condition:public.film,     TRUE
   Query.filmsByRentalRateRange(filter.rentalRateRange:), public.film, condition:public.film, TRUE
   Query.filmsByType,                            public.film,     condition:public.film,     TRUE
   Query.occupantsByMixedNamePrefix(firstName:), public.customer, condition:public.customer, FALSE
@@ -87,6 +97,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_method", where
   Query.filmsByField,                           condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.filmsByPath,                            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.filmsByPrefix(titlePrefix:),            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, rentalRateRange, (Lorg/jooq/Table;Ljava/math/BigDecimal;Ljava/math/BigDecimal;)Lorg/jooq/Condition;
   Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, rentalRateRange, (Lorg/jooq/Table;Ljava/math/BigDecimal;Ljava/math/BigDecimal;)Lorg/jooq/Condition;
   Query.filmsByType,                            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.customer, occupantMixedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
@@ -113,6 +124,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
   Query.filmsByField,                           condition:public.film,     1,        ARGUMENT,    Query.filmsByField(filter.titlePrefix:),
   Query.filmsByPath,                            condition:public.film,     1,        ARGUMENT,    Query.filmsByPath(filter.titlePrefix:),
   Query.filmsByPrefix(titlePrefix:),            condition:public.film,     1,        ARGUMENT,    Query.filmsByPrefix(titlePrefix:),
+  Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, 1, ARGUMENT, Query.filmsByRentalRateBounds(filter.bounds.fraVerdi:),
+  Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, 2, ARGUMENT, Query.filmsByRentalRateBounds(filter.bounds.tilVerdi:),
   Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, 1, ARGUMENT, Query.filmsByRentalRateRange(filter.rentalRateRange.fra:),
   Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, 2, ARGUMENT, Query.filmsByRentalRateRange(filter.rentalRateRange.til:),
   Query.filmsByType,                            condition:public.film,     1,        ARGUMENT,    Query.filmsByType(title:),
@@ -142,4 +155,17 @@ extend schema @assertContains(relation: "graphitron_occurrence_input_type", rows
   Query.filmsByRentalRateRange(filter.rentalRateRange:),     RentalRateRange, INPUT_OBJECT, FALSE,
   Query.filmsByRentalRateRange(filter.rentalRateRange.fra:), BigDecimal,      SCALAR,       FALSE,   java.math.BigDecimal
   Query.filmsByType(title:),                                 String,          SCALAR,       FALSE,   java.lang.String
+  """)
+
+# The bounds' fills came from the argMapping's pairs, a parameter filled by name having no row; and
+# their input object builds into no class, the call taking its fields one by one.
+extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair",
+    where: "coordinate LIKE 'Query.filmsByRentalRate%'", rows: """
+  coordinate,                                    call,                  position, parameter_name
+  Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, 1,        fra
+  Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, 2,        til
+  """)
+extend schema @assertAbsent(relation: "graphitron_occurrence_built_class", rows: """
+  coordinate
+  Query.filmsByRentalRateBounds(filter.bounds:)
   """)

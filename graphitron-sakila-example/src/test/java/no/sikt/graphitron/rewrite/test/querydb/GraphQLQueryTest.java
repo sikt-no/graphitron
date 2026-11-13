@@ -4550,6 +4550,20 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void inputFieldCondition_argMappingNamesFieldsApartFromParameters_bindsEachBound() {
+        // RentalRateBounds.{fraVerdi,tilVerdi} share no name with rentalRateRange's fra and til,
+        // so only the argMapping binds them. [2.00, 3.00] selects exactly the three 2.99 films; a
+        // swapped binding reads [3.00, 2.00] and selects none, an unbound one all.
+        List<Map<String, Object>> films = (List<Map<String, Object>>) execute(
+            "{ filmsByRentalRateBounds(filter: {bounds: {fraVerdi: 2.0, tilVerdi: 3.0}}) { title } }")
+            .get("filmsByRentalRateBounds");
+
+        assertThat(films).extracting(f -> f.get("title"))
+            .containsExactlyInAnyOrder("ADAPTATION HOLES", "AFFAIR PREJUDICE", "AGENT TRUMAN");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds() {
         // The argument default spells bounds [4, 5], which selects ACE GOLDFINGER (4.99) alone;
         // the input fields default to [0, 1], which selects ACADEMY DINOSAUR (0.99) alone. Distinct
