@@ -52,7 +52,7 @@
           owns the walk (plexus DirectoryScanner includes), so the build's own scan and the
           recorded-recipe freshness replay cannot drift apart.
         -->
-        <version.org.codehaus.plexus.plexus-utils>3.6.1</version.org.codehaus.plexus.plexus-utils>
+        <version.org.codehaus.plexus.plexus-utils>4.1.0</version.org.codehaus.plexus.plexus-utils>
         <version.org.junit>6.1.3</version.org.junit>
         <version.ch.qos.logback>1.5.32</version.ch.qos.logback>
         <version.postgresql>42.7.13</version.postgresql>
