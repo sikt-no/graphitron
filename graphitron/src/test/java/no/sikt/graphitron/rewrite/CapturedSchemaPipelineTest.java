@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -36,9 +36,9 @@ class CapturedSchemaPipelineTest {
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
 
-        try (var captured = GraphitronStore.captured(ctx)) {
+        try (var captured = CapturedGraphs.open(ctx)) {
             Files.writeString(schema, "strayTokenHere");
-            assertThatCode(() -> new GraphQLRewriteGenerator(ctx, captured).validate())
+            assertThatCode(() -> new GraphQLRewriteGenerator(ctx, captured.graph()).validate())
                 .as("the file no longer parses, and a generator reading it would throw")
                 .doesNotThrowAnyException();
         }

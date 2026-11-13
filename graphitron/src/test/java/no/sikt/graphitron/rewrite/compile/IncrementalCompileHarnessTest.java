@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.compile;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.plan.GeneratedUnits;
@@ -434,8 +434,8 @@ class IncrementalCompileHarnessTest {
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
 
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, store.graph())
                 .generate();
         }
 

@@ -27,7 +27,7 @@ class InlineCaptureGateTest {
      * Where the arms are defined rather than called, and {@code FactGraphsTest}, whose subject is the
      * population's inline route itself and so has nothing a document could state instead.
      */
-    private static final Set<String> HARNESSES = Set.of("CapturedStore.java", "FactDocuments.java", "FactGraphs.java", "InlineCaptures.java",
+    private static final Set<String> HARNESSES = Set.of("CapturedStore.java", "CapturedGraphs.java", "FactDocuments.java", "FactGraphs.java", "InlineCaptures.java",
         "CorpusStore.java", "EntryFamilyFixture.java", "InlineCaptureGateTest.java", "FactGraphsTest.java");
 
     @Test

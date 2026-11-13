@@ -12,7 +12,7 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
@@ -392,8 +392,8 @@ class StoreEmittedFederationSchemaPipelineTest {
     /** Runs the generator over a store captured from {@code ctx} and parses the schema it wrote. */
     private static TypeDefinitionRegistry generate(RunContext ctx) throws IOException {
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, store.graph())
                 .generate();
         }
         Path schema = result.emitted().stream()
@@ -405,8 +405,8 @@ class StoreEmittedFederationSchemaPipelineTest {
     /** The schema classes a run over {@code ctx} wrote, compiled with everything else it wrote. */
     private static SchemaClasses schemaClasses(RunContext ctx) {
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store).generate();
+        try (var store = CapturedGraphs.open(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, store.graph()).generate();
         }
         var sources = result.emitted().stream()
             .filter(path -> path.getFileName().toString().endsWith(".java"))
@@ -444,8 +444,8 @@ class StoreEmittedFederationSchemaPipelineTest {
     /** The {@code shared-type-tags-narrowed} findings in the report the build assembles. */
     private static List<BuildWarning.LintFinding> narrowedFindings(RunContext ctx) {
         ValidationReport report;
-        try (var store = GraphitronStore.captured(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            report = new GraphQLRewriteGenerator(ctx, store.graph())
                 .buildOutput().report();
         }
         return report.warnings().stream()

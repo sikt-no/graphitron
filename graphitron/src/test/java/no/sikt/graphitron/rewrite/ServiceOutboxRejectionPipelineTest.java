@@ -4,7 +4,7 @@ import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -80,8 +80,8 @@ class ServiceOutboxRejectionPipelineTest {
             tmp, "ServiceOutboxRejectionPipelineTest", tmp,
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, testClassesRoot()
         ).withOutboxConfig(OutboxConfig.from("outbox", null, Map.of(), Map.of(), null));
-        try (var store = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store).validate();
+        try (var store = CapturedGraphs.open(ctx)) {
+            new GraphQLRewriteGenerator(ctx, store.graph()).validate();
             return List.of();
         } catch (ValidationFailedException e) {
             return e.errors().stream().map(ValidationError::message).toList();

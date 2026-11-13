@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -90,8 +90,8 @@ class BuildOutputReportPipelineTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE
         );
-        try (var store = GraphitronStore.captured(ctx)) {
-            return new GraphQLRewriteGenerator(ctx, store).buildOutput().report();
+        try (var store = CapturedGraphs.open(ctx)) {
+            return new GraphQLRewriteGenerator(ctx, store.graph()).buildOutput().report();
         }
     }
 
@@ -114,8 +114,8 @@ class BuildOutputReportPipelineTest {
             tmp, "BuildOutputReportPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         ValidationReport report;
-        try (var store = GraphitronStore.captured(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            report = new GraphQLRewriteGenerator(ctx, store.graph())
                 .buildOutput().report();
         }
 

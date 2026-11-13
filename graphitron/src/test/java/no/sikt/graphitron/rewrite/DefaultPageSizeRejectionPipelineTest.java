@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -94,8 +94,8 @@ class DefaultPageSizeRejectionPipelineTest {
         var ctx = context(tmp, FILM + """
             type Query { films: [Film!]! @asConnection(defaultFirstValue: 50) }
             """, OptionalInt.of(10));
-        try (var store = GraphitronStore.captured(ctx)) {
-            var rows = store.store().dsl().selectFrom(DIAGNOSTIC)
+        try (var store = CapturedGraphs.open(ctx)) {
+            var rows = store.graph().store().dsl().selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(ctx.graphName()),
                     DIAGNOSTIC.LSP_CODE.eq("GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM"))
                 .fetch();
@@ -114,8 +114,8 @@ class DefaultPageSizeRejectionPipelineTest {
     /** Runs the build-time validate pass over one SDL fixture, capture and detections included. */
     private static void validate(Path tmp, String sdl, OptionalInt max) throws IOException {
         var ctx = context(tmp, sdl, max);
-        try (var store = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store).validate();
+        try (var store = CapturedGraphs.open(ctx)) {
+            new GraphQLRewriteGenerator(ctx, store.graph()).validate();
         }
     }
 

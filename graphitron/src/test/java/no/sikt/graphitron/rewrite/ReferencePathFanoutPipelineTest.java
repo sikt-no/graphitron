@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
@@ -203,8 +203,8 @@ class ReferencePathFanoutPipelineTest {
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lint);
         var run = store == null ? ctx : ctx.withStoreDirectory(store);
-        try (var opened = GraphitronStore.captured(run)) {
-            return new GraphQLRewriteGenerator(run, opened).buildOutput().report();
+        try (var opened = CapturedGraphs.open(run)) {
+            return new GraphQLRewriteGenerator(run, opened.graph()).buildOutput().report();
         }
     }
 }

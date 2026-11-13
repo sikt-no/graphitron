@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.command.Arity;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
@@ -117,8 +117,8 @@ class LauncherOrderingClosureTest {
             OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, store.graph())
                 .generate();
         }
         launchers = result.plan().launchers();

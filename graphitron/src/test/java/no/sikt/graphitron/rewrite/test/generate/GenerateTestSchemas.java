@@ -4,7 +4,7 @@ import no.sikt.graphitron.model.config.DependencyVersions;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -27,7 +27,7 @@ import java.util.List;
  * without the plugin and so without the language server or the MCP server it brings.
  *
  * <p>A generating run, whole: each scenario is a {@link RunContext} declaring its output
- * coordinates, captured by {@link GraphitronStore#captured(RunContext)} and generated from what that
+ * coordinates, captured by {@link CapturedGraphs#open(RunContext)} and generated from what that
  * captured. So everything the run declares reaches the store the way it does in production, and an
  * emitter reading the run's configuration from the store finds it there. What the scenario is captured
  * over is what {@code FactExpectationTest} checks: the folder {@link Scenario} renders for it, the
@@ -118,8 +118,8 @@ public final class GenerateTestSchemas {
             SchemaRecipe.literalOver(inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
             null,
             null);
-        try (var captured = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, captured).generate();
+        try (var captured = CapturedGraphs.open(ctx)) {
+            new GraphQLRewriteGenerator(ctx, captured.graph()).generate();
         }
     }
 

@@ -6,8 +6,11 @@ import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.boot.StoreUse;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.run.CapturedGraph;
 import no.sikt.graphitron.model.run.CapturedSchema;
+import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -227,6 +230,15 @@ public final class FactGraphs implements AutoCloseable {
      */
     public static Inline inline() {
         return new Inline(shared());
+    }
+
+    /**
+     * A run's graph captured as a goal captures it, for {@link CapturedGraphs#open}. Each run is
+     * captured into a store of its own for now; the lease is what lets the population lend pooled
+     * stores here later without its callers changing.
+     */
+    static CapturedGraphs.Lease lendRun(RunContext ctx) {
+        return new CapturedGraphs.Lease(GraphitronStore.captured(ctx), CapturedGraph::close);
     }
 
     /** A class's handle on the population, to register as an extension. */

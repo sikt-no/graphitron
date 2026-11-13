@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
@@ -129,10 +129,10 @@ class LauncherRelationClosureTest {
             TestSchemaHelper.testClasspath().stream()
                 .map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = GraphitronStore.captured(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            result = new GraphQLRewriteGenerator(ctx, store.graph())
                 .generate();
-            services = no.sikt.graphitron.emit.ServiceEmission.read(store.handle());
+            services = no.sikt.graphitron.emit.ServiceEmission.read(store.graph().handle());
         }
         walk = EmittedMethodClosure.walk(result.emittedUnits());
         launchers = result.plan().launchers();

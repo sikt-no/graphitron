@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -52,8 +52,8 @@ class SchemaParseExceptionPropagationTest {
         // The capture ends at the parse and throws there, so the run fails before generate() is
         // reached, with the exception the mojo's catch arm and the dev loop's parse report handle.
         Throwable thrown = catchThrowable(() -> {
-            try (var store = GraphitronStore.captured(ctx)) {
-                new GraphQLRewriteGenerator(ctx, store).generate();
+            try (var store = CapturedGraphs.open(ctx)) {
+                new GraphQLRewriteGenerator(ctx, store.graph()).generate();
             }
         });
 

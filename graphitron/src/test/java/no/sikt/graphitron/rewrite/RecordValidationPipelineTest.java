@@ -5,7 +5,7 @@ import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
@@ -145,22 +145,22 @@ class RecordValidationPipelineTest {
     private static List<BuildWarning> validateOnly(Path tmp, String sdl, LintConfig lint, boolean dropGetter)
             throws IOException {
         var run = context(tmp, sdl, lint);
-        try (var opened = GraphitronStore.captured(run)) {
+        try (var opened = CapturedGraphs.open(run)) {
             if (dropGetter) {
-                dropDescriptionGetter(opened);
+                dropDescriptionGetter(opened.graph());
             }
-            return new GraphQLRewriteGenerator(run, opened).buildOutput().warnings();
+            return new GraphQLRewriteGenerator(run, opened.graph()).buildOutput().warnings();
         }
     }
 
     private static List<BuildWarning> generating(Path tmp, String sdl, LintConfig lint, boolean dropGetter)
             throws IOException {
         var run = context(tmp, sdl, lint);
-        try (var opened = GraphitronStore.captured(run)) {
+        try (var opened = CapturedGraphs.open(run)) {
             if (dropGetter) {
-                dropDescriptionGetter(opened);
+                dropDescriptionGetter(opened.graph());
             }
-            return new GraphQLRewriteGenerator(run, opened).runPass().output().warnings();
+            return new GraphQLRewriteGenerator(run, opened.graph()).runPass().output().warnings();
         }
     }
 

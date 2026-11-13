@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -70,8 +70,8 @@ class ServiceKeyProjectionRejectionPipelineTest {
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "ServiceKeyProjectionRejectionPipelineTest", tmp,
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, testClassesRoot());
-        try (var store = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store).validate();
+        try (var store = CapturedGraphs.open(ctx)) {
+            new GraphQLRewriteGenerator(ctx, store.graph()).validate();
             return List.of();
         } catch (ValidationFailedException e) {
             return e.errors().stream().map(ValidationError::message).toList();

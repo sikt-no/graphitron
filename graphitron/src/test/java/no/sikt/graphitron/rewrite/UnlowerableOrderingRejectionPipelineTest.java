@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
@@ -234,8 +234,8 @@ class UnlowerableOrderingRejectionPipelineTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE
         );
-        try (var store = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            new GraphQLRewriteGenerator(ctx, store.graph())
                 .validate();
         }
     }

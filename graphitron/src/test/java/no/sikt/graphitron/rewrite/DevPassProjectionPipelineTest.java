@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -92,10 +92,10 @@ class DevPassProjectionPipelineTest {
     @Test
     void runPass_producesEverythingBuildOutputAndGenerateProduce(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, CLEAN);
-        try (var store = GraphitronStore.captured(ctx)) {
-            var generated = new GraphQLRewriteGenerator(ctx, store).generate();
-            var reported = new GraphQLRewriteGenerator(ctx, store).buildOutput();
-            var pass = new GraphQLRewriteGenerator(ctx, store).runPass();
+        try (var store = CapturedGraphs.open(ctx)) {
+            var generated = new GraphQLRewriteGenerator(ctx, store.graph()).generate();
+            var reported = new GraphQLRewriteGenerator(ctx, store.graph()).buildOutput();
+            var pass = new GraphQLRewriteGenerator(ctx, store.graph()).runPass();
 
             assertThat(pass.output().report().errors())
                 .as("no errors on either path, which is what makes the fixture the clean one")
@@ -132,8 +132,8 @@ class DevPassProjectionPipelineTest {
     @Test
     void runPass_rejectedRound_reportsTheErrorsAndEmitsNothing(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, REJECTED);
-        try (var store = GraphitronStore.captured(ctx)) {
-            var pass = new GraphQLRewriteGenerator(ctx, store).runPass();
+        try (var store = CapturedGraphs.open(ctx)) {
+            var pass = new GraphQLRewriteGenerator(ctx, store.graph()).runPass();
 
             assertThat(pass.output().report().errors())
                 .extracting(ValidationError::message)
@@ -160,17 +160,17 @@ class DevPassProjectionPipelineTest {
     @Test
     void theBuildEntryPointsStillThrowTheListThePassReports(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, REJECTED);
-        try (var store = GraphitronStore.captured(ctx)) {
-            var reportedErrors = new GraphQLRewriteGenerator(ctx, store).runPass()
+        try (var store = CapturedGraphs.open(ctx)) {
+            var reportedErrors = new GraphQLRewriteGenerator(ctx, store.graph()).runPass()
                 .output().report().errors().stream().map(ValidationError::message).toList();
 
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).generate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.graph()).generate())
                 .as("generate() fails the build on the same errors the dev pass merely reports")
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                     .extracting(ValidationError::message)
                     .isEqualTo(reportedErrors));
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.graph()).validate())
                 .as("and so does validate(), which emits nothing either way")
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(e -> assertThat(((ValidationFailedException) e).errors())

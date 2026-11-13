@@ -371,6 +371,10 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | `CapturedStore` (`graphitron-model` test-jar)
 | A real capture over a document into a store the test owns, with named arms saying what each capture's inputs are; `CapturedStore.captureFolder` runs a document's rendered scenario as the population does. Below the line with the capture it drives, so a client can take it without taking the generator. Every other store-backed test reads `FactGraphs` instead.
 
+| A generator run driven end to end over a captured graph
+| `CapturedGraphs` (`graphitron-model` test-jar)
+| `CapturedGraphs.open(ctx)` captures the run's graph as a goal does and lends it as a lease, whose `graph()` is what `GraphQLRewriteGenerator` takes. A run naming a store directory gets a store of its own there; any other run's store is the `FactGraphs` population's to lend, so a module outside the model never calls `GraphitronStore.captured` itself.
+
 | The dev loop's own wiring, over rows only a pipeline run can produce
 | `BuiltStore` (`graphitron` test-jar)
 | A real `buildOutput()` run into a store on disk that outlives the run.

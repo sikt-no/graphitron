@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures;
@@ -506,8 +506,8 @@ class ArgmappingProjectionRejectionPipelineTest {
             DEFAULT_JOOQ_PACKAGE,
             classpathRoots
         );
-        try (var store = GraphitronStore.captured(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store)
+        try (var store = CapturedGraphs.open(ctx)) {
+            new GraphQLRewriteGenerator(ctx, store.graph())
                 .validate();
         }
     }

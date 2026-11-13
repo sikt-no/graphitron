@@ -2,9 +2,6 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
-import no.sikt.graphitron.model.run.SubjectConfig;
-import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -24,6 +21,7 @@ import java.util.Optional;
 import java.util.function.Function;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.RunContext;
+import no.sikt.graphitron.model.test.CapturedGraphs;
 import no.sikt.graphitron.model.test.CapturedStore;
 
 /**
@@ -131,10 +129,9 @@ public final class BuiltStore implements AutoCloseable {
             // The fixture opens the store and captures into it, which is what a goal does and
             // what a test is allowed to do. The generator is handed a reader over it and captures
             // nothing: a pass that could open a store would make "reads facts, writes none" a
-            // property of what its code happens to call.
-            var captured = GraphitronStore.captured(storeHome, new GraphIdentity(graphName, tmp),
-                SubjectConfig.of(ctx), ctx.classpathRoots(),
-                ctx.codegenLoader());
+            // property of what its code happens to call. The store lives under storeHome, so the
+            // fixture owns it past the lease and close() closes it.
+            var captured = CapturedGraphs.open(ctx).graph();
             var output = pass == null ? null
                 : pass.apply(new GraphQLRewriteGenerator(ctx, captured));
             return new BuiltStore(captured.store(), graphName, schemaFile, storeHome, output);
