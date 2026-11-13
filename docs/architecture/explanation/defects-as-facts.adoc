@@ -36,6 +36,13 @@ broken. A rule is not given a code of its own for each place it can be broken: a
 does not exist is one defect, `ELEMENT_UNRESOLVED`, whether a `@routine` at a root or an element
 along a path claimed it, and the position it sits at is the place it was claimed (Alf, 2026-11-09).
 
+A shape a macro would mint and the store refuses is a defect at the macro's application, raised
+before the mint; a minted coordinate never carries a defect of its own. The author wrote the macro,
+not what it expands to, so the application is the only place they can act on, and it is where the
+store already reports macros that disagree, `graphitron_minted_conflict` (Alf, 2026-11-13). A rule
+judging authored elements therefore leaves minted ones out, rather than reporting at a coordinate no
+document declares.
+
 `graphitron_defect_type` declares each code once:
 
 [cols="1,3"]
