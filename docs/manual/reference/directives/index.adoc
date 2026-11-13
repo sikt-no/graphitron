@@ -22,7 +22,7 @@ a|
 * xref:field.adoc[`@field`]
 * xref:globalData.adoc[`@globalData`]
 * xref:index-directive.adoc[`@index`] _(deprecated, use `@order(index:)`)_
-* xref:issue.adoc[`@issue`] _(refused until generated)_
+* xref:issue.adoc[`@issue`]
 * xref:lookupKey.adoc[`@lookupKey`]
 * xref:multitableReference.adoc[`@multitableReference`] _(rejected, remove from the schema)_
 * xref:mutation.adoc[`@mutation`]
@@ -72,7 +72,7 @@ xref:discriminate.adoc[`@discriminate`], xref:discriminator.adoc[`@discriminator
 xref:node.adoc[`@node`], xref:nodeId.adoc[`@nodeId`]
 
 *Federation* +
-xref:issue.adoc[`@issue`] (refused until generated)
+xref:issue.adoc[`@issue`]
 
 *Rejected by the rewrite* +
 xref:notGenerated.adoc[`@notGenerated`], xref:multitableReference.adoc[`@multitableReference`] (remove from the schema)

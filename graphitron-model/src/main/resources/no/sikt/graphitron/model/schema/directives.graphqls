@@ -634,8 +634,7 @@ Marks the voucher field of a table-bound type in a federated subgraph that vouch
 another subgraph. Every other field of the type is absorbed into the voucher: sealed inside it, signed,
 and withheld from this subgraph's published schema, which publishes the voucher alone. The voucher is
 `@inaccessible`, and the type is keyed by it, so a router can reach the other subgraph's entity from
-here only through the voucher. Requires a federation `@link`. Generation does not issue vouchers yet,
-so a schema using `@issue` is refused for now.
+here only through the voucher. Requires a federation `@link`.
 """
 directive @issue(
   """
