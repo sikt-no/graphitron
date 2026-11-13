@@ -218,6 +218,13 @@ rather than members. The input `in` that `Mutation.customerUpsert` takes is buil
 `CustomerRecord`, and so is its field `details`, which groups `firstName` and `lastName` onto the
 same record.
 
+An input object reaches a call typed, never as the untyped map graphql-java delivers (Alf,
+2026-11-13). A parameter takes it whole as a class the store builds, a `@condition` on an input field
+included, or takes its fields one by one through `argMapping` paths into it, `fra:
+range.fraVerdi`. A parameter declaring `Map` or `Object` for an input object is refused, and its
+remedy names those two forms; it is not a deferral, the shape being one graphitron does not mean to
+generate.
+
 An argument a call consumes binds no row here: the call's parameter is stated on the call, in
 `graphitron_occurrence_call_parameter`, whose fill names the occurrence it takes.
 
