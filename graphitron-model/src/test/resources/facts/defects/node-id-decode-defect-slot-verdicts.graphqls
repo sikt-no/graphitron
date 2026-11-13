@@ -1,7 +1,8 @@
 # A @nodeId argument whose decoded value reaches a Java parameter by name, judged at that parameter:
 # the whole key lands only on the node's own record or a tuple of its key, so it is refused at any
 # other class, on a tuple typed otherwise than the key, or on the slot's shape, and otherwise carried
-# out. One key column is taken by projecting it with argMapping. Each verdict sits beside the shapes
+# out. One key column is taken by projecting it with argMapping. A @condition's parameter is judged
+# as a @service's, the id an argument or an input field. Each verdict sits beside the shapes
 # that resolve, since the relation is the population the decode does not claim and an absence there
 # is a resolution.
 
@@ -12,6 +13,24 @@ type FilmActor @table(name: "film_actor") @node { filmId: Int @field(name: "film
 
 # A pinned key column the table does not have, so the catalog cannot type it.
 type Pinned @table(name: "language") @node(keyColumns: ["not_a_column"]) { name: String }
+
+type Address @table(name: "address") @node { district: String }
+
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+
+# A @nodeId input field whose own @condition takes the whole key at the column's type: refused; the
+# projected twin takes the column's value.
+input CustomerAddressFilter {
+  addressId: ID @nodeId(typeName: "Address") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "addressDistrictAlberta"}, override: true)
+}
+
+input CustomerAddressProjectedFilter {
+  addressId: ID @nodeId(typeName: "Address") @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "addressDistrictAlberta", argMapping: "addressId: addressId.address_id"}, override: true)
+}
 
 input PairingInput {
   title: String
@@ -39,6 +58,16 @@ type Query {
   # The node type's own record takes the whole tuple, at any arity.
   filmActorRecord(in: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmActorRecord"})
+  # A @condition's parameter taking the whole key by its name at the column's type: refused, as a
+  # @service's is; projected, it takes the column's value.
+  filmsByConditionKey(filmId: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals"}, override: true)
+  filmsByConditionProjection(filmId: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "filmId: filmId.film_id"}, override: true)
+  customersByAddress(filter: CustomerAddressFilter): [Customer!]!
+  customersByAddressProjected(filter: CustomerAddressProjectedFilter): [Customer!]!
   # No parameter at all: a table predicate.
   films(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
   # A key column the catalog cannot type resolves no key, so nothing is judged.
@@ -100,6 +129,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.pairByMistypedRow(key:),  NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT,  key
   Query.pairByWideTuple(key:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       key
   Query.film(id:),                NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
+  Query.filmsByConditionKey(filmId:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT,   filmId
+  CustomerAddressFilter.addressId, NODE_ID_KEY_ARITY_EXCEEDS_SLOT,      addressId
   Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.filmsByIds(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids

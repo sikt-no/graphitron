@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Project;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.Condition;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
@@ -53,6 +54,19 @@ public final class InputFieldConditionFixtures {
             return DSL.noCondition();
         }
         return table.field(Film.FILM.FILM_ID).eq(filmId);
+    }
+
+    /**
+     * The whole-key shape: a {@code @condition} parameter a {@code @nodeId} lands on whole, without a
+     * projection, takes the node's record, as a whole key lands nowhere but on its record or a tuple of
+     * it. {@link #filmIdKeyEquals} is the same filter taking one key column, which an author asks for
+     * with an {@code argMapping} projection.
+     */
+    public static Condition filmKeyRecordEquals(Table<?> table, FilmRecord filmId) {
+        if (filmId == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Film.FILM.FILM_ID).eq(filmId.getFilmId());
     }
 
     /**

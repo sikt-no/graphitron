@@ -1,7 +1,8 @@
 # Which key column a parameter takes out of a node id. A path that stops on the @nodeId slot it opens
 # hands the parameter the whole decoded key; one naming a column past it, or descending through an
 # input object onto a @nodeId input field, projects one key column, named where it is written and
-# else the node's one-column key. filmsBySlot takes its slot by name, the whole key; filmsByNamed
+# else the node's one-column key. filmsBySlot takes its slot by name, the whole key, as the node's
+# record; filmsByNamed
 # names film_id past its slot; filmsByPicked descends through pick onto film, whose node has one key
 # column. The projection is a fact of the argMapping landing, and each fill a pair wrote states it.
 
@@ -17,7 +18,7 @@ input FilmPick { film: ID @nodeId(typeName: "Film") }
 type Query {
   filmsBySlot(filmId: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-      method: "filmIdKeyEquals"}, override: true)
+      method: "filmKeyRecordEquals"}, override: true)
   filmsByNamed(id: ID @nodeId(typeName: "Film")): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "filmId: id.film_id"}, override: true)

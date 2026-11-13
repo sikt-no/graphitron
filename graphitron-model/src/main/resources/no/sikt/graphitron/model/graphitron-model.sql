@@ -14933,8 +14933,8 @@ SELECT pj.graph_name, site.source_name, site.source_line, site.source_column,
                       AND d.slot = s.slot AND d.bound = pj.bound)
  GROUP BY pj.graph_name, site.source_name, site.source_line, site.source_column
 UNION ALL
--- A single node's decoded id handed whole to a @service parameter that cannot take it, at the
--- @nodeId: a parameter whose shape is not the argument's, or a landing no decode shape fits, which
+-- A single node's decoded id handed whole to a @service's or a @condition's parameter that cannot
+-- take it, at the @nodeId: a parameter whose shape is not the argument's, or a landing no decode shape fits, which
 -- graphitron_occurrence_node_id_shape decides. Which it is follows the key: a jOOQ tuple of the
 -- key's degree whose type arguments disagree with it, or any other class, a whole key landing only
 -- on its record or a tuple of it. The parameter is the detail, the least where uses differ.
@@ -14969,15 +14969,22 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
          -- The parameter taking the whole key: the one named for the argument, which no written pair
          -- fills, or one a pair fills without projecting a key column.
-         WHERE o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE'
-           AND CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
-                                  WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
-                                    AND pp.call = cp.call AND pp.position = cp.position)
-                    THEN NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_projection pj
-                                      WHERE pj.graph_name = sp.graph_name
-                                        AND pj.call_coordinate = sp.call_coordinate
-                                        AND pj.call = sp.call AND pj.position = sp.position)
-                    ELSE cp.parameter_name = o.name END
+         WHERE ((o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE'
+                 AND CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
+                                        WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
+                                          AND pp.call = cp.call AND pp.position = cp.position)
+                          THEN NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_projection pj
+                                            WHERE pj.graph_name = sp.graph_name
+                                              AND pj.call_coordinate = sp.call_coordinate
+                                              AND pj.call = sp.call AND pj.position = sp.position)
+                          ELSE cp.parameter_name = o.name END)
+                -- A @condition's parameter the id lands on takes the whole key unless a pair projects
+                -- a column out of it, wherever the id is: an argument or an input field.
+                OR (cp.call_kind = 'CONDITION'
+                    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_slot_projection pj
+                                     WHERE pj.graph_name = sp.graph_name
+                                       AND pj.call_coordinate = sp.call_coordinate
+                                       AND pj.call = sp.call AND pj.position = sp.position)))
            AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim_container k
                             WHERE k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate)) v
   JOIN graphitron_directive_application da
@@ -21805,7 +21812,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('NODE_ID_SLOT_SHAPE_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_SLOT_SHAPE_MISMATCH',
    'A @nodeId''s decoded value goes to a @service parameter whose shape is not the argument''s, a list where one id arrives, one value where a list does, or a collection other than java.util.List: declare the parameter in the argument''s shape.', 'occurrence-builds'),
   ('NODE_ID_KEY_ARITY_EXCEEDS_SLOT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_ARITY_EXCEEDS_SLOT',
-   'A @nodeId''s decoded key goes whole to a @service parameter, or each element of one, that is neither the node''s record nor a tuple of its key, and a whole key lands only on those: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or take one key column with argMapping.', 'occurrence-builds'),
+   'A @nodeId''s decoded key goes whole to a @service''s or a @condition''s parameter, or each element of one, that is neither the node''s record nor a tuple of its key, and a whole key lands only on those: declare the parameter as the node''s record, or as a RecordN or RowN of the key''s columns'' types, or take one key column with argMapping.', 'occurrence-builds'),
   ('NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT',
    'A @nodeId''s decoded key goes to a @service parameter typed as a jOOQ RecordN or RowN of the key''s degree whose type arguments are not the key columns'' types in key order: declare the tuple with the columns'' own types.', 'occurrence-builds'),
   ('NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_KEY_COLUMN_TYPE_DISAGREEMENT',
