@@ -19946,16 +19946,29 @@ COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_bound IS 'the table the k
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.key_kind IS 'what the key occurrence binds, COLUMN or NODE_ID, carried so the foreign key holds the row to a binding of that kind';
 COMMENT ON COLUMN graphitron_occurrence_lookup_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- What a @lookupKey the keys above cannot state, each at the application. Two rules the walk
--- enforces: a field returning a connection, which pages where the keys answer one row each; and a
--- node id of a node on another table than the list reads, as the argument itself, or as a field of
--- the input object it takes whose path's one foreign key does not carry every key position back to
--- the list's table, either narrowing by nothing. One deferral: a field of a table-bound type returning
--- one table-bound object, which the walk does not generate a lookup for.
-CREATE VIEW graphitron_occurrence_lookup_key_entry_defect_rule
+-- What the written orderings and lookup keys say wrong before any occurrence reads them, raised by
+-- field-targets, the first stage holding the field targets they are judged by: an ordering writing
+-- other than one surface, or a fields element of no legal shape; a @lookupKey on a field returning a
+-- connection, which pages where the keys answer one row each; and the deferral, a @lookupKey on a field
+-- of a table-bound type returning one table-bound object, which the walk does not generate a lookup for.
+CREATE VIEW graphitron_field_target_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_SURFACES',
+       CAST(NULL AS VARCHAR), 'field-targets'
+  FROM graphql_directive_application da
+  JOIN graphitron_ast_order_entry oe
+    ON oe.graph_name = da.graph_name AND oe.source_name = da.source_name
+   AND oe.source_line = da.source_line AND oe.source_column = da.source_column
+ WHERE da.directive_name IN ('defaultOrder', 'order')
+   AND oe.surfaces_written <> 1
+UNION ALL
+SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_FIELD_SHAPE',
+       CAST(NULL AS VARCHAR), 'field-targets'
+  FROM graphitron_ast_order_field_entry fe
+ WHERE fe.shape = 'MALFORMED'
+UNION ALL
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'LOOKUP_KEY_ON_CONNECTION', CAST(NULL AS VARCHAR), 'occurrence-lookup-keys'
+       'LOOKUP_KEY_ON_CONNECTION', CAST(NULL AS VARCHAR), 'field-targets'
   FROM graphql_directive_application da
   JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
   JOIN graphitron_field_target ft
@@ -19963,7 +19976,7 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
  WHERE da.directive_name = 'lookupKey' AND ft.wrapper_type_name IS NOT NULL
 UNION ALL
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'LOOKUP_KEY_ON_SINGLE_CHILD', CAST(NULL AS VARCHAR), 'occurrence-lookup-keys'
+       'LOOKUP_KEY_ON_SINGLE_CHILD', CAST(NULL AS VARCHAR), 'field-targets'
   FROM graphql_directive_application da
   JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
   JOIN graphitron_field f
@@ -19977,8 +19990,15 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON rt.graph_name = ft.graph_name AND rt.type_name = ft.target_type_name AND rt.named_type_kind = 'OBJECT'
  WHERE da.directive_name = 'lookupKey'
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_many m
-                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name)
-UNION ALL
+                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name);
+COMMENT ON VIEW graphitron_field_target_entry_defect_rule IS 'One row the field target defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the field-targets stage inserts this view''s rows for one graph into graphitron_entry_defect, a @defaultOrder writing both index and primaryKey: true giving one ORDER_SURFACES row at the application.';
+
+-- What a @lookupKey the keys above cannot state, at the application: a node id of a node on another
+-- table than the list reads, as the argument itself, or as a field of the input object it takes whose
+-- path's one foreign key does not carry every key position back to the list's table, either narrowing
+-- by nothing.
+CREATE VIEW graphitron_occurrence_lookup_key_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
        'LOOKUP_KEY_OFF_TABLE', n.bound, 'occurrence-lookup-keys'
   FROM graphitron_occurrence_binding_table t
@@ -20513,22 +20533,12 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_method.owner IS 'where in the a
 COMMENT ON COLUMN graphitron_occurrence_sort_key_method.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 
--- What an ordering cannot state: an application writing other than one surface; a primary key a
--- table does not have; an index or a column the table does not have; a fields element of no legal
--- shape; a value of an @orderBy argument's sort enum with no @order; a client choice on a list read
+-- What an ordering cannot state: a primary key a table does not have; an index or a column the table
+-- does not have; a value of an @orderBy argument's sort enum with no @order; a client choice on a list read
 -- inline in its parent's statement, which is not generated yet; and such a list, over a table with
 -- no primary key, with no order written at all.
 CREATE VIEW graphitron_occurrence_order_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_SURFACES',
-       CAST(NULL AS VARCHAR), 'occurrence-orderings'
-  FROM graphql_directive_application da
-  JOIN graphitron_ast_order_entry oe
-    ON oe.graph_name = da.graph_name AND oe.source_name = da.source_name
-   AND oe.source_line = da.source_line AND oe.source_column = da.source_column
- WHERE da.directive_name IN ('defaultOrder', 'order')
-   AND oe.surfaces_written <> 1
-UNION ALL
 SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ORDER_PRIMARY_KEY_MISSING',
        t.bound, 'occurrence-orderings'
   FROM graphitron_occurrence_order r
@@ -20561,11 +20571,6 @@ SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 
                     WHERE ix.source_name = t.table_source_name AND ix.table_schema = t.table_schema
                       AND ix.table_name = t.table_name
                       AND UPPER(ix.index_name) = UPPER(COALESCE(oe.index_ref, ie.index_ref)))
-UNION ALL
-SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_FIELD_SHAPE',
-       CAST(NULL AS VARCHAR), 'occurrence-orderings'
-  FROM graphitron_ast_order_field_entry fe
- WHERE fe.shape = 'MALFORMED'
 UNION ALL
 SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'COLUMN_UNRESOLVED',
        fe.name_ref, 'occurrence-orderings'
@@ -23770,6 +23775,7 @@ INSERT INTO meta_stage_write VALUES
   ('node-legacy-key-shapes', 'graphitron_node_legacy_keycolumn'),
   ('field-targets', 'graphitron_field_target'),
   ('field-targets', 'graphitron_field_many'),
+  ('field-targets', 'graphitron_entry_defect'),
   ('producer-claims', 'graphitron_claim'),
   ('binding-claims', 'graphitron_binding_claim'),
   ('binding-claims', 'graphitron_binding_claim_container'),
@@ -26319,6 +26325,10 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.',
    'The defects judging the facts occurrence-bindings and occurrence-builds write, a child producer''s lift and the column a field reads or writes, by a stage of their own after them, so neither the depth loop nor the gatherer''s one rule over every arm carries them.'),
+  ('graphitron_field_target_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the field target defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the field-targets stage inserts this view''s rows for one graph into graphitron_entry_defect, a @defaultOrder writing both index and primaryKey: true giving one ORDER_SURFACES row at the application.',
+   'Raised at field-targets because what it judges is the written decode and the field targets, which that stage is the first to hold: a defect is raised by the first stage holding its facts (Alf, 2026-11-13).'),
   ('graphitron_occurrence_lookup_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the lookup key defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-lookup-keys stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.',

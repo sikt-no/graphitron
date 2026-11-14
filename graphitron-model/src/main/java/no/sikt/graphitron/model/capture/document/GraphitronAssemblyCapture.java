@@ -271,5 +271,7 @@ public final class GraphitronAssemblyCapture {
             .where(many.GRAPH_NAME.eq(graph))
             .and(many.TOUCHED_AT.ne(touchedAt))
             .execute();
+        // What the written orderings and lookup keys say wrong, judged by the targets just written.
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FIELD_TARGETS);
     }
 }
