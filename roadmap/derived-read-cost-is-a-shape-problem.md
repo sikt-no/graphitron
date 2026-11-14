@@ -82,7 +82,8 @@ The walk's read path is gone
 │   ├── A projection unit is emitted from the store, censused
 │   ├── The filter conditions are emitted from the store
 │   │   ├── An argument binds the call parameter it supplies
-│   │   └── A routine and a write state what they bind as call parameters
+│   │   ├── A routine and a write state what they bind as call parameters
+│   │   └── A condition on a routine's result table is a call the store states
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
 │   │   ├── An inline list's ordering is resolved at its occurrence
@@ -849,6 +850,10 @@ static method needs no holder.
     shape row answers. `NODE_ID_PARTICIPANT`, an id each participant decodes as a node of its own,
     waits on the not-this-participant decode policy; an id naming one node type is emitted on every
     participant.
+    * **A condition on a routine's result table is a call the store states** `open`. A field-level
+      `@condition` on a `@routine`'s result table, `tilgangerAdmin`'s `tilgangAdminOnly`, has no
+      condition call in the store, so the flip would drop it; it belongs to the condition-call
+      candidates on a routine's result table, and the flip waits on it.
     * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
