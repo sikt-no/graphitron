@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-13
+last-updated: 2026-11-14
 ---
 
 # A clean build runs in under five minutes
@@ -258,6 +258,17 @@ and a cold capture.
 
 R876's subtractions also retire the comparisons against the walk: 364 s of `graphitron` class time,
 302 s of it one test.
+
+**C1. "H2 brute-force planning of big CTE views dominates test heap"** (filed 2026-11-14, B). The
+same planning costs heap as well as time, and in `graphitron` the heap is what fails first. At trunk
+`ac48c2b126`, `graphitron` alone at `-Xmx2g` dies at about minute 6, after 2,184 tests: the live heap
+after a full GC climbs from 1.2 GB at minute 1 to 2.04 GB at minute 5, thirty full GCs a minute at
+the end, and the OutOfMemoryError is H2 planning a CTE (`Optimizer.calculateBruteForceAll` into
+`Plan.<init>`, from `CTE.createIndex` under `SelectUnion.preparePlan`). CI gives this fork about
+4 GB (a public repository's `ubuntu-latest` has 16 GB and the module pins no heap), so it passes
+there; `-Xmx2g` is the margin. Owed: a class histogram of the fork at its peak, taken from the fork's
+own pid (a `jcmd` on the surefire booter, not on the shell that started Maven), to say which views'
+plans hold it.
 
 ### Not in scope, and why
 
