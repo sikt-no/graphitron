@@ -1,13 +1,27 @@
 # Which connection each root @service call runs on under the tenant column film_id. A required value
 # names the tenant, so a call cannot come without one. A list argument names it per element, and a
 # call given an empty list answers the field's own empty list without a connection. @globalData says
-# the call runs on the request's own connection.
+# the call runs on the request's own connection. A child service under film rows runs on the key its
+# parent handed down; one under language rows, which no tenant column scopes, on the key with an empty
+# tenant part.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
-type Film @table(name: "film") { title: String }
+type Film @table(name: "film") {
+  title: String
+  servedBy: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+    method: "servedBy"})
+}
+
+type Language @table(name: "language") {
+  name: String
+  servedBy: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+    method: "languageServedBy"})
+}
 
 type Query {
+  films: [Film!]!
+  languages: [Language!]!
   filmByPair(id: Int!, org: Int!): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id, $tenant: org"})
@@ -20,10 +34,12 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
-  coordinate,       call,     outcome
-  Query.filmByPair, producer, ROUTED
-  Query.filmsByIds, producer, ROUTED
-  Query.filmGlobal, producer, REQUEST
+  coordinate,                outcome
+  Query.filmByPair,          ROUTED
+  Query.filmsByIds,          ROUTED
+  Query.filmGlobal,          UNSCOPED
+  Film.servedBy,             INHERIT
+  Language.servedBy,         UNSCOPED
   """)
 
 # A routed connection's key has a tenant part, and what a call naming no tenant gets is the part's.

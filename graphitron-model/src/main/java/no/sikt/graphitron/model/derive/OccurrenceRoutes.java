@@ -12,10 +12,10 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
- * The {@code occurrence-routes} stage: the connection each root service call of a database-per-tenant
- * graph runs on, into {@code graphitron_occurrence_connection}, the parts its key is made of, into
- * {@code graphitron_occurrence_connection_part}, and a defect for each call it cannot say that for, so
- * every such call has one or the other; marked and swept.
+ * The {@code occurrence-routes} stage: the connection each producer of a database-per-tenant graph runs
+ * on, into {@code graphitron_occurrence_connection}, the parts a routed key is made of, into
+ * {@code graphitron_occurrence_connection_part}, and a defect for each root call it cannot say that for;
+ * marked and swept.
  *
  * <p>Runs after {@link OccurrenceTenants}, off the tenant slots, the optional and list element
  * occurrences, the calls' fills and the producers' results.
@@ -36,26 +36,25 @@ public final class OccurrenceRoutes {
         dsl.deleteFrom(p)
             .where(p.GRAPH_NAME.eq(graph))
             .andNotExists(dsl.selectOne().from(r)
-                .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE), r.CALL.eq(p.CALL),
-                    r.OUTCOME.eq(ROUTED)))
+                .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE), r.OUTCOME.eq(ROUTED)))
             .execute();
         dsl.insertInto(c)
-            .columns(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.OUTCOME, c.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.OUTCOME, val(touchedAt, c.TOUCHED_AT))
+            .columns(c.GRAPH_NAME, c.COORDINATE, c.OUTCOME, c.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.OUTCOME, val(touchedAt, c.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.OUTCOME.isNotNull()))
-            .onConflict(c.GRAPH_NAME, c.COORDINATE, c.CALL)
+            .onConflict(c.GRAPH_NAME, c.COORDINATE)
             .doUpdate()
             .set(c.OUTCOME, excluded(c.OUTCOME))
             .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
             .execute();
         dsl.insertInto(p)
-            .columns(p.GRAPH_NAME, p.COORDINATE, p.CALL, p.PART, p.OUTCOME, p.WHEN_EMPTY, p.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, inline("TENANT"), r.OUTCOME, r.WHEN_EMPTY,
+            .columns(p.GRAPH_NAME, p.COORDINATE, p.PART, p.OUTCOME, p.WHEN_EMPTY, p.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, inline("TENANT"), r.OUTCOME, r.WHEN_EMPTY,
                     val(touchedAt, p.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.OUTCOME.eq(ROUTED)))
-            .onConflict(p.GRAPH_NAME, p.COORDINATE, p.CALL, p.PART)
+            .onConflict(p.GRAPH_NAME, p.COORDINATE, p.PART)
             .doUpdate()
             .set(p.WHEN_EMPTY, excluded(p.WHEN_EMPTY))
             .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT))

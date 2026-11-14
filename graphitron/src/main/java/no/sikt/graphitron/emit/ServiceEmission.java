@@ -205,19 +205,18 @@ public final class ServiceEmission {
         var out = new LinkedHashMap<String, String>();
         boolean tenanted = store.dsl().fetchExists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(store.graphName())));
         if (tenanted) {
-            // A child call takes the key its producer chain hands down, which the store does not state
-            // yet; a root call runs on the connection the store states for it, or is refused there.
+            // Each service runs on the connection the store states for it; a root without one is refused
+            // there, and a child without one is routed by its row's tenant, which the store does not
+            // state yet, so the walk keeps emitting it.
             var cn = GRAPHITRON_OCCURRENCE_CONNECTION;
             store.dsl().select(p.COORDINATE, p.START,
                     field(exists(selectOne().from(cn).where(cn.GRAPH_NAME.eq(p.GRAPH_NAME),
-                        cn.COORDINATE.eq(p.COORDINATE), cn.CALL.eq("producer")))))
+                        cn.COORDINATE.eq(p.COORDINATE)))))
                 .from(p)
                 .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
                 .forEach(r -> {
-                    if ("CHILD".equals(r.value2())) {
-                        out.put(r.value1(), "TENANT_ROUTING");
-                    } else if (!r.value3()) {
-                        out.put(r.value1(), "UNROUTED");
+                    if (!r.value3()) {
+                        out.put(r.value1(), "CHILD".equals(r.value2()) ? "FAN_OUT_BY_ROW_TENANT" : "UNROUTED");
                     }
                 });
         }
@@ -498,9 +497,9 @@ public final class ServiceEmission {
     }
 
     /**
-     * The connection {@code coordinate}'s root frame runs on, as the store states it: the request's own
-     * where the store states none, as in a graph with no tenant column, or says so, else one keyed by
-     * the tenant its slots name. An outcome the store gains later fails to compile here rather than falling into a known arm.
+     * The connection {@code coordinate}'s frame runs on, as the store states it: the request's own where
+     * the store states none, as in a graph with no tenant column, else the routed, inherited or unscoped
+     * key. An outcome the store gains later fails to compile here rather than falling into a known arm.
      */
     private FrameEmitter.Connection connection(String coordinate, String fieldCoordinate, Runtime runtime) {
         var row = connections.get(coordinate);
@@ -509,7 +508,8 @@ public final class ServiceEmission {
         }
         var routing = runtime.routing();
         return switch (row.outcome()) {
-            case REQUEST -> new FrameEmitter.Connection.Request();
+            case INHERIT -> new FrameEmitter.Connection.Inherited(routing.ownedConnections());
+            case UNSCOPED -> new FrameEmitter.Connection.Unscoped(routing.ownedConnections(), routing.connectionKey());
             case ROUTED -> new FrameEmitter.Connection.Routed(
                 ClassName.bestGuess(tenantType.orElseThrow(() -> new IllegalStateException(coordinate
                     + " is routed, but the graph's tenant columns agree on no one type, which the store refuses"))),

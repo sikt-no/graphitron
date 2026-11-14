@@ -143,6 +143,12 @@ public final class ConnectionRuntimeClassGenerator {
 
     /** The name the request's {@code SessionState} travels under as a parameter and a field. */
     static final String SESSION_STATE_SLOT = "sessionState";
+    /**
+     * What a field running on the key its parent hands down is refused with where none was handed
+     * down: a request-level error before any SQL.
+     */
+    static final String NO_HANDED_DOWN_KEY =
+        "No connection key was handed down to this field; cannot choose the connection it runs on.";
     /** The per-operation carrier of the owned connections, one per connection key. */
     public static final String OWNED_CONNECTIONS_CLASS_NAME = "OwnedConnections";
     /**
@@ -2018,6 +2024,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(keyedDslFor(connectionKey))
                 .addMethod(staticKeyedDslFor(self, connectionKey))
+                .addMethod(staticHandedDownDsl(self, connectionKey))
                 .addMethod(dslGlobal)
                 .addMethod(staticDslGlobal(self))
                 .addMethod(namedTenant(tenantKey))
@@ -2032,6 +2039,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(mapTenantLeaves())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName(connectionKey))
+                .addMethod(handedDownLoaderName(connectionKey))
                 .addMethod(tenantLoaderNameFor())
                 .addType(outcomeType(self, tenantKey))
                 .addType(fanOutFailureType());
@@ -3109,6 +3117,25 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
+    /**
+     * {@code static DSLContext dslHandedDown(DataFetchingEnvironment env)}: the acquisition a child
+     * call makes on the whole key its parent handed down in {@code localContext}, a request-level
+     * error before any SQL where none was handed down.
+     */
+    private static MethodSpec staticHandedDownDsl(ClassName self, ClassName connectionKey) {
+        return MethodSpec.methodBuilder("dslHandedDown")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("if (env.getLocalContext() instanceof $T key)", connectionKey)
+            .addStatement("return dslFor(env, key)")
+            .endControlFlow()
+            .addStatement("throw new $T($S)", NO_SUCH_ELEMENT, NO_HANDED_DOWN_KEY)
+            .addJavadoc("Acquisition on the key the parent handed down, every part of it.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
     /** The global-read sibling of {@link #staticDslDefault}, emitted in multi-tenant builds only. */
     private static MethodSpec staticDslGlobal(ClassName self) {
         return MethodSpec.methodBuilder("dslGlobal")
@@ -3374,6 +3401,29 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("The tenant-partitioned DataLoader name for a field inheriting a divined tenant:\n"
                 + "{@link #tenantLoaderName(DataFetchingEnvironment, String, Object)} over the\n"
                 + "handed-down tenant.\n")
+            .build();
+    }
+
+    /**
+     * {@code static String handedDownLoaderName(DataFetchingEnvironment env, String parentType)}: the
+     * loader name for a child running on the key its parent handed down, partitioned by the whole
+     * key rather than one part of it, so each batch acquires on the key every one of its rows was
+     * handed. The key is an opaque segment, never parsed back.
+     */
+    private static MethodSpec handedDownLoaderName(ClassName connectionKey) {
+        return MethodSpec.methodBuilder("handedDownLoaderName")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(String.class, "parentType")
+            .beginControlFlow("if (env.getLocalContext() instanceof $T key)", connectionKey)
+            .addStatement("return loaderName(env, parentType) + $S + key", " key:")
+            .endControlFlow()
+            .addStatement("throw new $T($S)", NO_SUCH_ELEMENT, NO_HANDED_DOWN_KEY)
+            .addJavadoc("The DataLoader name for a child on the handed-down key: {@link #loaderName} plus\n"
+                + "the whole key as an opaque segment, so each batch runs on one key.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param parentType the declaring parent type\n")
             .build();
     }
 

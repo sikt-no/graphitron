@@ -60,6 +60,7 @@ public final class FrameEmitter {
     private static final ClassName BATCH_ENV = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
 
     /**
      * The generated runtime the frame calls into: the error router, the outcome and its error
@@ -79,13 +80,32 @@ public final class FrameEmitter {
     }
 
     /**
-     * The connection a root frame runs its body on, as the store states it for the call: the
-     * request's own, or one keyed by the tenant its slots name.
+     * The connection a frame runs its body on, as the store states it for the producer: the request's
+     * own in a graph with no tenant column; else at a root one keyed by the tenant its slots name,
+     * under an object the key its parent handed down, or at either the key with an empty tenant part.
      */
     public sealed interface Connection {
 
-        /** The request's own connection, the one {@link Runtime#dslContext} reaches. */
+        /** The request's own connection, the one {@link Runtime#dslContext} reaches, in an untenanted graph. */
         record Request() implements Connection {}
+
+        /**
+         * A child's run on the whole key its producer chain handed down, read and acquired by the
+         * generated {@code dslHandedDown}.
+         */
+        record Inherited(ClassName ownedConnections) implements Connection {
+            public Inherited {
+                Objects.requireNonNull(ownedConnections, "ownedConnections");
+            }
+        }
+
+        /** A child's run on the key with an empty tenant part, its rows lying in no tenant scope. */
+        record Unscoped(ClassName ownedConnections, ClassName connectionKey) implements Connection {
+            public Unscoped {
+                Objects.requireNonNull(ownedConnections, "ownedConnections");
+                Objects.requireNonNull(connectionKey, "connectionKey");
+            }
+        }
 
         /**
          * A connection keyed by the tenant {@code reads} name, folded by the carrier into one tenant,
@@ -163,15 +183,16 @@ public final class FrameEmitter {
     }
 
     /**
-     * {@link #render}, where a root frame runs its body on {@code connection}: the request's own, or
-     * one keyed by its tenant, handed down to the subtree. Only a root frame is routed; a child frame
-     * takes the request's connection as before.
+     * {@link #render}, where the frame runs its body on {@code connection}. Only a root frame is routed,
+     * handing its key down to the subtree, and only a child frame inherits that key.
      */
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
                                     ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
                                     boolean bodyAnswersOutcome, Connection connection) {
-        if (!row.root() && !(connection instanceof Connection.Request)) {
-            throw new IllegalArgumentException(row.coordinate() + ": only a root frame is routed");
+        if (row.root() && connection instanceof Connection.Inherited
+                || !row.root() && connection instanceof Connection.Routed) {
+            throw new IllegalArgumentException(row.coordinate() + ": a root frame is routed and a child's"
+                + " inherits; " + connection + " does not fit");
         }
         if (bodyAnswersOutcome && (!row.root() || row.outcome().isEmpty())) {
             throw new IllegalArgumentException(row.coordinate() + ": only a root frame with an outcome takes it"
@@ -179,7 +200,7 @@ public final class FrameEmitter {
         }
         return row.root()
             ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome, connection)
-            : child(row, methodName, valueType, bodyClass, body, runtime);
+            : child(row, methodName, valueType, bodyClass, body, runtime, connection);
     }
 
     private static MethodSpec root(FrameQuery.Row row, String methodName, TypeName valueType,
@@ -196,6 +217,15 @@ public final class FrameEmitter {
             case Connection.Request ignored -> {
                 if (needsContext) {
                     method.addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("env"));
+                }
+                yield CodeBlock.of("");
+            }
+            case Connection.Inherited inherited -> throw new IllegalArgumentException(row.coordinate()
+                + ": a root frame has no parent to inherit a key from");
+            case Connection.Unscoped unscoped -> {
+                if (needsContext) {
+                    method.addStatement("$T dsl = $T.dslFor(env, new $T($T.empty()))", DSL_CONTEXT,
+                        unscoped.ownedConnections(), unscoped.connectionKey(), OPTIONAL);
                 }
                 yield CodeBlock.of("");
             }
@@ -221,7 +251,7 @@ public final class FrameEmitter {
     }
 
     private static MethodSpec child(FrameQuery.Row row, String methodName, TypeName valueType,
-                                    ClassName bodyClass, String body, Runtime runtime) {
+                                    ClassName bodyClass, String body, Runtime runtime, Connection connection) {
         var parent = row.parent().orElseThrow();
         if (parent.key().isEmpty()) {
             throw new IllegalArgumentException(row.coordinate() + "'s parent, a row of "
@@ -241,7 +271,7 @@ public final class FrameEmitter {
             .add("($T<$T> keys, $T batch) -> {\n", SET, keyType, BATCH_ENV)
             .indent()
             .addStatement("$T first = ($T) batch.getKeyContextsList().get(0)", ENV, ENV)
-            .addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("first"))
+            .addStatement("$T dsl = $L", DSL_CONTEXT, childDsl(connection, runtime))
             // The body may throw what the call throws, checked or not; the loader's function may
             // not, so a throw becomes the batch's failed future, which the error routing below reads.
             .beginControlFlow("try")
@@ -256,8 +286,7 @@ public final class FrameEmitter {
             .add("$T<$T, $T> loader = env.getDataLoaderRegistry().computeIfAbsent(\n",
                 LOADER, keyType, valueType)
             .indent()
-            .add("$T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S,\n",
-                String.class, "/", "@" + row.declaringType())
+            .add("$L,\n", loaderName(row, connection))
             // Built with the request's options, where a consumer's batch size limit takes effect.
             .add("name -> $L);\n", LoaderConstruction.mapped(
                 batchLambda, "env", runtime.errorRouter()))
@@ -324,6 +353,33 @@ public final class FrameEmitter {
             ? CodeBlock.of("new $T.Success<>($L)", runtime.outcome(), value)
             : value;
         return CodeBlock.of("$T.<$T>newResult().data($L)$L.build()", RESULT, declared, data, handDown);
+    }
+
+    /**
+     * The name a child frame's loader is registered under: the field's path, and for a child
+     * inheriting its key the whole key handed down with it, so every batch runs on one key.
+     */
+    private static CodeBlock loaderName(FrameQuery.Row row, Connection connection) {
+        return connection instanceof Connection.Inherited inherited
+            ? CodeBlock.of("$T.handedDownLoaderName(env, $S)", inherited.ownedConnections(), row.declaringType())
+            : CodeBlock.of("$T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S",
+                String.class, "/", "@" + row.declaringType());
+    }
+
+    /**
+     * The jOOQ context a child frame's batch runs on, off its first environment: the request's own, the
+     * key its parent handed down, or the key with an empty tenant part.
+     */
+    private static CodeBlock childDsl(Connection connection, Runtime runtime) {
+        return switch (connection) {
+            case Connection.Request ignored -> runtime.dslContext().apply("first");
+            case Connection.Inherited inherited -> CodeBlock.of("$T.dslHandedDown(first)",
+                inherited.ownedConnections());
+            case Connection.Unscoped unscoped -> CodeBlock.of("$T.dslFor(first, new $T($T.empty()))",
+                unscoped.ownedConnections(), unscoped.connectionKey(), OPTIONAL);
+            case Connection.Routed routed -> throw new IllegalArgumentException(
+                "a child frame is not routed by its own slots");
+        };
     }
 
     /**

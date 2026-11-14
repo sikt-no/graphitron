@@ -27,8 +27,7 @@ import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 
 /**
- * The connection each root service call of a database-per-tenant graph runs on, as the store states
- * it: its outcome, its tenant part's answer to a call naming no tenant, the values the tenant is read
+ * The connection each producer of a database-per-tenant graph runs on, as the store states it: its outcome, its tenant part's answer to a call naming no tenant, the values the tenant is read
  * from and how each is read, and the producer's empty answer; one statement, the slots nested on their
  * call.
  */
@@ -36,8 +35,8 @@ public final class ConnectionQuery {
 
     private ConnectionQuery() {}
 
-    /** Which connection a call runs on, as {@code graphitron_occurrence_connection} spells it. */
-    public enum Outcome { ROUTED, REQUEST }
+    /** Which connection a producer runs on, as {@code graphitron_occurrence_connection} spells it. */
+    public enum Outcome { ROUTED, INHERIT, UNSCOPED }
 
     /** What a routed call naming no tenant gets, as its tenant part states it. */
     public enum WhenEmpty { UNREACHABLE, EMPTY, REFUSE }
@@ -84,7 +83,7 @@ public final class ConnectionQuery {
     private record RawSlot(List<String> names, Integer keyPosition, String typeId, String tablesClass,
                            String tableField, List<String> keyColumns) {}
 
-    /** The graph's root service calls' connections, by the occurrence making each. */
+    /** The graph's producers' connections, by the producer's occurrence. */
     public static Map<String, Row> read(StoreHandle store) {
         var c = GRAPHITRON_OCCURRENCE_CONNECTION;
         var p = GRAPHITRON_OCCURRENCE_CONNECTION_PART;
@@ -127,20 +126,19 @@ public final class ConnectionQuery {
             .where(k.GRAPH_NAME.eq(s.GRAPH_NAME), k.TYPE_NAME.eq(nodeType)));
         var slots = multiset(select(names, s.KEY_POSITION, typeId, tablesClass, tableField, keyColumns)
                 .from(s)
-                .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.CALL_COORDINATE.eq(c.COORDINATE), s.CALL.eq(c.CALL))
+                .where(s.GRAPH_NAME.eq(c.GRAPH_NAME), s.CALL_COORDINATE.eq(c.COORDINATE), s.CALL.eq("producer"))
                 .orderBy(s.SLOT))
             .convertFrom(rs2 -> rs2.map(Records.mapping(RawSlot::new)));
         return store.dsl()
             .select(c.COORDINATE, c.OUTCOME, p.WHEN_EMPTY, slots, e.EMPTY, rs.TABLES_CLASS_FQN, rt.JOOQ_NAME)
             .from(c)
-            .leftJoin(p).on(p.GRAPH_NAME.eq(c.GRAPH_NAME), p.COORDINATE.eq(c.COORDINATE), p.CALL.eq(c.CALL),
-                p.PART.eq("TENANT"))
+            .leftJoin(p).on(p.GRAPH_NAME.eq(c.GRAPH_NAME), p.COORDINATE.eq(c.COORDINATE), p.PART.eq("TENANT"))
             .leftJoin(e).on(e.GRAPH_NAME.eq(c.GRAPH_NAME), e.COORDINATE.eq(c.COORDINATE))
             .leftJoin(r).on(r.GRAPH_NAME.eq(e.GRAPH_NAME), r.COORDINATE.eq(e.COORDINATE))
             .leftJoin(rt).on(rt.SOURCE_NAME.eq(r.TABLE_SOURCE_NAME), rt.TABLE_SCHEMA.eq(r.TABLE_SCHEMA),
                 rt.TABLE_NAME.eq(r.TABLE_NAME))
             .leftJoin(rs).on(rs.SOURCE_NAME.eq(rt.SOURCE_NAME), rs.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA))
-            .where(c.GRAPH_NAME.eq(store.graphName()), c.CALL.eq("producer"))
+            .where(c.GRAPH_NAME.eq(store.graphName()))
             .orderBy(c.COORDINATE)
             .fetch(rec -> new Row(rec.value1(), Outcome.valueOf(rec.value2()),
                 Optional.ofNullable(rec.value3()).map(WhenEmpty::valueOf),
