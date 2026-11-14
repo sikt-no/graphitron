@@ -117,10 +117,8 @@ class LauncherOrderingClosureTest {
             OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = CapturedGraphs.open(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store.graph())
-                .generate();
-        }
+        result = CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
+                .generate());
         launchers = result.plan().launchers();
         projections = result.plan().projections();
     }

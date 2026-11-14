@@ -80,8 +80,10 @@ class ServiceOutboxRejectionPipelineTest {
             tmp, "ServiceOutboxRejectionPipelineTest", tmp,
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, testClassesRoot()
         ).withOutboxConfig(OutboxConfig.from("outbox", null, Map.of(), Map.of(), null));
-        try (var store = CapturedGraphs.open(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store.graph()).validate();
+        try {
+            CapturedGraphs.run(ctx, store -> {
+                new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).validate();
+            });
             return List.of();
         } catch (ValidationFailedException e) {
             return e.errors().stream().map(ValidationError::message).toList();

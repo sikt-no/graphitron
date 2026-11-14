@@ -392,10 +392,8 @@ class StoreEmittedFederationSchemaPipelineTest {
     /** Runs the generator over a store captured from {@code ctx} and parses the schema it wrote. */
     private static TypeDefinitionRegistry generate(RunContext ctx) throws IOException {
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = CapturedGraphs.open(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store.graph())
-                .generate();
-        }
+        result = CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
+                .generate());
         Path schema = result.emitted().stream()
             .filter(path -> path.getFileName().toString().equals("schema.graphqls"))
             .findFirst().orElseThrow();
@@ -405,9 +403,7 @@ class StoreEmittedFederationSchemaPipelineTest {
     /** The schema classes a run over {@code ctx} wrote, compiled with everything else it wrote. */
     private static SchemaClasses schemaClasses(RunContext ctx) {
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = CapturedGraphs.open(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store.graph()).generate();
-        }
+        result = CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate());
         var sources = result.emitted().stream()
             .filter(path -> path.getFileName().toString().endsWith(".java"))
             .toList();
@@ -444,10 +440,8 @@ class StoreEmittedFederationSchemaPipelineTest {
     /** The {@code shared-type-tags-narrowed} findings in the report the build assembles. */
     private static List<BuildWarning.LintFinding> narrowedFindings(RunContext ctx) {
         ValidationReport report;
-        try (var store = CapturedGraphs.open(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, store.graph())
-                .buildOutput().report();
-        }
+        report = CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
+                .buildOutput().report());
         return report.warnings().stream()
             .filter(BuildWarning.LintFinding.class::isInstance)
             .map(BuildWarning.LintFinding.class::cast)

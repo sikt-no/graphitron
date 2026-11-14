@@ -128,12 +128,10 @@ class LauncherRelationClosureTest {
             TestConfiguration.DEFAULT_JOOQ_PACKAGE,
             TestSchemaHelper.testClasspath().stream()
                 .map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
-        GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = CapturedGraphs.open(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store.graph())
-                .generate();
-            services = no.sikt.graphitron.emit.ServiceEmission.read(store.graph().handle());
-        }
+        var result = CapturedGraphs.read(ctx, store -> {
+            services = no.sikt.graphitron.emit.ServiceEmission.read(store.handle());
+            return new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate();
+        });
         walk = EmittedMethodClosure.walk(result.emittedUnits());
         launchers = result.plan().launchers();
         emittedUnits = result.emittedUnits();

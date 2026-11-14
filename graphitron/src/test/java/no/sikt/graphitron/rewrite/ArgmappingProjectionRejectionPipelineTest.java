@@ -505,10 +505,10 @@ class ArgmappingProjectionRejectionPipelineTest {
             DEFAULT_JOOQ_PACKAGE,
             classpathRoots
         );
-        try (var store = CapturedGraphs.open(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store.graph())
+        CapturedGraphs.run(ctx, store -> {
+            new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
                 .validate();
-        }
+        });
     }
 
     /**

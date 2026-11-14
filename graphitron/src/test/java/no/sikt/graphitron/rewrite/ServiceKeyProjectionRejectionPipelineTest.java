@@ -70,8 +70,10 @@ class ServiceKeyProjectionRejectionPipelineTest {
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             tmp, "ServiceKeyProjectionRejectionPipelineTest", tmp,
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE, testClassesRoot());
-        try (var store = CapturedGraphs.open(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store.graph()).validate();
+        try {
+            CapturedGraphs.run(ctx, store -> {
+                new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).validate();
+            });
             return List.of();
         } catch (ValidationFailedException e) {
             return e.errors().stream().map(ValidationError::message).toList();

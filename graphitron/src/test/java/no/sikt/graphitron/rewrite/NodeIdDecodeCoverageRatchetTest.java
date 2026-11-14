@@ -88,9 +88,11 @@ class NodeIdDecodeCoverageRatchetTest {
             tmp,
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE);
-        try (var store = CapturedGraphs.open(ctx)) {
-            var generator = new GraphQLRewriteGenerator(ctx, store.graph());
-            generator.validate();
+        try {
+            CapturedGraphs.run(ctx, store -> {
+                var generator = new GraphQLRewriteGenerator(ctx, store.handle(), store.schema());
+                generator.validate();
+            });
             return List.of();
         } catch (ValidationFailedException e) {
             return e.errors().stream().map(ValidationError::message).toList();

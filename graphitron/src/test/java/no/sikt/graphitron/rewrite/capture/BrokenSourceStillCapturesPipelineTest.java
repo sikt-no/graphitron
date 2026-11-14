@@ -61,8 +61,8 @@ class BrokenSourceStillCapturesPipelineTest {
 
         Path storeDir = Files.createDirectories(tmp.resolve("store"));
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(good), SchemaInput.file(broken)));
-        try (var store = CapturedGraphs.open(ctx)) {
-            assertThat(store.graph().store().dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Actor")))
+        try (var store = CapturedGraphs.own(ctx)) {
+            assertThat(store.store().dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Actor")))
                 .as("the clean reading the broken one meets")
                 .isOne();
         }
@@ -72,8 +72,8 @@ class BrokenSourceStillCapturesPipelineTest {
             strayTokenHere
             """);
         assertThatThrownBy(() -> {
-            try (var store = CapturedGraphs.open(ctx)) {
-                new GraphQLRewriteGenerator(ctx, store.graph()).validate();
+            try (var store = CapturedGraphs.own(ctx)) {
+                new GraphQLRewriteGenerator(ctx, store).validate();
             }
         })
             .as("the run fails at the capture, with the exception the mojo's catch arm handles")
@@ -107,8 +107,8 @@ class BrokenSourceStillCapturesPipelineTest {
         Path storeDir = Files.createDirectories(tmp.resolve("store"));
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(dangling)));
 
-        try (var store = CapturedGraphs.open(ctx)) {
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.graph()).validate())
+        try (var store = CapturedGraphs.own(ctx)) {
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
                 .as("an unassemblable schema still fails the run")
                 .isInstanceOf(RuntimeException.class);
         }
@@ -140,12 +140,12 @@ class BrokenSourceStillCapturesPipelineTest {
         Path storeDir = Files.createDirectories(tmp.resolve("store"));
         var ctx = context(tmp, storeDir, List.of(SchemaInput.file(links)));
 
-        try (var store = CapturedGraphs.open(ctx)) {
-            String recorded = store.graph().store().dsl().select(GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
+        try (var store = CapturedGraphs.own(ctx)) {
+            String recorded = store.store().dsl().select(GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
                 .from(GRAPHQL_SCHEMA_PROBLEM)
                 .where(GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE"))
                 .fetchSingle(GRAPHQL_SCHEMA_PROBLEM.MESSAGE);
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.graph()).validate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
                 .hasMessageContaining(recorded);
         }
     }

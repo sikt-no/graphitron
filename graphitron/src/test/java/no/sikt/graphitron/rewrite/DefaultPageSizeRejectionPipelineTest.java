@@ -94,9 +94,9 @@ class DefaultPageSizeRejectionPipelineTest {
         var ctx = context(tmp, FILM + """
             type Query { films: [Film!]! @asConnection(defaultFirstValue: 50) }
             """, OptionalInt.of(10));
-        try (var store = CapturedGraphs.open(ctx)) {
-            var rows = store.graph().store().dsl().selectFrom(DIAGNOSTIC)
-                .where(DIAGNOSTIC.GRAPH_NAME.eq(ctx.graphName()),
+        CapturedGraphs.run(ctx, store -> {
+            var rows = store.handle().dsl().selectFrom(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(store.handle().graphName()),
                     DIAGNOSTIC.LSP_CODE.eq("GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM"))
                 .fetch();
 
@@ -106,7 +106,7 @@ class DefaultPageSizeRejectionPipelineTest {
                 assertThat(row.getTypeName()).isEqualTo("Query");
                 assertThat(row.getFieldName()).isEqualTo("films");
             });
-        }
+        });
     }
 
     // ===== Helpers =====
@@ -114,9 +114,9 @@ class DefaultPageSizeRejectionPipelineTest {
     /** Runs the build-time validate pass over one SDL fixture, capture and detections included. */
     private static void validate(Path tmp, String sdl, OptionalInt max) throws IOException {
         var ctx = context(tmp, sdl, max);
-        try (var store = CapturedGraphs.open(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store.graph()).validate();
-        }
+        CapturedGraphs.run(ctx, store -> {
+            new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).validate();
+        });
     }
 
     private static RunContext context(Path tmp, String sdl, OptionalInt max) throws IOException {

@@ -90,9 +90,7 @@ class BuildOutputReportPipelineTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE
         );
-        try (var store = CapturedGraphs.open(ctx)) {
-            return new GraphQLRewriteGenerator(ctx, store.graph()).buildOutput().report();
-        }
+        return CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).buildOutput().report());
     }
 
     @Test
@@ -114,10 +112,8 @@ class BuildOutputReportPipelineTest {
             tmp, "BuildOutputReportPipelineTest", tmp, DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
 
         ValidationReport report;
-        try (var store = CapturedGraphs.open(ctx)) {
-            report = new GraphQLRewriteGenerator(ctx, store.graph())
-                .buildOutput().report();
-        }
+        report = CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
+                .buildOutput().report());
 
         var lintFinding = report.warnings().stream()
             .filter(w -> w instanceof BuildWarning.LintFinding lf

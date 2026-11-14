@@ -144,24 +144,27 @@ class RecordValidationPipelineTest {
 
     private static List<BuildWarning> validateOnly(Path tmp, String sdl, LintConfig lint, boolean dropGetter)
             throws IOException {
-        var run = context(tmp, sdl, lint);
-        try (var opened = CapturedGraphs.open(run)) {
-            if (dropGetter) {
-                dropDescriptionGetter(opened.graph());
-            }
-            return new GraphQLRewriteGenerator(run, opened.graph()).buildOutput().warnings();
-        }
+        return warnings(tmp, sdl, lint, dropGetter, generator -> generator.buildOutput().warnings());
     }
 
     private static List<BuildWarning> generating(Path tmp, String sdl, LintConfig lint, boolean dropGetter)
             throws IOException {
+        return warnings(tmp, sdl, lint, dropGetter, generator -> generator.runPass().output().warnings());
+    }
+
+    private static List<BuildWarning> warnings(Path tmp, String sdl, LintConfig lint, boolean dropGetter,
+            java.util.function.Function<GraphQLRewriteGenerator, List<BuildWarning>> pass) throws IOException {
         var run = context(tmp, sdl, lint);
-        try (var opened = CapturedGraphs.open(run)) {
-            if (dropGetter) {
-                dropDescriptionGetter(opened.graph());
+        if (dropGetter) {
+            // A store of its own, for now: the case deletes a catalog-wide row, which a shared store
+            // cannot take. A classpath fixture whose generated getter is renamed replaces it.
+            try (var opened = CapturedGraphs.own(run.withStoreDirectory(tmp.resolve("store")))) {
+                dropDescriptionGetter(opened);
+                return pass.apply(new GraphQLRewriteGenerator(run, opened));
             }
-            return new GraphQLRewriteGenerator(run, opened.graph()).runPass().output().warnings();
         }
+        return CapturedGraphs.read(run, opened ->
+            pass.apply(new GraphQLRewriteGenerator(run, opened.handle(), opened.schema())));
     }
 
     /** What a generator strategy renaming film.description's getter leaves: no accessor row. */

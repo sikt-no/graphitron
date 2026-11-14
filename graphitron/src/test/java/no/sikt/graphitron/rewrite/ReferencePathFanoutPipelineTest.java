@@ -203,8 +203,6 @@ class ReferencePathFanoutPipelineTest {
             DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lint);
         var run = store == null ? ctx : ctx.withStoreDirectory(store);
-        try (var opened = CapturedGraphs.open(run)) {
-            return new GraphQLRewriteGenerator(run, opened.graph()).buildOutput().report();
-        }
+        return CapturedGraphs.read(run, opened -> new GraphQLRewriteGenerator(run, opened.handle(), opened.schema()).buildOutput().report());
     }
 }

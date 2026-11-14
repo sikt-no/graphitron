@@ -51,10 +51,8 @@ class LintSuppressionPipelineTest {
             List.of(new SchemaInput(SchemaSource.file(schema), Optional.empty(), Optional.empty())),
             schema.getParent(), "LintSuppressionPipelineTest", schema.getParent(), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE
         ).withLintConfig(lintConfig).withDependencyVersions(versions);
-        try (var store = CapturedGraphs.open(ctx)) {
-            return new GraphQLRewriteGenerator(ctx, store.graph())
-                .buildOutput().report();
-        }
+        return CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
+                .buildOutput().report());
     }
 
     private static List<BuildWarning.LintFinding> lintFindings(ValidationReport report) {

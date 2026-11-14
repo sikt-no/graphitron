@@ -434,10 +434,8 @@ class IncrementalCompileHarnessTest {
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
 
         GraphQLRewriteGenerator.GenerationResult result;
-        try (var store = CapturedGraphs.open(ctx)) {
-            result = new GraphQLRewriteGenerator(ctx, store.graph())
-                .generate();
-        }
+        result = CapturedGraphs.read(ctx, store -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
+                .generate());
 
         // The model, from the same SDL the generator classified (plain untagged schema, so a direct
         // parse + buildBundle matches the generator's attributed pipeline). The plan rides the

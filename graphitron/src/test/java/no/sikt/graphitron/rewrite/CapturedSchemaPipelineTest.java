@@ -36,11 +36,15 @@ class CapturedSchemaPipelineTest {
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE,
             TestConfiguration.DEFAULT_JOOQ_PACKAGE);
 
-        try (var captured = CapturedGraphs.open(ctx)) {
-            Files.writeString(schema, "strayTokenHere");
-            assertThatCode(() -> new GraphQLRewriteGenerator(ctx, captured.graph()).validate())
+        CapturedGraphs.run(ctx, captured -> {
+            try {
+                Files.writeString(schema, "strayTokenHere");
+            } catch (java.io.IOException e) {
+                throw new java.io.UncheckedIOException(e);
+            }
+            assertThatCode(() -> new GraphQLRewriteGenerator(ctx, captured.handle(), captured.schema()).validate())
                 .as("the file no longer parses, and a generator reading it would throw")
                 .doesNotThrowAnyException();
-        }
+        });
     }
 }

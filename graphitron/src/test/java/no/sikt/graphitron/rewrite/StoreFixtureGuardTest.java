@@ -229,7 +229,7 @@ class StoreFixtureGuardTest {
             your own and its named arms say what each capture's inputs are.
 
               A whole generator run over a captured graph?
-                Take the graph from CapturedGraphs.open, a lease on a store the population owns.
+                Read the document's graph from FactGraphs, or CapturedGraphs.read while the schema is inline.
 
               The dev loop's own wiring, over rows only a pipeline run can produce?
                 Run a build. BuiltStore leaves its facts in a store on disk that outlives the run.

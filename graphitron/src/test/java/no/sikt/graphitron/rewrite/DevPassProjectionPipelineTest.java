@@ -92,10 +92,10 @@ class DevPassProjectionPipelineTest {
     @Test
     void runPass_producesEverythingBuildOutputAndGenerateProduce(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, CLEAN);
-        try (var store = CapturedGraphs.open(ctx)) {
-            var generated = new GraphQLRewriteGenerator(ctx, store.graph()).generate();
-            var reported = new GraphQLRewriteGenerator(ctx, store.graph()).buildOutput();
-            var pass = new GraphQLRewriteGenerator(ctx, store.graph()).runPass();
+        CapturedGraphs.run(ctx, store -> {
+            var generated = new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate();
+            var reported = new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).buildOutput();
+            var pass = new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).runPass();
 
             assertThat(pass.output().report().errors())
                 .as("no errors on either path, which is what makes the fixture the clean one")
@@ -126,14 +126,14 @@ class DevPassProjectionPipelineTest {
                 .extracting(no.sikt.graphitron.command.UnitRef::fqcn)
                 .as("projected from the same plan, so it names the units the run rendered")
                 .containsExactlyInAnyOrderElementsOf(generation.result().emittedUnits().keySet());
-        }
+        });
     }
 
     @Test
     void runPass_rejectedRound_reportsTheErrorsAndEmitsNothing(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, REJECTED);
-        try (var store = CapturedGraphs.open(ctx)) {
-            var pass = new GraphQLRewriteGenerator(ctx, store.graph()).runPass();
+        CapturedGraphs.run(ctx, store -> {
+            var pass = new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).runPass();
 
             assertThat(pass.output().report().errors())
                 .extracting(ValidationError::message)
@@ -146,37 +146,37 @@ class DevPassProjectionPipelineTest {
             assertThat(pass.generation())
                 .as("a rejected schema emits nothing, so there is no generation to compile")
                 .isEmpty();
+        });
 
-            // Nothing half-emitted: the rejection skips the plan, the renderers, the writer and the
-            // orphan sweep as one, rather than running some of them.
-            try (Stream<Path> tree = Files.walk(tmp)) {
-                assertThat(tree.filter(p -> p.toString().endsWith(".java")).toList())
-                    .as("a rejected round writes no source at all")
-                    .isEmpty();
-            }
+        // Nothing half-emitted: the rejection skips the plan, the renderers, the writer and the
+        // orphan sweep as one, rather than running some of them.
+        try (Stream<Path> tree = Files.walk(tmp)) {
+            assertThat(tree.filter(p -> p.toString().endsWith(".java")).toList())
+                .as("a rejected round writes no source at all")
+                .isEmpty();
         }
     }
 
     @Test
     void theBuildEntryPointsStillThrowTheListThePassReports(@TempDir Path tmp) throws IOException {
         var ctx = contextFor(tmp, REJECTED);
-        try (var store = CapturedGraphs.open(ctx)) {
-            var reportedErrors = new GraphQLRewriteGenerator(ctx, store.graph()).runPass()
+        CapturedGraphs.run(ctx, store -> {
+            var reportedErrors = new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).runPass()
                 .output().report().errors().stream().map(ValidationError::message).toList();
 
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.graph()).generate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate())
                 .as("generate() fails the build on the same errors the dev pass merely reports")
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                     .extracting(ValidationError::message)
                     .isEqualTo(reportedErrors));
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.graph()).validate())
+            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).validate())
                 .as("and so does validate(), which emits nothing either way")
                 .isInstanceOf(ValidationFailedException.class)
                 .satisfies(e -> assertThat(((ValidationFailedException) e).errors())
                     .extracting(ValidationError::message)
                     .isEqualTo(reportedErrors));
-        }
+        });
     }
 
     private static RunContext contextFor(Path tmp, String sdl) throws IOException {

@@ -118,9 +118,9 @@ public final class GenerateTestSchemas {
             SchemaRecipe.literalOver(inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
             null,
             null);
-        try (var captured = CapturedGraphs.open(ctx)) {
-            new GraphQLRewriteGenerator(ctx, captured.graph()).generate();
-        }
+        CapturedGraphs.run(ctx, captured -> {
+            new GraphQLRewriteGenerator(ctx, captured.handle(), captured.schema()).generate();
+        });
     }
 
     private static List<Path> filesIn(Path folder) throws IOException {

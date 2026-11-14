@@ -52,9 +52,9 @@ class SchemaParseExceptionPropagationTest {
         // The capture ends at the parse and throws there, so the run fails before generate() is
         // reached, with the exception the mojo's catch arm and the dev loop's parse report handle.
         Throwable thrown = catchThrowable(() -> {
-            try (var store = CapturedGraphs.open(ctx)) {
-                new GraphQLRewriteGenerator(ctx, store.graph()).generate();
-            }
+            CapturedGraphs.run(ctx, store -> {
+                new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate();
+            });
         });
 
         assertThat(thrown)

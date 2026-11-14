@@ -116,9 +116,7 @@ class MethodClosureOracleTest {
             TestConfiguration.DEFAULT_JOOQ_PACKAGE,
             TestSchemaHelper.testClasspath().stream()
                 .map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
-        try (var store = CapturedGraphs.open(ctx)) {
-            walk = EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx, store.graph()).generate().emittedUnits());
-        }
+        walk = CapturedGraphs.read(ctx, store -> EmittedMethodClosure.walk(new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate().emittedUnits()));
     }
 
     @Test

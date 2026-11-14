@@ -234,10 +234,10 @@ class UnlowerableOrderingRejectionPipelineTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE
         );
-        try (var store = CapturedGraphs.open(ctx)) {
-            new GraphQLRewriteGenerator(ctx, store.graph())
+        CapturedGraphs.run(ctx, store -> {
+            new GraphQLRewriteGenerator(ctx, store.handle(), store.schema())
                 .validate();
-        }
+        });
     }
 
     private static CatalogInput jooq() {

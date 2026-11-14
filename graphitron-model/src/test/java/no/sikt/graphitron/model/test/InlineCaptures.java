@@ -40,7 +40,7 @@ public final class InlineCaptures {
         + "|ownStore|ownStoreWith|ownStoreOfCatalog|ownStoreOfCatalogWith|ownLongLivedStoreOfCatalog"
         + "|ownStoreOfFiles|tagged|configured|ofRefusedSchema|withCapturedStore|capture|captured"
         + "|capturedInMemory|buildBundle|storeBackedPlan|storeBackedFetchers|withStoreOver|run"
-        + "|ofClasspath|ofOtherCatalog|withoutCatalog|ofCodeFixtures|ofSchema|open|own";
+        + "|ofClasspath|ofOtherCatalog|withoutCatalog|ofCodeFixtures|ofSchema|read|own";
 
     private static final Pattern THROUGH_A_FIXTURE =
         Pattern.compile("\\b(?:" + FIXTURES + ")\\.(?:held\\(\\)\\.)?(?:" + ARMS + ")\\s*\\(");

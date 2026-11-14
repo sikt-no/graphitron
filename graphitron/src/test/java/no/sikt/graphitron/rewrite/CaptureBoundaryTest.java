@@ -56,7 +56,7 @@ class CaptureBoundaryTest {
     void testsCaptureOnlyThroughTheModelsHarnesses() throws IOException {
         assertThat(scan(Path.of("src/test/java"), MIN_TEST_FILES))
             .as("take the store from FactGraphs, or a whole run's captured graph from "
-                + "CapturedGraphs.open; a test of what capture writes belongs in graphitron-model")
+                + "CapturedGraphs.read; a test of what capture writes belongs in graphitron-model")
             .isEmpty();
     }
 

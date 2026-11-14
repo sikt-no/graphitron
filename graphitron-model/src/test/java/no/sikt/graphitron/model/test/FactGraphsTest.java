@@ -178,12 +178,13 @@ class FactGraphsTest {
     }
 
     @Test
-    @DisplayName("an inline store holds the ballast graph, so an unscoped read meets rows not its own")
-    void inlineStoresHoldTheBallast() {
+    @DisplayName("an inline schema's store holds graphs not its own, so an unscoped read meets their rows")
+    void inlineStoresHoldOtherGraphs() {
         var graphs = FACTS.readInline("fixture", INLINE_SDL, null, graph -> graph.handle().dsl()
             .selectDistinct(GRAPHITRON_FIELD.GRAPH_NAME).from(GRAPHITRON_FIELD)
             .fetch(GRAPHITRON_FIELD.GRAPH_NAME));
-        assertThat(graphs).contains(FactGraphs.BALLAST).hasSizeGreaterThan(1);
+        assertThat(graphs).as("the ballast, or the documents and inline schemas captured before it")
+            .hasSizeGreaterThan(1);
     }
 
     @Test
@@ -195,14 +196,42 @@ class FactGraphsTest {
     }
 
     @Test
-    @DisplayName("inline schemas captured one after another over one catalog and classpath share one store")
-    void inlineSchemasShareTheThreadsStore() {
+    @DisplayName("inline schemas over one catalog and classpath boot no stores beyond the population's for it")
+    void inlineSchemasShareThePopulationsStores() {
         long before = FactGraphs.boots();
-        FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
-        long afterFirst = FactGraphs.boots();
-        FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
-        FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
-        assertThat(afterFirst - before).as("at most the first capture boots").isLessThanOrEqualTo(1);
-        assertThat(FactGraphs.boots()).as("later captures boot nothing").isEqualTo(afterFirst);
+        for (int i = 0; i < 3 * FactGraphs.SHARDS_PER_CATALOG; i++) {
+            FACTS.readInline("fixture", INLINE_SDL, null, graph -> null);
+        }
+        assertThat(FactGraphs.boots() - before).as("at most one boot per store of the key")
+            .isLessThanOrEqualTo(FactGraphs.SHARDS_PER_CATALOG);
+    }
+
+    @Test
+    @DisplayName("a store that stops answering is retired, and the next read gets a fresh one")
+    void aBrokenStoreIsRetired() {
+        // A classpath no other test captures over, so the store shut down here is this test's alone.
+        var classpath = List.of(ClasspathCorpus.jooqRuntime());
+        long before = FactGraphs.retired();
+        assertThatThrownBy(() -> FACTS.readInline("fixture", INLINE_SDL, null, classpath, graph -> {
+                FactGraphs.population().shutDownStoreOf(graph.handle().graphName());
+                return graph.handle().dsl().fetchCount(GRAPHITRON_FIELD);
+            }))
+            .isInstanceOf(RuntimeException.class);
+        assertThat(FactGraphs.retired()).as("the shut-down store").isEqualTo(before + 1);
+        for (int i = 0; i < 2; i++) {
+            int fields = FACTS.readInline("fixture", INLINE_SDL, null, classpath, graph -> graph.handle().dsl()
+                .fetchCount(GRAPHITRON_FIELD, GRAPHITRON_FIELD.GRAPH_NAME.eq(graph.handle().graphName())));
+            assertThat(fields).as("every read after it, in the store that replaced it").isPositive();
+        }
+    }
+
+    @Test
+    @DisplayName("a store that refuses one statement and still answers is kept")
+    void aRefusedStatementRetiresNothing() {
+        long before = FactGraphs.retired();
+        assertThatThrownBy(() -> FACTS.readInline("fixture", INLINE_SDL, null,
+                graph -> graph.handle().dsl().fetch("SELECT * FROM NO_SUCH_RELATION")))
+            .isInstanceOf(DataAccessException.class);
+        assertThat(FactGraphs.retired()).isEqualTo(before);
     }
 }
