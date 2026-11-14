@@ -359,6 +359,16 @@ primary key (xref:../../manual/how-to/map-types-to-tables.adoc#parents-own-row[t
 row]). Graphitron never infers the parent's row; an unwritten same-table path rides the
 self-referencing key or fails. The fix for a schema that meets the refusal is in the schema.
 
+Which connection a query runs on is decided by the tenant facts, never by `@splitQuery` (Alf,
+2026-11-14). A split splits a query and nothing else: the child runs on the connection key its
+producer hands down. At each occurrence the key is one of three things. It is inherited, which is
+the default. Or it is routed by a row's tenant column: where a followed foreign key lands on the
+tenant column under a parent that is not on that tenant, the store states a fan-out, and the child
+becomes a producer that groups its parents by the tenant they name and runs each group on that
+tenant's connection, whether or not the field is written `@splitQuery`. Or it is the default
+source, for a table no tenant column scopes. The author never writes a split to make routing work;
+the facts already say where a query fans out.
+
 '''
 
 == What the facts generate
