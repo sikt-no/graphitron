@@ -20542,7 +20542,7 @@ SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 
                     WHERE pk.source_name = t.table_source_name AND pk.table_schema = t.table_schema
                       AND pk.table_name = t.table_name)
 UNION ALL
-SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ORDER_INDEX_UNRESOLVED',
+SELECT DISTINCT r.graph_name, ra.source_name, ra.source_line, ra.source_column, 'ELEMENT_UNRESOLVED',
        COALESCE(oe.index_ref, ie.index_ref), 'occurrence-orderings'
   FROM graphitron_occurrence_order r
   LEFT JOIN graphitron_directive_application ra
@@ -20567,7 +20567,7 @@ SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_F
   FROM graphitron_ast_order_field_entry fe
  WHERE fe.shape = 'MALFORMED'
 UNION ALL
-SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_COLUMN_UNRESOLVED',
+SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'COLUMN_UNRESOLVED',
        fe.name_ref, 'occurrence-orderings'
   FROM graphitron_occurrence_sort_key k
   JOIN graphitron_occurrence_order r
@@ -24876,12 +24876,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @defaultOrder or @order writes other than exactly one of index, primaryKey: true and fields, so it does not say what to sort by: write one.'),
   ('ORDER_PRIMARY_KEY_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_PRIMARY_KEY_MISSING',
    'An ordering sorts by the primary key of a table that has none, so there is nothing to sort by: name the columns with fields, or an index.'),
-  ('ORDER_INDEX_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INDEX_UNRESOLVED',
-   'An ordering names an index the table the field reads does not have, so there are no columns to sort by: name one of its indexes, or its columns with fields.'),
   ('ORDER_FIELD_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELD_SHAPE',
    'A fields element of an ordering writes neither or both of name and method, or a path beside a method, so it names no one key: write a name, optionally with a path, or a method.'),
-  ('ORDER_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_COLUMN_UNRESOLVED',
-   'A fields element of an ordering names no one column of the table the field reads, under its SQL name or the one jOOQ generates, so there is nothing to sort by: the name is misspelt, or the column lives on another table, which a path reaches.'),
   ('ORDER_VALUE_UNORDERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_VALUE_UNORDERED',
    'A value of the enum an @orderBy argument picks its order by carries neither @order nor @index, so a client choosing it asks for an order that says nothing: give it @order.'),
   ('ORDER_CHOICE_ON_INLINE_LIST', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDER_CHOICE_ON_INLINE_LIST',
@@ -24921,7 +24917,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('REFERENCE_FOR_DUPLICATE_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_REFERENCE_FOR_DUPLICATE_TYPE',
    'Two @referenceFor applications on one field name the same type, and only the first one written is used.'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
-   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all; a root field''s leading @routine naming no routine is the same name claimed in vain, and the field calls nothing.'),
+   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all; a root field''s leading @routine naming no routine is the same name claimed in vain, and the field calls nothing; and an ordering''s index the table the field reads does not have, named in the detail, leaves nothing to sort by.'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
    'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.'),
   ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',
@@ -25105,7 +25101,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('KEY_FIELD_NOT_A_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_FIELD_NOT_A_COLUMN',
    'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
-   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, so there is nothing to select or write: the name is misspelt, or the column lives on another table.'),
+   'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, or an ordering''s fields element names one, so there is nothing to select, write or sort by: the name is misspelt, or the column lives on another table.'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
    'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',

@@ -222,12 +222,12 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 [#ordering-refusals]
 === An ordering that says nothing to sort by
 
-*What it says.* One of eight codes, at the `@defaultOrder`, `@order`, `@orderBy` or `fields` element written, or at the list field:
+*What it says.* One of these codes, at the `@defaultOrder`, `@order`, `@orderBy` or `fields` element written, or at the list field:
 
 * `ORDER_SURFACES`: the application writes other than exactly one of `index`, `primaryKey: true` and `fields`.
 * `ORDER_PRIMARY_KEY_MISSING`: `primaryKey: true` over a table with no primary key, named in the detail.
-* `ORDER_INDEX_UNRESOLVED`: an `index` the table does not have, named in the detail.
-* `ORDER_COLUMN_UNRESOLVED`: a `fields` element's `name` matching no one column of the table, named in the detail.
+* `ELEMENT_UNRESOLVED`: an `index` the table does not have, named in the detail, the code every name claimed in vain draws.
+* `COLUMN_UNRESOLVED`: a `fields` element's `name` matching no one column of the table, named in the detail, the code a field reading a missing column draws.
 * `ORDER_FIELD_SHAPE`: a `fields` element writing neither or both of `name` and `method`, or a `path` beside a `method`.
 * `ORDER_VALUE_UNORDERED`: a value of an xref:directives/orderBy.adoc[`@orderBy`] argument's sort enum with neither `@order` nor `@index`.
 * `ORDER_CHOICE_ON_INLINE_LIST`: an `@orderBy` argument on a list read inside its parent's query, where a client's choice of order is not applied yet. A deferral, not a fault in the schema: read the list with `@splitQuery`, or order it with `@defaultOrder`.

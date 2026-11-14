@@ -67,8 +67,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   18,          LIST_ORDER_UNDETERMINED,     public.role_assignment
   19,          ORDER_PRIMARY_KEY_MISSING,   public.role_assignment
   27,          ORDER_SURFACES,
-  29,          ORDER_INDEX_UNRESOLVED,      idx_no_such_index
-  31,          ORDER_COLUMN_UNRESOLVED,     no_such_column
+  29,          ELEMENT_UNRESOLVED,          idx_no_such_index
+  31,          COLUMN_UNRESOLVED,           no_such_column
   33,          ORDER_FIELD_SHAPE,
   35,          ORDER_CHOICE_ON_INLINE_LIST,
   46,          ORDER_VALUE_UNORDERED,
