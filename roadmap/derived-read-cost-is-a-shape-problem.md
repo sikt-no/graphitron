@@ -829,15 +829,18 @@ static method needs no holder.
     `aSurvivingInputLeafNarrowsTheRoutineResult`), and the store's row is meant as that filter,
     the bound leaves being no filter term; the flip's run of that test is what confirms it.
     An authored call on a node id's table and one taking its key as a tuple or a projected column are
-    emitted, and the record-or-tuple rule holds at a `@condition` (Alf, 2026-11-14), so a one-column
-    key is projected with `argMapping` there: the walk refuses the node's record for it, a walk-only
-    refusal the flip lifts. ConditionQuery still resolves a decode through `NodeIdDecodeQuery`, a
-    query other emitters read, rather than stating it in its own query. What is left:
-    `AUTHORED_NODE_ID` on `stockByLanguageOverride`, an override whose node id reaches neither
-    participant's table by any path; `NODE_ID`, a generated term on a converter-backed or composite
-    key, waiting on `NodeIdDecodeQuery` resolving a decode for it; and `NODE_ID_PARTICIPANT`, whose
-    ids are dispatched by the type id each carries, each to the participant whose type it names, an id
-    naming no participant a client error (`code-generation-triggers.adoc`, Alf 2026-11-14).
+    emitted. ConditionQuery still resolves a decode through `NodeIdDecodeQuery`, a query other emitters
+    read, rather than stating it in its own query. What is left: `AUTHORED_NODE_ID` where a one-column
+    key goes whole to a parameter of the column's type (`customersByAddressDistrict` and its siblings,
+    `stockByLanguageOverride`, whose node id also reaches neither participant's table by any path);
+    `NODE_ID`, a generated term on a converter-backed or composite key, waiting on `NodeIdDecodeQuery`
+    resolving a decode for it; and `NODE_ID_PARTICIPANT`, whose ids are dispatched by the type id each
+    carries, each to the participant whose type it names, an id naming no participant a client error
+    (`code-generation-triggers.adoc`, Alf 2026-11-14). The record-or-tuple rule at a `@condition` (Alf,
+    2026-11-14) waits on branch `wip/r876-condition-arity-at-flip` and ships when the walk no longer
+    renders conditions: a `@condition` on a `@nodeId` input field projecting its own key column is
+    the walk's deferral, which the store emits, so refusing the whole key before then leaves that
+    site, tilgangsstyring's `miljoer` among them, no shape that generates.
     * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
