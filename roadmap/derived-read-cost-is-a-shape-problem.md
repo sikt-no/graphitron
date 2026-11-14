@@ -841,6 +841,11 @@ static method needs no holder.
     Every reason closes before the flip, which keeps no fallback to the classified model per
     occurrence (principles review at take-up, 2026-11-12); before it, the census's `CONSUMED` and
     `NOTHING` fields are checked against the old glue for a filter it emits today.
+    `Query.actorFilmsFiltered` joined the emitted conditions once a root routine's result was a
+    binding: the walk binds `actorRef` and `minLength` to `films_for_actor`'s call and puts `title`
+    in the WHERE clause as an equality on the result (`RoutineFieldExecutionTest`
+    `aSurvivingInputLeafNarrowsTheRoutineResult`), and the store's row is meant as that filter,
+    the bound leaves being no filter term; the flip's run of that test is what confirms it.
     The node-id reasons wait on three things. `AUTHORED_NODE_ID` waits on the record-or-tuple rule
     holding at a `@condition` as at a `@service` (`defects-as-facts.adoc`, Alf 2026-11-12, applied to
     `@condition` first, Alf 2026-11-13): a parameter of the sole key column's type draws
