@@ -19802,23 +19802,6 @@ SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_
           COALESCE(r.source_column, da.source_column), d.code;
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
-CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
--- An input-field occurrence read per element of a list a filter compares: its field reads, looks up
--- or counts rows, and its argument is not a @lookupKey, whose fields are the lookup's key.
-WITH element (graph_name, coordinate, element_coordinate) AS (
-  SELECT DISTINCT o.graph_name, o.coordinate, o.element_coordinate
-    FROM graphitron_occurrence_list_element le
-    JOIN graphitron_occurrence o ON o.graph_name = le.graph_name AND o.coordinate = le.coordinate
-    JOIN graphitron_occurrence_producer fp
-      ON fp.graph_name = o.graph_name AND fp.coordinate = o.field_coordinate
-     AND fp.kind IN ('SELECT', 'LOOKUP', 'COUNT')
-    JOIN graphitron_occurrence ao ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application k
-                      WHERE k.graph_name = ao.graph_name AND k.coordinate = ao.element_coordinate
-                        AND k.directive_name = 'lookupKey')
-)
--- It carries @condition, whose value would be read through the list as one object.
-SELECT e.graph_name, e.coordinate, 'LIST_ELEMENT_CONDITION'
 -- The column a node id's key position is carried back to on the table its path departs: where the
 -- path to the node's table is one foreign-key step, the departing table's column paired with the key
 -- column. A filter or a lookup on that table then reads its own column rather than joining the
