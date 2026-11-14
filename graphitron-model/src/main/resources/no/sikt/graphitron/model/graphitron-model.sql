@@ -11624,6 +11624,64 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.table_name IS 'the node''s table
 COMMENT ON COLUMN graphitron_occurrence_node_id.column_name IS 'the key column at this position, on the node''s table';
 COMMENT ON COLUMN graphitron_occurrence_node_id.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The column a node id's key position is carried back to on the table its path departs: where the
+-- path to the node's table is one foreign-key step, the departing table's column paired with the key
+-- column. A filter or a lookup on that table then reads its own column rather than joining the
+-- node's table. A path of several steps, one whose foreign key does not pair the key column, or
+-- paths to several types pairing it with different columns, carry nothing back, and state no row.
+CREATE VIEW graphitron_occurrence_node_id_carried_rule
+  (graph_name, coordinate, bound, position, table_source_name, table_schema, table_name, column_name) AS
+SELECT n.graph_name, n.coordinate, n.bound, n.position, MIN(sc.from_source_name), MIN(sc.from_schema),
+       MIN(sc.from_table), MIN(sc.from_column)
+  FROM graphitron_occurrence_node_id n
+  JOIN graphitron_join_path_step_column sc
+    ON sc.graph_name = n.graph_name AND sc.coordinate = n.coordinate AND sc.position = 0
+   AND sc.to_source_name = n.table_source_name AND sc.to_schema = n.table_schema
+   AND sc.to_table = n.table_name AND sc.to_column = n.column_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s
+                    WHERE s.graph_name = sc.graph_name AND s.coordinate = sc.coordinate
+                      AND s.target_type = sc.target_type AND s.position > 0)
+ GROUP BY n.graph_name, n.coordinate, n.bound, n.position
+HAVING COUNT(DISTINCT sc.from_source_name || '.' || sc.from_schema || '.' || sc.from_table || '.'
+                      || sc.from_column) = 1;
+COMMENT ON VIEW graphitron_occurrence_node_id_carried_rule IS 'One row the carried key rule computes, in the shape graphitron_occurrence_node_id_carried stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_node_id_carried, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.position';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.column_name';
+
+CREATE TABLE graphitron_occurrence_node_id_carried (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  position          INT       NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, position),
+  FOREIGN KEY (graph_name, coordinate, bound, position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_node_id_carried IS 'The column a node id''s key position is carried back to on the table its path departs: one row per node id occurrence, node table and key position whose one foreign-key step pairs it. For example Query.customersByKey(key.store:), a Store id under a customer list, carries the store key at position 0 back to the customer table''s own foreign-key column.';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.coordinate IS 'the occurrence carrying the id';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.bound IS 'the node''s table, as the node id binding spells it';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.position IS 'the key position, graphitron_occurrence_node_id''s; with the three columns above a reference into it, so the carried column goes with the key column it was paired with';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_source_name IS 'the catalog source of the departing table';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_schema IS 'the departing table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_name IS 'the table the path departs, whose foreign key reaches the node''s table';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.column_name IS 'the departing table''s column the foreign key pairs with the key column at this position';
+COMMENT ON COLUMN graphitron_occurrence_node_id_carried.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+
 -- The key column a written argMapping path projects out of a node id: a path descending onto a
 -- @nodeId slot, or naming a column past it, hands the parameter one key column, named where it is
 -- written and else the node's one column; one stopping on the slot hands it the whole decoded key.
@@ -13099,26 +13157,18 @@ COMMENT ON VIEW graphitron_occurrence_node_id_slot_projection_rule IS 'The key c
 CREATE VIEW graphitron_occurrence_node_id_slot_record_column_rule
   (graph_name, coordinate, class_name, bound, key_position, column_source_name, column_schema,
    column_table, column_name) AS
--- Carried back by a path of one step from the record's table to the node's: the pair reaching the
--- key column names the record column. A longer path lands nothing.
-SELECT DISTINCT sr.graph_name, sr.coordinate, sr.class_name, n.bound, n.position,
-       bc.record_source_name, bc.record_schema, bc.record_table, pc.from_column
+-- Carried back to the record's table: the column the node id's one-step path pairs with the key
+-- column, as graphitron_occurrence_node_id_carried states it. A longer path carries nothing.
+SELECT sr.graph_name, sr.coordinate, sr.class_name, c.bound, c.position,
+       bc.record_source_name, bc.record_schema, bc.record_table, c.column_name
   FROM graphitron_occurrence_node_id_slot_record sr
   JOIN graphitron_occurrence_built_class bc
     ON bc.graph_name = sr.graph_name AND bc.coordinate = sr.parent_coordinate
    AND bc.class_name = sr.class_name
-  JOIN graphitron_occurrence_node_id n ON n.graph_name = sr.graph_name AND n.coordinate = sr.coordinate
-  JOIN graphitron_join_path_step st
-    ON st.graph_name = sr.graph_name AND st.coordinate = sr.coordinate AND st.position = 0
-   AND st.from_source_name = bc.record_source_name AND st.from_schema = bc.record_schema
-   AND st.from_table = bc.record_table AND st.to_source_name = n.table_source_name
-   AND st.to_schema = n.table_schema AND st.to_table = n.table_name
-  JOIN graphitron_join_path_step_column pc
-    ON pc.graph_name = st.graph_name AND pc.coordinate = st.coordinate
-   AND pc.target_type = st.target_type AND pc.position = 0 AND pc.to_column = n.column_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s1
-                    WHERE s1.graph_name = st.graph_name AND s1.coordinate = st.coordinate
-                      AND s1.target_type = st.target_type AND s1.position = 1)
+  JOIN graphitron_occurrence_node_id_carried c
+    ON c.graph_name = sr.graph_name AND c.coordinate = sr.coordinate
+   AND c.table_source_name = bc.record_source_name AND c.table_schema = bc.record_schema
+   AND c.table_name = bc.record_table
 UNION ALL
 -- A record of the node's own table, with no path from it: the key's own columns.
 SELECT sr.graph_name, sr.coordinate, sr.class_name, n.bound, n.position,
@@ -19801,63 +19851,6 @@ SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_
  GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
           COALESCE(r.source_column, da.source_column), d.code;
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
-
--- The column a node id's key position is carried back to on the table its path departs: where the
--- path to the node's table is one foreign-key step, the departing table's column paired with the key
--- column. A filter or a lookup on that table then reads its own column rather than joining the
--- node's table. A path of several steps, one whose foreign key does not pair the key column, or
--- paths to several types pairing it with different columns, carry nothing back, and state no row.
-CREATE VIEW graphitron_occurrence_node_id_carried_rule
-  (graph_name, coordinate, bound, position, table_source_name, table_schema, table_name, column_name) AS
-SELECT n.graph_name, n.coordinate, n.bound, n.position, MIN(sc.from_source_name), MIN(sc.from_schema),
-       MIN(sc.from_table), MIN(sc.from_column)
-  FROM graphitron_occurrence_node_id n
-  JOIN graphitron_join_path_step_column sc
-    ON sc.graph_name = n.graph_name AND sc.coordinate = n.coordinate AND sc.position = 0
-   AND sc.to_source_name = n.table_source_name AND sc.to_schema = n.table_schema
-   AND sc.to_table = n.table_name AND sc.to_column = n.column_name
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s
-                    WHERE s.graph_name = sc.graph_name AND s.coordinate = sc.coordinate
-                      AND s.target_type = sc.target_type AND s.position > 0)
- GROUP BY n.graph_name, n.coordinate, n.bound, n.position
-HAVING COUNT(DISTINCT sc.from_source_name || '.' || sc.from_schema || '.' || sc.from_table || '.'
-                      || sc.from_column) = 1;
-COMMENT ON VIEW graphitron_occurrence_node_id_carried_rule IS 'One row the carried key rule computes, in the shape graphitron_occurrence_node_id_carried stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_node_id_carried, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.bound';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.position';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.table_name';
--- COMMENT ON COLUMN graphitron_occurrence_node_id_carried_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_occurrence_node_id_carried.column_name';
-
-CREATE TABLE graphitron_occurrence_node_id_carried (
-  graph_name        VARCHAR   NOT NULL,
-  coordinate        VARCHAR   NOT NULL,
-  bound             VARCHAR   NOT NULL,
-  position          INT       NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  column_name       VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, bound, position),
-  FOREIGN KEY (graph_name, coordinate, bound, position)
-    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE,
-  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_occurrence_node_id_carried IS 'The column a node id''s key position is carried back to on the table its path departs: one row per node id occurrence, node table and key position whose one foreign-key step pairs it. For example Query.customersByKey(key.store:), a Store id under a customer list, carries the store key at position 0 back to the customer table''s own foreign-key column.';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.coordinate IS 'the occurrence carrying the id';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.bound IS 'the node''s table, as the node id binding spells it';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.position IS 'the key position, graphitron_occurrence_node_id''s; with the three columns above a reference into it, so the carried column goes with the key column it was paired with';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_source_name IS 'the catalog source of the departing table';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_schema IS 'the departing table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.table_name IS 'the table the path departs, whose foreign key reaches the node''s table';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.column_name IS 'the departing table''s column the foreign key pairs with the key column at this position';
-COMMENT ON COLUMN graphitron_occurrence_node_id_carried.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
 -- input object one takes, that binds a column or a node id of the table the list reads; and an input
