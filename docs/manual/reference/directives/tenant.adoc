@@ -45,6 +45,15 @@ The build rejects the marker where it decides nothing, naming each field that re
 
 A field marked xref:globalData.adoc[`@globalData`] whose arguments carry a `@tenant` value is rejected too: the value names a tenant, which contradicts the statement that the data is global.
 
+== `$tenant` says the same
+
+The service's `argMapping` names the same value with `$tenant: <path>`, which is the preferred form, this directive being due for removal;
+see xref:service.adoc#arg-mapping[`@service`]. Where both are written for one call they must name the
+same value: a `$tenant` pair and a `@tenant` on another argument or input field are refused as
+`TENANT_NAMED_TWICE`, since nothing says which tenant the call runs on. A value whose GraphQL type
+does not arrive as the tenant key's Java type is refused as `TENANT_VALUE_TYPE_DISAGREES`, whichever
+way it is named.
+
 See xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping] for the other ways a service names its tenant.
 
 xref:index.adoc[← Directives index]
