@@ -829,7 +829,10 @@ static method needs no holder.
     `aSurvivingInputLeafNarrowsTheRoutineResult`), and the store's row is meant as that filter,
     the bound leaves being no filter term; the flip's run of that test is what confirms it.
     An authored call on a node id's table and one taking its key as a tuple or a projected column are
-    emitted, and the record-or-tuple rule holds at a `@condition` (Alf, 2026-11-14). What is left:
+    emitted, and the record-or-tuple rule holds at a `@condition` (Alf, 2026-11-14), so a one-column
+    key is projected with `argMapping` there: the walk refuses the node's record for it, a walk-only
+    refusal the flip lifts. ConditionQuery still resolves a decode through `NodeIdDecodeQuery`, a
+    query other emitters read, rather than stating it in its own query. What is left:
     `AUTHORED_NODE_ID` on `stockByLanguageOverride`, an override whose node id reaches neither
     participant's table by any path; `NODE_ID`, a generated term on a converter-backed or composite
     key, waiting on `NodeIdDecodeQuery` resolving a decode for it; and `NODE_ID_PARTICIPANT`, whose
