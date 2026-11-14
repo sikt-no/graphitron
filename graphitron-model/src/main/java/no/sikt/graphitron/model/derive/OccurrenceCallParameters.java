@@ -186,7 +186,7 @@ public final class OccurrenceCallParameters {
         var r = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER_RULE;
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline(PARAMETER), val(touchedAt, b.TOUCHED_AT))
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.CALL_KIND.eq(callKind)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
@@ -197,7 +197,7 @@ public final class OccurrenceCallParameters {
             .columns(p.GRAPH_NAME, p.COORDINATE, p.CALL_COORDINATE, p.CALL, p.POSITION, p.CALL_KIND, p.FILL,
                 p.KIND, p.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL_COORDINATE, r.CALL, r.POSITION, r.CALL_KIND,
-                    r.FILL, inline(PARAMETER), val(touchedAt, p.TOUCHED_AT))
+                    r.FILL, r.KIND, val(touchedAt, p.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.CALL_KIND.eq(callKind)))
             // The parameter's own key, every column of it inserted: the primary key's bound is

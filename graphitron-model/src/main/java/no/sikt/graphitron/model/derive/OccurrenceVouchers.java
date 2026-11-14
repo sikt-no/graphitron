@@ -8,7 +8,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_VOUCHER_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -32,7 +31,7 @@ public final class OccurrenceVouchers {
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("VOUCHER"), val(touchedAt, b.TOUCHED_AT))
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(r.GRAPH_NAME.eq(graph)))

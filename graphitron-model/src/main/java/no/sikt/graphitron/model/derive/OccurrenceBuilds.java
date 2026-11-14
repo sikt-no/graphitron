@@ -11,7 +11,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_MEMB
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.val;
 
@@ -98,7 +97,7 @@ public final class OccurrenceBuilds {
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("MEMBER"), val(touchedAt, b.TOUCHED_AT))
+                .selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(current))
@@ -110,7 +109,7 @@ public final class OccurrenceBuilds {
             .columns(m.GRAPH_NAME, m.COORDINATE, m.BOUND, m.KIND, m.PARENT_COORDINATE,
                 m.SLOT_SOURCE_NAME, m.SLOT_METHOD_NAME, m.SLOT_DESCRIPTOR, m.SLOT_POSITION, m.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("MEMBER"), r.PARENT_COORDINATE,
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, r.PARENT_COORDINATE,
                     r.SLOT_SOURCE_NAME, r.SLOT_METHOD_NAME, r.SLOT_DESCRIPTOR, r.SLOT_POSITION,
                     val(touchedAt, m.TOUCHED_AT))
                 .from(r)

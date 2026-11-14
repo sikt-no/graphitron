@@ -11308,11 +11308,12 @@ COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that 
 
 -- The member each occurrence with an object source reads, off its accessor path.
 CREATE VIEW graphitron_occurrence_value_rule
-  (graph_name, coordinate, bound, source_class, value_class, slot_source_name, slot_class_name,
+  (graph_name, coordinate, bound, kind, source_class, value_class, slot_source_name, slot_class_name,
    slot_method_name, slot_descriptor) AS
 SELECT a.graph_name, a.coordinate,
        CASE WHEN s.slot_method_name IS NULL THEN n.start_class
             ELSE n.start_class || '#' || s.slot_method_name END,
+       'VALUE',
        n.start_class, a.target_class_name, s.slot_source_name, s.slot_class_name,
        s.slot_method_name, s.slot_descriptor
   FROM graphitron_accessor_path a
@@ -11676,9 +11677,10 @@ COMMENT ON COLUMN graphitron_occurrence_column.touched_at IS 'the reading that l
 -- A voucher occurrence binds the voucher at the table its path lands on, the issuing type's own: its
 -- value is the voucher Graphitron computes from the members' columns, never a column it failed to
 -- find, so the column rule stands down for it and this rule binds it.
-CREATE VIEW graphitron_occurrence_voucher_rule (graph_name, coordinate, bound) AS
+CREATE VIEW graphitron_occurrence_voucher_rule (graph_name, coordinate, bound, kind) AS
 SELECT DISTINCT o.graph_name, o.coordinate,
-       COALESCE(jp.target_schema, n.landing_schema) || '.' || COALESCE(jp.target_table, n.landing_table)
+       COALESCE(jp.target_schema, n.landing_schema) || '.' || COALESCE(jp.target_table, n.landing_table),
+       'VOUCHER'
   FROM graphitron_occurrence o
   JOIN graphitron_binding_claim x
     ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'VOUCHER'
@@ -11692,6 +11694,7 @@ COMMENT ON VIEW graphitron_occurrence_voucher_rule IS 'One row the occurrence vo
 -- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.coordinate IS 'the voucher occurrence';
 -- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.bound IS 'the table it lands on, schema-qualified'
+-- COMMENT ON COLUMN graphitron_occurrence_voucher_rule.kind IS 'always VOUCHER, the binding''s kind'
 
 -- A scalar or enum occurrence that reads or binds a column, on each table its path lands on: the
 -- @field(name:) where one is claimed and the element's own name otherwise, folded by case, the SQL
@@ -11706,9 +11709,10 @@ COMMENT ON VIEW graphitron_occurrence_voucher_rule IS 'One row the occurrence vo
 -- graph into it. Which column a spelling reaches, and how many, is sql_column_spelling's, so this
 -- rule only joins it.
 CREATE VIEW graphitron_occurrence_column_rule
-  (graph_name, coordinate, bound, table_source_name, table_schema, table_name, column_name,
+  (graph_name, coordinate, bound, kind, table_source_name, table_schema, table_name, column_name,
    matched_by) AS
-SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_name, c.source_name,
+SELECT DISTINCT o.graph_name, o.coordinate, c.table_schema || '.' || c.table_name, 'COLUMN',
+       c.source_name,
        c.table_schema, c.table_name, c.column_name, c.matched_by
   FROM graphitron_occurrence o
   LEFT JOIN graphitron_field f
@@ -11766,6 +11770,7 @@ COMMENT ON VIEW graphitron_occurrence_column_rule IS 'One row the occurrence col
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.coordinate IS 'the scalar occurrence';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.bound IS 'the landing table, schema-qualified';
+-- COMMENT ON COLUMN graphitron_occurrence_column_rule.kind IS 'always COLUMN, the binding''s kind'
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_source_name IS 'the landing table''s catalog source';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_schema IS 'its schema';
 -- COMMENT ON COLUMN graphitron_occurrence_column_rule.table_name IS 'the landing table';
@@ -12404,8 +12409,8 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter.touched_at IS 'the readin
 -- parameter, read off the ARGUMENT fills. One occurrence may bind several parameters, of one call or
 -- of several, and a parameter is bound by one occurrence.
 CREATE VIEW graphitron_occurrence_binding_parameter_rule
-  (graph_name, coordinate, bound, call_coordinate, call, position, call_kind, fill) AS
-SELECT c.graph_name, c.landing_coordinate, c.coordinate || ' ' || c.call || ' ' || c.position,
+  (graph_name, coordinate, bound, kind, call_coordinate, call, position, call_kind, fill) AS
+SELECT c.graph_name, c.landing_coordinate, c.coordinate || ' ' || c.call || ' ' || c.position, 'PARAMETER',
        c.coordinate, c.call, c.position, c.call_kind, c.fill
   FROM graphitron_occurrence_call_parameter c
  WHERE c.fill = 'ARGUMENT';
@@ -12413,6 +12418,7 @@ COMMENT ON VIEW graphitron_occurrence_binding_parameter_rule IS 'One row the par
 -- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_binding.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.kind IS 'always PARAMETER, the binding''s kind'
 -- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.call_coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.call IS 'the call of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.call';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_parameter_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_binding_parameter.position';
@@ -13094,9 +13100,10 @@ COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id lands
 -- row says: the first of the class's members by that name, in the order code_write_slot keys them.
 -- A record's fields write columns, so a record's setters are no members here, however they are named.
 CREATE VIEW graphitron_occurrence_binding_member_rule
-  (graph_name, coordinate, bound, parent_coordinate, class_name, slot_source_name, slot_method_name,
+  (graph_name, coordinate, bound, kind, parent_coordinate, class_name, slot_source_name, slot_method_name,
    slot_descriptor, slot_position, parent_touched_at) AS
-SELECT o.graph_name, o.coordinate, pr.class_name || '#' || w.slot_name, o.parent_coordinate,
+SELECT o.graph_name, o.coordinate, pr.class_name || '#' || w.slot_name, 'MEMBER',
+       o.parent_coordinate,
        pr.class_name, w.source_name, w.method_name, w.descriptor, w.position, pr.touched_at
   FROM graphitron_occurrence o
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -13736,12 +13743,12 @@ COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the
 -- A slot whose needs reach several nodes decides only for a bare @nodeId on an argument, one node
 -- per table; anywhere else which node the id names is the defect's.
 CREATE VIEW graphitron_occurrence_node_id_rule
-  (graph_name, coordinate, bound, position, basis, node_type_name, table_source_name,
+  (graph_name, coordinate, bound, kind, position, basis, node_type_name, table_source_name,
    table_schema, table_name, column_name) AS
 -- One arm per rule, each joining the node's key columns itself and none wrapped in a WITH: H2 takes
 -- the writer's graph into every branch of a union, and into nothing a WITH computes first.
 -- @nodeId(typeName:) naming a node.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'EXPLICIT_TYPE_NAME', cl.named, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_occurrence o
@@ -13755,7 +13762,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.posi
 UNION ALL
 -- @nodeId(typeName:) naming an interface or union that is no node itself: each member that is,
 -- alone on its table among the members.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'EXPLICIT_TYPE_NAME', m.member_type_name, k.table_source_name, k.table_schema,
        k.table_name, k.column_name
   FROM graphitron_occurrence o
@@ -13783,7 +13790,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.posi
                       AND bt2.table_schema = bt.table_schema AND bt2.table_name = bt.table_name)
 UNION ALL
 -- A bare @nodeId on an output field with no @reference: its declaring type, a node.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'CONTAINING_NODE_TYPE', f.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_occurrence o
@@ -13800,7 +13807,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.posi
                       AND d.directive_name = 'reference')
 UNION ALL
 -- A bare @nodeId on an output field with a @reference: the one node over the table it lands on.
-SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_occurrence o
@@ -13823,7 +13830,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
 UNION ALL
 -- A node type's own id: ID with neither @nodeId nor @field written, where its table has no column
 -- of that name: the manual makes that collision an error, the SDL not having said which is meant.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'OWN_ID_FIELD', f.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_occurrence o
@@ -13845,7 +13852,7 @@ UNION ALL
 -- where they all reach that one node, as the generator reads a nested input whose participants
 -- agree, and for an argument, which the manual lets stand for any implementation, one node per
 -- table its needs land on.
-SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'TARGET_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_binding_claim cl
@@ -13887,7 +13894,7 @@ UNION ALL
 -- An argument's or input field's id: ID with neither @nodeId nor @field written, named for its
 -- target: the node its need reaches, on the terms above, all its needs reaching that one node, and
 -- only where that node's table has no column of the name, as the own id.
-SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'TARGET_ID_NAME', k.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_occurrence o
@@ -13933,7 +13940,7 @@ SELECT DISTINCT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_nam
 UNION ALL
 -- A write's ID return with neither @nodeId nor @field: the id of the one node over the table the
 -- write mutates, which is what the write hands back.
-SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, k.position,
+SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_ID', k.position,
        'WRITTEN_TABLE_NODE_TYPE', k.type_name, k.table_source_name, k.table_schema, k.table_name,
        k.column_name
   FROM graphitron_occurrence o
@@ -13952,6 +13959,7 @@ COMMENT ON VIEW graphitron_occurrence_node_id_rule IS 'One row the occurrence no
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.coordinate IS 'the occurrence carrying the id';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.bound IS 'the node''s table, schema-qualified';
+-- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.kind IS 'always NODE_ID, the binding''s kind'
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.position IS 'the key position';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.basis IS 'which rule decided the node type';
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.node_type_name IS 'the node type';
@@ -15983,7 +15991,7 @@ COMMENT ON COLUMN graphitron_occurrence_binding_tenant.bound IS 'the call spelle
 COMMENT ON COLUMN graphitron_occurrence_binding_tenant.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_binding_tenant_rule
-  (graph_name, coordinate, call_coordinate, call, origin, key_position) AS
+  (graph_name, coordinate, bound, kind, call_coordinate, call, origin, key_position) AS
 -- A $tenant pair of a @service's argMapping, where its path lands under the call's occurrence, and
 -- where it ends past a node id, the key position it names.
 WITH argmapping (graph_name, coordinate, call_coordinate, call, key_position) AS (
@@ -16021,13 +16029,15 @@ named_twice (graph_name, call_coordinate, call) AS (
       ON d.graph_name = a.graph_name AND d.call_coordinate = a.call_coordinate AND d.call = a.call
      AND d.coordinate <> a.coordinate
 )
-SELECT a.graph_name, a.coordinate, a.call_coordinate, a.call, 'ARGMAPPING', a.key_position
+SELECT a.graph_name, a.coordinate, a.call_coordinate || ' ' || a.call || ' tenant', 'TENANT',
+       a.call_coordinate, a.call, 'ARGMAPPING', a.key_position
   FROM argmapping a
  WHERE NOT EXISTS (SELECT 1 FROM named_twice t
                     WHERE t.graph_name = a.graph_name AND t.call_coordinate = a.call_coordinate
                       AND t.call = a.call)
 UNION ALL
-SELECT d.graph_name, d.coordinate, d.call_coordinate, d.call, 'DIRECTIVE', CAST(NULL AS INT)
+SELECT d.graph_name, d.coordinate, d.call_coordinate || ' ' || d.call || ' tenant', 'TENANT',
+       d.call_coordinate, d.call, 'DIRECTIVE', CAST(NULL AS INT)
   FROM directive d
  WHERE NOT EXISTS (SELECT 1 FROM named_twice t
                     WHERE t.graph_name = d.graph_name AND t.call_coordinate = d.call_coordinate
@@ -19078,7 +19088,7 @@ COMMENT ON VIEW graphitron_occurrence_route_entry_defect_rule IS 'One row the oc
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
 -- occurrence and table, beside the COLUMN and NODE_ID bindings that land on a table too.
 CREATE VIEW graphitron_occurrence_binding_table_rule
-  (graph_name, coordinate, bound, table_source_name, table_schema, table_name) AS
+  (graph_name, coordinate, bound, kind, table_source_name, table_schema, table_name) AS
 WITH landing (graph_name, coordinate, target_type, source_name, schema_name, table_name) AS (
   -- Where an occurrence's need lands: its join path's target where a path was walked, else the
   -- need's own landing, none where a written path stopped.
@@ -19089,7 +19099,7 @@ WITH landing (graph_name, coordinate, target_type, source_name, schema_name, tab
     LEFT JOIN graphitron_join_path jp
       ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
 )
-SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, source_name, schema_name,
+SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, 'TABLE', source_name, schema_name,
        table_name
   FROM (
     -- A field below a source whose values are a table's rows: each table-bound type it reaches, where
@@ -19162,6 +19172,7 @@ COMMENT ON VIEW graphitron_occurrence_binding_table_rule IS 'One row the table b
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.kind IS 'always TABLE, the binding''s kind'
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.table_source_name';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.table_schema';
 -- COMMENT ON COLUMN graphitron_occurrence_binding_table_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_binding_table.table_name';
@@ -19330,8 +19341,8 @@ COMMENT ON COLUMN graphitron_occurrence_condition.touched_at IS 'the reading tha
 -- An @externalField occurrence binds an expression at each table its values are rows of: the table
 -- its method takes, the parent's row for a field of a table-bound type and the nesting chain's
 -- anchor for a field of a nesting type under one. Which method computes it is the call's, below.
-CREATE VIEW graphitron_occurrence_expression_binding_rule (graph_name, coordinate, bound) AS
-SELECT DISTINCT o.graph_name, o.coordinate, st.table_schema || '.' || st.table_name
+CREATE VIEW graphitron_occurrence_expression_binding_rule (graph_name, coordinate, bound, kind) AS
+SELECT DISTINCT o.graph_name, o.coordinate, st.table_schema || '.' || st.table_name, 'EXPRESSION'
   FROM graphitron_occurrence o
   JOIN graphitron_binding_claim x
     ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
@@ -19342,6 +19353,7 @@ COMMENT ON VIEW graphitron_occurrence_expression_binding_rule IS 'One row the oc
 -- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.coordinate IS 'the @externalField occurrence';
 -- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.bound IS 'the table its values are rows of, schema-qualified';
+-- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.kind IS 'always EXPRESSION, the binding''s kind';
 
 -- The method an expression's call could be: the one its reference resolves to, where that method is
 -- one @externalField may name and its parameter fits the bound table, by code_method_parameter_table,

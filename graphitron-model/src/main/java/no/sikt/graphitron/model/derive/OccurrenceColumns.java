@@ -9,7 +9,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -35,7 +34,7 @@ public final class OccurrenceColumns {
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("COLUMN"), val(touchedAt, b.TOUCHED_AT))
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(r.GRAPH_NAME.eq(graph)))
@@ -47,7 +46,7 @@ public final class OccurrenceColumns {
             .columns(c.GRAPH_NAME, c.COORDINATE, c.BOUND, c.KIND, c.TABLE_SOURCE_NAME,
                 c.TABLE_SCHEMA, c.TABLE_NAME, c.COLUMN_NAME, c.MATCHED_BY, c.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("COLUMN"), r.TABLE_SOURCE_NAME,
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, r.TABLE_SOURCE_NAME,
                     r.TABLE_SCHEMA, r.TABLE_NAME, r.COLUMN_NAME, r.MATCHED_BY,
                     val(touchedAt, c.TOUCHED_AT))
                 .from(r)

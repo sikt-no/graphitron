@@ -18,7 +18,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT_RECORD_COLUMN_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -57,10 +56,9 @@ public final class OccurrenceTenants {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var t = GRAPHITRON_OCCURRENCE_BINDING_TENANT;
         var r = GRAPHITRON_OCCURRENCE_BINDING_TENANT_RULE;
-        Field<String> bound = r.CALL_COORDINATE.concat(" ").concat(r.CALL).concat(" tenant");
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, bound, inline(TENANT), val(touchedAt, b.TOUCHED_AT))
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
@@ -70,7 +68,7 @@ public final class OccurrenceTenants {
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.CALL_COORDINATE, t.CALL, t.KIND, t.ORIGIN, t.KEY_POSITION,
                 t.TOUCHED_AT)
-            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL_COORDINATE, r.CALL, inline(TENANT), r.ORIGIN,
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL_COORDINATE, r.CALL, r.KIND, r.ORIGIN,
                     r.KEY_POSITION, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))

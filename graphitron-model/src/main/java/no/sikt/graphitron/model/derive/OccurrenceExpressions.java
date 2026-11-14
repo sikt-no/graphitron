@@ -16,7 +16,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_EXPRESSION_B
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_EXPRESSION_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_EXPRESSION_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.noCondition;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.val;
@@ -46,7 +45,7 @@ public final class OccurrenceExpressions {
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
             .select(dsl
-                .select(br.GRAPH_NAME, br.COORDINATE, br.BOUND, inline("EXPRESSION"), val(touchedAt, b.TOUCHED_AT))
+                .select(br.GRAPH_NAME, br.COORDINATE, br.BOUND, br.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(br)
                 .join(o).on(o.GRAPH_NAME.eq(br.GRAPH_NAME), o.COORDINATE.eq(br.COORDINATE))
                 .where(br.GRAPH_NAME.eq(graph)))

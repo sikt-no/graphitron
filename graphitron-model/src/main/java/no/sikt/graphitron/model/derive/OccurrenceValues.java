@@ -8,7 +8,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_VALUE_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -33,7 +32,7 @@ public final class OccurrenceValues {
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline(VALUE), val(touchedAt, b.TOUCHED_AT))
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
             .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
@@ -45,7 +44,7 @@ public final class OccurrenceValues {
                 v.SLOT_SOURCE_NAME, v.SLOT_CLASS_NAME, v.SLOT_METHOD_NAME, v.SLOT_DESCRIPTOR,
                 v.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline(VALUE), r.SOURCE_CLASS,
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, r.SOURCE_CLASS,
                     r.VALUE_CLASS, r.SLOT_SOURCE_NAME, r.SLOT_CLASS_NAME, r.SLOT_METHOD_NAME,
                     r.SLOT_DESCRIPTOR, val(touchedAt, v.TOUCHED_AT))
                 .from(r)

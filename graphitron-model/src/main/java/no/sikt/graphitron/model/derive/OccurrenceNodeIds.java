@@ -9,7 +9,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_RULE;
 import static org.jooq.impl.DSL.excluded;
-import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -37,7 +36,7 @@ public final class OccurrenceNodeIds {
         dsl.insertInto(b)
             .columns(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND, b.TOUCHED_AT)
             .select(dsl
-                .selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline("NODE_ID"),
+                .selectDistinct(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND,
                     val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
@@ -51,7 +50,7 @@ public final class OccurrenceNodeIds {
                 n.NODE_TYPE_NAME, n.TABLE_SOURCE_NAME, n.TABLE_SCHEMA, n.TABLE_NAME, n.COLUMN_NAME,
                 n.TOUCHED_AT)
             .select(dsl
-                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.POSITION, inline("NODE_ID"),
+                .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.POSITION, r.KIND,
                     r.BASIS, r.NODE_TYPE_NAME, r.TABLE_SOURCE_NAME, r.TABLE_SCHEMA, r.TABLE_NAME,
                     r.COLUMN_NAME, val(touchedAt, n.TOUCHED_AT))
                 .from(r)
