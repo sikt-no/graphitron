@@ -253,6 +253,11 @@ but a join, at least for now: the field's producer is the lift that starts a que
 parent's key, as for `@splitQuery`, and the routine is a step on that query's path, first or after a
 table, its arguments stated on the step. Only a root `@routine` is a call.
 
+A call keeps its provenance, as every claim the store registers does (Alf, 2026-11-14): the
+directive application it came from is stored with it, so a reader that needs to know which
+directive made a call, a defect rule naming where to fix it among them, joins that application
+rather than working it out again from the call's kind.
+
 '''
 
 == Producer
