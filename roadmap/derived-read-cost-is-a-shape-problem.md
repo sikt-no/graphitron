@@ -1021,6 +1021,10 @@ static method needs no holder.
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
   other, which the connection hook decides (Alf, 2026-11-14).
+* **A tenant-routed build refuses a caller-supplied connection at the request** `open`, off the critical
+  path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
+  2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
+  than at whichever routed or unscoped field first acquires a key and finds no carrier.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child call takes the connection key its producer chain hands down". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
