@@ -16,6 +16,7 @@ import java.util.TreeSet;
 
 import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static no.sikt.graphitron.model.Tables.META_STAGE_WRITE;
+import static no.sikt.graphitron.model.Tables.META_STAGE_WRITE_KIND;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -77,6 +78,7 @@ class StageRosterGateTest {
     void aStagesRuleReadsNothingALaterStageWrites() {
         ThreadConfinedStore.run(dsl -> {
             var declared = declaredWrites(dsl);
+            var kinds = declaredKinds(dsl);
             var violations = new TreeSet<String>();
             for (var rule : EntryDefects.RULES) {
                 var stage = dsl.selectFrom(META_STAGE)
@@ -89,7 +91,9 @@ class StageRosterGateTest {
                 var reached = ViewReferences.tablesReachedBy(dsl, view);
                 for (String laterStage : later) {
                     for (String written : declared.getOrDefault(laterStage, Set.of())) {
-                        if (reached.contains(written)) {
+                        // A relation split between the two stages by a kind column is read in the
+                        // earlier stage's own kinds, which the later stage never writes.
+                        if (reached.contains(written) && !splitApart(kinds, rule.stage(), laterStage, written)) {
                             violations.add(view + " (" + rule.stage() + ") reads " + written
                                 + ", which " + laterStage + " writes after it");
                         }
@@ -101,6 +105,27 @@ class StageRosterGateTest {
                     + " rows: move the arm to the later stage, or the stage after it")
                 .isEmpty();
         });
+    }
+
+    /** Each stage's declared kinds of each relation it shares, keyed by stage and relation. */
+    private static Map<String, Set<String>> declaredKinds(DSLContext dsl) {
+        var out = new TreeMap<String, Set<String>>();
+        dsl.selectFrom(META_STAGE_WRITE_KIND).fetch().forEach(r -> out
+            .computeIfAbsent(r.getStageName() + " " + r.getRelationName().toLowerCase(Locale.ROOT),
+                k -> new TreeSet<>())
+            .add(r.getKind()));
+        return out;
+    }
+
+    /**
+     * Whether {@code earlier} and {@code later} write {@code relation} split by a kind column, each
+     * declaring kinds of it and none in common: the split the fact model allows (Alf, 2026-11-12).
+     */
+    private static boolean splitApart(Map<String, Set<String>> kinds, String earlier, String later,
+                                      String relation) {
+        var mine = kinds.get(earlier + " " + relation);
+        var theirs = kinds.get(later + " " + relation);
+        return mine != null && theirs != null && mine.stream().noneMatch(theirs::contains);
     }
 
     /** Each stage's declared writes, lower case. */

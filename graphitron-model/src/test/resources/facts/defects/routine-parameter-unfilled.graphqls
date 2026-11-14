@@ -26,10 +26,10 @@ type Query {
 }
 
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
-  code,                      coordinate
-  ROUTINE_PARAMETER_UNBOUND, Actor.filmsMisnamed
-  ROUTINE_PARAMETER_UNBOUND, Actor.filmsBareColumn
-  ROUTINE_PARAMETER_UNBOUND, Actor.filmsUnmapped
+  code,               coordinate,            detail
+  PARAMETER_UNFILLED, Actor.filmsMisnamed,   pActorId
+  PARAMETER_UNFILLED, Actor.filmsBareColumn, pActorId
+  PARAMETER_UNFILLED, Actor.filmsUnmapped,   pMinLength
   """)
 
 extend schema @expectEquals(relation: "graphitron_join_path_step_parameter", rows: """

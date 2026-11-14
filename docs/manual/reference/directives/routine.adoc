@@ -119,7 +119,7 @@ Every IN parameter of the routine takes its value from one place, named by the `
 * *A bare name is an argument of the field.* The value is the argument's, or the leaf a dot-path walks to inside it.
 * *`$source.<column>` is a column of the row the routine is applied to.* That is the enclosing type's row when the routine comes first in a child field's path, and the last hop's table after `@reference` hops. A column is matched by its SQL name, without regard to case. The call becomes correlated: SQL evaluates it once per row of that table, via `CROSS JOIN LATERAL`, inside the same statement that fetches the parent (the inline correlated multiset), so there is no per-row round trip. A column's Java type must be the parameter's.
 
-A bare name never binds a column, so adding a column to a table never changes what a call reads. A name that is no argument, or a `$source.<column>` naming no column of that table, leaves the parameter with no value, reported as `GRAPHITRON_ROUTINE_PARAMETER_UNBOUND` at the `@routine`. A root field has no such row, so `$source` is an error there and every parameter binds an argument.
+A bare name never binds a column, so adding a column to a table never changes what a call reads. A name that is no argument, or a `$source.<column>` naming no column of that table, leaves the parameter with no value, reported as `GRAPHITRON_PARAMETER_UNFILLED` at the `@routine`. A root field has no such row, so `$source` is an error there and every parameter binds an argument.
 
 [source,graphql]
 ----

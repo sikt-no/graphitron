@@ -726,8 +726,7 @@ static method needs no holder.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
-  * **`PARAMETER_MISMATCH` reads the stored `EXPRESSION` binding** `blocked`, on
-    "An unbound parameter is one code, raised where its bindings are, claimed by G", off the critical path.
+  * **`PARAMETER_MISMATCH` reads the stored `EXPRESSION` binding** `open`, off the critical path.
     Its rule repeats the join the binding is written from, since `StageRosterGateTest` refuses a
     rule reading `graphitron_occurrence_binding`, which later stages write other kinds of.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
@@ -1046,8 +1045,8 @@ static method needs no holder.
   a path and a JSON one to a selection set, so `payload: { filmId: $result.id, title: in.title }`
   builds the body and `aggregateid: $result.id` fills a routing column an author keeps. `type` takes
   the event unless bound. A key naming no column is the unresolved-name defect, and a `NOT NULL`
-  column with no default that nothing binds is an unbound parameter, as `ROUTINE_PARAMETER_UNBOUND`
-  is; the default check this replaces carries over as that.
+  column with no default that nothing binds is an unbound parameter, `PARAMETER_UNFILLED` as a
+  routine's is; the default check this replaces carries over as that.
   The grammar is one for every `argMapping`, a strict subset of Apollo Connectors' `JSONSelection`
   (`apollo-federation/src/connectors/json_selection/README.md` in `apollographql/router`), whose
   principle that a selection's output shape is static is the store's own: shorthand (`title`),
@@ -1206,13 +1205,6 @@ pass and no stratum that clears and recomputes.
       become a stored defect read off the routine's parameter bindings before the walk's routine
       path goes; a parameter nothing binds is `PARAMETER_UNFILLED`, raised where the root call's fills
       are.
-    * **An unbound parameter is one code, raised where its bindings are, claimed by G** `open`.
-      `PARAMETER_UNFILLED` is raised by the first stage holding each parameter list's bindings, a
-      service's and a root routine's at `occurrence-producers`, a child routine's step at
-      `occurrence-depths` and a condition's at `occurrence-bindings`, rather than at
-      `occurrence-depth-defects`, and
-      `ROUTINE_PARAMETER_UNBOUND` retires into it, a breaking change to the codes an editor filters by
-      (Alf, 2026-11-13).
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
       The walk's single-channel rules for the type a write, a routine or a service returns are no
       rule of the model: each field under the result is an occurrence with its own lift off its parent, so two
@@ -2707,7 +2699,7 @@ need a claim covers and walks to: the field's own `@referenceFor` naming the typ
 claim where it walks to the type, then exactly one inherited, and it is the rule for
 `graphitron_join_path_claimed`, written for the needs whose walk reaches the target. The walk's
 defects, `ROUTE_AMBIGUOUS`, `NO_ROUTE_FROM_DEPARTURE`, `ELEMENT_UNRESOLVED`,
-`ROUTINE_PARAMETER_UNBOUND`, `NO_ROUTE_TO_TARGET` for a walk ending off its target and the two
+`PARAMETER_UNFILLED`, `NO_ROUTE_TO_TARGET` for a walk ending off its target and the two
 condition-overload codes, moved to the new walk when it landed, raised at the written element, an
 inherited claim's being the interface's. A stopped need keeps the steps
 it took. A condition alone whose second parameter takes any table (`Table<?>`, `TableLike<?>`) says
@@ -2949,7 +2941,7 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   An `argMapping` entry binds a routine parameter to an argument, or with `$source.<column>` to a
   column of the row the routine is applied to: the enclosing type's row, or the table the preceding
   `@reference` reached. A bare name never binds a column. An entry that binds nothing draws
-  `ROUTINE_PARAMETER_UNBOUND`.
+  `PARAMETER_UNFILLED`.
 * **Removed: the MCP schema tool's `demand` slot** ("the demand relations go"). A tool reading it gets no slot; it
   restated directives the same entry shows.
 * **Changed: `graphitron:capture` never fails over a schema that parses** ("capture captures, and
@@ -3074,6 +3066,15 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 **A routed fetcher acquires by the connection key it built** (2026-11-14). The generated
 `TenantConnections.dslFor(env, tenantKey)`, which builds the key from its tenant part, goes when the
 walk's last routed site does; a store-emitted fetcher calls `dslFor(env, ConnectionKey)`.
+
+**An unbound parameter is one code, raised where its bindings are** (2026-11-14).
+`ROUTINE_PARAMETER_UNBOUND` is gone: a child routine step's parameter nothing binds is
+`PARAMETER_UNFILLED`, as a method's and a root `@routine`'s is, a breaking change to the codes an
+editor filters by. The view `graphitron_occurrence_call_parameter_defect` is a table each kind's
+stage writes from its own rule view, a service's and a root routine's at `occurrence-producers` and
+a condition's at `occurrence-bindings`, and `occurrence-depth-defects` raises no parameter code. A
+call states the directive application it came from, so no rule picks a field's first `@routine` by
+`MIN(ordinal)`; `meta_stage_write_kind` states the call relations' split by call kind.
 
 **A routine and a write state what they bind as call parameters** (2026-11-14). A write and a root
 `@routine` are calls whose arguments bind their parameters, and a child routine's step parameter

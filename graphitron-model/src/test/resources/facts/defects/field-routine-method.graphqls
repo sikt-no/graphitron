@@ -81,14 +81,15 @@ extend schema @assertAbsent(relation: "graphitron_spelled_table", rows: """
 
 # What stops the graph generating: a root field's first routine is its call, and films_for_actor's
 # parameters have no argument here, at Query.films and at Query.chained; the chain's second routine,
-# rent_film, departs from films_for_actor's result and finds no value there for its parameters; and
+# rent_film, departs from films_for_actor's result and finds no value there for its parameters, the
+# same code at its own @routine; and
 # the two names that resolve to nothing are each a name claimed that does not exist, at the @routine
 # that claims it.
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
-  code,                      coordinate
-  PARAMETER_UNFILLED,        Query.films
-  PARAMETER_UNFILLED,        Query.chained
-  ROUTINE_PARAMETER_UNBOUND, Query.chained
-  ELEMENT_UNRESOLVED,        Query.missing
-  ELEMENT_UNRESOLVED,        Query.notCallable
+  code,               coordinate
+  PARAMETER_UNFILLED, Query.films
+  PARAMETER_UNFILLED, Query.chained
+  PARAMETER_UNFILLED, Query.chained
+  ELEMENT_UNRESOLVED, Query.missing
+  ELEMENT_UNRESOLVED, Query.notCallable
   """)

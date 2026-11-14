@@ -548,6 +548,9 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_call_parameter_written", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_candidate", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_defect", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_service_parameter_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_routine_parameter_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_condition_parameter_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot", Arm.DERIVED);
         registrations.put("graphitron_occurrence_node_id_slot_parameter", Arm.DERIVED);
@@ -681,6 +684,7 @@ class RelationRegistrationGateTest {
         registrations.put("meta_relation", Arm.DERIVED);
         registrations.put("meta_stage", Arm.DERIVED);
         registrations.put("meta_stage_write", Arm.DERIVED);
+        registrations.put("meta_stage_write_kind", Arm.DERIVED);
         registrations.put("meta_stated_relation", Arm.DERIVED);
         // The lint vocabulary, on the meta_ rosters' terms: rows this file supplies, so there
         // is no gatherer whose reading could be compared against anything. What pins it is

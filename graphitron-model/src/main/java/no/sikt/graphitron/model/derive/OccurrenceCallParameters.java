@@ -17,7 +17,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_EXPRESSION_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_PARAMETER_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTINE_PARAMETER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SERVICE_PARAMETER_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_WRITE_PARAMETER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
@@ -56,6 +60,7 @@ public final class OccurrenceCallParameters {
         write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
         pairs(dsl, graph, touchedAt, "SERVICE");
         bindings(dsl, graph, touchedAt, "SERVICE");
+        defects(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_SERVICE_PARAMETER_DEFECT_RULE);
     }
 
     /**
@@ -135,6 +140,7 @@ public final class OccurrenceCallParameters {
             .execute();
         pairs(dsl, graph, touchedAt, "ROUTINE");
         bindings(dsl, graph, touchedAt, "ROUTINE");
+        defects(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_ROUTINE_PARAMETER_DEFECT_RULE);
     }
 
     /**
@@ -146,6 +152,7 @@ public final class OccurrenceCallParameters {
         write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_RULE);
         pairs(dsl, graph, touchedAt, "CONDITION");
         bindings(dsl, graph, touchedAt, "CONDITION");
+        defects(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CONDITION_PARAMETER_DEFECT_RULE);
     }
 
     /**
@@ -286,12 +293,41 @@ public final class OccurrenceCallParameters {
     }
 
     /**
+     * The parameters of one kind's calls that nothing binds, or two fills bind, read off {@code rule}
+     * once that kind's fills are written: the facts the stage's own defect rule raises them from.
+     */
+    private static void defects(DSLContext dsl, String graph, LocalDateTime touchedAt, Table<?> rule) {
+        var t = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_DEFECT;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.CALL_KIND, t.POSITION, t.PARAMETER_NAME, t.CODE,
+                t.TOUCHED_AT)
+            .select(dsl.select(rule.field("GRAPH_NAME", String.class), rule.field("COORDINATE", String.class),
+                    rule.field("CALL", String.class), rule.field("CALL_KIND", String.class),
+                    rule.field("POSITION", Integer.class), rule.field("PARAMETER_NAME", String.class),
+                    rule.field("CODE", String.class), val(touchedAt, t.TOUCHED_AT))
+                .from(rule)
+                .where(rule.field("GRAPH_NAME", String.class).eq(graph)))
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION, t.CODE)
+            .doUpdate()
+            .set(t.CALL_KIND, excluded(t.CALL_KIND))
+            .set(t.PARAMETER_NAME, excluded(t.PARAMETER_NAME))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /**
      * Deletes the fills of the calls of {@code callKind} this reading did not mark, their pairs first,
      * then the parameter bindings of those calls the reading did not mark. A {@code PARAMETER} binding
      * left with no parameter beneath it is stale whichever stage wrote it, the cascade having taken its
      * parameter.
      */
     public static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
+        var d = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_DEFECT;
+        dsl.deleteFrom(d)
+            .where(d.GRAPH_NAME.eq(graph))
+            .and(d.CALL_KIND.eq(callKind))
+            .and(d.TOUCHED_AT.ne(touchedAt))
+            .execute();
         var pair = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         dsl.deleteFrom(pair)

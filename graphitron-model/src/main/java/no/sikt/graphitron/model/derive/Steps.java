@@ -99,7 +99,7 @@ import static org.jooq.impl.DSL.when;
  * {@code ELEMENT_UNRESOLVED} for none, the first naming why where a condition alone takes any table
  * as its second parameter, {@code NO_ROUTE_TO_TARGET} where a walk takes every step and
  * ends off its target, {@code ELEMENT_UNRESOLVED} too at a root field's leading {@code @routine}
- * naming no routine, which no walk stands on, {@code ROUTINE_PARAMETER_UNBOUND}, and the two overload defects. Each row is marked with the
+ * naming no routine, which no walk stands on, {@code PARAMETER_UNFILLED}, and the two overload defects. Each row is marked with the
  * reading's instant as its depth is written, an overload defect's detail naming the pairs of every
  * depth; {@link EntryDefects#sweep} takes the rows of the gatherer's codes a reading did not mark.
  *
@@ -121,7 +121,7 @@ public final class Steps {
     private static final String NO_ROUTE_FROM_DEPARTURE = "NO_ROUTE_FROM_DEPARTURE";
     private static final String ELEMENT_UNRESOLVED = "ELEMENT_UNRESOLVED";
     private static final String NO_ROUTE_TO_TARGET = "NO_ROUTE_TO_TARGET";
-    private static final String ROUTINE_PARAMETER_UNBOUND = "ROUTINE_PARAMETER_UNBOUND";
+    private static final String PARAMETER_UNFILLED = "PARAMETER_UNFILLED";
 
     /** The stage raising the walk's defects, the one this runs in. */
     public static final String STAGE = "occurrence-depths";
@@ -129,7 +129,7 @@ public final class Steps {
     /** The {@code graphitron_entry_defect} codes this stage writes. */
     public static final List<String> ENTRY_DEFECT_CODES = List.of(NO_OVERLOAD_FOR_PAIR, OVERLOAD_TIE,
         ROUTE_AMBIGUOUS, NO_ROUTE_FROM_DEPARTURE, ELEMENT_UNRESOLVED, NO_ROUTE_TO_TARGET,
-        ROUTINE_PARAMETER_UNBOUND);
+        PARAMETER_UNFILLED);
 
     /** Far more positions than any written path is long; reaching it means a walk stopped ending. */
     private static final int POSITION_LIMIT = 1000;
@@ -907,8 +907,9 @@ public final class Steps {
      * Where each routine step's parameters take their values: a column of the table the step departs
      * where its argMapping entry is {@code $source.<column>}, else the field occurrence's argument or
      * input field its entry lands on, or its own name where no entry names it. A parameter binding
-     * neither is {@code ROUTINE_PARAMETER_UNBOUND} at the {@code @routine}; one binding both binds
-     * nothing, and one whose entry lands nowhere is the entry's defect and binds nothing either.
+     * neither is {@code PARAMETER_UNFILLED} at the {@code @routine}, naming the first such parameter;
+     * one binding both binds nothing, and one whose entry lands nowhere is the entry's defect and binds
+     * nothing either.
      */
     private static void parameters(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    List<RoutineStep> routines, Map<DefectKey, String> defects) {
@@ -925,7 +926,7 @@ public final class Steps {
                 boolean column = p.columnName() != null;
                 boolean argument = p.argument() != null;
                 if (!column && !argument) {
-                    defects.putIfAbsent(new DefectKey(step.element(), ROUTINE_PARAMETER_UNBOUND), null);
+                    defects.putIfAbsent(new DefectKey(step.element(), PARAMETER_UNFILLED), p.name());
                     continue;
                 }
                 if (column == argument) {

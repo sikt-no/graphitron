@@ -151,7 +151,8 @@ routine is applied to:
   right-hand side or its own name where no entry names it, is no argument of the field. A bare name
   never binds a column; where it names one, the message says to write `$source.<column>`. A
   `$source` column the table lacks is reported the same way, listing that table's columns. The
-  editor reports both as `GRAPHITRON_ROUTINE_PARAMETER_UNBOUND` at the `@routine`.
+  editor reports both as `GRAPHITRON_PARAMETER_UNFILLED` at the `@routine`, the same code an
+  unbound parameter of a `@service` or `@condition` method draws.
 * `@routine parameter 'pEnv' binds to 'input', whose GraphQL type 'RentFilmInput' is not a scalar
   or enum`: the path stopped on an input object. A routine IN parameter takes one value; bind a
   scalar field inside it.

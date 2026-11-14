@@ -142,9 +142,10 @@ A defect is raised as early as possible, by the first stage that holds the facts
 2026-11-13). An unbound parameter is one rule whatever the parameter list, a method's, a root
 `@routine`'s or a child routine's step: `PARAMETER_UNFILLED`, which each stage raises where its fills
 are written, a service's and a root routine's at `occurrence-producers`, a child routine step's at
-`occurrence-depths`, a condition's at `occurrence-bindings`. The three parameter codes are written
-today by `occurrence-depth-defects`, straight after the depth loop that settles every fill, until
-each moves to where its facts are. This one is `occurrence-builds'`, one rule over the node-id slots and their decode
+`occurrence-depths`, a condition's at `occurrence-bindings`. The stage writing a kind's fills
+stores that kind's parameter outcomes beside them, in `graphitron_occurrence_call_parameter_defect`
+from the kind's own rule view, and its defect rule finds the directive through the call's provenance,
+the application the call came from. Another rule at the call's grain is `occurrence-builds'`, one rule over the node-id slots and their decode
 shapes: a key column a pair projects into a parameter where no decode shape fits, its parameters
 `graphitron_occurrence_node_id_slot_projection`'s rows.
 
