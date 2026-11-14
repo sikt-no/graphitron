@@ -84,8 +84,8 @@ The walk's read path is gone
 │   │   └── An argument binds the call parameter it supplies
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
-│   │   ├── An inline list's ordering is resolved at its occurrence
-│   │   └── An inline list states how it is narrowed
+│   │   ├── An inline list's ordering is resolved at its occurrence, claimed by G
+│   │   └── An inline list states how it is narrowed, claimed by G
 │   └── A single child's null contract is stated
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
@@ -707,7 +707,7 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
-  * **A child read inline is emitted from the store** `blocked`, on "An inline list's ordering is resolved at its occurrence" and "An inline list states how it is narrowed". A
+  * **A child read inline is emitted from the store** `blocked`, on "An inline list's ordering is resolved at its occurrence, claimed by G" and "An inline list states how it is narrowed, claimed by G". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -789,11 +789,11 @@ static method needs no holder.
       pass-through and `ConditionBeanAtInputField` go, and typed-rejection.adoc says so. Breaking
       for utdanningsregisteret's `searchVektingstallRange` and `filterUtdanningsinstanserByVarighet`,
       so it lands after the typed forms, with a `BREAKING-CHANGE` footer naming the migration.
-  * **An inline list's ordering is resolved at its occurrence** `open`. `@defaultOrder` and `@order`
+  * **An inline list's ordering is resolved at its occurrence, claimed by G** `open`. `@defaultOrder` and `@order`
     are stored as written today; the occurrence states its sort keys in order, each a column with
     direction and collation or an order-field method, read by the multiset's `orderBy`. The walk's
     row identity for a list over a table with no primary key, a node's key standing in, goes with it.
-  * **An inline list states how it is narrowed** `open`. Its `@lookupKey` arguments in key order,
+  * **An inline list states how it is narrowed, claimed by G** `open`. Its `@lookupKey` arguments in key order,
     which today claim `LOOKUP` only at a root or a split; FS-plattform writes `@lookupKey` on child
     fields, so the flip needs it. A `first` limiting an inline list is not stated and not needed:
     pagination is a connection's (Alf, 2026-11-13).
