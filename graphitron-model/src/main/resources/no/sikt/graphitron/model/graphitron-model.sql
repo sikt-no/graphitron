@@ -20036,6 +20036,30 @@ COMMENT ON VIEW graphitron_occurrence_lookup_key_entry_defect_rule IS 'One row t
 -- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect.code';
 -- COMMENT ON COLUMN graphitron_occurrence_lookup_key_entry_defect_rule.detail IS 'the detail of a row of this rule, which the stage writes into graphitron_entry_defect.detail';
 
+-- An enum a client picks an order by: one with a value carrying @order or @index, whichever input
+-- type takes it. Stated at the type's grain so every rule asking it reads one row.
+CREATE VIEW graphitron_sort_enum_rule (graph_name, type_name) AS
+SELECT DISTINCT v.graph_name, v.type_name
+  FROM graphitron_enum_value v
+  JOIN graphql_directive_application w
+    ON w.graph_name = v.graph_name AND w.coordinate = v.coordinate AND w.directive_name IN ('order', 'index');
+COMMENT ON VIEW graphitron_sort_enum_rule IS 'One row the sort enum rule computes, in the shape graphitron_sort_enum stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_sort_enum, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_sort_enum_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_sort_enum.graph_name';
+-- COMMENT ON COLUMN graphitron_sort_enum_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_sort_enum.type_name';
+
+CREATE TABLE graphitron_sort_enum (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_type (graph_name, type_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_sort_enum IS 'An enum whose values are orders a client can pick: one row per enum with a value carrying @order or @index. For example FilmSort, whose TITLE value carries @order(fields: [{name: "title"}]).';
+COMMENT ON COLUMN graphitron_sort_enum.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_sort_enum.type_name IS 'the enum, completing the key';
+COMMENT ON COLUMN graphitron_sort_enum.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 -- The input type an @orderBy argument takes, as it shapes the argument: the one field typed as an enum
 -- whose values carry @order or @index, which the client picks an order by, and the one other enum
 -- field, which the client picks the direction by. A type without exactly one of each states no row.
@@ -20043,30 +20067,20 @@ CREATE VIEW graphitron_order_input_rule (graph_name, type_name, sort_field_name,
 SELECT DISTINCT a.graph_name, a.named_type, s.field_name, d.field_name
   FROM graphitron_argument a
   JOIN graphitron_field s ON s.graph_name = a.graph_name AND s.type_name = a.named_type
+  JOIN graphitron_sort_enum se ON se.graph_name = s.graph_name AND se.type_name = s.named_type
   JOIN graphitron_field d
     ON d.graph_name = a.graph_name AND d.type_name = a.named_type AND d.field_name <> s.field_name
   JOIN graphitron_type dt ON dt.graph_name = d.graph_name AND dt.type_name = d.named_type AND dt.kind = 'ENUM'
  WHERE EXISTS (SELECT 1 FROM graphitron_directive_application o
                 WHERE o.graph_name = a.graph_name AND o.coordinate = a.coordinate
                   AND o.directive_name = 'orderBy')
-   AND EXISTS (SELECT 1 FROM graphitron_enum_value v
-                 JOIN graphql_directive_application w
-                   ON w.graph_name = v.graph_name AND w.coordinate = v.coordinate
-                  AND w.directive_name IN ('order', 'index')
-                WHERE v.graph_name = s.graph_name AND v.type_name = s.named_type)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_enum_value v
-                     JOIN graphql_directive_application w
-                       ON w.graph_name = v.graph_name AND w.coordinate = v.coordinate
-                      AND w.directive_name IN ('order', 'index')
-                    WHERE v.graph_name = d.graph_name AND v.type_name = d.named_type)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_sort_enum de
+                    WHERE de.graph_name = d.graph_name AND de.type_name = d.named_type)
    AND NOT EXISTS (SELECT 1 FROM graphitron_field s2
+                     JOIN graphitron_sort_enum se2
+                       ON se2.graph_name = s2.graph_name AND se2.type_name = s2.named_type
                     WHERE s2.graph_name = s.graph_name AND s2.type_name = s.type_name
-                      AND s2.field_name <> s.field_name
-                      AND EXISTS (SELECT 1 FROM graphitron_enum_value v
-                                    JOIN graphql_directive_application w
-                                      ON w.graph_name = v.graph_name AND w.coordinate = v.coordinate
-                                     AND w.directive_name IN ('order', 'index')
-                                   WHERE v.graph_name = s2.graph_name AND v.type_name = s2.named_type))
+                      AND s2.field_name <> s.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_field d2
                      JOIN graphitron_type t2
                        ON t2.graph_name = d2.graph_name AND t2.type_name = d2.named_type AND t2.kind = 'ENUM'
@@ -20534,7 +20548,8 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_method.touched_at IS 'the readi
 
 
 -- What an ordering cannot state: a primary key a table does not have; an index or a column the table
--- does not have; a value of an @orderBy argument's sort enum with no @order; a client choice on a list read
+-- does not have; an @orderBy argument whose type is no order input, so it offers no choice; a value of
+-- an @orderBy argument's sort enum with no @order; a client choice on a list read
 -- inline in its parent's statement, which is not generated yet; and such a list, over a table with
 -- no primary key, with no order written at all.
 CREATE VIEW graphitron_occurrence_order_entry_defect_rule
@@ -20589,6 +20604,14 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_column c
                     WHERE c.graph_name = k.graph_name AND c.coordinate = k.coordinate AND c.bound = k.bound
                       AND c.choice = k.choice AND c.position = k.position)
+UNION ALL
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column, 'ORDER_INPUT_SHAPE',
+       a.named_type, 'occurrence-orderings'
+  FROM graphitron_directive_application da
+  JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
+ WHERE da.directive_name = 'orderBy' AND da.source_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_order_input oi
+                    WHERE oi.graph_name = a.graph_name AND oi.type_name = a.named_type)
 UNION ALL
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column, 'ORDER_VALUE_UNORDERED',
        CAST(NULL AS VARCHAR), 'occurrence-orderings'
@@ -23853,6 +23876,7 @@ INSERT INTO meta_stage_write VALUES
   ('type-identifying-keys', 'graphitron_type_identifying_key'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id_carried'),
   ('occurrence-orderings', 'graphitron_entry_defect'),
+  ('occurrence-orderings', 'graphitron_sort_enum'),
   ('occurrence-orderings', 'graphitron_order_input'),
   ('occurrence-orderings', 'graphitron_occurrence_order'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key'),
@@ -24882,6 +24906,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @defaultOrder or @order writes other than exactly one of index, primaryKey: true and fields, so it does not say what to sort by: write one.'),
   ('ORDER_PRIMARY_KEY_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_PRIMARY_KEY_MISSING',
    'An ordering sorts by the primary key of a table that has none, so there is nothing to sort by: name the columns with fields, or an index.'),
+  ('ORDER_INPUT_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_INPUT_SHAPE',
+   'An @orderBy argument''s type is not an input object with exactly one field typed as an enum whose values carry @order or @index and exactly one other enum field, the direction, so it offers the client no order to pick: give the input type one of each, told apart by type rather than name.'),
   ('ORDER_FIELD_SHAPE', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_FIELD_SHAPE',
    'A fields element of an ordering writes neither or both of name and method, or a path beside a method, so it names no one key: write a name, optionally with a path, or a method.'),
   ('ORDER_VALUE_UNORDERED', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_VALUE_UNORDERED',
@@ -26388,6 +26414,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_node_id_carried_rule', 'occurrence-node-id-key', 'graphitron',
    'One row the carried key rule computes, in the shape graphitron_occurrence_node_id_carried stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_node_id_carried, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_sort_enum', 'expanded-type', 'graphitron',
+   'An enum whose values are orders a client can pick: one row per enum with a value carrying @order or @index.',
+   'For example FilmSort, whose TITLE value carries @order(fields: [{name: "title"}]).',
+   'A fact of the enum, not of any input type taking it, so it is stated once at the type''s grain and the order input rule and the choices read it rather than each testing the values again. Written by the occurrence-orderings stage before the order inputs.'),
+  ('graphitron_sort_enum_rule', 'expanded-type', 'graphitron',
+   'One row the sort enum rule computes, in the shape graphitron_sort_enum stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_sort_enum, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_order_input', 'expanded-type', 'graphitron',
    'The input type an @orderBy argument takes, as it shapes the argument: one row per such type with one sort enum field and one direction field.',

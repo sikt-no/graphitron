@@ -1,6 +1,7 @@
 # What an ordering cannot state, each refused where it is written: an application writing two
 # surfaces; a primary key the table does not have; an index or a column the table does not have; a
-# fields element naming both a column and a method; a value of an @orderBy sort enum with no @order;
+# fields element naming both a column and a method; an @orderBy argument whose input type has no
+# direction field, so it offers no choice; a value of an @orderBy sort enum with no @order;
 # a client's choice of order on a list read inline in its parent's statement, which graphitron does
 # not generate yet, though its choices are stated; and such a list over a table with no primary key
 # with no order written at all. The near misses beside them draw nothing: the same keyless list
@@ -60,18 +61,20 @@ type Query {
     films: [Film!]!
     holders: [RoleHolder!]!
     actorsFullySorted(order: ActorFullOrderBy @orderBy): [Actor!]!
+    actorsUndirected(order: ActorUndirectedOrderBy @orderBy): [Actor!]!
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   source_line, code,                        detail
-  18,          LIST_ORDER_UNDETERMINED,     public.role_assignment
-  19,          ORDER_PRIMARY_KEY_MISSING,   public.role_assignment
-  27,          ORDER_SURFACES,
-  29,          ELEMENT_UNRESOLVED,          idx_no_such_index
-  31,          COLUMN_UNRESOLVED,           no_such_column
-  33,          ORDER_FIELD_SHAPE,
-  35,          ORDER_CHOICE_ON_INLINE_LIST,
-  46,          ORDER_VALUE_UNORDERED,
+  19,          LIST_ORDER_UNDETERMINED,     public.role_assignment
+  20,          ORDER_PRIMARY_KEY_MISSING,   public.role_assignment
+  28,          ORDER_SURFACES,
+  30,          ELEMENT_UNRESOLVED,          idx_no_such_index
+  32,          COLUMN_UNRESOLVED,           no_such_column
+  34,          ORDER_FIELD_SHAPE,
+  36,          ORDER_CHOICE_ON_INLINE_LIST,
+  47,          ORDER_VALUE_UNORDERED,
+  64,          ORDER_INPUT_SHAPE,           ActorUndirectedOrderBy
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kind = 'CHOICE'", rows: """
@@ -80,3 +83,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "kin
   Query.actorsFullySorted, ActorFullSort.LAST_NAME, FIELDS
   Query.actorsFullySorted, ActorFullSort.ACTOR_ID,  PRIMARY_KEY
   """)
+
+input ActorUndirectedOrderBy {
+    field: ActorFullSort!
+}

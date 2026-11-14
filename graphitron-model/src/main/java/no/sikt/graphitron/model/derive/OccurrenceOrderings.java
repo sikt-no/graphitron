@@ -19,6 +19,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_MET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SORT_ENUM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SORT_ENUM_RULE;
 import static org.jooq.impl.DSL.and;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.selectOne;
@@ -41,6 +43,7 @@ public final class OccurrenceOrderings {
 
     /** Writes the stage's relations and its defects, marked with this reading. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        replace(dsl, GRAPHITRON_SORT_ENUM, GRAPHITRON_SORT_ENUM_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_ORDER_INPUT, GRAPHITRON_ORDER_INPUT_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_ORDER, GRAPHITRON_OCCURRENCE_ORDER_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY, GRAPHITRON_OCCURRENCE_SORT_KEY_RULE, graph, touchedAt);
