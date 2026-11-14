@@ -31,7 +31,6 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.inline;
@@ -421,9 +420,9 @@ public final class OutboxQuery {
         for (var type : types) {
             var rows = store.dsl()
                 .select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE,
-                    t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN, coalesce(n.TYPE_ID, k.TYPE_NAME))
+                    t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, s.TABLES_CLASS_FQN, n.TYPE_ID)
                 .from(k)
-                .leftJoin(n).on(n.GRAPH_NAME.eq(k.GRAPH_NAME), n.TYPE_NAME.eq(k.TYPE_NAME))
+                .join(n).on(n.GRAPH_NAME.eq(k.GRAPH_NAME), n.TYPE_NAME.eq(k.TYPE_NAME))
                 .join(c).on(c.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
                     c.TABLE_NAME.eq(k.TABLE_NAME), c.COLUMN_NAME.eq(k.COLUMN_NAME))
                 .join(t).on(t.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(k.TABLE_SCHEMA),
