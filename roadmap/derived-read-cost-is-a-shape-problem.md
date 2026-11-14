@@ -84,7 +84,6 @@ The walk's read path is gone
 │   │   ├── An argument binds the call parameter it supplies
 │   │   └── A routine and a write state what they bind as call parameters
 │   ├── The root query fetchers are emitted from the store
-│   ├── A child producer states the parent columns it is handed
 │   ├── A child read inline is emitted from the store
 │   │   ├── An inline list's ordering is resolved at its occurrence
 │   │   └── An inline list states how it is narrowed
@@ -721,7 +720,8 @@ static method needs no holder.
     the declaring type, so a discriminated participant writes an interface's field under the
     interface's name and a lift can pass no shared fields. Left (`SCALAR_PATH`): a path stepping by a
     condition method or a routine, and a node id down a path. A child read inline is its own
-    node below, and a polymorphic field's parent-row columns close with "A child producer states the parent columns it is handed".
+    node below. A child producer's parent columns are projected off its lift, stated under a row
+    graphitron selected as under a record.
   * **A child read inline is emitted from the store** `blocked`, on "An inline list's ordering is resolved at its occurrence" and "An inline list states how it is narrowed". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
@@ -809,14 +809,6 @@ static method needs no holder.
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
     so the flip states it as a deferral, a stored defect of basis `UNSUPPORTED`, until this lands
     (Alf, 2026-11-13).
-  * **A child producer states the parent columns it is handed** `open`, F's. Landed: the lift is
-    stated for a producer under a row graphitron selected as well as under a record, a target lift on
-    the key its one condition-free hop's foreign key references, a source lift on the source's
-    primary key otherwise, stated only where the source has one; the projection unit projects the
-    parent's columns the lift is read off, the hop's own where the key is the target's, so the census's
-    child producers are rendered. Left: a service under a row whose call takes no key off it
-    (`Film.castMembers`, `Film.languageByService`, `Film.modifiedLanguage` in the example), which has
-    no lift; whether it needs any column of its parent's row is what this node settles.
   * **A single child's null contract is stated** `blocked`, on the expression and condition nodes.
     Nothing states when a nesting field or a single inline child is null, which the `__p_` probe
     decides today as a disjunction over its paths and expressions; it is modelled once those land.

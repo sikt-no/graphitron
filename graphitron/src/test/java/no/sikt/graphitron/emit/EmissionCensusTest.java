@@ -312,8 +312,6 @@ class EmissionCensusTest {
                 "Film.summary", "PivotNestingHost.labels", "PivotNestingHost.labelsComputed",
                 "PivotNestingHost.labelsMixed", "PivotNestingHost.origin", "PivotNestingHost.texts",
                 "PresenceHost.detailRefs", "PresenceHost.holdings", "PresenceHost.holdingsSplit", "Store.location"))
-            .containsEntry("CHILD_PRODUCER_COLUMNS", List.of("Film.castMembers", "Film.languageByService",
-                "Film.modifiedLanguage"))
             .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Actor.recentFilms",
                 "Actor.recentFilmsInferred", "Category.children", "Category.parent", "Customer.address",
                 "Customer.addressByCondition", "Customer.storeAddress", "DivergedRefChild.organisation",
@@ -332,8 +330,7 @@ class EmissionCensusTest {
                 "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
             .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
                 "Film.soleActorFirstName"))
-            .containsOnlyKeys("CHILD_PRODUCER_COLUMNS", "EXPRESSION", "INLINE_CHILD", "NULL_CONTRACT", "PIVOT",
-                "SCALAR_PATH");
+            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NULL_CONTRACT", "PIVOT", "SCALAR_PATH");
     }
 
     /**

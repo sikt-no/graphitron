@@ -15,7 +15,12 @@ type Film @table(name: "film") {
   # A plain object under a film row, whose split field is read off the same selected row.
   details: FilmSplitDetails
   titleUppercase: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  # A service returning a table-bound type, or a list of one, takes its keys off the film row as
+  # the scalar one does: the film's, not the table its result is of.
+  languageByService: Language @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "languageByService"})
+  castMembers: [FilmActor!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "castMembersByFilm"})
 }
+type FilmActor @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
 type Language @table(name: "language") {
   name: String
   # one hop back along a key, for a list, a target lift keyed on the language's key the films' key
@@ -105,8 +110,9 @@ type Mutation {
 # The key each child producer is filled with from its source, per occurrence: a member handing over
 # the key's records, a re-fetch of the target's own record, a selection under a record handed over
 # whose path leaves the record's table by its first key, a re-read of the target's rows matched out
-# of a routine's result, and a service keyed on its source's table, whether that source is a record
-# handed over or a row graphitron selected (Film.titleUppercase). A selection under a row graphitron
+# of a routine's result, and a service keyed on the table of the row or record its parent holds,
+# whether a record handed over or a row graphitron selected, whatever its own result is of
+# (Film.titleUppercase, Film.languageByService, Film.castMembers). A selection under a row graphitron
 # selected, under a table-bound type or a plain one nesting on its row, takes a target lift on its one
 # hop's key where that hop has no condition, and a source lift on the source's primary key otherwise.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", rows: """
@@ -119,6 +125,8 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Query.filmKeySummaries.keyCensus,             ACCESSOR, ONE,   film,      film_pkey
   Query.occupantsBatch.occupants,               ACCESSOR, MANY,  address,   address_pkey
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
+  Film.languageByService,                       COLUMNS,  ONE,   film,      film_pkey
+  Film.castMembers,                             COLUMNS,  ONE,   film,      film_pkey
   Mutation.rentFilmPayload.rental,              COLUMNS,  ONE,   rental,    rental_pkey
   Film.languageSplit,                           COLUMNS,  ONE,   language,  language_pkey
   Film.actors,                                  COLUMNS,  ONE,   film,      film_pkey

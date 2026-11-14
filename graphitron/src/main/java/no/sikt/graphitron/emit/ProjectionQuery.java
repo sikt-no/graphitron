@@ -20,9 +20,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
@@ -38,6 +38,7 @@ import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.when;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectOne;
 
@@ -301,29 +302,35 @@ public final class ProjectionQuery {
     }
 
     /**
-     * The columns of the parent's row a child producer's lift is keyed on, in key order: the lift's
-     * key columns where the key is the source's, else the source columns its one hop pairs with
-     * them, the source's row holding the values the target's key is matched by.
+     * The columns of the parent's row a child producer's lift is keyed on, in key order: where the
+     * path's one condition-free hop arrives at a key column, the source column it leaves from, the
+     * source's row holding the values the target's key is matched by; otherwise the key column
+     * itself, the key being the source's own, whatever table the producer's result is of.
      */
     private static Field<List<Column>> liftColumns(Field<String> graph, Field<String> coordinate) {
         var l = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
         var kc = SQL_CONSTRAINT_COLUMN;
         var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
-        var src = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var s1 = GRAPHITRON_JOIN_PATH_STEP.as("s1");
+        var sm = GRAPHITRON_JOIN_PATH_STEP_METHOD;
         var col = SQL_COLUMN;
-        var onSource = l.KEY_TABLE.eq(src.TABLE_NAME).and(l.KEY_SCHEMA.eq(src.TABLE_SCHEMA));
-        Field<String> table = when(onSource, kc.TABLE_NAME).otherwise(sc.FROM_TABLE);
-        Field<String> schema = when(onSource, kc.TABLE_SCHEMA).otherwise(sc.FROM_SCHEMA);
-        Field<String> source = when(onSource, kc.SOURCE_NAME).otherwise(sc.FROM_SOURCE_NAME);
-        Field<String> column = when(onSource, kc.COLUMN_NAME).otherwise(sc.FROM_COLUMN);
+        // A key column the path's one condition-free hop arrives at is the target's, matched by the
+        // source column the hop leaves from; any other is a column of the source's row itself.
+        Field<String> table = coalesce(sc.FROM_TABLE, kc.TABLE_NAME);
+        Field<String> schema = coalesce(sc.FROM_SCHEMA, kc.TABLE_SCHEMA);
+        Field<String> source = coalesce(sc.FROM_SOURCE_NAME, kc.SOURCE_NAME);
+        Field<String> column = coalesce(sc.FROM_COLUMN, kc.COLUMN_NAME);
         return multiset(
             select(col.SOURCE_NAME, col.TABLE_SCHEMA, col.TABLE_NAME, col.COLUMN_NAME, col.JOOQ_NAME)
                 .from(l)
-                .join(src).on(src.GRAPH_NAME.eq(l.GRAPH_NAME), src.COORDINATE.eq(l.COORDINATE))
                 .join(kc).on(kc.SOURCE_NAME.eq(l.KEY_SOURCE_NAME), kc.TABLE_SCHEMA.eq(l.KEY_SCHEMA),
                     kc.TABLE_NAME.eq(l.KEY_TABLE), kc.CONSTRAINT_NAME.eq(l.KEY_CONSTRAINT))
                 .leftJoin(sc).on(sc.GRAPH_NAME.eq(l.GRAPH_NAME), sc.COORDINATE.eq(l.COORDINATE), sc.POSITION.eq(0),
-                    sc.TO_TABLE.eq(kc.TABLE_NAME), sc.TO_SCHEMA.eq(kc.TABLE_SCHEMA), sc.TO_COLUMN.eq(kc.COLUMN_NAME))
+                    sc.TO_TABLE.eq(kc.TABLE_NAME), sc.TO_SCHEMA.eq(kc.TABLE_SCHEMA), sc.TO_COLUMN.eq(kc.COLUMN_NAME),
+                    notExists(selectOne().from(s1).where(s1.GRAPH_NAME.eq(sc.GRAPH_NAME),
+                        s1.COORDINATE.eq(sc.COORDINATE), s1.TARGET_TYPE.eq(sc.TARGET_TYPE), s1.POSITION.gt(0))),
+                    notExists(selectOne().from(sm).where(sm.GRAPH_NAME.eq(sc.GRAPH_NAME),
+                        sm.COORDINATE.eq(sc.COORDINATE), sm.TARGET_TYPE.eq(sc.TARGET_TYPE), sm.POSITION.eq(0))))
                 .join(col).on(col.SOURCE_NAME.eq(source), col.TABLE_SCHEMA.eq(schema), col.TABLE_NAME.eq(table),
                     col.COLUMN_NAME.eq(column))
                 .where(l.GRAPH_NAME.eq(graph), l.COORDINATE.eq(coordinate), l.READ.eq("COLUMNS"))

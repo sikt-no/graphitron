@@ -13923,18 +13923,31 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS', CASE WHEN f.is_list THEN 'MANY' EL
                       AND st.table_source_name = b.table_source_name
                       AND st.table_schema = b.table_schema AND st.table_name = b.table_name)
 UNION ALL
--- A service under a row or a record of its source's table, keyed on that table's primary key: its
--- key parameter takes that table's records or, under a row graphitron selected, its key columns.
+-- A service under a row or a record, keyed on the primary key of the table the row or record is of.
+-- Under a row graphitron selected that is the declaring type's own table or the one a nesting field
+-- above it reads off, never the table the service's own result is of; under a record handed over,
+-- the record's. Its key parameter takes that table's records or, under a row graphitron selected,
+-- its key columns.
 SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
-       st.table_source_name, st.table_schema, st.table_name, k.constraint_name
+       COALESCE(dtt.table_source_name, pst.table_source_name, st.table_source_name),
+       COALESCE(dtt.table_schema, pst.table_schema, st.table_schema),
+       COALESCE(dtt.table_name, pst.table_name, st.table_name), k.constraint_name
   FROM graphitron_occurrence_producer p
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_occurrence_source_table st
+  LEFT JOIN graphitron_tabletype dtt ON dtt.graph_name = f.graph_name AND dtt.type_name = f.type_name
+  LEFT JOIN graphitron_occurrence_nesting pn
+    ON pn.graph_name = o.graph_name AND pn.coordinate = o.parent_coordinate AND dtt.type_name IS NULL
+  LEFT JOIN graphitron_occurrence_source_table pst
+    ON pst.graph_name = pn.graph_name AND pst.coordinate = pn.coordinate
+  LEFT JOIN graphitron_occurrence_source_table st
     ON st.graph_name = p.graph_name AND st.coordinate = p.coordinate
+   AND dtt.type_name IS NULL AND pn.coordinate IS NULL
   LEFT JOIN sql_constraint k
-    ON k.source_name = st.table_source_name AND k.table_schema = st.table_schema
-   AND k.table_name = st.table_name AND k.constraint_type = 'PRIMARY KEY'
+    ON k.source_name = COALESCE(dtt.table_source_name, pst.table_source_name, st.table_source_name)
+   AND k.table_schema = COALESCE(dtt.table_schema, pst.table_schema, st.table_schema)
+   AND k.table_name = COALESCE(dtt.table_name, pst.table_name, st.table_name)
+   AND k.constraint_type = 'PRIMARY KEY'
   JOIN graphitron_occurrence_call_method cm
     ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate AND cm.call = 'producer'
   JOIN graphitron_occurrence_call_parameter cp
@@ -13945,29 +13958,33 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
    AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor
    AND mp.position = cp.position
  WHERE p.start = 'CHILD' AND p.kind = 'SERVICE'
+   AND COALESCE(dtt.table_name, pst.table_name, st.table_name) IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st2
-                    WHERE st2.graph_name = st.graph_name AND st2.coordinate = st.coordinate
-                      AND (st2.table_source_name <> st.table_source_name
-                           OR st2.table_schema <> st.table_schema OR st2.table_name <> st.table_name))
+                    WHERE st2.graph_name = COALESCE(pst.graph_name, st.graph_name)
+                      AND st2.coordinate = COALESCE(pst.coordinate, st.coordinate)
+                      AND (st2.table_source_name <> COALESCE(pst.table_source_name, st.table_source_name)
+                           OR st2.table_schema <> COALESCE(pst.table_schema, st.table_schema)
+                           OR st2.table_name <> COALESCE(pst.table_name, st.table_name)))
    AND (EXISTS (SELECT 1 FROM store_graph_source gs
                   JOIN sql_table kt
                     ON kt.source_name = gs.source_name AND kt.record_class_fqn = mp.element_class
-                 WHERE gs.graph_name = p.graph_name AND kt.source_name = st.table_source_name
-                   AND kt.table_schema = st.table_schema AND kt.table_name = st.table_name)
-        OR (EXISTS (SELECT 1 FROM graphitron_tabletype dt
-                     WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
+                 WHERE gs.graph_name = p.graph_name
+                   AND kt.source_name = COALESCE(dtt.table_source_name, pst.table_source_name, st.table_source_name)
+                   AND kt.table_schema = COALESCE(dtt.table_schema, pst.table_schema, st.table_schema)
+                   AND kt.table_name = COALESCE(dtt.table_name, pst.table_name, st.table_name))
+        OR ((dtt.type_name IS NOT NULL OR pn.coordinate IS NOT NULL)
             AND (mp.element_class LIKE 'org.jooq.Record%' OR mp.element_class LIKE 'org.jooq.Row%')))
-   -- Under a row of a table-bound type, or a record its parent handed over.
-   AND (EXISTS (SELECT 1 FROM graphitron_tabletype dt
-                 WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
-        OR (EXISTS (SELECT 1 FROM graphitron_occurrence_producer pp
+   -- Under a row of a table-bound type or a nesting field reading one, or a record its parent
+   -- handed over.
+   AND (dtt.type_name IS NOT NULL OR pn.coordinate IS NOT NULL
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer pp
                  WHERE pp.graph_name = o.graph_name AND pp.coordinate = o.parent_coordinate
                    AND pp.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE'))
         OR EXISTS (SELECT 1 FROM graphitron_occurrence po
                      JOIN graphitron_code_reference xr
                        ON xr.graph_name = po.graph_name AND xr.coordinate = po.element_coordinate
                       AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
-                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate)))
+                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate))
 UNION ALL
 -- A child producer under a row graphitron selected, its declaring type's own or the one a nesting
 -- field above it reads off. A target lift where its one need's path is one hop joining on column
