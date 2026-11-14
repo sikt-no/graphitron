@@ -75,16 +75,16 @@ interface Node {
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", rows: """
-  coordinate,           bound,             position, key_coordinate,                    key_bound,         key_kind
-  Film.actors,          public.actor,      0,        Film.actors(actor_id:),            public.actor,      COLUMN
-  Film.actorsNamed,     public.actor,      0,        Film.actorsNamed(actor_id:),       public.actor,      COLUMN
-  Film.cast,            public.film_actor, 0,        Film.cast(key.filmId:),            public.film_actor, COLUMN
-  Film.cast,            public.film_actor, 1,        Film.cast(key.actorId:),           public.film_actor, COLUMN
-  Film.actorsById,      public.actor,      0,        Film.actorsById(id:),              public.actor,      NODE_ID
-  Film.actorsSplit,     public.actor,      0,        Film.actorsSplit(actor_id:),       public.actor,      COLUMN
-  Query.filmsByKey,     public.film,       0,        Query.filmsByKey(film_id:),        public.film,       COLUMN
-  Query.customersByKey, public.customer,   0,        Query.customersByKey(key.email:),  public.customer,   COLUMN
-  Query.customersByKey, public.customer,   1,        Query.customersByKey(key.store:),  public.store,      NODE_ID
+  coordinate,           bound,             key_coordinate,                   key_bound,         key_kind, argument_ordinal, field_ordinal
+  Film.actors,          public.actor,      Film.actors(actor_id:),           public.actor,      COLUMN,   0,                -1
+  Film.actorsNamed,     public.actor,      Film.actorsNamed(actor_id:),      public.actor,      COLUMN,   0,                -1
+  Film.cast,            public.film_actor, Film.cast(key.filmId:),           public.film_actor, COLUMN,   0,                0
+  Film.cast,            public.film_actor, Film.cast(key.actorId:),          public.film_actor, COLUMN,   0,                1
+  Film.actorsById,      public.actor,      Film.actorsById(id:),             public.actor,      NODE_ID,  0,                -1
+  Film.actorsSplit,     public.actor,      Film.actorsSplit(actor_id:),      public.actor,      COLUMN,   0,                -1
+  Query.filmsByKey,     public.film,       Query.filmsByKey(film_id:),       public.film,       COLUMN,   0,                -1
+  Query.customersByKey, public.customer,   Query.customersByKey(key.email:), public.customer,   COLUMN,   0,                0
+  Query.customersByKey, public.customer,   Query.customersByKey(key.store:), public.store,      NODE_ID,  0,                1
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id_carried", where: "coordinate LIKE 'Query.customersByKey%'", rows: """

@@ -33,16 +33,16 @@ public final class OccurrenceLookupKeys {
             .where(k.GRAPH_NAME.eq(graph))
             .andNotExists(select(r.GRAPH_NAME).from(r)
                 .where(r.GRAPH_NAME.eq(k.GRAPH_NAME), r.COORDINATE.eq(k.COORDINATE), r.BOUND.eq(k.BOUND),
-                    r.POSITION.eq(k.POSITION), r.KEY_COORDINATE.eq(k.KEY_COORDINATE), r.KEY_BOUND.eq(k.KEY_BOUND),
-                    r.KEY_KIND.eq(k.KEY_KIND)))
+                    r.KEY_COORDINATE.eq(k.KEY_COORDINATE), r.KEY_BOUND.eq(k.KEY_BOUND), r.KEY_KIND.eq(k.KEY_KIND),
+                    r.ARGUMENT_ORDINAL.eq(k.ARGUMENT_ORDINAL), r.FIELD_ORDINAL.eq(k.FIELD_ORDINAL)))
             .execute();
         dsl.insertInto(k)
-            .columns(k.GRAPH_NAME, k.COORDINATE, k.BOUND, k.POSITION, k.KEY_COORDINATE, k.KEY_BOUND, k.KEY_KIND,
-                k.TOUCHED_AT)
-            .select(select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.POSITION, r.KEY_COORDINATE, r.KEY_BOUND, r.KEY_KIND,
-                    val(touchedAt, k.TOUCHED_AT))
+            .columns(k.GRAPH_NAME, k.COORDINATE, k.BOUND, k.KEY_COORDINATE, k.KEY_BOUND, k.KEY_KIND,
+                k.ARGUMENT_ORDINAL, k.FIELD_ORDINAL, k.TOUCHED_AT)
+            .select(select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KEY_COORDINATE, r.KEY_BOUND, r.KEY_KIND,
+                    r.ARGUMENT_ORDINAL, r.FIELD_ORDINAL, val(touchedAt, k.TOUCHED_AT))
                 .from(r).where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(k.GRAPH_NAME, k.COORDINATE, k.BOUND, k.POSITION)
+            .onConflict(k.GRAPH_NAME, k.COORDINATE, k.BOUND, k.KEY_COORDINATE)
             .doUpdate()
             .set(k.TOUCHED_AT, excluded(k.TOUCHED_AT))
             .execute();

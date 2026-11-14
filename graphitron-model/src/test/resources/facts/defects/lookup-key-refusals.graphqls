@@ -45,9 +45,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", rows: """
-  coordinate,       bound,       position, key_coordinate,             key_bound,   key_kind
-  Film.sequel,      public.film, 0,        Film.sequel(film_id:),      public.film, COLUMN
-  Query.filmsPaged, public.film, 0,        Query.filmsPaged(film_id:), public.film, COLUMN
-  Query.filmByKey,  public.film, 0,        Query.filmByKey(film_id:),  public.film, COLUMN
-  Query.filmsById,  public.film, 0,        Query.filmsById(id:),       public.film, NODE_ID
+  coordinate,       bound,       key_coordinate,             key_bound,   key_kind, argument_ordinal, field_ordinal
+  Film.sequel,      public.film, Film.sequel(film_id:),      public.film, COLUMN,   0,                -1
+  Query.filmsPaged, public.film, Query.filmsPaged(film_id:), public.film, COLUMN,   0,                -1
+  Query.filmByKey,  public.film, Query.filmByKey(film_id:),  public.film, COLUMN,   0,                -1
+  Query.filmsById,  public.film, Query.filmsById(id:),       public.film, NODE_ID,  0,                -1
   """)

@@ -71,41 +71,17 @@ final class GraphitronOrderEntries {
             application -> val(string(application, "index"), t.INDEX_REF),
             application -> val(bool(application, "primaryKey"), t.PRIMARY_KEY),
             application -> val(token(application, "direction"), t.DIRECTION),
-            application -> val(surface(application), t.SURFACE),
-            application -> val(surfacesWritten(application), t.SURFACES_WRITTEN)));
+            application -> val(fieldsWritten(application), t.FIELDS_WRITTEN)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION, t.SURFACE, t.SURFACES_WRITTEN)
+                    t.TOUCHED_AT, t.INDEX_REF, t.PRIMARY_KEY, t.DIRECTION, t.FIELDS_WRITTEN)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.INDEX_REF, excluded(t.INDEX_REF))
                 .set(t.PRIMARY_KEY, excluded(t.PRIMARY_KEY))
                 .set(t.DIRECTION, excluded(t.DIRECTION))
-                .set(t.SURFACE, excluded(t.SURFACE))
-                .set(t.SURFACES_WRITTEN, excluded(t.SURFACES_WRITTEN)));
-    }
-
-    /**
-     * The surface the application sorts by where it writes exactly one of an index, the primary key
-     * and a field list; null where it writes none or several, which says nothing to sort by and
-     * which the decode does not settle by precedence.
-     */
-    private static String surface(Directive application) {
-        if (surfacesWritten(application) != 1) {
-            return null;
-        }
-        if (string(application, "index") != null) {
-            return "INDEX";
-        }
-        return Boolean.TRUE.equals(bool(application, "primaryKey")) ? "PRIMARY_KEY" : "FIELDS";
-    }
-
-    /** How many of the three surfaces the application writes; the directive admits exactly one. */
-    private static int surfacesWritten(Directive application) {
-        return (string(application, "index") != null ? 1 : 0)
-            + (Boolean.TRUE.equals(bool(application, "primaryKey")) ? 1 : 0)
-            + (fieldsWritten(application) ? 1 : 0);
+                .set(t.FIELDS_WRITTEN, excluded(t.FIELDS_WRITTEN)));
     }
 
     private static boolean fieldsWritten(Directive application) {
