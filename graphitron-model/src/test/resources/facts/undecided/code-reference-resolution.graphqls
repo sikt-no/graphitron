@@ -47,7 +47,7 @@ type Language @table(name: "language") {
     @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "noSuchMethod"}}])
 }
 
-# A class reference names no method, so it is neither resolved here nor a defect.
+# A class reference names no method, so it is a row naming none, and neither resolved nor a defect.
 enum Rating @enum(enumReference: {className: "no.example.RatingEnum"}) {
   G
 }
@@ -58,10 +58,28 @@ type Query {
   languages: [Language!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
+# The references that resolve, each to its one method.
+extend schema @expectEquals(relation: "graphitron_code_reference", where: "method_descriptor IS NOT NULL", rows: """
   method_class_name,                                          method_name
   no.sikt.graphitron.rewrite.test.services.CityService,       cityUppercase
   no.sikt.graphitron.rewrite.test.extensions.FilmExtensions,  isEnglish
+  """)
+
+# Every written reference is a row, resolved or not, naming what was written: the @externalField
+# default applied, and the class reference naming no method.
+extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
+  coordinate,                    directive_name, owner,           kind,             class_name,                                                                named_method
+  City.uppercase,                service,        service,         ROOT,             no.sikt.graphitron.rewrite.test.services.CityService,                      cityUppercase
+  City.misspelt,                 service,        service,         ROOT,             no.sikt.graphitron.rewrite.test.services.CityService,                      cityUpercase
+  City.unread,                   service,        service,         ROOT,             no.example.Absent,                                                         anything
+  Film.isEnglish,                externalField,  reference,       ROOT,             no.sikt.graphitron.rewrite.test.extensions.FilmExtensions,                 isEnglish
+  Film.missing,                  externalField,  reference,       ROOT,             no.sikt.graphitron.rewrite.test.extensions.FilmExtensions,                 missing
+  Film.overloaded,               condition,      condition,       ROOT,             no.sikt.graphitron.rewrite.test.conditions.MultiTableConditionFixtures,    occupantTypedNamePrefix
+  Film.topRated,                 service,        service,         ROOT,             no.sikt.graphitron.rewrite.test.services.FilmService,                      topRated
+  Language.filmsByTopRated,      defaultOrder,   fields.0,        ORDER_FIELD,      no.sikt.graphitron.rewrite.test.services.FilmService,                      topRated
+  Language.filmsByPathCondition, defaultOrder,   fields.0.path.0, ORDER_FIELD_PATH, no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures, agreeingOnBoth
+  Language.filmsByMissingMethod, defaultOrder,   fields.0,        ORDER_FIELD,      no.sikt.graphitron.rewrite.test.services.FilmService,                      noSuchMethod
+  Rating,                        enum,           enumReference,   ROOT,             no.example.RatingEnum,
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """

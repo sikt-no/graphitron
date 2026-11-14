@@ -32,12 +32,17 @@ extend type Film {
         @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.services.FilmService"})
 }
 
-# The whole resolved population of this graph: a reference resolves where exactly one method
-# answers, so the overload and the two absences have no row.
+# Every reference of this graph, beside the method it resolves to: a reference resolves where
+# exactly one method answers, so the overload, the two absences and the service naming no method
+# carry none. The external field names its own field, the default applied where no method is written.
 extend schema @expectEquals(relation: "graphitron_code_reference", rows: """
-  coordinate,          method_name
-  Film.titleUppercase, titleUppercase
-  Query.uppercased,    titleUppercase
+  coordinate,          named_method,   method_name
+  Film.titleUppercase, titleUppercase, titleUppercase
+  Query.absent,        noSuchMethod,
+  Query.topRated,      topRated,
+  Query.unnamed,       ,
+  Query.unread,        get,
+  Query.uppercased,    titleUppercase, titleUppercase
   """)
 
 # Which of the two absences is which. The class behind `absent` was read; the one behind `unread`

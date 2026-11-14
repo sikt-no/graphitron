@@ -51,7 +51,7 @@ class CodeReferenceClasspathScopeTest {
             var rows = captured.dsl()
                 .select(r.GRAPH_NAME, r.METHOD_SOURCE_NAME)
                 .from(r)
-                .where(r.COORDINATE.eq("Film.titleUppercase"))
+                .where(r.COORDINATE.eq("Film.titleUppercase"), r.METHOD_DESCRIPTOR.isNotNull())
                 .fetch();
 
             assertThat(rows).extracting(row -> row.value1())
