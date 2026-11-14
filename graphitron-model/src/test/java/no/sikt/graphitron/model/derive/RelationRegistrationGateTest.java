@@ -685,6 +685,7 @@ class RelationRegistrationGateTest {
         registrations.put("meta_stage", Arm.DERIVED);
         registrations.put("meta_stage_write", Arm.DERIVED);
         registrations.put("meta_stage_write_kind", Arm.DERIVED);
+        registrations.put("meta_stage_rule", Arm.DERIVED);
         registrations.put("meta_stated_relation", Arm.DERIVED);
         // The lint vocabulary, on the meta_ rosters' terms: rows this file supplies, so there
         // is no gatherer whose reading could be compared against anything. What pins it is

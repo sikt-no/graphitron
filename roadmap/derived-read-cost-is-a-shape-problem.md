@@ -726,16 +726,6 @@ static method needs no holder.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
-  * **A binding's kind is stated by its rule view, claimed by G** `open`, off the critical path.
-    `meta_stage_write_kind` states which kinds each stage writes into a relation it shares, and
-    nothing checks that a stage writes only those. Each binding rule view projects its `kind`, so the
-    writers' Java literals (`inline("MEMBER")` and the rest) go and every writer is a plain insert
-    from its view, as the call relations' `call_kind` already is. A `meta_stage_rule` (stage,
-    relation, rule view) beside `meta_stage_write` names the views each stage inserts from, making
-    `EntryDefects.RULES` and `StageAnswerAgreementTest.STAGES` data, and a gate checks over the
-    population that each declared view's kinds are among its stage's declared kinds. A `PARAMETER`
-    binding is owned by its call's kind as well, so each stage sweeps only the rows of its own calls'
-    kinds; today the sweep deletes any `PARAMETER` binding no fill of any kind names.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
     tables a parameter fits is `code_method_parameter_table`, keyed by the method's classpath entry
     and the table's catalog: its generated class, or a public jOOQ table type in `code_jooq_class`
@@ -3069,6 +3059,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A binding's kind is stated by its rule view** (2026-11-14). The binding writers' kind literals are
+gone: each binding rule view projects `kind`, and the tenant view its `bound`, which its writer
+composed. `meta_stage_rule` names the views each stage inserts `graphitron_occurrence_binding` from,
+and `StageAnswerAgreementTest` holds the kinds each yields over the fact documents to its stage's
+`meta_stage_write_kind` rows. A `PARAMETER` binding's sweep was already its call kind's: a stage
+deletes only its own calls' fills, and then the bindings no fill names.
 
 **A routed fetcher acquires by the connection key it built** (2026-11-14). The generated
 `TenantConnections.dslFor(env, tenantKey)`, which builds the key from its tenant part, goes when the

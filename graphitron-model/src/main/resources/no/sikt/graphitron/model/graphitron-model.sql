@@ -21904,6 +21904,10 @@ COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_rel
 COMMENT ON COLUMN meta_stated_relation.rationale IS 'why the rows are the file''s rather than a gatherer''s. The bar is not that the rows change rarely: a gathered relation whose corpus never changes is still gathered. It is that no corpus outside the store could be read to produce them, because they are the vocabulary this file itself declares, so a refresh has nothing to re-read and a gate has nothing to compare against but the DDL';
 
 INSERT INTO meta_stated_relation VALUES
+  ('meta_stage_rule',
+   'One rule view a stage inserts a relation it shares with another stage from: one row per stage, relation and view.',
+   'For example occurrence-builds inserts graphitron_occurrence_binding from graphitron_occurrence_binding_member_rule, whose kind column says MEMBER.',
+   'The kinds a stage declares in meta_stage_write_kind are held to what it writes: each view here states its kind as a column, and a gate reads the kinds each view yields over the fact documents against its stage''s declaration, so a stage writing a kind it did not declare fails the build rather than reading past another stage''s rows.'),
   ('meta_stage_write_kind',
    'One kind of row a stage writes into a relation it shares with another stage, the relation split between them by a column it carries: one row per stage, relation and kind.',
    'For example occurrence-producers writes the SERVICE, WRITE and ROUTINE rows of graphitron_occurrence_call, and occurrence-bindings its CONDITION and EXPRESSION rows.',
@@ -22700,6 +22704,18 @@ COMMENT ON COLUMN meta_stage_write_kind.relation_name IS 'the shared relation, l
 COMMENT ON COLUMN meta_stage_write_kind.kind_column IS 'the column the relation is split by, lower case';
 COMMENT ON COLUMN meta_stage_write_kind.kind IS 'a value of that column whose rows the stage writes and sweeps, completing the key';
 
+CREATE TABLE meta_stage_rule (
+  stage_name    VARCHAR NOT NULL,
+  relation_name VARCHAR NOT NULL,
+  rule_view     VARCHAR NOT NULL,
+  PRIMARY KEY (stage_name, relation_name, rule_view),
+  FOREIGN KEY (stage_name, relation_name) REFERENCES meta_stage_write (stage_name, relation_name)
+);
+COMMENT ON TABLE meta_stage_rule IS 'One rule view a stage inserts a relation it shares with another stage from: one row per stage, relation and view. For example occurrence-builds inserts graphitron_occurrence_binding from graphitron_occurrence_binding_member_rule, whose kind column says MEMBER.';
+COMMENT ON COLUMN meta_stage_rule.stage_name IS 'the inserting stage; with the relation, its meta_stage_write';
+COMMENT ON COLUMN meta_stage_rule.relation_name IS 'the shared relation, lower case as meta_stage_write declares it';
+COMMENT ON COLUMN meta_stage_rule.rule_view IS 'the rule view the stage inserts from, lower case, completing the key; its kind column carries only kinds meta_stage_write_kind declares for the stage';
+
 -- The claim precedences name the stage owning each rule, a reference added once the roster holds
 -- the stages.
 ALTER TABLE graphitron_occurrence_source_precedence ADD FOREIGN KEY (owner_stage)
@@ -22946,6 +22962,19 @@ INSERT INTO meta_stage_write_kind VALUES
   ('occurrence-builds', 'graphitron_occurrence_binding', 'kind', 'MEMBER'),
   ('occurrence-tenants', 'graphitron_occurrence_binding', 'kind', 'TENANT'),
   ('occurrence-values', 'graphitron_occurrence_binding', 'kind', 'VALUE');
+
+-- The rule views each stage inserts the bindings from, each view stating the kind it binds.
+INSERT INTO meta_stage_rule VALUES
+  ('occurrence-producers', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_node_id_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_column_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_voucher_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_expression_binding_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_table_rule'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
+  ('occurrence-builds', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_member_rule'),
+  ('occurrence-tenants', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_tenant_rule'),
+  ('occurrence-values', 'graphitron_occurrence_binding', 'graphitron_occurrence_value_rule');
 
 CREATE TABLE store_graph_progress (
   graph_name     VARCHAR   NOT NULL,

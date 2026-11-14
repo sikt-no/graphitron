@@ -11,7 +11,11 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
+import java.util.TreeSet;
 
+import static no.sikt.graphitron.model.Tables.META_STAGE_RULE;
+import static no.sikt.graphitron.model.Tables.META_STAGE_WRITE_KIND;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.name;
@@ -224,6 +228,84 @@ public class StageAnswerAgreementTest {
         assertThat(STAGES.stream().map(Stage::ruleView).filter(t -> !populated.contains(t)).toList())
             .as("stage rules no fact document reaches; add a document that reaches one")
             .isEmpty();
+    }
+
+    /**
+     * Each rule view a stage inserts a shared relation from yields only the kinds
+     * {@code meta_stage_write_kind} declares for that stage, over every store the fact documents
+     * fill: the declaration the stage roster gate exempts a read by, held to what the stage writes.
+     * A view no document reaches is named too, since it would pass while asserting nothing.
+     */
+    @Test
+    @DisplayName("every rule view a stage inserts a shared relation from yields only the stage's declared kinds")
+    void everyStageWritesOnlyTheKindsItDeclares() {
+        var rules = new ArrayList<org.jooq.Record3<String, String, String>>();
+        var declared = new TreeMap<String, Set<String>>();
+        var columns = new TreeMap<String, String>();
+        var observed = new TreeMap<String, Set<String>>();
+        eachReading((graphs, dsl) -> {
+            if (rules.isEmpty()) {
+                rules.addAll(dsl.select(META_STAGE_RULE.STAGE_NAME, META_STAGE_RULE.RELATION_NAME,
+                    META_STAGE_RULE.RULE_VIEW).from(META_STAGE_RULE).fetch());
+                dsl.selectFrom(META_STAGE_WRITE_KIND).fetch().forEach(k -> {
+                    var key = k.getStageName() + " " + k.getRelationName();
+                    declared.computeIfAbsent(key, x -> new TreeSet<>()).add(k.getKind());
+                    columns.put(key, k.getKindColumn());
+                });
+            }
+            for (var rule : rules) {
+                var column = columns.get(rule.value1() + " " + rule.value2());
+                if (column == null) {
+                    continue;
+                }
+                var kinds = observed.computeIfAbsent(rule.value3(), x -> new TreeSet<>());
+                for (var graph : graphs) {
+                    kinds.addAll(dsl.selectDistinct(field(name(column.toUpperCase()), String.class))
+                        .from(table(name(rule.value3().toUpperCase()))).where(inGraph(graph))
+                        .fetch(0, String.class));
+                }
+            }
+        });
+        var violations = new ArrayList<String>();
+        for (var rule : rules) {
+            var key = rule.value1() + " " + rule.value2();
+            violations.addAll(undeclared(rule.value1(), rule.value2(), rule.value3(),
+                observed.getOrDefault(rule.value3(), Set.of()), declared.getOrDefault(key, Set.of())));
+        }
+        assertThat(violations)
+            .as("a stage writing a kind it does not declare reads past another stage's rows unrefused;"
+                + " declare the kind, or move the rows to the stage declaring it")
+            .isEmpty();
+    }
+
+    @Test
+    @DisplayName("a view yielding a kind its stage does not declare is named")
+    void aKindTheStageDoesNotDeclareIsNamed() {
+        assertThat(undeclared("occurrence-bindings", "graphitron_occurrence_binding",
+                "graphitron_occurrence_binding_table_rule", Set.of("TABLE"), Set.of("COLUMN", "NODE_ID")))
+            .containsExactly("graphitron_occurrence_binding_table_rule yields TABLE, which occurrence-bindings"
+                + " does not declare for graphitron_occurrence_binding");
+        assertThat(undeclared("occurrence-bindings", "graphitron_occurrence_binding",
+                "graphitron_occurrence_binding_table_rule", Set.of(), Set.of("TABLE")))
+            .containsExactly("graphitron_occurrence_binding_table_rule yields no rows in any fact document");
+        assertThat(undeclared("occurrence-bindings", "graphitron_occurrence_binding",
+                "graphitron_occurrence_binding_table_rule", Set.of("TABLE"), Set.of("TABLE")))
+            .isEmpty();
+    }
+
+    /**
+     * What a view's {@code observed} kinds say against the kinds its stage {@code declared} for the
+     * relation: each kind it yields and the stage does not declare, or that it yields nothing.
+     */
+    private static List<String> undeclared(String stage, String relation, String view, Set<String> observed,
+                                           Set<String> declared) {
+        if (observed.isEmpty()) {
+            return List.of(view + " yields no rows in any fact document");
+        }
+        return observed.stream()
+            .filter(kind -> !declared.contains(kind))
+            .map(kind -> view + " yields " + kind + ", which " + stage + " does not declare for " + relation)
+            .toList();
     }
 
     /**
