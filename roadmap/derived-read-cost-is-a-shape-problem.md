@@ -84,11 +84,9 @@ The walk's read path is gone
 │   │   └── An argument binds the call parameter it supplies
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
-│   │   ├── An inline list's ordering is resolved at its occurrence, claimed by G
 │   │   ├── A sort key's path is resolved at its occurrence
 │   │   ├── A client's choice of order is applied to an inline list
 │   │   ├── A list's order is completed with its row key
-│   │   ├── An inline list states how it is narrowed, claimed by G
 │   │   └── A single child is looked up by its keys
 │   ├── Every list states its order or is refused
 │   └── A single child's null contract is stated
@@ -712,7 +710,7 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
-  * **A child read inline is emitted from the store** `blocked`, on "An inline list's ordering is resolved at its occurrence, claimed by G", "A sort key's path is resolved at its occurrence", "A client's choice of order is applied to an inline list", "A list's order is completed with its row key", "An inline list states how it is narrowed, claimed by G" and "A single child is looked up by its keys". A
+  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "A client's choice of order is applied to an inline list", "A list's order is completed with its row key" and "A single child is looked up by its keys". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -794,29 +792,6 @@ static method needs no holder.
       pass-through and `ConditionBeanAtInputField` go, and typed-rejection.adoc says so. Breaking
       for utdanningsregisteret's `searchVektingstallRange` and `filterUtdanningsinstanserByVarighet`,
       so it lands after the typed forms, with a `BREAKING-CHANGE` footer naming the migration.
-  * **An inline list's ordering is resolved at its occurrence, claimed by G** `open`. Read by "A child read
-    inline is emitted from the store". `@defaultOrder` and `@order` are one decode,
-    `graphitron_ast_order_entry` and its field elements written from both sites with the
-    application-level direction, the surface where exactly one is written and how many were, and each
-    element's index and shape. Per list or connection occurrence (`graphitron_field_many`, a field-grain
-    fact the `field-targets` step writes) and table its binding reads, `graphitron_occurrence_order`
-    states the default, written or the primary key it falls back to, and one choice per value of an
-    `@orderBy` argument's sort enum (`@order` or `@index`); `graphitron_occurrence_sort_key` its keys
-    in order with the resolved direction and the collation written, a `_column` subtype (the spelling's
-    column, or a primary key's or index's own) and a `_method` one keyed into `graphitron_code_reference`,
-    both read off the stored keys; a key read through a `path:` is `PATH` with no subtype until "A sort
-    key's path is resolved at its occurrence". `graphitron_order_input` keys the sort and direction
-    fields by input type. What identifies a row is `graphitron_type_identifying_key`, every key the
-    walk's row identity holds, ranked (primary key, the type's node key, the all-not-null unique keys),
-    key ordinal 0 the row key, written by a `type-identifying-keys` stage after the node keys and read
-    by "A list's order is completed with its row key". Written by the `occurrence-orderings` stage, which states
-    beside the orders six rules the walk enforces (`ORDER_PRIMARY_KEY_MISSING`,
-    `ORDER_INDEX_UNRESOLVED`, `ORDER_COLUMN_UNRESOLVED`, `ORDER_FIELD_SHAPE`,
-    `ORDER_VALUE_UNORDERED`, and `LIST_ORDER_UNDETERMINED` for an inline list over a keyless table),
-    the manual's `ORDER_SURFACES`, stricter than the walk, which takes the first surface written, a
-    breaking change that is Alf's to rule on (no schema in this repository hits it), and
-    the deferral `ORDER_CHOICE_ON_INLINE_LIST`, closed by "A client's choice of order is applied to an
-    inline list". Of "An enum value's ordering is read from the store" it closes the store's half.
   * **A sort key's path is resolved at its occurrence** `open`. A `fields` element's `path:` (about
     twenty sakila sites) is a `PATH` sort key with no column: the path family's decode extends to
     `FieldSort.path`, so the join path need and step relations resolve it, the to-one refusal
@@ -850,23 +825,6 @@ static method needs no holder.
     connection with none (`validatePaginationRequiresOrdering`), at the root, split and over several
     participants too. The rule widens to those producers, each exemption stated as a fact, before the
     root fetchers flip.
-  * **An inline list states how it is narrowed, claimed by G** `open`. Read by "A child read inline is emitted
-    from the store". `graphitron_occurrence_lookup_key(graph, coordinate, bound, position,
-    key_coordinate, key_bound, key_kind)` states, per field occurrence and table its binding reads, each
-    argument or input-field occurrence written `@lookupKey` that binds a column or node id, in key
-    order: arguments as declared, an input object's fields as declared within it, a node id's columns
-    in its own key order. It keys into the key occurrence's binding rather than copying the column,
-    and holds for root, split and inline lists alike, the producer saying where the lookup runs. An
-    input field's node id of another table's node is a key where its path's one foreign key carries
-    every key position back to the list's table, `graphitron_occurrence_node_id_carried`, which
-    `occurrence-bindings` writes for every node id, so the lookup matches the list's own foreign-key
-    columns as the walk does. The filter conditions leave a key out of the generated predicates by
-    joining this relation, never by reading `@lookupKey` again. Written by the
-    `occurrence-lookup-keys` stage, which states two rules the walk enforces,
-    `LOOKUP_KEY_ON_CONNECTION` and `LOOKUP_KEY_OFF_TABLE` (a node id argument of another table's node,
-    or an input field one no foreign key carries back), and the deferral `LOOKUP_KEY_ON_SINGLE_CHILD`,
-    closed by "A single child is looked up by its keys". A `first` limit is no part of it: pagination
-    is a connection's (Alf, 2026-11-13).
   * **A `@pivot` is resolved against the catalog** `open`, off the critical path. The attribute table, its on and value
     columns as `sql_column` rows, and each slot's token, where today the entry holds the strings
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
@@ -3165,6 +3123,19 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 **The generated connection carrier is `OwnedConnections`** (2026-11-14). `TenantConnections`,
 `TENANT_CONNECTIONS_CLASS_NAME` and `ServiceEmission.Tenancy` go; the tenant is one part of the
 connection key, and the carrier and emit's routing classes are named for the key mechanism.
+
+**An inline list's ordering and its narrowing are stated at its occurrence** (2026-11-15).
+`@defaultOrder` and `@order` are one decode, `graphitron_ast_order_entry` with its surface and count
+generated from the row; `graphitron_occurrence_order` states each list's default and each `@orderBy`
+choice, referencing the application it is read from, and `graphitron_occurrence_sort_key` its keys,
+column or method; `graphitron_sort_enum` and `graphitron_order_input` state the sort enum and the
+argument's input type. `graphitron_occurrence_lookup_key` states a list's `@lookupKey` keys, keyed by
+the key occurrence and ordered by the stored argument and field ordinals, and
+`graphitron_occurrence_node_id_carried` the column a node id's one-step path carries a key back to,
+which the node id slot's record column now reads. An ordering's missing index or column draws
+`ELEMENT_UNRESOLVED` or `COLUMN_UNRESOLVED`; the decode's and the lookup key's own refusals are
+`field-targets`', the orders' `occurrence-orderings`', a malformed `@orderBy` input type among them,
+`ORDER_INPUT_SHAPE`.
 
 **A binding's kind is stated by its rule view** (2026-11-14). The binding writers' kind literals are
 gone: each binding rule view projects `kind`, and the tenant view its `bound`, which its writer
