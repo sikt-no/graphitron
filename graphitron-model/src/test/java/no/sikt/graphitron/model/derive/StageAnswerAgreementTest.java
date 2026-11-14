@@ -109,6 +109,7 @@ public class StageAnswerAgreementTest {
         new Stage("graphitron_sort_enum", "graphitron_sort_enum_rule"),
         new Stage("graphitron_order_input", "graphitron_order_input_rule"),
         new Stage("graphitron_occurrence_order", "graphitron_occurrence_order_rule"),
+        new Stage("graphitron_occurrence_order_index", "graphitron_occurrence_order_index_rule"),
         new Stage("graphitron_occurrence_sort_key", "graphitron_occurrence_sort_key_rule"),
         new Stage("graphitron_occurrence_sort_key_column", "graphitron_occurrence_sort_key_column_rule"),
         new Stage("graphitron_occurrence_sort_key_method", "graphitron_occurrence_sort_key_method_rule"),

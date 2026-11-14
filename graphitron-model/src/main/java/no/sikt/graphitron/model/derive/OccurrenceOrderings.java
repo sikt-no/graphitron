@@ -11,6 +11,8 @@ import java.util.LinkedHashMap;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_INDEX;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_INDEX_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE;
@@ -46,6 +48,7 @@ public final class OccurrenceOrderings {
         replace(dsl, GRAPHITRON_SORT_ENUM, GRAPHITRON_SORT_ENUM_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_ORDER_INPUT, GRAPHITRON_ORDER_INPUT_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_ORDER, GRAPHITRON_OCCURRENCE_ORDER_RULE, graph, touchedAt);
+        replace(dsl, GRAPHITRON_OCCURRENCE_ORDER_INDEX, GRAPHITRON_OCCURRENCE_ORDER_INDEX_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY, GRAPHITRON_OCCURRENCE_SORT_KEY_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE, graph,
             touchedAt);

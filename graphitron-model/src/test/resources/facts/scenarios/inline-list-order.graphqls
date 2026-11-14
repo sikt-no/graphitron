@@ -138,8 +138,15 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", r
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_method", rows: """
-  coordinate, choice, position, directive_name, ordinal, owner
-  Language.films, Language.films, 0, defaultOrder, 0, fields.0
+  coordinate, choice, position, application_coordinate, directive_name, ordinal, owner
+  Language.films, Language.films, 0, Language.films, defaultOrder, 0, fields.0
+  """)
+
+# The index each INDEX order sorts by, matched once; the keys above read its columns from here.
+extend schema @expectEquals(relation: "graphitron_occurrence_order_index", rows: """
+  coordinate,          choice,             index_table, index_name
+  Film.actorsByIndex,  Film.actorsByIndex, actor,       idx_actor_last_name
+  Query.actorsOrdered, ActorSort.BY_INDEX, actor,       idx_actor_last_name
   """)
 
 extend schema @expectEquals(relation: "graphitron_order_input", rows: """
