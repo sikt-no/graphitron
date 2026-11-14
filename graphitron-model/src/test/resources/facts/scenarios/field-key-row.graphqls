@@ -7,29 +7,31 @@
 # A service under a table row takes its keys off that row, its fill naming the row's table.
 type Film @table(name: "film") {
   title: String
-  # Selections under a row graphitron selected take no key off it: one hop forward,
+  # Selections under a row graphitron selected take their key off it: one hop forward is a target
+  # lift, keyed on the language's key the film row's foreign key references,
   languageSplit: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
-  # two hops,
+  # two hops a source lift, keyed on the film's primary key,
   actors: [Actor!]! @splitQuery @reference(path: [{table: "film_actor"}, {table: "actor"}])
-  # A plain object under a film row, whose split field is read off a row graphitron selected.
+  # A plain object under a film row, whose split field is read off the same selected row.
   details: FilmSplitDetails
   titleUppercase: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
 }
 type Language @table(name: "language") {
   name: String
-  # one hop back along a key, for a list,
+  # one hop back along a key, for a list, a target lift keyed on the language's key the films' key
+  # references,
   films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
 # Not bound to a table, but passing on its parent's selected film row rather than a record handed
-# over, so the split field under it takes no key, as one under the film row would not.
+# over, so the split field under it is lifted off the film row, as one under the film row is.
 type FilmSplitDetails {
   language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
 }
 type Address @table(name: "address") { address: String }
 type Customer @table(name: "customer") {
   firstName: String @field(name: "first_name")
-  # or one hop carrying a condition.
+  # and one hop carrying a condition a source lift, keyed on the customer's primary key.
   address: Address @splitQuery @reference(path: [{key: "customer_address_id_fkey", condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
       method: "customerToAddress"}}])
@@ -105,8 +107,8 @@ type Mutation {
 # whose path leaves the record's table by its first key, a re-read of the target's rows matched out
 # of a routine's result, and a service keyed on its source's table, whether that source is a record
 # handed over or a row graphitron selected (Film.titleUppercase). A selection under a row graphitron
-# selected, whether its path is one hop or several or carries a condition, and a plain type under a
-# table-bound one, take no key here.
+# selected, under a table-bound type or a plain one nesting on its row, takes a target lift on its one
+# hop's key where that hop has no condition, and a source lift on the source's primary key otherwise.
 extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", rows: """
   coordinate,                                   read,     arity, key_table, key_constraint
   Query.filmDetailsBatch.language,              COLUMNS,  ONE,   film,      film_pkey
@@ -118,6 +120,11 @@ extend schema @expectEquals(relation: "graphitron_occurrence_producer_lift", row
   Query.occupantsBatch.occupants,               ACCESSOR, MANY,  address,   address_pkey
   Film.titleUppercase,                          COLUMNS,  ONE,   film,      film_pkey
   Mutation.rentFilmPayload.rental,              COLUMNS,  ONE,   rental,    rental_pkey
+  Film.languageSplit,                           COLUMNS,  ONE,   language,  language_pkey
+  Film.actors,                                  COLUMNS,  ONE,   film,      film_pkey
+  Film.details.language,                        COLUMNS,  ONE,   language,  language_pkey
+  Language.films,                               COLUMNS,  ONE,   language,  language_pkey
+  Customer.address,                             COLUMNS,  ONE,   customer,  customer_pkey
   """)
 
 # A key read through a member names the member, its one candidate: the record component the

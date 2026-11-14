@@ -23,6 +23,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT_ACCESSOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static org.jooq.impl.DSL.selectOne;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,9 +38,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>{@link KeyLift.FkColumns} and {@link KeyLift.ProducedRecords} both read the keys as columns
  * off the object, the store's {@code COLUMNS}; which columns is the path's, so the comparison does
- * not ask. A polymorphic field under a table-row parent carries a lift too, but its parent holds a
- * row, not an object; a service under one is filled off that row, which the classifier states as
- * {@link ServiceKeySource.FromTableRow}, so the comparison leaves both out.
+ * not ask. A producer under a table-row parent, or under a nesting field reading one, carries a lift
+ * too, but its parent holds a row, not an object; a service under one is filled off that row, which
+ * the classifier states as {@link ServiceKeySource.FromTableRow}, so the comparison leaves them out.
  */
 @PipelineTier
 class ProducerFillPinTest {
@@ -60,6 +61,7 @@ class ProducerFillPinTest {
             var o = GRAPHITRON_OCCURRENCE;
             var f = GRAPHITRON_FIELD;
             var tt = GRAPHITRON_TABLETYPE;
+            var ns = GRAPHITRON_OCCURRENCE_NESTING;
             var stored = new TreeMap<String, String>();
             // An accessor key names the member it reads, its code_read_slot row. A field reached
             // under several parents is filled once per occurrence, the same way each time.
@@ -70,6 +72,8 @@ class ProducerFillPinTest {
                 .leftJoin(a).on(a.GRAPH_NAME.eq(k.GRAPH_NAME), a.COORDINATE.eq(k.COORDINATE))
                 .whereNotExists(selectOne().from(tt)
                     .where(tt.GRAPH_NAME.eq(f.GRAPH_NAME), tt.TYPE_NAME.eq(f.TYPE_NAME)))
+                .andNotExists(selectOne().from(ns)
+                    .where(ns.GRAPH_NAME.eq(o.GRAPH_NAME), ns.COORDINATE.eq(o.PARENT_COORDINATE)))
                 .fetch()
                 .forEach(r -> stored.merge(r.value1() + "." + r.value2(),
                     r.value3() + " " + r.value4() + (r.value5() == null ? "" : " " + r.value5()),

@@ -9,7 +9,13 @@ type Film implements Node @table(name: "film") @node {
   languageName: String @reference(path: [{key: "film_language_id_fkey"}]) @field(name: "name")
   "Non-null, so it is the film row's whatever its columns hold."
   facts: FilmFacts!
+  "A split keyed on the language's key, read off the film row's language_id."
+  languageSplit: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  "A split over two hops, keyed on the film's own key."
+  actors: [Actor!]! @splitQuery @reference(path: [{table: "film_actor"}, {table: "actor"}])
 }
+
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
 
 "Read off the film row it is nested under."
 type FilmFacts {

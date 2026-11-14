@@ -37,8 +37,9 @@ public final class ProjectionEmitter {
         EXPRESSION,
         /**
          * A field resolved by a producer of its own, a split, a service, a batched or polymorphic
-         * fetch, whose parent row must carry the columns its loader keys on, which nothing states
-         * at the occurrence yet.
+         * fetch, whose parent row must carry the columns its loader keys on, where no lift states
+         * them on the unit's table: a producer whose source has no primary key, or one under a
+         * record a producer handed over rather than a row the unit selects.
          */
         CHILD_PRODUCER_COLUMNS,
         /**
@@ -159,7 +160,7 @@ public final class ProjectionEmitter {
     /** Why {@code arm} is not rendered, or null where it is. */
     private static Reason reasonFor(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable) {
         if (arm.pivot()) return Reason.PIVOT;
-        if ("PRODUCER".equals(arm.side())) return Reason.CHILD_PRODUCER_COLUMNS;
+        if ("PRODUCER".equals(arm.side())) return handed(arm, unitTable) ? null : Reason.CHILD_PRODUCER_COLUMNS;
         if (arm.reads() == null) return Reason.UNSTATED;
         return switch (arm.reads()) {
             case "EXPRESSION" -> Reason.EXPRESSION;
@@ -187,6 +188,14 @@ public final class ProjectionEmitter {
         var landing = from;
         var columns = arm.columns().stream().filter(c -> c.table().equals(landing)).toList();
         return columns.size() == 1 ? columns.get(0) : null;
+    }
+
+    /**
+     * A field fetched by a producer of its own whose lift states the columns of the unit's row its
+     * keys are read off, all of them the unit's table's: the unit projects them for the producer.
+     */
+    private static boolean handed(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable) {
+        return !arm.liftColumns().isEmpty() && arm.liftColumns().stream().allMatch(c -> c.table().equals(unitTable));
     }
 
     /** A nesting field, its fields read off its parent's row; anything else nested is read down a path. */
@@ -247,11 +256,11 @@ public final class ProjectionEmitter {
             return CodeBlock.of("$L(fields, $T.mergeByResultKey(entry.getValue()), table, env, rkPath + entry.getKey() + $S);\n",
                 levelName(arm.chain()), occurrences, PATH_DELIMITER);
         }
+        var columns = "PRODUCER".equals(arm.side()) ? arm.liftColumns() : projected(arm, unitTable);
         var terminal = terminal(arm, unitTable);
-        if (terminal != null && !sameRow(arm)) {
+        if (!"PRODUCER".equals(arm.side()) && terminal != null && !sameRow(arm)) {
             return subselect(arm, terminal);
         }
-        var columns = projected(arm, unitTable);
         var body = CodeBlock.builder().add("{\n").indent();
         for (var column : columns) {
             body.addStatement("fields.add(table.$L)", column.javaName());

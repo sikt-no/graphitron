@@ -803,10 +803,14 @@ static method needs no holder.
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
     so the flip states it as a deferral, a stored defect of basis `UNSUPPORTED`, until this lands
     (Alf, 2026-11-13).
-  * **A child producer states the parent columns it is handed** `open`. Beside the key
-    `graphitron_occurrence_producer_lift` fills it with, the columns of the parent occurrence's table its
-    loader keys on, so the parent's unit projects them by a join from the producer rather than by
-    `correlationKeyArm`.
+  * **A child producer states the parent columns it is handed** `open`, F's. Landed: the lift is
+    stated for a producer under a row graphitron selected as well as under a record, a target lift on
+    the key its one condition-free hop's foreign key references, a source lift on the source's
+    primary key otherwise, stated only where the source has one; the projection unit projects the
+    parent's columns the lift is read off, the hop's own where the key is the target's, so the census's
+    child producers are rendered. Left: a service under a row whose call takes no key off it
+    (`Film.castMembers`, `Film.languageByService`, `Film.modifiedLanguage` in the example), which has
+    no lift; whether it needs any column of its parent's row is what this node settles.
   * **A single child's null contract is stated** `blocked`, on the expression and condition nodes.
     Nothing states when a nesting field or a single inline child is null, which the `__p_` probe
     decides today as a disjunction over its paths and expressions; it is modelled once those land.

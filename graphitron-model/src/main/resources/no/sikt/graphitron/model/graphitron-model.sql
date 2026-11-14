@@ -11623,7 +11623,8 @@ COMMENT ON COLUMN graphitron_occurrence_producer.touched_at IS 'the reading that
 
 CREATE VIEW graphitron_occurrence_nesting_rule (graph_name, coordinate, target_type) AS
 -- A single object with no table and no producer of its own, whose need is met by an empty path: a
--- list, a table-bound object, a producer's result or anything read down a path is no nesting field.
+-- list, a table-bound object, a producer's result, an @externalField's object or anything read down
+-- a path is no nesting field.
 SELECT o.graph_name, o.coordinate, p.target_type
   FROM graphitron_occurrence o
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -11637,7 +11638,11 @@ SELECT o.graph_name, o.coordinate, p.target_type
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
                      WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer op
-                     WHERE op.graph_name = o.graph_name AND op.coordinate = o.coordinate);
+                     WHERE op.graph_name = o.graph_name AND op.coordinate = o.coordinate)
+   -- An @externalField's value is the object its expression hands over, not its parent's row.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference xr
+                     WHERE xr.graph_name = o.graph_name AND xr.coordinate = o.element_coordinate
+                       AND xr.directive_name = 'externalField');
 COMMENT ON VIEW graphitron_occurrence_nesting_rule IS 'One row the occurrence nesting rule computes, in the shape graphitron_occurrence_nesting stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_nesting, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_nesting_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_nesting.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_nesting_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_nesting.coordinate';
@@ -13741,8 +13746,9 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_candidate_rule IS 'One row t
 -- How a child producer's keys are filled from its source, written after the depths, per
 -- occurrence and with services in: a member handing over the key's records, a re-fetch of the
 -- source's own rows, a re-read of the target's rows matched out of a routine's result, a selection
--- under a record handed over whose path leaves the record's table by its first key, and a service
--- keyed on its source's table.
+-- under a record handed over whose path leaves the record's table by its first key, a service keyed
+-- on its source's table, and a child producer under a row graphitron selected, by a target or a
+-- source lift.
 CREATE VIEW graphitron_occurrence_producer_lift_rule
   (graph_name, coordinate, read, arity, key_source_name, key_schema, key_table, key_constraint) AS
 -- A key table with no primary key gives a row with no constraint, which KEY_TABLE_WITHOUT_PRIMARY_KEY
@@ -13961,7 +13967,95 @@ SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
                      JOIN graphitron_code_reference xr
                        ON xr.graph_name = po.graph_name AND xr.coordinate = po.element_coordinate
                       AND xr.directive_name = 'externalField' AND xr.kind = 'ROOT'
-                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate)));
+                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate)))
+UNION ALL
+-- A child producer under a row graphitron selected, its declaring type's own or the one a nesting
+-- field above it reads off. A target lift where its one need's path is one hop joining on column
+-- pairs with no condition on it, keyed on the key the hop's foreign key references: the target's,
+-- where the hop's target columns are a primary or unique key of the target's table, else the
+-- source's, a list's rows each its own key's. A lift states a primary or unique key, never the
+-- foreign key; which of the target's keys the rows match through is the step's. Every other is a
+-- source lift on the source's primary key, stated only where the source has one: a source lift
+-- needs it, and a split from a table without one is left to the walk rather than refused here.
+SELECT p.graph_name, p.coordinate, 'COLUMNS', 'ONE',
+       COALESCE(t.key_source_name, src.table_source_name), COALESCE(t.key_schema, src.table_schema),
+       COALESCE(t.key_table, src.table_name), COALESCE(t.key_constraint, pk.constraint_name)
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_source_table src ON src.graph_name = p.graph_name AND src.coordinate = p.coordinate
+  LEFT JOIN sql_constraint pk
+    ON pk.source_name = src.table_source_name AND pk.table_schema = src.table_schema
+   AND pk.table_name = src.table_name AND pk.constraint_type = 'PRIMARY KEY'
+  LEFT JOIN (
+    SELECT s.graph_name, s.coordinate, k.source_name AS key_source_name, k.table_schema AS key_schema,
+           k.table_name AS key_table, k.constraint_name AS key_constraint
+      FROM graphitron_join_path_step s
+      JOIN sql_constraint k
+        ON k.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+       AND ((k.source_name = s.to_source_name AND k.table_schema = s.to_schema AND k.table_name = s.to_table)
+            OR (k.source_name = s.from_source_name AND k.table_schema = s.from_schema
+                AND k.table_name = s.from_table))
+     WHERE s.position = 0
+       AND EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                    WHERE sc.graph_name = s.graph_name AND sc.coordinate = s.coordinate
+                      AND sc.target_type = s.target_type AND sc.position = s.position)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step s1
+                        WHERE s1.graph_name = s.graph_name AND s1.coordinate = s.coordinate
+                          AND s1.target_type = s.target_type AND s1.position > 0)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_method sm
+                        WHERE sm.graph_name = s.graph_name AND sm.coordinate = s.coordinate
+                          AND sm.target_type = s.target_type AND sm.position = 0)
+       AND NOT EXISTS (SELECT 1 FROM graphitron_path_need n
+                        WHERE n.graph_name = s.graph_name AND n.coordinate = s.coordinate
+                          AND n.target_type <> s.target_type)
+       -- The key's columns are exactly the hop's columns on its table: on the target where the
+       -- target's columns are a key, else on the source.
+       AND NOT EXISTS (SELECT 1 FROM sql_constraint_column kc
+                        WHERE kc.source_name = k.source_name AND kc.table_schema = k.table_schema
+                          AND kc.table_name = k.table_name AND kc.constraint_name = k.constraint_name
+                          AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                                           WHERE sc.graph_name = s.graph_name AND sc.coordinate = s.coordinate
+                                             AND sc.target_type = s.target_type AND sc.position = s.position
+                                             AND kc.column_name = CASE WHEN k.table_name = s.to_table
+                                                                         AND k.table_schema = s.to_schema
+                                                                       THEN sc.to_column ELSE sc.from_column END))
+       AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                        WHERE sc.graph_name = s.graph_name AND sc.coordinate = s.coordinate
+                          AND sc.target_type = s.target_type AND sc.position = s.position
+                          AND NOT EXISTS (SELECT 1 FROM sql_constraint_column kc
+                                           WHERE kc.source_name = k.source_name AND kc.table_schema = k.table_schema
+                                             AND kc.table_name = k.table_name AND kc.constraint_name = k.constraint_name
+                                             AND kc.column_name = CASE WHEN k.table_name = s.to_table
+                                                                         AND k.table_schema = s.to_schema
+                                                                       THEN sc.to_column ELSE sc.from_column END))
+       -- The target's key where both sides' columns are keys, a hop between two rows sharing one.
+       AND NOT (k.table_name <> s.to_table
+                AND EXISTS (SELECT 1 FROM sql_constraint k2
+                             WHERE k2.source_name = s.to_source_name AND k2.table_schema = s.to_schema
+                               AND k2.table_name = s.to_table AND k2.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+                               AND NOT EXISTS (SELECT 1 FROM sql_constraint_column kc
+                                                WHERE kc.source_name = k2.source_name
+                                                  AND kc.table_schema = k2.table_schema
+                                                  AND kc.table_name = k2.table_name
+                                                  AND kc.constraint_name = k2.constraint_name
+                                                  AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                                                                   WHERE sc.graph_name = s.graph_name
+                                                                     AND sc.coordinate = s.coordinate
+                                                                     AND sc.target_type = s.target_type
+                                                                     AND sc.position = s.position
+                                                                     AND kc.column_name = sc.to_column))))) t
+    ON t.graph_name = p.graph_name AND t.coordinate = p.coordinate
+ WHERE p.start = 'CHILD' AND p.kind <> 'SERVICE'
+   AND (EXISTS (SELECT 1 FROM graphitron_tabletype dt
+                 WHERE dt.graph_name = f.graph_name AND dt.type_name = f.type_name)
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_nesting ns
+                    WHERE ns.graph_name = o.graph_name AND ns.coordinate = o.parent_coordinate))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st2
+                    WHERE st2.graph_name = src.graph_name AND st2.coordinate = src.coordinate
+                      AND (st2.table_source_name <> src.table_source_name OR st2.table_schema <> src.table_schema
+                           OR st2.table_name <> src.table_name))
+   AND (t.coordinate IS NOT NULL OR pk.constraint_name IS NOT NULL);
 
 COMMENT ON VIEW graphitron_occurrence_producer_lift_rule IS 'One row the lift rule computes, in the shape graphitron_occurrence_producer_lift stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-bindings stage inserts this view''s rows for one graph into graphitron_occurrence_producer_lift, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_lift_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_producer_lift.graph_name';

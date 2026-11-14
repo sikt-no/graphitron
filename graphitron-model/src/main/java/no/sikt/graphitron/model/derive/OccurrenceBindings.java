@@ -22,11 +22,12 @@ public final class OccurrenceBindings {
 
     /** Writes the stage's relations, then sweeps what this reading did not mark. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        // The nesting fields first: a producer beneath one is lifted off the row it reads.
+        OccurrenceNestings.write(dsl, graph, touchedAt);
         OccurrenceLifts.write(dsl, graph, touchedAt);
         OccurrenceNodeIds.write(dsl, graph, touchedAt);
         LandingKeyColumns.write(dsl, graph, touchedAt);
         OccurrenceColumns.write(dsl, graph, touchedAt);
-        OccurrenceNestings.write(dsl, graph, touchedAt);
         OccurrenceVouchers.write(dsl, graph, touchedAt);
         OccurrenceTables.write(dsl, graph, touchedAt);
         OccurrenceConditions.write(dsl, graph, touchedAt);

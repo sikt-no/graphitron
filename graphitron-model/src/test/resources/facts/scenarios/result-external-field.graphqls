@@ -125,3 +125,7 @@ extend schema @assertEmpty(relation: "graphitron_occurrence_source",
 
 extend schema @assertEmpty(relation: "graphitron_path_need_table",
     where: "coordinate = 'Inventory.filmCardData.example.fieldA'")
+
+# An @externalField returning an object hands that object over: no nesting field, though its path
+# is empty and it has no producer, so a child under it is lifted off the value, not off the row.
+extend schema @assertEmpty(relation: "graphitron_occurrence_nesting", where: "coordinate IN ('Inventory.filmRef', 'Inventory.filmCardData')")

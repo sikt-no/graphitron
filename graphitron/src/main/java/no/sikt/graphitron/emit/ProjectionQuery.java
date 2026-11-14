@@ -21,12 +21,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
@@ -95,7 +98,8 @@ public final class ProjectionQuery {
     public record Arm(String coordinate, List<String> chain, boolean nonNull, int listDepth,
                       List<Column> columns, List<Column> nodeKeys, List<String> pathOrigins, String side,
                       String producerKind, String reads, String targetType, boolean targetTable,
-                      boolean pivot, boolean nesting, List<Step> steps, String aliasOwner, List<Arm> nested) {
+                      boolean pivot, boolean nesting, List<Step> steps, String aliasOwner, List<Column> liftColumns,
+                      List<Arm> nested) {
         public Arm {
             Objects.requireNonNull(coordinate, "coordinate");
             chain = List.copyOf(chain);
@@ -103,6 +107,7 @@ public final class ProjectionQuery {
             nodeKeys = List.copyOf(nodeKeys);
             pathOrigins = List.copyOf(pathOrigins);
             steps = List.copyOf(steps);
+            liftColumns = List.copyOf(liftColumns);
             nested = List.copyOf(nested);
         }
 
@@ -181,7 +186,8 @@ public final class ProjectionQuery {
                     pv.PIVOT_TYPE_NAME.eq(f.TYPE_NAME), pv.PIVOT_FIELD_NAME.eq(f.FIELD_NAME))),
                 exists(selectOne().from(ns).where(ns.GRAPH_NAME.eq(o.GRAPH_NAME), ns.COORDINATE.eq(o.COORDINATE))),
                 steps(o.GRAPH_NAME, o.COORDINATE),
-                aliasOwner(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME))
+                aliasOwner(f.GRAPH_NAME, f.TYPE_NAME, f.FIELD_NAME),
+                liftColumns(o.GRAPH_NAME, o.COORDINATE))
             .from(o)
             .join(f).on(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE))
             .leftJoin(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
@@ -198,7 +204,7 @@ public final class ProjectionQuery {
                 Boolean.TRUE.equals(r.value5()), r.value6() == null ? 0 : r.value6(),
                 r.value7() == null ? 0 : r.value7(), r.value8(), r.value9(), r.value10(), r.value11(),
                 r.value12(), r.value13(), r.value14(), r.value15() != null, Boolean.TRUE.equals(r.value16()),
-                Boolean.TRUE.equals(r.value17()), r.value18(), r.value19())));
+                Boolean.TRUE.equals(r.value17()), r.value18(), r.value19(), r.value20())));
 
         // A chain starts at an occurrence with no parent; the type declaring its field is the unit
         // it belongs to.
@@ -230,6 +236,7 @@ public final class ProjectionQuery {
                 return new Arm(fact.coordinate(), chain, fact.nonNull(), fact.listDepth(), fact.columns(),
                     fact.nodeKeys(), fact.pathOrigins(), fact.side(), fact.producerKind(), fact.reads(),
                     fact.targetType(), fact.targetTable(), fact.pivot(), fact.nesting(), fact.steps(), fact.aliasOwner(),
+                    fact.liftColumns(),
                     arms(children.getOrDefault(fact.coordinate(), List.of()), chain, children));
             })
             .toList();
@@ -293,6 +300,37 @@ public final class ProjectionQuery {
         return when(discriminated, coalesce(field(declaringInterface), type));
     }
 
+    /**
+     * The columns of the parent's row a child producer's lift is keyed on, in key order: the lift's
+     * key columns where the key is the source's, else the source columns its one hop pairs with
+     * them, the source's row holding the values the target's key is matched by.
+     */
+    private static Field<List<Column>> liftColumns(Field<String> graph, Field<String> coordinate) {
+        var l = GRAPHITRON_OCCURRENCE_PRODUCER_LIFT;
+        var kc = SQL_CONSTRAINT_COLUMN;
+        var sc = GRAPHITRON_JOIN_PATH_STEP_COLUMN;
+        var src = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var col = SQL_COLUMN;
+        var onSource = l.KEY_TABLE.eq(src.TABLE_NAME).and(l.KEY_SCHEMA.eq(src.TABLE_SCHEMA));
+        Field<String> table = when(onSource, kc.TABLE_NAME).otherwise(sc.FROM_TABLE);
+        Field<String> schema = when(onSource, kc.TABLE_SCHEMA).otherwise(sc.FROM_SCHEMA);
+        Field<String> source = when(onSource, kc.SOURCE_NAME).otherwise(sc.FROM_SOURCE_NAME);
+        Field<String> column = when(onSource, kc.COLUMN_NAME).otherwise(sc.FROM_COLUMN);
+        return multiset(
+            select(col.SOURCE_NAME, col.TABLE_SCHEMA, col.TABLE_NAME, col.COLUMN_NAME, col.JOOQ_NAME)
+                .from(l)
+                .join(src).on(src.GRAPH_NAME.eq(l.GRAPH_NAME), src.COORDINATE.eq(l.COORDINATE))
+                .join(kc).on(kc.SOURCE_NAME.eq(l.KEY_SOURCE_NAME), kc.TABLE_SCHEMA.eq(l.KEY_SCHEMA),
+                    kc.TABLE_NAME.eq(l.KEY_TABLE), kc.CONSTRAINT_NAME.eq(l.KEY_CONSTRAINT))
+                .leftJoin(sc).on(sc.GRAPH_NAME.eq(l.GRAPH_NAME), sc.COORDINATE.eq(l.COORDINATE), sc.POSITION.eq(0),
+                    sc.TO_TABLE.eq(kc.TABLE_NAME), sc.TO_SCHEMA.eq(kc.TABLE_SCHEMA), sc.TO_COLUMN.eq(kc.COLUMN_NAME))
+                .join(col).on(col.SOURCE_NAME.eq(source), col.TABLE_SCHEMA.eq(schema), col.TABLE_NAME.eq(table),
+                    col.COLUMN_NAME.eq(column))
+                .where(l.GRAPH_NAME.eq(graph), l.COORDINATE.eq(coordinate), l.READ.eq("COLUMNS"))
+                .orderBy(kc.POSITION))
+            .convertFrom(rs -> rs.map(Records.mapping(ProjectionQuery::column)));
+    }
+
     private static Column column(String source, String schema, String table, String column, String javaName) {
         return new Column(new TableKey(source, schema, table), column, javaName);
     }
@@ -302,5 +340,5 @@ public final class ProjectionQuery {
                         int listDepth, int ordinal, List<Column> columns, List<Column> nodeKeys,
                         List<String> pathOrigins, String side, String producerKind, String reads,
                         String targetType, boolean targetTable, boolean pivot, boolean nesting,
-                        List<Step> steps, String aliasOwner) {}
+                        List<Step> steps, String aliasOwner, List<Column> liftColumns) {}
 }

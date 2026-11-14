@@ -98,6 +98,16 @@ class ProjectionEmitterExecutionTest {
     }
 
     @Test
+    @DisplayName("a split's keys are read off the film row by the parent table's fields, as its loader reads them")
+    void aSplitsKeys() throws Exception {
+        var row = film(1, grouped(field("languageSplit"), field("actors")));
+        var expected = TestDatabase.dsl().selectFrom(FILM).where(FILM.FILM_ID.eq(1)).fetchOne();
+        assertThat(row.get(FILM.LANGUAGE_ID)).as("languageSplit's key, the language's id the film holds")
+            .isEqualTo(expected.getLanguageId());
+        assertThat(row.get(FILM.FILM_ID)).as("actors' key, the film's own").isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("a discriminated participant names an interface's field for the interface and its own for itself")
     void aliasOwners() {
         var owners = FACTS.read("scenarios/projection-unit", graph -> {
