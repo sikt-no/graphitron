@@ -283,7 +283,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argmapping_landing_rule", Arm.DERIVED);
         registrations.put("graphitron_call_context_key", Arm.DERIVED);
         registrations.put("graphitron_call_context_key_rule", Arm.DERIVED);
-        registrations.put("graphitron_call_context_key_written", Arm.DERIVED);
         registrations.put("graphitron_federation_link", Arm.DERIVED);
         registrations.put("graphitron_federation_link_rule", Arm.DERIVED);
         registrations.put("graphitron_federation_link_import", Arm.DERIVED);
@@ -433,7 +432,6 @@ class RelationRegistrationGateTest {
         registrations.put("code_graph_class", Arm.DERIVED);
         registrations.put("code_graph_class_rule", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);
-        registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);
         registrations.put("intent_argmapping_key_column_candidate", Arm.DERIVED);
@@ -507,6 +505,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_path_claim_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_call_context_key_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_landing_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
         registrations.put("graphitron_producer_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_service", Arm.DERIVED);
@@ -659,7 +658,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
         registrations.put("graphitron_session_handle_member", Arm.DERIVED);
-        registrations.put("graphitron_argmapping_parameter", Arm.DERIVED);
         // The defect collapse. UNSHADOWED because the model it would be compared against
         // states no defect population at all: the walk threw, and a thrown error is not a
         // row anything can be held to. What pins it is the entry-defect fact documents.
@@ -676,7 +674,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_entry_defect_table", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_table_rule", Arm.UNSHADOWED);
         registrations.put("graphitron_entry_defect_path_step", Arm.UNSHADOWED);
-        registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_pair_entry_defect_pair_rule", Arm.DERIVED);
+        registrations.put("graphitron_call_context_key_entry_defect_pair_rule", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_landing_entry_defect_pair_rule", Arm.DERIVED);
+        registrations.put("graphitron_outbox_entry_defect_pair_rule", Arm.DERIVED);
         registrations.put("graphitron_claim_kind", Arm.UNSHADOWED);
         registrations.put("graphitron_claim_inclusion", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);

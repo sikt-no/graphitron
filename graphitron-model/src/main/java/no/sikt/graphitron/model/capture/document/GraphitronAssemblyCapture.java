@@ -8,9 +8,6 @@ import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
 import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
-import no.sikt.graphitron.model.derive.EntryDefectClaims;
-import no.sikt.graphitron.model.derive.EntryDefectMembers;
-import no.sikt.graphitron.model.derive.EntryDefectKeyColumns;
 import no.sikt.graphitron.model.derive.EntryDefectTables;
 import no.sikt.graphitron.model.derive.Occurrences;
 import no.sikt.graphitron.model.derive.EntityKeyAlternatives;
@@ -135,9 +132,13 @@ public final class GraphitronAssemblyCapture {
         new AnchorStage("occurrences", Occurrences.class,
             Occurrences::derive),
         // Where each written argMapping path lands under each occurrence of its call, a walk over the
-        // occurrences just written.
-        new AnchorStage("argmapping-landings", ArgMappingLandings.class,
-            ArgMappingLandings::derive),
+        // occurrences just written; then a path that lands nowhere, and its entries.
+        new AnchorStage("argmapping-landings", ArgMappingLandings.class, (dsl, graph, readAt) -> {
+            ArgMappingLandings.derive(dsl, graph, readAt);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.ARGMAPPING_LANDINGS);
+            ArgMappingPairDefects.derive(dsl, graph, ArgMappingPairDefects.LANDINGS,
+                EntryDefects.ARGMAPPING_LANDINGS.stage());
+        }),
         // Where each path is written, by the declared element and the type it reaches, off the path
         // entries and the targets above; the paths follow these.
         new AnchorStage("path-claims", PathClaims.class,
@@ -209,19 +210,7 @@ public final class GraphitronAssemblyCapture {
             EntityKeyAlternatives::derive),
         // The outbox targets the configuration resolves to, and each @outbox as the message its
         // field's call writes, judged against the occurrences' producers above; then their defects.
-        new AnchorStage("outbox", Outboxes.class, Outboxes::derive),
-        // Last, the defects of every code no earlier stage writes itself, off everything above: the
-        // rule's rows marked with this reading, the details under them, then the argMapping entries
-        // under the strings they fault.
-        new AnchorStage("entry-defects", EntryDefects.class, (dsl, graph, readAt) -> {
-            var stage = EntryDefects.GRAPHITRON.stage();
-            EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
-            EntryDefectClaims.derive(dsl, graph, readAt, stage);
-            EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.GRAPHITRON, stage);
-            EntryDefectKeyColumns.derive(dsl, graph, readAt, stage);
-            EntryDefectTables.derive(dsl, graph, readAt, stage);
-            ArgMappingPairDefects.derive(dsl, graph, stage);
-        }));
+        new AnchorStage("outbox", Outboxes.class, Outboxes::derive));
 
     /**
      * Each field's target type, over the population the generator emits rather than over the

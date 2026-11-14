@@ -59,9 +59,9 @@ import static org.jooq.impl.DSL.when;
  * {@code @nodeId}, whose node is its {@code typeName} or else the type the need reaches, is
  * {@code INFERRED} where exactly one foreign key joins its start and the node's table, in either
  * direction, its target that table; one starting on the node's table, or joined to it by no key or
- * several, stays {@code EMPTY}, which {@code graphitron_entry_defect_rule} judges. The one step it takes is {@link Steps}'s to
- * write. Any other uncovered field between two tables, the same table included, is a defect, which
- * {@code graphitron_entry_defect_rule} raises.
+ * several, stays {@code EMPTY}, which an entry-defect rule judges. The one step it takes is {@link Steps}'s to
+ * write. Any other uncovered field between two tables, the same table included, is a defect the
+ * stage holding its facts raises.
  *
  * <p>The foreign keys are counted off {@code sql_table_reference}, which holds the count per ordered
  * pair of tables: both orders summed between two tables, the one pair of a table with itself for its

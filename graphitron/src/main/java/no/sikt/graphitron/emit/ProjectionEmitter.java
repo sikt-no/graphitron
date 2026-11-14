@@ -61,7 +61,7 @@ public final class ProjectionEmitter {
         SCALAR_PATH,
         /**
          * A {@code @pivot}: deferred past the flip, where it becomes the stored defect
-         * {@code PIVOT_UNSUPPORTED} of basis {@code UNSUPPORTED}, owned by {@code entry-defects}.
+         * {@code PIVOT_UNSUPPORTED} of basis {@code UNSUPPORTED}, raised by the stage holding its facts.
          */
         PIVOT,
         /** A field the store states no way of reading on the unit's row. */

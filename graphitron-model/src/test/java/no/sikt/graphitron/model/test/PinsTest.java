@@ -86,7 +86,7 @@ class PinsTest {
         assertThat(members.get(Pins.Anchor.DEFECT)).contains("GRAPHITRON_ENTRY_DEFECT_SITE")
             .as("a detail keying one parameter of a defect is a grain of its own, and a defect as one"
                 + " stage raised it is finer than the finding an author reads")
-            .doesNotContain("GRAPHITRON_ENTRY_DEFECT_PARAMETER_RULE", "GRAPHITRON_ENTRY_DEFECT_RULE");
+            .doesNotContain("GRAPHITRON_ENTRY_DEFECT_PARAMETER_RULE", "GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE");
         assertThat(members.get(Pins.Anchor.OCCURRENCE)).contains("GRAPHITRON_OCCURRENCE_PRODUCER_RESULT")
             .as("a step of an occurrence's path keys something finer than the occurrence")
             .doesNotContain("GRAPHITRON_JOIN_PATH_STEP", "GRAPHITRON_FIELD");

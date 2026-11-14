@@ -167,8 +167,7 @@ public class StageAnswerAgreementTest {
         new Stage(DEFECTS, "graphitron_occurrence_order_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_build_entry_defect_rule"),
         new Stage(DEFECTS, "graphitron_occurrence_depth_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_outbox_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_entry_defect_rule"));
+        new Stage(DEFECTS, "graphitron_outbox_entry_defect_rule"));
 
     @Test
     @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
@@ -363,8 +362,9 @@ public class StageAnswerAgreementTest {
         return select(columns(dsl, rule)).from(table(name(rule.toUpperCase()))).where(inGraph(graph));
     }
 
+    /** The table's rows in a rule view's columns, every stage's rule view carrying the same ones. */
     private static org.jooq.SelectConditionStep<org.jooq.Record> defectTable(DSLContext dsl, String graph) {
-        return select(columns(dsl, "graphitron_entry_defect_rule"))
+        return select(columns(dsl, DEFECT_RULES.keySet().iterator().next()))
             .from(table(name(DEFECTS.toUpperCase())))
             .where(inGraph(graph));
     }

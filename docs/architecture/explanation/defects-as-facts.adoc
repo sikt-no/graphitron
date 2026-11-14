@@ -93,16 +93,17 @@ stages have run, deletes the rows its stages raised that the reading did not mar
 gatherer's rows are never touched. A detail row names the stage that wrote it, which is the stage
 that raised its defect, and is swept the same way.
 
-The split is under way. `graphitron_entry_defect_rule` takes no new arm: a new code goes to the
-stage whose facts it judges, and an existing one leaves with its family. `occurrence-bindings`,
-`occurrence-builds`, `occurrence-depth-defects`, `outbox` and `entity-key-alternatives` write their
-own, `occurrence-bindings` the `NODE_ID_TARGET_*` family of a node id no binding could be written
-for; the
-`entry-defects` stage, `EntryDefects` itself as the graphitron anchor phase's last step, owns every
-graphitron code no earlier stage raises yet, from `graphitron_entry_defect_rule`. A stage takes a
-rule by raising it, and the members a per-member defect names go with it: `occurrence-builds` writes the node-id slot and container defects with the members a
-polymorphic id's names, from `graphitron_occurrence_build_entry_defect_member_rule`, and
-`entry-defects` the `@discriminate`'s, from `graphitron_entry_defect_member_rule`.
+Every graphitron code is raised so, by a stage's own rule view or Java writer; no stage runs after
+the others to raise what they leave. A stage takes a rule by raising it, and the details a defect
+names go with it: `occurrence-builds` writes the node-id slot and container defects with the members
+a polymorphic id's names, from `graphitron_occurrence_build_entry_defect_member_rule`, and
+`table-types` the `@discriminate`'s, from `graphitron_entry_defect_member_rule`. A rule judging the
+entries of an `argMapping` string computes the entries in a CTE of its stage's rule view, which
+raises the string's defect from them, a rule view reading no other view; the stage then writes the
+same entries under that defect into `graphitron_argmapping_pair_defect`, from a pair rule beside the
+rule view. `argmapping-pairs` judges the session, context and scope sigils, `call-context-keys` a
+`$context` pair's duplicate key, `argmapping-landings` a path that lands nowhere, and `outbox` a
+source that cannot fill a payload key.
 
 `DefectStageGateTest` holds this together: every stage raising defects has one rule view, whose rows
 name that stage and no other, or a Java writer stating its stage; every such stage declares the

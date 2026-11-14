@@ -17,7 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_ENTRY_DE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_LANDING_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_TYPE_ENTRY_DEFECT_RULE;
@@ -61,9 +61,8 @@ import static org.jooq.impl.DSL.val;
  * and when.
  *
  * <p>{@link Outboxes} raises the {@code OUTBOX_} codes its relations judge, from
- * {@code graphitron_outbox_entry_defect_rule}. This class's own stage, {@code entry-defects}, the
- * graphitron anchor phase's last step, raises every graphitron code no earlier stage raises itself,
- * from {@code graphitron_entry_defect_rule}. What follows is about that rule.
+ * {@code graphitron_outbox_entry_defect_rule}, and every graphitron code is raised so, by the stage
+ * whose facts it judges; no stage runs after the others to raise what they leave.
  *
  * <p><b>Stored because it is read interactively and costs a walk.</b> Most of the rule is cheap,
  * the write arms reading entries the gatherer already anchored. The chain arms were not: they
@@ -79,8 +78,8 @@ import static org.jooq.impl.DSL.val;
  * stops, and writes the walk's own defects as it goes.
  * Computing them again per read is a second evaluation of a rule the capture has already run, which
  * is the shape this whole arc exists to remove rather than a cost to be weighed. The same holds
- * inside this stage: the chain arms read the stored walk rather than walking, because a walk named
- * from a correlated subquery here is walked once per chain it drives.
+ * inside the rules: the chain arms read the stored walk rather than walking, because a walk named
+ * from a correlated subquery is walked once per chain it drives.
  */
 public final class EntryDefects {
 
@@ -92,9 +91,6 @@ public final class EntryDefects {
      * stage column naming that stage.
      */
     public record Rule(String stage, Table<?> view) {}
-
-    /** The rule of the graphitron anchor phase's last stage, this class. */
-    public static final Rule GRAPHITRON = new Rule("entry-defects", GRAPHITRON_ENTRY_DEFECT_RULE);
 
     /** The outbox stage's rule. */
     public static final Rule OUTBOX = new Rule("outbox", GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE);
@@ -153,13 +149,20 @@ public final class EntryDefects {
     /** The voucher stage's rule, {@link Vouchers}. */
     public static final Rule VOUCHERS = new Rule("vouchers", GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE);
 
-    /** The argMapping pairs stage's rule. */
+    /**
+     * The argMapping pairs stage's rule: a {@code $tenant} where nothing reads it, and the session,
+     * context and scope sigils.
+     */
     public static final Rule ARGMAPPING_PAIRS =
         new Rule("argmapping-pairs", GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE);
 
     /** The call-context-keys stage's rule: a parameter given a context key twice. */
     public static final Rule CALL_CONTEXT_KEYS =
         new Rule("call-context-keys", GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE);
+
+    /** The argmapping-landings stage's rule, {@link ArgMappingLandings}: a written path that lands nowhere. */
+    public static final Rule ARGMAPPING_LANDINGS =
+        new Rule("argmapping-landings", GRAPHITRON_ARGMAPPING_LANDING_ENTRY_DEFECT_RULE);
 
     /**
      * The anchor stage's rule, {@link no.sikt.graphitron.model.capture.document.GraphitronAnchor}: what the
@@ -207,9 +210,9 @@ public final class EntryDefects {
     /** Every raising stage's rule, one per stage, in the order the stages run. */
     public static final List<Rule> RULES = List.of(ANCHOR, MACRO_EXPANSION, CODE_REFERENCES, ARGMAPPING_PAIRS,
         CALL_CONTEXT_KEYS, TABLE_TYPES, NODES, VOUCHERS, MINTED_KEYS, DIRECTIVE_APPLICATIONS,
-        FEDERATION_VOCABULARY, NODE_LEGACY_KEY_SHAPES, FIELD_TARGETS, BINDING_CLAIMS, SPELLED_TABLES, PATH_CLAIMS,
-        FETCHERS, PRODUCERS, BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS, ROUTES, DEPTHS, ENTITY_KEYS, OUTBOX,
-        GRAPHITRON);
+        FEDERATION_VOCABULARY, NODE_LEGACY_KEY_SHAPES, FIELD_TARGETS, BINDING_CLAIMS, SPELLED_TABLES,
+        ARGMAPPING_LANDINGS, PATH_CLAIMS, FETCHERS, PRODUCERS, BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS,
+        ROUTES, DEPTHS, ENTITY_KEYS, OUTBOX);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

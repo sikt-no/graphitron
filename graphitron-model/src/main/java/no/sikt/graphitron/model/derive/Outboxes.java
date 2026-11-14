@@ -31,7 +31,8 @@ import static org.jooq.impl.DSL.val;
  * <p>Then each message's keys, the parameters of its call, each read off its landing's binding. Each
  * relation is written from its {@code _rule} view, marked with the reading's instant and
  * swept of the graph's rows a reading did not mark. The defects are this stage's own rule,
- * {@link EntryDefects#OUTBOX}, written last, so they read the rows this stage has just written. Runs
+ * {@link EntryDefects#OUTBOX}, written last with the argMapping entries under them, so they read the
+ * rows this stage has just written. Runs
  * after the occurrences and their producers, which a message's placement is judged against.
  */
 public final class Outboxes {
@@ -47,6 +48,7 @@ public final class Outboxes {
         messages(dsl, graph, touchedAt);
         keys(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.OUTBOX);
+        ArgMappingPairDefects.derive(dsl, graph, ArgMappingPairDefects.OUTBOX, EntryDefects.OUTBOX.stage());
     }
 
     private static void messages(DSLContext dsl, String graph, LocalDateTime touchedAt) {

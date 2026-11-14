@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.AnchorStage;
 import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.derive.ArgMappingPairDefects;
 import no.sikt.graphitron.model.derive.EntryDefectMembers;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.MintedKeys;
@@ -155,16 +156,22 @@ public final class GraphitronAstCapture {
         new AnchorStage("argmapping-sites", GraphitronArgMappingSites.class,
             GraphitronArgMappingSites::write),
         // And each pair of each, named by its mapping and the target it binds; then the pairs' own
-        // defects, a sigil the site does not read.
+        // defects, a sigil the site does not read or one naming what the graph does not offer, and
+        // the entries under them.
         new AnchorStage("argmapping-pairs", GraphitronArgMappingPairs.class, (dsl, graph, readAt) -> {
             GraphitronArgMappingPairs.write(dsl, graph, readAt);
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.ARGMAPPING_PAIRS);
+            ArgMappingPairDefects.derive(dsl, graph, ArgMappingPairDefects.PAIRS,
+                EntryDefects.ARGMAPPING_PAIRS.stage());
         }),
         // The context key filling each parameter of each call, which finds a pair's call through
-        // the sites just written; then a parameter given a key twice.
+        // the sites just written; then a parameter given a key twice, and a pair doing so under its
+        // string's defect.
         new AnchorStage("call-context-keys", GraphitronCallContextKeys.class, (dsl, graph, readAt) -> {
             GraphitronCallContextKeys.write(dsl, graph, readAt);
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.CALL_CONTEXT_KEYS);
+            ArgMappingPairDefects.derive(dsl, graph, ArgMappingPairDefects.CONTEXT_KEYS,
+                EntryDefects.CALL_CONTEXT_KEYS.stage());
         }),
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
         // written and corpora captured before this one, and the mint below reads the second. Each
