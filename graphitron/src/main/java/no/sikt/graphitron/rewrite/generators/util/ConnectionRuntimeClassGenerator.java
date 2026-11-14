@@ -2029,6 +2029,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(permits(self, tenantKey))
                 .addMethod(staticEntityDefaultTenant(tenantKey))
                 .addMethod(tenantSlot())
+                .addMethod(mapTenantLeaves())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName(connectionKey))
                 .addMethod(tenantLoaderNameFor())
@@ -3077,14 +3078,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(connectionKey, "key")
             .addException(SQL_EXCEPTION)
             .addStatement("return enlist(key, entryFor(key))")
-            .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code key}, pinning and mounting one
-"
-                + "connection for it on first use and reusing it thereafter.
-"
-                + "@param key the connection key the fetcher built; a tenant outside the request's set raises
-"
-                + "before any SQL
-")
+            .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code key}, pinning and mounting one\n"
+                + "connection for it on first use and reusing it thereafter.\n"
+                + "@param key the connection key the fetcher built; a tenant outside the request's set raises\n"
+                + "before any SQL\n")
             .build();
     }
 
@@ -3105,14 +3102,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw new $T($S + key, e)", DATA_ACCESS_EXCEPTION,
                 "Acquiring the routed connection failed for connection key: ")
             .endControlFlow()
-            .addJavadoc("Routed acquisition for emitted fetcher sites, by the key the site built: {@link #of} and
-"
-                + "the carrier's keyed {@code dslFor}, with the checked acquisition failure wrapped unchecked.
-"
-                + "@param env the field's {@code DataFetchingEnvironment}
-"
-                + "@param key the connection key
-")
+            .addJavadoc("Routed acquisition for emitted fetcher sites, by the key the site built: {@link #of} and\n"
+                + "the carrier's keyed {@code dslFor}, with the checked acquisition failure wrapped unchecked.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param key the connection key\n")
             .build();
     }
 
@@ -3674,6 +3667,40 @@ public final class ConnectionRuntimeClassGenerator {
                     + " must be the same.")
             .endControlFlow()
             .addStatement("return key")
+            .build();
+    }
+
+    /**
+     * {@code static Object mapTenantLeaves(Object value, Function<Object, Object> leaf)}: applies
+     * {@code leaf} to every value a slot read handed back, through any list it was read over, so a
+     * tenant inside a node id is decoded out of each id before the divined-tenant fold flattens them.
+     */
+    private static MethodSpec mapTenantLeaves() {
+        var list = ClassName.get("java.util", "List");
+        var arrayList = ClassName.get("java.util", "ArrayList");
+        var collection = ClassName.get("java.util", "Collection");
+        var function = ParameterizedTypeName.get(ClassName.get("java.util.function", "Function"),
+            ClassName.get(Object.class), ClassName.get(Object.class));
+        return MethodSpec.methodBuilder("mapTenantLeaves")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "value")
+            .addParameter(function, "leaf")
+            .beginControlFlow("if (value == null)")
+            .addStatement("return null")
+            .endControlFlow()
+            .beginControlFlow("if (value instanceof $T<?> values)", collection)
+            .addStatement("$T<Object> out = new $T<>()", list, arrayList)
+            .beginControlFlow("for (Object each : values)")
+            .addStatement("out.add(mapTenantLeaves(each, leaf))")
+            .endControlFlow()
+            .addStatement("return out")
+            .endControlFlow()
+            .addStatement("return leaf.apply(value)")
+            .addJavadoc("Applies {@code leaf} to every value a slot read handed back, through any list it was\n"
+                + "read over; null stays null.\n"
+                + "@param value what a slot read handed back\n"
+                + "@param leaf what each value is turned into\n")
             .build();
     }
 

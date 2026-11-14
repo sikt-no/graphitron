@@ -23,12 +23,17 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
+import static org.jooq.impl.DSL.exists;
+import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -56,14 +61,31 @@ public final class ServiceEmission {
      */
     public record Runtime(FrameEmitter.Runtime frame, FillEmitter.Runtime fill, ValidationEmitter.Runtime validation,
                           ClassName fetchersClass, ClassName selectionOccurrences,
-                          Function<String, ClassName> projectionClass) {
+                          Function<String, ClassName> projectionClass, Tenancy tenancy) {
+
         public Runtime {
+            Objects.requireNonNull(tenancy, "tenancy");
             Objects.requireNonNull(frame, "frame");
             Objects.requireNonNull(validation, "validation");
             Objects.requireNonNull(fill, "fill");
             Objects.requireNonNull(fetchersClass, "fetchersClass");
             Objects.requireNonNull(selectionOccurrences, "selectionOccurrences");
             Objects.requireNonNull(projectionClass, "projectionClass");
+        }
+    }
+
+    /**
+     * The generated classes a routed fetcher calls into: the connection carrier, the key it is acquired
+     * and handed down by, the client error a call naming no tenant is refused with, and the node id
+     * encoder a tenant inside an id is decoded by. Named only where the store states a routed call.
+     */
+    public record Tenancy(ClassName tenantConnections, ClassName connectionKey, ClassName clientException,
+                          ClassName nodeIdEncoder) {
+        public Tenancy {
+            Objects.requireNonNull(tenantConnections, "tenantConnections");
+            Objects.requireNonNull(connectionKey, "connectionKey");
+            Objects.requireNonNull(clientException, "clientException");
+            Objects.requireNonNull(nodeIdEncoder, "nodeIdEncoder");
         }
     }
 
@@ -102,12 +124,17 @@ public final class ServiceEmission {
     private final Set<String> validating;
     /** The occurrences whose rows a column of one shared table tells apart, by coordinate. */
     private final Map<String, DiscriminatedQuery.Row> discriminated;
+    /** Each root call's connection in a database-per-tenant graph, by coordinate. */
+    private final Map<String, ConnectionQuery.Row> connections;
+    /** The tenant column's Java type, in a database-per-tenant graph whose tables agree on one. */
+    private final Optional<String> tenantType;
 
     private ServiceEmission(Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
                             Map<String, String> excluded,
-                            Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated) {
+                            Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated,
+                            Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
         this.frames = frames;
         this.calls = calls;
         this.fills = fills;
@@ -117,11 +144,14 @@ public final class ServiceEmission {
         this.excluded = excluded;
         this.validating = validating;
         this.discriminated = discriminated;
+        this.connections = connections;
+        this.tenantType = tenantType;
     }
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of());
+        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+            Map.of(), Optional.empty());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -141,7 +171,21 @@ public final class ServiceEmission {
             byCoordinate(PolymorphicLiftQuery.read(store), PolymorphicLiftQuery.Row::coordinate),
             excluded(store),
             validating(store),
-            DiscriminatedQuery.read(store, targets));
+            DiscriminatedQuery.read(store, targets),
+            ConnectionQuery.read(store),
+            tenantType(store));
+    }
+
+    /** The tenant column's Java type, where the graph's tenant columns agree on one. */
+    private static Optional<String> tenantType(StoreHandle store) {
+        var tc = GRAPHITRON_TENANT_COLUMN;
+        var c = SQL_COLUMN;
+        var types = store.dsl().selectDistinct(c.BINDING_TYPE).from(tc)
+            .join(c).on(c.SOURCE_NAME.eq(tc.SOURCE_NAME), c.TABLE_SCHEMA.eq(tc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(tc.TABLE_NAME), c.COLUMN_NAME.eq(tc.COLUMN_NAME))
+            .where(tc.GRAPH_NAME.eq(store.graphName()))
+            .fetch(c.BINDING_TYPE);
+        return types.size() == 1 ? Optional.of(types.getFirst()) : Optional.empty();
     }
 
     private static <R> Map<String, R> byCoordinate(List<R> rows, Function<R, String> coordinate) {
@@ -160,12 +204,22 @@ public final class ServiceEmission {
         var tc = STORE_GRAPH_TENANT_COLUMN;
         var out = new LinkedHashMap<String, String>();
         boolean tenanted = store.dsl().fetchExists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(store.graphName())));
-        var coordinates = store.dsl().select(p.COORDINATE).from(p)
-            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
-            .fetch(p.COORDINATE);
         if (tenanted) {
-            coordinates.forEach(c -> out.put(c, "TENANT_ROUTING"));
-            return out;
+            // A child call takes the key its producer chain hands down, which the store does not state
+            // yet; a root call runs on the connection the store states for it, or is refused there.
+            var cn = GRAPHITRON_OCCURRENCE_CONNECTION;
+            store.dsl().select(p.COORDINATE, p.START,
+                    field(exists(selectOne().from(cn).where(cn.GRAPH_NAME.eq(p.GRAPH_NAME),
+                        cn.COORDINATE.eq(p.COORDINATE), cn.CALL.eq("producer")))))
+                .from(p)
+                .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
+                .forEach(r -> {
+                    if ("CHILD".equals(r.value2())) {
+                        out.put(r.value1(), "TENANT_ROUTING");
+                    } else if (!r.value3()) {
+                        out.put(r.value1(), "UNROUTED");
+                    }
+                });
         }
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         store.dsl().select(r.COORDINATE).from(r)
@@ -357,7 +411,7 @@ public final class ServiceEmission {
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
             framed, runtime.frame(),
             outbox.isPresent() || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
-            validates);
+            validates, connection(coordinate, fieldCoordinate, runtime));
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
         all.addAll(written);
@@ -441,6 +495,91 @@ public final class ServiceEmission {
             return answer;
         }
         return p.rawType().simpleName().equals("Map") ? p.typeArguments().get(1) : p.typeArguments().getFirst();
+    }
+
+    /**
+     * The connection {@code coordinate}'s root frame runs on, as the store states it: the request's own
+     * where the store states none, as in a graph with no tenant column, or says so, else one keyed by
+     * the tenant its slots name. An outcome the store gains later fails to compile here rather than falling into a known arm.
+     */
+    private FrameEmitter.Connection connection(String coordinate, String fieldCoordinate, Runtime runtime) {
+        var row = connections.get(coordinate);
+        if (row == null) {
+            return new FrameEmitter.Connection.Request();
+        }
+        var tenancy = runtime.tenancy();
+        return switch (row.outcome()) {
+            case REQUEST -> new FrameEmitter.Connection.Request();
+            case ROUTED -> new FrameEmitter.Connection.Routed(
+                ClassName.bestGuess(tenantType.orElseThrow(() -> new IllegalStateException(coordinate
+                    + " is routed, but the graph's tenant columns agree on no one type, which the store refuses"))),
+                tenancy.tenantConnections(), tenancy.connectionKey(),
+                row.slots().stream().map(slot -> slotRead(slot, tenancy)).toList(),
+                noTenant(row, fieldCoordinate, tenancy));
+        };
+    }
+
+    /** What a routed call whose values name no tenant gets, as its tenant part states it. */
+    private static FrameEmitter.NoTenant noTenant(ConnectionQuery.Row row, String fieldCoordinate, Tenancy tenancy) {
+        return switch (row.whenEmpty().orElseThrow(() -> new IllegalStateException(row.coordinate()
+            + " is routed with no tenant part"))) {
+            case UNREACHABLE -> new FrameEmitter.NoTenant.Unreachable();
+            case EMPTY -> new FrameEmitter.NoTenant.Empty(emptyValue(row));
+            case REFUSE -> new FrameEmitter.NoTenant.Refuse(tenancy.clientException(),
+                noTenantMessage(fieldCoordinate, row.slots().stream()
+                    .map(slot -> slot.names().getFirst()).distinct().toList()));
+        };
+    }
+
+    /**
+     * The client-facing refusal for a call whose lists name no tenant:
+     * {@code Mutation.rateFilms names no tenant: its tenant is read from the elements of 'in', which
+     * is empty.}
+     */
+    private static String noTenantMessage(String coordinate, List<String> arguments) {
+        var quoted = arguments.stream().map(a -> "'" + a + "'").toList();
+        String names = quoted.size() == 1
+            ? quoted.getFirst()
+            : String.join(", ", quoted.subList(0, quoted.size() - 1)) + " and " + quoted.getLast();
+        return coordinate + " names no tenant: its tenant is read from the elements of " + names
+            + (quoted.size() == 1 ? ", which is empty." : ", which are empty.");
+    }
+
+    /** The producer's empty answer, as the store states it: an empty list, set or result. */
+    private static CodeBlock emptyValue(ConnectionQuery.Row row) {
+        var empty = row.empty().orElseThrow(() -> new IllegalStateException(row.coordinate()
+            + " answers an empty call empty, but its producer states no empty answer"));
+        return switch (empty.kind()) {
+            case LIST -> CodeBlock.of("$T.of()", List.class);
+            case SET -> CodeBlock.of("$T.of()", Set.class);
+            case RESULT -> CodeBlock.of("$T.using($T.DEFAULT).newResult($T.$L)",
+                ClassName.get("org.jooq.impl", "DSL"), ClassName.get("org.jooq", "SQLDialect"),
+                ClassName.bestGuess(empty.tablesClass().orElseThrow()), empty.tableField().orElseThrow());
+        };
+    }
+
+    /**
+     * How one value the tenant is read from is read: the argument, and where it lies under an input
+     * object, the path below it, read over every element of a list it crosses; and where it is a node
+     * id, the tenant column's value out of each id.
+     */
+    private static CodeBlock slotRead(ConnectionQuery.Slot slot, Tenancy tenancy) {
+        var names = slot.names();
+        var read = names.size() == 1
+            ? CodeBlock.of("env.getArgument($S)", names.getFirst())
+            : CodeBlock.of("$T.tenantSlot(env.getArgument($S), $L)", tenancy.tenantConnections(), names.getFirst(),
+                CodeBlock.join(names.subList(1, names.size()).stream().map(n -> CodeBlock.of("$S", n)).toList(),
+                    ", "));
+        if (slot.node().isEmpty()) {
+            return read;
+        }
+        var node = slot.node().get();
+        var tables = ClassName.bestGuess(node.tablesClass());
+        var columns = CodeBlock.join(node.keyColumns().stream()
+            .map(c -> CodeBlock.of("$T.$L.$L", tables, node.tableField(), c)).toList(), ", ");
+        return CodeBlock.of("$T.mapTenantLeaves($L, id -> id instanceof $T s ? $T.decodeColumns($S, s, $L)[$L] : null)",
+            tenancy.tenantConnections(), read, String.class, tenancy.nodeIdEncoder(), node.typeId(), columns,
+            slot.keyPosition().orElseThrow());
     }
 
     /**

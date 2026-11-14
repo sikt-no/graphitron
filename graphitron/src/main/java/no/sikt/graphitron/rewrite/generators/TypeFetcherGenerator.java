@@ -1702,10 +1702,17 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage)
                 .enclosingClassName(),
             env -> CodeBlock.of("$L.getValidator($L)", ctx.graphitronContextCall(), env));
+        // The generated classes a routed call names; which calls are routed is the store's to say, so a
+        // graph with no tenant column states no connection and names none of them.
+        var tenancy = new no.sikt.graphitron.emit.ServiceEmission.Tenancy(tenantConnections,
+            no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage),
+            ClassName.get(outputPackage + ".schema",
+                no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME),
+            no.sikt.graphitron.render.NodeIdEncoderRef.of(outputPackage));
         return new no.sikt.graphitron.emit.ServiceEmission.Runtime(frame, fill, validation,
             className(units.fetchers(ctx.parentTypeName())),
             no.sikt.graphitron.render.ProjectionCall.selectionOccurrencesClass(outputPackage),
-            typeName -> className(units.typeClass(typeName)));
+            typeName -> className(units.typeClass(typeName)), tenancy);
     }
 
     /**

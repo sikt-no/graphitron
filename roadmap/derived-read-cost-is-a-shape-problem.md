@@ -657,19 +657,8 @@ static method needs no holder.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
-* **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
-  the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
-  Stated: a pair's left side is a target of a kind, `$tenant` the kind `TENANT`; `@tenant` is read as
-  the same fact (Alf, 2026-11-14), `graphitron_occurrence_binding_tenant` the call each names, the
-  pair winning where both name one value and `TENANT_NAMED_TWICE` where they name two; every value a
-  call's tenant is read from, `graphitron_occurrence_tenant_slot`, authored, a jOOQ record's field on
-  the tenant column or a node id whose key holds it; and `graphitron_occurrence_optional`, which
-  values a call may be given none of. The walk reads the stored binding as a marker, and each root
-  call's connection is stated, `graphitron_occurrence_connection` and its `TENANT` part. What is
-  left: the fetcher builds the connection key and routes by it, reading each value's path from
-  `graphitron_occurrence_argument_step`.
-  * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
-    moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
+* **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
+  `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
   call, the re-read and the polymorphic re-read each have an emitter reading the store; what remains
   is routine writes, which take neither the re-read, today an unordered `IN` (a bug), nor the frame,
@@ -923,10 +912,11 @@ static method needs no holder.
   field as the parts land: `ServiceEmission` emits a field the store states whole, the classified
   emitters the rest, and `EmissionCensusTest` pins the count: all 133 of the example schema's
   services on 2026-11-13. In FS-plattform at main 946fc4aa20 every `@service` is emitted from the
-  store (opptak 264 of 264 on 2026-11-14). What is left is tenant routing: sis's port to the
-  rewrite, Filip's `sis/upgrade-graphitron` at 68d0313ebf, configures `INSTITUSJONSNR_EIER` and its 73
-  services with a frame are all `TENANT_ROUTING`, so the routing is done in the flip rather than
-  deferred. That census also found four sis inputs whose field binds no column of the record's
+  store (opptak 264 of 264 on 2026-11-14). Tenant routing is done in the flip rather than
+  deferred, since sis's port to the rewrite, Filip's `sis/upgrade-graphitron` at 68d0313ebf,
+  configures `INSTITUSJONSNR_EIER` and has 73 services with a frame: a root call runs on the
+  connection the store states for it, `graphitron_occurrence_connection`, and a child call waits on
+  "A child call takes the connection key its producer chain hands down", censused `TENANT_ROUTING`. That census also found four sis inputs whose field binds no column of the record's
   table, to show Filip: `Mutation.leggTilBegrensningerForEmnevalgIStudieoppbygningsdeler`'s
   `studienivaIntervall.fraStudienivaId` on `EMNEVALG_I_EMNEKOMBINASJON`, and `telefonnummertype` on
   `PERSON_TELEFON` under `opprettStudenter`, `registrerInnreisendeUtvekslinger` and
@@ -3074,6 +3064,10 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A routed fetcher acquires by the connection key it built** (2026-11-14). The generated
+`TenantConnections.dslFor(env, tenantKey)`, which builds the key from its tenant part, goes when the
+walk's last routed site does; a store-emitted fetcher calls `dslFor(env, ConnectionKey)`.
 
 **A routine and a write state what they bind as call parameters** (2026-11-14). A write and a root
 `@routine` are calls whose arguments bind their parameters, and a child routine's step parameter

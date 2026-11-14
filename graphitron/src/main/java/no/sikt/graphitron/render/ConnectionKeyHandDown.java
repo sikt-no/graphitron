@@ -43,6 +43,16 @@ public final class ConnectionKeyHandDown {
         return new ConnectionKeyHandDown(CodeBlock.of(".localContext($T.forTenant($L))", connectionKey, tenantKeyLocal));
     }
 
+    /**
+     * Hands down the connection key a fetcher built and acquired by, held in {@code keyLocal}: the whole
+     * key, every part of it, rather than one part to build it from again.
+     *
+     * @param keyLocal the local holding the built {@code ConnectionKey}
+     */
+    public static ConnectionKeyHandDown ofKey(String keyLocal) {
+        return new ConnectionKeyHandDown(CodeBlock.of(".localContext($L)", keyLocal));
+    }
+
     /** The {@code DataFetcherResult} builder call this hand-down appends; empty for {@link #none()}. */
     public CodeBlock builderTail() {
         return builderTail;

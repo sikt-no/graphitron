@@ -8,6 +8,7 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.LoaderConstruction;
 
 import javax.lang.model.element.Modifier;
+import java.util.List;
 import java.util.Objects;
 import java.util.function.Function;
 
@@ -78,6 +79,54 @@ public final class FrameEmitter {
     }
 
     /**
+     * The connection a root frame runs its body on, as the store states it for the call: the
+     * request's own, or one keyed by the tenant its slots name.
+     */
+    public sealed interface Connection {
+
+        /** The request's own connection, the one {@link Runtime#dslContext} reaches. */
+        record Request() implements Connection {}
+
+        /**
+         * A connection keyed by the tenant {@code reads} name, folded by the carrier into one tenant,
+         * keyed, acquired by that key and handed down to the subtree.
+         *
+         * @param tenantType        the tenant column's Java type, boxed
+         * @param tenantConnections the generated connection carrier
+         * @param connectionKey     the generated key it is acquired and handed down by
+         * @param reads             each value the tenant is read from, as an expression over {@code env}
+         * @param noTenant          what a call whose values name no tenant gets
+         */
+        record Routed(TypeName tenantType, ClassName tenantConnections, ClassName connectionKey,
+                      List<CodeBlock> reads, NoTenant noTenant) implements Connection {
+            public Routed {
+                Objects.requireNonNull(tenantType, "tenantType");
+                Objects.requireNonNull(tenantConnections, "tenantConnections");
+                Objects.requireNonNull(connectionKey, "connectionKey");
+                reads = List.copyOf(reads);
+                Objects.requireNonNull(noTenant, "noTenant");
+            }
+        }
+    }
+
+    /** What a routed call whose values name no tenant gets. */
+    public sealed interface NoTenant {
+
+        /** Never reached: a value is always there; the carrier's fold throws if one is not. */
+        record Unreachable() implements NoTenant {}
+
+        /** The producer's empty answer, {@code value}, returned without a connection. */
+        record Empty(CodeBlock value) implements NoTenant {}
+
+        /** A client error, {@code exception} with {@code message}, before the service runs. */
+        record Refuse(ClassName exception, String message) implements NoTenant {}
+    }
+
+    /** The local the routed tenant is folded into, and the one its key is built under. */
+    private static final String TENANT_LOCAL = "_tenant";
+    private static final String KEY_LOCAL = "_key";
+
+    /**
      * Renders {@code row}'s frame.
      *
      * @param methodName the fetcher's generated name
@@ -109,18 +158,33 @@ public final class FrameEmitter {
     public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
                                     ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
                                     boolean bodyAnswersOutcome) {
+        return render(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome,
+            new Connection.Request());
+    }
+
+    /**
+     * {@link #render}, where a root frame runs its body on {@code connection}: the request's own, or
+     * one keyed by its tenant, handed down to the subtree. Only a root frame is routed; a child frame
+     * takes the request's connection as before.
+     */
+    public static MethodSpec render(FrameQuery.Row row, String methodName, TypeName valueType,
+                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
+                                    boolean bodyAnswersOutcome, Connection connection) {
+        if (!row.root() && !(connection instanceof Connection.Request)) {
+            throw new IllegalArgumentException(row.coordinate() + ": only a root frame is routed");
+        }
         if (bodyAnswersOutcome && (!row.root() || row.outcome().isEmpty())) {
             throw new IllegalArgumentException(row.coordinate() + ": only a root frame with an outcome takes it"
                 + " from its body");
         }
         return row.root()
-            ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome)
+            ? root(row, methodName, valueType, bodyClass, body, runtime, needsContext, bodyAnswersOutcome, connection)
             : child(row, methodName, valueType, bodyClass, body, runtime);
     }
 
     private static MethodSpec root(FrameQuery.Row row, String methodName, TypeName valueType,
                                    ClassName bodyClass, String body, Runtime runtime, boolean needsContext,
-                                   boolean bodyAnswersOutcome) {
+                                   boolean bodyAnswersOutcome, Connection connection) {
         var declared = declared(row, valueType, runtime);
         var held = bodyAnswersOutcome ? declared : valueType;
         var method = MethodSpec.methodBuilder(methodName)
@@ -128,15 +192,26 @@ public final class FrameEmitter {
             .returns(ParameterizedTypeName.get(RESULT, declared))
             .addParameter(ENV, "env")
             .beginControlFlow("try");
-        if (needsContext) {
-            method.addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("env"))
-                .addStatement("$T value = $T.$L(env, dsl)", held, bodyClass, body);
-        } else {
-            method.addStatement("$T value = $T.$L(env, null)", held, bodyClass, body);
-        }
+        CodeBlock handDown = switch (connection) {
+            case Connection.Request ignored -> {
+                if (needsContext) {
+                    method.addStatement("$T dsl = $L", DSL_CONTEXT, runtime.dslContext().apply("env"));
+                }
+                yield CodeBlock.of("");
+            }
+            case Connection.Routed routed -> {
+                routedKey(method, row, declared, routed, runtime);
+                if (needsContext) {
+                    method.addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, routed.tenantConnections(),
+                        KEY_LOCAL);
+                }
+                yield no.sikt.graphitron.render.ConnectionKeyHandDown.ofKey(KEY_LOCAL).builderTail();
+            }
+        };
+        method.addStatement("$T value = $T.$L(env, $L)", held, bodyClass, body, needsContext ? "dsl" : "null");
         var answer = bodyAnswersOutcome
-            ? CodeBlock.of("$T.<$T>newResult().data(value).build()", RESULT, declared)
-            : success(row, declared, CodeBlock.of("value"), runtime);
+            ? CodeBlock.of("$T.<$T>newResult().data(value)$L.build()", RESULT, declared, handDown)
+            : success(row, declared, CodeBlock.of("value"), runtime, handDown);
         return method
             .addStatement("return $L", answer)
             .nextControlFlow("catch ($T thrown)", Exception.class)
@@ -239,10 +314,45 @@ public final class FrameEmitter {
     /** {@code DataFetcherResult.<T>newResult().data(value).build()}, wrapped in its outcome if any. */
     private static CodeBlock success(FrameQuery.Row row, TypeName declared, CodeBlock value,
                                      Runtime runtime) {
+        return success(row, declared, value, runtime, CodeBlock.of(""));
+    }
+
+    /** {@link #success}, the result builder carrying {@code handDown} before it is built. */
+    private static CodeBlock success(FrameQuery.Row row, TypeName declared, CodeBlock value,
+                                     Runtime runtime, CodeBlock handDown) {
         var data = row.outcome().isPresent()
             ? CodeBlock.of("new $T.Success<>($L)", runtime.outcome(), value)
             : value;
-        return CodeBlock.of("$T.<$T>newResult().data($L).build()", RESULT, declared, data);
+        return CodeBlock.of("$T.<$T>newResult().data($L)$L.build()", RESULT, declared, data, handDown);
+    }
+
+    /**
+     * The routed tenant and its key: the reads folded into one tenant, what a call naming none gets,
+     * and the key built over it.
+     */
+    private static void routedKey(MethodSpec.Builder method, FrameQuery.Row row, TypeName declared,
+                                  Connection.Routed routed, Runtime runtime) {
+        var reads = CodeBlock.join(routed.reads(), ", ");
+        switch (routed.noTenant()) {
+            case NoTenant.Unreachable ignored -> method.addStatement("$T $L = $T.divinedTenant($L)",
+                routed.tenantType(), TENANT_LOCAL, routed.tenantConnections(), reads);
+            case NoTenant.Empty empty -> {
+                method.addStatement("$T $L = $T.namedTenant($L)", routed.tenantType(), TENANT_LOCAL,
+                    routed.tenantConnections(), reads);
+                method.beginControlFlow("if ($L == null)", TENANT_LOCAL)
+                    .addStatement("return $L", success(row, declared, empty.value(), runtime))
+                    .endControlFlow();
+            }
+            case NoTenant.Refuse refuse -> {
+                method.addStatement("$T $L = $T.namedTenant($L)", routed.tenantType(), TENANT_LOCAL,
+                    routed.tenantConnections(), reads);
+                method.beginControlFlow("if ($L == null)", TENANT_LOCAL)
+                    .addStatement("throw new $T($S)", refuse.exception(), refuse.message())
+                    .endControlFlow();
+            }
+        }
+        method.addStatement("$T $L = $T.forTenant($L)", routed.connectionKey(), KEY_LOCAL, routed.connectionKey(),
+            TENANT_LOCAL);
     }
 
     /**
