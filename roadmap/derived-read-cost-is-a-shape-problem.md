@@ -82,7 +82,6 @@ The walk's read path is gone
 │   ├── A projection unit is emitted from the store, censused
 │   ├── The filter conditions are emitted from the store
 │   │   ├── An argument binds the call parameter it supplies
-│   │   ├── A routine and a write state what they bind as call parameters
 │   │   └── A condition on a routine's result table is a call the store states
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
@@ -858,13 +857,10 @@ static method needs no holder.
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
       then goes, after the flips.
-    * **A routine and a write state what they bind as call parameters** `open`. A write's and a root
-      `@routine`'s fills are call parameters, and a child routine's step parameter names the
-      argument occurrence it reads, so `ConditionQuery` excludes a term either binds and `CONSUMED`
-      goes, a name shared with a column being no filter (Alf, 2026-11-13); a root `SELECT` or `LOOKUP`'s own call parameters wait for "The root query fetchers are emitted from the store".
   * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
-    and facets, is read off its occurrence, and flips in the same pass as `$project` and the
+    and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
+    off its occurrence, and flips in the same pass as `$project` and the
     conditions, so every condition caller moves at once (Alf, 2026-11-08, 2026-11-13).
 * **What a filter means does not depend on where it is written** `open`, off the critical path.
   Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
@@ -1203,7 +1199,7 @@ pass and no stratum that clears and recomputes.
       `PlainColumnCollision`, `FailOnMissingNeedsKey`, the idempotent delete's key and echo, and
       `UnsupportedInputFieldShape`. Each becomes a stored defect before the walkers go, or the shape
       is admitted silently.
-    * **A root routine's refusals are codes a stage writes** `blocked`, on "A routine and a write state what they bind as call parameters".
+    * **A root routine's refusals are codes a stage writes** `open`.
       `RoutineDirectiveResolver`'s GRAPHITRON refusals, a parameter nothing binds, an argMapping
       naming no IN parameter, a non-scalar leaf, `$source` at a root, an unknown or mistyped
       `$source` column and `@field` or `@condition` on a bound leaf, and its UNSUPPORTED deferrals, a
@@ -1211,10 +1207,11 @@ pass and no stratum that clears and recomputes.
       become a stored defect read off the routine's parameter bindings before the walk's routine
       path goes; a parameter nothing binds is `PARAMETER_UNFILLED`, raised where the root call's fills
       are.
-    * **An unbound parameter is one code, raised where its fills are** `blocked`, on "A routine and a write state what they bind as call parameters".
-      `PARAMETER_UNFILLED` is raised by the first stage holding each parameter list's fills, a service's
-      and a root routine's at `occurrence-producers`, a child routine's step at `occurrence-depths` and
-      a condition's at `occurrence-bindings`, rather than at `occurrence-depth-defects`, and
+    * **An unbound parameter is one code, raised where its bindings are, claimed by G** `open`.
+      `PARAMETER_UNFILLED` is raised by the first stage holding each parameter list's bindings, a
+      service's and a root routine's at `occurrence-producers`, a child routine's step at
+      `occurrence-depths` and a condition's at `occurrence-bindings`, rather than at
+      `occurrence-depth-defects`, and
       `ROUTINE_PARAMETER_UNBOUND` retires into it, a breaking change to the codes an editor filters by
       (Alf, 2026-11-13).
     * **What a producer's object result holds is judged by the families it is stated in** `open`.
@@ -3074,6 +3071,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A routine and a write state what they bind as call parameters** (2026-11-14). A write and a root
+`@routine` are calls whose arguments bind their parameters, and a child routine's step parameter
+names the argument occurrence it reads: `graphitron_join_path_step_parameter.argument`, a name path,
+is `argument_coordinate`. A filter term is what no call binds, so `ConditionEmitter`'s `CONSUMED`
+reason and its `FILTERED` set of producer kinds are gone, facets waiting on a `FACETS` reason of
+their own.
 
 **A defect is keyed by the stage that raised it** (2026-11-13). `graphitron_entry_defect` and the
 relations detailing it, `_claim`, `_member`, `_key_column`, `_table`, `_path_step` and
