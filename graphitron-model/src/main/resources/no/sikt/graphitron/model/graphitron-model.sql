@@ -4518,6 +4518,7 @@ COMMENT ON COLUMN graphitron_occurrence.element_graph_ref IS 'the graph half of 
 COMMENT ON COLUMN graphitron_occurrence.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
 
 CREATE INDEX graphitron_occurrence_element_ix ON graphitron_occurrence (graph_name, element_coordinate);
+CREATE INDEX graphitron_occurrence_argument_ix ON graphitron_occurrence (graph_name, argument_coordinate);
 COMMENT ON INDEX graphitron_occurrence_element_ix IS 'A reader holding a declared element asks for its occurrences, and the primary key, a nested coordinate, serves none of that. graphitron_argmapping_step asks it of every argMapping, which is written on a declared field, argument or input field and resolved once per place that element is reached.';
 
 CREATE TABLE graphitron_occurrence_list_element (
@@ -16090,7 +16091,46 @@ SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_VALU
          WHERE b.key_position IS NULL) x
 -- A scalar whose class is unknown is not judged here; its own rule says so.
  WHERE x.value_class <> x.tenant_class AND x.source_name IS NOT NULL
- GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column;
+ GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
+UNION ALL
+-- An argument of a @service field nothing binds, at the argument: a service composes with no filter,
+-- so an argument nothing binds, itself or anything under it, has nowhere to go: no call's parameter,
+-- no tenant, no @outbox message's key. Raised here, the first stage holding every binder's facts,
+-- the tenant's last, and only where the service's method resolved, an unresolved one being its
+-- reference's defect. The arguments graphitron reads itself go to no call: an @orderBy, and a
+-- connection's page arguments; the ones expansion mints are written nowhere and so are not reached.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ARGUMENT_UNBOUND', CAST(NULL AS VARCHAR), 'occurrence-tenants'
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence po ON po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+  JOIN graphitron_occurrence_producer p
+    ON p.graph_name = po.graph_name AND p.coordinate = po.coordinate AND p.kind = 'SERVICE'
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_field f ON f.graph_name = po.graph_name AND f.coordinate = po.element_coordinate
+ WHERE o.kind = 'FIELD_ARGUMENT'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_method m
+                WHERE m.graph_name = po.graph_name AND m.coordinate = po.coordinate AND m.call = 'producer')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence u
+                     JOIN graphitron_occurrence_binding_parameter b
+                       ON b.graph_name = u.graph_name AND b.coordinate = u.coordinate
+                    WHERE u.graph_name = o.graph_name AND u.argument_coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence u
+                     JOIN graphitron_occurrence_binding_tenant b
+                       ON b.graph_name = u.graph_name AND b.coordinate = u.coordinate
+                    WHERE u.graph_name = o.graph_name AND u.argument_coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                     JOIN graphitron_occurrence u
+                       ON u.graph_name = l.graph_name AND u.coordinate = l.landing_coordinate
+                    WHERE l.graph_name = o.graph_name AND l.call_coordinate = po.coordinate
+                      AND l.directive_name = 'outbox' AND u.argument_coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application d
+                    WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                      AND d.directive_name = 'orderBy')
+   AND NOT (o.name IN ('first', 'last', 'after', 'before')
+            AND EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                         WHERE cc.graph_name = f.graph_name AND cc.type_name = f.type_name
+                           AND cc.field_name = f.field_name));
 COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
 
 CREATE VIEW graphitron_occurrence_build_entry_defect_rule
@@ -23267,6 +23307,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @discriminator value is not among the literals of the database enum the discriminating column is, so it would match no row: write one of the enum''s literals, as the database spells it.'),
   ('TABLE_INTERFACE_PARTICIPANT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_INTERFACE_PARTICIPANT_UNBOUND',
    'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.'),
+  ('ARGUMENT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGUMENT_UNBOUND',
+   'An argument nothing binds: no call takes it as a parameter, itself or anything inside it, and graphitron reads it for no filter, ordering or page, so the value a client sends goes nowhere. Bind it in the call''s argMapping, or remove it.'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
    'A method a @service or a @condition calls, or a root @routine, has a parameter nothing fills: no argument of its name, no argMapping pair, no context key, and nothing it could take by its type. Name it in argMapping or contextArguments, or rename it after the argument it takes.'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',

@@ -1075,11 +1075,11 @@ static method needs no holder.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
   flag and where it is computed, so a client-side computed column is told from a stored one.
 
-### An argument a call consumes generates nothing `open`
+### An argument a call binds generates nothing `open`
 
-An SDL argument or input field has exactly one kind of consumer: a call that takes its value as a
-parameter, or else the generator, which writes a column predicate, a lookup, an ordering or
-pagination from it. One with neither is an author error. This replaces `@condition(override:)`,
+An SDL argument or input field is bound by exactly one kind of thing: a call that takes its value as
+a parameter, or else the generator, which writes a column predicate, a lookup, an ordering or
+pagination from it. One bound by neither is an author error. This replaces `@condition(override:)`,
 whose default of `false` (the method's condition ANDed with the generated predicates) is the wrong
 default by fs-plattform's own usage: 443 applications write `override: true`, 5 compose on purpose,
 and one omission is a likely bug. The census, the 18 omissions and the reasoning are in
@@ -1087,36 +1087,34 @@ and one omission is a likely bug. The census, the 18 omissions and the reasoning
 2026-11-02.
 
 * **The rule reproduces fs-plattform's intent** `open`. Over captured fs-plattform subgraphs, list
-  every argument or input field `override: true` switches off that no call consumes, and every
-  `@lookupKey` or `@orderBy` argument a call does consume. Both lists empty, or only author errors,
+  every argument or input field `override: true` switches off that no call binds, and every
+  `@lookupKey` or `@orderBy` argument a call does bind. Both lists empty, or only author errors,
   is the evidence the flag can go; anything else comes to Alf before the nodes below.
-* **An argument's consumer is stated** `blocked`, on "A producer's fetcher parts are emitted from the store".
-  A relation over every argument and input-field occurrence, derived from the parameter fills: the
-  calls that consume it, or the generator, or none. Consuming an input-typed argument consumes every
-  field inside it; consuming one input field leaves its siblings to the generator. None is the entry
-  defect `ARGUMENT_WITHOUT_CONSUMER` at the argument's written position. The generator is a
-  candidate only under a producer it composes with, `@condition`, `@routine` or a table read, so
-  under `@service` and `@externalField` an occurrence the call does not take is that defect.
-  `ARGUMENT_WITHOUT_CONSUMER` is a code whose `graphitron_defect_type` row names its
-  `owner_stage`, written through that stage's rule view and swept by its gatherer.
-  * **A path or a column a consumer does not take is a defect** `blocked`, on "An argument's consumer is stated".
-    A written path on an occurrence whose consumer takes no table is `PATH_NOT_TAKEN`. A scalar
+* **What binds an argument is stated** `blocked`, on "A producer's fetcher parts are emitted from the store".
+  What binds each argument and input-field occurrence is stated beside its `PARAMETER` bindings: a
+  call, or the generator, or nothing; binding an input-typed argument binds every field inside it,
+  and binding one input field leaves its siblings to the generator. Nothing is `ARGUMENT_UNBOUND` at
+  the argument's written position, raised where the facts are; its `@service` case, which composes
+  with no generator, is raised by `occurrence-tenants` already, the first stage holding every binder, and what is left is
+  `@externalField` and an input field left unbound inside an argument a call binds in part.
+  * **A path or a column nothing binding it reads is a defect** `blocked`, on "What binds an argument is stated".
+    A written path on an occurrence whose binder reads no table is `PATH_NOT_TAKEN`. A scalar
     argument or input field matching no column at its path's end is `COLUMN_UNRESOLVED` only where
-    no call parameter consumes it.
-* **The generator emits from an argument only when no call consumes it** `blocked`, on "An argument's consumer is stated".
+    no call parameter binds it.
+* **The generator emits from an argument only when no call binds it** `blocked`, on "What binds an argument is stated".
   `override:` is no longer read, and `graphitron_ast_field_condition_entry`, the store's only typed copy
   of a written `override:` on a field, has its reader or goes. What goes: the `enclosingOverride` cascade in `ClassifyContext`,
   `InputFieldResolver` and `FieldBuilder`, `suppressedByFieldOverride` on `ArgumentRef`,
   the `override` axis of `ConditionFactVisitor` and `ArgConditionRef`, and the walk's refusals that
   turn on it (the `override: false` column miss in `BuildContext`, the mutation-input and `@nodeId`
-  carrier refusals that require `override: true`), each replaced by the consumer relation or by
-  `ARGUMENT_WITHOUT_CONSUMER`. The sakila fixtures `filmsOuterOverrideFilterInput` and
+  carrier refusals that require `override: true`), each replaced by what binds the argument or by
+  `ARGUMENT_UNBOUND`. The sakila fixtures `filmsOuterOverrideFilterInput` and
   `filmsOuterOverridePlainInput` are re-asserted as behaviour under the rule.
-* **A written `override:` is a deprecation warning** `blocked`, on "The generator emits from an argument only when no call consumes it".
+* **A written `override:` is a deprecation warning** `blocked`, on "The generator emits from an argument only when no call binds it".
   Accepted for a transition, deprecated in `directives.graphqls`, and a lint detection where the
   written value disagrees with what consumption implies, so an author sees the sites whose behaviour
   changed.
-* **The manual states the rule in one sentence** `blocked`, on "The generator emits from an argument only when no call consumes it".
+* **The manual states the rule in one sentence** `blocked`, on "The generator emits from an argument only when no call binds it".
   `reference/directives/condition.adoc`, `how-to/condition-cascade.adoc` and
   `how-to/migrating-from-legacy.adoc` lose the override, cascade and legacy-divergence prose; the
   rule and its consequences replace them.
@@ -2442,7 +2440,7 @@ Today's writers build both sides, the accessor path being `graphitron_accessor_p
   nothing, the call's parameter fill naming it. A root field with no path binds its target's table,
   once per table its end would fork to. A parameter fill is decided before `COLUMN`: a scalar input
   with no binding under
-  a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and `ARGUMENT_WITHOUT_CONSUMER`
+  a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and `ARGUMENT_UNBOUND`
   only where the generator cannot consume it, under `@service` or `@externalField`, and no
   parameter does.
 
@@ -2625,7 +2623,7 @@ last element names no table (`PATH_LANDING_UNKNOWN`); a `@nodeId` path landing o
 one name (R1099's). Two calls consuming one argument with different record tables belong with the
 producer's lift ("Producer, bind and call on the occurrence (draft)"). A binding's own defects are the binding's: a scalar
 input with no binding under a parent bound `TABLE` is `COLUMN_UNRESOLVED` or `COLUMN_AMBIGUOUS`, and
-`ARGUMENT_WITHOUT_CONSUMER` only where the generator cannot consume it, under `@service` or
+`ARGUMENT_UNBOUND` only where the generator cannot consume it, under `@service` or
 `@externalField`, and no parameter does; `PATH_NOT_TAKEN` waits on the consumer.
 
 **What it replaces.**

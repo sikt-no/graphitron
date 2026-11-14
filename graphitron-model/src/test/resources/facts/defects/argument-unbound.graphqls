@@ -1,0 +1,27 @@
+# An argument nothing binds has nowhere to go. A @service composes with no filter, so an argument its
+# method takes no parameter for is ARGUMENT_UNBOUND, at the argument: Query.filmsWithExtra's extra.
+# Its ids is bound by the method's parameter, as Query.filmsByService's only argument is, and those
+# draw nothing.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  filmsByService(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
+  filmsWithExtra(ids: [Int!]!, extra: String): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+      method: "filmsByService"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,             coordinate
+  ARGUMENT_UNBOUND, Query.filmsWithExtra(extra:)
+  """)
+
+# The bound arguments bind the method's parameter; the unbound one binds nothing.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_parameter", rows: """
+  coordinate,                    call_coordinate,      call,     position, call_kind
+  Query.filmsByService(ids:),    Query.filmsByService, producer, 1,        SERVICE
+  Query.filmsWithExtra(ids:),    Query.filmsWithExtra, producer, 1,        SERVICE
+  """)

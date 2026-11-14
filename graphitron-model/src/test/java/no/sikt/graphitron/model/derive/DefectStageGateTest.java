@@ -78,7 +78,12 @@ class DefectStageGateTest {
                 String view = rule.view().getName().toLowerCase(java.util.Locale.ROOT);
                 assertThat(rule.view().field("STAGE")).as(view + " has a stage column").isNotNull();
                 var named = new TreeSet<String>();
-                var m = STAGE_LITERAL.matcher(definitionOf(dsl, view));
+                // A literal compared against, a directive name such as 'outbox' among them, names
+                // what the rule reads, not the stage its rows name.
+                String projected = definitionOf(dsl, view)
+                    .replaceAll("(=|<>)\\s*'[^']*'", "")
+                    .replaceAll("(?i)\\bIN\\s*\\([^)]*\\)", "");
+                var m = STAGE_LITERAL.matcher(projected);
                 while (m.find()) {
                     if (stages.contains(m.group(1))) {
                         named.add(m.group(1));
