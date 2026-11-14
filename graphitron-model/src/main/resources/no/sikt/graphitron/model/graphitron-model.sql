@@ -6207,94 +6207,6 @@ COMMENT ON COLUMN graphitron_node_keycolumn.table_source_name IS 'the catalog so
 COMMENT ON COLUMN graphitron_node_keycolumn.table_schema IS 'the bound table''s schema, half of the reference that ties this column to the type''s own binding rather than to any table having such a column';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_name IS 'the bound table, cascading with the catalog that declares it: a recrawled source takes its columns and these rows with it, which is the same lifetime rule graphitron_tabletype carries';
 
--- The keys that identify a row of a table-bound type, ranked: the table's primary key; the type's
--- node key on the same table, taken without a NOT NULL check, being the identity its author declared;
--- and every unique key of the table none of whose columns admits null, in the catalog's key order,
--- PostgreSQL letting several rows hold null in a unique key. The first is the row key a client's
--- order is completed with; any of them listed in full already identifies a row.
-CREATE VIEW graphitron_type_identifying_key_rule
-  (graph_name, type_name, key_ordinal, position, table_source_name, table_schema, table_name,
-   column_name, basis) AS
-SELECT graph_name, type_name,
-       CAST(DENSE_RANK() OVER (PARTITION BY graph_name, type_name ORDER BY rank, key_position, key_name) - 1 AS INT),
-       position, table_source_name, table_schema, table_name, column_name, basis
-  FROM (
-    SELECT tt.graph_name, tt.type_name, 0, -1, pk.constraint_name, cc.position, cc.source_name,
-           cc.table_schema, cc.table_name, cc.column_name, 'PRIMARY_KEY'
-      FROM graphitron_tabletype tt
-      JOIN sql_primary_key pk
-        ON pk.source_name = tt.table_source_name AND pk.table_schema = tt.table_schema
-       AND pk.table_name = tt.table_name
-      JOIN sql_constraint_column cc
-        ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
-       AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
-    UNION ALL
-    SELECT nk.graph_name, nk.type_name, 1, -1, '', nk.position, nk.table_source_name, nk.table_schema,
-           nk.table_name, nk.column_name, 'NODE_KEY'
-      FROM graphitron_node_keycolumn nk
-    UNION ALL
-    SELECT tt.graph_name, tt.type_name, 2, COALESCE(c.key_position, 2147483647), c.constraint_name,
-           cc.position, cc.source_name, cc.table_schema, cc.table_name, cc.column_name, 'UNIQUE_KEY'
-      FROM graphitron_tabletype tt
-      JOIN sql_constraint c
-        ON c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
-       AND c.table_name = tt.table_name AND c.constraint_type = 'UNIQUE'
-      JOIN sql_constraint_column cc
-        ON cc.source_name = c.source_name AND cc.table_schema = c.table_schema
-       AND cc.table_name = c.table_name AND cc.constraint_name = c.constraint_name
-     WHERE NOT EXISTS (SELECT 1 FROM sql_constraint_column n
-                     JOIN sql_column col
-                       ON col.source_name = n.source_name AND col.table_schema = n.table_schema
-                      AND col.table_name = n.table_name AND col.column_name = n.column_name
-                    WHERE n.source_name = c.source_name AND n.table_schema = c.table_schema
-                      AND n.table_name = c.table_name AND n.constraint_name = c.constraint_name
-                      AND col.nullable)
-  ) k (graph_name, type_name, rank, key_position, key_name, position, table_source_name, table_schema,
-       table_name, column_name, basis);
-COMMENT ON VIEW graphitron_type_identifying_key_rule IS 'One row the identifying key rule computes, in the shape graphitron_type_identifying_key stores: the rule itself, evaluated on demand rather than read off disk. For example the type-identifying-keys stage inserts this view''s rows for one graph into graphitron_type_identifying_key, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_identifying_key.graph_name';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_type_identifying_key.type_name';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.key_ordinal IS 'the key_ordinal of a row of this rule, which the stage writes into graphitron_type_identifying_key.key_ordinal';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_identifying_key.position';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_type_identifying_key.table_source_name';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_type_identifying_key.table_schema';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_type_identifying_key.table_name';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_type_identifying_key.column_name';
--- COMMENT ON COLUMN graphitron_type_identifying_key_rule.basis IS 'the basis of a row of this rule, which the stage writes into graphitron_type_identifying_key.basis';
-
-CREATE TABLE graphitron_type_identifying_key (
-  graph_name        VARCHAR   NOT NULL,
-  type_name         VARCHAR   NOT NULL,
-  key_ordinal       INT       NOT NULL,
-  position          INT       NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  column_name       VARCHAR   NOT NULL,
-  basis             VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, key_ordinal, position),
-  FOREIGN KEY (graph_name, type_name, table_source_name, table_schema, table_name)
-    REFERENCES graphitron_tabletype (graph_name, type_name, table_source_name, table_schema, table_name)
-    ON DELETE CASCADE,
-  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
-  CHECK (basis IN ('PRIMARY_KEY', 'NODE_KEY', 'UNIQUE_KEY')),
-  CHECK (key_ordinal >= 0),
-  CHECK (position >= 0)
-);
-COMMENT ON TABLE graphitron_type_identifying_key IS 'One column of one key that identifies a row of a table-bound type: one row per type, key and key position, the keys ranked. For example Film is identified by film_id of public.film, its primary key at key ordinal 0, and a type over a table with none by its node key there.';
-COMMENT ON COLUMN graphitron_type_identifying_key.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_type_identifying_key.type_name IS 'the table-bound type';
-COMMENT ON COLUMN graphitron_type_identifying_key.key_ordinal IS 'the key''s rank, numbered from zero: the primary key, then the type''s node key, then the all-not-null unique keys in the catalog''s key order. Key ordinal 0 is the row key a client''s order is completed with; an order listing any key in full already identifies a row. A node key with the primary key''s columns is still a key of its own here, as the walk keeps both';
-COMMENT ON COLUMN graphitron_type_identifying_key.position IS 'the column''s place in its key, numbered from zero, the key''s own order';
-COMMENT ON COLUMN graphitron_type_identifying_key.table_source_name IS 'the catalog source of the type''s table';
-COMMENT ON COLUMN graphitron_type_identifying_key.table_schema IS 'the table''s schema';
-COMMENT ON COLUMN graphitron_type_identifying_key.table_name IS 'the type''s table';
-COMMENT ON COLUMN graphitron_type_identifying_key.column_name IS 'the key column';
-COMMENT ON COLUMN graphitron_type_identifying_key.basis IS 'which source the key is, the same on every position of one key: PRIMARY_KEY, the table''s; NODE_KEY, the type''s node key; UNIQUE_KEY, a unique key of the table whose columns all refuse null';
-COMMENT ON COLUMN graphitron_type_identifying_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
 CREATE TABLE graphitron_node_legacy_keycolumn (
   graph_name        VARCHAR NOT NULL,
   type_id           VARCHAR NOT NULL,
@@ -23677,36 +23589,35 @@ INSERT INTO meta_stage VALUES
   ('argmapping-candidates', 'graphitron', 16, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
   ('node-key-columns', 'graphitron', 17, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
   ('node-legacy-key-shapes', 'graphitron', 18, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('type-identifying-keys', 'graphitron', 19, 'no.sikt.graphitron.model.derive.TypeIdentifyingKeys'),
-  ('field-targets', 'graphitron', 20, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 23, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 24, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 25, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 26, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 27, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 28, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 29, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 30, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('occurrence-participants', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-lists', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
-  ('occurrence-overrides', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
-  ('occurrence-producers', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
-  ('occurrence-source-claims', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
-  ('occurrence-depths', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-bindings', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-lookup-keys', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
-  ('occurrence-orderings', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceOrderings'),
-  ('occurrence-builds', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-tenants', 'graphitron', 42, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
-  ('occurrence-routes', 'graphitron', 43, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
-  ('occurrence-depth-defects', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 45, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 46, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 47, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 48, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('field-targets', 'graphitron', 19, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 20, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 23, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 24, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 25, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 26, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 27, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 28, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 29, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 30, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-lists', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
+  ('occurrence-overrides', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
+  ('occurrence-producers', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
+  ('occurrence-source-claims', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
+  ('occurrence-depths', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-lookup-keys', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
+  ('occurrence-orderings', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceOrderings'),
+  ('occurrence-builds', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-tenants', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
+  ('occurrence-routes', 'graphitron', 42, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
+  ('occurrence-depth-defects', 'graphitron', 43, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 45, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 46, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 47, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -23883,7 +23794,6 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_join_path_stop'),
   ('occurrence-lookup-keys', 'graphitron_entry_defect'),
   ('occurrence-lookup-keys', 'graphitron_occurrence_lookup_key'),
-  ('type-identifying-keys', 'graphitron_type_identifying_key'),
   ('occurrence-bindings', 'graphitron_occurrence_node_id_carried'),
   ('occurrence-orderings', 'graphitron_entry_defect'),
   ('occurrence-orderings', 'graphitron_sort_enum'),
@@ -24527,9 +24437,6 @@ INSERT INTO meta_grain VALUES
   ('occurrence-sort-key',
    'one key at one position of one order of one list or connection occurrence, in one graph',
    'graph_name, coordinate, bound, choice, position', 'sdl'),
-  ('type-identifying-key',
-   'one column of one ranked key that identifies a row of one table-bound type, in one graph',
-   'graph_name, type_name, key_ordinal, position', 'sdl'),
   ('graph-occurrence-participant',
    'one type the rows of one polymorphic occurrence may be, in one graph',
    'graph_name, coordinate, participant_type', 'sdl'),
@@ -26408,14 +26315,6 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_sort_key_method_rule', 'occurrence-sort-key', 'graphitron',
    'One row the sort key method rule computes, in the shape graphitron_occurrence_sort_key_method stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_method, which is the name every reader spells.',
-   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
-  ('graphitron_type_identifying_key', 'type-identifying-key', 'graphitron',
-   'One column of one key that identifies a row of a table-bound type: one row per type, key and key position, the keys ranked.',
-   'For example Film is identified by film_id of public.film, its primary key at key ordinal 0, and a type over a table with none by its node key there.',
-   'What the walk''s row identity holds, every identifying key and the row key among them: a list''s fixed order, its default included, is completed with the row key''s columns it does not list unless it already lists some identifying key in full, and that completion, the node "A list''s order is completed with its row key", is this relation''s named reader. Keyed by the type, since the node key is the type''s; the primary-key and unique-key halves are a function of the catalog alone, a sql_ fact a later node may state at table grain. Written by the type-identifying-keys stage after the node keys, marked and swept.'),
-  ('graphitron_type_identifying_key_rule', 'type-identifying-key', 'graphitron',
-   'One row the identifying key rule computes, in the shape graphitron_type_identifying_key stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the type-identifying-keys stage inserts this view''s rows for one graph into graphitron_type_identifying_key, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_node_id_carried', 'occurrence-node-id-key', 'graphitron',
    'The column a node id''s key position is carried back to on the table its path departs: one row per node id occurrence, node table and key position whose one foreign-key step pairs it.',

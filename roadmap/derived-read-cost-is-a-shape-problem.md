@@ -831,12 +831,14 @@ static method needs no holder.
   * **A list's order is completed with its row key** `open`. The walk completes every single-table
     list's fixed order, its default included, not only a connection's (`OrderByResolver.complete`):
     the row key's columns the order does not list follow it, in the direction of its last key,
-    unless it already lists an identifying key in full, own-table columns alone counting. The
-    `occurrence-orderings` stage states the appended keys from `graphitron_type_identifying_key`,
-    as sort keys of their own basis, so the multiset orders as the walk does; a client-composed
-    sequence is completed at run time with key ordinal 0. Whether the primary-key and unique-key
-    halves of the identifying keys are a `sql_` fact at table grain, stated once in the catalog
-    family, is Alf's question; closes before the flip.
+    unless it already lists an identifying key in full, own-table columns alone counting. What
+    identifies a row is stated first, by this node: the primary key and the all-not-null unique keys
+    are a `sql_` fact at table grain, stated once in the catalog family, and a type's node key stands
+    in over a keyless table through `graphitron_node_keycolumn`. A ranked per-type relation of all
+    three, `graphitron_type_identifying_key`, was written ahead of this node and taken out unread;
+    its rule is in the cloud branch's 74a6f6260f. The `occurrence-orderings` stage then states the
+    appended keys as sort keys of their own basis, so the multiset orders as the walk does; a
+    client-composed sequence is completed at run time with the row key; closes before the flip.
   * **A single child is looked up by its keys** `open`. A `@lookupKey` on a field of a table-bound
     type returning one table-bound object is refused by the walk as not supported, and by the store
     as the deferral `LOOKUP_KEY_ON_SINGLE_CHILD`; the child is read as the one row its keys match, or

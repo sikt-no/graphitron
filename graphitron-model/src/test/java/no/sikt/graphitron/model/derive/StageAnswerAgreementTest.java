@@ -112,7 +112,6 @@ public class StageAnswerAgreementTest {
         new Stage("graphitron_occurrence_sort_key", "graphitron_occurrence_sort_key_rule"),
         new Stage("graphitron_occurrence_sort_key_column", "graphitron_occurrence_sort_key_column_rule"),
         new Stage("graphitron_occurrence_sort_key_method", "graphitron_occurrence_sort_key_method_rule"),
-        new Stage("graphitron_type_identifying_key", "graphitron_type_identifying_key_rule"),
         new Stage("graphitron_field_handed_class", "graphitron_field_handed_class_rule"),
         new Stage("graphitron_field_handed_record", "graphitron_field_handed_record_rule"),
         new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),

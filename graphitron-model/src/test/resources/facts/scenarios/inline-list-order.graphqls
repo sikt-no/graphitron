@@ -142,20 +142,6 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_method", r
   Language.films, Language.films, 0, defaultOrder, 0, fields.0
   """)
 
-extend schema @expectEquals(relation: "graphitron_type_identifying_key", rows: """
-  type_name,      key_ordinal, position, table_name,      column_name, basis
-  Actor,          0,           0,        actor,           actor_id,    PRIMARY_KEY
-  Actor,          1,           0,        actor,           actor_id,    NODE_KEY
-  Film,           0,           0,        film,            film_id,     PRIMARY_KEY
-  Language,       0,           0,        language,        language_id, PRIMARY_KEY
-  RoleAssignment, 0,           0,        role_assignment, holder_id,   NODE_KEY
-  RoleAssignment, 0,           1,        role_assignment, role_code,   NODE_KEY
-  RoleHolder,     0,           0,        role_holder,     holder_id,   PRIMARY_KEY
-  Stint,          0,           0,        stint,           person_id,   UNIQUE_KEY
-  Stint,          0,           1,        stint,           valid_from,  UNIQUE_KEY
-  Store,          0,           0,        store,           store_id,    PRIMARY_KEY
-  """)
-
 extend schema @expectEquals(relation: "graphitron_order_input", rows: """
   type_name,    sort_field_name, direction_field_name
   ActorOrderBy, field,           direction

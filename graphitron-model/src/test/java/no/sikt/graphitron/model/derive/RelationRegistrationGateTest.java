@@ -556,8 +556,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_sort_key_column_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_sort_key_method", Arm.DERIVED);
         registrations.put("graphitron_occurrence_sort_key_method_rule", Arm.DERIVED);
-        registrations.put("graphitron_type_identifying_key", Arm.DERIVED);
-        registrations.put("graphitron_type_identifying_key_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_order_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_pair", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_pair_rule", Arm.DERIVED);

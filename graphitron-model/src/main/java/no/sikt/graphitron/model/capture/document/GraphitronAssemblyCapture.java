@@ -21,7 +21,6 @@ import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.OccurrenceBindings;
 import no.sikt.graphitron.model.derive.OccurrenceLookupKeys;
 import no.sikt.graphitron.model.derive.OccurrenceOrderings;
-import no.sikt.graphitron.model.derive.TypeIdentifyingKeys;
 import no.sikt.graphitron.model.derive.OccurrenceBuilds;
 import no.sikt.graphitron.model.derive.OccurrenceDepthDefects;
 import no.sikt.graphitron.model.derive.OccurrenceDepths;
@@ -97,8 +96,6 @@ public final class GraphitronAssemblyCapture {
         // The legacy key shape each type id answers to, against the current keys just written.
         new AnchorStage("node-legacy-key-shapes", NodeLegacyKeyShapes.class,
             (dsl, graph, readAt) -> NodeLegacyKeyShapes.derive(dsl, graph)),
-        // The ranked keys identifying a row of each table-bound type, the node keys just written among them.
-        new AnchorStage("type-identifying-keys", TypeIdentifyingKeys.class, TypeIdentifyingKeys::derive),
         // Each field's target type, over the population the generator emits.
         new AnchorStage("field-targets", GraphitronAssemblyCapture.class,
             GraphitronAssemblyCapture::targets),
