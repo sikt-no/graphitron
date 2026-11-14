@@ -303,6 +303,11 @@ is the right path when you already own a request-scoped `DSLContext` (an
 existing transaction manager, a framework-provided connection) and want
 Graphitron to use it rather than acquire its own.
 
+A tenant-routed build is owned connections only (Alf, 2026-11-14). Routing by tenant means
+graphitron acquires each query's connection from its connection key, so a caller-supplied
+connection has no place in such a build; the consumer's control over which connection a key gets
+is the connection hook, not this path.
+
 `GraphitronContext` is the sealed per-request contract every generated DataFetcher reads from. It is _emitted_ per app under `<outputPackage>.schema` and sealed to permit only the generator's own `GraphitronContextImpl` singleton (nested inside the interface to inherit same-compilation-unit permits); apps no longer implement it directly. The extension surface moves to the points where per-request values cross the boundary:
 
 * *Per-request `DSLContext`*: pass it as the first parameter of `Graphitron.newExecutionInput(dsl, ...)`. On the owned-connection path you do not supply one, the instrumentation produces it from the pinned connection.
