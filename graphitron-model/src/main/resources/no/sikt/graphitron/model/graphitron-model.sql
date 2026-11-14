@@ -15944,196 +15944,6 @@ SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
     OR (u.bound_to LIKE '$result.%' AND rl.key_name IS NOT NULL);
 COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
 
--- The defects judging the node ids occurrence-bindings writes: a node id the generator would bind
--- against the one node over a table, where no node or several are, so no binding was written.
-CREATE VIEW graphitron_occurrence_binding_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- A bare @nodeId at an argument or input field whose needs land where no node is: no target type a
--- node and no node over any table they land on. A slot with no need at all is not judged here, its
--- table being one a need has yet to state. Reported once per @nodeId, an occurrence in the detail.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TARGET_UNRESOLVED', MIN(o.coordinate), 'occurrence-bindings'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
-   AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
-                 LEFT JOIN graphitron_join_path jp
-                   ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-                  AND jp.target_type = pn.target_type
-                WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                  AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn
-                     LEFT JOIN graphitron_join_path jp
-                       ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-                      AND jp.target_type = pn.target_type
-                    WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                      AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-                      AND (EXISTS (SELECT 1 FROM graphitron_node tn
-                                    WHERE tn.graph_name = pn.graph_name
-                                      AND tn.type_name = pn.target_type)
-                           OR EXISTS (SELECT 1 FROM graphitron_node_table nt
-                                       WHERE nt.graph_name = pn.graph_name
-                                         AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-                                         AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
-                                         AND nt.table_name = COALESCE(jp.target_table, pn.landing_table))))
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
-UNION ALL
--- A bare @nodeId at an argument or input field whose needs reach nodes but decide none: a table
--- several nodes declare themselves over, or participants that disagree where the manual lets no
--- one id stand for all. Reported once per @nodeId, an occurrence in the detail.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate), 'occurrence-bindings'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id b
-                    WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
-   AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
-                 LEFT JOIN graphitron_join_path jp
-                   ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-                  AND jp.target_type = pn.target_type
-                WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-                  AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-                  AND (EXISTS (SELECT 1 FROM graphitron_node tn
-                                WHERE tn.graph_name = pn.graph_name
-                                  AND tn.type_name = pn.target_type)
-                       OR EXISTS (SELECT 1 FROM graphitron_node_table nt
-                                   WHERE nt.graph_name = pn.graph_name
-                                     AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-                                     AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
-                                     AND nt.table_name = COALESCE(jp.target_table, pn.landing_table))))
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
-UNION ALL
--- An input field's id: ID with neither @nodeId nor @field, landing on a table several nodes declare
--- themselves over: the name says it is a node's id and not which node's. Reported at the input field,
--- since what is missing is a directive there, at its declaration as the author wrote it: a field the
--- macro expansion minted has none, so the join to the entry is what leaves a minted field out.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate), 'occurrence-bindings'
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphql_ast_input_field_entry e
-    ON e.graph_name = f.graph_name AND e.type_name = f.type_name AND e.name = f.field_name
-  JOIN graphitron_path_need_table pn
-    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-   AND jp.target_type = pn.target_type
- WHERE o.kind = 'INPUT_FIELD' AND o.name = 'id' AND f.named_type = 'ID'
-   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'COLUMN'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node tn
-                    WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type)
-   AND EXISTS (SELECT 1 FROM graphitron_node_table nt
-                WHERE nt.graph_name = pn.graph_name
-                  AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-                  AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
-                  AND nt.table_name = COALESCE(jp.target_table, pn.landing_table)
-                  AND nt.node_count > 1)
- GROUP BY e.graph_name, e.source_name, e.source_line, e.source_column
-UNION ALL
--- A write's ID return with neither @nodeId nor @field over a table no node declares itself over: the
--- id the write hands back is no node's. Reported at the @mutation, the occurrence in the detail.
-SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
-       'NODE_ID_TARGET_UNRESOLVED', o.coordinate, 'occurrence-bindings'
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
-  JOIN graphitron_producer_write pw
-    ON pw.graph_name = f.graph_name AND pw.type_name = f.type_name AND pw.field_name = f.field_name
- WHERE o.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node_table nt
-                    WHERE nt.graph_name = pw.graph_name AND nt.table_source_name = pw.table_source_name
-                      AND nt.table_schema = pw.table_schema AND nt.table_name = pw.table_name)
-UNION ALL
--- The same over a table several nodes declare themselves over: the write names no node its id is.
--- Reported at the @mutation, the occurrence in the detail.
-SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
-       'NODE_ID_TARGET_AMBIGUOUS', o.coordinate, 'occurrence-bindings'
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
-  JOIN graphitron_producer_write pw
-    ON pw.graph_name = f.graph_name AND pw.type_name = f.type_name AND pw.field_name = f.field_name
- WHERE o.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
-   AND EXISTS (SELECT 1 FROM graphitron_node_table nt
-                WHERE nt.graph_name = pw.graph_name AND nt.table_source_name = pw.table_source_name
-                  AND nt.table_schema = pw.table_schema AND nt.table_name = pw.table_name
-                  AND nt.node_count > 1)
-UNION ALL
--- An @externalField whose reference resolved to a method it may name, at a table its values are rows
--- of that the method does not accept: its parameter is typed on another table's class or record, so no
--- call was pinned there. Read off the claim and the source table the binding is written from, not the
--- binding, which later stages write other kinds of.
--- Reported once per reference, at the reference, the first table the parameter does not accept in
--- the detail.
-SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
-       'PARAMETER_MISMATCH', MIN(st.table_schema || '.' || st.table_name), 'occurrence-bindings'
-  FROM graphitron_occurrence o
-  JOIN graphitron_binding_claim x
-    ON x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate AND x.kind = 'EXPRESSION'
-  JOIN graphitron_occurrence_source_table st
-    ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
-  JOIN graphitron_code_reference r
-    ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
-   AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
-  JOIN code_external_field_method m
-    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
-   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
- WHERE o.kind = 'FIELD'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call c
-                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate
-                      AND c.call = 'expression:' || st.table_schema || '.' || st.table_name
-                      AND c.call_kind = 'EXPRESSION')
- GROUP BY r.graph_name, r.source_name, r.source_line, r.source_column
-UNION ALL
--- An @externalField whose field also writes a @reference path: the expression would bind at the
--- path's landing, which the binding does not state yet, so it is deferred rather than bound at the
--- source table the path leaves. Reported at the @reference, the directive to remove.
-SELECT ref.graph_name, ref.source_name, ref.source_line, ref.source_column,
-       'EXTERNAL_FIELD_PATH_UNSUPPORTED', x.coordinate, 'occurrence-bindings'
-  FROM graphitron_binding_claim x
-  JOIN graphitron_directive_application ref
-    ON ref.graph_name = x.graph_name AND ref.coordinate = x.coordinate
-   AND ref.directive_name = 'reference'
- WHERE x.kind = 'EXPRESSION' AND ref.source_line IS NOT NULL
-UNION ALL
--- A @condition's parameter nothing binds, at the reference the @condition names its method by: once
--- per written directive, the detail the first such parameter.
-SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-       COALESCE(r.source_column, da.source_column), d.code, MIN(d.parameter_name), 'occurrence-bindings'
-  FROM graphitron_occurrence_call_parameter_defect d
-  JOIN graphitron_occurrence_call oc
-    ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
-  JOIN graphitron_directive_application da
-    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
-   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
-  LEFT JOIN graphitron_code_reference r
-    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
-   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
-   AND r.owner = oc.application_directive
- WHERE d.call_kind IN ('CONDITION') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
- GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-          COALESCE(r.source_column, da.source_column), d.code;
-COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
-
 -- The defects of what an input object is built into and how its fields fill it, read off the built
 -- classes and member bindings occurrence-builds writes, by that stage: a rule of its own, as the
 -- outbox's and the entity keys' are.
@@ -19635,6 +19445,190 @@ COMMENT ON COLUMN graphitron_occurrence_expression.call IS 'the call it is, expr
 COMMENT ON COLUMN graphitron_occurrence_expression.call_kind IS 'always EXPRESSION, pinned so the foreign key holds the row to a call of that kind';
 COMMENT ON COLUMN graphitron_occurrence_expression.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The defects judging the node ids occurrence-bindings writes: a node id the generator would bind
+-- against the one node over a table, where no node or several are, so no binding was written.
+CREATE VIEW graphitron_occurrence_binding_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A bare @nodeId at an argument or input field whose needs land where no node is: no target type a
+-- node and no node over any table they land on. A slot with no need at all is not judged here, its
+-- table being one a need has yet to state. Reported once per @nodeId, an occurrence in the detail.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_TARGET_UNRESOLVED', MIN(o.coordinate), 'occurrence-bindings'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
+                 LEFT JOIN graphitron_join_path jp
+                   ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                  AND jp.target_type = pn.target_type
+                WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+                  AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_need_table pn
+                     LEFT JOIN graphitron_join_path jp
+                       ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                      AND jp.target_type = pn.target_type
+                    WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+                      AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+                      AND (EXISTS (SELECT 1 FROM graphitron_node tn
+                                    WHERE tn.graph_name = pn.graph_name
+                                      AND tn.type_name = pn.target_type)
+                           OR EXISTS (SELECT 1 FROM graphitron_node_table nt
+                                       WHERE nt.graph_name = pn.graph_name
+                                         AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                         AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                         AND nt.table_name = COALESCE(jp.target_table, pn.landing_table))))
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- A bare @nodeId at an argument or input field whose needs reach nodes but decide none: a table
+-- several nodes declare themselves over, or participants that disagree where the manual lets no
+-- one id stand for all. Reported once per @nodeId, an occurrence in the detail.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate), 'occurrence-bindings'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id b
+                    WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_path_need_table pn
+                 LEFT JOIN graphitron_join_path jp
+                   ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+                  AND jp.target_type = pn.target_type
+                WHERE pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+                  AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+                  AND (EXISTS (SELECT 1 FROM graphitron_node tn
+                                WHERE tn.graph_name = pn.graph_name
+                                  AND tn.type_name = pn.target_type)
+                       OR EXISTS (SELECT 1 FROM graphitron_node_table nt
+                                   WHERE nt.graph_name = pn.graph_name
+                                     AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                                     AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                                     AND nt.table_name = COALESCE(jp.target_table, pn.landing_table))))
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- An input field's id: ID with neither @nodeId nor @field, landing on a table several nodes declare
+-- themselves over: the name says it is a node's id and not which node's. Reported at the input field,
+-- since what is missing is a directive there, at its declaration as the author wrote it: a field the
+-- macro expansion minted has none, so the join to the entry is what leaves a minted field out.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'NODE_ID_TARGET_AMBIGUOUS', MIN(o.coordinate), 'occurrence-bindings'
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_input_field_entry e
+    ON e.graph_name = f.graph_name AND e.type_name = f.type_name AND e.name = f.field_name
+  JOIN graphitron_path_need_table pn
+    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
+ WHERE o.kind = 'INPUT_FIELD' AND o.name = 'id' AND f.named_type = 'ID'
+   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'COLUMN'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node tn
+                    WHERE tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type)
+   AND EXISTS (SELECT 1 FROM graphitron_node_table nt
+                WHERE nt.graph_name = pn.graph_name
+                  AND nt.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+                  AND nt.table_schema = COALESCE(jp.target_schema, pn.landing_schema)
+                  AND nt.table_name = COALESCE(jp.target_table, pn.landing_table)
+                  AND nt.node_count > 1)
+ GROUP BY e.graph_name, e.source_name, e.source_line, e.source_column
+UNION ALL
+-- A write's ID return with neither @nodeId nor @field over a table no node declares itself over: the
+-- id the write hands back is no node's. Reported at the @mutation, the occurrence in the detail.
+SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
+       'NODE_ID_TARGET_UNRESOLVED', o.coordinate, 'occurrence-bindings'
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = f.graph_name AND pw.type_name = f.type_name AND pw.field_name = f.field_name
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node_table nt
+                    WHERE nt.graph_name = pw.graph_name AND nt.table_source_name = pw.table_source_name
+                      AND nt.table_schema = pw.table_schema AND nt.table_name = pw.table_name)
+UNION ALL
+-- The same over a table several nodes declare themselves over: the write names no node its id is.
+-- Reported at the @mutation, the occurrence in the detail.
+SELECT pw.graph_name, pw.source_name, pw.source_line, pw.source_column,
+       'NODE_ID_TARGET_AMBIGUOUS', o.coordinate, 'occurrence-bindings'
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate AND f.named_type = 'ID'
+  JOIN graphitron_producer_write pw
+    ON pw.graph_name = f.graph_name AND pw.type_name = f.type_name AND pw.field_name = f.field_name
+ WHERE o.kind = 'FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate)
+   AND EXISTS (SELECT 1 FROM graphitron_node_table nt
+                WHERE nt.graph_name = pw.graph_name AND nt.table_source_name = pw.table_source_name
+                  AND nt.table_schema = pw.table_schema AND nt.table_name = pw.table_name
+                  AND nt.node_count > 1)
+UNION ALL
+-- An @externalField whose reference resolved to a method it may name, bound at a table its values are
+-- rows of that the method does not accept: its parameter is typed on another table's class or record,
+-- so the binding has no expression, no call having been pinned there.
+-- Reported once per reference, at the reference, the first table the parameter does not accept in
+-- the detail.
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'PARAMETER_MISMATCH', MIN(b.bound), 'occurrence-bindings'
+  FROM graphitron_occurrence_binding b
+  JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+  JOIN graphitron_code_reference r
+    ON r.graph_name = o.graph_name AND r.coordinate = o.element_coordinate
+   AND r.directive_name = 'externalField' AND r.kind = 'ROOT'
+  JOIN code_external_field_method m
+    ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
+   AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+ WHERE b.kind = 'EXPRESSION'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_expression e
+                    WHERE e.graph_name = b.graph_name AND e.coordinate = b.coordinate AND e.bound = b.bound)
+ GROUP BY r.graph_name, r.source_name, r.source_line, r.source_column
+UNION ALL
+-- An @externalField whose field also writes a @reference path: the expression would bind at the
+-- path's landing, which the binding does not state yet, so it is deferred rather than bound at the
+-- source table the path leaves. Reported at the @reference, the directive to remove.
+SELECT ref.graph_name, ref.source_name, ref.source_line, ref.source_column,
+       'EXTERNAL_FIELD_PATH_UNSUPPORTED', x.coordinate, 'occurrence-bindings'
+  FROM graphitron_binding_claim x
+  JOIN graphitron_directive_application ref
+    ON ref.graph_name = x.graph_name AND ref.coordinate = x.coordinate
+   AND ref.directive_name = 'reference'
+ WHERE x.kind = 'EXPRESSION' AND ref.source_line IS NOT NULL
+UNION ALL
+-- A @condition's parameter nothing binds, at the reference the @condition names its method by: once
+-- per written directive, the detail the first such parameter.
+SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+       COALESCE(r.source_column, da.source_column), d.code, MIN(d.parameter_name), 'occurrence-bindings'
+  FROM graphitron_occurrence_call_parameter_defect d
+  JOIN graphitron_occurrence_call oc
+    ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
+  JOIN graphitron_directive_application da
+    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
+   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
+  LEFT JOIN graphitron_code_reference r
+    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
+   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
+   AND r.owner = oc.application_directive
+ WHERE d.call_kind IN ('CONDITION') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
+ GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+          COALESCE(r.source_column, da.source_column), d.code;
+COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
+
 CREATE VIEW graphitron_occurrence_list_element_defect_rule (graph_name, coordinate, code) AS
 -- An input-field occurrence read per element of a list a filter compares: its field reads, looks up
 -- or counts rows, and its argument is not a @lookupKey, whose fields are the lookup's key.
@@ -22895,7 +22889,9 @@ INSERT INTO meta_stage_write VALUES
   ('method-parameter-tables', 'code_method_parameter_table');
 
 -- The call relations split between the stage writing the producers' calls and the one writing the
--- conditions' and the expressions', by call kind (Alf, 2026-11-12).
+-- conditions' and the expressions', by call kind (Alf, 2026-11-12). The bindings split by their kind
+-- between the stages writing them, PARAMETER shared: both the producers and occurrence-bindings write
+-- it, so neither reads it past the other.
 INSERT INTO meta_stage_write_kind VALUES
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_defect', 'call_kind', 'SERVICE'),
   ('occurrence-producers', 'graphitron_occurrence_call_parameter_defect', 'call_kind', 'ROUTINE'),
@@ -22925,7 +22921,17 @@ INSERT INTO meta_stage_write_kind VALUES
   ('occurrence-producers', 'graphitron_occurrence_binding_parameter', 'call_kind', 'WRITE'),
   ('occurrence-producers', 'graphitron_occurrence_binding_parameter', 'call_kind', 'ROUTINE'),
   ('occurrence-bindings', 'graphitron_occurrence_binding_parameter', 'call_kind', 'CONDITION'),
-  ('occurrence-bindings', 'graphitron_occurrence_binding_parameter', 'call_kind', 'EXPRESSION');
+  ('occurrence-bindings', 'graphitron_occurrence_binding_parameter', 'call_kind', 'EXPRESSION'),
+  ('occurrence-producers', 'graphitron_occurrence_binding', 'kind', 'PARAMETER'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'NODE_ID'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'COLUMN'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'VOUCHER'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'EXPRESSION'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'TABLE'),
+  ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'PARAMETER'),
+  ('occurrence-builds', 'graphitron_occurrence_binding', 'kind', 'MEMBER'),
+  ('occurrence-tenants', 'graphitron_occurrence_binding', 'kind', 'TENANT'),
+  ('occurrence-values', 'graphitron_occurrence_binding', 'kind', 'VALUE');
 
 CREATE TABLE store_graph_progress (
   graph_name     VARCHAR   NOT NULL,
