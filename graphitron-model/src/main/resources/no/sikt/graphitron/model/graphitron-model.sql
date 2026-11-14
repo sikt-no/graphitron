@@ -11290,7 +11290,9 @@ CREATE TABLE graphitron_occurrence_binding (
   kind       VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, bound),
-  -- What each subtype references, so a subtype row can only hang under a binding of its own kind.
+  -- What each subtype references, so a subtype row can only hang under a binding of its own kind, and
+  -- what every writer upserts on: a stage binding a place another stage bound as another kind finds no
+  -- row to re-mark and fails on the primary key, rather than taking the other's row as its own.
   UNIQUE (graph_name, coordinate, bound, kind),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,

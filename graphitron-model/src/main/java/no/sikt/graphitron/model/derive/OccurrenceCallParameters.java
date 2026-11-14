@@ -189,7 +189,7 @@ public final class OccurrenceCallParameters {
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, inline(PARAMETER), val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph), r.CALL_KIND.eq(callKind)))
-            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
+            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
             .execute();

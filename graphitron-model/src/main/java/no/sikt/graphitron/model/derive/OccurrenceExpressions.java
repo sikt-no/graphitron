@@ -50,7 +50,7 @@ public final class OccurrenceExpressions {
                 .from(br)
                 .join(o).on(o.GRAPH_NAME.eq(br.GRAPH_NAME), o.COORDINATE.eq(br.COORDINATE))
                 .where(br.GRAPH_NAME.eq(graph)))
-            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
+            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
             .execute();

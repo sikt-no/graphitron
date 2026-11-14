@@ -39,7 +39,7 @@ public final class OccurrenceColumns {
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
+            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
             .execute();

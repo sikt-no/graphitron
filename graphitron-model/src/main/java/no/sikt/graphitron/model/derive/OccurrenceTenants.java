@@ -63,7 +63,7 @@ public final class OccurrenceTenants {
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, bound, inline(TENANT), val(touchedAt, b.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND)
+            .onConflict(b.GRAPH_NAME, b.COORDINATE, b.BOUND, b.KIND)
             .doUpdate()
             .set(b.TOUCHED_AT, excluded(b.TOUCHED_AT))
             .execute();
