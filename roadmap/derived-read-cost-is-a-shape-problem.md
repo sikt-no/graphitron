@@ -80,9 +80,9 @@ generate again. Additive, flip, subtract; the critical path, by node title:
 The walk's read path is gone
 ├── The projection units are rendered from the store
 │   ├── A projection unit is emitted from the store, censused
-│   ├── The filter conditions are emitted from the store
+│   ├── The filter conditions are emitted from the store, claimed by F
 │   │   ├── An argument binds the call parameter it supplies
-│   │   └── A condition on a routine's result table is a call the store states
+│   │   └── A condition on a routine's result table is a call the store states, claimed by F
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
 │   │   ├── An inline list's ordering is resolved at its occurrence
@@ -741,7 +741,8 @@ static method needs no holder.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
-  * **`PARAMETER_MISMATCH` reads the stored `EXPRESSION` binding** `open`, off the critical path.
+  * **`PARAMETER_MISMATCH` reads the stored `EXPRESSION` binding** `blocked`, on
+    "An unbound parameter is one code, raised where its bindings are, claimed by G", off the critical path.
     Its rule repeats the join the binding is written from, since `StageRosterGateTest` refuses a
     rule reading `graphitron_occurrence_binding`, which later stages write other kinds of.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
@@ -828,7 +829,7 @@ static method needs no holder.
     than each spelling its own `instanceof Map` ladder over the wire (Alf, 2026-11-08). A node id
     decodes through one method per node type and policy beside `NodeIdEncoder`, strict or
     not-this-participant, rather than through private copies in every class that reads one.
-  * **The filter conditions are emitted from the store** `open`, the generated predicates first,
+  * **The filter conditions are emitted from the store, claimed by F** `open`, the generated predicates first,
     the authored calls on the `@condition` call node. One condition per field occurrence and table it
     filters, named and aliased from its coordinate, composing the generated predicates, the authored
     `@condition` calls and the path steps' conditions with `override:` read as written, its behaviour
@@ -854,7 +855,7 @@ static method needs no holder.
     shape row answers. `NODE_ID_PARTICIPANT`, an id each participant decodes as a node of its own,
     waits on the not-this-participant decode policy; an id naming one node type is emitted on every
     participant.
-    * **A condition on a routine's result table is a call the store states** `open`. A field-level
+    * **A condition on a routine's result table is a call the store states, claimed by F** `open`. A field-level
       `@condition` on a `@routine`'s result table, `tilgangerAdmin`'s `tilgangAdminOnly`, has no
       condition call in the store, so the flip would drop it; it belongs to the condition-call
       candidates on a routine's result table, and the flip waits on it.
@@ -874,7 +875,7 @@ static method needs no holder.
   list is cast where a scalar one is converted by `valueOf`, untested beyond `G`, and a top-level enum
   list argument on an enum column emits glue that does not compile. Each gets a test
   first, then a fix or a stated breaking change, after the flip, which keeps them as they are.
-* **A list of input objects compares what the old emitter could not** `blocked`, on "The filter conditions are emitted from the store", off the critical path.
+* **A list of input objects compares what the old emitter could not** `blocked`, on "The filter conditions are emitted from the store, claimed by F", off the critical path.
   The list-of-input filter's refusals that guarded the old emitter's single row, rather than a rule an
   author meets, are lifted once the flip has moved every caller onto `ConditionEmitter`, each a
   capability with an execution test first and its glossary entry and reference page changed with it.
