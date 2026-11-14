@@ -207,12 +207,13 @@ public final class GraphitronAssemblyCapture {
         // rule's rows marked with this reading, the details under them, then the argMapping entries
         // under the strings they fault.
         new AnchorStage("entry-defects", EntryDefects.class, (dsl, graph, readAt) -> {
+            var stage = EntryDefects.GRAPHITRON.stage();
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.GRAPHITRON);
-            EntryDefectClaims.derive(dsl, graph, readAt);
-            EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.GRAPHITRON, EntryDefects.GRAPHITRON.stage());
-            EntryDefectKeyColumns.derive(dsl, graph, readAt);
-            EntryDefectTables.derive(dsl, graph, readAt);
-            ArgMappingPairDefects.derive(dsl, graph);
+            EntryDefectClaims.derive(dsl, graph, readAt, stage);
+            EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.GRAPHITRON, stage);
+            EntryDefectKeyColumns.derive(dsl, graph, readAt, stage);
+            EntryDefectTables.derive(dsl, graph, readAt, stage);
+            ArgMappingPairDefects.derive(dsl, graph, stage);
         }));
 
     /**

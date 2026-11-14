@@ -43,16 +43,16 @@ public final class EntryDefectClaims {
     /** The codes whose claims this writes. */
     public static final List<String> CODES = List.of("CLAIMS_CONFLICT", "ROUTINE_LOOKUP_DEFERRED");
 
-    /** The stage that raised those defects and writes their details, the one this runs in. */
-    private static final String STAGE = EntryDefects.GRAPHITRON.stage();
-
-    /** Writes the claims and steps under each of the graph's claim defects the reading marked. */
-    public static void derive(DSLContext dsl, String graph, LocalDateTime readAt) {
+    /**
+     * Writes the claims and steps under each of the graph's claim defects the reading marked in
+     * {@code stage}, the stage that raised them and runs this.
+     */
+    public static void derive(DSLContext dsl, String graph, LocalDateTime readAt, String stage) {
         var d = GRAPHITRON_ENTRY_DEFECT;
         var fe = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
         var f = GRAPHITRON_FIELD;
         var te = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        Condition marked = d.GRAPH_NAME.eq(graph).and(d.CODE.in(CODES)).and(d.STAGE.eq(STAGE))
+        Condition marked = d.GRAPH_NAME.eq(graph).and(d.CODE.in(CODES)).and(d.STAGE.eq(stage))
             .and(d.TOUCHED_AT.eq(readAt));
         var fieldSites = select(d.GRAPH_NAME, d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN, d.CODE,
                 f.COORDINATE)
@@ -69,12 +69,12 @@ public final class EntryDefectClaims {
                 te.SOURCE_LINE.eq(d.SOURCE_LINE), te.SOURCE_COLUMN.eq(d.SOURCE_COLUMN),
                 te.IS_EXTENSION.isFalse())
             .where(marked);
-        claims(dsl, fieldSites.unionAll(typeSites).asTable("s"), readAt);
-        steps(dsl, fieldSites.asTable("s"), readAt);
+        claims(dsl, fieldSites.unionAll(typeSites).asTable("s"), readAt, stage);
+        steps(dsl, fieldSites.asTable("s"), readAt, stage);
     }
 
     /** The strongest claims of each family at each site's element. */
-    private static void claims(DSLContext dsl, Table<?> s, LocalDateTime readAt) {
+    private static void claims(DSLContext dsl, Table<?> s, LocalDateTime readAt, String stage) {
         var c = GRAPHITRON_CLAIM;
         var k = GRAPHITRON_CLAIM_KIND;
         var stronger = GRAPHITRON_CLAIM.as("stronger");
@@ -84,7 +84,7 @@ public final class EntryDefectClaims {
             .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.COORDINATE, t.KIND, t.CLAIMER, t.TOUCHED_AT)
             .select(select(site(s, "GRAPH_NAME"), site(s, "SOURCE_NAME"), line(s, "SOURCE_LINE"),
-                    line(s, "SOURCE_COLUMN"), site(s, "CODE"), val(STAGE, t.STAGE), c.COORDINATE, c.KIND,
+                    line(s, "SOURCE_COLUMN"), site(s, "CODE"), val(stage, t.STAGE), c.COORDINATE, c.KIND,
                     c.CLAIMER, val(readAt, t.TOUCHED_AT))
                 .from(s)
                 .join(c).on(c.GRAPH_NAME.eq(site(s, "GRAPH_NAME")),
@@ -103,7 +103,7 @@ public final class EntryDefectClaims {
     }
 
     /** Each {@code @routine} a site's field's written path steps through and no producer claim holds. */
-    private static void steps(DSLContext dsl, Table<?> s, LocalDateTime readAt) {
+    private static void steps(DSLContext dsl, Table<?> s, LocalDateTime readAt, String stage) {
         var pc = GRAPHITRON_JOIN_PATH_CLAIM;
         var pe = GRAPHITRON_AST_PATH_ENTRY;
         var re = GRAPHITRON_AST_ROUTINE_ENTRY;
@@ -113,7 +113,7 @@ public final class EntryDefectClaims {
             .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.CODE, t.STAGE,
                 t.STEP_SOURCE_NAME, t.STEP_SOURCE_LINE, t.STEP_SOURCE_COLUMN, t.TOUCHED_AT)
             .select(selectDistinct(site(s, "GRAPH_NAME"), site(s, "SOURCE_NAME"),
-                    line(s, "SOURCE_LINE"), line(s, "SOURCE_COLUMN"), site(s, "CODE"), val(STAGE, t.STAGE),
+                    line(s, "SOURCE_LINE"), line(s, "SOURCE_COLUMN"), site(s, "CODE"), val(stage, t.STAGE),
                     re.SOURCE_NAME, re.SOURCE_LINE, re.SOURCE_COLUMN, val(readAt, t.TOUCHED_AT))
                 .from(s)
                 .join(pc).on(pc.GRAPH_NAME.eq(site(s, "GRAPH_NAME")),
