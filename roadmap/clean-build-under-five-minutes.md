@@ -266,9 +266,22 @@ after a full GC climbs from 1.2 GB at minute 1 to 2.04 GB at minute 5, thirty fu
 the end, and the OutOfMemoryError is H2 planning a CTE (`Optimizer.calculateBruteForceAll` into
 `Plan.<init>`, from `CTE.createIndex` under `SelectUnion.preparePlan`). CI gives this fork about
 4 GB (a public repository's `ubuntu-latest` has 16 GB and the module pins no heap), so it passes
-there; `-Xmx2g` is the margin. Owed: a class histogram of the fork at its peak, taken from the fork's
-own pid (a `jcmd` on the surefire booter, not on the shell that started Maven), to say which views'
-plans hold it.
+there; `-Xmx2g` is the margin.
+
+*Measured 2026-11-14 at `a9cb37b7c9`* (`graphitron` alone at `-Xmx2g`, class histograms each minute
+from the surefire fork's own pid). The heap is held by parsed SQL, not by data: H2's
+`Token$KeywordToken` and `Token$IdentifierToken` hold 500 MB at minute 1 and 790 MB by minute 8, of a
+live heap of 1.2 to 2.0 GB, with as much again in `byte[]`. In H2 2.5.250 every parsed statement
+(`org.h2.command.Prepared`) keeps its token list in `sqlTokens`, and parsed statements live in each
+connection's query cache, which `StoreUse.LONG_LIVED` sizes at 1,024. That run died after 3,149 tests.
+With `-Dgraphitron.queryCacheSize=64` the same run passes, 4,588 tests and no OutOfMemoryError, the
+live heap at 0.7 to 1.3 GB and the tokens at 290 to 530 MB; but it took 29:41, against 10:01 for the
+1,024 cache at `-Xmx4g` under other load. The cache count matters, and the size of what is cached
+matters as much: at 64 entries a connection the tokens are still 40% of the heap, so a few cached
+statements are individually huge. Smaller statements both plan better and cache fewer tokens (Alf,
+2026-11-14), so the lever is the views, with the cache setting chosen after. R876's node
+"An arm belongs to the last stage whose facts it reads, claimed by B"
+takes `graphitron_entry_defect_rule` first, 87k characters in 65 branches.
 
 ### Not in scope, and why
 
