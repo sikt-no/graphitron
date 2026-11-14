@@ -726,7 +726,7 @@ static method needs no holder.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
-  * **`PARAMETER_MISMATCH` reads the stored `EXPRESSION` binding** `open`, off the critical path.
+  * **`PARAMETER_MISMATCH` reads the stored `EXPRESSION` binding, claimed by G** `open`, off the critical path.
     Its rule repeats the join the binding is written from, since `StageRosterGateTest` refuses a
     rule reading `graphitron_occurrence_binding`, which later stages write other kinds of.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
