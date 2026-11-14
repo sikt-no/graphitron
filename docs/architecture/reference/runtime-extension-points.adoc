@@ -282,6 +282,15 @@ inference that divines the tenant key is the tenant-column work; the runtime sea
 it rides is part of this path. The consumer-facing recipe is
 xref:../../manual/how-to/tenant-scoping.adoc[How-to: Tenant scoping].
 
+The direction (Alf, 2026-11-14): a default source is supported for backwards compatibility and is
+not the model. Which connection a query gets is the consumer's choice, made in code it owns and can
+test rather than in the schema: the consumer registers a connection hook, which receives the whole
+`ConnectionKey` and returns the connection for it. A key's parts are each optional, the tenant
+among them; a key whose tenant part is empty is a key like any other, and what it means is the
+hook's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
+child's key differs from its parent's and acquires again only then. The `Map<TenantId, DataSource>`
+seam and the default tenant above are what today's runtime does in that hook's place.
+
 [#escape-hatch-path]
 == The escape-hatch path: GraphitronContext
 
