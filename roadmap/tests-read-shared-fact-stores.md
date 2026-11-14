@@ -7,7 +7,7 @@ priority: 5
 theme: testing
 depends-on: []
 created: 2026-11-06
-last-updated: 2026-11-11
+last-updated: 2026-11-14
 ---
 
 # Every schema a test captures is a fact document, and the test strategy is rebuilt on them
@@ -137,7 +137,7 @@ A class in graphitron-model's test harness, published in the test-jar that graph
 * **Sharded within catalog and classpath.** Graphs share a store only when they share a catalog and a classpath, so a store-wide relation holds the same rows in every store a graph can land in. Within each such key there are four long-lived stores, a graph assigned to one by its name, each with its own lock, so captures keep the four-way parallelism they have today; nearly every document shares the default catalog and classpath. Four is a constant of `FactGraphs`, not read from `junit-platform.properties`, so it does not depend on which properties file a module sees. Configuration is graph-keyed (`store_graph_*` rows), so graphs of different configurations may share a store.
 * **Read-only, by the database**: readers connect as `GRAPHITRON_READER`, which every store's DDL creates with `SELECT` and nothing else.
 * **Handed out in a transaction.** A test declares `@RegisterExtension static final FactGraphs.Reader FACTS = FactGraphs.reader();`, the shape `FactStores.perClass()` and graphitron-mcp's `StoreFixture.held()` already have, and reads with `FACTS.read("scenarios/field-key-row", graph -> ...)`. The body gets a `FactGraph`: the `StoreHandle` scoped to the graph and the `CapturedSchema` the capture built, which a generating run needs beside the store. There is no parameter resolver handing out a bare handle: `StoreReader` makes its transaction the only way onto a reader, so an answer built from several queries sees one commit, and production readers take the same shape (`CatalogQueries`, `CatalogCorpus`).
-* **`FactExpectationTest` reads every scenario's final reading from the population**, warming it with one thread per shard, so in graphitron-model the graphs it checks and the graphs other tests read are captured once between them. A scenario with steps is replayed in a store of the test's own to verify the claims at each step, an intermediate state the population does not keep.
+* **`FactExpectationTest` reads every scenario's final reading from the population**, warming it with one thread per shard, so in graphitron-model the graphs it checks and the graphs other tests read are captured once between them. A scenario with steps is captured step by step in its shard, its claims checked as each step arrives.
 
 ### Authoritative tests
 
@@ -163,7 +163,17 @@ Every other test that touches a behaviour relies on its authoritative test rathe
 
 ### What keeps a store of its own
 
-A test that writes after capture (a recapture, a second graph, hand DML, a fact writer, DDL), reads an intermediate state no claim states, has a file-backed store or warm start as its subject, exercises a capture's failure path, counts or times captures or boots, or tests one capture stage in isolation. It still takes its schema from a document, run by the scenario engine into a store it owns (`CapturedStore.captureFolder`). A test counting the statements a read issues writes nothing, so it reads the shared population through a handle whose configuration counts them, as `RoutineWriteQueryStatementCountTest` does. So does a test of the same document under a configuration or classpath its scenario does not state (lint configuration, page size, `TypeBackingPartitionTest`'s four classpaths). Examples from the inventory: `WarmStartRefreshTest`, `PersistentStoreTest`, `CaptureCommitsAsItGoesTest`, `WriteTimesTest`, `DiagnosticFactsTest`, `BrokenSourceStillCapturesPipelineTest`, `StoreBootCountTest`, the LSP's `*StatementCountTest` classes until each counts over the population, the `StoreOutOfBudgetTest` classes, and the stage-capture tests over `ThreadConfinedStore.run`. The ceilings are set with these counted.
+Almost nothing. Inline SDL is deprecated, and a search for a test that needs a store of its own found
+none (Alf, 2026-11-14), so an exception is shown case by case, as `testing.adoc` § "Keep a store of
+your own only for a reason" says. The cases shown so far are tests whose subject is the store itself:
+`PersistentStoreTest` (a second process holding the file, a stale stamp or unreadable file refused,
+compaction on the last handle, held rows stopping a capture), `GraphitronModelStoreTest` (the open,
+the reap and the marker), `StoreStatementReuseTest`'s first opener deciding a fresh database's cache,
+`PartitionSelectivityTest`'s reopened store, and graphitron-lsp's `StoreBootCountTest`. They take their
+schema from a document and keep `FactStores.fileBacked`. A stepped scenario is not one: the population
+runs a scenario's steps itself, and an edited file recaptured, a broken step and a rewritten jar are
+steps. A test that deletes store-wide rows by hand, as `RecordValidationPipelineTest` deletes a catalog
+accessor, takes a classpath fixture stating that catalog instead.
 
 ### Out of scope
 
@@ -224,6 +234,9 @@ Four phases, each landing on its own and keeping the build green.
      - The population costs memory: about 95 MB a store, every store held for the fork, and the four fixture stores tipped the module over the default heap of a 16 GB machine. graphitron-model's surefire pins `-Xmx5g`. Fewer, smaller stores is the lever when this comes back.
      - Found: a graph's type backings depend on what was captured into its store before it, filed as R1182 and absorbed into R876's node "A graph's `code_` answers are a function of its own entries". `TypeBackingPartitionTest`'s old assertion held only because of that history; the document claims the answer the graph gives alone. Alf ruled (2026-11-12) that graphs on different classpaths share entries and stores, so the classpath shard key, the fixture compiled twice and the heap pin are a stopgap that node's last child removes.
      - Left: plan gates keep the scaled fixture until a plan over the population is shown to choose the same index; `GraphQLAnchorTest`'s count case waits on R1175.
+   - graphitron, from 2026-11-14 (B, under R1131's A4): 133 inline sites in 64 files, heaviest first by heap, each batch a green graphitron run at `-Xmx2g`. Graphs held beside the population cost the fork its heap: an open store holds about 55 MB empty and about 137 MB after one long-lived capture, file-backed or not, and twelve open at once ran graphitron out of a 2 GB heap. `TestSchemaHelper.buildBundle` (70) and the whole-run tests on `CapturedGraphs.open` (31 sites, 113 runs) go first.
+   - "graphitron-lsp, graphitron-mcp, graphitron-maven-plugin and graphitron-model's inline sites move onto documents"
+     - 145, 29, 18 and 170 sites by their `InlineCaptureGateTest` counts (2026-11-14), through the pipeline below, each module's ceiling lowered as its batches land, ending at the store-lifecycle tests above. Open for whoever is free next, as a one-node brief.
 
 ### The migration pipeline
 
