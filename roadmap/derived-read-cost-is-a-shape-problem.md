@@ -1014,6 +1014,10 @@ static method needs no holder.
       The producer rule decides the fan-out before `occurrence-depths` writes the steps, so it reads the
       field's reference or foreign key joined to `graphitron_tenant_column` from facts upstream of the
       producers, captured there where they are not yet.
+* **A routine write's routing is named by the connection key** `open`, F's, off the critical path.
+  `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
+  the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
+  other, which the connection hook decides (Alf, 2026-11-14).
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child call takes the connection key its producer chain hands down". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
