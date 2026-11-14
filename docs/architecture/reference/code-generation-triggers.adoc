@@ -341,7 +341,11 @@ reference one key as `film.language_id` and `film.original_language_id` do, is t
 
 A source lift needs the source's table to have a primary key, and a key spanning several columns is
 read whole and in key order. A polymorphic producer has one lift: which participant each fetched row
-is, `graphitron_occurrence_participant` decides once the rows are fetched. A root producer has no
+is, `graphitron_occurrence_participant` decides once the rows are fetched. A node id argument on
+such a producer is dispatched by the type id every node id carries, known at runtime without
+decoding (Alf, 2026-11-14): each id goes to the participant whose type it names, so a lookup by ids
+of several participant types answers each from its own participant's rows, and no participant
+decodes another's id. An id naming no participant is malformed for the field, a client error. A root producer has no
 parent and so has no source. An argument or an input field never produces and reads the table it
 binds.
 
