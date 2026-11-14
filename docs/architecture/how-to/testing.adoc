@@ -197,6 +197,11 @@ A test that writes, times or fails a store, that captures a document under a con
 classpath its scenario does not state, or that puts graphs of two classpaths in one store, captures
 into a store it owns. Everything else reads the shared population.
 
+Inline SDL is deprecated: a test's schema becomes a fact document the population captures, and an
+inline read moves onto one (Alf, 2026-11-14). A search for a test that needs a store of its own
+found none, so the exceptions above are to be shown case by case rather than assumed, and the
+population, which keeps every store, is where their number and reuse are managed.
+
 === What is not an example
 
 Two things are not examples, and are not built as though they were:
@@ -375,7 +380,7 @@ There is a harness per subject, and a structural guard (`StoreFixtureGuardTest`)
 | Whatever reader-side surface is local to you. `graphitron-mcp`'s `StoreFixture` is the worked example: every factory on it is one arm of `CapturedStore` or `FactWriters` with the module's own vocabulary in front of it, a generated jOOQ package name instead of a catalog and the module's own class census instead of a list the caller assembles. `graphitron-lsp`'s `StoreFixture` is the same shape. Both move onto `FactGraphs` as their modules migrate, keeping a store of their own only where the row above does.
 |===
 
-A test whose schema is still inline SDL, and that reads only its own graph, captures it into the population too, not into a store of its own and not into a store a harness clears between tests (Alf, 2026-11-12).
+Until it moves onto a document, a test whose schema is still inline SDL, and that reads only its own graph, captures it into the population too, not into a store of its own and not into a store a harness clears between tests (Alf, 2026-11-12).
 The inline graph goes in under a name of its own, into a store the population lends it from a pool kept per catalog and classpath, and the test reads it back through the same select-only connection as a document's graph.
 The reason is cost: a capture into a store that already holds other graphs, with its statement cache intact, costs a fraction of one into an empty or freshly cleared store.
 That store also holds one ballast graph from its first capture, so a read that forgets to filter on its graph sees the ballast's rows and fails on every run instead of depending on which tests ran before it.
