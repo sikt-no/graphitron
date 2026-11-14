@@ -197,7 +197,8 @@ class EmissionCensusTest {
             "Query.filmsByEffectiveNullability film", "Query.filmsByJunctionActorId film",
             "Query.filmsByLanguagePairs film", "Query.filmsByNodeIdArg film",
             "Query.filmsByNodeIdArgWithTitleFilter film", "Query.filmsByNullableNodeIds film",
-            "Query.filmsByOneOf film", "Query.filmsByOptionalLanguages film", "Query.filmsByOriginalLanguages film",
+            "Query.filmsByOneOf film", "Query.filmsByOptionalLanguage film", "Query.filmsByOptionalLanguages film",
+            "Query.filmsByOriginalLanguages film",
             "Query.filmsByPlainInput film", "Query.filmsByRentalRateBounds film",
             "Query.filmsByRentalRateRange film",
             "Query.filmsByRentalRateRangeDefaulted film", "Query.filmsByRentalRateRangeExplicit film",
@@ -222,7 +223,9 @@ class EmissionCensusTest {
             "Query.occupantsStartingWithM customer", "Query.occupantsStartingWithM staff",
             "Query.presenceDetail presence_detail", "Query.presenceDetailNode presence_detail",
             "Query.presenceDetailRequired presence_detail", "Query.presenceHostRefs presence_host",
-            "Query.presenceHosts presence_host", "Query.rentalsByInventoryItem rental",
+            "Query.presenceHosts presence_host", "Query.projectNotesByPlainFilter project_note",
+            "Query.projectNotesByPlainFilterConnection project_note", "Query.projectNotesByProject project_note",
+            "Query.rentalsByInventoryItem rental",
             "Query.splitFilterParentsByTargetLabel split_filter_parent", "Query.stockByLanguage film",
             "Query.stockByLanguage inventory",
             "Query.tilgangerAdmin tilganger_for_feidebruker_med_fs_fiktivt_fnr",
@@ -236,10 +239,7 @@ class EmissionCensusTest {
         // change to look at, not to re-pin.
         assertThat(census)
             .containsEntry("AUTHORED_NODE_ID", List.of("Query.customersByAddressDistrict customer", "Query.customersByAddressDistrictActive customer",
-                "Query.customersByMultiFieldFilter customer", "Query.filmsByOptionalLanguage film",
-                "Query.projectNotesByPlainFilter project_note",
-                "Query.projectNotesByPlainFilterConnection project_note",
-                "Query.projectNotesByProject project_note", "Query.stockByLanguageOverride film",
+                "Query.customersByMultiFieldFilter customer", "Query.stockByLanguageOverride film",
                 "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
                 "Store.customersByAddressDistrictSplit customer"))
             .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",

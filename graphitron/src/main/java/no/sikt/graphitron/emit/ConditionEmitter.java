@@ -60,6 +60,12 @@ import java.util.regex.Pattern;
  * elements of the fields each gives, a field an element leaves out placing no constraint. Its fields
  * share one path, so a reached list compares inside one {@code EXISTS} over it.
  *
+ * <p>A {@code @condition} a node id applies to the table it identifies is called on that table,
+ * aliased per call, inside a correlated {@code EXISTS} over the node id's join path from the
+ * condition's table, and only where the node id is present. A parameter a node id fills takes the
+ * decoded key in the shape the store states at it: the node's record, a {@code RecordN} or
+ * {@code RowN} of the key, or the one key column a pair projects; {@code null} where the id is absent.
+ *
  * <p>A {@code @lookupKey} argument is the lookup's key, not a filter, and writes nothing here. What
  * this emitter does not write yet it says, and emits nothing for the occurrence: see {@link Reason}.
  * The method name is the caller's.
@@ -85,8 +91,9 @@ public final class ConditionEmitter {
         /** A {@code @condition} takes an input object as a bean, built from the map before the call. */
         AUTHORED_BEAN,
         /**
-         * A {@code @condition} is applied to the table a node id identifies, under an {@code EXISTS}
-         * over the foreign key, or takes a node id's decoded key.
+         * A {@code @condition} is applied to the table a node id identifies where the store states no
+         * join path from the row's table to it, or takes a node id's decoded key in a shape the store
+         * states none for at the parameter, or of several node types, or read through a list.
          */
         AUTHORED_NODE_ID,
         /** A {@code @condition} has a parameter nothing fills, its defect the store's. */
@@ -171,7 +178,7 @@ public final class ConditionEmitter {
             }
         }
         for (var call : row.calls()) {
-            var reason = reasonFor(call, builds);
+            var reason = reasonFor(call, builds, decodes);
             if (reason.isPresent()) {
                 return new Result.NotYet(reason.get(), call.coordinate());
             }
@@ -200,7 +207,7 @@ public final class ConditionEmitter {
             if (term.nodeId()) {
                 var decode = decodeOnto(row, term, decodes).orElseThrow();
                 var onOwn = decode.recordClass().equals(row.table().recordClassName());
-                var hops = onOwn ? List.<String>of() : hops(method, term, local);
+                var hops = onOwn ? List.<String>of() : hops(method, term.steps(), local);
                 var alias = hops.isEmpty() ? "table" : hops.getLast();
                 var compare = nodeId(method, helpers, term, decode, name + "_" + local, local, alias, counter,
                     runtime.decode());
@@ -208,12 +215,12 @@ public final class ConditionEmitter {
                     ? (term.present() ? CodeBlock.of("!$L.isEmpty()", local)
                         : CodeBlock.of("$L != null && !$L.isEmpty()", local, local))
                     : (term.present() ? null : CodeBlock.of("$L != null", local));
-                var predicate = hops.isEmpty() ? compare : reached(term, hops, compare);
+                var predicate = hops.isEmpty() ? compare : reached(term.steps(), hops, compare);
                 adds.addStatement(guard == null ? CodeBlock.of("conditions.add($L)", predicate)
                     : CodeBlock.of("if ($L) conditions.add($L)", guard, predicate));
                 continue;
             }
-            var hops = hops(method, term, local);
+            var hops = hops(method, term.steps(), local);
             var alias = hops.isEmpty() ? "table" : hops.getLast();
             var column = CodeBlock.of("$L.$L", alias, term.column().javaName());
             var type = type(term.column().bindingType()).orElseThrow();
@@ -234,7 +241,7 @@ public final class ConditionEmitter {
                 compare = CodeBlock.of("$L.eq($L)", column, local);
                 guard = term.present() ? null : CodeBlock.of("$L != null", local);
             }
-            var predicate = hops.isEmpty() ? compare : reached(term, hops, compare);
+            var predicate = hops.isEmpty() ? compare : reached(term.steps(), hops, compare);
             if (guard == null) {
                 adds.addStatement("conditions.add($L)", predicate);
             } else {
@@ -245,18 +252,34 @@ public final class ConditionEmitter {
             list(method, adds, helpers, name, row, elements, locals, counter);
         }
         if (row.calls().stream().flatMap(call -> call.fills().stream())
-                .anyMatch(fill -> "ARGUMENT".equals(fill.fill()) && !"ENUM_VALUE_OF".equals(fill.extraction())
+                .anyMatch(fill -> "ARGUMENT".equals(fill.fill()) && !fill.landingNodeId()
+                    && !"ENUM_VALUE_OF".equals(fill.extraction())
                     && javaType(fill.parameterType()).orElseThrow() instanceof ParameterizedTypeName)) {
             method.addAnnotation(com.palantir.javapoet.AnnotationSpec.builder(SuppressWarnings.class)
                 .addMember("value", "$S", "unchecked").build());
         }
         for (var call : row.calls()) {
+            // A call a node id applies to the table it identifies is called on that table, reached
+            // over the node id's join path and aliased per call.
+            boolean onNode = "NODE_ID".equals(call.bindingKind());
+            var hops = onNode ? hops(method, call.steps(), fresh(call.path().names().getLast(), locals))
+                : List.<String>of();
+            var alias = hops.isEmpty() ? "table" : hops.getLast();
             var arguments = new ArrayList<CodeBlock>();
             for (var fill : call.fills()) {
-                arguments.add(argument(method, helpers, name, call, fill, counter, runtime, row.coordinate(), builds));
+                arguments.add(argument(method, helpers, name, call, fill, alias, counter, runtime, row.coordinate(),
+                    builds, decodes));
             }
-            adds.addStatement("conditions.add($T.$L($L))", ClassName.bestGuess(call.className()), call.methodName(),
+            var invoke = CodeBlock.of("$T.$L($L)", ClassName.bestGuess(call.className()), call.methodName(),
                 CodeBlock.join(arguments, ", "));
+            if (!onNode) {
+                adds.addStatement("conditions.add($L)", invoke);
+            } else if (call.path().present()) {
+                adds.addStatement("conditions.add($L)", reached(call.steps(), hops, invoke));
+            } else {
+                adds.addStatement("if ($L != null) conditions.add($L)", read(call.path().names(), counter),
+                    reached(call.steps(), hops, invoke));
+            }
         }
         method.addStatement("$T<$T> conditions = new $T<>()", LIST, CONDITION, ARRAY_LIST);
         method.addCode(adds.build());
@@ -302,7 +325,7 @@ public final class ConditionEmitter {
         int at = first.lists().getFirst().position();
         var names = first.names().subList(0, at + 1);
         var local = fresh(names.getLast(), locals);
-        var hops = hops(method, first, local);
+        var hops = hops(method, first.steps(), local);
         var alias = hops.isEmpty() ? "table" : hops.getLast();
         var tableClass = ClassName.bestGuess(hops.isEmpty() ? row.table().tableClassName()
             : first.steps().getLast().to().tableClassName());
@@ -331,7 +354,7 @@ public final class ConditionEmitter {
             compare = CodeBlock.of("$L", local);
             guard = CodeBlock.of("$L != null", local);
         }
-        var predicate = hops.isEmpty() ? compare : reached(first, hops, compare);
+        var predicate = hops.isEmpty() ? compare : reached(first.steps(), hops, compare);
         adds.addStatement("if ($L) conditions.add($L)", guard, predicate);
     }
 
@@ -437,15 +460,25 @@ public final class ConditionEmitter {
 
     /**
      * Why an authored call is not emitted yet: a fill it takes that this emitter does not hand over, or
-     * a table it is applied to by way of a node id.
+     * a node id's table it is applied to that the store states no join path to.
      */
-    private static Optional<Reason> reasonFor(ConditionQuery.Call call, Map<BuildQuery.Root, BuildQuery.Result> builds) {
-        if ("NODE_ID".equals(call.bindingKind())) return Optional.of(Reason.AUTHORED_NODE_ID);
+    private static Optional<Reason> reasonFor(ConditionQuery.Call call, Map<BuildQuery.Root, BuildQuery.Result> builds,
+                                              NodeIdDecodeQuery decodes) {
+        if ("NODE_ID".equals(call.bindingKind()) && (call.path() == null || call.steps().isEmpty()
+                || call.steps().stream().anyMatch(step -> step.routine() || step.pairs().isEmpty() && step.method() == null))) {
+            return Optional.of(Reason.AUTHORED_NODE_ID);
+        }
         for (var fill : call.fills()) {
             switch (fill.fill()) {
                 case "TABLE" -> { }
                 case "ARGUMENT" -> {
-                    if (fill.landingNodeId()) return Optional.of(Reason.AUTHORED_NODE_ID);
+                    if (fill.landingNodeId()) {
+                        if (fill.throughList() || decoded(fill, decodes).isEmpty()) {
+                            return Optional.of(Reason.AUTHORED_NODE_ID);
+                        }
+                        if (javaType(fill.parameterType()).isEmpty()) return Optional.of(Reason.UNSPELLED_TYPE);
+                        continue;
+                    }
                     if (fill.throughList()) {
                         return Optional.of(Reason.THROUGH_LIST);
                     }
@@ -482,16 +515,39 @@ public final class ConditionEmitter {
     }
 
     /**
-     * The value one parameter of an authored call takes: the table the condition is applied to, or an
-     * argument's value off the map, cast to the parameter's declared type, an enum by its constant's name.
+     * How a node id fills a parameter, in the one shape the store states at it for its one node table:
+     * the node's record, a {@code RecordN} or {@code RowN} of its key, or the projected key column's
+     * value. Empty where no shape fits, the id is of several node types, or its decode is not stated.
+     */
+    private static Optional<BuildQuery.Result.Decoded> decoded(ConditionQuery.Fill fill, NodeIdDecodeQuery decodes) {
+        if (fill.shapes().size() != 1) return Optional.empty();
+        var landing = fill.shapes().getFirst();
+        var shape = switch (landing.shape()) {
+            case "OWN_RECORD" -> "RECORD";
+            case "RECORD_N", "ROW_N" -> landing.shape();
+            case "KEY_VALUE" -> landing.projectedColumn() == null ? null : landing.shape();
+            default -> null;
+        };
+        if (shape == null) return Optional.empty();
+        return decodes.resolve(fill.landing(), landing.bound(), Optional.empty())
+                instanceof NodeIdDecodeQuery.Resolution.Resolved resolved
+            ? Optional.of(new BuildQuery.Result.Decoded(List.of(resolved.decode()), shape,
+                Optional.ofNullable(landing.projectedColumn()), landing.erasedClass()))
+            : Optional.empty();
+    }
+
+    /**
+     * The value one parameter of an authored call takes: the table the condition is applied to, as
+     * {@code table} names it, or an argument's value off the map, cast to the parameter's declared type,
+     * an enum by its constant's name, a node id decoded by a helper of its own.
      */
     private static CodeBlock argument(MethodSpec.Builder method, List<MethodSpec> helpers, String name,
-                                      ConditionQuery.Call call, ConditionQuery.Fill fill, int[] counter,
+                                      ConditionQuery.Call call, ConditionQuery.Fill fill, String table, int[] counter,
                                       FillEmitter.Runtime runtime, String coordinate,
-                                      Map<BuildQuery.Root, BuildQuery.Result> builds) {
+                                      Map<BuildQuery.Root, BuildQuery.Result> builds, NodeIdDecodeQuery decodes) {
         switch (fill.fill()) {
             case "TABLE" -> {
-                return CodeBlock.of("table");
+                return CodeBlock.of("$L", table);
             }
             case "CONTEXT_KEY" -> {
                 var type = javaType(fill.parameterType()).orElseThrow();
@@ -508,6 +564,15 @@ public final class ConditionEmitter {
         }
         var type = javaType(fill.parameterType()).orElseThrow();
         var read = read(fill.path().names(), counter);
+        if (fill.landingNodeId()) {
+            var boxed = type.isPrimitive() ? type.box() : type;
+            var local = "d" + ++counter[0];
+            var helper = name + "_decode" + counter[0];
+            helpers.add(NodeIdDecodeEmitter.parameterHelper(helper, boxed, decoded(fill, decodes).orElseThrow(),
+                runtime.decode()));
+            method.addStatement("$T $L = $L($L)", boxed, local, helper, read);
+            return CodeBlock.of("$L", local);
+        }
         // An input object a bean takes: the map made into it by a helper of its own, before the call.
         if (builds.get(new BuildQuery.Root(call.coordinate(), fill.position(), fill.landing()))
                 instanceof BuildQuery.Result.Built made && !takesMap(fill)) {
@@ -618,13 +683,13 @@ public final class ConditionEmitter {
     }
 
     /**
-     * Declares the table each step of a reached term's path lands on, aliased under the table the
-     * condition is handed so a condition applied inside another statement's alias stays distinct, and
-     * returns their locals in step order; none for a term on the field's own table.
+     * Declares the table each step of a path lands on, aliased under the table the condition is handed
+     * so a condition applied inside another statement's alias stays distinct, and returns their locals
+     * in step order; none for an empty path.
      */
-    private static List<String> hops(MethodSpec.Builder method, ConditionQuery.Term term, String local) {
+    private static List<String> hops(MethodSpec.Builder method, List<ConditionQuery.Step> steps, String local) {
         var hops = new java.util.ArrayList<String>();
-        for (var step : term.steps()) {
+        for (var step : steps) {
             var hop = local + "Hop" + step.position();
             method.addStatement("$T $L = $T.$L.as(table.getName() + $S)", ClassName.bestGuess(step.to().tableClassName()),
                 hop, ClassName.bestGuess(step.to().constantsClassName()), step.to().javaFieldName(),
@@ -635,12 +700,11 @@ public final class ConditionEmitter {
     }
 
     /**
-     * A predicate on the last table of a term's path, as a correlated {@code EXISTS} from the condition's
+     * A predicate on the last table of a path, as a correlated {@code EXISTS} from the condition's
      * table: the first step correlates to it, each later step joins the one before, on its column pairs
      * and its condition method where it has them.
      */
-    private static CodeBlock reached(ConditionQuery.Term term, List<String> hops, CodeBlock compare) {
-        var steps = term.steps();
+    private static CodeBlock reached(List<ConditionQuery.Step> steps, List<String> hops, CodeBlock compare) {
         var select = CodeBlock.builder().add("$T.exists($T.selectOne().from($L)", DSL, DSL, hops.getFirst());
         for (int i = 1; i < steps.size(); i++) {
             select.add(".join($L).on($L)", hops.get(i), on(steps.get(i), hops.get(i - 1), hops.get(i)));
