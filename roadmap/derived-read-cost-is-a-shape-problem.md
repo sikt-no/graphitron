@@ -1681,16 +1681,16 @@ someone to profile.
   `graphitron_argmapping_pair_defect_rule`, `graphitron_entry_defect_member_rule` (over
   `graphql_poly_member`), `graphitron_occurrence_call_parameter_rule`
   and `_defect`, `graphitron_argmapping_step_head_rule` and `graphitron_occurrence_node_id_rule`.
-  Oversized rule views, each a derivation skipped upstream: `graphitron_entry_defect_rule`,
+  Oversized rule views, each a derivation skipped upstream:
   `graphitron_occurrence_condition_parameter_rule`, `graphitron_occurrence_producer_lift_rule` and
   `graphitron_join_path_step_rule`. Each is fixed by storing the skipped derivation at its own
   grain, priced by `prepare_ms` on a cold capture. No rule view uses a window function (Alf,
-  2026-11-15), a stored ordinal or a `NOT EXISTS` stating what it ranked; fourteen views still do:
+  2026-11-15), a stored ordinal or a `NOT EXISTS` stating what it ranked; thirteen views still do:
   `graphitron_argmapping_pair_rule`, `graphitron_configured_tag_rule`, `graphitron_connection_facet`,
   `graphitron_federation_link_import_rule`, `graphitron_federation_link_rule`,
   `graphitron_inherited_directive`, `graphitron_minted_key_rule`, `graphitron_occurrence_source_rule`,
-  `graphitron_outbox_entry_defect_rule`, `graphitron_outbox_key_rule`,
-  `graphitron_outbox_routine_target_rule`, `graphitron_outbox_target_rule`,
+  `graphitron_outbox_key_rule`, `graphitron_outbox_routine_target_rule`,
+  `graphitron_outbox_target_rule`,
   `graphitron_path_need_table_rule` and `graphitron_producer_claim_rule`, and two `intent_` views go
   with their family.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's

@@ -15985,6 +15985,39 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
                 WHERE hm.graph_name = u.graph_name AND hm.member_name = SUBSTRING(u.bound_to, 10)) = 1)
       OR u.bound_to = '$result'
       OR (u.bound_to LIKE '$result.%' AND rl.key_name IS NOT NULL)
+),
+-- An entry of an @outbox's own mapping whose key it binds twice, or the common payload also names,
+-- with where its mapping string sits so the first one as written is found by position, then site.
+key_conflict (graph_name, source_name, source_line, source_column, site_source_name, site_line,
+              site_column, position, key_name) AS (
+  SELECT m.graph_name, m.source_name, m.source_line, m.source_column, s.source_name, s.source_line,
+         s.source_column, p.position, p.target_name
+    FROM graphitron_outbox_message m
+    JOIN graphitron_argmapping_site s
+      ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
+     AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
+    JOIN graphitron_ast_argmapping_pair_entry p
+      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+     AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
+   WHERE EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
+                  WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
+                    AND p2.source_line = p.source_line AND p2.source_column = p.source_column
+                    AND p2.target_name = p.target_name AND p2.target_kind = p.target_kind AND p2.position <> p.position)
+      OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
+                  WHERE c.graph_name = m.graph_name AND c.key_name = p.target_name)
+),
+-- An entry of the common payload, at one @outbox carrying it, that names a key twice or that the
+-- message has no key for; the payload's position is its key within the graph.
+payload_invalid (graph_name, source_name, source_line, source_column, position, key_name, bound_to) AS (
+  SELECT m.graph_name, m.source_name, m.source_line, m.source_column, c.position, c.key_name, c.bound_to
+    FROM graphitron_outbox_message m
+    JOIN store_graph_outbox_payload_entry c ON c.graph_name = m.graph_name
+   WHERE EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
+                  WHERE c2.graph_name = c.graph_name AND c2.key_name = c.key_name
+                    AND c2.position <> c.position)
+      OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
+                      WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
+                        AND k.ordinal = m.ordinal AND k.key_name = c.key_name)
 )
 -- An @outbox that is not on a field writing a table with @mutation, nor on a mutation field a
 -- @service answers: no write, no message. A field no occurrence reaches writes nothing either.
@@ -16107,40 +16140,27 @@ UNION ALL
 -- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
 -- first offending key as written; the author fixes it and the next one is reported.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT', d.key_name, 'outbox'
-  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.target_name AS key_name,
-               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
-                                               m.source_column ORDER BY p.position) AS rn
-          FROM graphitron_outbox_message m
-          JOIN graphitron_argmapping_site s
-            ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
-           AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
-          JOIN graphitron_ast_argmapping_pair_entry p
-            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-           AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
-         WHERE EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
-                        WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
-                          AND p2.source_line = p.source_line AND p2.source_column = p.source_column
-                          AND p2.target_name = p.target_name AND p2.target_kind = p.target_kind AND p2.position <> p.position)
-            OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
-                        WHERE c.graph_name = m.graph_name AND c.key_name = p.target_name)) d
- WHERE d.rn = 1
+  FROM key_conflict d
+ WHERE NOT EXISTS (SELECT 1 FROM key_conflict e
+                    WHERE e.graph_name = d.graph_name AND e.source_name = d.source_name
+                      AND e.source_line = d.source_line AND e.source_column = d.source_column
+                      AND (e.position < d.position
+                           OR (e.position = d.position
+                               AND (e.site_source_name < d.site_source_name
+                                    OR (e.site_source_name = d.site_source_name
+                                        AND (e.site_line < d.site_line
+                                             OR (e.site_line = d.site_line
+                                                 AND e.site_column < d.site_column)))))))
 UNION ALL
 -- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
 -- entry no message could carry.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYLOAD_INVALID',
        d.key_name || ': ' || d.bound_to, 'outbox'
-  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, c.key_name, c.bound_to,
-               ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
-                                               m.source_column ORDER BY c.position) AS rn
-          FROM graphitron_outbox_message m
-          JOIN store_graph_outbox_payload_entry c ON c.graph_name = m.graph_name
-         WHERE EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
-                        WHERE c2.graph_name = c.graph_name AND c2.key_name = c.key_name
-                          AND c2.position <> c.position)
-            OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
-                            WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
-                              AND k.ordinal = m.ordinal AND k.key_name = c.key_name)) d
- WHERE d.rn = 1
+  FROM payload_invalid d
+ WHERE NOT EXISTS (SELECT 1 FROM payload_invalid e
+                    WHERE e.graph_name = d.graph_name AND e.source_name = d.source_name
+                      AND e.source_line = d.source_line AND e.source_column = d.source_column
+                      AND e.position < d.position)
 UNION ALL
 -- Each string one of whose entries a rule above refuses, once per code; the entries are
 -- graphitron_outbox_entry_defect_pair_rule's rows, written under it.
