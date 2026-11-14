@@ -1006,15 +1006,21 @@ static method needs no holder.
     and reading nested classes reached through another class's members closes the one hop the census
     reads today.
 * **A child call takes the connection key its producer chain hands down** `open`, E's. In a database-per-tenant
-  graph each occurrence states whether it takes the key its producer hands down or starts its own, the
-  whole key and not a part, for every producer kind, `SELECT` included, so a child `@service` is
-  emitted from the store; sis's `Studieprogram.navnAlleSprak` is the acceptance case, and the census's
-  child exclusion goes with it. Its outcomes are the producer rule's in `code-generation-triggers.adoc`
-  (Alf, 2026-11-14): inherited by default; routed by a row's tenant column, where a followed foreign
-  key lands on the tenant column under a parent not on that tenant, which makes the child a producer
-  grouping its parents by tenant whether written `@splitQuery` or not; and the request's own
-  connection for a table no tenant column scopes. The commit shipping the fan-out rewrites
-  `tenant-scoping.adoc`'s `@splitQuery` sections.
+  graph each producer occurrence states the connection it runs on, `graphitron_occurrence_connection`
+  re-keyed onto the producer so a root and a child share it: a child `INHERIT`s the whole key its
+  producer chain hands down, by default, or is `UNSCOPED`, the key with an empty tenant part, for a table
+  no tenant column scopes (Alf, 2026-11-14), and a child `@service` is emitted from the store; sis's
+  `Studieprogram.navnAlleSprak` is the acceptance case, and the census's child exclusion goes with it,
+  save a shape the fan-out routes, which stays excluded until the node below lands.
+  * **A child whose followed key lands on the tenant column is routed by its row's tenant** `blocked`, E's, on "A field's followed foreign key is joined to the tenant column before the producers".
+    Where a followed foreign key lands on the tenant column under a parent not on that tenant, the
+    child is a producer grouping its parents by tenant, written `@splitQuery` or not, its connection
+    `ROUTED` with a `TENANT` part read off the parent row (`code-generation-triggers.adoc`, Alf,
+    2026-11-14). The commit shipping it rewrites `tenant-scoping.adoc`'s `@splitQuery` sections.
+    * **A field's followed foreign key is joined to the tenant column before the producers** `open`, E's.
+      The producer rule decides the fan-out before `occurrence-depths` writes the steps, so it reads the
+      field's reference or foreign key joined to `graphitron_tenant_column` from facts upstream of the
+      producers, captured there where they are not yet.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child call takes the connection key its producer chain hands down". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
