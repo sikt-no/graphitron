@@ -207,8 +207,10 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_path_element_key", "graphitron_path_element_primary_key"),
         // The legacy key-columns array is a second positional list of a table's columns, the same
         // payload as the current one under the same key.
+        // The tenant column names one column of a table, as each of these names its columns, keyed
+        // by the graph that configures it rather than by a constraint, an index or a key position.
         Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column",
-               "sql_node_legacy_key_column"),
+               "sql_node_legacy_key_column", "graphitron_tenant_column"),
         Set.of("graphitron_element", "graphql_element"),
 
         // The rest of this roster is the decode migration, and it reads as one thing rather than

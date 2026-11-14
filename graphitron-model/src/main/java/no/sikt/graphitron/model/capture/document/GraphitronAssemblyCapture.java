@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.AnchorStage;
+import no.sikt.graphitron.model.derive.TenantColumns;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
@@ -77,6 +78,8 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     static final List<AnchorStage> STAGES = List.of(
+        // The tables the configured tenant column scopes, off the configuration and the catalog alone.
+        new AnchorStage("tenant-columns", TenantColumns.class, TenantColumns::derive),
         // What each argMapping may write at its site, off the sites the anchor just wrote and the
         // transcription; the views the defects below read over it see this reading's rows.
         new AnchorStage("argmapping-candidates", ArgMappingCandidates.class,

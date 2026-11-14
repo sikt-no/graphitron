@@ -1,0 +1,13 @@
+# A tenant column behind a converter is matched like any other: owner_org, a bigint the generated
+# model binds to String, is carried by org_site alone. The tenant key's Java type is the column's,
+# read off sql_column beside this row rather than copied onto it.
+
+extend schema @withConfiguration(tenantColumn: "owner_org")
+
+type Query { sites: [OrgSite!]! }
+type OrgSite @table(name: "org_site") { ownerOrg: String! @field(name: "owner_org") }
+
+extend schema @expectEquals(relation: "graphitron_tenant_column", rows: """
+  table_schema, table_name, column_name
+  public,       org_site,   owner_org
+  """)

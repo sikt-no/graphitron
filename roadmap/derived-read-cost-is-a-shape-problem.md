@@ -904,9 +904,15 @@ static method needs no holder.
   changes on purpose, its behaviour does not, save a behaviour ruled a defect. It goes field by
   field as the parts land: `ServiceEmission` emits a field the store states whole, the classified
   emitters the rest, and `EmissionCensusTest` pins the count: all 133 of the example schema's
-  services on 2026-11-13. In FS-plattform at main 946fc4aa20 what is left is opptak's two
-  `settMeldingLest`/`settMeldingUlest` (a discriminated lift reading an interface-declared field) and
-  utdanningsregisteret's 14 mutations decoding a node id through a converter-backed key column. Two Java
+  services on 2026-11-13. In FS-plattform at main 946fc4aa20 every `@service` is emitted from the
+  store (opptak 264 of 264 on 2026-11-14). What is left is tenant routing: sis's port to the
+  rewrite, Filip's `sis/upgrade-graphitron` at 68d0313ebf, configures `INSTITUSJONSNR_EIER` and its 73
+  services with a frame are all `TENANT_ROUTING`, so the routing is done in the flip rather than
+  deferred. That census also found four sis inputs whose field binds no column of the record's
+  table, to show Filip: `Mutation.leggTilBegrensningerForEmnevalgIStudieoppbygningsdeler`'s
+  `studienivaIntervall.fraStudienivaId` on `EMNEVALG_I_EMNEKOMBINASJON`, and `telefonnummertype` on
+  `PERSON_TELEFON` under `opprettStudenter`, `registrerInnreisendeUtvekslinger` and
+  `registrerInnreisendeUtvekslingerGittPersonId`. Two Java
   refusals stand in for the store until then, transitional (Alf, 2026-11-13: "as long as we shed it
   very soon"): `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes`, refusing a
   key-column projection and an `@outbox` at a `@service` whose fetcher is not emitted from the store.
@@ -1405,7 +1411,11 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
     `schema.table.column`, so a plain name matches what it matched before. The fact is per matched
     column, `graphitron_tenant_column`, anchored from `store_graph_tenant_column` and `sql_column`
     through the graph's sources; matched columns that disagree on type, and a pattern that matches
-    nothing, are defects located in the build file the configuration was read from. An argument or
+    nothing, are defects located in the build file the configuration was read from. The relation is
+    stated, matching the configured name as the store matches every column spelling
+    (`sql_column_spelling`, a name reaching two columns of one table resolving neither), and
+    `TenantColumnAgreementTest` holds it to `TenantScopeClassifier`; what is left is the pattern, the
+    two defects, whose locus is Alf's to decide, and the session hook half. An argument or
     input field is a tenant field when its column joins a matched column, which needs the argument
     model; the walk's classifier goes with the walk rather than learning the pattern, its tenant fold
     routing a tenant-keyed node's decode with it, resolvable or not. The session

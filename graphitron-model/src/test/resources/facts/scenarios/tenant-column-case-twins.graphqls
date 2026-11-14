@@ -1,0 +1,16 @@
+# The configured tenant column is matched as a column name is everywhere in the store, by the SQL
+# name where a column of the table carries it, else by the generated jOOQ name, folded by case. On
+# case_twins the spelling code folds onto both "Code" and "code" by their SQL names, so that table
+# resolves neither rather than picking one, while published_elsewhere, with one code column, is a
+# row.
+
+extend schema @withConfiguration(tenantColumn: "code")
+
+type Query { twins: [CaseTwins!]! }
+type CaseTwins @table(name: "nodeidfixture.case_twins") { id: String! }
+
+extend schema @expectEquals(relation: "graphitron_tenant_column", where: "table_schema = 'nodeidfixture'",
+    rows: """
+  table_schema,  table_name,          column_name
+  nodeidfixture, published_elsewhere, code
+  """)

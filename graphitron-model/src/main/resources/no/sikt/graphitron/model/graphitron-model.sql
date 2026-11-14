@@ -5613,6 +5613,10 @@ COMMENT ON COLUMN sql_column_spelling.column_name IS 'the column the spelling re
 COMMENT ON COLUMN sql_column_spelling.matched_by IS 'which of the column''s names the spelling met: SQL_NAME, the column''s own; JOOQ_NAME, the generated one, which answers only where no column of the table carries the spelling as its SQL name';
 COMMENT ON COLUMN sql_column_spelling.reach IS 'how many columns of the table the spelling reaches under that precedence, the same on every row of one spelling: one is a resolution, more is an ambiguity, and a spelling no column answers has no row';
 
+-- A configured name matched across every table of a source, the tenant column being one, probes by
+-- the spelling rather than the table.
+CREATE INDEX sql_column_spelling_by_spelling ON sql_column_spelling (source_name, spelling_upper);
+
 CREATE TABLE sql_referential_constraint (
   source_name                VARCHAR NOT NULL,
   table_schema               VARCHAR NOT NULL,
@@ -10458,6 +10462,37 @@ SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, COALESCE(e.event
   LEFT JOIN graphitron_occurrence oc ON oc.graph_name = a.graph_name AND oc.coordinate = a.coordinate
  WHERE a.directive_name = 'outbox';
 COMMENT ON VIEW graphitron_outbox_message_rule IS 'One row the outbox message rule computes, in the shape graphitron_outbox_message stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_message, which is the name every reader spells.';
+
+CREATE TABLE graphitron_tenant_column (
+  graph_name   VARCHAR   NOT NULL,
+  source_name  VARCHAR   NOT NULL,
+  table_schema VARCHAR   NOT NULL,
+  table_name   VARCHAR   NOT NULL,
+  column_name  VARCHAR   NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_tenant_column (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_tenant_column IS 'One catalog table of one graph that carries the configured tenant column, naming the column it carries. For example <tenantColumn>film_id</tenantColumn> gives public.film and public.film_actor a row each, naming film_id, and public.language none.';
+COMMENT ON COLUMN graphitron_tenant_column.graph_name IS 'the configuring graph''s partition, anchored by store_graph_tenant_column, so a graph whose configuration stops naming a tenant column loses its rows';
+COMMENT ON COLUMN graphitron_tenant_column.source_name IS 'the catalog partition the table was read from, the first column of the sql_column key this row names';
+COMMENT ON COLUMN graphitron_tenant_column.table_schema IS 'the table''s SQL schema';
+COMMENT ON COLUMN graphitron_tenant_column.table_name IS 'the table''s SQL name';
+COMMENT ON COLUMN graphitron_tenant_column.column_name IS 'the column the configured name reaches on the table, as the catalog spells it; its Java type is read off sql_column rather than copied here';
+COMMENT ON COLUMN graphitron_tenant_column.touched_at IS 'when the reading that resolved this row ran; the tenant-columns stage deletes the graph''s rows a reading did not mark, so a table the configuration or the catalog no longer resolves goes';
+
+CREATE VIEW graphitron_tenant_column_rule
+  (graph_name, source_name, table_schema, table_name, column_name) AS
+SELECT t.graph_name, sp.source_name, sp.table_schema, sp.table_name, sp.column_name
+  FROM store_graph_tenant_column t
+  JOIN store_graph_source m ON m.graph_name = t.graph_name
+  -- The store's one column-match fold: the SQL name where a column of the table carries it, else
+  -- the jOOQ name. A spelling reaching two columns of one table resolves neither.
+  JOIN sql_column_spelling sp
+    ON sp.source_name = m.source_name AND sp.spelling_upper = UPPER(t.column_name) AND sp.reach = 1;
+COMMENT ON VIEW graphitron_tenant_column_rule IS 'One row the tenant column rule computes, in the shape graphitron_tenant_column stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_column, which is the name every reader spells.';
 
 CREATE TABLE graphitron_outbox_target (
   graph_name           VARCHAR   NOT NULL,
@@ -21252,34 +21287,35 @@ INSERT INTO meta_stage VALUES
   ('directive-applications', 'graphitron', 12, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
   ('federation-imports', 'graphitron', 13, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
   ('federation-vocabulary', 'graphitron', 14, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
-  ('argmapping-candidates', 'graphitron', 15, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
-  ('node-key-columns', 'graphitron', 16, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
-  ('node-legacy-key-shapes', 'graphitron', 17, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('field-targets', 'graphitron', 18, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 19, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 20, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 22, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 23, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 24, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 25, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 26, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 27, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 28, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 29, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('occurrence-participants', 'graphitron', 30, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-lists', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
-  ('occurrence-overrides', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
-  ('occurrence-producers', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
-  ('occurrence-source-claims', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
-  ('occurrence-depths', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-bindings', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-builds', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 40, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 41, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 42, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('tenant-columns', 'graphitron', 15, 'no.sikt.graphitron.model.derive.TenantColumns'),
+  ('argmapping-candidates', 'graphitron', 16, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 17, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 18, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 19, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 20, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 23, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 24, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 25, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 26, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 27, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 28, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 29, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 30, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-lists', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
+  ('occurrence-overrides', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
+  ('occurrence-producers', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
+  ('occurrence-source-claims', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
+  ('occurrence-depths', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-builds', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-depth-defects', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 41, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 42, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 43, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -21469,6 +21505,7 @@ INSERT INTO meta_stage_write VALUES
   ('outbox', 'graphitron_outbox_message'),
   ('outbox', 'graphitron_outbox_routine_target'),
   ('outbox', 'graphitron_outbox_target'),
+  ('tenant-columns', 'graphitron_tenant_column'),
   ('entry-defects', 'graphitron_argmapping_pair_defect'),
   ('entry-defects', 'graphitron_entry_defect'),
   ('entry-defects', 'graphitron_entry_defect_claim'),
@@ -21837,6 +21874,9 @@ INSERT INTO meta_grain VALUES
   ('graph-outbox',
    'one graph whose build configures an outbox for its @outbox fields',
    'graph_name', 'configuration'),
+  ('graph-tenant-column',
+   'one catalog table one graph routes by tenant, with the tenant column it carries',
+   'graph_name, source_name, table_schema, table_name', 'catalog'),
   ('graph-outbox-role',
    'one role one graph''s outbox configuration binds to a column or a parameter',
    'graph_name, kind, role', 'configuration'),
@@ -23581,6 +23621,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_outbox_message_rule', 'outbox-message', 'graphitron',
    'One row the outbox message rule computes, in the shape graphitron_outbox_message stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_message, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_tenant_column', 'graph-tenant-column', 'graphitron',
+   'One catalog table of one graph that carries the configured tenant column, naming the column it carries.',
+   'For example <tenantColumn>film_id</tenantColumn> gives public.film and public.film_actor a row each, naming film_id, and public.language none.',
+   'Which tables live in the per-tenant databases, stated once so a tenant slot, a call''s route and the entity dispatch each join a row rather than matching the configured name against the catalog again. Derived from the configuration and the catalog, both read before the graphitron gatherer anchors, through the graph''s own sources so a sibling graph''s tables never answer, with the store''s one column-match fold. The Java type is not copied: a reader joins sql_column for it. Written by the tenant-columns stage from graphitron_tenant_column_rule, marked and swept.'),
+  ('graphitron_tenant_column_rule', 'graph-tenant-column', 'graphitron',
+   'One row the tenant column rule computes, in the shape graphitron_tenant_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_column, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_outbox_target', 'graph-outbox', 'graphitron',
    'The outbox table of one graph, resolved: the table the configuration names and the columns its two roles land in, the event''s type and its payload.',

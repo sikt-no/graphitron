@@ -1,0 +1,15 @@
+# A database-per-tenant build names its tenant column once, and every catalog table carrying it lives
+# in the per-tenant databases: each such table is a row naming the column, and a table without it,
+# language here, lives on the default source and has none.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Query { languages: [Language!]! }
+type Language @table(name: "language") { name: String! }
+
+extend schema @expectEquals(relation: "graphitron_tenant_column",
+    where: "table_name IN ('film', 'inventory', 'language')", rows: """
+  table_schema, table_name, column_name
+  public,       film,       film_id
+  public,       inventory,  film_id
+  """)
