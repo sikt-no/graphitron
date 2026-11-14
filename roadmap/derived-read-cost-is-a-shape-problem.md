@@ -1020,6 +1020,15 @@ static method needs no holder.
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
   than at whichever routed or unscoped field first acquires a key and finds no carrier.
+* **A root call's routing refusal is a defect written before its connection** `open`, E's, off the
+  critical path. `graphitron_occurrence_route_entry_defect_rule` reads the refusal off
+  `graphitron_occurrence_connection_rule`, a view reading a view, which Alf and B ruled out on
+  2026-11-14: a rule view reads stored tables, a defect is written first, and the rule raising it
+  computes its facts in a CTE. occurrence-routes' defect rule computes the verdict from stored
+  tables (the call, its tenant slots and their optionality, the result's scope) and writes
+  `TENANT_SLOTS_OPTIONAL_ONLY` or `UNROUTED_SERVICE_CALL` into the defect family; the connection
+  rule then states a row only for a root call with no such defect. One derivation, no refusal
+  relation beside the defect. The model goes past the architect at take-up.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child whose followed key lands on the tenant column is routed by its row's tenant". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
