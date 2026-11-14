@@ -330,6 +330,12 @@ source's primary key and the query anchors the source's table and walks the whol
 a path of several hops, a hop carrying a condition, and a foreign key read off a record a `@service`
 or a write handed over, which guarantees only its primary key (Alf, 2026-11-10).
 
+The key a lift states is always a primary or unique key, never a foreign key: where a foreign key
+is followed, the key it references (Alf, 2026-11-14). For a list whose target's foreign key
+references the source, as `Language.films` over `film.language_id`, that is the source's key the
+foreign key points at; which of the target's foreign keys the rows are matched through, when two
+reference one key as `film.language_id` and `film.original_language_id` do, is the path step's fact.
+
 A source lift needs the source's table to have a primary key, and a key spanning several columns is
 read whole and in key order. A polymorphic producer has one lift: which participant each fetched row
 is, `graphitron_occurrence_participant` decides once the rows are fetched. A root producer has no
