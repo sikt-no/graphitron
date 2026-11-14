@@ -2,24 +2,29 @@
 # be spelt apart from the parameter. No site reads it yet, so every one refuses it as unsupported, a
 # deferral rather than an author error; the store still states what it fills, so the call's
 # parameters can read it once the site does. A parameter given a key twice, by two contextArguments
-# elements or by an element and a pair, is filled by neither.
+# elements or by an element and a pair, is filled by neither: each writing is a row, none written
+# once.
 
 type Query {
   # The pair fills tenant from the key tenantId, and is refused at this site.
   byPair(id: Int): String @service(service: {
       className: "example.Ref", method: "m", argMapping: "tenant: $context.tenantId"})
-  # userId twice in contextArguments: no row, a defect at each element.
+  # userId twice in contextArguments: a row and a defect at each element, neither written once.
   twiceListed: String @service(service: {className: "example.Ref", method: "m"},
       contextArguments: ["userId", "userId"])
-  # userId by an element and by a pair: no row, a defect at the element and at the pair.
+  # userId by an element and by a pair: a row and a defect at each, neither written once.
   listedAndPaired: String @service(service: {
       className: "example.Ref", method: "m", argMapping: "userId: $context.userId"},
       contextArguments: ["userId"])
 }
 
 extend schema @expectEquals(relation: "graphitron_call_context_key", rows: """
-  parameter_name, context_key, origin, origin_position
-  tenant,         tenantId,    PAIR,   0
+  coordinate,            parameter_name, context_key, origin,            origin_position, written_once
+  Query.byPair,          tenant,         tenantId,    PAIR,              0,               TRUE
+  Query.twiceListed,     userId,         userId,      CONTEXT_ARGUMENTS, 0,               FALSE
+  Query.twiceListed,     userId,         userId,      CONTEXT_ARGUMENTS, 1,               FALSE
+  Query.listedAndPaired, userId,         userId,      PAIR,              0,               FALSE
+  Query.listedAndPaired, userId,         userId,      CONTEXT_ARGUMENTS, 0,               FALSE
   """)
 
 extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
