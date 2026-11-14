@@ -667,8 +667,13 @@ static method needs no holder.
   pair winning where both name one value and `TENANT_NAMED_TWICE` where they name two; every value a
   call's tenant is read from, `graphitron_occurrence_tenant_slot`, authored, a jOOQ record's field on
   the tenant column or a node id whose key holds it; and `graphitron_occurrence_optional`, which
-  values a call may be given none of. What is left: the walk parses the sigil, each call's route is
-  stated, and the fetcher routes by it.
+  values a call may be given none of. The walk reads the stored binding as a marker, and each root
+  call's connection is stated, `graphitron_occurrence_connection` and its `TENANT` part. What is
+  left: the fetcher builds the connection key and routes by it, blocked on the node below.
+  * **An argument's path from its argument down is stated in the store** `open`, E's. `ArgumentPaths` climbs the
+    occurrence chain in Java for `FillQuery` and `ConditionQuery`; `graphitron_occurrence_argument_step`
+    states each step from the argument down, with its name and whether it is a list and non-null, and
+    the fills, the conditions and the routed fetcher read it in their own statements.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
