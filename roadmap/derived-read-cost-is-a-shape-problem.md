@@ -828,19 +828,13 @@ static method needs no holder.
     in the WHERE clause as an equality on the result (`RoutineFieldExecutionTest`
     `aSurvivingInputLeafNarrowsTheRoutineResult`), and the store's row is meant as that filter,
     the bound leaves being no filter term; the flip's run of that test is what confirms it.
-    The node-id reasons wait on three things. `AUTHORED_NODE_ID` waits on the record-or-tuple rule
-    holding at a `@condition` as at a `@service` (`defects-as-facts.adoc`, Alf 2026-11-12, applied to
-    `@condition` first, Alf 2026-11-13): a parameter of the sole key column's type draws
-    `NODE_ID_KEY_ARITY_EXCEEDS_SLOT` there too, the condition reference's arity-1 promise goes, and
-    sakila's `addressDistrictAlberta` takes its column through an `argMapping` projection; the emitter
-    then reads where an id lands off `graphitron_occurrence_node_id_slot_parameter` and
-    `graphitron_occurrence_node_id_slot`, how it decodes off `graphitron_occurrence_node_id_shape`,
-    which holds a `@condition`'s parameters since 2026-11-13, and a single column only through
-    `graphitron_occurrence_node_id_slot_projection`. `NODE_ID`, a generated term on a converter-backed
-    or composite key, waits on `NodeIdDecodeQuery` resolving a decode for it, which no parameter's
-    shape row answers. `NODE_ID_PARTICIPANT`, an id each participant decodes as a node of its own,
-    waits on the not-this-participant decode policy; an id naming one node type is emitted on every
-    participant.
+    An authored call on a node id's table and one taking its key as a tuple or a projected column are
+    emitted, and the record-or-tuple rule holds at a `@condition` (Alf, 2026-11-14). What is left:
+    `AUTHORED_NODE_ID` on `stockByLanguageOverride`, an override whose node id reaches neither
+    participant's table by any path; `NODE_ID`, a generated term on a converter-backed or composite
+    key, waiting on `NodeIdDecodeQuery` resolving a decode for it; and `NODE_ID_PARTICIPANT`, whose
+    ids are dispatched by the type id each carries, each to the participant whose type it names, an id
+    naming no participant a client error (`code-generation-triggers.adoc`, Alf 2026-11-14).
     * **An argument binds the call parameter it supplies** `open`. Each `ARGUMENT` fill is also a
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
