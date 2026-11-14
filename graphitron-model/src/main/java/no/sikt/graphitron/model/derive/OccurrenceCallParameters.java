@@ -173,9 +173,9 @@ public final class OccurrenceCallParameters {
         var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.CALL, t.POSITION, t.PAIR_COORDINATE, t.DIRECTIVE_NAME,
-                t.ORDINAL, t.OWNER, t.PARAMETER_NAME, t.TOUCHED_AT)
+                t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.POSITION, r.PAIR_COORDINATE,
-                    r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER, r.PARAMETER_NAME, val(touchedAt, t.TOUCHED_AT))
+                    r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER, r.TARGET_KIND, r.TARGET_NAME, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .join(c).on(c.GRAPH_NAME.eq(r.GRAPH_NAME), c.COORDINATE.eq(r.COORDINATE), c.CALL.eq(r.CALL),
                     c.POSITION.eq(r.POSITION))
@@ -186,7 +186,8 @@ public final class OccurrenceCallParameters {
             .set(t.DIRECTIVE_NAME, excluded(t.DIRECTIVE_NAME))
             .set(t.ORDINAL, excluded(t.ORDINAL))
             .set(t.OWNER, excluded(t.OWNER))
-            .set(t.PARAMETER_NAME, excluded(t.PARAMETER_NAME))
+            .set(t.TARGET_KIND, excluded(t.TARGET_KIND))
+            .set(t.TARGET_NAME, excluded(t.TARGET_NAME))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

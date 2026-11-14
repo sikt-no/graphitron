@@ -557,7 +557,7 @@ public final class RoutineWriteQuery {
                         .where(a.GRAPH_NAME.eq(called.GRAPH_NAME), a.SOURCE_NAME.eq(called.SOURCE_NAME),
                             a.SOURCE_LINE.eq(called.SOURCE_LINE), a.SOURCE_COLUMN.eq(called.SOURCE_COLUMN),
                             a.DIRECTIVE_NAME.eq("routine"),
-                            m.PARAM_NAME.eq(p.JOOQ_NAME))
+                            m.TARGET_KIND.eq("NAME"), m.TARGET_NAME.eq(p.JOOQ_NAME))
                         .orderBy(m.POSITION)
                         .limit(1)),
                     p.JOOQ_NAME))

@@ -34,7 +34,7 @@ type Mutation {
 # Each path lands on the id it names, the input field's descending past the argument it opens, and
 # each hands its key the id whole but where it names a key column.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "directive_name = 'outbox'", rows: """
-  parameter_name, landing_coordinate,                trailing_name, descends, receives
+  target_name, landing_coordinate,                trailing_name, descends, receives
   film,           Mutation.recast(ref.film:),        ,              TRUE,     WHOLE
   actor,          Mutation.recast(ref.filmActor:),   ,              TRUE,     WHOLE
   actors,         Mutation.recast(ref.filmActors:),  ,              TRUE,     WHOLE
@@ -46,7 +46,7 @@ extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "d
 # A key column is projected only where a payload key names one, at its position in FilmActor's key,
 # (actor_id, film_id).
 extend schema @expectEquals(relation: "graphitron_argmapping_landing_key_column", where: "directive_name = 'outbox'", rows: """
-  parameter_name, landing_coordinate,               bound,             position
+  target_name, landing_coordinate,               bound,             position
   actorId,        Mutation.recast(ref.filmActor:),  public.film_actor, 0
   filmIds,        Mutation.recast(ref.filmActors:), public.film_actor, 1
   """)

@@ -967,7 +967,7 @@ public final class Steps {
                 ams.DIRECTIVE_NAME.eq("routine"), ams.ORDINAL.eq(da.ORDINAL))
             .leftJoin(am).on(am.GRAPH_NAME.eq(ams.GRAPH_NAME), am.SOURCE_NAME.eq(ams.SOURCE_NAME),
                 am.SOURCE_LINE.eq(ams.SOURCE_LINE), am.SOURCE_COLUMN.eq(ams.SOURCE_COLUMN),
-                am.PARAM_NAME.eq(sp.JOOQ_NAME))
+                am.TARGET_KIND.eq("NAME"), am.TARGET_NAME.eq(sp.JOOQ_NAME))
             .leftJoin(f).on(f.GRAPH_NAME.eq(graph), f.COORDINATE.eq(claimCoordinate))
             .leftJoin(a).on(a.GRAPH_NAME.eq(f.GRAPH_NAME), a.TYPE_NAME.eq(f.TYPE_NAME),
                 a.FIELD_NAME.eq(f.FIELD_NAME), a.ARGUMENT_NAME.eq(coalesce(am.ROOT_NAME, sp.JOOQ_NAME)))

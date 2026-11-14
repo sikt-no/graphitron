@@ -27,10 +27,10 @@ final class GraphitronArgMappingPairs {
         var t = GRAPHITRON_ARGMAPPING_PAIR;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER,
-                t.PARAMETER_NAME, t.BOUND_TO, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                t.TARGET_KIND, t.TARGET_NAME, t.BOUND_TO, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                 t.POSITION, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER,
-                    r.PARAMETER_NAME, r.BOUND_TO, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
+                    r.TARGET_KIND, r.TARGET_NAME, r.BOUND_TO, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
                     r.POSITION, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))

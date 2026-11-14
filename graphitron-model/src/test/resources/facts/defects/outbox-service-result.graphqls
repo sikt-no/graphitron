@@ -63,7 +63,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "co
 # returns has no table, and on the bound type's own field once it reaches Film. A path through a list
 # lands as any other: what it may read there is its reader's to judge. A name no field has lands nowhere.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "directive_name = 'outbox'", rows: """
-  coordinate,    parameter_name, landing_coordinate
+  coordinate,    target_name, landing_coordinate
   Mutation.blurb, text,          Mutation.blurb.holder.blurb.description
   Mutation.blurb, whole,         Mutation.blurb.holder.blurb
   Mutation.card,  filmId,        Film.id

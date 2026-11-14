@@ -303,7 +303,7 @@ public final class ArgmappingProjectionDefects {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         return dsl.selectDistinct(p.DIRECTIVE_NAME, p.ELEMENT_KIND, p.COORDINATE, p.ORDINAL,
                 p.TYPE_NAME, p.FIELD_NAME, p.POSITION, p.WRITTEN_PATH, p.NODE_TYPE_NAME,
-                p.COLUMN_NAME, p.PARAMETER_TYPE, p.PARAM_NAME,
+                p.COLUMN_NAME, p.PARAMETER_TYPE, p.TARGET_NAME,
                 p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
             .from(p)
             .where(p.GRAPH_NAME.eq(graphName), p.PARAM_JAVA_TYPE.isNull(),
@@ -313,11 +313,11 @@ public final class ArgmappingProjectionDefects {
                 var site = Site.of(row.get(p.DIRECTIVE_NAME), row.get(p.ELEMENT_KIND));
                 var useSite = site.useSite(row.get(p.COORDINATE), row.get(p.ORDINAL));
                 var entry = entry(site, useSite, row.get(p.TYPE_NAME),
-                    row.get(p.FIELD_NAME), row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH));
+                    row.get(p.FIELD_NAME), row.get(p.TARGET_NAME), row.get(p.WRITTEN_PATH));
                 String primitive = row.get(p.PARAMETER_TYPE);
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
-                    useSite, row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH), false,
+                    useSite, row.get(p.TARGET_NAME), row.get(p.WRITTEN_PATH), false,
                     Rejection.structural(entry + " projects '" + row.get(p.COLUMN_NAME)
                         + "' of '" + row.get(p.NODE_TYPE_NAME) + "', but the parameter it binds to"
                         + " is declared " + primitive + "; an omitted or null @nodeId anywhere on"
@@ -350,10 +350,10 @@ public final class ArgmappingProjectionDefects {
                 var site = Site.of(row.getDirectiveName(), row.getElementKind());
                 var useSite = site.useSite(row.getCoordinate(), row.getOrdinal());
                 var entry = entry(site, useSite, row.getTypeName(), row.getFieldName(),
-                    row.getParamName(), row.getWrittenPath());
+                    row.getTargetName(), row.getWrittenPath());
                 return new Defect(
                     row.getTypeName() + "." + row.getFieldName(),
-                    useSite, row.getParamName(), row.getWrittenPath(), false,
+                    useSite, row.getTargetName(), row.getWrittenPath(), false,
                     rejectionOf(Verdict.of(row.getVerdict()), entry, row.getNodeTypeRef(),
                         row.getTrailingName(),
                         keyColumnsOf(dsl, graphName, row.getNodeTypeRef()),
@@ -380,7 +380,7 @@ public final class ArgmappingProjectionDefects {
         var p = INTENT_RESOLVED_NODE_KEY_PROJECTION;
         return dsl.selectDistinct(p.DIRECTIVE_NAME, p.ELEMENT_KIND, p.COORDINATE, p.ORDINAL,
                 p.TYPE_NAME, p.FIELD_NAME, p.POSITION, p.WRITTEN_PATH, p.NODE_TYPE_NAME,
-                p.LEAF_IS_LIST, p.PARAM_NAME, p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
+                p.LEAF_IS_LIST, p.TARGET_NAME, p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN)
             .from(p)
             .where(p.GRAPH_NAME.eq(graphName))
             .orderBy(p.TYPE_NAME, p.FIELD_NAME, p.COORDINATE, p.ORDINAL, p.POSITION)
@@ -394,7 +394,7 @@ public final class ArgmappingProjectionDefects {
                 var site = Site.of(row.get(p.DIRECTIVE_NAME), row.get(p.ELEMENT_KIND));
                 var useSite = site.useSite(row.get(p.COORDINATE), row.get(p.ORDINAL));
                 var entry = entry(site, useSite, row.get(p.TYPE_NAME),
-                    row.get(p.FIELD_NAME), row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH));
+                    row.get(p.FIELD_NAME), row.get(p.TARGET_NAME), row.get(p.WRITTEN_PATH));
                 // The list reason is reported ahead of the unwired-site one where both hold: it is
                 // the shape the author can act on, an unwired site being nothing they control.
                 String why = listDeferred(row.get(p.LEAF_IS_LIST), site)
@@ -405,7 +405,7 @@ public final class ArgmappingProjectionDefects {
                       + "', which no emitter reads at this site yet";
                 return new Defect(
                     row.get(p.TYPE_NAME) + "." + row.get(p.FIELD_NAME),
-                    useSite, row.get(p.PARAM_NAME), row.get(p.WRITTEN_PATH), true,
+                    useSite, row.get(p.TARGET_NAME), row.get(p.WRITTEN_PATH), true,
                     Rejection.deferred(entry + why),
                     location(row.get(p.SOURCE_NAME), row.get(p.SOURCE_LINE),
                         row.get(p.SOURCE_COLUMN)));

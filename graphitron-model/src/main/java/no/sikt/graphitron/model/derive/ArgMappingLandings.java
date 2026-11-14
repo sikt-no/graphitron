@@ -38,15 +38,15 @@ public final class ArgMappingLandings {
         var r = GRAPHITRON_ARGMAPPING_LANDING_RULE;
         var t = GRAPHITRON_ARGMAPPING_LANDING;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME,
                 t.CALL_COORDINATE, t.LANDING_COORDINATE, t.TRAILING_NAME, t.REPEATS_OWN_NAME,
                 t.DESCENDS, t.RECEIVES, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL,
-                    r.OWNER, r.PARAMETER_NAME, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.TRAILING_NAME,
+                    r.OWNER, r.TARGET_KIND, r.TARGET_NAME, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.TRAILING_NAME,
                     r.REPEATS_OWN_NAME, r.DESCENDS, r.RECEIVES, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME,
                 t.CALL_COORDINATE)
             .doUpdate()
             .set(t.LANDING_COORDINATE, excluded(t.LANDING_COORDINATE))
@@ -67,7 +67,7 @@ public final class ArgMappingLandings {
     private static void steps(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var h = GRAPHITRON_ARGMAPPING_STEP_HEAD_RULE;
         upsert(dsl, dsl.select(h.GRAPH_NAME, h.COORDINATE, h.DIRECTIVE_NAME, h.ORDINAL,
-                h.OWNER, h.PARAMETER_NAME, h.CALL_COORDINATE, h.CONSUMED, h.BOUND_TO, h.SEGMENTS, h.REST,
+                h.OWNER, h.TARGET_KIND, h.TARGET_NAME, h.CALL_COORDINATE, h.CONSUMED, h.BOUND_TO, h.SEGMENTS, h.REST,
                 h.STEP_COORDINATE, h.REPEATS_OWN_NAME, val(touchedAt, GRAPHITRON_ARGMAPPING_STEP.TOUCHED_AT))
             .from(h)
             .where(h.GRAPH_NAME.eq(graph)));
@@ -75,7 +75,7 @@ public final class ArgMappingLandings {
         var n = GRAPHITRON_ARGMAPPING_STEP_NEXT_RULE;
         for (int count = 1; ; count++) {
             int taken = upsert(dsl, dsl.select(n.GRAPH_NAME, n.COORDINATE, n.DIRECTIVE_NAME,
-                    n.ORDINAL, n.OWNER, n.PARAMETER_NAME, n.CALL_COORDINATE, n.CONSUMED, n.BOUND_TO,
+                    n.ORDINAL, n.OWNER, n.TARGET_KIND, n.TARGET_NAME, n.CALL_COORDINATE, n.CONSUMED, n.BOUND_TO,
                     n.SEGMENTS, n.REST, n.STEP_COORDINATE, n.REPEATS_OWN_NAME,
                     val(touchedAt, GRAPHITRON_ARGMAPPING_STEP.TOUCHED_AT))
                 .from(n)
@@ -98,10 +98,10 @@ public final class ArgMappingLandings {
         var s = GRAPHITRON_ARGMAPPING_STEP;
         return dsl.insertInto(s)
             .columns(List.of(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL,
-                s.OWNER, s.PARAMETER_NAME, s.CALL_COORDINATE, s.CONSUMED, s.BOUND_TO, s.SEGMENTS, s.REST,
+                s.OWNER, s.TARGET_KIND, s.TARGET_NAME, s.CALL_COORDINATE, s.CONSUMED, s.BOUND_TO, s.SEGMENTS, s.REST,
                 s.STEP_COORDINATE, s.REPEATS_OWN_NAME, s.TOUCHED_AT))
             .select(rows)
-            .onConflict(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL, s.OWNER, s.PARAMETER_NAME,
+            .onConflict(s.GRAPH_NAME, s.COORDINATE, s.DIRECTIVE_NAME, s.ORDINAL, s.OWNER, s.TARGET_KIND, s.TARGET_NAME,
                 s.CALL_COORDINATE, s.CONSUMED)
             .doUpdate()
             .set(s.BOUND_TO, excluded(s.BOUND_TO))

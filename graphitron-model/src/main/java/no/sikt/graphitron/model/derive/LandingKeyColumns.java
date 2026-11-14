@@ -27,15 +27,15 @@ public final class LandingKeyColumns {
         var t = GRAPHITRON_ARGMAPPING_LANDING_KEY_COLUMN;
         var r = GRAPHITRON_ARGMAPPING_LANDING_KEY_COLUMN_RULE;
         dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
+            .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME,
                 t.CALL_COORDINATE, t.LANDING_COORDINATE, t.BOUND, t.POSITION, t.TOUCHED_AT)
             .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.DIRECTIVE_NAME, r.ORDINAL, r.OWNER,
-                    r.PARAMETER_NAME, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.BOUND, r.POSITION,
+                    r.TARGET_KIND, r.TARGET_NAME, r.CALL_COORDINATE, r.LANDING_COORDINATE, r.BOUND, r.POSITION,
                     val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.LANDING_COORDINATE))
                 .where(r.GRAPH_NAME.eq(graph)))
-            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.PARAMETER_NAME,
+            .onConflict(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL, t.OWNER, t.TARGET_KIND, t.TARGET_NAME,
                 t.CALL_COORDINATE, t.BOUND)
             .doUpdate()
             .set(t.LANDING_COORDINATE, excluded(t.LANDING_COORDINATE))

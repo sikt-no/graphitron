@@ -59,7 +59,7 @@ extend schema @expectEquals(relation: "graphitron_outbox_target", rows: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", where: "bound_to LIKE '$result%' OR bound_to LIKE '$scope%' OR bound_to = 'in.title'", rows: """
-  position, param_name, bound_to
+  position, target_name, bound_to
   0,        filmId,     $result.id
   1,        title,      in.title
   2,        name,       $result.title
@@ -70,7 +70,7 @@ extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", wh
 # argument path on the argument or input field it names, a $result path on the field of what the call
 # returns, here a field of Film, which is bound to a table and so starts its own chain.
 extend schema @expectEquals(relation: "graphitron_argmapping_landing", where: "directive_name = 'outbox'", rows: """
-  coordinate,          ordinal, parameter_name, call_coordinate,     landing_coordinate,              trailing_name
+  coordinate,          ordinal, target_name, call_coordinate,     landing_coordinate,              trailing_name
   Mutation.createFilm, 0,       filmId,         Mutation.createFilm, Film.id,                         
   Mutation.createFilm, 0,       title,          Mutation.createFilm, Mutation.createFilm(in.title:),  
   Mutation.createFilm, 0,       name,           Mutation.createFilm, Film.title,                      

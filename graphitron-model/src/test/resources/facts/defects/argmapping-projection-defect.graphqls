@@ -104,7 +104,7 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "intent_argmapping_projection_defect", rows: """
-  coordinate,                 directive_name, ordinal, position, param_name,   written_path,                     verdict,                  bound_kind,  node_type_ref, trailing_name,  leaf_named_type, column_java_type,  param_java_type
+  coordinate,                 directive_name, ordinal, position, target_name,   written_path,                     verdict,                  bound_kind,  node_type_ref, trailing_name,  leaf_named_type, column_java_type,  param_java_type
   Mutation.bare,              routine,        0,       0,        pInventoryId, input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, FilmActor,     ,               ID,              ,
   Mutation.bareArgument,      routine,        0,       0,        pInventoryId, inventoryId,                      BARE_NODE_ID,             ARGUMENT,    FilmActor,     ,               ID,              ,
   Mutation.bareUntyped,       routine,        0,       0,        pInventoryId, input.inventoryId,                BARE_NODE_ID,             INPUT_FIELD, ,              ,               ID,              ,

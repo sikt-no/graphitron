@@ -75,19 +75,21 @@ final class GraphitronArgMappingEntries {
             pair -> GraphQLAstEntries.sourceColumn(pair.mapping()),
             pair -> val(pair.position(), t.POSITION),
             pair -> val(touchedAt, t.TOUCHED_AT),
-            pair -> val(pair.entry().parameter(), t.PARAM_NAME),
+            pair -> val("NAME", t.TARGET_KIND),
+            pair -> val(pair.entry().parameter(), t.TARGET_NAME),
             pair -> val(pair.entry().boundTo(), t.BOUND_TO),
             pair -> val(pair.trail().argument(), t.ARGUMENT_NAME),
             pair -> val(pair.trail().argumentIndex(), t.ARGUMENT_INDEX),
             pair -> val(pair.trail().pathIndex(), t.PATH_INDEX)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.POSITION, t.TOUCHED_AT, t.PARAM_NAME, t.BOUND_TO, t.ARGUMENT_NAME,
+                    t.POSITION, t.TOUCHED_AT, t.TARGET_KIND, t.TARGET_NAME, t.BOUND_TO, t.ARGUMENT_NAME,
                     t.ARGUMENT_INDEX, t.PATH_INDEX)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.PARAM_NAME, excluded(t.PARAM_NAME))
+                .set(t.TARGET_KIND, excluded(t.TARGET_KIND))
+                .set(t.TARGET_NAME, excluded(t.TARGET_NAME))
                 .set(t.BOUND_TO, excluded(t.BOUND_TO))
                 .set(t.ARGUMENT_NAME, excluded(t.ARGUMENT_NAME))
                 .set(t.ARGUMENT_INDEX, excluded(t.ARGUMENT_INDEX))

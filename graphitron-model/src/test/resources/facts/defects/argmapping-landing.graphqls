@@ -23,7 +23,7 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_argmapping_landing", rows: """
-  coordinate,              directive_name, owner,     parameter_name, call_coordinate,         landing_coordinate,               trailing_name, repeats_own_name
+  coordinate,              directive_name, owner,     target_name, call_coordinate,         landing_coordinate,               trailing_name, repeats_own_name
   Query.byIds,             service,        service,   a,              Query.byIds,             Query.byIds(input.ids:),          ,              FALSE
   Query.byIds,             service,        service,   b,              Query.byIds,             Query.byIds(input.ref.key:),      ,              FALSE
   Query.byIds,             service,        service,   c,              Query.byIds,             Query.byIds(input.ref:),          actor_id,      FALSE

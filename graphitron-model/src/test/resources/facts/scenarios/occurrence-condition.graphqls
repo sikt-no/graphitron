@@ -161,7 +161,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_input_type", rows
 # their input object builds into no class, the call taking its fields one by one.
 extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter_pair",
     where: "coordinate LIKE 'Query.filmsByRentalRate%'", rows: """
-  coordinate,                                    call,                  position, parameter_name
+  coordinate,                                    call,                  position, target_name
   Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, 1,        fra
   Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, 2,        til
   """)

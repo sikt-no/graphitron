@@ -2354,7 +2354,8 @@ CREATE TABLE graphitron_ast_argmapping_pair_entry (
   source_column INT     NOT NULL,
   position      INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  param_name    VARCHAR NOT NULL,
+  target_kind   VARCHAR NOT NULL,
+  target_name   VARCHAR NOT NULL,
   bound_to      VARCHAR NOT NULL,
   argument_name  VARCHAR NOT NULL,
   argument_index INT,
@@ -2371,7 +2372,8 @@ CREATE TABLE graphitron_ast_argmapping_pair_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (position >= 0)
+  CHECK (position >= 0),
+  CHECK (target_kind IN ('NAME'))
 );
 COMMENT ON TABLE graphitron_ast_argmapping_pair_entry IS 'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this. For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -2380,7 +2382,8 @@ COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_line IS 'source li
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_column IS 'source column of the same. The four columns are that string''s key in graphql_ast_value_entry, which holds it verbatim, so the directive or reference it was written in is a join from here and the raw text is not repeated';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.position IS 'the entry''s 0-based position in the mapping as written, completing the key; the order an author wrote the entries in';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a mapping whose string went is swept with it';
-COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.param_name IS 'the parameter the entry names, as written: a Java parameter at a code reference, a routine parameter at @routine';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.target_kind IS 'what the entry''s left side is: NAME, a name the mapping''s site gives its meaning, a parameter at a call or a key at @outbox';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.target_name IS 'the entry''s left side, as written: for a NAME a Java parameter at a code reference, a routine parameter at @routine, a payload key at @outbox';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.root_name IS 'the first segment of what the entry binds to, which at a site rooted on a field is the argument the value enters through. Generated, so nothing writes it and nothing can';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.head_path IS 'what the entry binds to with its last segment removed, NULL where it is one segment. Generated. The position an author had resolved when the whole path does not';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.tail_name IS 'the last segment of what the entry binds to, the whole of it where there is one. Generated';
@@ -2850,13 +2853,13 @@ CREATE VIEW graphitron_call_context_key_written
 -- A $context pair names its parameter on the left and its key after the dot, exactly one name. Its
 -- call is the code reference its string is a field of, which shares the mapping's key; a mapping
 -- with none, a @routine's, has no call to fill here and is refused where the sigil is judged.
-SELECT p.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, p.param_name,
+SELECT p.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, p.target_name,
        SUBSTRING(p.bound_to, 10), 'PAIR', p.source_name, p.source_line, p.source_column, p.position
   FROM graphitron_ast_argmapping_pair_entry p
   JOIN graphitron_argmapping_site s
     ON s.graph_name = p.graph_name AND s.source_name = p.source_name
    AND s.source_line = p.source_line AND s.source_column = p.source_column
- WHERE p.bound_to LIKE '$context.%'
+ WHERE p.target_kind = 'NAME' AND p.bound_to LIKE '$context.%'
    AND CHAR_LENGTH(p.bound_to) > 9 AND POSITION('.', SUBSTRING(p.bound_to, 10)) = 0
    AND EXISTS (SELECT 1 FROM graphitron_code_reference_site r
                 WHERE r.graph_name = s.graph_name AND r.coordinate = s.coordinate
@@ -4591,15 +4594,15 @@ COMMENT ON VIEW graphitron_occurrence_overridden_rule IS 'One row the overridden
 -- One pair of a written argMapping, named: the mapping's site and the parameter the pair binds, the
 -- first written of two naming one parameter kept. The entry's position rides along for a defect.
 CREATE VIEW graphitron_argmapping_pair_rule
-  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, bound_to,
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, bound_to,
    source_name, source_line, source_column, position) AS
-SELECT graph_name, coordinate, directive_name, ordinal, owner, parameter_name, bound_to,
+SELECT graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, bound_to,
        source_name, source_line, source_column, position
   FROM (SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner,
-               e.param_name AS parameter_name, e.bound_to, e.source_name, e.source_line,
+               e.target_kind, e.target_name AS target_name, e.bound_to, e.source_name, e.source_line,
                e.source_column, e.position,
                ROW_NUMBER() OVER (PARTITION BY s.graph_name, s.coordinate, s.directive_name,
-                                  s.ordinal, s.owner, e.param_name
+                                  s.ordinal, s.owner, e.target_kind, e.target_name
                                   ORDER BY e.position) AS written
           FROM graphitron_ast_argmapping_pair_entry e
           JOIN graphitron_argmapping_site s
@@ -4612,7 +4615,7 @@ COMMENT ON VIEW graphitron_argmapping_pair_rule IS 'One row the argMapping pair 
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.directive_name IS 'the mapping''s directive';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.ordinal IS 'its application''s ordinal';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.owner IS 'what the mapping is written under';
--- COMMENT ON COLUMN graphitron_argmapping_pair_rule.parameter_name IS 'the parameter the pair binds';
+-- COMMENT ON COLUMN graphitron_argmapping_pair_rule.target_name IS 'the parameter the pair binds';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.bound_to IS 'the right-hand side as written';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.source_name IS 'the file the mapping string was written in';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.source_line IS 'its line';
@@ -4625,14 +4628,15 @@ CREATE TABLE graphitron_argmapping_pair (
   directive_name VARCHAR   NOT NULL,
   ordinal        INT       NOT NULL,
   owner          VARCHAR   NOT NULL,
-  parameter_name VARCHAR   NOT NULL,
+  target_kind    VARCHAR   NOT NULL,
+  target_name    VARCHAR   NOT NULL,
   bound_to       VARCHAR   NOT NULL,
   source_name    VARCHAR   NOT NULL,
   source_line    INT       NOT NULL,
   source_column  INT       NOT NULL,
   position       INT       NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name),
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name),
   -- The mapping the pair is one of.
   FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner)
     REFERENCES graphitron_argmapping_site (graph_name, coordinate, directive_name, ordinal, owner)
@@ -4648,7 +4652,8 @@ COMMENT ON COLUMN graphitron_argmapping_pair.coordinate IS 'the element the mapp
 COMMENT ON COLUMN graphitron_argmapping_pair.directive_name IS 'the mapping''s directive';
 COMMENT ON COLUMN graphitron_argmapping_pair.ordinal IS 'its application''s ordinal';
 COMMENT ON COLUMN graphitron_argmapping_pair.owner IS 'what the mapping is written under in its application';
-COMMENT ON COLUMN graphitron_argmapping_pair.parameter_name IS 'the parameter the pair binds, its left side, completing the key: a mapping names a parameter once, and of two naming one the first written is kept';
+COMMENT ON COLUMN graphitron_argmapping_pair.target_kind IS 'what the pair''s left side is, as on graphitron_ast_argmapping_pair_entry; with its name, the pair''s part of the key';
+COMMENT ON COLUMN graphitron_argmapping_pair.target_name IS 'the pair''s left side, the parameter or key it binds, completing the key: a mapping names one target once, and of two naming one the first written is kept';
 COMMENT ON COLUMN graphitron_argmapping_pair.bound_to IS 'the right-hand side as written, an argument path or a sigil';
 COMMENT ON COLUMN graphitron_argmapping_pair.source_name IS 'the file the mapping string was written in; with the line, the column and the position, the pair''s entry, where a defect about it points';
 COMMENT ON COLUMN graphitron_argmapping_pair.source_line IS 'source line of the mapping string';
@@ -4657,21 +4662,21 @@ COMMENT ON COLUMN graphitron_argmapping_pair.position IS 'the pair''s position i
 COMMENT ON COLUMN graphitron_argmapping_pair.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_argmapping_call
-  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
    call_name, call_kind, bound_to, segments, head, rest, source_name, source_line, source_column,
    position) AS
 -- A @service, a @routine, a @condition or an @outbox, on a field, an argument or an input field,
 -- written once and taken under every occurrence of what it is written on. A path names arguments and
 -- input fields, or, after an @outbox's $result, the fields of what the call returns, the sigil taken
 -- off; any other sigil binds something else, and a path element's mapping binds a table.
-SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.parameter_name,
+SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.target_kind, p.target_name,
        c.coordinate, c.name, c.kind, p.bound_to,
        CHAR_LENGTH(p.path) - CHAR_LENGTH(REPLACE(p.path, '.', '')) + 1,
        REGEXP_REPLACE(p.path, '\..*$', ''),
        CASE WHEN POSITION('.', p.path) = 0 THEN ''
             ELSE SUBSTRING(p.path, POSITION('.', p.path) + 1) END,
        p.source_name, p.source_line, p.source_column, p.position
-  FROM (SELECT q.graph_name, q.coordinate, q.directive_name, q.ordinal, q.owner, q.parameter_name,
+  FROM (SELECT q.graph_name, q.coordinate, q.directive_name, q.ordinal, q.owner, q.target_kind, q.target_name,
                q.bound_to, q.source_name, q.source_line, q.source_column, q.position,
                REGEXP_REPLACE(q.bound_to, '^\$result\.', '') AS path
           FROM graphitron_argmapping_pair q) p
@@ -4690,7 +4695,7 @@ COMMENT ON VIEW graphitron_argmapping_call IS 'One written argMapping entry bind
 -- COMMENT ON COLUMN graphitron_argmapping_call.directive_name IS 'the mapping''s directive';
 -- COMMENT ON COLUMN graphitron_argmapping_call.ordinal IS 'its application''s ordinal';
 -- COMMENT ON COLUMN graphitron_argmapping_call.owner IS 'what the mapping is written under';
--- COMMENT ON COLUMN graphitron_argmapping_call.parameter_name IS 'the parameter the pair binds';
+-- COMMENT ON COLUMN graphitron_argmapping_call.target_name IS 'the parameter the pair binds';
 -- COMMENT ON COLUMN graphitron_argmapping_call.source_name IS 'the file the mapping string was written in, where a defect about it points';
 -- COMMENT ON COLUMN graphitron_argmapping_call.source_line IS 'source line of the mapping string';
 -- COMMENT ON COLUMN graphitron_argmapping_call.source_column IS 'source column of the mapping string';
@@ -4712,7 +4717,8 @@ CREATE TABLE graphitron_argmapping_step (
   directive_name   VARCHAR   NOT NULL,
   ordinal          INT       NOT NULL,
   owner            VARCHAR   NOT NULL,
-  parameter_name   VARCHAR   NOT NULL,
+  target_kind      VARCHAR   NOT NULL,
+  target_name      VARCHAR   NOT NULL,
   call_coordinate  VARCHAR   NOT NULL,
   consumed         INT       NOT NULL,
   bound_to         VARCHAR   NOT NULL,
@@ -4721,11 +4727,11 @@ CREATE TABLE graphitron_argmapping_step (
   step_coordinate  VARCHAR   NOT NULL,
   repeats_own_name BOOLEAN   NOT NULL,
   touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name,
                call_coordinate, consumed),
   -- The pair, so a step cannot outlive what an author wrote.
-  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name)
-    REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, parameter_name)
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
+    REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
     ON DELETE CASCADE,
   -- The call's occurrence and the step's, so a place the corpus no longer reaches takes its rows.
   FOREIGN KEY (graph_name, call_coordinate)
@@ -4740,7 +4746,8 @@ COMMENT ON COLUMN graphitron_argmapping_step.coordinate IS 'the element the mapp
 COMMENT ON COLUMN graphitron_argmapping_step.directive_name IS 'the mapping''s directive';
 COMMENT ON COLUMN graphitron_argmapping_step.ordinal IS 'its application''s ordinal';
 COMMENT ON COLUMN graphitron_argmapping_step.owner IS 'what the mapping is written under in its application';
-COMMENT ON COLUMN graphitron_argmapping_step.parameter_name IS 'the parameter the pair binds, completing the pair''s key';
+COMMENT ON COLUMN graphitron_argmapping_step.target_kind IS 'what the pair''s left side is, as on graphitron_ast_argmapping_pair_entry; with its name, the pair''s part of the key';
+COMMENT ON COLUMN graphitron_argmapping_step.target_name IS 'the pair''s left side, completing the pair''s key';
 COMMENT ON COLUMN graphitron_argmapping_step.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on that this path is taken under';
 COMMENT ON COLUMN graphitron_argmapping_step.consumed IS 'how many names this step has consumed, 1 at the head, completing the key: each name reaches one occurrence under the one before, so one entry and call have one step per count';
 COMMENT ON COLUMN graphitron_argmapping_step.bound_to IS 'the right-hand side as written';
@@ -4754,10 +4761,10 @@ COMMENT ON COLUMN graphitron_argmapping_step.touched_at IS 'the reading that las
 -- names a field of what that opens into, or the call's own name, which the coordinate's own name
 -- wins where an input field shares it.
 CREATE VIEW graphitron_argmapping_step_head_rule
-  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
    consumed,
    bound_to, segments, rest, step_coordinate, repeats_own_name) AS
-SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
+SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.target_kind, e.target_name,
        e.call_coordinate,
        1, e.bound_to, e.segments, e.rest, o.coordinate, FALSE
   FROM graphitron_argmapping_call e
@@ -4769,7 +4776,7 @@ SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.param
 UNION ALL
 -- A $result path's head is a field of what the call returns: the field under the call, or, where the
 -- type it returns is bound to a table and so starts chains of its own, that type's field.
-SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
+SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.target_kind, e.target_name,
        e.call_coordinate,
        1, e.bound_to, e.segments, e.rest, o.coordinate, FALSE
   FROM graphitron_argmapping_call e
@@ -4778,7 +4785,7 @@ SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.param
    AND o.kind = 'FIELD'
  WHERE e.call_kind = 'FIELD' AND e.bound_to LIKE '$result.%'
 UNION ALL
-SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
+SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.target_kind, e.target_name,
        e.call_coordinate,
        1, e.bound_to, e.segments, e.rest, o.coordinate, FALSE
   FROM graphitron_argmapping_call e
@@ -4790,7 +4797,7 @@ SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.param
    AND o.parent_coordinate IS NULL AND o.kind = 'FIELD'
  WHERE e.call_kind = 'FIELD' AND e.bound_to LIKE '$result.%'
 UNION ALL
-SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.parameter_name,
+SELECT e.graph_name, e.coordinate, e.directive_name, e.ordinal, e.owner, e.target_kind, e.target_name,
        e.call_coordinate,
        1, e.bound_to, e.segments, e.rest, e.call_coordinate, TRUE
   FROM graphitron_argmapping_call e
@@ -4801,7 +4808,7 @@ COMMENT ON VIEW graphitron_argmapping_step_head_rule IS 'One head step the argMa
 -- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.directive_name IS 'the pair''s directive_name';
 -- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.ordinal IS 'the pair''s ordinal';
 -- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.owner IS 'the pair''s owner';
--- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.parameter_name IS 'the pair''s parameter_name';
+-- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.target_name IS 'the pair''s target_name';
 -- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.call_coordinate IS 'the call occurrence the path is taken under';
 -- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.consumed IS 'always 1';
 -- COMMENT ON COLUMN graphitron_argmapping_step_head_rule.bound_to IS 'the right-hand side as written';
@@ -4813,10 +4820,10 @@ COMMENT ON VIEW graphitron_argmapping_step_head_rule IS 'One head step the argMa
 -- Every later segment names an input field of what the step before reached: one step down from the
 -- stored steps, with what the writer needs to take only this reading's at one count.
 CREATE VIEW graphitron_argmapping_step_next_rule
-  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
    consumed,
    bound_to, segments, rest, step_coordinate, repeats_own_name, from_consumed, from_touched_at) AS
-SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.target_kind, s.target_name,
        s.call_coordinate,
        s.consumed + 1, s.bound_to, s.segments,
        CASE WHEN POSITION('.', s.rest) = 0 THEN ''
@@ -4829,7 +4836,7 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.param
  WHERE s.consumed < s.segments
 UNION ALL
 -- After a $result head, each name is a field of what the field before returns, found as the head is.
-SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.target_kind, s.target_name,
        s.call_coordinate,
        s.consumed + 1, s.bound_to, s.segments,
        CASE WHEN POSITION('.', s.rest) = 0 THEN ''
@@ -4841,7 +4848,7 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.param
    AND o.name = REGEXP_REPLACE(s.rest, '\..*$', '') AND o.kind = 'FIELD'
  WHERE s.consumed < s.segments AND s.bound_to LIKE '$result.%'
 UNION ALL
-SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.target_kind, s.target_name,
        s.call_coordinate,
        s.consumed + 1, s.bound_to, s.segments,
        CASE WHEN POSITION('.', s.rest) = 0 THEN ''
@@ -4863,7 +4870,7 @@ COMMENT ON VIEW graphitron_argmapping_step_next_rule IS 'One next step the argMa
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.directive_name IS 'the pair''s directive_name';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.ordinal IS 'the pair''s ordinal';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.owner IS 'the pair''s owner';
--- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.parameter_name IS 'the pair''s parameter_name';
+-- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.target_name IS 'the pair''s target_name';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.call_coordinate IS 'the call occurrence the path is taken under';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.consumed IS 'the names consumed with this step';
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.bound_to IS 'the right-hand side as written';
@@ -4875,11 +4882,11 @@ COMMENT ON VIEW graphitron_argmapping_step_next_rule IS 'One next step the argMa
 -- COMMENT ON COLUMN graphitron_argmapping_step_next_rule.from_touched_at IS 'the instant of the stored step this one follows, which the writer pins to this reading';
 
 CREATE VIEW graphitron_argmapping_landing_rule
-  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
    landing_coordinate, trailing_name, repeats_own_name, descends, receives) AS
 -- Where the path stops: every name consumed, or every name but one, which then names a key column of
 -- a node id at the occurrence reached and is the path end's to resolve.
-SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.parameter_name,
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.target_kind, s.target_name,
        s.call_coordinate,
        s.step_coordinate,
        CASE WHEN s.consumed = s.segments THEN CAST(NULL AS VARCHAR) ELSE s.rest END,
@@ -4903,7 +4910,7 @@ SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, s.param
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
                     WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate
                       AND d.directive_name = s.directive_name AND d.ordinal = s.ordinal
-                      AND d.owner = s.owner AND d.parameter_name = s.parameter_name
+                      AND d.owner = s.owner AND d.target_name = s.target_name AND d.target_kind = s.target_kind
                       AND d.call_coordinate = s.call_coordinate
                       AND d.consumed > s.consumed);
 COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping landing rule computes, in the shape graphitron_argmapping_landing stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_argmapping_landing, which is the name every reader spells.';
@@ -4913,7 +4920,7 @@ COMMENT ON VIEW graphitron_argmapping_landing_rule IS 'One row the argMapping la
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.directive_name IS 'the pair''s directive_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.ordinal IS 'the pair''s ordinal';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.owner IS 'the pair''s owner';
--- COMMENT ON COLUMN graphitron_argmapping_landing_rule.parameter_name IS 'the pair''s parameter_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_rule.target_name IS 'the pair''s target_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.call_coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing.landing_coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_rule.trailing_name IS 'the trailing_name of a row of this rule, which the stage writes into graphitron_argmapping_landing.trailing_name';
@@ -4926,7 +4933,8 @@ CREATE TABLE graphitron_argmapping_landing (
   directive_name     VARCHAR   NOT NULL,
   ordinal            INT       NOT NULL,
   owner              VARCHAR   NOT NULL,
-  parameter_name     VARCHAR   NOT NULL,
+  target_kind        VARCHAR   NOT NULL,
+  target_name        VARCHAR   NOT NULL,
   call_coordinate    VARCHAR   NOT NULL,
   landing_coordinate VARCHAR   NOT NULL,
   trailing_name      VARCHAR,
@@ -4934,12 +4942,12 @@ CREATE TABLE graphitron_argmapping_landing (
   descends           BOOLEAN   NOT NULL,
   receives           VARCHAR   NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name,
                call_coordinate),
   CHECK (receives IN ('WHOLE', 'COLUMN')),
   -- The pair, so a landing cannot outlive what an author wrote.
-  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name)
-    REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, parameter_name)
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
+    REFERENCES graphitron_argmapping_pair (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name)
     ON DELETE CASCADE,
   -- The call's occurrence and the landing's, so a place the corpus no longer reaches takes its rows.
   FOREIGN KEY (graph_name, call_coordinate)
@@ -4953,7 +4961,8 @@ COMMENT ON COLUMN graphitron_argmapping_landing.coordinate IS 'the element the m
 COMMENT ON COLUMN graphitron_argmapping_landing.directive_name IS 'the mapping''s directive';
 COMMENT ON COLUMN graphitron_argmapping_landing.ordinal IS 'its application''s ordinal';
 COMMENT ON COLUMN graphitron_argmapping_landing.owner IS 'what the mapping is written under in its application';
-COMMENT ON COLUMN graphitron_argmapping_landing.parameter_name IS 'the parameter the pair binds, completing the pair''s key';
+COMMENT ON COLUMN graphitron_argmapping_landing.target_kind IS 'what the pair''s left side is, as on graphitron_ast_argmapping_pair_entry; with its name, the pair''s part of the key';
+COMMENT ON COLUMN graphitron_argmapping_landing.target_name IS 'the pair''s left side, completing the pair''s key';
 COMMENT ON COLUMN graphitron_argmapping_landing.call_coordinate IS 'the occurrence of the field, argument or input field the directive is written on, completing the key: a field of a nested type is reached once per parent, and the path resolves under each';
 COMMENT ON COLUMN graphitron_argmapping_landing.landing_coordinate IS 'the argument or input-field occurrence the path names; what it is, its column, table or node identity, is that occurrence''s own binding, not restated here';
 COMMENT ON COLUMN graphitron_argmapping_landing.trailing_name IS 'the path''s last name where it names nothing under the landing, NULL where every name was consumed: a key column of the node id the landing carries, which the landing''s binding resolves and judges';
@@ -10625,7 +10634,7 @@ SELECT pair.graph_name, pair.source_name, pair.source_line, pair.source_column, 
    AND parameter.class_name = reference.method_class_name
    AND parameter.method_name = reference.method_name
    AND parameter.descriptor = reference.method_descriptor
-   AND parameter.parameter_name = pair.param_name;
+   AND parameter.parameter_name = pair.target_name AND pair.target_kind = 'NAME';
 COMMENT ON VIEW graphitron_argmapping_parameter IS 'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left. For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.';
 -- COMMENT ON COLUMN graphitron_argmapping_parameter.graph_name IS 'the owning graph''s partition, carried from the entry';
 -- COMMENT ON COLUMN graphitron_argmapping_parameter.source_name IS 'the file the mapping string was written in, the first of the four columns that are the entry''s key in graphitron_ast_argmapping_pair_entry';
@@ -11228,14 +11237,14 @@ COMMENT ON COLUMN graphitron_occurrence_node_id.touched_at IS 'the reading that 
 -- @nodeId slot, or naming a column past it, hands the parameter one key column, named where it is
 -- written and else the node's one column; one stopping on the slot hands it the whole decoded key.
 CREATE VIEW graphitron_argmapping_landing_key_column_rule
-  (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+  (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
    landing_coordinate, bound, position) AS
-WITH projected (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+WITH projected (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
                 landing_coordinate, trailing_name, bound, position, table_source_name, table_schema,
                 table_name, column_name) AS (
   -- A projecting landing on a node id of one node binding: one of several, an interface's or a
   -- union's, is refused for now.
-  SELECT l.graph_name, l.coordinate, l.directive_name, l.ordinal, l.owner, l.parameter_name,
+  SELECT l.graph_name, l.coordinate, l.directive_name, l.ordinal, l.owner, l.target_kind, l.target_name,
          l.call_coordinate, l.landing_coordinate, l.trailing_name, n.bound, n.position,
          n.table_source_name, n.table_schema, n.table_name, n.column_name
     FROM graphitron_argmapping_landing l
@@ -11247,7 +11256,7 @@ WITH projected (graph_name, coordinate, directive_name, ordinal, owner, paramete
                         AND m.bound <> n.bound)
 )
 -- The key column the written name reaches on the node's table.
-SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.parameter_name,
+SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.target_kind, p.target_name,
        p.call_coordinate, p.landing_coordinate, p.bound, p.position
   FROM projected p
   JOIN sql_column_spelling sp
@@ -11256,7 +11265,7 @@ SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.param
    AND sp.spelling_upper = UPPER(p.trailing_name)
 UNION ALL
 -- Named nothing: the node's one key column.
-SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.parameter_name,
+SELECT p.graph_name, p.coordinate, p.directive_name, p.ordinal, p.owner, p.target_kind, p.target_name,
        p.call_coordinate, p.landing_coordinate, p.bound, p.position
   FROM projected p
  WHERE p.trailing_name IS NULL
@@ -11269,7 +11278,7 @@ COMMENT ON VIEW graphitron_argmapping_landing_key_column_rule IS 'One row the la
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.directive_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.ordinal';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.owner IS 'the owner of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.owner';
--- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.parameter_name';
+-- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.target_name IS 'the target_name of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.target_name';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.call_coordinate IS 'the call_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.call_coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.landing_coordinate IS 'the landing_coordinate of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.landing_coordinate';
 -- COMMENT ON COLUMN graphitron_argmapping_landing_key_column_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_argmapping_landing_key_column.bound';
@@ -11281,18 +11290,19 @@ CREATE TABLE graphitron_argmapping_landing_key_column (
   directive_name     VARCHAR   NOT NULL,
   ordinal            INT       NOT NULL,
   owner              VARCHAR   NOT NULL,
-  parameter_name     VARCHAR   NOT NULL,
+  target_kind        VARCHAR   NOT NULL,
+  target_name        VARCHAR   NOT NULL,
   call_coordinate    VARCHAR   NOT NULL,
   landing_coordinate VARCHAR   NOT NULL,
   bound              VARCHAR   NOT NULL,
   position           INT       NOT NULL,
   touched_at         TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate,
+  PRIMARY KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
                bound),
   -- The landing it projects, so a projection cannot outlive the path that wrote it.
-  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate)
     REFERENCES graphitron_argmapping_landing
-      (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+      (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate)
     ON DELETE CASCADE,
   -- The key column of the node binding at the landing, so a binding that changes takes it.
   FOREIGN KEY (graph_name, landing_coordinate, bound, position)
@@ -11304,7 +11314,8 @@ COMMENT ON COLUMN graphitron_argmapping_landing_key_column.coordinate IS 'the el
 COMMENT ON COLUMN graphitron_argmapping_landing_key_column.directive_name IS 'the mapping''s directive';
 COMMENT ON COLUMN graphitron_argmapping_landing_key_column.ordinal IS 'its application''s ordinal';
 COMMENT ON COLUMN graphitron_argmapping_landing_key_column.owner IS 'what the mapping is written under in its application';
-COMMENT ON COLUMN graphitron_argmapping_landing_key_column.parameter_name IS 'the parameter the pair binds';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.target_kind IS 'what the pair''s left side is, as on graphitron_ast_argmapping_pair_entry; with its name, the pair''s part of the key';
+COMMENT ON COLUMN graphitron_argmapping_landing_key_column.target_name IS 'the pair''s left side';
 COMMENT ON COLUMN graphitron_argmapping_landing_key_column.call_coordinate IS 'the occurrence of the call the path is resolved under';
 COMMENT ON COLUMN graphitron_argmapping_landing_key_column.landing_coordinate IS 'the node id occurrence the path lands on, as the landing names it';
 COMMENT ON COLUMN graphitron_argmapping_landing_key_column.bound IS 'the node binding at the landing it reads, completing the key';
@@ -11323,13 +11334,13 @@ SELECT DISTINCT pr.graph_name, pr.source_name, pr.source_line, pr.source_column,
   JOIN graphitron_argmapping_pair pr
     ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
    AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
-   AND pr.parameter_name = l.parameter_name
+   AND pr.target_name = l.target_name AND pr.target_kind = l.target_kind
   JOIN graphitron_occurrence_node_id n ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
  WHERE l.receives = 'COLUMN'
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing_key_column kc
                     WHERE kc.graph_name = l.graph_name AND kc.coordinate = l.coordinate
                       AND kc.directive_name = l.directive_name AND kc.ordinal = l.ordinal
-                      AND kc.owner = l.owner AND kc.parameter_name = l.parameter_name
+                      AND kc.owner = l.owner AND kc.target_name = l.target_name AND kc.target_kind = l.target_kind
                       AND kc.call_coordinate = l.call_coordinate);
 COMMENT ON VIEW graphitron_entry_defect_key_column_rule IS 'One row the unresolved projection detail rule computes, in the shape graphitron_entry_defect_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the entry-defects stage writes this view''s rows for one graph into graphitron_entry_defect_key_column under the defects it marked, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_entry_defect_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_key_column.graph_name';
@@ -11654,7 +11665,7 @@ SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.pa
   JOIN graphitron_argmapping_pair pr
     ON pr.graph_name = c.graph_name AND pr.coordinate = c.element_coordinate
    AND pr.directive_name = 'service' AND pr.owner = 'service'
-   AND pr.parameter_name = c.parameter_name
+   AND pr.target_name = c.parameter_name AND pr.target_kind = 'NAME'
  WHERE pr.bound_to = '$session' OR pr.bound_to LIKE '$session.%'
 UNION ALL
 -- An argument path a pair names, where it lands under this occurrence of the call.
@@ -11665,7 +11676,7 @@ SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.pa
   JOIN graphitron_argmapping_landing l
     ON l.graph_name = c.graph_name AND l.coordinate = c.element_coordinate
    AND l.directive_name = 'service' AND l.owner = 'service'
-   AND l.parameter_name = c.parameter_name AND l.call_coordinate = c.coordinate
+   AND l.target_name = c.parameter_name AND l.target_kind = 'NAME' AND l.call_coordinate = c.coordinate
 UNION ALL
 -- A context key, from a $context pair or a contextArguments element.
 SELECT c.graph_name, c.coordinate, c.call, c.method_descriptor, c.position, c.parameter_name, 'CONTEXT_KEY',
@@ -11709,7 +11720,7 @@ WITH open_parameter (graph_name, coordinate, call, method_descriptor, position, 
      AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                       WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                         AND pr.directive_name = 'service' AND pr.owner = 'service'
-                        AND pr.parameter_name = p.parameter_name)
+                        AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME')
      AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
                       WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
                         AND k.directive_name = 'service' AND k.owner = 'service'
@@ -11820,7 +11831,7 @@ SELECT s.graph_name, s.coordinate, s.call, s.method_descriptor, p.position, p.pa
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'service' AND pr.owner = 'service'
-                      AND pr.parameter_name = p.parameter_name)
+                      AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME')
    AND NOT EXISTS (SELECT 1 FROM graphitron_call_context_key k
                     WHERE k.graph_name = s.graph_name AND k.coordinate = o.element_coordinate
                       AND k.directive_name = 'service' AND k.owner = 'service'
@@ -12160,13 +12171,13 @@ COMMENT ON COLUMN graphitron_occurrence_binding_parameter.touched_at IS 'the rea
 -- inferred has none.
 CREATE VIEW graphitron_occurrence_call_parameter_pair_rule
   (graph_name, coordinate, call, position, pair_coordinate, directive_name, ordinal, owner,
-   parameter_name) AS
+   target_kind, target_name) AS
 SELECT c.graph_name, c.coordinate, c.call, c.position, l.coordinate, l.directive_name, l.ordinal,
-       l.owner, l.parameter_name
+       l.owner, l.target_kind, l.target_name
   FROM graphitron_occurrence_call_parameter c
   JOIN graphitron_argmapping_landing l
     ON l.graph_name = c.graph_name AND l.call_coordinate = c.coordinate
-   AND l.landing_coordinate = c.landing_coordinate AND l.parameter_name = c.parameter_name
+   AND l.landing_coordinate = c.landing_coordinate AND l.target_name = c.parameter_name AND l.target_kind = 'NAME'
    AND ((c.call_kind = 'SERVICE' AND l.directive_name = 'service' AND l.owner = 'service')
         OR (c.call_kind = 'CONDITION' AND l.directive_name = 'condition' AND l.owner = 'condition'))
  WHERE c.fill = 'ARGUMENT';
@@ -12179,7 +12190,7 @@ COMMENT ON VIEW graphitron_occurrence_call_parameter_pair_rule IS 'One row the f
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.directive_name';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.ordinal';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.owner IS 'the owner of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.owner';
--- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.parameter_name';
+-- COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair_rule.target_name IS 'the target_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_pair.target_name';
 
 CREATE TABLE graphitron_occurrence_call_parameter_pair (
   graph_name      VARCHAR   NOT NULL,
@@ -12190,7 +12201,8 @@ CREATE TABLE graphitron_occurrence_call_parameter_pair (
   directive_name  VARCHAR   NOT NULL,
   ordinal         INT       NOT NULL,
   owner           VARCHAR   NOT NULL,
-  parameter_name  VARCHAR   NOT NULL,
+  target_kind     VARCHAR   NOT NULL,
+  target_name     VARCHAR   NOT NULL,
   touched_at      TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, call, position),
   -- The fill it is the provenance of.
@@ -12198,9 +12210,9 @@ CREATE TABLE graphitron_occurrence_call_parameter_pair (
     REFERENCES graphitron_occurrence_call_parameter (graph_name, coordinate, call, position)
     ON DELETE CASCADE,
   -- The pair's landing under the call, so the two cannot drift.
-  FOREIGN KEY (graph_name, pair_coordinate, directive_name, ordinal, owner, parameter_name, coordinate)
+  FOREIGN KEY (graph_name, pair_coordinate, directive_name, ordinal, owner, target_kind, target_name, coordinate)
     REFERENCES graphitron_argmapping_landing
-      (graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate)
+      (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate)
     ON DELETE CASCADE
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter_pair IS 'The written argMapping pair a fill came from: one row per fill a pair wrote. For example the filmId parameter of Query.filmsByOptionalLanguage''s condition takes the pair filmId: pick.languageRef.language_id, and a parameter its name or its type filled has no row.';
@@ -12212,7 +12224,8 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.pair_coordinate IS '
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.directive_name IS 'the mapping''s directive, the one that wrote the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.ordinal IS 'its application''s ordinal';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.owner IS 'what the mapping is written under in its application';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.parameter_name IS 'the parameter the pair binds';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.target_kind IS 'what the pair''s left side is, as on graphitron_ast_argmapping_pair_entry; with its name, the pair''s part of the key';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.target_name IS 'the pair''s left side, the parameter it binds';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_call_parameter_defect
@@ -12263,7 +12276,7 @@ SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'service' AND pr.owner = 'service'
-                      AND pr.parameter_name = p.parameter_name)
+                      AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME')
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_candidate c
                     WHERE c.graph_name = s.graph_name AND c.coordinate = s.coordinate
                       AND c.call = s.call AND c.method_descriptor = s.method_descriptor
@@ -12285,7 +12298,7 @@ SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_pair pr
                     WHERE pr.graph_name = s.graph_name AND pr.coordinate = o.element_coordinate
                       AND pr.directive_name = 'condition' AND pr.owner = 'condition'
-                      AND pr.parameter_name = p.parameter_name);
+                      AND pr.target_name = p.parameter_name AND pr.target_kind = 'NAME');
 COMMENT ON VIEW graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that no fill or two fills reach: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument query and no pair naming it is PARAMETER_UNFILLED, whether a @service or a @condition names it.';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.coordinate IS 'the occurrence making the call';
@@ -12594,7 +12607,7 @@ SELECT sp.graph_name, sp.call_coordinate, sp.call, sp.position, sp.coordinate, k
   JOIN graphitron_argmapping_landing_key_column kc
     ON kc.graph_name = pp.graph_name AND kc.coordinate = pp.pair_coordinate
    AND kc.directive_name = pp.directive_name AND kc.ordinal = pp.ordinal AND kc.owner = pp.owner
-   AND kc.parameter_name = pp.parameter_name AND kc.call_coordinate = pp.coordinate
+   AND kc.target_name = pp.target_name AND kc.target_kind = pp.target_kind AND kc.call_coordinate = pp.coordinate
    AND kc.landing_coordinate = sp.coordinate;
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_projection_rule IS 'The key column a written argMapping pair projects out of a node id into the parameter it fills: one row per parameter and node table, in the shape graphitron_occurrence_node_id_slot_projection stores. For example Query.languagesByPrimitive(ref:)''s pair languageId: ref.language_id hands its condition''s languageId parameter key position 0 of Language''s key, at public.language; a parameter with no row takes the whole key.';
 
@@ -13930,14 +13943,14 @@ CREATE VIEW graphitron_outbox_key_rule
   (graph_name, coordinate, ordinal, key_name, origin, position, fill, reads, source_path,
    landing_coordinate, column_name, node_type_name, key_position) AS
 WITH written (graph_name, coordinate, ordinal, key_name, origin, position, bound_to) AS (
-  SELECT m.graph_name, m.coordinate, m.ordinal, p.param_name, 'MESSAGE', p.position, p.bound_to
+  SELECT m.graph_name, m.coordinate, m.ordinal, p.target_name, 'MESSAGE', p.position, p.bound_to
     FROM graphitron_outbox_message m
     JOIN graphitron_argmapping_site s
       ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
      AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
     JOIN graphitron_ast_argmapping_pair_entry p
       ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-     AND p.source_line = s.source_line AND p.source_column = s.source_column
+     AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
   UNION ALL
   SELECT m.graph_name, m.coordinate, m.ordinal, c.key_name, 'COMMON', c.position, c.bound_to
     FROM graphitron_outbox_message m
@@ -13996,7 +14009,7 @@ node_table (graph_name, table_source_name, table_schema, table_name, node_type_n
 -- the node type whose id it is and the column.
 decoded (graph_name, coordinate, ordinal, key_name, landing_coordinate, node_type_name, column_name,
          key_position) AS (
-  SELECT DISTINCT kc.graph_name, kc.coordinate, kc.ordinal, kc.parameter_name, kc.landing_coordinate,
+  SELECT DISTINCT kc.graph_name, kc.coordinate, kc.ordinal, kc.target_name, kc.landing_coordinate,
          n.node_type_name, n.column_name, kc.position
     FROM graphitron_argmapping_landing_key_column kc
     JOIN graphitron_occurrence_node_id n
@@ -14006,17 +14019,17 @@ decoded (graph_name, coordinate, ordinal, key_name, landing_coordinate, node_typ
 ),
 -- Where each key's path lands under the call, whole: every name consumed.
 landed (graph_name, coordinate, ordinal, key_name, call_coordinate, landing_coordinate) AS (
-  SELECT l.graph_name, l.coordinate, l.ordinal, l.parameter_name, MIN(l.call_coordinate),
+  SELECT l.graph_name, l.coordinate, l.ordinal, l.target_name, MIN(l.call_coordinate),
          MIN(l.landing_coordinate)
     FROM graphitron_argmapping_landing l
    WHERE l.directive_name = 'outbox' AND l.trailing_name IS NULL
-   GROUP BY l.graph_name, l.coordinate, l.ordinal, l.parameter_name
+   GROUP BY l.graph_name, l.coordinate, l.ordinal, l.target_name
 ),
 -- Each step a $result path over a service's value takes, with what it reads there: the value at an
 -- accessor path's end, the record a member hands back and the field lifts onto its table, or neither.
 step_read (graph_name, coordinate, ordinal, key_name, consumed, segments, step_coordinate, is_list,
            value_read, record_read) AS (
-  SELECT st.graph_name, st.coordinate, st.ordinal, st.parameter_name, st.consumed, st.segments,
+  SELECT st.graph_name, st.coordinate, st.ordinal, st.target_name, st.consumed, st.segments,
          st.step_coordinate, sf.is_list,
          CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_binding_value v
                             WHERE v.graph_name = st.graph_name AND v.coordinate = st.step_coordinate)
@@ -14318,7 +14331,7 @@ UNION ALL
 -- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
 -- first offending key as written; the author fixes it and the next one is reported.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT', d.key_name, 'outbox'
-  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.param_name AS key_name,
+  FROM (SELECT m.graph_name, m.source_name, m.source_line, m.source_column, p.target_name AS key_name,
                ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.source_name, m.source_line,
                                                m.source_column ORDER BY p.position) AS rn
           FROM graphitron_outbox_message m
@@ -14327,13 +14340,13 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_
            AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
           JOIN graphitron_ast_argmapping_pair_entry p
             ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-           AND p.source_line = s.source_line AND p.source_column = s.source_column
+           AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
          WHERE EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
                         WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
                           AND p2.source_line = p.source_line AND p2.source_column = p.source_column
-                          AND p2.param_name = p.param_name AND p2.position <> p.position)
+                          AND p2.target_name = p.target_name AND p2.target_kind = p.target_kind AND p2.position <> p.position)
             OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
-                        WHERE c.graph_name = m.graph_name AND c.key_name = p.param_name)) d
+                        WHERE c.graph_name = m.graph_name AND c.key_name = p.target_name)) d
  WHERE d.rn = 1
 UNION ALL
 -- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
@@ -15167,7 +15180,7 @@ session_binding_type (graph_name, source_name, source_line, source_column, posit
 outbox_unkeyed (graph_name, source_name, source_line, source_column, position, coordinate, ordinal,
                 key_name, bound_to, write_kind, is_service) AS (
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, m.coordinate,
-         m.ordinal, p.param_name, p.bound_to, w.kind,
+         m.ordinal, p.target_name, p.bound_to, w.kind,
          CASE WHEN w.kind IS NULL THEN 1 ELSE 0 END
     FROM graphitron_outbox_message m
     JOIN graphitron_argmapping_site s
@@ -15175,7 +15188,7 @@ outbox_unkeyed (graph_name, source_name, source_line, source_column, position, c
      AND s.coordinate = m.coordinate AND s.ordinal = m.ordinal
     JOIN graphitron_ast_argmapping_pair_entry p
       ON p.graph_name = s.graph_name AND p.source_name = s.source_name
-     AND p.source_line = s.source_line AND p.source_column = s.source_column
+     AND p.source_line = s.source_line AND p.source_column = s.source_column AND p.target_kind = 'NAME'
     LEFT JOIN graphitron_occurrence_producer_write w
       ON w.graph_name = m.graph_name AND w.coordinate = m.occurrence_coordinate_ref
    WHERE (w.kind IS NOT NULL
@@ -15184,12 +15197,12 @@ outbox_unkeyed (graph_name, source_name, source_line, source_column, position, c
                         AND op.kind = 'SERVICE'))
      AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_key k
                       WHERE k.graph_name = m.graph_name AND k.coordinate = m.coordinate
-                        AND k.ordinal = m.ordinal AND k.key_name = p.param_name)
+                        AND k.ordinal = m.ordinal AND k.key_name = p.target_name)
 ),
 -- Each $result path of an @outbox that lands: whether a step of it is a list, and over a service's
 -- value, the type a path read whole ends on, the member's yield or else the class it is read off.
 result_landed (graph_name, coordinate, ordinal, key_name, through_list, type_name) AS (
-  SELECT st.graph_name, st.coordinate, st.ordinal, st.parameter_name,
+  SELECT st.graph_name, st.coordinate, st.ordinal, st.target_name,
          MAX(CASE WHEN sf.is_list THEN 1 ELSE 0 END),
          MAX(CASE WHEN st.consumed = st.segments
                   THEN COALESCE(cs.slot_type, so_src.class_name) END)
@@ -15207,9 +15220,9 @@ result_landed (graph_name, coordinate, ordinal, key_name, through_list, type_nam
      AND EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
                   WHERE l.graph_name = st.graph_name AND l.coordinate = st.coordinate
                     AND l.directive_name = st.directive_name AND l.ordinal = st.ordinal
-                    AND l.owner = st.owner AND l.parameter_name = st.parameter_name
+                    AND l.owner = st.owner AND l.target_name = st.target_name AND l.target_kind = st.target_kind
                     AND l.call_coordinate = st.call_coordinate)
-   GROUP BY st.graph_name, st.coordinate, st.ordinal, st.parameter_name
+   GROUP BY st.graph_name, st.coordinate, st.ordinal, st.target_name
 )
 SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
        'SESSION_BINDING_WITHOUT_IDENTITY', sp.bound_to
@@ -15297,16 +15310,16 @@ SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column, c.p
   LEFT JOIN graphitron_argmapping_step f
     ON f.graph_name = c.graph_name AND f.coordinate = c.coordinate
    AND f.directive_name = c.directive_name AND f.ordinal = c.ordinal AND f.owner = c.owner
-   AND f.parameter_name = c.parameter_name AND f.call_coordinate = c.call_coordinate
+   AND f.target_kind = c.target_kind AND f.target_name = c.target_name AND f.call_coordinate = c.call_coordinate
    AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_step d
                     WHERE d.graph_name = f.graph_name AND d.coordinate = f.coordinate
                       AND d.directive_name = f.directive_name AND d.ordinal = f.ordinal
-                      AND d.owner = f.owner AND d.parameter_name = f.parameter_name
+                      AND d.owner = f.owner AND d.target_kind = f.target_kind AND d.target_name = f.target_name
                       AND d.call_coordinate = f.call_coordinate AND d.consumed > f.consumed)
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
                     WHERE l.graph_name = c.graph_name AND l.coordinate = c.coordinate
                       AND l.directive_name = c.directive_name AND l.ordinal = c.ordinal
-                      AND l.owner = c.owner AND l.parameter_name = c.parameter_name
+                      AND l.owner = c.owner AND l.target_kind = c.target_kind AND l.target_name = c.target_name
                       AND l.call_coordinate = c.call_coordinate)
 UNION ALL
 -- $scope.<member> naming no member of the field's scope. The detail is the member written.
@@ -17572,7 +17585,7 @@ SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(
           JOIN graphitron_argmapping_pair pr
             ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
            AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
-           AND pr.parameter_name = l.parameter_name AND pr.source_name = k.source_name
+           AND pr.target_kind = l.target_kind AND pr.target_name = l.target_name AND pr.source_name = k.source_name
            AND pr.source_line = k.source_line AND pr.source_column = k.source_column
          GROUP BY k.graph_name, k.source_name, k.source_line, k.source_column, k.code, k.landing_coordinate) u
  GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column, u.code
@@ -18436,11 +18449,11 @@ nested (graph_name, slot_coordinate, java_type) AS (
 ),
 -- What the author wrote for a parameter: an argMapping pair, or a contextArguments key.
 paired (graph_name, coordinate, parameter_name, bound_to) AS (
-  SELECT c.graph_name, c.coordinate, pr.parameter_name, pr.bound_to
+  SELECT c.graph_name, c.coordinate, pr.target_name, pr.bound_to
     FROM (SELECT DISTINCT graph_name, coordinate, element_coordinate FROM cand) c
     JOIN graphitron_argmapping_pair pr
       ON pr.graph_name = c.graph_name AND pr.coordinate = c.element_coordinate
-   WHERE pr.directive_name = 'condition' AND pr.owner = 'condition'
+   WHERE pr.directive_name = 'condition' AND pr.owner = 'condition' AND pr.target_kind = 'NAME'
 ),
 keyed (graph_name, coordinate, parameter_name, context_key) AS (
   SELECT c.graph_name, c.coordinate, k.parameter_name, k.context_key
@@ -18605,7 +18618,7 @@ SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.p
   JOIN graphitron_argmapping_landing l
     ON l.graph_name = c.graph_name AND l.coordinate = c.element_coordinate
    AND l.directive_name = 'condition' AND l.owner = 'condition'
-   AND l.parameter_name = p.parameter_name AND l.call_coordinate = c.coordinate
+   AND l.target_name = p.parameter_name AND l.target_kind = 'NAME' AND l.call_coordinate = c.coordinate
 UNION ALL
 -- An element of the parameter's name, where nothing is written for it.
 SELECT p.graph_name, p.coordinate, p.call, p.call_kind, p.method_descriptor, p.position,
@@ -19028,7 +19041,7 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     -- reference the mapping is a field of rather than to the coordinate, so another directive's
     -- mapping on the same field redirects nothing here.
     LEFT JOIN (SELECT ms.graph_name, ms.coordinate, ms.directive_name, ms.ordinal, ms.owner,
-                      p.param_name, p.root_name
+                      p.target_kind, p.target_name, p.root_name
                  FROM graphitron_ast_argmapping_pair_entry p
                  JOIN graphitron_argmapping_site ms
                    ON ms.graph_name = p.graph_name AND ms.source_name = p.source_name
@@ -19036,7 +19049,7 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
                 WHERE ms.directive_name = 'service') am
       ON am.graph_name = s.graph_name AND am.coordinate = s.coordinate
      AND am.directive_name = s.directive_name AND am.ordinal = s.ordinal AND am.owner = s.owner
-     AND am.param_name = mp.parameter_name
+     AND am.target_name = mp.parameter_name AND am.target_kind = 'NAME'
     JOIN graphql_argument a
       ON a.graph_name = s.graph_name AND a.type_name = s.type_name
      AND a.field_name = s.field_name
@@ -19157,12 +19170,12 @@ COMMENT ON COLUMN intent_type_domain.graph_name IS 'the owning graph''s partitio
 COMMENT ON COLUMN intent_type_domain.type_name IS 'a member of the graph''s classification domain; lands only on captured types, which is what makes the type FK structural';
 
 CREATE VIEW intent_argmapping_bound_parameter_type
-  (graph_name, source_name, source_line, source_column, position, param_name, java_type,
+  (graph_name, source_name, source_line, source_column, position, target_name, java_type,
    candidates, parameter_type, element_class, delivery) AS
-WITH resolved (graph_name, source_name, source_line, source_column, position, param_name,
+WITH resolved (graph_name, source_name, source_line, source_column, position, target_name,
                java_type, parameter_type, element_class, delivery) AS (
   SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
-         p.param_name, ct.root_class, ct.display_name, te.element_class, te.delivery
+         p.target_name, ct.root_class, ct.display_name, te.element_class, te.delivery
     FROM graphitron_ast_argmapping_pair_entry p
     JOIN graphitron_argmapping_site s
       ON s.graph_name = p.graph_name AND s.source_name = p.source_name
@@ -19174,7 +19187,7 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
     JOIN code_method_parameter mp
       ON mp.source_name = cr.method_source_name AND mp.class_name = cr.method_class_name
      AND mp.method_name = cr.method_name AND mp.descriptor = cr.method_descriptor
-     AND mp.parameter_name = p.param_name
+     AND mp.parameter_name = p.target_name AND p.target_kind = 'NAME'
     JOIN code_type ct
       ON ct.source_name = mp.source_name AND ct.type_name = mp.parameter_type
     -- The peel, off the per-type dictionary: a type that delivers no class has no row there.
@@ -19182,7 +19195,7 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
       ON te.source_name = ct.source_name AND te.type_name = ct.type_name
    UNION ALL
   SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
-         p.param_name, rp.binding_type,
+         p.target_name, rp.binding_type,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
     FROM graphitron_ast_argmapping_pair_entry p
     JOIN graphitron_argmapping_site s
@@ -19196,7 +19209,7 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
      AND rm.source_line = ra.source_line AND rm.source_column = ra.source_column
     JOIN sql_routine_parameter rp
       ON rp.source_name = rm.routine_source_name AND rp.table_schema = rm.table_schema
-     AND rp.routine_name = rm.routine_name AND rp.jooq_name = p.param_name
+     AND rp.routine_name = rm.routine_name AND rp.jooq_name = p.target_name AND p.target_kind = 'NAME'
    WHERE s.directive_name = 'routine'
      AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_routine r2
                       WHERE r2.graph_name = rm.graph_name AND r2.source_name = rm.source_name
@@ -19205,7 +19218,7 @@ WITH resolved (graph_name, source_name, source_line, source_column, position, pa
                              OR r2.table_schema <> rm.table_schema
                              OR r2.routine_name <> rm.routine_name))
 )
-SELECT r.graph_name, r.source_name, r.source_line, r.source_column, r.position, r.param_name,
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column, r.position, r.target_name,
        r.java_type,
        CAST(COUNT(*) OVER (PARTITION BY r.graph_name, r.source_name, r.source_line,
                                         r.source_column, r.position) AS INT),
@@ -19217,7 +19230,7 @@ COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'Deprecated with the w
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.source_line IS 'source line of the mapping string, 1-based; part of its key';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.source_column IS 'source column of the mapping string, 1-based; part of its key';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.position IS 'the pair''s 0-based position within its own argMapping list, completing the grain';
--- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.param_name IS 'the left side of the pair as the author wrote it, which is also the parameter name the match was made on';
+-- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.target_name IS 'the left side of the pair as the author wrote it, which is also the parameter name the match was made on';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.java_type IS 'the parameter''s Java type, fully qualified: sql_routine_parameter.binding_type on the routine arm and code_type.root_class on the other seven. Qualified on both by construction, which is the whole reason the classpath arm reads the type rather than the parameter row beside it; the view''s own comment states that. The root of the declared type and so the raw head of a parameterised one, java.util.List rather than List<Film>: a comparison caring about what the type delivers instead reads code_type_element, which answers the other question and answers it for the same type key. NULL where the root names no class, which a primitive, a void, an array and a type variable are alike in; the reader that has to tell those apart reads the spelling beside it';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.candidates IS 'how many distinct answers this pair resolved, this row''s being one of them; 1 on an unambiguous parameter. An answer is the pair of intent_argmapping_bound_parameter_type.java_type and intent_argmapping_bound_parameter_type.parameter_type, both being inside the arm''s own DISTINCT, so two untypeable overloads at one position (an int and a long) are two rows reporting 2 rather than one row claiming an unambiguous answer. 1 therefore says the resolution is unambiguous and no longer says a type resolved: intent_argmapping_bound_parameter_type.java_type is what says which of the two a row carries, and a reader needing a type tests that column rather than this one. Above one means an overload set or a doubly-declared class whose parameters of this name differ, which is a resolution nothing here picks between: a reader that must have one answer requires 1, on graphitron_spelled_table.candidates'' terms';
 -- COMMENT ON COLUMN intent_argmapping_bound_parameter_type.parameter_type IS 'the source spelling of the parameter''s declared type with its packages dropped, from code_type.display_name; NULL on every routine-arm row, a database routine having no Java parameter row to read it from. The spelling a message shows a person, which is what the one reader does with it, naming the primitive an author declared where a boxed type was needed. It keeps its type arguments where the census spelling it replaced erased them, so two overloads taking a list of different elements are two answers at one position rather than one: that is a finer reading than before and the right one on this relation''s own terms, candidates existing to say that a position resolved more than one way rather than to collapse the ways. Not a second spelling of intent_argmapping_bound_parameter_type.java_type and never compared with one: the two spellings answer different questions and an equality across them would read as a genuine disagreement, which is the whole reason the classpath arm reaches code_type for the type at all. What this column is for is the one distinction that decomposition cannot make, a declared type that names no class being a primitive, an array or a type variable alike; a consumer refusing a primitive tests this against the eight primitive spellings, a closed vocabulary and the same spelling its message quotes. It rides here rather than being re-resolved downstream because the consumer already joins this relation on this grain, and re-spelling the classpath chain to reach one column would be a third spelling of one resolution';
@@ -19227,12 +19240,12 @@ COMMENT ON VIEW intent_argmapping_bound_parameter_type IS 'Deprecated with the w
 CREATE VIEW graphitron_argmapping_match
   (graph_name, source_name, source_line, source_column, position,
    directive_name, ordinal, coordinate, element_kind,
-   type_name, field_name, param_name, bound_to, tail_name, tail_name_upper,
+   type_name, field_name, target_name, bound_to, tail_name, tail_name_upper,
    bound_path, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
    node_id_declared, node_type_ref, leaf_named_type, leaf_is_list) AS
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position,
        s.directive_name, s.ordinal, s.coordinate, s.element_kind,
-       cf.type_name, cf.field_name, p.param_name, p.bound_to, p.tail_name, p.tail_name_upper,
+       cf.type_name, cf.field_name, p.target_name, p.bound_to, p.tail_name, p.tail_name_upper,
        COALESCE(ce.path, ch.path),
        COALESCE(ce.element_kind, ch.element_kind),
        COALESCE(ce.container_type_name, ch.container_type_name, cf.type_name),
@@ -19298,7 +19311,7 @@ COMMENT ON VIEW graphitron_argmapping_match IS 'Where a written argMapping right
 -- COMMENT ON COLUMN graphitron_argmapping_match.element_kind IS 'which kind of element the coordinate names, FIELD_DEFINITION, FIELD_ARGUMENT or INPUT_FIELD, carried from graphitron_argmapping_site';
 -- COMMENT ON COLUMN graphitron_argmapping_match.type_name IS 'the spelling site''s owning type, decomposed from the entry''s coordinate rather than kept beside it';
 -- COMMENT ON COLUMN graphitron_argmapping_match.field_name IS 'the spelling site''s field name within that type';
--- COMMENT ON COLUMN graphitron_argmapping_match.param_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
+-- COMMENT ON COLUMN graphitron_argmapping_match.target_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
 -- COMMENT ON COLUMN graphitron_argmapping_match.bound_to IS 'the right side as written, carried from graphitron_ast_argmapping_pair_entry.bound_to; what bound_path is compared against, and what a message quotes so an author reads back their own spelling';
 -- COMMENT ON COLUMN graphitron_argmapping_match.tail_name IS 'the last name of the written path, carried from graphitron_ast_argmapping_pair_entry.tail_name; the name left over where the path names one thing beyond a candidate';
 -- COMMENT ON COLUMN graphitron_argmapping_match.tail_name_upper IS 'tail_name upper-cased, carried from graphitron_ast_argmapping_pair_entry for the case-insensitive key-column match downstream';
@@ -19339,13 +19352,13 @@ COMMENT ON VIEW graphitron_argument_reachable_input IS 'Which input types the em
 CREATE VIEW intent_argmapping_key_column_candidate
   (graph_name, source_name, source_line, source_column, position,
    directive_name, ordinal, coordinate, element_kind,
-   type_name, field_name, param_name, written_path,
+   type_name, field_name, target_name, written_path,
    bound_kind, bound_type_name, bound_field_name, bound_argument_name,
    node_type_name, column_name, key_position, tier, column_java_type,
    leaf_named_type, leaf_is_list, trailing_name) AS
 SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
        l.directive_name, l.ordinal, l.coordinate, l.element_kind,
-       l.type_name, l.field_name, l.param_name, l.bound_to,
+       l.type_name, l.field_name, l.target_name, l.bound_to,
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, k.column_name, k.position, k.column_origin, c.binding_type,
        l.leaf_named_type, l.leaf_is_list, l.tail_name
@@ -19361,7 +19374,7 @@ SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
  UNION ALL
 SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
        l.directive_name, l.ordinal, l.coordinate, l.element_kind,
-       l.type_name, l.field_name, l.param_name, l.bound_to,
+       l.type_name, l.field_name, l.target_name, l.bound_to,
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, k.column_name, k.position, k.column_origin, s.sole_column_java_type,
        l.leaf_named_type, l.leaf_is_list, CAST(NULL AS VARCHAR)
@@ -19384,7 +19397,7 @@ COMMENT ON VIEW intent_argmapping_key_column_candidate IS 'Deprecated with the w
 -- COMMENT ON COLUMN intent_argmapping_key_column_candidate.element_kind IS 'which kind of element the coordinate names, FIELD_DEFINITION, FIELD_ARGUMENT or INPUT_FIELD, carried from graphitron_argmapping_site';
 -- COMMENT ON COLUMN intent_argmapping_key_column_candidate.type_name IS 'the spelling site''s owning type';
 -- COMMENT ON COLUMN intent_argmapping_key_column_candidate.field_name IS 'the spelling site''s field name within that type';
--- COMMENT ON COLUMN intent_argmapping_key_column_candidate.param_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
+-- COMMENT ON COLUMN intent_argmapping_key_column_candidate.target_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
 -- COMMENT ON COLUMN intent_argmapping_key_column_candidate.written_path IS 'the path as written, carried so a message quotes the author''s own spelling';
 -- COMMENT ON COLUMN intent_argmapping_key_column_candidate.bound_kind IS 'ARGUMENT where the decoded node id is a field argument, INPUT_FIELD where it is an input field reached below one; carried from the binding leaf';
 -- COMMENT ON COLUMN intent_argmapping_key_column_candidate.bound_type_name IS 'the leaf''s owning type, carried from the binding leaf';
@@ -19402,13 +19415,13 @@ COMMENT ON VIEW intent_argmapping_key_column_candidate IS 'Deprecated with the w
 CREATE VIEW intent_resolved_node_key_projection
   (graph_name, source_name, source_line, source_column, position,
    directive_name, ordinal, coordinate, element_kind,
-   type_name, field_name, param_name, written_path,
+   type_name, field_name, target_name, written_path,
    bound_kind, bound_type_name, bound_field_name, bound_argument_name,
    node_type_name, column_name, key_position, tier, column_java_type, param_java_type,
    parameter_type, leaf_is_list, trailing_name) AS
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column, n.position,
        n.directive_name, n.ordinal, n.coordinate, n.element_kind,
-       n.type_name, n.field_name, n.param_name, n.written_path,
+       n.type_name, n.field_name, n.target_name, n.written_path,
        n.bound_kind, n.bound_type_name, n.bound_field_name, n.bound_argument_name,
        n.node_type_name, n.column_name, n.key_position, n.tier,
        n.column_java_type, p.java_type, p.parameter_type, n.leaf_is_list, n.trailing_name
@@ -19431,7 +19444,7 @@ COMMENT ON VIEW intent_resolved_node_key_projection IS 'Deprecated with the whol
 -- COMMENT ON COLUMN intent_resolved_node_key_projection.element_kind IS 'which kind of element the coordinate names, FIELD_DEFINITION, FIELD_ARGUMENT or INPUT_FIELD, carried from graphitron_argmapping_site';
 -- COMMENT ON COLUMN intent_resolved_node_key_projection.type_name IS 'the spelling site''s owning type';
 -- COMMENT ON COLUMN intent_resolved_node_key_projection.field_name IS 'the spelling site''s field name within that type';
--- COMMENT ON COLUMN intent_resolved_node_key_projection.param_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
+-- COMMENT ON COLUMN intent_resolved_node_key_projection.target_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
 -- COMMENT ON COLUMN intent_resolved_node_key_projection.written_path IS 'the path as written, carried so a message quotes the author''s own spelling rather than the resolution''s';
 -- COMMENT ON COLUMN intent_resolved_node_key_projection.bound_kind IS 'ARGUMENT where the decoded node id is a field argument, INPUT_FIELD where it is an input field reached below one; carried from the binding resolution, and what tells an emitter which slot the wire value is read out of';
 -- COMMENT ON COLUMN intent_resolved_node_key_projection.bound_type_name IS 'the leaf''s owning type, carried from the binding resolution';
@@ -19450,13 +19463,13 @@ COMMENT ON VIEW intent_resolved_node_key_projection IS 'Deprecated with the whol
 CREATE VIEW intent_argmapping_projection_defect
   (graph_name, source_name, source_line, source_column, position,
    directive_name, ordinal, coordinate, element_kind,
-   type_name, field_name, param_name, written_path,
+   type_name, field_name, target_name, written_path,
    verdict, bound_kind, bound_type_name, bound_field_name, bound_argument_name,
    node_type_ref, trailing_name, leaf_named_type,
    column_java_type, param_java_type) AS
 SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
        l.directive_name, l.ordinal, l.coordinate, l.element_kind,
-       l.type_name, l.field_name, l.param_name, l.bound_to, 'BARE_NODE_ID',
+       l.type_name, l.field_name, l.target_name, l.bound_to, 'BARE_NODE_ID',
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, CAST(NULL AS VARCHAR), l.leaf_named_type,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
@@ -19469,7 +19482,7 @@ SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
  UNION ALL
 SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
        l.directive_name, l.ordinal, l.coordinate, l.element_kind,
-       l.type_name, l.field_name, l.param_name, l.bound_to, 'MISSING_TYPE_NAME',
+       l.type_name, l.field_name, l.target_name, l.bound_to, 'MISSING_TYPE_NAME',
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, l.tail_name, l.leaf_named_type,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
@@ -19479,7 +19492,7 @@ SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
  UNION ALL
 SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
        l.directive_name, l.ordinal, l.coordinate, l.element_kind,
-       l.type_name, l.field_name, l.param_name, l.bound_to, 'UNKNOWN_KEY_COLUMN',
+       l.type_name, l.field_name, l.target_name, l.bound_to, 'UNKNOWN_KEY_COLUMN',
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, l.tail_name, l.leaf_named_type,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
@@ -19493,7 +19506,7 @@ SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
  UNION ALL
 SELECT ca.graph_name, ca.source_name, ca.source_line, ca.source_column, ca.position,
        ca.directive_name, ca.ordinal, ca.coordinate, ca.element_kind,
-       ca.type_name, ca.field_name, ca.param_name, ca.written_path, 'KEY_COLUMN_TYPE_MISMATCH',
+       ca.type_name, ca.field_name, ca.target_name, ca.written_path, 'KEY_COLUMN_TYPE_MISMATCH',
        ca.bound_kind, ca.bound_type_name, ca.bound_field_name, ca.bound_argument_name,
        ca.node_type_name, ca.trailing_name, ca.leaf_named_type,
        ca.column_java_type, pt.java_type
@@ -19506,7 +19519,7 @@ SELECT ca.graph_name, ca.source_name, ca.source_line, ca.source_column, ca.posit
  UNION ALL
 SELECT l.graph_name, l.source_name, l.source_line, l.source_column, l.position,
        l.directive_name, l.ordinal, l.coordinate, l.element_kind,
-       l.type_name, l.field_name, l.param_name, l.bound_to, 'UNDECLARED_NODE_ID',
+       l.type_name, l.field_name, l.target_name, l.bound_to, 'UNDECLARED_NODE_ID',
        l.bound_kind, l.bound_type_name, l.bound_field_name, l.bound_argument_name,
        l.node_type_ref, l.tail_name, l.leaf_named_type,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
@@ -19525,7 +19538,7 @@ COMMENT ON VIEW intent_argmapping_projection_defect IS 'Deprecated with the whol
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.element_kind IS 'which kind of element the coordinate names, FIELD_DEFINITION, FIELD_ARGUMENT or INPUT_FIELD, carried from graphitron_argmapping_site';
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.type_name IS 'the spelling site''s owning type; with the field beside it, the coordinate a validation error attaches to';
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.field_name IS 'the spelling site''s field name within that type. An input field where the condition is written on one, an output field everywhere else';
--- COMMENT ON COLUMN intent_argmapping_projection_defect.param_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
+-- COMMENT ON COLUMN intent_argmapping_projection_defect.target_name IS 'the left side of the pair as written, carried from graphitron_ast_argmapping_pair_entry so a message quotes the whole entry the author wrote';
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.written_path IS 'the right side as written; quoted in the message beside the parameter, so an author reads back their own spelling rather than a normalised one';
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.verdict IS 'which defect, in a closed vocabulary of five: UNDECLARED_NODE_ID where a path opens something that declares no @nodeId and so has nothing to open, BARE_NODE_ID where a declared decode names no key column and none can be inferred, MISSING_TYPE_NAME where a projection is asked for against a @nodeId carrying no typeName:, UNKNOWN_KEY_COLUMN where the trailing name matches no resolved key column of the named type, KEY_COLUMN_TYPE_MISMATCH where it matches one whose Java type the consuming parameter cannot take. Disjoint by construction over two columns and two existence tests: node_id_declared splits the first off, trailing_name being NULL or not splits the rest, the NULL bucket keeps only what resolves no candidate, and within the other a typeName: test and then a candidate-row test separate the last three. The mismatch arm is the one that spans both buckets, driving off candidates rather than matches, and its trailing_name says which. This column is a discriminator a consumer switches on and never a precedence to re-test';
 -- COMMENT ON COLUMN intent_argmapping_projection_defect.bound_kind IS 'ARGUMENT where the defective leaf is a field argument, INPUT_FIELD where it is an input field; carried from the leaf, and what tells a reader which @nodeId relation the directive sits on';
@@ -22069,16 +22082,16 @@ INSERT INTO meta_grain VALUES
    'graph_name, coordinate, directive_name, ordinal, owner, parameter_name', 'sdl'),
   ('graph-argmapping-pair',
    'one pair of one written argMapping, named by its mapping and the parameter it binds, in one graph',
-   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name', 'sdl'),
+   'graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name', 'sdl'),
   ('graph-argmapping-pair-call',
    'one pair of one written argMapping under one occurrence of its call, in one graph',
-   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate', 'sdl'),
+   'graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate', 'sdl'),
   ('graph-argmapping-pair-call-node',
    'one node binding one written argMapping pair projects a key column out of under one occurrence of its call, in one graph',
-   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate, bound', 'sdl'),
+   'graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate, bound', 'sdl'),
   ('graph-argmapping-pair-call-step',
    'one name of one argMapping pair''s path, consumed under one occurrence of its call, in one graph',
-   'graph_name, coordinate, directive_name, ordinal, owner, parameter_name, call_coordinate, consumed', 'sdl'),
+   'graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate, consumed', 'sdl'),
   ('graph-argmapping-site',
    'one written argMapping, named by its application and what it is written under there, in one graph',
    'graph_name, coordinate, directive_name, ordinal, owner', 'sdl'),

@@ -351,7 +351,7 @@ public final class OutboxQuery {
             .leftJoin(cs).on(cs.SOURCE_NAME.eq(v.SLOT_SOURCE_NAME), cs.CLASS_NAME.eq(v.SLOT_CLASS_NAME),
                 cs.METHOD_NAME.eq(v.SLOT_METHOD_NAME), cs.DESCRIPTOR.eq(v.SLOT_DESCRIPTOR))
             .where(st.GRAPH_NAME.eq(store.graphName()), st.DIRECTIVE_NAME.eq("outbox"),
-                st.COORDINATE.eq(coordinate), st.ORDINAL.eq(ordinal), st.PARAMETER_NAME.eq(key),
+                st.COORDINATE.eq(coordinate), st.ORDINAL.eq(ordinal), st.TARGET_KIND.eq("NAME"), st.TARGET_NAME.eq(key),
                 nodeId ? st.CONSUMED.lt(st.SEGMENTS) : DSL.noCondition())
             .orderBy(st.CONSUMED)
             .fetch(r -> r.value2() == null ? null : new Accessor(r.value2(), r.value3()))

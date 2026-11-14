@@ -218,7 +218,7 @@ public final class BuildQuery {
         var pp = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_PAIR;
         var ap = GRAPHITRON_ARGMAPPING_PAIR;
         var o = GRAPHITRON_OCCURRENCE;
-        return store.dsl().selectDistinct(pj.CALL_COORDINATE, o.ELEMENT_COORDINATE, ap.PARAMETER_NAME, ap.BOUND_TO,
+        return store.dsl().selectDistinct(pj.CALL_COORDINATE, o.ELEMENT_COORDINATE, ap.TARGET_NAME, ap.BOUND_TO,
                 ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
             .from(pj)
             .join(c).on(c.GRAPH_NAME.eq(pj.GRAPH_NAME), c.COORDINATE.eq(pj.CALL_COORDINATE), c.CALL.eq(pj.CALL),
@@ -227,10 +227,10 @@ public final class BuildQuery {
                 pp.POSITION.eq(c.POSITION))
             .join(ap).on(ap.GRAPH_NAME.eq(pp.GRAPH_NAME), ap.COORDINATE.eq(pp.PAIR_COORDINATE),
                 ap.DIRECTIVE_NAME.eq(pp.DIRECTIVE_NAME), ap.ORDINAL.eq(pp.ORDINAL), ap.OWNER.eq(pp.OWNER),
-                ap.PARAMETER_NAME.eq(pp.PARAMETER_NAME))
+                ap.TARGET_KIND.eq(pp.TARGET_KIND), ap.TARGET_NAME.eq(pp.TARGET_NAME))
             .join(o).on(o.GRAPH_NAME.eq(pj.GRAPH_NAME), o.COORDINATE.eq(pj.CALL_COORDINATE))
             .where(pj.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(pj.CALL_COORDINATE, ap.PARAMETER_NAME)
+            .orderBy(pj.CALL_COORDINATE, ap.TARGET_NAME)
             .fetch(r -> new Projected(r.value1(), r.value2(), r.value3() + ": " + r.value4(), r.value5(),
                 r.value6(), r.value7()));
     }
