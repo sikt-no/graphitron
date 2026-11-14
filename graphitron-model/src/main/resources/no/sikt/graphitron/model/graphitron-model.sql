@@ -6437,18 +6437,6 @@ COMMENT ON COLUMN code_constructor_parameter.erased_class IS 'the class the para
 COMMENT ON COLUMN code_constructor_parameter.role IS 'what the position is for as far as its type alone decides, by the rule and in the vocabulary of code_method_parameter.role: DSL_CONTEXT or CONFIGURATION where the position is declared as that jOOQ type exactly, the two table roles, else OTHER';
 COMMENT ON COLUMN code_constructor_parameter.touched_at IS 'when the reading that produced this row ran; swept with the constructor it hangs on';
 
-CREATE VIEW code_constructor_buildable (source_name, class_name, descriptor, width) AS
--- The constructors code_constructor.is_buildable admits, which the code gatherer decides as it
--- writes their parameters.
-SELECT c.source_name, c.class_name, c.descriptor, c.width
-  FROM code_constructor c
- WHERE c.is_buildable;
-COMMENT ON VIEW code_constructor_buildable IS 'One public constructor the run can call to make an object an instance service method runs on: every parameter the jOOQ context, at most once. For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not.';
--- COMMENT ON COLUMN code_constructor_buildable.source_name IS 'the entry the class was read from, as on code_constructor';
--- COMMENT ON COLUMN code_constructor_buildable.class_name IS 'the class the constructor makes';
--- COMMENT ON COLUMN code_constructor_buildable.descriptor IS 'the constructor''s descriptor, completing its key in code_constructor';
--- COMMENT ON COLUMN code_constructor_buildable.width IS 'how many parameters it takes, which is what makes one buildable constructor wider than another';
-
 CREATE TABLE code_write_slot (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -8337,13 +8325,27 @@ COMMENT ON COLUMN graphitron_call_context_key.origin_position IS 'the pair''s po
 COMMENT ON COLUMN graphitron_call_context_key.written_once IS 'true where no other row writes a key for the same parameter of the same call: the row that fills the parameter. False on each writing of a parameter written twice, which fills nothing';
 COMMENT ON COLUMN graphitron_call_context_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- The defects judging what a resolved reference resolved to, written by the code-references stage
--- beside graphitron_code_reference: a method the directive cannot call as it calls the methods it
--- names. An @externalField's must be one code_external_field_method admits: static, taking one jOOQ
--- table and returning an org.jooq.Field. Reported at the reference, the first clause it fails in the
--- detail. And what an ordering's decode says wrong, the first stage holding it, beside the order
--- field methods it resolves: an application writing other than one surface, and a fields element of
--- no legal shape.
+-- The defects judging the context keys the call-context-keys stage writes into
+-- graphitron_call_context_key.
+CREATE VIEW graphitron_call_context_key_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A contextArguments element naming a parameter its call is also given a context key for
+-- elsewhere, at the element. A pair doing so is a pair defect, which graphitron_entry_defect_rule
+-- rolls up. The detail is the parameter.
+SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY_DUPLICATE',
+       w.parameter_name, 'call-context-keys'
+  FROM graphitron_call_context_key w
+ WHERE w.origin = 'CONTEXT_ARGUMENTS' AND NOT w.written_once;
+COMMENT ON VIEW graphitron_call_context_key_entry_defect_rule IS 'One row the call-context-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element, naming userId.';
+
+-- The defects judging the written code references, written by the code-references stage beside
+-- graphitron_code_reference: a reference resolving to no one method, a @condition whose overloads
+-- disagree in shape, an instance @service method whose class nothing can build, and, first, a method
+-- the directive cannot call as it calls the methods it names. An @externalField's must be one
+-- code_external_field_method admits: static, taking one jOOQ table and returning an org.jooq.Field.
+-- Reported at the reference, the first clause it fails in the detail. And what an ordering's decode
+-- says wrong, the first stage holding it, beside the order field methods it resolves: an application
+-- writing other than one surface, and a fields element of no legal shape.
 CREATE VIEW graphitron_code_reference_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT r.graph_name, r.source_name, r.source_line, r.source_column, 'CODE_REFERENCE_METHOD_UNFIT',
@@ -8380,7 +8382,141 @@ UNION ALL
 SELECT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'ORDER_FIELD_SHAPE',
        CAST(NULL AS VARCHAR), 'code-references'
   FROM graphitron_ast_order_field_entry fe
- WHERE fe.shape = 'MALFORMED';
+ WHERE fe.shape = 'MALFORMED'
+UNION ALL
+-- A code reference that resolves to no one method, at the position it was written: exactly the
+-- references naming a method that graphitron_code_reference resolves to none, told apart by what the
+-- graph's classpath holds under the names. No class, a class without the method, or more than one
+-- method; exclusive by construction, a single match being the resolution's method. One arm for every site,
+-- the reference being one fact wherever it is written.
+--
+-- More than one method is a defect only where the generator calls exactly one: @service,
+-- @externalField and a FieldSort.method under @order or @defaultOrder. A @condition, and a
+-- condition a path element names, take an overload set, whose rules are their own codes. Under
+-- @order and @defaultOrder a reference is a FieldSort.method or a FieldSort.path[].condition, told
+-- apart by the object field it is written at. Counted on the class the graph resolves the name to,
+-- as the resolution reads it, so a name two entries declare is the first entry's class and a
+-- method only a later entry's copy declares is not found.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
+       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
+            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
+            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
+       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END, 'code-references'
+  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
+               c.type_name, c.field_name, c.class_name, c.named_method AS method_name, c.directive_name,
+               (SELECT COUNT(*) FROM code_graph_class k
+                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
+               (SELECT COUNT(*) FROM code_graph_class k
+                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
+                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
+                   AND m.method_name = c.named_method) AS methods,
+               (SELECT COUNT(DISTINCT m.descriptor) FROM code_graph_class k
+                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
+                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
+                   AND m.method_name = c.named_method) AS descriptors,
+               (SELECT v.object_field_name FROM graphql_ast_value_entry v
+                 WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
+                   AND v.source_line = c.source_line
+                   AND v.source_column = c.source_column) AS written_at
+          FROM graphitron_code_reference c
+         WHERE c.named_method IS NOT NULL AND c.method_descriptor IS NULL
+           -- A graph whose classpath was never read has told the store nothing about any class, so
+           -- no name it writes is wrong yet: a store before its first build, or a capture with no
+           -- classpath at all. Only a reading that read something can say a class is absent.
+           AND EXISTS (SELECT 1 FROM store_graph_source g
+                         JOIN code_class k ON k.source_name = g.source_name
+                        WHERE g.graph_name = c.graph_name)) s
+ WHERE s.classes = 0 OR s.methods = 0
+    OR (s.descriptors > 1
+        AND (s.directive_name IN ('service', 'externalField')
+             OR (s.directive_name IN ('order', 'defaultOrder') AND s.written_at = 'method')))
+UNION ALL
+-- A @condition whose overloads disagree in shape, at the reference. The declarations of one name are
+-- one condition where they differ only in their jOOQ table parameters, the generated call being the
+-- same for each and javac picking among them; otherwise the name stands for more than one call. The
+-- axes are compared in order and the first that disagrees is the detail: the parameter count, the
+-- static modifier, the return type, the throws clause, then the first position that is a table in
+-- some declarations and not others, or is no table and differs in name or declared type. A position
+-- is a table where its role is one of the two table roles, which is the assignability the
+-- classpath reading decided. Every declaration is the public methods of the name on the class the
+-- graph resolves the name to, one per descriptor.
+SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
+       'CONDITION_OVERLOAD_SHAPE_DISAGREES',
+       CASE WHEN y.arities > 1 THEN 'parameter count'
+            WHEN y.statics > 1 THEN 'static modifier'
+            WHEN y.results > 1 THEN 'return type'
+            WHEN y.clauses > 1 THEN 'throws clause'
+            ELSE 'parameter ' || y.first_position END, 'code-references'
+  FROM (SELECT x.graph_name, x.source_name, x.source_line, x.source_column,
+               x.arities, x.statics, x.results,
+               -- Two throws clauses disagree where an exception one overload declares is missing
+               -- from another's; compared as sets, row by row.
+               CASE WHEN EXISTS (
+                      SELECT 1 FROM code_graph_class k
+                        JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
+                        JOIN code_method_exception e
+                          ON e.source_name = k.source_name AND e.class_name = m.class_name
+                         AND e.method_name = m.method_name
+                       WHERE k.graph_name = x.graph_name AND k.class_name = x.class_name
+                         AND m.method_name = x.method_name
+                         AND NOT EXISTS (SELECT 1 FROM code_method_exception f
+                                          WHERE f.source_name = m.source_name
+                                            AND f.class_name = m.class_name
+                                            AND f.method_name = m.method_name
+                                            AND f.descriptor = m.descriptor
+                                            AND f.exception_class = e.exception_class))
+                    THEN 2 ELSE 1 END AS clauses,
+               (SELECT p.position FROM code_graph_class k
+                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
+                  JOIN code_method_parameter p
+                    ON p.source_name = m.source_name AND p.class_name = m.class_name
+                   AND p.method_name = m.method_name AND p.descriptor = m.descriptor
+                 WHERE k.graph_name = x.graph_name AND k.class_name = x.class_name
+                   AND m.method_name = x.method_name
+                 GROUP BY p.position
+                HAVING COUNT(DISTINCT CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) > 1
+                    OR (MAX(CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) = 0
+                        AND COUNT(DISTINCT COALESCE(p.parameter_name, '') || '|' || p.parameter_type) > 1)
+                 ORDER BY p.position
+                 FETCH FIRST 1 ROW ONLY) AS first_position
+          FROM (SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+                       d.class_name, d.method_name,
+                       COUNT(DISTINCT d.arity) AS arities,
+                       COUNT(DISTINCT d.is_static) AS statics,
+                       COUNT(DISTINCT d.result_class) AS results
+                  FROM (SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column,
+                               c.class_name, c.named_method AS method_name, m.descriptor, m.is_static,
+                               COALESCE(m.result_erased_class, m.result_type) AS result_class,
+                               (SELECT COUNT(*) FROM code_method_parameter p
+                                 WHERE p.source_name = m.source_name AND p.class_name = m.class_name
+                                   AND p.method_name = m.method_name
+                                   AND p.descriptor = m.descriptor) AS arity
+                          FROM graphitron_code_reference c
+                          JOIN code_graph_class k
+                            ON k.graph_name = c.graph_name AND k.class_name = c.class_name
+                          JOIN code_method m
+                            ON m.source_name = k.source_name AND m.class_name = k.class_name
+                           AND m.method_name = c.named_method
+                         WHERE c.directive_name = 'condition') d
+                 GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column,
+                          d.class_name, d.method_name
+                HAVING COUNT(DISTINCT d.descriptor) > 1) x) y
+ WHERE y.arities > 1 OR y.statics > 1 OR y.results > 1 OR y.clauses > 1
+    OR y.first_position IS NOT NULL
+UNION ALL
+-- An instance @service method whose class has no constructor the run can call, at the reference:
+-- an abstract class or an interface has none, and one taking anything but the jOOQ context is not
+-- buildable. The detail is the class.
+SELECT cr.graph_name, cr.source_name, cr.source_line, cr.source_column,
+       'SERVICE_HOLDER_UNBUILDABLE', cr.method_class_name, 'code-references'
+  FROM graphitron_code_reference cr
+  JOIN code_method m
+    ON m.source_name = cr.method_source_name AND m.class_name = cr.method_class_name
+   AND m.method_name = cr.method_name AND m.descriptor = cr.method_descriptor
+ WHERE cr.directive_name = 'service' AND NOT m.is_static
+   AND NOT EXISTS (SELECT 1 FROM code_constructor b
+                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name
+                      AND b.is_buildable);
 COMMENT ON VIEW graphitron_code_reference_entry_defect_rule IS 'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.';
 
 CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
@@ -13891,7 +14027,7 @@ WITH container_slot (graph_name, coordinate, slot, kind, element_coordinate, con
 member (graph_name, container_name, member_type_name, is_table, is_node) AS (
   SELECT pm.graph_name, pm.container_name, pm.member_type_name, tt.type_name IS NOT NULL,
          n.type_name IS NOT NULL
-    FROM graphql_poly_member pm
+    FROM graphitron_type_member pm
     LEFT JOIN graphitron_tabletype tt
       ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
     LEFT JOIN graphitron_node n
@@ -16965,6 +17101,76 @@ service_slot (graph_name, element_coordinate, parameter_name, slot_shape) AS (
       ON s.kind IN ('MEMBER', 'RECORD') AND rp.graph_name = o.graph_name AND rp.fill = 'ARGUMENT'
      AND rp.landing_coordinate = o.argument_coordinate AND rp.call_kind = 'SERVICE'
    WHERE cp.call_kind = 'SERVICE' OR rp.call_kind IS NOT NULL
+),
+-- A container id's places under a @service: a parameter of its call, or a member or record its input
+-- object is built into where the root argument goes to one.
+container_slot (graph_name, coordinate, slot, kind, element_coordinate, container_name, landing_type,
+                slot_shape) AS (
+  SELECT DISTINCT s.graph_name, s.coordinate, s.slot, s.kind, o.element_coordinate, cl.named, s.landing_class,
+         s.slot_shape
+    FROM graphitron_occurrence_node_id_slot s
+    JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
+    JOIN graphitron_binding_claim_container k
+      ON k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate
+    JOIN graphitron_binding_claim cl
+      ON cl.graph_name = k.graph_name AND cl.coordinate = k.coordinate AND cl.kind = k.kind
+     AND cl.claimer = k.claimer
+    LEFT JOIN graphitron_occurrence_node_id_slot_parameter sp
+      ON sp.graph_name = s.graph_name AND sp.coordinate = s.coordinate AND sp.slot = s.slot
+    LEFT JOIN graphitron_occurrence_call_parameter cp
+      ON cp.graph_name = sp.graph_name AND cp.coordinate = sp.call_coordinate AND cp.call = sp.call
+     AND cp.position = sp.position
+   WHERE (cp.call_kind = 'SERVICE'
+          OR s.kind IN ('MEMBER', 'RECORD')
+             AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter rp
+                          WHERE rp.graph_name = o.graph_name AND rp.fill = 'ARGUMENT'
+                            AND rp.landing_coordinate = o.argument_coordinate
+                            AND rp.call_kind = 'SERVICE'))
+     AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype ct
+                      WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
+),
+member (graph_name, container_name, member_type_name, is_table, is_node) AS (
+  SELECT pm.graph_name, pm.container_name, pm.member_type_name, tt.type_name IS NOT NULL,
+         n.type_name IS NOT NULL
+    FROM graphitron_type_member pm
+    LEFT JOIN graphitron_tabletype tt
+      ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
+    LEFT JOIN graphitron_node n
+      ON n.graph_name = pm.graph_name AND n.type_name = pm.member_type_name
+),
+-- The members a polymorphic @nodeId's per-member defects name, as
+-- graphitron_occurrence_build_entry_defect_member_rule states them for the member rows written
+-- under each defect.
+node_id_member (graph_name, source_name, source_line, source_column, code, member_type_name) AS (
+  SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
+         'NODE_ID_MEMBER_NOT_NODE_TYPE', m.member_type_name
+    FROM container_slot s
+    JOIN member m
+      ON m.graph_name = s.graph_name AND m.container_name = s.container_name
+     AND m.is_table AND NOT m.is_node
+    JOIN graphitron_directive_application da
+      ON da.graph_name = s.graph_name AND da.coordinate = s.element_coordinate
+     AND da.directive_name = 'nodeId' AND da.ordinal = 0
+   WHERE da.source_line IS NOT NULL
+  UNION ALL
+  -- A member the id binds whose record the slot cannot take: no decode shape lands it there.
+  SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
+         'NODE_ID_SLOT_NOT_SUPERTYPE_OF_MEMBER', n.node_type_name
+    FROM container_slot s
+    JOIN graphitron_occurrence_node_id n
+      ON n.graph_name = s.graph_name AND n.coordinate = s.coordinate AND n.position = 0
+    JOIN graphitron_directive_application da
+      ON da.graph_name = s.graph_name AND da.coordinate = s.element_coordinate
+     AND da.directive_name = 'nodeId' AND da.ordinal = 0
+   WHERE da.source_line IS NOT NULL AND s.kind IN ('PARAMETER', 'MEMBER') AND s.landing_type IS NOT NULL
+     AND s.slot_shape <> 'MISMATCH'
+     -- A container with a table-bound member that is no node is refused on that member first.
+     AND NOT EXISTS (SELECT 1 FROM member x
+                      WHERE x.graph_name = s.graph_name AND x.container_name = s.container_name
+                        AND x.is_table AND NOT x.is_node)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_shape d
+                      WHERE d.graph_name = s.graph_name AND d.coordinate = s.coordinate AND d.slot = s.slot
+                        AND d.bound = n.bound)
 )
 -- The class an input object is built into, where nothing says how to make one: no public
 -- constructor the code census can call, or a class no entry of the graph declares. At the argument or
@@ -17090,7 +17296,7 @@ SELECT pj.graph_name, site.source_name, site.source_line, site.source_column,
     ON c.source_name = n.table_source_name AND c.table_schema = n.table_schema
    AND c.table_name = n.table_name AND c.column_name = n.column_name
   JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.coordinate
-  JOIN graphitron_code_reference_site site
+  JOIN graphitron_code_reference site
     ON site.graph_name = o.graph_name AND site.coordinate = o.element_coordinate
    AND ((cp.call_kind = 'SERVICE' AND site.directive_name = 'service' AND site.owner = 'service')
         OR (cp.call_kind = 'CONDITION' AND site.directive_name = 'condition' AND site.owner = 'condition'))
@@ -17199,7 +17405,7 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
                CASE WHEN EXISTS (SELECT 1 FROM graphitron_tabletype ct
                                   WHERE ct.graph_name = cl.graph_name AND ct.type_name = cl.named)
                     THEN 'NODE_ID_SINGLE_TABLE_CONTAINER'
-                    WHEN NOT EXISTS (SELECT 1 FROM graphql_poly_member pm
+                    WHEN NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
                                        JOIN graphitron_tabletype mt
                                          ON mt.graph_name = pm.graph_name
                                         AND mt.type_name = pm.member_type_name
@@ -17226,7 +17432,7 @@ UNION ALL
 -- are graphitron_entry_defect_member's.
 SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
        CAST(NULL AS VARCHAR), 'occurrence-builds'
-  FROM graphitron_occurrence_build_entry_defect_member_rule m
+  FROM node_id_member m
 UNION ALL
 -- A named node id whose written or inferred path ends on a table other than the node's: the key the
 -- id packs or unpacks is not on the rows the path reaches, an argument's or input field's own path
@@ -17297,9 +17503,10 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
        AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
                         WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
        AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
-                         JOIN graphitron_producer_claim pc
+                         JOIN graphitron_claim pc
                            ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
                           AND pc.kind = 'SERVICE'
+                         JOIN graphitron_claim_kind pk ON pk.kind = pc.kind AND pk.family = 'PRODUCER'
                         WHERE o.kind <> 'FIELD' AND fo.graph_name = o.graph_name
                           AND fo.coordinate = o.field_coordinate))
    AND COALESCE((SELECT tr.constraints FROM sql_table_reference tr
@@ -18819,167 +19026,12 @@ COMMENT ON VIEW graphitron_path_claim_entry_defect_rule IS 'One row the path-cla
 
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- A code reference that resolves to no one method, at the position it was written: exactly the
--- references naming a method that graphitron_code_reference resolves to none, told apart by what the
--- graph's classpath holds under the names. No class, a class without the method, or more than one
--- method; exclusive by construction, a single match being the resolution's method. One arm for every site,
--- the reference being one fact wherever it is written.
---
--- More than one method is a defect only where the generator calls exactly one: @service,
--- @externalField and a FieldSort.method under @order or @defaultOrder. A @condition, and a
--- condition a path element names, take an overload set, whose rules are their own codes. Under
--- @order and @defaultOrder a reference is a FieldSort.method or a FieldSort.path[].condition, told
--- apart by the object field it is written at. Counted on the class the graph resolves the name to,
--- as the resolution reads it, so a name two entries declare is the first entry's class and a
--- method only a later entry's copy declares is not found.
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
-       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
-            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
-            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
-       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END, 'entry-defects'
-  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
-               c.type_name, c.field_name, c.class_name, c.method_name, c.directive_name,
-               (SELECT COUNT(*) FROM code_graph_class k
-                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
-               (SELECT COUNT(*) FROM code_graph_class k
-                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
-                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
-                   AND m.method_name = c.method_name) AS methods,
-               (SELECT COUNT(DISTINCT m.descriptor) FROM code_graph_class k
-                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
-                 WHERE k.graph_name = c.graph_name AND k.class_name = c.class_name
-                   AND m.method_name = c.method_name) AS descriptors,
-               (SELECT v.object_field_name FROM graphql_ast_value_entry v
-                 WHERE v.graph_name = c.graph_name AND v.source_name = c.source_name
-                   AND v.source_line = c.source_line
-                   AND v.source_column = c.source_column) AS written_at
-          FROM graphitron_code_reference_site c
-         WHERE c.method_name IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
-                            WHERE r.graph_name = c.graph_name AND r.coordinate = c.coordinate
-                              AND r.directive_name = c.directive_name
-                              AND r.ordinal = c.ordinal AND r.owner = c.owner
-                              AND r.method_descriptor IS NOT NULL)
-           -- A graph whose classpath was never read has told the store nothing about any class, so
-           -- no name it writes is wrong yet: a store before its first build, or a capture with no
-           -- classpath at all. Only a reading that read something can say a class is absent.
-           AND EXISTS (SELECT 1 FROM store_graph_source g
-                         JOIN code_class k ON k.source_name = g.source_name
-                        WHERE g.graph_name = c.graph_name)) s
- WHERE s.classes = 0 OR s.methods = 0
-    OR (s.descriptors > 1
-        AND (s.directive_name IN ('service', 'externalField')
-             OR (s.directive_name IN ('order', 'defaultOrder') AND s.written_at = 'method')))
-UNION ALL
--- A @condition whose overloads disagree in shape, at the reference. The declarations of one name are
--- one condition where they differ only in their jOOQ table parameters, the generated call being the
--- same for each and javac picking among them; otherwise the name stands for more than one call. The
--- axes are compared in order and the first that disagrees is the detail: the parameter count, the
--- static modifier, the return type, the throws clause, then the first position that is a table in
--- some declarations and not others, or is no table and differs in name or declared type. A position
--- is a table where its role is one of the two table roles, which is the assignability the
--- classpath reading decided. Every declaration is the public methods of the name on the class the
--- graph resolves the name to, one per descriptor.
-SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
-       'CONDITION_OVERLOAD_SHAPE_DISAGREES',
-       CASE WHEN y.arities > 1 THEN 'parameter count'
-            WHEN y.statics > 1 THEN 'static modifier'
-            WHEN y.results > 1 THEN 'return type'
-            WHEN y.clauses > 1 THEN 'throws clause'
-            ELSE 'parameter ' || y.first_position END, 'entry-defects'
-  FROM (SELECT x.graph_name, x.source_name, x.source_line, x.source_column,
-               x.arities, x.statics, x.results,
-               -- Two throws clauses disagree where an exception one overload declares is missing
-               -- from another's; compared as sets, row by row.
-               CASE WHEN EXISTS (
-                      SELECT 1 FROM code_graph_class k
-                        JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
-                        JOIN code_method_exception e
-                          ON e.source_name = k.source_name AND e.class_name = m.class_name
-                         AND e.method_name = m.method_name
-                       WHERE k.graph_name = x.graph_name AND k.class_name = x.class_name
-                         AND m.method_name = x.method_name
-                         AND NOT EXISTS (SELECT 1 FROM code_method_exception f
-                                          WHERE f.source_name = m.source_name
-                                            AND f.class_name = m.class_name
-                                            AND f.method_name = m.method_name
-                                            AND f.descriptor = m.descriptor
-                                            AND f.exception_class = e.exception_class))
-                    THEN 2 ELSE 1 END AS clauses,
-               (SELECT p.position FROM code_graph_class k
-                  JOIN code_method m ON m.source_name = k.source_name AND m.class_name = k.class_name
-                  JOIN code_method_parameter p
-                    ON p.source_name = m.source_name AND p.class_name = m.class_name
-                   AND p.method_name = m.method_name AND p.descriptor = m.descriptor
-                 WHERE k.graph_name = x.graph_name AND k.class_name = x.class_name
-                   AND m.method_name = x.method_name
-                 GROUP BY p.position
-                HAVING COUNT(DISTINCT CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) > 1
-                    OR (MAX(CASE WHEN p.role IN ('TABLE_CONCRETE', 'TABLE_ANY') THEN 1 ELSE 0 END) = 0
-                        AND COUNT(DISTINCT COALESCE(p.parameter_name, '') || '|' || p.parameter_type) > 1)
-                 ORDER BY p.position
-                 FETCH FIRST 1 ROW ONLY) AS first_position
-          FROM (SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-                       d.class_name, d.method_name,
-                       COUNT(DISTINCT d.arity) AS arities,
-                       COUNT(DISTINCT d.is_static) AS statics,
-                       COUNT(DISTINCT d.result_class) AS results
-                  FROM (SELECT DISTINCT c.graph_name, c.source_name, c.source_line, c.source_column,
-                               c.class_name, c.method_name, m.descriptor, m.is_static,
-                               COALESCE(m.result_erased_class, m.result_type) AS result_class,
-                               (SELECT COUNT(*) FROM code_method_parameter p
-                                 WHERE p.source_name = m.source_name AND p.class_name = m.class_name
-                                   AND p.method_name = m.method_name
-                                   AND p.descriptor = m.descriptor) AS arity
-                          FROM graphitron_code_reference_site c
-                          JOIN code_graph_class k
-                            ON k.graph_name = c.graph_name AND k.class_name = c.class_name
-                          JOIN code_method m
-                            ON m.source_name = k.source_name AND m.class_name = k.class_name
-                           AND m.method_name = c.method_name
-                         WHERE c.directive_name = 'condition') d
-                 GROUP BY d.graph_name, d.source_name, d.source_line, d.source_column,
-                          d.class_name, d.method_name
-                HAVING COUNT(DISTINCT d.descriptor) > 1) x) y
- WHERE y.arities > 1 OR y.statics > 1 OR y.results > 1 OR y.clauses > 1
-    OR y.first_position IS NOT NULL
-UNION ALL
 -- A $session binding the session configuration cannot answer, at the written position of the
 -- string, once per code however many of its entries offend. Which entries, and what is wrong with
 -- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
 SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column, r.code,
        CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_argmapping_pair_defect_rule r
-UNION ALL
--- A contextArguments element naming a parameter its call is also given a context key for
--- elsewhere, at the element. A pair doing so is a pair defect, rolled up above. The detail is the
--- parameter.
-SELECT w.graph_name, w.source_name, w.origin_line, w.origin_column, 'CONTEXT_KEY_DUPLICATE',
-       w.parameter_name, 'entry-defects'
-  FROM graphitron_call_context_key_written w
- WHERE w.origin = 'CONTEXT_ARGUMENTS'
-   AND EXISTS (SELECT 1 FROM graphitron_call_context_key_written o
-                WHERE o.graph_name = w.graph_name AND o.coordinate = w.coordinate
-                  AND o.directive_name = w.directive_name AND o.ordinal = w.ordinal
-                  AND o.owner = w.owner AND o.parameter_name = w.parameter_name
-                  AND (o.origin_line <> w.origin_line OR o.origin_column <> w.origin_column
-                       OR o.origin_position <> w.origin_position))
-UNION ALL
--- An instance @service method whose class has no constructor the run can call, at the reference:
--- an abstract class or an interface has none, and one taking anything but the jOOQ context is not
--- buildable. The detail is the class.
-SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
-       'SERVICE_HOLDER_UNBUILDABLE', cr.method_class_name, 'entry-defects'
-  FROM graphitron_code_reference_site site
-  JOIN graphitron_code_reference cr
-    ON cr.graph_name = site.graph_name AND cr.coordinate = site.coordinate
-   AND cr.directive_name = site.directive_name AND cr.ordinal = site.ordinal AND cr.owner = site.owner
-  JOIN code_method m
-    ON m.source_name = cr.method_source_name AND m.class_name = cr.method_class_name
-   AND m.method_name = cr.method_name AND m.descriptor = cr.method_descriptor
- WHERE site.directive_name = 'service' AND NOT m.is_static
-   AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable b
-                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name);
+  FROM graphitron_argmapping_pair_defect_rule r;
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
@@ -23919,6 +23971,7 @@ INSERT INTO meta_stage_write VALUES
   ('argmapping-sites', 'graphitron_argmapping_site'),
   ('argmapping-pairs', 'graphitron_argmapping_pair'),
   ('call-context-keys', 'graphitron_call_context_key'),
+  ('call-context-keys', 'graphitron_entry_defect'),
   ('table-types', 'graphitron_tabletype'),
   ('table-types', 'graphitron_entry_defect'),
   ('table-types', 'graphitron_entry_defect_member'),
@@ -25852,7 +25905,11 @@ INSERT INTO meta_relation VALUES
   ('graphitron_code_reference_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.',
-   'The defects judging a resolution against the code arm its directive names from, written by the code-references stage that writes graphitron_code_reference, since they judge no occurrence fact, so graphitron_entry_defect_rule does not carry them.'),
+   'The defects judging a written reference against the code arm its directive names from, resolved or not, written by the code-references stage that writes graphitron_code_reference, since they judge no occurrence fact, so graphitron_entry_defect_rule does not carry them.'),
+  ('graphitron_call_context_key_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the call-context-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example contextArguments: ["userId", "userId"] on one @service gives one CONTEXT_KEY_DUPLICATE row at each element, naming userId.',
+   'The stage''s own defects, decided from the context keys it has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
   ('graphitron_occurrence_condition', 'graph-occurrence-binding', 'graphitron',
    'A @condition applied to one table its occurrence binds: one row per occurrence carrying a @condition and table it binds whose call pinned a method.',
    'For example Query.occupantsTyped(firstName:) on customer and staff is two rows, each calling the occupantTypedNamePrefix overload taking that table.',
@@ -27552,10 +27609,6 @@ INSERT INTO meta_relation VALUES
    'One public constructor of a class declaring an instance @service method: one row per class and constructor, overloads told apart by descriptor.',
    'For example SampleInstanceService(DSLContext), the one public constructor of a class whose titleByFilmId an instance @service names.',
    'What a generated fetcher calls to get the object an instance @service method runs on, so the holder a field needs is chosen from what the class offers rather than by reflecting on it when the schema is classified. Read only for the classes the reading already found an instance service method on, kept apart from the methods as the census keeps them, since a constructor is named by nothing an author writes. Its width and whether the run can call it are stored on the row, decided where its parameters are written, because the holder rule and the defect reporting a class with no buildable constructor both build on them.'),
-  ('code_constructor_buildable', 'class-constructor', 'code',
-   'One public constructor the run can call to make an object an instance service method runs on: every parameter the jOOQ context, at most once.',
-   'For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not.',
-   'Which constructors the generated code can call, read off code_constructor.is_buildable, which the code gatherer decides where it writes the parameters. A view over that one table, kept while a reader still names it.'),
   ('code_constructor_parameter', 'constructor-parameter', 'code',
    'One position in a public constructor''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of SampleInstanceService(DSLContext), named ctx and playing the DSL_CONTEXT role.',

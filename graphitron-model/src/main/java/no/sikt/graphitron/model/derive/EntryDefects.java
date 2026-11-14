@@ -16,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE;
@@ -142,7 +143,10 @@ public final class EntryDefects {
     /** The minted-keys stage's rule, {@link MintedKeys}. */
     public static final Rule MINTED_KEYS = new Rule("minted-keys", GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE);
 
-    /** The code-references stage's rule, what a resolved reference resolved to. */
+    /**
+     * The code-references stage's rule: a reference resolving to no one method or to one its directive
+     * cannot call, a {@code @condition}'s overloads disagreeing, and a service holder nothing builds.
+     */
     public static final Rule CODE_REFERENCES =
         new Rule("code-references", GRAPHITRON_CODE_REFERENCE_ENTRY_DEFECT_RULE);
 
@@ -152,6 +156,10 @@ public final class EntryDefects {
     /** The argMapping pairs stage's rule. */
     public static final Rule ARGMAPPING_PAIRS =
         new Rule("argmapping-pairs", GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE);
+
+    /** The call-context-keys stage's rule: a parameter given a context key twice. */
+    public static final Rule CALL_CONTEXT_KEYS =
+        new Rule("call-context-keys", GRAPHITRON_CALL_CONTEXT_KEY_ENTRY_DEFECT_RULE);
 
     /**
      * The anchor stage's rule, {@link no.sikt.graphitron.model.capture.document.GraphitronAnchor}: what the
@@ -198,9 +206,10 @@ public final class EntryDefects {
 
     /** Every raising stage's rule, one per stage, in the order the stages run. */
     public static final List<Rule> RULES = List.of(ANCHOR, MACRO_EXPANSION, CODE_REFERENCES, ARGMAPPING_PAIRS,
-        TABLE_TYPES, NODES, VOUCHERS, MINTED_KEYS, DIRECTIVE_APPLICATIONS, FEDERATION_VOCABULARY,
-        NODE_LEGACY_KEY_SHAPES, FIELD_TARGETS, BINDING_CLAIMS, SPELLED_TABLES, PATH_CLAIMS, FETCHERS, PRODUCERS,
-        BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS, ROUTES, DEPTHS, ENTITY_KEYS, OUTBOX, GRAPHITRON);
+        CALL_CONTEXT_KEYS, TABLE_TYPES, NODES, VOUCHERS, MINTED_KEYS, DIRECTIVE_APPLICATIONS,
+        FEDERATION_VOCABULARY, NODE_LEGACY_KEY_SHAPES, FIELD_TARGETS, BINDING_CLAIMS, SPELLED_TABLES, PATH_CLAIMS,
+        FETCHERS, PRODUCERS, BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS, ROUTES, DEPTHS, ENTITY_KEYS, OUTBOX,
+        GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

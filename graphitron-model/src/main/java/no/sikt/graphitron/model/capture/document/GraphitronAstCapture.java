@@ -161,9 +161,11 @@ public final class GraphitronAstCapture {
             EntryDefects.derive(dsl, graph, readAt, EntryDefects.ARGMAPPING_PAIRS);
         }),
         // The context key filling each parameter of each call, which finds a pair's call through
-        // the sites just written.
-        new AnchorStage("call-context-keys", GraphitronCallContextKeys.class,
-            GraphitronCallContextKeys::write),
+        // the sites just written; then a parameter given a key twice.
+        new AnchorStage("call-context-keys", GraphitronCallContextKeys.class, (dsl, graph, readAt) -> {
+            GraphitronCallContextKeys.write(dsl, graph, readAt);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.CALL_CONTEXT_KEYS);
+        }),
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
         // written and corpora captured before this one, and the mint below reads the second. Each
         // then raises the defects its rows judge, the bindings' with the members they name.

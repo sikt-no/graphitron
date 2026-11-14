@@ -234,7 +234,6 @@ class RelationRegistrationGateTest {
         registrations.put("code_construction", Arm.UNSHADOWED);
         registrations.put("code_constructor", Arm.UNSHADOWED);
         registrations.put("code_constructor_parameter", Arm.UNSHADOWED);
-        registrations.put("code_constructor_buildable", Arm.DERIVED);
         registrations.put("code_write_slot", Arm.UNSHADOWED);
         registrations.put("code_method_parameter", Arm.UNSHADOWED);
         registrations.put("code_method_exception", Arm.UNSHADOWED);
@@ -507,6 +506,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_spelled_table_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_path_claim_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_call_context_key_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
         registrations.put("graphitron_producer_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_service", Arm.DERIVED);

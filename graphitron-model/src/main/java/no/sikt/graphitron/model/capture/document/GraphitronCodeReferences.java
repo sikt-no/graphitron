@@ -151,7 +151,8 @@ final class GraphitronCodeReferences {
             .and(t.TOUCHED_AT.ne(touchedAt))
             .execute();
 
-        // Last, the stage's own codes: a resolution its directive cannot call.
+        // Last, the stage's own codes: a reference resolving to no one method or to one its
+        // directive cannot call, overloads disagreeing in shape, and a service holder nothing builds.
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.CODE_REFERENCES);
     }
 }
