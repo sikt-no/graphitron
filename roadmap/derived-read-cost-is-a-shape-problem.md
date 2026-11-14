@@ -88,7 +88,8 @@ The walk's read path is gone
 │   │   ├── An inline list's ordering is resolved at its occurrence
 │   │   └── An inline list states how it is narrowed
 │   └── A single child's null contract is stated
-│       └── An `@externalField` binds an expression at its occurrence
+│       └── An `@externalField` binds an expression at its occurrence, claimed by F
+│           └── An `@externalField` under a written path binds at the path's landing
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
     │   └── A producer's fetcher parts are emitted from the store
@@ -739,9 +740,13 @@ static method needs no holder.
     alike, and a nesting field selected twice merges, the consistent-argument check failing where the
     arguments beneath differ. The unit and the readers keep today's names until the readers move,
     so this lands with them, backwards compatible until then (Alf, 2026-11-13).
-  * **An `@externalField` binds an expression at its occurrence** `open`. A subtype of
+  * **An `@externalField` binds an expression at its occurrence, claimed by F** `blocked`, on
+    "An `@externalField` under a written path binds at the path's landing". A subtype of
     `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
     parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
+    * **An `@externalField` under a written path binds at the path's landing** `open`. The walk
+      takes `@externalField` beside `@reference`, so the store binds the expression at the table
+      the path lands on rather than refusing it; it flips with `$project` (A, 2026-11-14).
   * **A field's or argument's `@condition` is a call at its occurrence** `blocked`, on
     "A `@condition` is a call per table its occurrence binds". The overload is pinned as `graphitron_join_path_step_method` pins a step's, rather than by
     name, with whether it reads context or the session; the multiset's filter and the `dsl` closure
