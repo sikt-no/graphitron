@@ -19117,7 +19117,7 @@ SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, source
     UNION ALL
     -- A root field, which has no source and so no need: a service's the table its result's records
     -- are rows of, which the lift reaches; any other's each participant's table, or its type's, the
-    -- type a connection carries for a field returning one.
+    -- type a connection carries for a field returning one, or a routine's function where neither is.
     SELECT o.graph_name, o.coordinate, r.table_source_name, r.table_schema, r.table_name
       FROM graphitron_occurrence o
       JOIN graphitron_occurrence_producer p ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
@@ -19138,6 +19138,20 @@ SELECT DISTINCT graph_name, coordinate, schema_name || '.' || table_name, source
         ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
       JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
      WHERE o.kind = 'FIELD' AND p.start = 'ROOT' AND p.kind <> 'SERVICE'
+       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
+                        WHERE pt.graph_name = o.graph_name AND pt.coordinate = o.coordinate)
+    UNION ALL
+    -- A root routine whose type is no table's and has no participants: the function its rows are
+    -- the result of.
+    SELECT o.graph_name, o.coordinate, rr.table_source_name, rr.table_schema, rr.table_name
+      FROM graphitron_occurrence o
+      JOIN graphitron_occurrence_producer p ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+      JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+      JOIN graphitron_routine_result rr
+        ON rr.graph_name = f.graph_name AND rr.type_name = f.type_name AND rr.field_name = f.field_name
+     WHERE o.kind = 'FIELD' AND p.start = 'ROOT' AND p.kind = 'ROUTINE'
+       AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                        WHERE tt.graph_name = rr.graph_name AND tt.type_name = rr.target_type_name)
        AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
                         WHERE pt.graph_name = o.graph_name AND pt.coordinate = o.coordinate)
     UNION ALL

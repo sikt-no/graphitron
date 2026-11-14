@@ -40,6 +40,13 @@ type Query {
     @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
              argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
     @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+  # A root @routine filtered by a @condition taking any table: applied to the function's result.
+  tilgangerAdmin(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+    @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+                           method: "tilgangAdminOnly"})
+    @defaultOrder(fields: [{name: "organisasjonskode"}])
 }
 
 extend schema @expectEquals(relation: "graphitron_path_element_routine", rows: """
@@ -81,4 +88,18 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
   Actor.longFilms.filmId, films_for_actor
   Actor.longFilms.title,  films_for_actor
   Actor.longFilms.film,   films_for_actor
+  """)
+
+# A root @routine's rows, its type no table's, are the function's result, which its occurrence binds
+# and a @condition on it is a call on.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_table",
+    where: "coordinate LIKE 'Query.tilganger%'", rows: """
+  coordinate,             bound
+  Query.tilganger,        public.tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  Query.tilgangerAdmin,   public.tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_condition", rows: """
+  coordinate,           bound,                                               call
+  Query.tilgangerAdmin, public.tilganger_for_feidebruker_med_fs_fiktivt_fnr, condition:public.tilganger_for_feidebruker_med_fs_fiktivt_fnr
   """)
