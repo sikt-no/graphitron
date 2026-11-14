@@ -1175,6 +1175,12 @@ pass and no stratum that clears and recomputes.
       `ConditionShapeDefectMethods` and `ArgMappingPairDefects` each write their rows in the stage
       that owns the codes they detail, so no defect writer runs after the stages but the gatherer's
       one sweep.
+    * **The store states every stage's rule views** `open`. `meta_stage_rule` names the rule views a
+      stage inserts a relation from, and holds only the binding rows today, half a fact. Every
+      stage's rule views go in, the defect rule views among them, and `EntryDefects.RULES` and
+      `StageAnswerAgreementTest.STAGES` are read from it rather than kept as Java lists, so a defect
+      rule view moving between stages moves one row, and the gates comparing a table with its rule
+      and holding a stage to its declared kinds cover a stage the day it lands.
     * **A routine write's refusals are codes a stage writes** `open`. A path the write's result
       leads on is the path family's to judge, `NO_ROUTE_TO_TARGET` at a landing or a payload data
       field no hop reaches and `REFERENCE_WITHOUT_TARGET_TABLE` at a path on a payload return, so
