@@ -31,7 +31,7 @@ import java.util.Optional;
  * <p>Emitted (not shipped as a graphitron artifact), following the {@code GraphitronContext}
  * precedent: the bodies depend only on the JDK, jOOQ, and (for the hook class) the consumer's own
  * named classes; no auth-framework type and no graphitron type ever appears. The
- * {@code TenantConnections} carrier additionally references graphql-java's
+ * {@code OwnedConnections} carrier additionally references graphql-java's
  * {@code DataFetchingEnvironment} (its routing statics resolve the carrier off the GraphQL
  * context), which every generated consumer already has on the classpath. The bodies must be valid
  * Java 17 (verified by the {@code graphitron-sakila-example} {@code <release>17</release>}
@@ -143,8 +143,8 @@ public final class ConnectionRuntimeClassGenerator {
 
     /** The name the request's {@code SessionState} travels under as a parameter and a field. */
     static final String SESSION_STATE_SLOT = "sessionState";
-    /** The per-operation tenant-keyed connection carrier. */
-    public static final String TENANT_CONNECTIONS_CLASS_NAME = "TenantConnections";
+    /** The per-operation carrier of the owned connections, one per connection key. */
+    public static final String OWNED_CONNECTIONS_CLASS_NAME = "OwnedConnections";
     /**
      * The carrier's per-element tenant stamp, {@code <T> DataFetcherResult<T> handDown(T row, K
      * tenantKey)}, shared by the fan-out union and node and entity dispatch.
@@ -319,7 +319,7 @@ public final class ConnectionRuntimeClassGenerator {
         var sessionMountException = ClassName.get(schemaPackage, SESSION_MOUNT_EXCEPTION_CLASS_NAME);
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
-        var tenantConnections = ClassName.get(schemaPackage, TENANT_CONNECTIONS_CLASS_NAME);
+        var ownedConnections = ClassName.get(schemaPackage, OWNED_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
@@ -343,13 +343,13 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
-            batchSizeLimit, identity, tenantKey, multiTenant, tenantConnections,
+            batchSizeLimit, identity, tenantKey, multiTenant, ownedConnections,
             vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null));
-        units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
+        units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException,
             keyType, connectionKey));
         if (multiTenant) {
-            units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
+            units.add(requestTenants(requestTenants, ownedConnections, tenantKey));
         }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
@@ -852,7 +852,7 @@ public final class ConnectionRuntimeClassGenerator {
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
                                     ClassName batchSizeLimit,
                                     SessionIdentityRows identity, TypeName tenantKey,
-                                    boolean multiTenant, ClassName tenantConnections, ClassName voucherKeys) {
+                                    boolean multiTenant, ClassName ownedConnections, ClassName voucherKeys) {
         var payload = payloadParams(identity, runtime);
         // In a build that vouches every public constructor takes the voucher keys last, so a runtime
         // without them is a compile error; keysArg appends them to a delegation.
@@ -939,7 +939,7 @@ public final class ConnectionRuntimeClassGenerator {
                     + " $T.requireNonNull(sourcesByTenant, $S).entrySet())",
                     ClassName.get("java.util", "Map", "Entry"), tenantKey, source, OBJECTS, "sourcesByTenant")
                 .addStatement("$T key = $T.canonicalTenantKey($T.requireNonNull(entry.getKey(), $S))",
-                    tenantKey, tenantConnections, OBJECTS, "tenant key")
+                    tenantKey, ownedConnections, OBJECTS, "tenant key")
                 .addStatement("Object earlier = spelledAs.putIfAbsent(key, entry.getKey())")
                 .beginControlFlow("if (earlier != null)")
                 .addStatement("throw new $T($S + earlier + $S + entry.getKey() + $S + key + $S)",
@@ -1077,7 +1077,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param sourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
                 + (multiTenant
                     ? "Each key is reduced to the tenant column's form ({@link "
-                        + tenantConnections.simpleName() + "#canonicalTenantKey}), so\n"
+                        + ownedConnections.simpleName() + "#canonicalTenantKey}), so\n"
                         + "{@link #tenantKeys()} and the mount report that form whichever spelling was supplied.\n"
                         + "@param fanOutExecutor the executor scatter workers run on; the supplier owns its\n"
                         + "concurrency bound (e.g. virtual threads); must not be {@code null}\n"
@@ -1304,7 +1304,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "{@link java.util.NoSuchElementException} before any connection is acquired (request-level\n"
                 + "error, no SQL). Per-key deduplication within one operation is the caller's ({@code $L}); this\n"
                 + "is the raw keyed acquisition primitive.\n"
-                + "@param tenantKey the divined tenant value selecting the source\n", TENANT_CONNECTIONS_CLASS_NAME)
+                + "@param tenantKey the divined tenant value selecting the source\n", OWNED_CONNECTIONS_CLASS_NAME)
             .build();
 
         var graphQL = ClassName.get("graphql", "GraphQL");
@@ -1538,7 +1538,7 @@ public final class ConnectionRuntimeClassGenerator {
      * fetcher may trigger the mount for a key, so the carrier holds the payload contextArguments
      * for the life of the request and hands them to {@code acquire} on each mint.
      */
-    private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
+    private static TypeSpec ownedConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionIdentityRows identity,
                                               ClassName requestTenants, CodeBlock tenantColumn,
@@ -1908,7 +1908,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .build())
             .build();
 
-        var carrier = TypeSpec.classBuilder(TENANT_CONNECTIONS_CLASS_NAME)
+        var carrier = TypeSpec.classBuilder(OWNED_CONNECTIONS_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc(multiTenant
                 ? "Per-operation carrier of the keyed pinned connections for one request. See\n"
@@ -3138,7 +3138,7 @@ public final class ConnectionRuntimeClassGenerator {
      * separately means, so the stored value needs no "inherit" marker. {@code tenantKey} is the boxed
      * tenant key type, so the class is not generic. Valid Java 17.
      */
-    private static TypeSpec requestTenants(ClassName self, ClassName tenantConnections, TypeName tenantKey) {
+    private static TypeSpec requestTenants(ClassName self, ClassName ownedConnections, TypeName tenantKey) {
         var setType = ParameterizedTypeName.get(SET, tenantKey);
         var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
         var collectionType = ParameterizedTypeName.get(COLLECTION, tenantKey);
@@ -3150,18 +3150,18 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("$T<$T> canonical = new $T<>()", LIST, tenantKey, ARRAY_LIST)
             .beginControlFlow("for ($T tenant : $T.requireNonNull(tenants, $S))", tenantKey, OBJECTS, "tenants")
             .addStatement("canonical.add($T.canonicalTenantKey($T.requireNonNull(tenant, $S)))",
-                tenantConnections, OBJECTS, "tenant")
+                ownedConnections, OBJECTS, "tenant")
             .endControlFlow()
             .addStatement("$T<$T> copy = $T.copyOf(canonical)", SET, tenantKey, SET)
             .addStatement("$T<$T> canonicalDefault = $T.requireNonNull(defaultTenant, $S)"
-                + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "defaultTenant", tenantConnections)
+                + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "defaultTenant", ownedConnections)
             .beginControlFlow("if (canonicalDefault.isPresent() && !copy.contains(canonicalDefault.get()))")
             .addStatement("throw new $T($S + defaultTenant.get() + $S)", IllegalArgumentException.class,
                 "Default tenant '", "' is not in the request tenant set.")
             .endControlFlow()
             .addStatement("$T<$T> canonicalEntityDefault = $T.requireNonNull(entityDefaultTenant, $S)"
                 + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "entityDefaultTenant",
-                tenantConnections)
+                ownedConnections)
             .beginControlFlow("if (canonicalEntityDefault.isPresent() && !copy.contains(canonicalEntityDefault.get()))")
             .addStatement("throw new $T($S + entityDefaultTenant.get() + $S)", IllegalArgumentException.class,
                 "Entity default tenant '", "' is not in the request tenant set.")
@@ -3170,7 +3170,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("this.defaultTenant = canonicalDefault")
             .addStatement("this.entityDefaultTenant = canonicalEntityDefault")
             .addJavadoc("Every tenant is reduced to the tenant column's form ({@link "
-                + tenantConnections.simpleName() + "#canonicalTenantKey})\n"
+                + ownedConnections.simpleName() + "#canonicalTenantKey})\n"
                 + "before the membership check, so two spellings the column stores as one value are one\n"
                 + "tenant, and {@link #tenants()}, {@link #defaultTenant()} and\n"
                 + "{@link #entityDefaultTenant()} report that form.\n"
@@ -3403,7 +3403,7 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static TenantConnections of(DataFetchingEnvironment env)}: resolves the per-operation
+     * {@code static OwnedConnections of(DataFetchingEnvironment env)}: resolves the per-operation
      * carrier the execution instrumentation stashed in the GraphQL context, on both topologies.
      * Emitted fetchers route every owned acquisition through this, so an operation that did not
      * run through graphitron-owned acquisition fails loudly before any SQL instead of silently
@@ -3417,7 +3417,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("$T carrier = env.getGraphQlContext().get($T.class)", self, self)
             .beginControlFlow("if (carrier == null)")
             .addStatement("throw new $T($S)", IllegalStateException.class,
-                "No " + TENANT_CONNECTIONS_CLASS_NAME + " in the GraphQL context: the owned-connection path"
+                "No " + OWNED_CONNECTIONS_CLASS_NAME + " in the GraphQL context: the owned-connection path"
                     + " resolves every connection through the per-operation carrier, so the operation must be"
                     + " built with Graphitron.newOwnedExecutionInput(...) and executed through"
                     + " GraphitronRuntime.newGraphQL(schema).")
@@ -3468,9 +3468,9 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.TenantConnections}. */
-    public static ClassName tenantConnectionsClass(String outputPackage) {
-        return ClassName.get(outputPackage + ".schema", TENANT_CONNECTIONS_CLASS_NAME);
+    /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.OwnedConnections}. */
+    public static ClassName ownedConnectionsClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", OWNED_CONNECTIONS_CLASS_NAME);
     }
 
     /** The method name of the guarded read of one handle member, the one place it is spelled. */

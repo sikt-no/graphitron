@@ -51,7 +51,7 @@ public sealed interface CallSiteExtraction
 
     /**
      * Read the whole session handle off the executing {@code DSLContext}'s own connection:
-     * {@code TenantConnections.sessionHandle(dsl, "<coordinate>")}. A {@code @condition} binding
+     * {@code OwnedConnections.sessionHandle(dsl, "<coordinate>")}. A {@code @condition} binding
      * ({@code argMapping: "x: $session"}); never reads the argument map or the request context,
      * so a glue holding one takes the statement's {@code dsl}.
      */

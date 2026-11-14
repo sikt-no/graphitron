@@ -218,7 +218,7 @@ class IncrementalCompileHarnessTest {
         assertThat(frozenReferences).isEqualTo(Map.of(
             // BatchSizeLimit: one abstract method on an interface emitted the same in every build.
             "schema.ErrorRouter", Set.of("schema.BatchSizeLimit", "schema.FetcherErrorLog",
-                "schema.FetcherErrorResponse", "schema.GraphitronClientException", "schema.TenantConnections"),
+                "schema.FetcherErrorResponse", "schema.GraphitronClientException", "schema.OwnedConnections"),
             "util.ConnectionHelper", Set.of("schema.GraphitronClientException", "schema.GraphitronContext",
                 "util.ColumnValues"),
             "util.SelectionOccurrences", Set.of("schema.GraphitronClientException")));
@@ -241,9 +241,9 @@ class IncrementalCompileHarnessTest {
         // The context interface names its carrier through a package-less ClassName, which the
         // TypeSpec walk could not attribute; javac resolves it.
         var context = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext");
-        var tenantConnections = units.tenantConnections();
-        assertThat(CompileGraphOracle.gaps(EditedGraph.dropping(graph, context, tenantConnections), references, frozen))
-            .containsExactlyEntriesOf(Map.of(context.fqcn(), Set.of(tenantConnections.fqcn())));
+        var ownedConnections = units.ownedConnections();
+        assertThat(CompileGraphOracle.gaps(EditedGraph.dropping(graph, context, ownedConnections), references, frozen))
+            .containsExactlyEntriesOf(Map.of(context.fqcn(), Set.of(ownedConnections.fqcn())));
     }
 
     @Test

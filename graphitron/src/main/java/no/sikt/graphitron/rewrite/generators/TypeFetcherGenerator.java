@@ -1342,9 +1342,9 @@ public class TypeFetcherGenerator {
         // TenantDslEmitter's FanOut invariant throw is this fork's build-time enforcer: routing
         // a fanned coordinate through the single-tenant arm fails generation loudly.
         if (row.tenancy() instanceof no.sikt.graphitron.command.TenantStrategy.Fanned fanned) {
-            var tenantConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
+            var ownedConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
             builder.addStatement("return $T.collapseFanOut(env, $T.$L(env))",
-                tenantConnections, launcherClass, row.unit().methodName());
+                ownedConnections, launcherClass, row.unit().methodName());
         } else {
             var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
                 new TenantDslEmitter.EmptyAnswerSite.Renders(value -> CodeBlock.builder()
@@ -1624,7 +1624,7 @@ public class TypeFetcherGenerator {
                 + " classifier and this emission have drifted");
         }
         return new no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy.DefaultSource(
-            className(units.tenantConnections()));
+            className(units.ownedConnections()));
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {
@@ -1680,7 +1680,7 @@ public class TypeFetcherGenerator {
     private static no.sikt.graphitron.emit.ServiceEmission.Runtime storeRuntime(TypeFetcherEmissionContext ctx,
                                                                                 String outputPackage) {
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
-        var tenantConnections = TenantDslEmitter.tenantConnectionsClass(outputPackage);
+        var ownedConnections = TenantDslEmitter.ownedConnectionsClass(outputPackage);
         var frame = new no.sikt.graphitron.emit.FrameEmitter.Runtime(
             className(units.errorRouter()), className(units.outcome()), className(units.errorMappings()),
             no.sikt.graphitron.plan.GeneratedUnits::mappingsConstant,
@@ -1692,8 +1692,8 @@ public class TypeFetcherGenerator {
             });
         var fill = new no.sikt.graphitron.emit.FillEmitter.Runtime(
             key -> CodeBlock.of("$L.getContextArgument(env, $S)", ctx.graphitronContextCall(), key),
-            coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", tenantConnections, coordinate),
-            (member, coordinate) -> CodeBlock.of("$T.$L(dsl, $S)", tenantConnections,
+            coordinate -> CodeBlock.of("$T.sessionHandle(dsl, $S)", ownedConnections, coordinate),
+            (member, coordinate) -> CodeBlock.of("$T.$L(dsl, $S)", ownedConnections,
                 no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.sessionMemberMethod(member),
                 coordinate),
             new no.sikt.graphitron.emit.NodeIdDecodeEmitter.Runtime(
@@ -1704,7 +1704,7 @@ public class TypeFetcherGenerator {
             env -> CodeBlock.of("$L.getValidator($L)", ctx.graphitronContextCall(), env));
         // The generated classes a routed call names; which calls are routed is the store's to say, so a
         // graph with no tenant column states no connection and names none of them.
-        var tenancy = new no.sikt.graphitron.emit.ServiceEmission.Tenancy(tenantConnections,
+        var routing = new no.sikt.graphitron.emit.ServiceEmission.Routing(ownedConnections,
             no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage),
             ClassName.get(outputPackage + ".schema",
                 no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME),
@@ -1712,7 +1712,7 @@ public class TypeFetcherGenerator {
         return new no.sikt.graphitron.emit.ServiceEmission.Runtime(frame, fill, validation,
             className(units.fetchers(ctx.parentTypeName())),
             no.sikt.graphitron.render.ProjectionCall.selectionOccurrencesClass(outputPackage),
-            typeName -> className(units.typeClass(typeName)), tenancy);
+            typeName -> className(units.typeClass(typeName)), routing);
     }
 
     /**
@@ -6236,7 +6236,7 @@ public class TypeFetcherGenerator {
             ErrorRouterClassGenerator.routerClass(outputPackage)
                 .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION),
             (member, coordinate) -> CodeBlock.of("$T.$L(tx, $S)",
-                TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                TenantDslEmitter.ownedConnectionsClass(outputPackage),
                 no.sikt.graphitron.command.SessionAccessors.memberMethod(member), coordinate));
     }
 
@@ -7212,7 +7212,7 @@ public class TypeFetcherGenerator {
     private static CodeBlock fannedAsyncWrapTail(String outputPackage) {
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.collapseFanOut(env, payload))\n",
-                TenantDslEmitter.tenantConnectionsClass(outputPackage))
+                TenantDslEmitter.ownedConnectionsClass(outputPackage))
             .add(".exceptionally(t -> ").add(asyncRouterCall(outputPackage, "t")).add(")")
             .build();
     }

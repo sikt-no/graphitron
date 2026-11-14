@@ -11,7 +11,7 @@ import javax.lang.model.element.Modifier;
 import java.util.List;
 
 /**
- * The carrier's mutation field scope: the members {@code TenantConnections} gains so that every
+ * The carrier's mutation field scope: the members {@code OwnedConnections} gains so that every
  * top-level mutation field on the owned-connection path runs as one transaction per connection it
  * touches. Emitted into the carrier by {@link ConnectionRuntimeClassGenerator}; driven by
  * {@code GraphitronConnectionInstrumentation}, which begins a scope when a top-level mutation

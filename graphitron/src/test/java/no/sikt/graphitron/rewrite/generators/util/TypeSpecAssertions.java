@@ -143,7 +143,7 @@ public final class TypeSpecAssertions {
     /**
      * True when some method body in {@code type} reads the mounted session handle through the
      * carrier's guarded accessor with {@code fieldCoordinate} baked in
-     * ({@code TenantConnections.sessionHandle(dsl, "Type.field")}) and no method body in the
+     * ({@code OwnedConnections.sessionHandle(dsl, "Type.field")}) and no method body in the
      * class reads it through a bare {@code configuration().data(...)} cast, which would bind
      * null on an escape-hatch operation instead of throwing located.
      */

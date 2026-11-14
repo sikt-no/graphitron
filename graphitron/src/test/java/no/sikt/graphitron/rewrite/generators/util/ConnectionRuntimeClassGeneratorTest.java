@@ -534,10 +534,10 @@ class ConnectionRuntimeClassGeneratorTest {
 
     @Test
     void mountCause_isTheMountsOwnExceptionWhereverARejectedMountIsOnTheChain() throws Throwable {
-        Class<?> tenantConnections = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        Class<?> ownedConnections = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         Class<?> mountException = harness.load(SCHEMA_PACKAGE + ".SessionMountException");
-        Method mountCause = tenantConnections.getMethod("mountCause", Throwable.class);
-        Method isMountFailure = tenantConnections.getMethod("isMountFailure", Throwable.class);
+        Method mountCause = ownedConnections.getMethod("mountCause", Throwable.class);
+        Method isMountFailure = ownedConnections.getMethod("isMountFailure", Throwable.class);
 
         var theMountsOwn = new IllegalStateException("the routine said no");
         Throwable rejected = (Throwable) mountException.getConstructor(Throwable.class).newInstance(theMountsOwn);
@@ -558,10 +558,10 @@ class ConnectionRuntimeClassGeneratorTest {
         // sessionMountFailure still compiles, and answers empty.
         var plain = compile(SessionIdentityRows.empty());
         try {
-            Class<?> tenantConnections = plain.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
-            assertThat(tenantConnections.getMethod("mountCause", Throwable.class)
+            Class<?> ownedConnections = plain.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
+            assertThat(ownedConnections.getMethod("mountCause", Throwable.class)
                 .invoke(null, new RuntimeException("anything"))).isEqualTo(Optional.empty());
-            assertThat(tenantConnections.getMethod("isMountFailure", Throwable.class)
+            assertThat(ownedConnections.getMethod("isMountFailure", Throwable.class)
                 .invoke(null, new RuntimeException("anything"))).isEqualTo(false);
         } finally {
             plain.close();
@@ -730,7 +730,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     private CompletableFuture<ExecutionResult> executeOverEngine(String operation, SynchronousAbortDriver.Abort abort)
             throws Throwable {
-        Class<?> carrierClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        Class<?> carrierClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         Method dslDefault = carrierClass.getMethod("dslDefault");
         var engine = SynchronousAbortDriver.engine(runtimeOverFakeSource(), ROOT_FIELDS, carrierClass,
             field -> dslDefault::invoke, new SynchronousAbortDriver.AbortAt("b", abort));

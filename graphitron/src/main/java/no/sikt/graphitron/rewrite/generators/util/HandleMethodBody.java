@@ -33,7 +33,7 @@ import java.util.Map;
  *       multi-tenant build over a tenant-scoped entity ({@link TenantRouting#bound()}), the
  *       grouping widens to {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's
  *       tenant is read from its alternative's classified source, the decoded key at the tenant
- *       column's position (canonicalised through {@code TenantConnections.tenantKeyOrNull}, a
+ *       column's position (canonicalised through {@code OwnedConnections.tenantKeyOrNull}, a
  *       value that names no tenant leaving the rep ungrouped) or the request's entity default
  *       tenant, so one batch spanning tenants
  *       splits into tenant-homogeneous groups instead of erroring or leaking. A rep whose
@@ -41,7 +41,7 @@ import java.util.Map;
  *       its slot stays {@code null}.</li>
  *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}
  *       with the group's own {@code DSLContext}: per-tenant acquisition through
- *       {@code TenantConnections.dslFor} for a bound entity, the default source for a global
+ *       {@code OwnedConnections.dslFor} for a bound entity, the default source for a global
  *       entity in a multi-tenant build, and the escape-hatch context read in single-tenant
  *       builds.</li>
  *   <li>In a multi-tenant build, wrap each filled slot as a {@code DataFetcherResult<Record>}:
@@ -75,7 +75,7 @@ final class HandleMethodBody {
      * {@code dslGlobal}). {@code tenantKey} is the boxed tenant column type, the type each tenant
      * group's key is held in.
      */
-    record TenantRouting(ClassName tenantConnections, Map<EntityKeyQuery.Identity, EntityTenantRouting.Source> bound,
+    record TenantRouting(ClassName ownedConnections, Map<EntityKeyQuery.Identity, EntityTenantRouting.Source> bound,
                          TypeName tenantKey) {}
 
     /** Single-tenant emission: no tenant routing. */
@@ -91,7 +91,7 @@ final class HandleMethodBody {
                 .anyMatch(source -> source instanceof EntityTenantRouting.Source.RequestEntityDefault)) {
             // Read once per call: every rep of an alternative routed by the request groups on it.
             b.addStatement("$T entityDefaultTenant = $T.entityDefaultTenant(env).orElse(null)",
-                routing.tenantKey(), routing.tenantConnections());
+                routing.tenantKey(), routing.ownedConnections());
         }
         emitPerRepLoop(b, entity, nodeIdEncoder, routing);
         emitGroupDispatch(b, entity, routing);
@@ -224,7 +224,7 @@ final class HandleMethodBody {
             CodeBlock tenantOfRep = switch (source) {
                 case TenantBinding.EntityRepBound.TenantSource.KeyColumn key -> {
                     b.addStatement("$T tenantOfRep = $T.tenantKeyOrNull(cols[$L])",
-                        routing.tenantKey(), routing.tenantConnections(), key.decodedPosition());
+                        routing.tenantKey(), routing.ownedConnections(), key.decodedPosition());
                     b.addStatement("if (tenantOfRep == null) continue");
                     yield CodeBlock.of("tenantOfRep");
                 }
@@ -299,15 +299,15 @@ final class HandleMethodBody {
             // to that tenant is taken. The other groups resolve normally. entryFor remains the
             // enforcer; this is presentation above it, and a refused id reads like a nonexistent
             // one, so the lookups cannot be used to probe tenants.
-            b.beginControlFlow("if (!$T.permits(groupEnv, tenantKey))", routing.tenantConnections());
+            b.beginControlFlow("if (!$T.permits(groupEnv, tenantKey))", routing.ownedConnections());
             b.addStatement("continue");
             b.endControlFlow();
             b.addStatement("$T dsl = $T.dslFor(groupEnv, tenantKey)",
-                DSL_CONTEXT, routing.tenantConnections());
+                DSL_CONTEXT, routing.ownedConnections());
             emitAltSwitch(b, entity);
             // Each filled slot carries the tenant its group was routed on, so the row's subtree
             // (an Inherited child, a @splitQuery below it) reads that tenant back.
-            emitSlotWrap(b, CodeBlock.of("$T.$L($L, $L)", routing.tenantConnections(),
+            emitSlotWrap(b, CodeBlock.of("$T.$L($L, $L)", routing.ownedConnections(),
                 ConnectionRuntimeClassGenerator.HAND_DOWN_METHOD,
                 CodeBlock.of("($T) result[slot]", RECORD), "tenantKey"));
             b.endControlFlow();
@@ -326,7 +326,7 @@ final class HandleMethodBody {
             // Multi-tenant build, global entity table: every group is a global read, served by
             // the request's default tenant when it names one, else by the default source.
             b.addStatement("$T dsl = $T.dslGlobal(groupEnv)",
-                DSL_CONTEXT, routing.tenantConnections());
+                DSL_CONTEXT, routing.ownedConnections());
         } else {
             b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
         }

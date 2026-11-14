@@ -48,7 +48,7 @@ public final class ServiceMethodCallEmitter {
     /**
      * Emit the body statements for a {@link ServiceMethodCall}. The {@code result} local is
      * declared with the carrier's {@link ServiceMethodCall#javaReturnType()}.
-     * {@code outputPackage} locates the generated {@code TenantConnections} carrier for the
+     * {@code outputPackage} locates the generated {@code OwnedConnections} carrier for the
      * {@code $session} guard; everything else emits unqualified same-class calls into the
      * {@code graphitronContext(env)} private static helper that
      * {@code TypeFetcherGenerator.buildGraphitronContextHelper} emits on every {@code *Fetchers}
@@ -207,7 +207,7 @@ public final class ServiceMethodCallEmitter {
                 }
                 out.add(CodeBlock.of("$T $L = $T.sessionHandle(dsl, $S)",
                     handle.javaType(), handle.javaName(),
-                    TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate));
+                    TenantDslEmitter.ownedConnectionsClass(outputPackage), fieldCoordinate));
             }
             case MappingEntry.FromSessionHandleMember member -> {
                 if (fieldCoordinate == null) {
@@ -219,7 +219,7 @@ public final class ServiceMethodCallEmitter {
                 }
                 out.add(CodeBlock.of("$T $L = $T.$L(dsl, $S)",
                     member.javaType(), member.javaName(),
-                    TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                    TenantDslEmitter.ownedConnectionsClass(outputPackage),
                     ConnectionRuntimeClassGenerator.sessionMemberMethod(member.member()), fieldCoordinate));
             }
             case MappingEntry.FromArg arg -> {

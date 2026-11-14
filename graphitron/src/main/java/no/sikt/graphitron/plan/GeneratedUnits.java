@@ -342,9 +342,9 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "ColumnValues");
     }
 
-    /** {@code <pkg>.schema.TenantConnections} — the multi-tenant scatter/acquisition carrier. */
-    public UnitRef tenantConnections() {
-        return unit(SUB_SCHEMA, "TenantConnections");
+    /** {@code <pkg>.schema.OwnedConnections} — the multi-tenant scatter/acquisition carrier. */
+    public UnitRef ownedConnections() {
+        return unit(SUB_SCHEMA, "OwnedConnections");
     }
 
     /** {@code <pkg>.fetchers.QueryNodeFetcher}: the node-lookup dispatch unit. */

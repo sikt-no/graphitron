@@ -194,7 +194,7 @@ class LauncherCommandsPipelineTest {
         var fanned = relation.rowFor("Query", "films").orElseThrow();
         var carrier = (no.sikt.graphitron.command.TenantStrategy.Fanned) fanned.tenancy();
         assertThat(carrier.carrier().fqcn())
-            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.TenantConnections");
+            .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.OwnedConnections");
         assertThat(fanned.result()).isInstanceOf(ResultShape.RecordList.class);
         assertThat(relation.carrierDsl()).isEqualTo(CarrierDsl.ROUTED);
 

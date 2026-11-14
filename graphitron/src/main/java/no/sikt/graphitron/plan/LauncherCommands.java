@@ -892,7 +892,7 @@ public final class LauncherCommands {
     private static TenantStrategy tenancyOf(GraphitronSchema schema, String parentTypeName,
             String fieldName, GeneratedUnits units) {
         return schema.tenantBindingOf(parentTypeName, fieldName) instanceof TenantBinding.FanOut fanOut
-            ? new TenantStrategy.Fanned(units.tenantConnections(), fanOut.narrowing().stream()
+            ? new TenantStrategy.Fanned(units.ownedConnections(), fanOut.narrowing().stream()
                 .map(TenantBinding.BoundSlot::slotName).toList())
             : new TenantStrategy.Single();
     }

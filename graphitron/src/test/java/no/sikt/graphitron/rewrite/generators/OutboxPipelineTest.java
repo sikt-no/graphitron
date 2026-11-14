@@ -118,10 +118,10 @@ class OutboxPipelineTest {
         assertThat(body)
             .as("a common payload key reads the handle's member through the guarded accessor, on the"
                 + " companion's own transaction, never from the environment")
-            .contains("DSL.key(\"actor\").value(outboxJsonValue(fake.code.generated.schema.TenantConnections"
+            .contains("DSL.key(\"actor\").value(outboxJsonValue(fake.code.generated.schema.OwnedConnections"
                 + ".sessionMember_brukerId(tx, \"Mutation.createFilm\")))")
             .as("so does a key of the message itself")
-            .contains("DSL.key(\"soker\").value(outboxJsonValue(fake.code.generated.schema.TenantConnections"
+            .contains("DSL.key(\"soker\").value(outboxJsonValue(fake.code.generated.schema.OwnedConnections"
                 + ".sessionMember_sokerId(tx, \"Mutation.createFilm\")))")
             .as("a failure to read the member, as where no handle was mounted, is an outbox failure")
             .contains("ErrorRouter.OutboxEmitException(e)");

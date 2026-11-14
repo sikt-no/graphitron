@@ -49,7 +49,7 @@ class OwnedBuildSettleSurfaceTest {
     }
 
     private static void assertEmitsTheSettleSurface(List<TypeSpec> runtime, List<TypeSpec> instrumentation) {
-        TypeSpec carrier = unit(runtime, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        TypeSpec carrier = unit(runtime, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(methodNames(carrier))
             .as("the carrier opens, marks and settles a field's scope in every owned build")
             .contains("beginField", "settleField", "markFieldFailed");

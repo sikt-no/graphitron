@@ -26,7 +26,7 @@ import java.util.function.Function;
  * @SuppressWarnings("unchecked") List<Integer> ids = env.getArgument("input") instanceof Map<?, ?> map1
  *     ? (List<Integer>) map1.get("ids") : null;
  * String userId = (String) graphitronContext(env).getContextArgument(env, "userId");
- * FilmKeySummary summary = TenantConnections.sessionHandle(dsl, "Query.callPrincipal");
+ * FilmKeySummary summary = OwnedConnections.sessionHandle(dsl, "Query.callPrincipal");
  * ...
  * Service.method(dsl, limit, ids, userId, summary)
  * }</pre>

@@ -25,7 +25,7 @@ Audited on 2026-10-27 against trunk at `89cde0450`. R1097 and R1055 were Done, a
 * **`manual/reference/runtime-api.adoc` predates the owned-connection engine.**
   * The `Graphitron` facade listing shows only `buildSchema`, while `GraphitronFacadeGenerator` also emits `runtime(...)`, `newGraphQL(...)` and `newOwnedExecutionInput(...)`.
   * `GraphitronContext` is described as "populated by `Graphitron.newExecutionInput(...)`".
-  * The `getDslContext` listing shows a one-line `GraphQLContext` read. The emitted method (`GraphitronContextInterfaceGenerator`) routes through the per-operation connection carrier (`TenantConnections`) and falls back to a supplied `DSLContext`.
+  * The `getDslContext` listing shows a one-line `GraphQLContext` read. The emitted method (`GraphitronContextInterfaceGenerator`) routes through the per-operation connection carrier (`OwnedConnections`) and falls back to a supplied `DSLContext`.
   * "Three hand-written-feeling classes" undercounts what is emitted.
   * The page never links to `architecture/reference/runtime-extension-points.adoc`, the only place the owned path is described.
 * **The same escape-hatch-only framing elsewhere.** `quick-start.adoc` ("the emitted `buildSchema` / `newExecutionInput` surface"), `manual/explanation/how-it-works.adoc` (the fetcher reads the `DSLContext` that `newExecutionInput(dsl, ...)` populated), and `manual/explanation/batching-model.adoc`.

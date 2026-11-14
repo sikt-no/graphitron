@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * bind null on an escape-hatch operation. One row per emission path: the root service fetcher
  * ({@code ServiceMethodCallEmitter}) and the batched-child rows method ({@code ArgCallEmitter}).
  * The accessor's own throw/return behaviour is driven compiled in
- * {@code TenantConnectionsGeneratorTest}.
+ * {@code OwnedConnectionsGeneratorTest}.
  */
 @PipelineTier
 class SessionHandleGuardPipelineTest {

@@ -705,7 +705,7 @@ class SessionIdentityPoolIsolationExecutionTest {
                     if (!proceed.await(30, TimeUnit.SECONDS)) {
                         throw new IllegalStateException("the test never let the late fetcher proceed");
                     }
-                    no.sikt.graphitron.generated.schema.TenantConnections.dslDefault(env);
+                    no.sikt.graphitron.generated.schema.OwnedConnections.dslDefault(env);
                 } catch (Throwable thrown) {
                     refusal.set(thrown);
                 } finally {

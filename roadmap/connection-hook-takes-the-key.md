@@ -19,6 +19,6 @@ A consumer registers one connection hook on the generated runtime. Graphitron ha
 ## Notes
 
 - The direction is Alf's (2026-11-14), recorded in `docs/architecture/reference/runtime-extension-points.adoc` § Per-tenant routing.
-- The generated code already acquires through one point keyed by the whole key (`TenantConnections.dslFor(env, ConnectionKey)`), for root services and, once R876's child-call node lands, for children; this item puts the consumer's hook behind that point.
+- The generated code already acquires through one point keyed by the whole key (`OwnedConnections.dslFor(env, ConnectionKey)`), for root services and, once R876's child-call node lands, for children; this item puts the consumer's hook behind that point.
 - R1119 adds the claims part of the key; the hook receives it with the rest.
 - The manual's default-tenant section in `tenant-scoping.adoc` is rewritten by this item.

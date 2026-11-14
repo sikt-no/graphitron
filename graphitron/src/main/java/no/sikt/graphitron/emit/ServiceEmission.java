@@ -61,10 +61,10 @@ public final class ServiceEmission {
      */
     public record Runtime(FrameEmitter.Runtime frame, FillEmitter.Runtime fill, ValidationEmitter.Runtime validation,
                           ClassName fetchersClass, ClassName selectionOccurrences,
-                          Function<String, ClassName> projectionClass, Tenancy tenancy) {
+                          Function<String, ClassName> projectionClass, Routing routing) {
 
         public Runtime {
-            Objects.requireNonNull(tenancy, "tenancy");
+            Objects.requireNonNull(routing, "routing");
             Objects.requireNonNull(frame, "frame");
             Objects.requireNonNull(validation, "validation");
             Objects.requireNonNull(fill, "fill");
@@ -79,10 +79,10 @@ public final class ServiceEmission {
      * and handed down by, the client error a call naming no tenant is refused with, and the node id
      * encoder a tenant inside an id is decoded by. Named only where the store states a routed call.
      */
-    public record Tenancy(ClassName tenantConnections, ClassName connectionKey, ClassName clientException,
+    public record Routing(ClassName ownedConnections, ClassName connectionKey, ClassName clientException,
                           ClassName nodeIdEncoder) {
-        public Tenancy {
-            Objects.requireNonNull(tenantConnections, "tenantConnections");
+        public Routing {
+            Objects.requireNonNull(ownedConnections, "ownedConnections");
             Objects.requireNonNull(connectionKey, "connectionKey");
             Objects.requireNonNull(clientException, "clientException");
             Objects.requireNonNull(nodeIdEncoder, "nodeIdEncoder");
@@ -507,25 +507,25 @@ public final class ServiceEmission {
         if (row == null) {
             return new FrameEmitter.Connection.Request();
         }
-        var tenancy = runtime.tenancy();
+        var routing = runtime.routing();
         return switch (row.outcome()) {
             case REQUEST -> new FrameEmitter.Connection.Request();
             case ROUTED -> new FrameEmitter.Connection.Routed(
                 ClassName.bestGuess(tenantType.orElseThrow(() -> new IllegalStateException(coordinate
                     + " is routed, but the graph's tenant columns agree on no one type, which the store refuses"))),
-                tenancy.tenantConnections(), tenancy.connectionKey(),
-                row.slots().stream().map(slot -> slotRead(slot, tenancy)).toList(),
-                noTenant(row, fieldCoordinate, tenancy));
+                routing.ownedConnections(), routing.connectionKey(),
+                row.slots().stream().map(slot -> slotRead(slot, routing)).toList(),
+                noTenant(row, fieldCoordinate, routing));
         };
     }
 
     /** What a routed call whose values name no tenant gets, as its tenant part states it. */
-    private static FrameEmitter.NoTenant noTenant(ConnectionQuery.Row row, String fieldCoordinate, Tenancy tenancy) {
+    private static FrameEmitter.NoTenant noTenant(ConnectionQuery.Row row, String fieldCoordinate, Routing routing) {
         return switch (row.whenEmpty().orElseThrow(() -> new IllegalStateException(row.coordinate()
             + " is routed with no tenant part"))) {
             case UNREACHABLE -> new FrameEmitter.NoTenant.Unreachable();
             case EMPTY -> new FrameEmitter.NoTenant.Empty(emptyValue(row));
-            case REFUSE -> new FrameEmitter.NoTenant.Refuse(tenancy.clientException(),
+            case REFUSE -> new FrameEmitter.NoTenant.Refuse(routing.clientException(),
                 noTenantMessage(fieldCoordinate, row.slots().stream()
                     .map(slot -> slot.names().getFirst()).distinct().toList()));
         };
@@ -563,11 +563,11 @@ public final class ServiceEmission {
      * object, the path below it, read over every element of a list it crosses; and where it is a node
      * id, the tenant column's value out of each id.
      */
-    private static CodeBlock slotRead(ConnectionQuery.Slot slot, Tenancy tenancy) {
+    private static CodeBlock slotRead(ConnectionQuery.Slot slot, Routing routing) {
         var names = slot.names();
         var read = names.size() == 1
             ? CodeBlock.of("env.getArgument($S)", names.getFirst())
-            : CodeBlock.of("$T.tenantSlot(env.getArgument($S), $L)", tenancy.tenantConnections(), names.getFirst(),
+            : CodeBlock.of("$T.tenantSlot(env.getArgument($S), $L)", routing.ownedConnections(), names.getFirst(),
                 CodeBlock.join(names.subList(1, names.size()).stream().map(n -> CodeBlock.of("$S", n)).toList(),
                     ", "));
         if (slot.node().isEmpty()) {
@@ -578,7 +578,7 @@ public final class ServiceEmission {
         var columns = CodeBlock.join(node.keyColumns().stream()
             .map(c -> CodeBlock.of("$T.$L.$L", tables, node.tableField(), c)).toList(), ", ");
         return CodeBlock.of("$T.mapTenantLeaves($L, id -> id instanceof $T s ? $T.decodeColumns($S, s, $L)[$L] : null)",
-            tenancy.tenantConnections(), read, String.class, tenancy.nodeIdEncoder(), node.typeId(), columns,
+            routing.ownedConnections(), read, String.class, routing.nodeIdEncoder(), node.typeId(), columns,
             slot.keyPosition().orElseThrow());
     }
 

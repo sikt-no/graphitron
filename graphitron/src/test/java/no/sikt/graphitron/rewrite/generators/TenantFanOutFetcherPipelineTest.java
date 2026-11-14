@@ -70,14 +70,14 @@ class TenantFanOutFetcherPipelineTest {
         // and pre-computed locals, never env.
         var entry = render(schema, "QueryFetchers", "films");
         assertThat(entry)
-            .contains("fake.code.generated.schema.TenantConnections.collapseFanOut(env,")
+            .contains("fake.code.generated.schema.OwnedConnections.collapseFanOut(env,")
             .contains("QueryFetchers.rowsFilms(env)")
             // No single-DSL acquisition and no single hand-down local: tenants ride per element.
             .doesNotContain("getDslContext(env)")
             .doesNotContain("_divinedTenant");
         var launcher = render(schema, "QueryFetchers", "rowsFilms");
         assertThat(launcher)
-            .contains("fake.code.generated.schema.TenantConnections.fanOutRows(env, dsl -> dsl")
+            .contains("fake.code.generated.schema.OwnedConnections.fanOutRows(env, dsl -> dsl")
             .contains("selectFields = fake.code.generated.types.Film.$project(fake.code.generated.util.SelectionOccurrences.ownFields(env.getSelectionSet()), filmTable, env)")
             .contains(".select(selectFields)")
             .contains(".where(condition)")
@@ -104,15 +104,15 @@ class TenantFanOutFetcherPipelineTest {
             // The fanned batched fetcher registers under the bare path name (parents are
             // untenanted; the fan-out happens inside the batch load) and collapses each parent's
             // marker-bearing list against that parent's own env.
-            .contains("fake.code.generated.schema.TenantConnections.loaderName(env, \"Language\")")
-            .contains(".thenApply(payload -> fake.code.generated.schema.TenantConnections.collapseFanOut(env, payload))")
+            .contains("fake.code.generated.schema.OwnedConnections.loaderName(env, \"Language\")")
+            .contains(".thenApply(payload -> fake.code.generated.schema.OwnedConnections.collapseFanOut(env, payload))")
             .doesNotContain("tenantLoaderName");
 
         var rows = render(schema, "LanguageFetchers", "rowsFilms");
         assertThat(rows)
             // One scatter per parent batch, one statement per tenant per batch: the batch
             // statement is the perTenant unit of work, and no per-method DSL declaration exists.
-            .contains("fake.code.generated.schema.TenantConnections.fanOutBatchRows(env, keys.size(), dsl -> {")
+            .contains("fake.code.generated.schema.OwnedConnections.fanOutBatchRows(env, keys.size(), dsl -> {")
             .contains("return scatterByIdx(flat, keys.size());")
             .doesNotContain("org.jooq.DSLContext dsl =");
     }

@@ -148,11 +148,11 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
-     * The emitted {@code TenantConnections} carrier, whose {@code isMountFailure} predicate the
+     * The emitted {@code OwnedConnections} carrier, whose {@code isMountFailure} predicate the
      * router asks so that it never names the mount-gated {@code SessionMountException} itself.
      */
-    static ClassName tenantConnectionsClass(String outputPackage) {
-        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).tenantConnections();
+    static ClassName ownedConnectionsClass(String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).ownedConnections();
         return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
@@ -210,7 +210,7 @@ public final class ErrorRouterClassGenerator {
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage,
             fetcherErrorResponse);
-        var claim = buildClaimMethod(tenantConnectionsClass(outputPackage));
+        var claim = buildClaimMethod(ownedConnectionsClass(outputPackage));
         var defaultResponse = FieldSpec.builder(fetcherErrorResponse, DEFAULT_RESPONSE,
                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("Answers when no {@code FetcherErrorResponse} is configured, or when the configured one\n"
@@ -580,7 +580,7 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildClaimMethod(ClassName tenantConnections) {
+    private static MethodSpec buildClaimMethod(ClassName ownedConnections) {
         var mappingArray = ArrayTypeName.of(ClassName.get("", MAPPING_INTERFACE));
         return MethodSpec.methodBuilder("claim")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -613,7 +613,7 @@ public final class ErrorRouterClassGenerator {
                 + "@param mappings the channel's dispatch table\n"
                 + "@param env the failing field's environment, or {@code null}\n"
                 + "@return the claimed link of {@code thrown}'s cause chain, or {@code null}\n")
-            .beginControlFlow("if ($T.isMountFailure(thrown) || isOutboxFailure(thrown))", tenantConnections)
+            .beginControlFlow("if ($T.isMountFailure(thrown) || isOutboxFailure(thrown))", ownedConnections)
             .addStatement("return null")
             .endControlFlow()
             .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))
@@ -621,7 +621,7 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("if (mapping.match(thrown, t))")
             .addStatement("recordClaim(thrown, t, env)")
             .addComment("A claimed exception still fails the field: its mutation transaction rolls back.")
-            .addStatement("$T.markFieldFailed(env, thrown)", tenantConnections)
+            .addStatement("$T.markFieldFailed(env, thrown)", ownedConnections)
             .addStatement("return t")
             .endControlFlow()
             .endControlFlow()
@@ -743,8 +743,8 @@ public final class ErrorRouterClassGenerator {
                 clientException, DATA_FETCHER_RESULT, fetcherErrorResponse)
             .addCode(CodeBlock.builder()
                 .add("// Every arm below fails the field: its mutation transaction, if any, rolls back.\n")
-                .addStatement("$T.markFieldFailed(env, thrown)", tenantConnectionsClass(outputPackage))
-                .beginControlFlow("if ($T.isMountFailure(thrown))", tenantConnectionsClass(outputPackage))
+                .addStatement("$T.markFieldFailed(env, thrown)", ownedConnectionsClass(outputPackage))
+                .beginControlFlow("if ($T.isMountFailure(thrown))", ownedConnectionsClass(outputPackage))
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
                 .add("    .error($T.newError(env).message($S).build())\n", GRAPHQL_ERROR_BUILDER,
@@ -1068,7 +1068,7 @@ public final class ErrorRouterClassGenerator {
                 + "@param path the field's result path, where the error is placed\n"
                 + "@return the error to add at the field's path\n")
             .addStatement("$T reference = $L(thrown, env, $S)", STRING_CN, REPORT_UNMATCHED, FAILED_TO_SETTLE)
-            .beginControlFlow("if (thrown instanceof $T)", tenantConnectionsClass(outputPackage).nestedClass("NestedScopeFailedException"))
+            .beginControlFlow("if (thrown instanceof $T)", ownedConnectionsClass(outputPackage).nestedClass("NestedScopeFailedException"))
             .addComment("A transaction a consumer's code opened inside the field failed: graphitron's own fixed")
             .addComment("message, so it states the cause the same way in every deployment. It carries no")
             .addComment("database text; the log under the reference has the cause.")

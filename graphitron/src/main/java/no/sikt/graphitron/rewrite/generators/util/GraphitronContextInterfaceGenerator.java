@@ -43,14 +43,14 @@ public class GraphitronContextInterfaceGenerator {
         // The carrier lives in the same emitted package, so the unqualified name resolves; the
         // interface generator stays outputPackage-free (the ClassName.bestGuess(CLASS_NAME)
         // precedent below).
-        var tenantConnections = ClassName.bestGuess(
-            ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var ownedConnections = ClassName.bestGuess(
+            ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         var getDslContext = MethodSpec.methodBuilder("getDslContext")
             .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
             .returns(DSL_CONTEXT)
             .addParameter(ENV, "env")
             .addStatement("$T carrier = env.getGraphQlContext().get($T.class)",
-                tenantConnections, tenantConnections)
+                ownedConnections, ownedConnections)
             .addStatement("$T supplied = env.getGraphQlContext().get($T.class)", DSL_CONTEXT, DSL_CONTEXT)
             .beginControlFlow("if (carrier != null && supplied != null)")
             .addComment("The mismatched pair, named as such: the operation was built with the escape-hatch")
@@ -65,7 +65,7 @@ public class GraphitronContextInterfaceGenerator {
             .endControlFlow()
             .beginControlFlow("if (carrier != null)")
             .addComment("Owned path: a carrier resolution, pinning on first demand (lazy on every path).")
-            .addStatement("return $T.dslDefault(env)", tenantConnections)
+            .addStatement("return $T.dslDefault(env)", ownedConnections)
             .endControlFlow()
             .beginControlFlow("if (supplied != null)")
             .addStatement("return supplied")

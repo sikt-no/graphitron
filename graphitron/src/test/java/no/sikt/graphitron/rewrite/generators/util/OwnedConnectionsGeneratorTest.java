@@ -34,7 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit-tier coverage of the runtime's tenant-keyed acquisition primitive
- * ({@code GraphitronRuntime.acquireForTenant}) and the per-operation {@code TenantConnections} carrier.
+ * ({@code GraphitronRuntime.acquireForTenant}) and the per-operation {@code OwnedConnections} carrier.
  * Because these are emitted, the honest way to assert their behaviour is to compile the real emitted
  * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the
  * {@link RecordingSessionState} callback pair so the real mount/unmount runs at acquisition/release,
@@ -43,14 +43,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * "one connection per distinct key" read straight off the call log.
  */
 @UnitTier
-class TenantConnectionsGeneratorTest {
+class OwnedConnectionsGeneratorTest {
 
     private static final String PACKAGE = "com.example";
     private static final String SCHEMA_PACKAGE = PACKAGE + ".schema";
 
     private static EmittedCodeHarness harness;
     private static Class<?> runtimeClass;
-    private static Class<?> tenantConnectionsClass;
+    private static Class<?> ownedConnectionsClass;
     private static Class<?> commitPolicyClass;
     private static Object commitPolicyCommit;
 
@@ -79,7 +79,7 @@ class TenantConnectionsGeneratorTest {
         }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
-        tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");
+        ownedConnectionsClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections");
         Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
         commitPolicyClass = java.util.Arrays.stream(providerClass.getDeclaredClasses())
             .filter(c -> c.getSimpleName().equals("CommitPolicy"))
@@ -120,7 +120,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void dslFor_pinsOneConnectionPerDistinctKey_reusingWithinTheOperation() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
-        Object tc = newTenantConnections(runtime, session());
+        Object tc = newOwnedConnections(runtime, session());
 
         dslFor(tc, "A");
         dslFor(tc, "A"); // same key again within the operation
@@ -148,7 +148,7 @@ class TenantConnectionsGeneratorTest {
         // B's disconnect fails; A's succeeds. releaseAll must release both (A returned, B evicted) and
         // rethrow, rather than let B's failed unmount orphan A or vice versa.
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", true)));
-        Object tc = newTenantConnections(runtime, session());
+        Object tc = newOwnedConnections(runtime, session());
 
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -168,7 +168,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void releaseAll_twice_unmountsAndReturnsEachConnectionOnce() throws Throwable {
         Object runtime = newRuntime(Map.of());
-        Object tc = newTenantConnections(runtime, session());
+        Object tc = newOwnedConnections(runtime, session());
         dslDefault(tc);
         events.clear();
 
@@ -183,7 +183,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void acquisitionAfterRelease_isRefused_withoutBorrowingOrMounting() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object tc = newTenantConnections(runtime, session());
+        Object tc = newOwnedConnections(runtime, session());
         dslDefault(tc);
         releaseAll(tc);
         events.clear();
@@ -205,7 +205,7 @@ class TenantConnectionsGeneratorTest {
         var entered = new CountDownLatch(1);
         var gate = new CountDownLatch(1);
         Object runtime = newRuntime(gated(fakeDataSource("default", false), entered, gate), Map.of());
-        Object tc = newTenantConnections(runtime, session());
+        Object tc = newOwnedConnections(runtime, session());
 
         var late = CompletableFuture.runAsync(() -> {
             try {
@@ -269,7 +269,7 @@ class TenantConnectionsGeneratorTest {
     @Test
     void sessionHandle_onAMountedConnection_returnsTheHandleWrittenAtMint() throws Throwable {
         Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object tc = newTenantConnections(runtime, session());
+        Object tc = newOwnedConnections(runtime, session());
 
         Object dsl = dslForReturning(tc, "A");
 
@@ -310,8 +310,8 @@ class TenantConnectionsGeneratorTest {
         return RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}");
     }
 
-    private Object newTenantConnections(Object runtime, Object session) throws Throwable {
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sessionStateClass())
+    private Object newOwnedConnections(Object runtime, Object session) throws Throwable {
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sessionStateClass())
             .newInstance(runtime, commitPolicyCommit, session);
     }
 
@@ -330,7 +330,7 @@ class TenantConnectionsGeneratorTest {
 
     private Object dslForReturning(Object tc, Object key) throws Throwable {
         try {
-            return tenantConnectionsClass.getMethod("dslFor", Object.class).invoke(tc, key);
+            return ownedConnectionsClass.getMethod("dslFor", Object.class).invoke(tc, key);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -338,7 +338,7 @@ class TenantConnectionsGeneratorTest {
 
     private Object sessionHandle(Object dsl, String fieldCoordinate) throws Throwable {
         try {
-            return tenantConnectionsClass.getMethod("sessionHandle", org.jooq.DSLContext.class, String.class)
+            return ownedConnectionsClass.getMethod("sessionHandle", org.jooq.DSLContext.class, String.class)
                 .invoke(null, dsl, fieldCoordinate);
         } catch (InvocationTargetException e) {
             throw e.getCause();
@@ -346,11 +346,11 @@ class TenantConnectionsGeneratorTest {
     }
 
     private void dslDefault(Object tc) throws Throwable {
-        invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
+        invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
     }
 
     private void releaseAll(Object tc) throws Throwable {
-        invoke(() -> tenantConnectionsClass.getMethod("releaseAll").invoke(tc));
+        invoke(() -> ownedConnectionsClass.getMethod("releaseAll").invoke(tc));
     }
 
     private static Object invoke(ThrowingSupplier body) throws Throwable {
@@ -438,7 +438,7 @@ class TenantConnectionsGeneratorTest {
 
     private static TypeSpec carrierOf(List<TypeSpec> units) {
         return units.stream()
-            .filter(t -> ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME.equals(t.name()))
+            .filter(t -> ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME.equals(t.name()))
             .findFirst()
             .orElseThrow();
     }

@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider.CommitPolicy;
-import no.sikt.graphitron.generated.schema.TenantConnections;
+import no.sikt.graphitron.generated.schema.OwnedConnections;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Execution-tier coverage of the tenant-keyed acquisition seam against real PostgreSQL:
- * the runtime's {@code Map<TenantId, DataSource>} construction and the {@code TenantConnections} carrier
+ * the runtime's {@code Map<TenantId, DataSource>} construction and the {@code OwnedConnections} carrier
  * route each divined key to its own {@code DataSource}, pinning one connection per distinct key.
  *
  * <p>Database-per-tenant is simulated with two schemas ({@code tenant_a}, {@code tenant_b}), each with a
@@ -74,7 +74,7 @@ class TenantRoutingExecutionTest {
             searchPathDataSource("public", null),
             Map.of(KEY_A, searchPathDataSource("tenant_a", null), KEY_B, searchPathDataSource("tenant_b", null)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{}"));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{}"));
         try {
             DSLContext a = tenants.dslFor(KEY_A);
             DSLContext b = tenants.dslFor(KEY_B);
@@ -99,7 +99,7 @@ class TenantRoutingExecutionTest {
             searchPathDataSource("public", opened),
             Map.of(KEY_A, searchPathDataSource("tenant_a", opened), KEY_B, searchPathDataSource("tenant_b", opened)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{}"));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{}"));
         try {
             tenants.dslFor(KEY_A);
             tenants.dslFor(KEY_B);

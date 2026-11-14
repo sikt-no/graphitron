@@ -350,7 +350,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var refs = new ArrayList<UnitRef>();
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
-        refs.add(units.tenantConnections());
+        refs.add(units.ownedConnections());
         if (multiTenant) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "RequestTenants"));
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA,

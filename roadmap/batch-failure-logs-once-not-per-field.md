@@ -131,7 +131,7 @@ six-column-tuple batch in the evidence above would be smaller here. A one-to-man
 hop with a filter, still keys one entry per parent, and so does any list of distinct FK values, so
 the bound is still needed.
 
-`TenantConnections.logFanOutFailure` (emitted by `ConnectionRuntimeClassGenerator`) is the same
+`OwnedConnections.logFanOutFailure` (emitted by `ConnectionRuntimeClassGenerator`) is the same
 shape at lower severity: it mints a fresh reference per failed tenant, so its volume is bounded by
 tenant count rather than by batch size, and each tenant's failure is its own exception. It needs the
 SQL summary (it logs the cause the same way) but not the memo.
@@ -217,7 +217,7 @@ All in `ErrorRouterClassGenerator`, plus one call site in `ConnectionRuntimeClas
   so, and says the call is once per failure per request.
 * **The default line.** A new public static `ErrorRouter.describe(Throwable, DataFetchingEnvironment)`
   returns `Optional<String>`, the one-line summary when the chain holds a `java.sql.SQLException`
-  and empty otherwise, matching the shape of `TenantConnections.mountCause`. It is public because
+  and empty otherwise, matching the shape of `OwnedConnections.mountCause`. It is public because
   it is useful to a `FetcherErrorLog` author too, and the error-channel how-to says so. The summary
   is `path = <path>; <failure class>: <driver class> [<SQL state>/<vendor code>] <first line>`: the
   field's path from the router's private `pathOf(env)` (`unknown` without an environment), the
@@ -228,7 +228,7 @@ All in `ErrorRouterClassGenerator`, plus one call site in `ConnectionRuntimeClas
   argument, then `<what>; correlation id = {}` at DEBUG with the throwable. Without one it logs
   today's ERROR line, throwable included. A configured `FetcherErrorLog` still receives the raw
   throwable and never sees the summary. The path is part of `describe` rather than of each caller
-  so the line has one spelling and `pathOf` stays private: `TenantConnections` reaches the router
+  so the line has one spelling and `pathOf` stays private: `OwnedConnections` reaches the router
   through its public statics, as it does today. A settle failure whose environment was not
   captured reads `path = unknown`; the client's error still carries the path.
 * **The tenant fan-out.** `logFanOutFailure`'s default line for a failed tenant uses
@@ -604,7 +604,7 @@ and `unmatched`'s javadoc names `tenantFailed` as the per-tenant exception.
 
 _Architect consult before this handover._ The `principles-architect` found the first-line rule,
 the node-fetcher edge, the pin argument and the fragment's home sound. It raised three things. It
-objected to an earlier draft that made `pathOf` package-private for `TenantConnections`, as a
+objected to an earlier draft that made `pathOf` package-private for `OwnedConnections`, as a
 second kind of coupling beside the router's public statics; taken, the path moved into `describe`.
 It noted the lint rule sees only the sakila example's output; taken, the body now says so. It
 noted that `docs/manual/reference/runtime-api.adoc` states none of the `GraphitronRuntime` hooks,

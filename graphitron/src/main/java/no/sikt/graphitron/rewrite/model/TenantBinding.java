@@ -238,7 +238,7 @@ public sealed interface TenantBinding {
 
         /**
          * A field inside an input-object argument: the generated
-         * {@code TenantConnections.tenantSlot(env.getArgument(outerArgName), path...)} walk,
+         * {@code OwnedConnections.tenantSlot(env.getArgument(outerArgName), path...)} walk,
          * where {@code path} is the build-time-computed key path down the argument map.
          */
         record NestedInput(String outerArgName, List<String> path) implements SlotRead {

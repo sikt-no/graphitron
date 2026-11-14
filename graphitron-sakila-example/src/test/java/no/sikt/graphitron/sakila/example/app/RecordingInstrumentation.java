@@ -5,7 +5,7 @@ import graphql.execution.instrumentation.InstrumentationContext;
 import graphql.execution.instrumentation.InstrumentationState;
 import graphql.execution.instrumentation.SimplePerformantInstrumentation;
 import graphql.execution.instrumentation.parameters.InstrumentationExecuteOperationParameters;
-import no.sikt.graphitron.generated.schema.TenantConnections;
+import no.sikt.graphitron.generated.schema.OwnedConnections;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -30,7 +30,7 @@ public final class RecordingInstrumentation extends SimplePerformantInstrumentat
     public InstrumentationContext<ExecutionResult> beginExecuteOperation(
             InstrumentationExecuteOperationParameters parameters, InstrumentationState state) {
         operations.incrementAndGet();
-        if (parameters.getExecutionContext().getGraphQLContext().hasKey(TenantConnections.class)) {
+        if (parameters.getExecutionContext().getGraphQLContext().hasKey(OwnedConnections.class)) {
             operationsWithGraphitronsCarrierAlreadyPresent.incrementAndGet();
         }
         return super.beginExecuteOperation(parameters, state);

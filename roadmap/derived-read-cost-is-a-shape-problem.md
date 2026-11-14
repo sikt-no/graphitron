@@ -91,7 +91,6 @@ The walk's read path is gone
     ├── The service fields are emitted from the store
     │   └── A producer's fetcher parts are emitted from the store
     └── A child call takes the connection key its producer chain hands down
-        └── The connection carrier is named for the owned connections it routes by key
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1002,19 +1001,13 @@ static method needs no holder.
     nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
     and reading nested classes reached through another class's members closes the one hop the census
     reads today.
-* **A child call takes the connection key its producer chain hands down** `blocked`, E's, on ""The connection carrier is named for the owned connections it routes by key". In a database-per-tenant
+* **A child call takes the connection key its producer chain hands down** `open`, E's. In a database-per-tenant
   graph each producer occurrence states the connection it runs on, `graphitron_occurrence_connection`
   re-keyed onto the producer so a root and a child share it: a child `INHERIT`s the whole key its
   producer chain hands down, by default, or is `UNSCOPED`, the key with an empty tenant part, for a table
   no tenant column scopes (Alf, 2026-11-14), and a child `@service` is emitted from the store; sis's
   `Studieprogram.navnAlleSprak` is the acceptance case, and the census's child exclusion goes with it,
   save a shape the fan-out routes, which stays excluded until the node below lands.
-  * **The connection carrier is named for the owned connections it routes by key** `open`, E's. The generated
-    `TenantConnections` is the operation's owned connections, one per `ConnectionKey`, emitted in an
-    untenanted build too; the tenant is one part of the key (Alf, 2026-11-14: "Tenant is a specific
-    case but what is the generic mechanism?"). It becomes `OwnedConnections`, the owned-connection
-    path's own word, and emit's `ServiceEmission.Tenancy` becomes `Routing`; the tenant part's own
-    helpers keep their tenant names. A consumer naming the class follows the rename.
   * **A child whose followed key lands on the tenant column is routed by its row's tenant** `blocked`, E's, on "A field's followed foreign key is joined to the tenant column before the producers".
     Where a followed foreign key lands on the tenant column under a parent not on that tenant, the
     child is a producer grouping its parents by tenant, written `@splitQuery` or not, its connection
@@ -2927,6 +2920,12 @@ The entry is written at Done, the board and the changelog holding an id one plac
 are what it owes a consumer reading it, each with the subject of the commit it landed in, a hash
 not surviving the harvest, so they are recorded here as they land rather than found afterwards.
 
+* **Breaking: the generated `TenantConnections` is `OwnedConnections`** ("breaking: the
+  generated connection carrier is OwnedConnections, unused in FS-plattform code"). The class holds
+  the operation's owned connections, one per connection key, in an untenanted build too; the tenant
+  is one part of the key. Consumer code naming the class, `TenantConnections.canonicalTenantKey`
+  among it, names `OwnedConnections` instead. Its methods and its error texts are unchanged.
+
 * **Fixed: an `@outbox` payload key takes a node id as the API's clients see it** ("an @outbox
   payload key takes a node id whole and decodes a key column named past it",
   sikt-no/graphitron#580). 10.0.0-RC49 applied the key column projection a call parameter takes to
@@ -3089,6 +3088,10 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 
 ## Retired vocabulary
 
+**The generated connection carrier is `OwnedConnections`** (2026-11-14). `TenantConnections`,
+`TENANT_CONNECTIONS_CLASS_NAME` and `ServiceEmission.Tenancy` go; the tenant is one part of the
+connection key, and the carrier and emit's routing classes are named for the key mechanism.
+
 **A binding's kind is stated by its rule view** (2026-11-14). The binding writers' kind literals are
 gone: each binding rule view projects `kind`, and the tenant view its `bound`, which its writer
 composed. `meta_stage_rule` names the views each stage inserts `graphitron_occurrence_binding` from,
@@ -3097,7 +3100,7 @@ and `StageAnswerAgreementTest` holds the kinds each yields over the fact documen
 deletes only its own calls' fills, and then the bindings no fill names.
 
 **A routed fetcher acquires by the connection key it built** (2026-11-14). The generated
-`TenantConnections.dslFor(env, tenantKey)`, which builds the key from its tenant part, goes when the
+`OwnedConnections.dslFor(env, tenantKey)`, which builds the key from its tenant part, goes when the
 walk's last routed site does; a store-emitted fetcher calls `dslFor(env, ConnectionKey)`.
 
 **An unbound parameter is one code, raised where its bindings are** (2026-11-14).

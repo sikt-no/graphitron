@@ -35,9 +35,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Direct-carrier concurrency proofs for the {@code TenantConnections.scatter} substrate: compiles
+ * Direct-carrier concurrency proofs for the {@code OwnedConnections.scatter} substrate: compiles
  * the real emitted multi-tenant runtime and drives it over fake JDBC (the
- * {@link TenantConnectionsGeneratorTest} pattern), so every concurrency invariant has a named
+ * {@link OwnedConnectionsGeneratorTest} pattern), so every concurrency invariant has a named
  * enforcer here before any fan-out emitter rides on the helper. Covered: the concurrency cap, the
  * join deadline, failure isolation, outcome ordering, per-key single acquisition under contention,
  * the re-entrancy guard, and the straggler contract (a timed-out worker's connection is aborted,
@@ -59,7 +59,7 @@ class TenantScatterSubstrateTest {
 
     private static EmittedCodeHarness harness;
     private static Class<?> runtimeClass;
-    private static Class<?> tenantConnectionsClass;
+    private static Class<?> ownedConnectionsClass;
     private static Class<?> commitPolicyClass;
     private static Object commitPolicyCommit;
     private static Class<?> successClass;
@@ -109,12 +109,12 @@ class TenantScatterSubstrateTest {
         }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
-        tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");
-        successClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$Outcome$Success");
-        failedClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$Outcome$Failed");
-        timedOutClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$Outcome$TimedOut");
+        ownedConnectionsClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections");
+        successClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections$Outcome$Success");
+        failedClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections$Outcome$Failed");
+        timedOutClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections$Outcome$TimedOut");
         providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
-        nestedScopeFailedClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections$NestedScopeFailedException");
+        nestedScopeFailedClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections$NestedScopeFailedException");
         commitPolicyClass = java.util.Arrays.stream(providerClass.getDeclaredClasses())
             .filter(c -> c.getSimpleName().equals("CommitPolicy"))
             .findFirst().orElseThrow();
@@ -147,7 +147,7 @@ class TenantScatterSubstrateTest {
     @Test
     void scatter_runsWorkersInParallel_boundedByTheConcurrencyCap() throws Throwable {
         Object runtime = newRuntime(sources("A", "B", "C", "D"), 2, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
 
         // With a cap of 2 and four keys, exactly two workers can be in flight: a barrier of two
         // proves genuine parallelism (a serial run would deadlock the barrier, tripping its
@@ -180,7 +180,7 @@ class TenantScatterSubstrateTest {
     @Test
     void scatter_joinDeadline_yieldsTimedOutForTheStragglerAndSuccessForTheRest() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
 
         List<?> outcomes = scatter(tc, List.of("A", "B"), dsl ->
@@ -196,7 +196,7 @@ class TenantScatterSubstrateTest {
     @Test
     void scatter_failureIsolation_oneThrowingWorkerCarriesItsCauseWhileSiblingsSucceed() throws Throwable {
         Object runtime = newRuntime(sources("A", "B", "C"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var boom = new IllegalArgumentException("tenant B exploded");
 
         List<?> outcomes = scatter(tc, List.of("A", "B", "C"), dsl -> {
@@ -216,7 +216,7 @@ class TenantScatterSubstrateTest {
     @Test
     void scatter_outcomesComeBackInKeyIterationOrder_withValuesAttached() throws Throwable {
         Object runtime = newRuntime(sources("A", "B", "C"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
 
         List<?> outcomes = scatter(tc, List.of("C", "A", "B"), dsl -> connectionLabel(dsl));
 
@@ -235,7 +235,7 @@ class TenantScatterSubstrateTest {
     @Test
     void dslFor_pinsExactlyOncePerKeyUnderContention() throws Throwable {
         Object runtime = newRuntime(sources("A"), 8, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
 
         int contenders = 8;
         var start = new CyclicBarrier(contenders);
@@ -265,7 +265,7 @@ class TenantScatterSubstrateTest {
     @Test
     void scatter_isNotReentrant_aPerTenantBodyCallingScatterFailsImmediately() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
 
         List<?> outcomes = scatter(tc, List.of("A"), dsl -> {
             try {
@@ -291,7 +291,7 @@ class TenantScatterSubstrateTest {
     @Test
     void acquisitionAfterRelease_isRefused_withoutBorrowingOrMounting() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         dslFor(tc, "A");
         releaseAll(tc);
         events.clear();
@@ -315,7 +315,7 @@ class TenantScatterSubstrateTest {
         var sources = new LinkedHashMap<String, DataSource>();
         sources.put("A", gated(fakeDataSource("A", false), entered, gate));
         Object runtime = newRuntime(sources, 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
 
         var late = java.util.concurrent.CompletableFuture.runAsync(() -> {
             try {
@@ -350,7 +350,7 @@ class TenantScatterSubstrateTest {
     @Test
     void straggler_releaseAllAbortsItsConnection_neverReusesIt_andCompletionLandsHarmlessly() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
         var workerDone = new CountDownLatch(1);
 
@@ -389,7 +389,7 @@ class TenantScatterSubstrateTest {
     @Test
     void interruptedJoin_quarantinesKeysLikeATimeout_soReleaseAbortsNotCloses() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
         var pinned = new CountDownLatch(2);
         var outcomes = new java.util.concurrent.atomic.AtomicReference<List<?>>();
@@ -471,7 +471,7 @@ class TenantScatterSubstrateTest {
             .getConstructor(DataSource.class, Map.class, SQLDialect.class, Executor.class, Duration.class)
             .newInstance(fakeDataSource("default", false), new LinkedHashMap<>(sources("A", "B")),
                 SQLDialect.POSTGRES, rejecting, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
 
         assertThatThrownBy(() -> scatter(tc, List.of("A", "B"), dsl -> {
@@ -503,7 +503,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aTimedOutTenantsScope_isNeverEnded_andFailsTheField() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
         beginField(tc, "m");
 
@@ -534,7 +534,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_thatFailed_rollsBackEveryConnectionItTouched() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         beginField(tc, "m");
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -552,7 +552,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aFailedCommitOnTheSecondConnection_keepsTheFirstsCommit_andFailsTheField() throws Throwable {
         Object runtime = newRuntime(sources("A", "B", "C"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         beginField(tc, "m");
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -575,7 +575,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aStragglerAfterItsFieldSettled_isRefused_andWritesNothing() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, STRAGGLER_DEADLINE);
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
         var workerDone = new CountDownLatch(1);
         var straggler = new java.util.concurrent.atomic.AtomicReference<Object>();
@@ -621,7 +621,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aFailedConsumerScope_commitsNoConnection_andReportsTheNestedFailure() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         beginField(tc, "m");
         var a = (org.jooq.DSLContext) dslFor(tc, "A");
         dslFor(tc, "B");
@@ -644,7 +644,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aFailedOwnScope_rollsTheFieldBack_butAddsNoNestedFailureReport() throws Throwable {
         Object runtime = newRuntime(sources("A"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         beginField(tc, "m");
         var a = (org.jooq.DSLContext) dslFor(tc, "A");
         var owned = (org.jooq.DSLContext) providerClass.getMethod("owned", org.jooq.DSLContext.class).invoke(null, a);
@@ -665,7 +665,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aProbeThatFailsOnTheSecondConnection_leavesTheFirstUncommitted() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         beginField(tc, "m");
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -683,7 +683,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_anUncheckedFailureSettlingOneConnection_failsTheField_andTheOthersStillSettle() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         beginField(tc, "m");
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -701,7 +701,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aWorkerWhoseOpenStalls_blocksNeitherAnotherWorkersEnlistNorTheSettle() throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(400));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var stall = new CountDownLatch(1);
         stallOpenFor.put("A", stall);
         beginField(tc, "m");
@@ -724,7 +724,7 @@ class TenantScatterSubstrateTest {
     @Test
     void mutationField_aSecondAcquirerOfAKey_waitsForTheOpen_andFailsWhenTheOpenFailed() throws Throwable {
         Object runtime = newRuntime(sources("A"), 4, Duration.ofSeconds(10));
-        Object tc = newTenantConnections(runtime);
+        Object tc = newOwnedConnections(runtime);
         var stall = new CountDownLatch(1);
         stallOpenFor.put("A", stall);
         failOpenFor.add("A");
@@ -759,10 +759,10 @@ class TenantScatterSubstrateTest {
     private java.util.concurrent.CompletableFuture<graphql.ExecutionResult> queryAbortingAtThirdField(
             SynchronousAbortDriver.Abort abort) throws Throwable {
         Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
-        Method dslFor = tenantConnectionsClass.getMethod("dslFor", String.class);
+        Method dslFor = ownedConnectionsClass.getMethod("dslFor", String.class);
         Map<String, String> keyOf = Map.of("a", "A", "b", "B");
         var fields = List.of("a", "b", "c");
-        var engine = SynchronousAbortDriver.engine(runtime, fields, tenantConnectionsClass,
+        var engine = SynchronousAbortDriver.engine(runtime, fields, ownedConnectionsClass,
             field -> carrier -> {
                 if (keyOf.containsKey(field)) {
                     dslFor.invoke(carrier, keyOf.get(field));
@@ -772,7 +772,7 @@ class TenantScatterSubstrateTest {
         Map<Object, Object> context = new java.util.HashMap<>();
         context.put(no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY,
             RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
-        context.put(tenantConnectionsClass.getField(ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD).get(null),
+        context.put(ownedConnectionsClass.getField(ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD).get(null),
             requestTenantsOf(runtime));
         return SynchronousAbortDriver.execute(engine, "query", fields, context);
     }
@@ -830,35 +830,35 @@ class TenantScatterSubstrateTest {
         return harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
     }
 
-    private Object newTenantConnections(Object runtime) throws Throwable {
+    private Object newOwnedConnections(Object runtime) throws Throwable {
         Class<?> requestTenantsClass = requestTenantsClass();
         Object requestTenants = requestTenantsOf(runtime);
         Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
             .newInstance(runtime, commitPolicyCommit, requestTenants,
                 RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {
-        return (List<?>) invoke(() -> tenantConnectionsClass
+        return (List<?>) invoke(() -> ownedConnectionsClass
             .getMethod("scatter", Collection.class, Function.class)
             .invoke(tc, keys, perTenant));
     }
 
     private void beginField(Object tc, String resultKey) throws Throwable {
-        invoke(() -> tenantConnectionsClass.getMethod("beginField", List.class).invoke(tc, List.of(resultKey)));
+        invoke(() -> ownedConnectionsClass.getMethod("beginField", List.class).invoke(tc, List.of(resultKey)));
     }
 
     private Throwable settleField(Object tc, boolean failed) throws Throwable {
-        return (Throwable) invoke(() -> tenantConnectionsClass.getMethod("settleField", boolean.class).invoke(tc, failed));
+        return (Throwable) invoke(() -> ownedConnectionsClass.getMethod("settleField", boolean.class).invoke(tc, failed));
     }
 
     private Object dslFor(Object tc, Object key) throws Throwable {
-        return invoke(() -> tenantConnectionsClass.getMethod("dslFor", String.class).invoke(tc, key));
+        return invoke(() -> ownedConnectionsClass.getMethod("dslFor", String.class).invoke(tc, key));
     }
 
     private void releaseAll(Object tc) throws Throwable {
-        invoke(() -> tenantConnectionsClass.getMethod("releaseAll").invoke(tc));
+        invoke(() -> ownedConnectionsClass.getMethod("releaseAll").invoke(tc));
     }
 
     private static Object invoke(ThrowingSupplier body) throws Throwable {

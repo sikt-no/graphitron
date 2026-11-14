@@ -325,7 +325,7 @@ public final class PlanCompileGraph {
                     });
                 }
                 // The context interface always names the per-operation carrier.
-                case GRAPHITRON_CONTEXT -> runtimeUnit("TenantConnections")
+                case GRAPHITRON_CONTEXT -> runtimeUnit("OwnedConnections")
                     .ifPresent(t -> precise(units.get(0), t));
                 // Every decode<Type> refuses a key value through the column trip.
                 case NODE_ID_ENCODER -> precise(units.get(0), require(GlobalUnitKind.COLUMN_VALUES));
@@ -335,7 +335,7 @@ public final class PlanCompileGraph {
                 case CONNECTION_RUNTIME -> {
                     var pinned = runtimeUnit("PinnedConnection");
                     var runtime = runtimeUnit("GraphitronRuntime");
-                    var tenantConnections = runtimeUnit("TenantConnections");
+                    var ownedConnections = runtimeUnit("OwnedConnections");
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
                     var mountException = runtimeUnit("SessionMountException");
                     var requestTenants = runtimeUnit("RequestTenants");
@@ -355,7 +355,7 @@ public final class PlanCompileGraph {
                         batchSizeLimit.ifPresent(l -> declared(r, l));
                         refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> declared(r, i));
                     });
-                    tenantConnections.ifPresent(t -> {
+                    ownedConnections.ifPresent(t -> {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
                         requestTenants.ifPresent(rt -> declared(t, rt));
@@ -381,7 +381,7 @@ public final class PlanCompileGraph {
                     runtimeUnit("PinnedConnection").ifPresent(p -> declared(instrumentation, p));
                     // Lazy acquisition on every path: the instrumentation publishes the
                     // per-operation carrier on both topologies.
-                    runtimeUnit("TenantConnections").ifPresent(t -> declared(instrumentation, t));
+                    runtimeUnit("OwnedConnections").ifPresent(t -> declared(instrumentation, t));
                     runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
@@ -418,7 +418,7 @@ public final class PlanCompileGraph {
                     // (Graphitron.runtime(...)) but never the instrumentation class.
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(facade, r));
                     // sessionMountFailure reads the cause chain through the carrier's static.
-                    runtimeUnit("TenantConnections").ifPresent(t -> precise(facade, t));
+                    runtimeUnit("OwnedConnections").ifPresent(t -> precise(facade, t));
                     // A <tenantColumn> build's factories take or wrap the RequestTenants value.
                     runtimeUnit("RequestTenants").ifPresent(rt -> precise(facade, rt));
                     // A federated @oneOf build's schemaSdl prints through the helper.
@@ -449,9 +449,9 @@ public final class PlanCompileGraph {
                     precise(glue, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                 }
                 // A session read goes through the connection runtime's guarded handle accessors,
-                // which live on the same TenantConnections carrier the request context reaches.
+                // which live on the same OwnedConnections carrier the request context reaches.
                 if (row.readsSession()) {
-                    runtimeUnit("TenantConnections").ifPresent(t -> precise(glue, t));
+                    runtimeUnit("OwnedConnections").ifPresent(t -> precise(glue, t));
                 }
             }
         }

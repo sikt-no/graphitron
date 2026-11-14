@@ -9,7 +9,7 @@ public final class SessionAccessors {
 
     private SessionAccessors() {}
 
-    /** The method on the generated {@code TenantConnections} that reads one member of the session handle. */
+    /** The method on the generated {@code OwnedConnections} that reads one member of the session handle. */
     public static String memberMethod(String member) {
         return "sessionMember_" + member;
     }

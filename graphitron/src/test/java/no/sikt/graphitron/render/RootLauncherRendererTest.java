@@ -170,7 +170,7 @@ class RootLauncherRendererTest {
     @Test
     void fannedInvocation_envOnlySignatureHoistsAndScattersThroughTheCarrierRef() {
         var row = filmsRow(null,
-            new TenantStrategy.Fanned(UNITS.tenantConnections(), List.of()), list(pkDesc()));
+            new TenantStrategy.Fanned(UNITS.ownedConnections(), List.of()), list(pkDesc()));
         var m = render(row);
         assertThat(m.name()).isEqualTo("rowsFilms");
         assertThat(m.returnType().toString()).isEqualTo("java.util.List<java.lang.Object>");
@@ -384,7 +384,7 @@ class RootLauncherRendererTest {
                     new LaunchSource.DiscriminatedTable(
                         filmTable(List.of()), discriminatorCol("film_type"), List.of(), List.of(), List.of(),
                         NO_SHARED_ALIASES),
-                    null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections(), List.of()), list(null), UNITS.selectionOccurrences()))
+                    null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.ownedConnections(), List.of()), list(null), UNITS.selectionOccurrences()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("runs single-tenant");
     }

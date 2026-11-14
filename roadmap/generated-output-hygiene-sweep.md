@@ -160,7 +160,7 @@ truncates at 100 and quietly reports exactly that). Baseline 2026-07-28, 413 war
 | `InvalidLink` | 1 | Corroborates the dangling-`{@link}` bullet above |
 
 Calibration, and the reason this is advisory rather than gate-grade: `ModifyCollectionInEnhancedForLoop`
-also fires once, on `TenantConnections`'s `pinnedByTenant.remove(key)` inside a `keySet()` loop.
+also fires once, on `OwnedConnections`'s `pinnedByTenant.remove(key)` inside a `keySet()` loop.
 It is a false positive. The field is a `ConcurrentHashMap`, its iterator is weakly consistent, and
 the emitted comment shows the removal is deliberate ownership arbitration. Each check earns
 gate status individually, on evidence, or stays a report.

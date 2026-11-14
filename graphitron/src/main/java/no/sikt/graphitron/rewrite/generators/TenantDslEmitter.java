@@ -17,7 +17,7 @@ import java.util.List;
  * the field's {@link TenantBinding} arm. Single-tenant builds (no configured tenant scopes, or a
  * schema-free emission context) keep the exact {@code graphitronContext(env).getDslContext(env)}
  * form; multi-tenant builds route each acquisition through the generated
- * {@code TenantConnections} carrier:
+ * {@code OwnedConnections} carrier:
  *
  * <ul>
  *   <li>{@link TenantBinding.ArgumentBound}: reads every bound slot's runtime value with the
@@ -85,15 +85,15 @@ final class TenantDslEmitter {
         }
     }
 
-    /** The generated {@code ConnectionKey} beside the carrier {@code tenantConnections}. */
-    private static ClassName connectionKeyOf(ClassName tenantConnections) {
-        return ClassName.get(tenantConnections.packageName(), ConnectionKeyShape.CLASS_NAME);
+    /** The generated {@code ConnectionKey} beside the carrier {@code ownedConnections}. */
+    private static ClassName connectionKeyOf(ClassName ownedConnections) {
+        return ClassName.get(ownedConnections.packageName(), ConnectionKeyShape.CLASS_NAME);
     }
 
-    /** The hand-down of the divined key held in {@value #TENANT_KEY_LOCAL}, for a carrier in {@code tenantConnections}' package. */
-    private static ConnectionKeyHandDown divinedHandDown(ClassName tenantConnections) {
+    /** The hand-down of the divined key held in {@value #TENANT_KEY_LOCAL}, for a carrier in {@code ownedConnections}' package. */
+    private static ConnectionKeyHandDown divinedHandDown(ClassName ownedConnections) {
         return ConnectionKeyHandDown.divined(TENANT_KEY_LOCAL,
-            ClassName.get(tenantConnections.packageName(), ConnectionKeyShape.CLASS_NAME));
+            ClassName.get(ownedConnections.packageName(), ConnectionKeyShape.CLASS_NAME));
     }
 
     /**
@@ -162,25 +162,25 @@ final class TenantDslEmitter {
             return singleTenant(ctx);
         }
         TenantBinding binding = requireBinding(ctx, fieldName);
-        var tenantConnections = tenantConnectionsClass(outputPackage);
+        var ownedConnections = ownedConnectionsClass(outputPackage);
         return switch (binding) {
             case TenantBinding.Untenanted.GlobalRead ignored -> new Resolution(
                 CodeBlock.builder()
-                    .addStatement("$T dsl = $T.dslGlobal(env)", DSL_CONTEXT, tenantConnections)
+                    .addStatement("$T dsl = $T.dslGlobal(env)", DSL_CONTEXT, ownedConnections)
                     .build());
             case TenantBinding.Untenanted.DefaultSource ignored -> new Resolution(
                 CodeBlock.builder()
-                    .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, tenantConnections)
+                    .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, ownedConnections)
                     .build());
-            case TenantBinding.ArgumentBound bound -> argumentBound(ctx, fieldName, bound, tenantConnections, site);
+            case TenantBinding.ArgumentBound bound -> argumentBound(ctx, fieldName, bound, ownedConnections, site);
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "FanOut reached the generic DSL-declaration site; the fanned-fetcher emission "
                     + "owns this coordinate and acquires per tenant through scatter.");
-            case TenantBinding.Inherited ignored -> inheritedRead(tenantConnections);
-            case TenantBinding.NodeIdBound ignored -> inheritedRead(tenantConnections);
-            case TenantBinding.EntityRepBound ignored -> inheritedRead(tenantConnections);
-            case TenantBinding.ParentRowBound parentRow -> parentRowRead(parentRow, tenantConnections);
+            case TenantBinding.Inherited ignored -> inheritedRead(ownedConnections);
+            case TenantBinding.NodeIdBound ignored -> inheritedRead(ownedConnections);
+            case TenantBinding.EntityRepBound ignored -> inheritedRead(ownedConnections);
+            case TenantBinding.ParentRowBound parentRow -> parentRowRead(parentRow, ownedConnections);
         };
     }
 
@@ -249,12 +249,12 @@ final class TenantDslEmitter {
             return CodeBlock.of("$L.getDslContext(env)", ctx.graphitronContextCall());
         }
         TenantBinding binding = requireBinding(ctx, fieldName);
-        var tenantConnections = tenantConnectionsClass(outputPackage);
+        var ownedConnections = ownedConnectionsClass(outputPackage);
         return switch (binding) {
             case TenantBinding.Untenanted.GlobalRead ignored ->
-                CodeBlock.of("$T.dslGlobal(env)", tenantConnections);
+                CodeBlock.of("$T.dslGlobal(env)", ownedConnections);
             case TenantBinding.Untenanted.DefaultSource ignored ->
-                CodeBlock.of("$T.dslDefault(env)", tenantConnections);
+                CodeBlock.of("$T.dslDefault(env)", ownedConnections);
             case TenantBinding.ArgumentBound ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "ArgumentBound reached an expression-only DSL site that cannot emit the "
@@ -266,9 +266,9 @@ final class TenantDslEmitter {
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "FanOut reached an expression-only DSL site (a service-call path); the "
                     + "service fan-out combination is deferred and rejected at validation.");
-            case TenantBinding.Inherited ignored -> inheritedReadExpression(tenantConnections);
-            case TenantBinding.NodeIdBound ignored -> inheritedReadExpression(tenantConnections);
-            case TenantBinding.EntityRepBound ignored -> inheritedReadExpression(tenantConnections);
+            case TenantBinding.Inherited ignored -> inheritedReadExpression(ownedConnections);
+            case TenantBinding.NodeIdBound ignored -> inheritedReadExpression(ownedConnections);
+            case TenantBinding.EntityRepBound ignored -> inheritedReadExpression(ownedConnections);
             case TenantBinding.ParentRowBound ignored -> throw parentRowUnreachable(ctx, fieldName);
         };
     }
@@ -287,14 +287,14 @@ final class TenantDslEmitter {
     static CodeBlock serviceDslExpression(TypeFetcherEmissionContext ctx, OutputField field,
                                           Resolution handDown, String outputPackage) {
         return handDown.handsDownTenant()
-            ? CodeBlock.of("$T.dslFor(env, $L)", tenantConnectionsClass(outputPackage), TENANT_KEY_LOCAL)
+            ? CodeBlock.of("$T.dslFor(env, $L)", ownedConnectionsClass(outputPackage), TENANT_KEY_LOCAL)
             : dslExpression(ctx, field.name(), outputPackage);
     }
 
     /** The localContext-divined acquisition expression the inherited family splices in. */
-    private static CodeBlock inheritedReadExpression(ClassName tenantConnections) {
+    private static CodeBlock inheritedReadExpression(ClassName ownedConnections) {
         return CodeBlock.of("$T.dslFor(env, $T.divinedTenant($T.tenantIn(env.getLocalContext())))",
-            tenantConnections, tenantConnections, connectionKeyOf(tenantConnections));
+            ownedConnections, ownedConnections, connectionKeyOf(ownedConnections));
     }
 
     /**
@@ -316,8 +316,8 @@ final class TenantDslEmitter {
         var none = new Resolution(CodeBlock.of(""));
         return switch (binding) {
             case TenantBinding.ArgumentBound bound -> new Resolution(
-                divinedKeyDeclaration(ctx, field.name(), bound, tenantConnectionsClass(outputPackage), site),
-                divinedHandDown(tenantConnectionsClass(outputPackage)));
+                divinedKeyDeclaration(ctx, field.name(), bound, ownedConnectionsClass(outputPackage), site),
+                divinedHandDown(ownedConnectionsClass(outputPackage)));
             // A fanned field hands tenants down per element (each unioned row's DataFetcherResult
             // carries its own localContext), never as one divined-key local; the fanned-fetcher
             // emission owns that stamping.
@@ -353,9 +353,9 @@ final class TenantDslEmitter {
         return new Resolution(
             CodeBlock.builder()
                 .addStatement("$T $L = $T.divinedTenant($L)", keyType, TENANT_KEY_LOCAL,
-                    tenantConnectionsClass(outputPackage), keyLocal)
+                    ownedConnectionsClass(outputPackage), keyLocal)
                 .build(),
-            divinedHandDown(tenantConnectionsClass(outputPackage)));
+            divinedHandDown(ownedConnectionsClass(outputPackage)));
     }
 
     /**
@@ -394,12 +394,12 @@ final class TenantDslEmitter {
                     String.class, localName, String.class, "/", "@" + parentType)
                 .build();
         }
-        var tenantConnections = tenantConnectionsClass(outputPackage);
+        var ownedConnections = ownedConnectionsClass(outputPackage);
         var tenantPartitioned = CodeBlock.builder()
-            .addStatement("$T $L = $T.tenantLoaderName(env, $S)", String.class, localName, tenantConnections, parentType)
+            .addStatement("$T $L = $T.tenantLoaderName(env, $S)", String.class, localName, ownedConnections, parentType)
             .build();
         var barePath = CodeBlock.builder()
-            .addStatement("$T $L = $T.loaderName(env, $S)", String.class, localName, tenantConnections, parentType)
+            .addStatement("$T $L = $T.loaderName(env, $S)", String.class, localName, ownedConnections, parentType)
             .build();
         return switch (binding) {
             case TenantBinding.Inherited ignored -> tenantPartitioned;
@@ -407,7 +407,7 @@ final class TenantDslEmitter {
             // name (the fetcher's key-first framing), so each loader batch is one tenant's.
             case TenantBinding.ParentRowBound ignored -> CodeBlock.builder()
                 .addStatement("$T $L = $T.tenantLoaderName(env, $S, $L)",
-                    String.class, localName, tenantConnections, parentType, TENANT_KEY_LOCAL)
+                    String.class, localName, ownedConnections, parentType, TENANT_KEY_LOCAL)
                 .build();
             // A fanned field's own loader batches its (untenanted) parents; the fan-out happens
             // inside the batch load, and children partition per tenant through the per-element
@@ -459,10 +459,10 @@ final class TenantDslEmitter {
         return binding;
     }
 
-    /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.TenantConnections}. */
-    static ClassName tenantConnectionsClass(String outputPackage) {
+    /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.OwnedConnections}. */
+    static ClassName ownedConnectionsClass(String outputPackage) {
         return ClassName.get(outputPackage + ".schema",
-            ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+            ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
     }
 
     /** The byte-identical pre-tenant form: {@code DSLContext dsl = graphitronContext(env).getDslContext(env);}. */
@@ -473,11 +473,11 @@ final class TenantDslEmitter {
                 .build());
     }
 
-    private static Resolution inheritedRead(ClassName tenantConnections) {
+    private static Resolution inheritedRead(ClassName ownedConnections) {
         return new Resolution(
             CodeBlock.builder()
                 .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant($T.tenantIn(env.getLocalContext())))",
-                    DSL_CONTEXT, tenantConnections, tenantConnections, connectionKeyOf(tenantConnections))
+                    DSL_CONTEXT, ownedConnections, ownedConnections, connectionKeyOf(ownedConnections))
                 .build());
     }
 
@@ -487,26 +487,26 @@ final class TenantDslEmitter {
      * the same value, so every key in the batch names this tenant.
      */
     private static Resolution parentRowRead(TenantBinding.ParentRowBound parentRow,
-                                            ClassName tenantConnections) {
+                                            ClassName ownedConnections) {
         var parent = parentRow.parentTable();
         return new Resolution(
             CodeBlock.builder()
                 .addStatement("$T dsl = $T.dslFor(env, $T.divinedTenant((($T) env.getSource()).get($T.$L.$L)))",
-                    DSL_CONTEXT, tenantConnections, tenantConnections, RECORD,
+                    DSL_CONTEXT, ownedConnections, ownedConnections, RECORD,
                     no.sikt.graphitron.render.CatalogRefs.constantsClass(parent),
                     parent.javaFieldName(), parentRow.slot().sourceSide().javaName())
                 .build());
     }
 
     private static Resolution argumentBound(TypeFetcherEmissionContext ctx, String fieldName,
-                                            TenantBinding.ArgumentBound bound, ClassName tenantConnections,
+                                            TenantBinding.ArgumentBound bound, ClassName ownedConnections,
                                             EmptyAnswerSite site) {
         return new Resolution(
             CodeBlock.builder()
-                .add(divinedKeyDeclaration(ctx, fieldName, bound, tenantConnections, site))
-                .addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, tenantConnections, TENANT_KEY_LOCAL)
+                .add(divinedKeyDeclaration(ctx, fieldName, bound, ownedConnections, site))
+                .addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, ownedConnections, TENANT_KEY_LOCAL)
                 .build(),
-            divinedHandDown(tenantConnections));
+            divinedHandDown(ownedConnections));
     }
 
     /**
@@ -533,7 +533,7 @@ final class TenantDslEmitter {
                 + requireBinding(ctx, fieldName));
         }
         var arguments = CodeBlock.builder();
-        for (CodeBlock read : slotReads(ctx, fanOut.narrowing(), tenantConnectionsClass(outputPackage))) {
+        for (CodeBlock read : slotReads(ctx, fanOut.narrowing(), ownedConnectionsClass(outputPackage))) {
             arguments.add(", $L", read);
         }
         return arguments.build();
@@ -554,31 +554,31 @@ final class TenantDslEmitter {
      * </ul>
      */
     private static CodeBlock divinedKeyDeclaration(TypeFetcherEmissionContext ctx, String fieldName,
-                                                   TenantBinding.ArgumentBound bound, ClassName tenantConnections,
+                                                   TenantBinding.ArgumentBound bound, ClassName ownedConnections,
                                                    EmptyAnswerSite site) {
         var scopes = (TenantScopes.Configured) ctx.graphitronSchema().tenantScopes();
         var keyType = scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
-        var reads = slotReads(ctx, bound.bindings(), tenantConnections);
+        var reads = slotReads(ctx, bound.bindings(), ownedConnections);
         return switch (bound.whenNoTenant()) {
             case TenantBinding.WhenNoTenant.Unreachable ignored ->
-                fold(keyType, "divinedTenant", reads, tenantConnections);
+                fold(keyType, "divinedTenant", reads, ownedConnections);
             case TenantBinding.WhenNoTenant.Refuse refuse -> CodeBlock.builder()
-                .add(fold(keyType, "namedTenant", reads, tenantConnections))
+                .add(fold(keyType, "namedTenant", reads, ownedConnections))
                 .beginControlFlow("if ($L == null)", TENANT_KEY_LOCAL)
-                .addStatement("throw new $T($S)", clientExceptionClass(tenantConnections),
+                .addStatement("throw new $T($S)", clientExceptionClass(ownedConnections),
                     noTenantMessage(
                         ctx.parentTypeName() + "." + fieldName, refuse.arguments()))
                 .endControlFlow()
                 .build();
             case TenantBinding.WhenNoTenant.AnswerEmpty empty -> switch (site) {
                 case EmptyAnswerSite.Renders renders -> CodeBlock.builder()
-                    .add(fold(keyType, "namedTenant", reads, tenantConnections))
+                    .add(fold(keyType, "namedTenant", reads, ownedConnections))
                     .beginControlFlow("if ($L == null)", TENANT_KEY_LOCAL)
                     .add(renders.early().apply(empty.value()))
                     .endControlFlow()
                     .build();
                 case EmptyAnswerSite.Gated ignored ->
-                    fold(keyType, "divinedTenant", reads, tenantConnections);
+                    fold(keyType, "divinedTenant", reads, ownedConnections);
                 case EmptyAnswerSite.NoEmptyAnswer ignored -> throw new IllegalStateException(
                     "Graphitron generator bug (tenant routing): field '" + ctx.parentTypeName() + "."
                         + fieldName + "' answers an empty request with " + empty.value()
@@ -611,11 +611,11 @@ final class TenantDslEmitter {
             ClassName.get("org.jooq", "SQLDialect"));
     }
 
-    /** {@code <K> _divinedTenant = TenantConnections.<method>(<slot reads>);} */
+    /** {@code <K> _divinedTenant = OwnedConnections.<method>(<slot reads>);} */
     private static CodeBlock fold(com.palantir.javapoet.TypeName keyType, String method,
-                                  List<CodeBlock> reads, ClassName tenantConnections) {
+                                  List<CodeBlock> reads, ClassName ownedConnections) {
         var divined = CodeBlock.builder()
-            .add("$T $L = $T.$L(", keyType, TENANT_KEY_LOCAL, tenantConnections, method);
+            .add("$T $L = $T.$L(", keyType, TENANT_KEY_LOCAL, ownedConnections, method);
         for (int i = 0; i < reads.size(); i++) {
             if (i > 0) {
                 divined.add(", ");
@@ -625,9 +625,9 @@ final class TenantDslEmitter {
         return divined.add(");\n").build();
     }
 
-    /** The generated client-error type, beside {@code TenantConnections} in the schema package. */
-    private static ClassName clientExceptionClass(ClassName tenantConnections) {
-        return ClassName.get(tenantConnections.packageName(),
+    /** The generated client-error type, beside {@code OwnedConnections} in the schema package. */
+    private static ClassName clientExceptionClass(ClassName ownedConnections) {
+        return ClassName.get(ownedConnections.packageName(),
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
     }
 
@@ -652,7 +652,7 @@ final class TenantDslEmitter {
      * re-walks the operation carriers, so classification and emission cannot disagree.
      */
     private static List<CodeBlock> slotReads(TypeFetcherEmissionContext ctx,
-                                             List<TenantBinding.BoundSlot> slots, ClassName tenantConnections) {
+                                             List<TenantBinding.BoundSlot> slots, ClassName ownedConnections) {
         var reads = new ArrayList<CodeBlock>();
         for (TenantBinding.BoundSlot slot : slots) {
             CodeBlock read = switch (slot.read()) {
@@ -660,7 +660,7 @@ final class TenantDslEmitter {
                     CodeBlock.of("env.<Object>getArgument($S)", slot.slotName());
                 case TenantBinding.SlotRead.NestedInput nested -> {
                     var walk = CodeBlock.builder()
-                        .add("$T.tenantSlot(env.getArgument($S)", tenantConnections, nested.outerArgName());
+                        .add("$T.tenantSlot(env.getArgument($S)", ownedConnections, nested.outerArgName());
                     for (String key : nested.path()) {
                         walk.add(", $S", key);
                     }

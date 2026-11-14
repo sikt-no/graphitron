@@ -495,7 +495,7 @@ class SessionHookExecutionTest {
 
             // The emitted guard itself, driven directly: the message names the field
             // coordinate, the sigil, and the owned entry points.
-            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.TenantConnections
+            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.OwnedConnections
                     .sessionHandle(supplied, "Query.sessionPrincipal"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Query.sessionPrincipal")
@@ -599,7 +599,7 @@ class SessionHookExecutionTest {
                 .isNotEmpty();
             // The error the engine surfaces is redacted like any fault; the guarded read itself,
             // driven directly, is what names the member's coordinate and the owned entry points.
-            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.TenantConnections
+            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.OwnedConnections
                     .sessionMember_principal(supplied, "Query.customersOfPrincipal"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Query.customersOfPrincipal")

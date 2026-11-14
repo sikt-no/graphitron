@@ -52,7 +52,7 @@ public final class ArgCallEmitter {
      *                          caller-unreachable today, retained as a guard for a future
      *                          caller with no batch to supply.
      * @param outputPackage     the run's output package, locating the generated
-     *                          {@code TenantConnections} carrier for the {@code $session} guard.
+     *                          {@code OwnedConnections} carrier for the {@code $session} guard.
      * @param fieldCoordinate   the emitting field ({@code Type.field}), baked into the
      *                          {@code $session} guard's failure message.
      */
@@ -134,7 +134,7 @@ public final class ArgCallEmitter {
                         + " message, so every caller must supply it: param '" + param.name() + "'");
                 }
                 yield CodeBlock.of("$T.sessionHandle(dsl, $S)",
-                    TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate);
+                    TenantDslEmitter.ownedConnectionsClass(outputPackage), fieldCoordinate);
             }
             case ParamSource.SessionHandleMember member -> {
                 if (fieldCoordinate == null) {
@@ -144,7 +144,7 @@ public final class ArgCallEmitter {
                         + " message, so every caller must supply it: param '" + param.name() + "'");
                 }
                 yield CodeBlock.of("$T.$L(dsl, $S)",
-                    TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                    TenantDslEmitter.ownedConnectionsClass(outputPackage),
                     ConnectionRuntimeClassGenerator.sessionMemberMethod(member.member()), fieldCoordinate);
             }
         };

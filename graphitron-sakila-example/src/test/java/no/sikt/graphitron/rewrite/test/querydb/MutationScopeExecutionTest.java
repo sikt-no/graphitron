@@ -250,7 +250,7 @@ class MutationScopeExecutionTest {
     void aServiceThatNestsATransaction_isWarnedOncePerMethod_namingTheFieldAndTheMethod() {
         // The test classpath logs through slf4j-jboss-logmanager, so the carrier's logger is the
         // JBoss LogManager's, and the line is read off a handler attached to it.
-        var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.TenantConnections");
+        var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.OwnedConnections");
         var warnings = new java.util.concurrent.CopyOnWriteArrayList<String>();
         // The logger is the JVM's, and other classes run beside this one: their requests warn on
         // their own threads, while this one's runs to completion on the test's thread.
@@ -366,7 +366,7 @@ class MutationScopeExecutionTest {
 
     /** Runs {@code body}, collecting what the carrier logs at WARN or above meanwhile. */
     private Captured warningsDuring(java.util.function.Supplier<ExecutionResult> body) {
-        var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.TenantConnections");
+        var logger = org.jboss.logmanager.Logger.getLogger("no.sikt.graphitron.generated.schema.OwnedConnections");
         var warnings = new java.util.concurrent.CopyOnWriteArrayList<String>();
         // The logger is the JVM's, and other classes run beside this one: their requests warn on
         // their own threads, while this one's runs to completion on the test's thread.

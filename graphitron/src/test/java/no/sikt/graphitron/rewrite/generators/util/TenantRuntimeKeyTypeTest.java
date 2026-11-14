@@ -61,7 +61,7 @@ class TenantRuntimeKeyTypeTest {
             .contains("java.util.Map<? extends java.lang.Integer, javax.sql.DataSource> dataSourcesByTenant")
             .contains("acquireForTenant(java.lang.Integer tenantKey");
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             .contains("java.util.Optional<java.lang.Integer>")
             .contains("dslFor(java.lang.Integer tenantKey");
@@ -103,7 +103,7 @@ class TenantRuntimeKeyTypeTest {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
-        var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         // The shape of the set the carrier owns. What entryFor does with it (refusal before any
         // getConnection and ahead of the hosting check) is pinned where it runs, in
@@ -196,7 +196,7 @@ class TenantRuntimeKeyTypeTest {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
-        var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         var defaultTenant = carrier.fieldSpecs().stream()
             .filter(f -> "defaultTenant".equals(f.name()))
@@ -232,7 +232,7 @@ class TenantRuntimeKeyTypeTest {
     void singleTenantBuildEmitsNoRequestTenancyValueAndNoGlobalReadAcquisition() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
-        var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         assertThat(units).extracting(TypeSpec::name)
             .doesNotContain(ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
@@ -244,7 +244,7 @@ class TenantRuntimeKeyTypeTest {
     void singleTenantCarrierHoldsNoTenantSet() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
-        var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("tenants");
         assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("permits");
@@ -256,10 +256,10 @@ class TenantRuntimeKeyTypeTest {
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             // Carrier resolution off the GraphQL context, failing loudly outside owned acquisition.
-            .contains("static fake.code.generated.schema.TenantConnections of(")
+            .contains("static fake.code.generated.schema.OwnedConnections of(")
             .contains("graphql.schema.DataFetchingEnvironment env")
             // The divined-key fold: typed return, collection flattening, agreement guard.
             .contains("static java.lang.Integer divinedTenant(java.lang.Object... candidates)")
@@ -279,7 +279,7 @@ class TenantRuntimeKeyTypeTest {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             // Genuinely <tenantColumn>-only machinery stays absent in single-tenant builds.
             .doesNotContain("divinedTenant")
@@ -289,7 +289,7 @@ class TenantRuntimeKeyTypeTest {
             // The unified per-key carrier is both topologies' one acquisition seam: the
             // single-tenant path resolves contexts through of(env) + dslDefault() (the one-key
             // case), and the untenanted slot is the map's Optional.empty() entry, never a field.
-            .contains("static fake.code.generated.schema.TenantConnections of(")
+            .contains("static fake.code.generated.schema.OwnedConnections of(")
             .contains("dslDefault")
             .doesNotContain("defaultPinned");
     }
@@ -322,7 +322,7 @@ class TenantRuntimeKeyTypeTest {
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             // The scatter method: typed keys, per-tenant unit of work, outcomes in key order.
             .contains("scatter(")
@@ -352,7 +352,7 @@ class TenantRuntimeKeyTypeTest {
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             // The graphitron-owned request key the factory writes and the instrumentation reads.
             .contains("String TENANTS_KEY = \"no.sikt.graphitron.request.tenants\"")
@@ -374,7 +374,7 @@ class TenantRuntimeKeyTypeTest {
 
         // The one per-element stamp, shared by the fan-out union and node and entity dispatch,
         // typed on the build's tenant key so it is no general-purpose way into the slot.
-        var handDown = method(type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME),
+        var handDown = method(type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME),
             ConnectionRuntimeClassGenerator.HAND_DOWN_METHOD);
         assertThat(handDown.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(handDown.returnType().toString()).isEqualTo("graphql.execution.DataFetcherResult<T>");
@@ -401,7 +401,7 @@ class TenantRuntimeKeyTypeTest {
         // The concurrent map itself is not fan-out substrate any more: the unified carrier uses
         // one ConcurrentHashMap in both topologies (computeIfAbsent is the only minting
         // mechanism), so only the genuinely <tenantColumn>-gated machinery is asserted absent.
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             .doesNotContain("scatter")
             .doesNotContain("Outcome")
@@ -424,7 +424,7 @@ class TenantRuntimeKeyTypeTest {
             .contains("java.util.Map<?, javax.sql.DataSource> dataSourcesByTenant")
             .contains("acquireForTenant(java.lang.Object tenantKey");
 
-        var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier).contains("dslFor(java.lang.Object tenantKey");
     }
 }

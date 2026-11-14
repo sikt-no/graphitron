@@ -48,7 +48,7 @@ class TenantAuthorizationSubstrateTest {
 
     private static EmittedCodeHarness harness;
     private static Class<?> runtimeClass;
-    private static Class<?> tenantConnectionsClass;
+    private static Class<?> ownedConnectionsClass;
     private static Class<?> requestTenantsClass;
     private static Class<?> commitPolicyClass;
     private static Class<?> clientExceptionClass;
@@ -84,7 +84,7 @@ class TenantAuthorizationSubstrateTest {
         }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
-        tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");
+        ownedConnectionsClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections");
         requestTenantsClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         clientExceptionClass = harness.load(SCHEMA_PACKAGE + "." + GraphitronClientExceptionClassGenerator.CLASS_NAME);
         Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
@@ -111,7 +111,7 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void keyOutsideTheRequestSet_isRefusedBeforeAnyConnectionIsTaken() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
             Set.of("A"));
 
         assertThatThrownBy(() -> dslFor(tc, "B"))
@@ -125,7 +125,7 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void unhostedKeyOutsideTheSet_getsTheSameRefusalAsAHostedOne_soHostingCannotBeProbed() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
 
         assertThatThrownBy(() -> dslFor(tc, "Z"))
             .as("the membership check runs ahead of the runtime's hosting check")
@@ -136,7 +136,7 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void unhostedKeyInsideTheSet_stillFailsTheHostingCheck() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A", "Z"));
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A", "Z"));
 
         assertThatThrownBy(() -> dslFor(tc, "Z")).isInstanceOf(NoSuchElementException.class);
         releaseAll(tc);
@@ -144,10 +144,10 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void mountReceivesTheRoutedKey_andEmptyForTheDefaultSource() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
 
         dslFor(tc, "A");
-        invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
+        invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
 
         assertThat(RecordingSessionState.mountedTenants(harness))
             .containsExactly(Optional.of("A"), Optional.empty());
@@ -160,7 +160,7 @@ class TenantAuthorizationSubstrateTest {
         var sources = new LinkedHashMap<String, DataSource>();
         sources.put("A", shared);
         sources.put("B", shared);
-        Object tc = newTenantConnections(newRuntime(sources), Set.of("A", "B"));
+        Object tc = newOwnedConnections(newRuntime(sources), Set.of("A", "B"));
 
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -186,7 +186,7 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void dslGlobal_pinsTheDefaultTenantsSource_andMountsForIt() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
             withDefault(Set.of("A", "B"), "B"));
 
         dslGlobal(tc);
@@ -198,7 +198,7 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void dslGlobalThenDslForTheSameTenant_takesOneConnectionAndRunsOneMount() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
             withDefault(Set.of("A"), "A"));
 
         Object global = dslGlobal(tc);
@@ -212,10 +212,10 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void dslDefault_staysOnTheDefaultSource_whenTheRequestNamesADefaultTenant() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
             withDefault(Set.of("A"), "A"));
 
-        invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
+        invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
 
         assertThat(events).containsExactly("getConnection:default");
         assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
@@ -224,7 +224,7 @@ class TenantAuthorizationSubstrateTest {
 
     @Test
     void dslGlobal_withoutADefaultTenant_pinsTheDefaultSource() throws Throwable {
-        Object tc = newTenantConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
 
         dslGlobal(tc);
 
@@ -241,14 +241,14 @@ class TenantAuthorizationSubstrateTest {
                 Duration.ofSeconds(10));
     }
 
-    private Object newTenantConnections(Object runtime, Set<String> tenants) throws Throwable {
-        return newTenantConnections(runtime,
+    private Object newOwnedConnections(Object runtime, Set<String> tenants) throws Throwable {
+        return newOwnedConnections(runtime,
             invoke(() -> requestTenantsClass.getMethod("of", java.util.Collection.class).invoke(null, tenants)));
     }
 
-    private Object newTenantConnections(Object runtime, Object requestTenants) throws Throwable {
+    private Object newOwnedConnections(Object runtime, Object requestTenants) throws Throwable {
         Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
-        return tenantConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
             .newInstance(runtime, commitPolicyCommit, requestTenants,
                 RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
     }
@@ -259,15 +259,15 @@ class TenantAuthorizationSubstrateTest {
     }
 
     private Object dslGlobal(Object tc) throws Throwable {
-        return invoke(() -> tenantConnectionsClass.getMethod("dslGlobal").invoke(tc));
+        return invoke(() -> ownedConnectionsClass.getMethod("dslGlobal").invoke(tc));
     }
 
     private Object dslFor(Object tc, Object key) throws Throwable {
-        return invoke(() -> tenantConnectionsClass.getMethod("dslFor", String.class).invoke(tc, key));
+        return invoke(() -> ownedConnectionsClass.getMethod("dslFor", String.class).invoke(tc, key));
     }
 
     private void releaseAll(Object tc) throws Throwable {
-        invoke(() -> tenantConnectionsClass.getMethod("releaseAll").invoke(tc));
+        invoke(() -> ownedConnectionsClass.getMethod("releaseAll").invoke(tc));
     }
 
     private static Object invoke(ThrowingSupplier body) throws Throwable {

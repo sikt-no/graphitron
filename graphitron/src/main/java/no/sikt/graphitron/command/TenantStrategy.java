@@ -22,7 +22,7 @@ public sealed interface TenantStrategy {
 
     /**
      * The composition runs once per tenant in the request's fan-out domain through the scatter
-     * carrier ({@link #carrier}, the generated {@code TenantConnections}), results concatenated
+     * carrier ({@link #carrier}, the generated {@code OwnedConnections}), results concatenated
      * in domain order. The launcher hoists every env-derived value onto the dispatch thread and
      * the per-tenant lambda closes over those locals plus its own {@code dsl}, preserving the
      * scatter contract that workers read no shared graphql-java state; the entry point collapses

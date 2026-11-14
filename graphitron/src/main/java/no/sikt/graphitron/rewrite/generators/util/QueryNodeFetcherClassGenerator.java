@@ -194,7 +194,7 @@ public class QueryNodeFetcherClassGenerator {
                 ? CodeBlock.builder().addStatement("$T path = $T.loaderName(env, $S)",
                     String.class,
                     ClassName.get(outputPackage + ".schema",
-                        ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME), "Query").build()
+                        ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME), "Query").build()
                 : CodeBlock.builder().addStatement(
                     "$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
                     String.class, String.class, "/").build())

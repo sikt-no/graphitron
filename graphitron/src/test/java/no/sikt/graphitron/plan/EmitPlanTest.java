@@ -78,7 +78,7 @@ class EmitPlanTest {
         // more, and nothing is emitted for the no-configuration case.
         var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections", "FetcherErrorLog",
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "FetcherErrorLog",
                 "FetcherErrorResponse", "BatchSizeLimit");
     }
 
@@ -88,7 +88,7 @@ class EmitPlanTest {
         var plan = EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE, SessionIdentityFixtures.handleLess());
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections",
                 "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "GraphitronSessionHook", "MountedSession",
                 "SessionState", "SessionMountException");
     }

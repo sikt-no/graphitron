@@ -165,10 +165,10 @@ public final class BatchedRowsFragments {
             // The fanned batched form: the same batch statement, one execution per domain
             // tenant through the scatter helper; per-key groups merge across tenants with
             // per-element tenant stamping, markers riding to the fetcher's collapse.
-            var tenantConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
+            var ownedConnections = ClassName.get(fanned.carrier().packageName(), fanned.carrier().simpleName());
             // The narrowing values ride the rows method's env, the same one the statement's own
             // filter values are read from, so the domain and the WHERE clause see one argument set.
-            body.add("return $T.fanOutBatchRows(env, keys.size(), dsl -> {\n", tenantConnections);
+            body.add("return $T.fanOutBatchRows(env, keys.size(), dsl -> {\n", ownedConnections);
             body.indent();
             body.add(sel.build());
             body.add("return scatterByIdx(flat, keys.size());\n");

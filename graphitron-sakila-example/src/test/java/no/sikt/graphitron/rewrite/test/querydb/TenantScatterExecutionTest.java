@@ -4,8 +4,8 @@ import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronTransactionProvider.CommitPolicy;
 import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
-import no.sikt.graphitron.generated.multitenant.schema.TenantConnections;
-import no.sikt.graphitron.generated.multitenant.schema.TenantConnections.Outcome;
+import no.sikt.graphitron.generated.multitenant.schema.OwnedConnections;
+import no.sikt.graphitron.generated.multitenant.schema.OwnedConnections.Outcome;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -25,7 +25,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Execution-tier proof of the {@code TenantConnections.scatter} substrate against real PostgreSQL,
+ * Execution-tier proof of the {@code OwnedConnections.scatter} substrate against real PostgreSQL,
  * over the multi-tenant fixture package (compiled with {@code <tenantColumn>film_id</tenantColumn>}):
  * genuinely parallel execution under the cap, per-tenant connection identity intact under
  * concurrency, an empty-result tenant coming back {@code Success}-empty (distinct from
@@ -76,7 +76,7 @@ class TenantScatterExecutionTest {
             dataSource(null, null, null),
             Map.of(1, dataSource("scatter_t1", null, null), 2, dataSource("scatter_t2", null, null)),
             SQLDialect.POSTGRES, 2, Duration.ofSeconds(10));
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), SessionStates.multitenant("{}"));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), SessionStates.multitenant("{}"));
         try {
             long start = System.nanoTime();
             List<Outcome<String>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
@@ -104,7 +104,7 @@ class TenantScatterExecutionTest {
             dataSource(null, null, null),
             Map.of(1, dataSource("scatter_t1", null, null), 2, dataSource("scatter_t2", null, null)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), SessionStates.multitenant("{}"));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), SessionStates.multitenant("{}"));
         try {
             List<Outcome<List<String>>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
                 perTenant.fetch("select title from film order by title").getValues("title", String.class));
@@ -129,7 +129,7 @@ class TenantScatterExecutionTest {
             dataSource(null, opened, closed),
             Map.of(1, dataSource("scatter_t1", opened, closed), 2, dataSource("scatter_t2", opened, closed)),
             SQLDialect.POSTGRES);
-        var tenants = new TenantConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), SessionStates.multitenant("{}"));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), SessionStates.multitenant("{}"));
 
         List<Outcome<Integer>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
             perTenant.fetchOne("select 1").get(0, Integer.class));

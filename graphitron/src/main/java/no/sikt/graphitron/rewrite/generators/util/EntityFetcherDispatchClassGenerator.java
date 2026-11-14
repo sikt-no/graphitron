@@ -119,8 +119,8 @@ public final class EntityFetcherDispatchClassGenerator {
         // widens per tenant at its classified tenant sources; global entities read the
         // default source. Null in single-tenant builds (byte-identical emission).
         boolean multiTenant = tenantKey.isPresent();
-        var tenantConnections = ClassName.get(outputPackage + ".schema",
-            ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var ownedConnections = ClassName.get(outputPackage + ".schema",
+            ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -137,7 +137,7 @@ public final class EntityFetcherDispatchClassGenerator {
 
         for (var entity : entities) {
             HandleMethodBody.TenantRouting routing = multiTenant
-                ? new HandleMethodBody.TenantRouting(tenantConnections,
+                ? new HandleMethodBody.TenantRouting(ownedConnections,
                     tenantRouting.boundOf(entity.typeName()).orElse(null), tenantKey.orElseThrow())
                 : null;
             spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder, routing));

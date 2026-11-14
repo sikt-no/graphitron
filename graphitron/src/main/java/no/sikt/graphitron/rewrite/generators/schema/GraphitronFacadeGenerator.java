@@ -128,11 +128,11 @@ public final class GraphitronFacadeGenerator {
         // deployment: a first-class typed slot (a compile error when missing, never a runtime
         // lookup), stashed under the carrier's graphitron-owned key, outside the contextArgument
         // namespace. Both forms carry it so their signatures stay identical; on the escape-hatch
-        // form nothing reads it, since TenantConnections.of(env) fails before any routed or
+        // form nothing reads it, since OwnedConnections.of(env) fails before any routed or
         // fanned field runs there.
         com.palantir.javapoet.TypeName requestTenantKey = schema.requestTenantKeyType().orElse(null);
-        var tenantConnections = ClassName.get(schemaPackage,
-            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var ownedConnections = ClassName.get(schemaPackage,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage,
             no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
 
@@ -142,7 +142,7 @@ public final class GraphitronFacadeGenerator {
             "newExecutionInput", dslContext, "defaultDsl",
             CodeBlock.of("b.put($T.class, defaultDsl);", dslContext),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections, requestTenants, false,
+            dataLoaderRegistry, contextArgs, requestTenantKey, ownedConnections, requestTenants, false,
             escapeHatchJavadoc(contextArgs, requestTenantKey != null), null);
 
         // The owned-connection factory: the caller brings only the declared contextArguments
@@ -151,7 +151,7 @@ public final class GraphitronFacadeGenerator {
         var newOwnedExecutionInput = buildExecutionInputFactory(
             "newOwnedExecutionInput", null, null, null,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections, requestTenants, false,
+            dataLoaderRegistry, contextArgs, requestTenantKey, ownedConnections, requestTenants, false,
             ownedExecutionInputJavadoc(contextArgs, requestTenantKey != null, false), sessionState);
 
         // In a <tenantColumn> build the owned path also takes the typed RequestTenants value, which
@@ -161,7 +161,7 @@ public final class GraphitronFacadeGenerator {
         var newOwnedExecutionInputTyped = requestTenantKey == null ? null : buildExecutionInputFactory(
             "newOwnedExecutionInput", null, null, null,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
-            dataLoaderRegistry, contextArgs, requestTenantKey, tenantConnections, requestTenants, true,
+            dataLoaderRegistry, contextArgs, requestTenantKey, ownedConnections, requestTenants, true,
             ownedExecutionInputJavadoc(contextArgs, true, true), sessionState);
 
         // Emit the caller-owns-everything notice once per process, even if the engine is rebuilt.
@@ -228,7 +228,7 @@ public final class GraphitronFacadeGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(optional, ClassName.get(Throwable.class)))
             .addParameter(Throwable.class, "thrown")
-            .addStatement("return $T.mountCause(thrown)", tenantConnections)
+            .addStatement("return $T.mountCause(thrown)", ownedConnections)
             .addJavadoc("The exception the configured session mount threw, when {@code thrown} is, or is\n"
                 + "caused by, a rejected mount; empty otherwise, and always empty in a build without a\n"
                 + "session identity. {@code execute} throws a rejected mount in place of a result, so an\n"
@@ -369,7 +369,7 @@ public final class GraphitronFacadeGenerator {
             ClassName graphitronContext, ClassName graphitronContextImpl,
             ClassName executionInput, ClassName executionInputBuilder,
             ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs,
-            com.palantir.javapoet.TypeName requestTenantKey, ClassName tenantConnections,
+            com.palantir.javapoet.TypeName requestTenantKey, ClassName ownedConnections,
             ClassName requestTenants, boolean typedRequestTenants, String javadoc,
             ClassName sessionState) {
         String tenantsParam = typedRequestTenants ? REQUEST_TENANTS_PARAM : TENANTS_PARAM;
@@ -415,7 +415,7 @@ public final class GraphitronFacadeGenerator {
         if (requestTenantKey != null) {
             // The carrier's own key constant, so the write here and the instrumentation's read
             // cannot drift, and no contextArgument name can collide with it.
-            method.addCode("        b.put($T.$L, $L);\n", tenantConnections,
+            method.addCode("        b.put($T.$L, $L);\n", ownedConnections,
                 no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD,
                 typedRequestTenants
                     ? CodeBlock.of("$L", tenantsParam)

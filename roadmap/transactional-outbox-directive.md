@@ -209,8 +209,8 @@ static void outboxCreateFilm(DSLContext tx, DataFetchingEnvironment env,
     try {
         // common payload: <outbox><payload>, from $session and $scope only; the handle is read from tx, the connection this statement runs on
         List<JSONEntry<?>> common = List.of(
-            key("actor").value(TenantConnections.sessionMember_userId(tx, "Mutation.createFilm")),
-            key("requestId").value(TenantConnections.sessionMember_requestId(tx, "Mutation.createFilm")),
+            key("actor").value(OwnedConnections.sessionMember_userId(tx, "Mutation.createFilm")),
+            key("requestId").value(OwnedConnections.sessionMember_requestId(tx, "Mutation.createFilm")),
             key("operation").value(env.getOperationDefinition().getName()));
 
         // message 1, event "FilmCreated": filmId: $result.id, title: in.title, languageId: in.languageId
@@ -243,7 +243,7 @@ static void outboxCreateFilm(DSLContext tx, DataFetchingEnvironment env,
 }
 ```
 
-The function target differs only in the last statement: one `new OutboxEmit()` per message, with the role setters the routine has, `execute(tx.configuration())`. Value rendering shown here (`TenantConnections.sessionMember_<name>`, leaf conversion through the types' `Coercing`) uses the helpers the generated fetchers already carry for `@service` bindings; the exact helper names are the implementer's to settle, the shape is the commitment.
+The function target differs only in the last statement: one `new OutboxEmit()` per message, with the role setters the routine has, `execute(tx.configuration())`. Value rendering shown here (`OwnedConnections.sessionMember_<name>`, leaf conversion through the types' `Coercing`) uses the helpers the generated fetchers already carry for `@service` bindings; the exact helper names are the implementer's to settle, the shape is the commitment.
 
 What varies by coordinate, and so is the generator's work:
 
@@ -368,7 +368,7 @@ Because a message's `$result` values are read by a subselect in its own insert, 
 
 ## Relation to other items
 
-* **R1102** (Done), `$session.<member>`: decoded the handle's members by reflection onto `SessionHooks.Handled`, a classified-model fact the store does not hold, and added the `TenantConnections.sessionMember_<name>(dsl, fieldCoordinate)` accessor. This item does not resolve against that decode, because R1120 retires it.
+* **R1102** (Done), `$session.<member>`: decoded the handle's members by reflection onto `SessionHooks.Handled`, a classified-model fact the store does not hold, and added the `OwnedConnections.sessionMember_<name>(dsl, fieldCoordinate)` accessor. This item does not resolve against that decode, because R1120 retires it.
 * **R1120** (Spec), session identity on the store: the dependency of phase 1b. It adds the handle's configured class and a derived member relation (one row per readable member, referencing the `code_read_slot` row of its accessor, which carries the member's type), and turns its `$session` checks into `graphitron_entry_defect` rows over the captured argMapping pairs. Phase 1b resolves `$session.<member>` against that relation and reads the member's type from its slot for the serialization check. Two things to confirm in R1120's own review, not assumed here: that the `sessionMember_<name>` accessor survives its retirement of `SessionHooks`, and that its `$session` defects are not scoped to `@service` and `@condition` sites. The `<outbox><payload>` pairs are captured from the configuration and not by the SDL argMapping writer, so phase 1b makes that capture join the same check. R1120 also removes the mount payload parameters, which is why `$context` is not offered.
 * **R1101** (Ready; its phase 1 is shipped), one transaction per mutation field. Phases 1 and 2 here depend only on R1101 phase 1: the write and its messages share the field's transaction, so they commit or roll back together, and an `@error`-claimed field rolls back, whether the fetcher's own `transactionResult` is a savepoint (today) or joins the field's transaction (R1101 phase 2). Phase 3 here (`@service` and routine writes) depends on R1101 phase 2: a service that opens nested transactions must join the field's transaction, or a failure it swallows would leave the emit running over a partly written field. This item carries its own `OutboxEmitException` claim decline beside R1101's `MutationHookException` one, and reads `$scope` from the `DataFetchingEnvironment`, so it does not wait on R1101 phase 3's `MutationScope`; the two items touch the same `ErrorRouter.claim` decline and `renderTransactionalKeyFetch`, so whichever lands second merges there. R1101's `MutationHook` runs at the transaction's start and knows no rows; `@outbox` runs after the write and records what the call did. R1101 keeps field arguments away from the hook because they can carry personal data; `@outbox` emits only the arguments the schema maps.
 
@@ -388,7 +388,7 @@ Because a message's `$result` values are read by a subselect in its own insert, 
 
 ### Round 1 (2026-10-28, Spec -> Ready, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
 
-Author response: finding 1 is right (verified against `emitEncoded` and the generated `deleteFilms`, which writes on the bare `dsl` and encodes in the fetch lambda). Taken the first way: the `ID`-returning arm is the fourth call site and gains a `transactionResult` that captures the keys, emits and returns them, with the encoding after the lambda (see "The generated code"); the "no other change" sentence, the call-site list, the seam count, and the escape-hatch test are updated. Rejecting `@outbox` on that arm would have removed `deleteFilms` from the Goal and left delete events, the natural outbox case, unreachable. The non-blocking note is taken: the decline is its own sibling of `TenantConnections.isMountFailure`.
+Author response: finding 1 is right (verified against `emitEncoded` and the generated `deleteFilms`, which writes on the bare `dsl` and encodes in the fetch lambda). Taken the first way: the `ID`-returning arm is the fourth call site and gains a `transactionResult` that captures the keys, emits and returns them, with the encoding after the lambda (see "The generated code"); the "no other change" sentence, the call-site list, the seam count, and the escape-hatch test are updated. Rejecting `@outbox` on that arm would have removed `deleteFilms` from the Goal and left delete events, the natural outbox case, unreachable. The non-blocking note is taken: the decline is its own sibling of `OwnedConnections.isMountFailure`.
 
 Verdict: withhold. One blocking finding, bearing on both questions; one non-blocking note. The goal reads on its own: a schema author adds `@outbox` to a mutation field, and every successful call writes one Debezium-style outbox row (or one call to their own emit routine) per directive, carrying a JSON payload they mapped from arguments, the written rows, the session and the context, committed or rolled back with the write. The plan extends shapes already in the tree (the `argMapping` parser behind `ArgBindingMap`, `Returning`, `JooqCatalog`, the `rows<Name>` companion registered through `addCompanionMethod`, the `ErrorRouter.claim` declines) rather than standing a parallel mechanism beside them, and every symbol it names exists as named, except `MutationHookException`, which is R1101 phase 3 and not yet on trunk (see the note).
 
@@ -405,7 +405,7 @@ What would satisfy it: name the encoded arm as a fourth call site, and state its
 
 **Non-blocking.**
 
-- Failure routing says `OutboxEmitException`'s claim decline sits "beside R1101's `MutationHookException` decline". That exception is R1101 phase 3's and is not on trunk, so if this item lands first there is nothing beside it yet. Relation to other items already says whichever lands second merges, so this is a wording point only: the decline needs its own sibling of `TenantConnections.isMountFailure` regardless of order.
+- Failure routing says `OutboxEmitException`'s claim decline sits "beside R1101's `MutationHookException` decline". That exception is R1101 phase 3's and is not on trunk, so if this item lands first there is nothing beside it yet. Relation to other items already says whichever lands second merges, so this is a wording point only: the decline needs its own sibling of `OwnedConnections.isMountFailure` regardless of order.
 
 ### Round 2 (2026-10-28, Ready -> Spec reopen, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
 
@@ -463,7 +463,7 @@ Consequences for this item:
 
 Two dependencies to confirm against R1120, rather than assume. Both are R1120's to state, so they belong in R1120's review:
 
-- The emit calls the generated `TenantConnections.sessionMember_<name>(dsl, fieldCoordinate)` accessor. R1120 does not name it: it says only that `ConnectionRuntimeClassGenerator` takes the new value in place of `SessionHooks`.
+- The emit calls the generated `OwnedConnections.sessionMember_<name>(dsl, fieldCoordinate)` accessor. R1120 does not name it: it says only that `ConnectionRuntimeClassGenerator` takes the new value in place of `SessionHooks`.
 - R1120's `$session` rejections must not be scoped to `@service` and `@condition` sites, or `$session` keys on `@outbox` and the common payload escape them. The `<outbox><payload>` pairs are a further case: they come from the configuration, not from the generic SDL argMapping writer, so R1120's anti-joins over the SDL pairs do not see them unless this item's capture joins the same check.
 
 ### Round 4 (2026-10-29, Spec -> Ready, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)

@@ -629,9 +629,9 @@ public final class ConditionGlueRenderer {
             // rather than a silent null where nothing was mounted.
             case CallSiteExtraction.SessionHandleRead ignored ->
                 CodeBlock.of("$T.sessionHandle(dsl, $S)",
-                    ClassName.get(outputPackage + ".schema", "TenantConnections"), coordinate);
+                    ClassName.get(outputPackage + ".schema", "OwnedConnections"), coordinate);
             case CallSiteExtraction.SessionMemberRead member ->
-                CodeBlock.of("$T.$L(dsl, $S)", ClassName.get(outputPackage + ".schema", "TenantConnections"),
+                CodeBlock.of("$T.$L(dsl, $S)", ClassName.get(outputPackage + ".schema", "OwnedConnections"),
                     SessionAccessors.memberMethod(member.member()), coordinate);
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("($T) args.get($S)", localType(param), param.name());

@@ -99,7 +99,7 @@ class ServiceMethodCallEmitterTest {
         assertThat(stmts.get(1).toString())
             .as("the extraction is the carrier's guarded accessor carrying the field coordinate, "
                 + "never a bare configuration().data() cast that would bind null on the escape hatch")
-            .contains("TenantConnections.sessionHandle(dsl, \"Query.sessionPrincipal\")")
+            .contains("OwnedConnections.sessionHandle(dsl, \"Query.sessionPrincipal\")")
             .doesNotContain("configuration().data");
     }
 

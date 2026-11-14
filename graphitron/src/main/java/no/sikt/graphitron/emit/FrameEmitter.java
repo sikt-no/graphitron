@@ -92,16 +92,16 @@ public final class FrameEmitter {
          * keyed, acquired by that key and handed down to the subtree.
          *
          * @param tenantType        the tenant column's Java type, boxed
-         * @param tenantConnections the generated connection carrier
+         * @param ownedConnections the generated connection carrier
          * @param connectionKey     the generated key it is acquired and handed down by
          * @param reads             each value the tenant is read from, as an expression over {@code env}
          * @param noTenant          what a call whose values name no tenant gets
          */
-        record Routed(TypeName tenantType, ClassName tenantConnections, ClassName connectionKey,
+        record Routed(TypeName tenantType, ClassName ownedConnections, ClassName connectionKey,
                       List<CodeBlock> reads, NoTenant noTenant) implements Connection {
             public Routed {
                 Objects.requireNonNull(tenantType, "tenantType");
-                Objects.requireNonNull(tenantConnections, "tenantConnections");
+                Objects.requireNonNull(ownedConnections, "ownedConnections");
                 Objects.requireNonNull(connectionKey, "connectionKey");
                 reads = List.copyOf(reads);
                 Objects.requireNonNull(noTenant, "noTenant");
@@ -202,7 +202,7 @@ public final class FrameEmitter {
             case Connection.Routed routed -> {
                 routedKey(method, row, declared, routed, runtime);
                 if (needsContext) {
-                    method.addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, routed.tenantConnections(),
+                    method.addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, routed.ownedConnections(),
                         KEY_LOCAL);
                 }
                 yield no.sikt.graphitron.render.ConnectionKeyHandDown.ofKey(KEY_LOCAL).builderTail();
@@ -335,17 +335,17 @@ public final class FrameEmitter {
         var reads = CodeBlock.join(routed.reads(), ", ");
         switch (routed.noTenant()) {
             case NoTenant.Unreachable ignored -> method.addStatement("$T $L = $T.divinedTenant($L)",
-                routed.tenantType(), TENANT_LOCAL, routed.tenantConnections(), reads);
+                routed.tenantType(), TENANT_LOCAL, routed.ownedConnections(), reads);
             case NoTenant.Empty empty -> {
                 method.addStatement("$T $L = $T.namedTenant($L)", routed.tenantType(), TENANT_LOCAL,
-                    routed.tenantConnections(), reads);
+                    routed.ownedConnections(), reads);
                 method.beginControlFlow("if ($L == null)", TENANT_LOCAL)
                     .addStatement("return $L", success(row, declared, empty.value(), runtime))
                     .endControlFlow();
             }
             case NoTenant.Refuse refuse -> {
                 method.addStatement("$T $L = $T.namedTenant($L)", routed.tenantType(), TENANT_LOCAL,
-                    routed.tenantConnections(), reads);
+                    routed.ownedConnections(), reads);
                 method.beginControlFlow("if ($L == null)", TENANT_LOCAL)
                     .addStatement("throw new $T($S)", refuse.exception(), refuse.message())
                     .endControlFlow();

@@ -19,4 +19,4 @@ When two input fields write one column (a `@nodeId` decode and a plain `@field` 
 ## Notes for the Spec
 
 - Needs an execution fixture with two writers on a converter-backed column. `NodeIdValueAgreementExecutionTest` has none today; `converter_campus.org_code` and the `ConverterCampusTerm` `@nodeId` roots in the example schema are the nearest candidates.
-- Decide whether the round trip becomes one emitted primitive that `NodeIdEncoder` and `TenantConnections` both call, or one generator-side helper both emitters render through.
+- Decide whether the round trip becomes one emitted primitive that `NodeIdEncoder` and `OwnedConnections` both call, or one generator-side helper both emitters render through.

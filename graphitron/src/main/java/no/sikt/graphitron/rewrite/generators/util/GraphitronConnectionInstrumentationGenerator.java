@@ -24,7 +24,7 @@ import java.util.List;
  * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
  *   <li>In a {@code <tenantColumn>} build, read the {@code RequestTenants} value the factory
- *       wrote under {@code TenantConnections.TENANTS_KEY}, failing the operation before any
+ *       wrote under {@code OwnedConnections.TENANTS_KEY}, failing the operation before any
  *       fetcher runs when it is absent (an {@code ExecutionInput} built without the generated
  *       factory), since the set has no "unrestricted" meaning, and when it names a default
  *       tenant this runtime has no {@code DataSource} for.</li>
@@ -35,7 +35,7 @@ import java.util.List;
  *       {@code BatchSizeLimit}, each when one is set, under its class key, where {@code ErrorRouter}
  *       reads the first two for every fetcher exception and the third for every loader it builds
  *       options for.</li>
- *   <li>Publish the per-operation {@code TenantConnections} carrier under its own class key, on
+ *   <li>Publish the per-operation {@code OwnedConnections} carrier under its own class key, on
  *       both topologies. Acquisition is lazy on every path: fetchers resolve contexts through
  *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault} /
  *       {@code dslGlobal}), which
@@ -68,7 +68,7 @@ import java.util.List;
  *
  * <h2>One transaction per top-level mutation field</h2>
  * {@code beginFieldExecution} settles the previous top-level mutation field and begins the next on
- * the carrier ({@code TenantConnections.beginField}); the carrier opens the field's transaction on
+ * the carrier ({@code OwnedConnections.beginField}); the carrier opens the field's transaction on
  * each connection the field first acquires and every jOOQ transaction inside it joins it, so the
  * field's writes and its payload's reads, batched sub-fields included, are one transaction per
  * connection. Settling here rather than in the previous field's own
@@ -168,7 +168,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
         String schemaPackage = outputPackage + ".schema";
         var self = ClassName.get(schemaPackage, CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
-        var tenantConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        var ownedConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
@@ -177,14 +177,14 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
-        return List.of(instrumentation(self, runtime, tenantConnections, requestTenants, fetcherErrorLog,
+        return List.of(instrumentation(self, runtime, ownedConnections, requestTenants, fetcherErrorLog,
             fetcherErrorResponse, batchSizeLimit, commitPolicy, state, tenantKey, sessionHooks, errorRouter,
             vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)
                 .nestedClass(no.sikt.graphitron.emit.VoucherRuntime.ISSUERS) : null));
     }
 
     private static TypeSpec instrumentation(
-            ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
+            ClassName self, ClassName runtime, ClassName ownedConnections, ClassName requestTenants,
             ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName batchSizeLimit,
             ClassName commitPolicy, ClassName state,
             TypeName tenantKey, SessionIdentityRows sessionHooks, ClassName errorRouter, ClassName issuers) {
@@ -264,7 +264,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 .addComment("built by the generated factory, and the set has no unrestricted meaning, so fail")
                 .addComment("before any fetcher runs.")
                 .addStatement("$T requestTenants = graphQLContext.get($T.$L)", requestTenants,
-                    tenantConnections, ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD)
+                    ownedConnections, ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD)
                 .beginControlFlow("if (requestTenants == null)")
                 .addStatement("throw new $T($S)", IllegalStateException.class,
                     "No request tenant set in the GraphQL context: a <tenantColumn> build's generated"
@@ -335,9 +335,9 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addComment("pins and mounts one connection per key on first demand; an operation that touches")
             .addComment("no database never pins. Nothing is published under DSLContext.class: the typed key")
             .addComment("belongs to the escape-hatch factory alone.")
-            .addStatement("$T carrier = new $T($L)", tenantConnections, tenantConnections, carrierArgs.toString())
+            .addStatement("$T carrier = new $T($L)", ownedConnections, ownedConnections, carrierArgs.toString())
             .addStatement("state.carrier = carrier")
-            .addStatement("graphQLContext.put($T.class, carrier)", tenantConnections)
+            .addStatement("graphQLContext.put($T.class, carrier)", ownedConnections)
             .addCode("\n")
             .addComment("When the operation completes, settle the last mutation field: whether it commits")
             .addComment("depends on how the strategy ended (throwable), which only this context sees. Release")
@@ -442,7 +442,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("state.fieldPath = null")
             .addStatement("boolean errorUnder = errorUnder(state.executionContext, path.toList())")
             .addStatement("$T cause = state.carrier.settleField(failed || errorUnder)", Throwable.class)
-            .beginControlFlow("if (cause instanceof $T nested)", tenantConnections.nestedClass("NestedScopeFailedException"))
+            .beginControlFlow("if (cause instanceof $T nested)", ownedConnections.nestedClass("NestedScopeFailedException"))
             .addComment("A transaction a consumer's code opened inside the field failed: reported beside whatever")
             .addComment("else the field reported. The value is dropped unless the field had already failed (its")
             .addComment("own error, or a claimed payload, which describes the failure and stays).")
@@ -545,7 +545,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var stateType = TypeSpec.classBuilder("State")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(INSTRUMENTATION_STATE)
-            .addField(FieldSpec.builder(tenantConnections, "carrier", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(ownedConnections, "carrier", Modifier.PRIVATE).build())
             .addField(FieldSpec.builder(EXECUTION_CONTEXT, "executionContext", Modifier.PRIVATE).build())
             .addField(FieldSpec.builder(boolean.class, "mutation", Modifier.PRIVATE).build())
             .addField(FieldSpec.builder(RESULT_PATH, "fieldPath", Modifier.PRIVATE)
