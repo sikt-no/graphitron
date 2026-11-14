@@ -184,10 +184,11 @@ class EmissionCensusTest {
             "Query.converterCampusesByOrgCode converter_campus",
             "Query.converterCampusesByOrgCodes converter_campus",
             "Query.converterIdChangeByNodeId converter_id_change", "Query.customerByPk customer",
-            "Query.customers customer", "Query.customersByAddresses customer",
+            "Query.customers customer", "Query.customersByAddressDistrict customer",
+            "Query.customersByAddressDistrictActive customer", "Query.customersByAddresses customer",
             "Query.customersByCityFilter customer", "Query.customersByCityId customer",
             "Query.customersByConditionDistrict customer", "Query.customersByDistrictBean customer",
-            "Query.customersByNullableAddressIds customer", "Query.customersByTwoNames customer",
+            "Query.customersByMultiFieldFilter customer", "Query.customersByNullableAddressIds customer", "Query.customersByTwoNames customer",
             "Query.customersOfPrincipal customer", "Query.customersSeenByUser customer",
             "Query.endorsementsByNodeId film_endorsement", "Query.fanItem fan_base",
             "Query.filmActorBySingularCompositeNodeId film_actor", "Query.filmActorsByCompositeNodeIds film_actor",
@@ -232,16 +233,15 @@ class EmissionCensusTest {
             "Query.xlatChildByParentId xlat_child",
             "Query.xlatChildrenByFilter xlat_child", "Query.xlatChildrenByParentIds xlat_child",
             "Query.xlatCompChildrenByParentIds xlat_comp_child", "SessionStore.customersOfPrincipal customer",
+            "Store.customersByAddressDistrict customer", "Store.customersByAddressDistrictSplit customer",
             "Store.customersByFirstName customer", "Store.customersByFirstNameSplit customer",
             "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer",
             "Store.customersSeenByUser customer");
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
         assertThat(census)
-            .containsEntry("AUTHORED_NODE_ID", List.of("Query.customersByAddressDistrict customer", "Query.customersByAddressDistrictActive customer",
-                "Query.customersByMultiFieldFilter customer", "Query.stockByLanguageOverride film",
-                "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
-                "Store.customersByAddressDistrictSplit customer"))
+            .containsEntry("AUTHORED_NODE_ID", List.of("Query.stockByLanguageOverride film",
+                "Query.stockByLanguageOverride inventory"))
             .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
                 "Query.occupantByOptionalId staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
                 "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",

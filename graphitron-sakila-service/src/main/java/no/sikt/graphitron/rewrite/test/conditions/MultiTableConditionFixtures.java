@@ -42,7 +42,8 @@ public final class MultiTableConditionFixtures {
     /**
      * The {@code @nodeId} override escape: no route from either participant's table to the node
      * type's table resolves, so this method owns the whole {@code WHERE} contribution and is handed
-     * each branch's own table plus the leaf's <em>decoded</em> key.
+     * each branch's own table plus the leaf's <em>decoded</em> key column, which the schema projects
+     * with {@code argMapping}.
      *
      * <p>What the author owns here is the predicate, not the wire format. The generated glue decodes
      * before the value reaches this method, which is what makes the parameter an {@code Integer}:

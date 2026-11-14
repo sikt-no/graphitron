@@ -94,9 +94,9 @@ public final class InputFieldConditionFixtures {
      * {@code override} suppressing the implicit key predicate; it is present so the binding shape
      * mirrors a real consumer method that receives the key alongside the table.
      *
-     * <p>Declared as {@code Integer} and not as the wire string, because a {@code @nodeId} slot's
-     * value is decoded before it leaves the generated glue: what arrives here is {@code Address}'s
-     * single-column key. The override suppresses the predicate, never the decode.
+     * <p>Declared as {@code Integer} and not as the wire string: the schema projects
+     * {@code Address}'s key column into it with {@code argMapping}, a whole key landing only on the
+     * node's record or a tuple of it. The override suppresses the predicate, never the decode.
      */
     public static Condition addressDistrictAlberta(Address address, Integer addressId) {
         return address.DISTRICT.eq("Alberta");

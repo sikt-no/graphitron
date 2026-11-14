@@ -3023,6 +3023,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   (added 2026-11-09, after the check this entry first rested on) takes `List<String>`: it asks for the
   column with `argMapping: "larestedIder: larestedIder.<key column>"`, which a `@service` parameter
   takes as a list since the entry below. Alf held releases until it could (2026-11-13).
+* **Breaking: a `@condition`'s parameter takes a whole node id as a `@service`'s does** ("a
+  @condition's parameter takes a whole node id only as a record or a tuple"). The rule above holds at a
+  `@condition`'s parameter too, at an argument or an input field: a parameter of the one key column's
+  type is `NODE_ID_KEY_ARITY_EXCEEDS_SLOT`, and the column is asked for with an `argMapping` entry
+  projecting it. Used in FS-plattform once: tilgangsstyring's
+  `ApplikasjonerFilterInput.miljoer: [ID!] @nodeId(typeName: "Miljo")`, whose
+  `ApplikasjonerFilterConditions.miljoer` takes `List<String>`, adds
+  `argMapping: "miljoer: miljoer.<key column>"` (Alf, 2026-11-14: "We break tilgangsstyring").
 * **Breaking: the generated node-id decode takes no parse classes or label** ("a node id decodes
   through a converter-backed key column, its text parsed as the column says"). The generated
   `NodeIdEncoder.decodeColumns(typeId, id, columns...)`, `decodeInto(record, typeId, id, columns...)` and
