@@ -53,7 +53,8 @@ import static org.jooq.impl.DSL.when;
  * file and position. Two {@code @referenceFor} on one declaration naming one type are also a defect,
  * which the entry-defect rule reads off the entries rather than off this.
  *
- * <p>Runs after the targets are written and before the paths that follow the claims.
+ * <p>Runs after the targets are written and before the paths that follow the claims. Last, the
+ * defects the claims judge, {@link EntryDefects#PATH_CLAIMS}, and the claims and steps under them.
  */
 public final class PathClaims {
 
@@ -174,5 +175,7 @@ public final class PathClaims {
             .where(a.GRAPH_NAME.eq(graphName))
             .and(a.TOUCHED_AT.ne(touchedAt))
             .execute();
+        EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.PATH_CLAIMS);
+        EntryDefectClaims.derive(dsl, graphName, touchedAt, EntryDefects.PATH_CLAIMS.stage());
     }
 }

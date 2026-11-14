@@ -16,7 +16,7 @@ import static org.jooq.impl.DSL.val;
 /**
  * The members a per-member defect names, written under it in {@code graphitron_entry_defect_member}
  * from the member rule of the stage owning the defect: a polymorphic {@code @nodeId}'s,
- * occurrence-builds', and a {@code @discriminate}'s, entry-defects'. Each stage's defects are written
+ * occurrence-builds', and a {@code @discriminate}'s, table-types'. Each stage's defects are written
  * by {@link EntryDefects} just before this runs in that stage; this reads the rows that reading marked
  * and marks its own with the same instant, and {@link EntryDefects#sweep} takes what the reading did
  * not mark.
@@ -28,7 +28,7 @@ public final class EntryDefectMembers {
     /** occurrence-builds' member rule, the polymorphic {@code @nodeId}'s members. */
     public static final Table<?> BUILDS = GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_MEMBER_RULE;
 
-    /** entry-defects' member rule, the {@code @discriminate}'s members. */
+    /** table-types' member rule, the {@code @discriminate}'s members. */
     public static final Table<?> GRAPHITRON = GRAPHITRON_ENTRY_DEFECT_MEMBER_RULE;
 
     /**

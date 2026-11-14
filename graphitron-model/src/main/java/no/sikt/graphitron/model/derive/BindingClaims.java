@@ -15,7 +15,8 @@ import static org.jooq.impl.DSL.val;
 /**
  * Writes the binding claims: the kind of binding each field, input field and argument claims into
  * {@code graphitron_claim}, and what each names into {@code graphitron_binding_claim}, from the rule
- * view beside them, marked and swept.
+ * view beside them, marked and swept; then the defects those claims judge,
+ * {@link EntryDefects#BINDING_CLAIMS}.
  *
  * <p>A claim is what the element's written directives say, keyed by the element, the kind and the
  * element that claims it; what the claim names rides in the subtype for the binding to resolve, and
@@ -92,5 +93,6 @@ public final class BindingClaims {
             .and(c.STAGE.eq(STAGE))
             .and(c.TOUCHED_AT.ne(touchedAt))
             .execute();
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BINDING_CLAIMS);
     }
 }

@@ -17,6 +17,17 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE_ENTRY_DE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_TYPE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_VOCABULARY_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACY_KEY_SHAPE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
@@ -87,7 +98,10 @@ public final class EntryDefects {
     /** The outbox stage's rule. */
     public static final Rule OUTBOX = new Rule("outbox", GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE);
 
-    /** The call defects' rule, {@link OccurrenceProducers}: a root routine's parameter nothing fills. */
+    /**
+     * The call defects' rule, {@link OccurrenceProducers}: a root routine's parameter nothing fills, and
+     * a re-read of what a delete removed.
+     */
     public static final Rule PRODUCERS =
         new Rule("occurrence-producers", GRAPHITRON_OCCURRENCE_PRODUCER_ENTRY_DEFECT_RULE);
 
@@ -139,10 +153,54 @@ public final class EntryDefects {
     public static final Rule ARGMAPPING_PAIRS =
         new Rule("argmapping-pairs", GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE);
 
-    /** Every raising stage's rule, one per stage. */
-    public static final List<Rule> RULES = List.of(CODE_REFERENCES, ARGMAPPING_PAIRS, VOUCHERS, MINTED_KEYS,
-        FIELD_TARGETS, ENTITY_KEYS, PRODUCERS, BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS, ROUTES,
-        DEPTHS, OUTBOX, GRAPHITRON);
+    /**
+     * The anchor stage's rule, {@link no.sikt.graphitron.model.capture.document.GraphitronAnchor}: what the
+     * documents and the gatherers ahead of this one decide alone.
+     */
+    public static final Rule ANCHOR = new Rule("anchor", GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE);
+
+    /** The macro-expansion stage's rule, judging the expanded schema's fields, connections and carriers. */
+    public static final Rule MACRO_EXPANSION =
+        new Rule("macro-expansion", GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE);
+
+    /** The table-types stage's rule, {@link TableTypes}: what a binding's table answers about it. */
+    public static final Rule TABLE_TYPES = new Rule("table-types", GRAPHITRON_TABLE_TYPE_ENTRY_DEFECT_RULE);
+
+    /** The nodes stage's rule, {@link Nodes}. */
+    public static final Rule NODES = new Rule("nodes", GRAPHITRON_NODE_ENTRY_DEFECT_RULE);
+
+    /** The directive-applications stage's rule, judging the applications across the expanded schema. */
+    public static final Rule DIRECTIVE_APPLICATIONS =
+        new Rule("directive-applications", GRAPHITRON_DIRECTIVE_APPLICATION_ENTRY_DEFECT_RULE);
+
+    /** The federation-vocabulary stage's rule, judging the composed schema's type names. */
+    public static final Rule FEDERATION_VOCABULARY =
+        new Rule("federation-vocabulary", GRAPHITRON_FEDERATION_VOCABULARY_ENTRY_DEFECT_RULE);
+
+    /** The legacy key shapes stage's rule, {@link NodeLegacyKeyShapes}: the verdicts it wrote, placed. */
+    public static final Rule NODE_LEGACY_KEY_SHAPES =
+        new Rule("node-legacy-key-shapes", GRAPHITRON_NODE_LEGACY_KEY_SHAPE_ENTRY_DEFECT_RULE);
+
+    /** The binding-claims stage's rule, {@link BindingClaims}: a {@code @nodeId} or a node's own id. */
+    public static final Rule BINDING_CLAIMS =
+        new Rule("binding-claims", GRAPHITRON_BINDING_CLAIM_ENTRY_DEFECT_RULE);
+
+    /** The spelled-tables stage's rule, {@link SpelledTables}: a written table name's resolution. */
+    public static final Rule SPELLED_TABLES =
+        new Rule("spelled-tables", GRAPHITRON_SPELLED_TABLE_ENTRY_DEFECT_RULE);
+
+    /** The path-claims stage's rule, {@link PathClaims}: a path with no table to reach, and claim conflicts. */
+    public static final Rule PATH_CLAIMS =
+        new Rule("path-claims", GRAPHITRON_PATH_CLAIM_ENTRY_DEFECT_RULE);
+
+    /** The fetchers stage's rule, {@link Fetchers}: the writes', errors fields', outcomes' and results' defects. */
+    public static final Rule FETCHERS = new Rule("fetchers", GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE);
+
+    /** Every raising stage's rule, one per stage, in the order the stages run. */
+    public static final List<Rule> RULES = List.of(ANCHOR, MACRO_EXPANSION, CODE_REFERENCES, ARGMAPPING_PAIRS,
+        TABLE_TYPES, NODES, VOUCHERS, MINTED_KEYS, DIRECTIVE_APPLICATIONS, FEDERATION_VOCABULARY,
+        NODE_LEGACY_KEY_SHAPES, FIELD_TARGETS, BINDING_CLAIMS, SPELLED_TABLES, PATH_CLAIMS, FETCHERS, PRODUCERS,
+        BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS, ROUTES, DEPTHS, ENTITY_KEYS, OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

@@ -10746,6 +10746,227 @@ COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last
 
 -- Where the messages of a graph go: the configured outbox table resolved against the catalog.
 -- The @outbox applications of a field, stated once, each as the message its field's call writes.
+-- The fetchers stage's own defects: what a write, an errors field, an outcome or a result's shape
+-- breaks, and a field nothing fetches, decided from the producers, readers, errors fields, outcomes
+-- and results the stage has just written. The detail is NULL; the code says why.
+CREATE VIEW graphitron_fetcher_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
+-- by the keys it returned, which is not a page, as a @routine write's are.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'CONNECTION_RETURN', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f
+    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_producer p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+   AND p.kind IN ('INSERT', 'UPDATE', 'DELETE')
+  JOIN graphitron_connection ce
+    ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
+ WHERE da.directive_name = 'mutation' AND da.ordinal = 0 AND da.source_name IS NOT NULL
+UNION ALL
+-- A field reading a member off what a write hands back, at the field: an insert, update, delete or
+-- @routine write hands back its keys and not an object of a class, so a field under the object type
+-- it returns reads nothing there. A field re-reading the written rows by those keys, an id encoded
+-- from them and the errors field are what such a type holds.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'WRITE_RESULT_HOLDS_ONLY_KEYS', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_producer p
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_reader rd
+    ON rd.graph_name = ft.graph_name AND rd.type_name = ft.target_type_name AND rd.reads = 'ACCESSOR'
+  JOIN graphitron_field f
+    ON f.graph_name = rd.graph_name AND f.type_name = rd.type_name AND f.field_name = rd.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
+   AND f.named_type <> 'ID'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
+                    WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                    WHERE rc.graph_name = ft.graph_name AND rc.type_name = ft.target_type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                      AND e.field_name = f.field_name)
+UNION ALL
+-- A re-read of what a delete removed, at the delete's own field returning a @table type: the rows are
+-- gone once the delete runs; what it hands back is their keys. A field under the type re-reading them
+-- is occurrence-producers'.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_producer p
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_tabletype b
+    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'DELETE'
+UNION ALL
+-- A write the tables it is read on disagree about, at its @mutation: the table its return or the
+-- fields re-reading its written rows bind and the one @mutation(table:) names are not one table, so
+-- graphitron_producer_write states no table for it. A write read on no table at all is not this.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'WRITE_TABLES_DISAGREE', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_directive_application da
+  JOIN graphitron_field f
+    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
+  JOIN graphitron_producer p
+    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+ WHERE da.directive_name = 'mutation' AND da.ordinal = 0
+   AND p.kind IN ('INSERT', 'UPDATE', 'DELETE')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write w
+                    WHERE w.graph_name = p.graph_name AND w.type_name = p.type_name
+                      AND w.field_name = p.field_name)
+   AND da.source_name IS NOT NULL
+   AND (EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
+                  JOIN graphitron_spelled_table sp
+                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
+                   AND sp.candidates = 1
+                 WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
+                   AND m.source_line = da.source_line AND m.source_column = da.source_column)
+        OR (p.kind IN ('INSERT', 'UPDATE')
+            AND (EXISTS (SELECT 1 FROM graphitron_tabletype b
+                          WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
+                 OR EXISTS (SELECT 1 FROM graphitron_producer rr
+                              JOIN graphitron_field_target rt
+                                ON rt.graph_name = rr.graph_name AND rt.type_name = rr.type_name
+                               AND rt.field_name = rr.field_name
+                              JOIN graphitron_tabletype b
+                                ON b.graph_name = rt.graph_name AND b.type_name = rt.target_type_name
+                             WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
+                               AND rr.kind = 'LOOKUP'))))
+UNION ALL
+-- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
+-- rule, and every field of the type would be fetched both ways. A row beside an object of classes
+-- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
+-- handed; an object of a table's own record, or of no class, is not.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM (SELECT graph_name, type_name FROM graphitron_result
+         GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
+  JOIN graphql_ast_type_declaration_entry d
+    ON d.graph_name = r.graph_name AND d.name = r.type_name
+ WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
+                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
+                              JOIN sql_table st ON st.record_class_fqn = rc.class_name
+                              JOIN store_graph_source sg
+                                ON sg.graph_name = rc.graph_name AND sg.source_name = st.source_name
+                             WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
+UNION ALL
+-- A field whose union or interface lists an @error type, or whose type is one, but which is no errors
+-- field, at its declaration, by the first rule it breaks: every member @error, a list, and a list
+-- that may be null.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_type_member pm
+                          WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application de
+                                             WHERE de.graph_name = pm.graph_name
+                                               AND de.coordinate = pm.member_type_name
+                                               AND de.directive_name = 'error'))
+              THEN 'ERRORS_FIELD_MIXED_MEMBERS'
+            WHEN NOT f.is_list THEN 'ERRORS_FIELD_NOT_A_LIST'
+            ELSE 'ERRORS_FIELD_NON_NULL' END,
+       CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_field f
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE (EXISTS (SELECT 1 FROM graphitron_type_member pm
+                 JOIN graphitron_directive_application de
+                   ON de.graph_name = pm.graph_name AND de.coordinate = pm.member_type_name
+                  AND de.directive_name = 'error'
+                WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
+        OR EXISTS (SELECT 1 FROM graphitron_directive_application de
+                    WHERE de.graph_name = f.graph_name AND de.coordinate = f.named_type
+                      AND de.directive_name = 'error'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                      AND e.field_name = f.field_name)
+UNION ALL
+-- A type with two errors fields, at the first: an outcome has one place for its errors.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_errors_field e
+  JOIN graphitron_field f
+    ON f.graph_name = e.graph_name AND f.type_name = e.type_name AND f.field_name = e.field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = e.graph_name AND d.type_name = e.type_name AND d.name = e.field_name
+ WHERE f.ordinal = (SELECT MIN(f2.ordinal)
+                      FROM graphitron_errors_field e2
+                      JOIN graphitron_field f2
+                        ON f2.graph_name = e2.graph_name AND f2.type_name = e2.type_name
+                       AND f2.field_name = e2.field_name
+                     WHERE e2.graph_name = e.graph_name AND e2.type_name = e.type_name
+                    HAVING COUNT(*) > 1)
+UNION ALL
+-- A field of an outcome other than its errors field that may not be null, at its declaration: on
+-- failure the value is absent, and graphql-java would drop the errors with it. A non-null list is
+-- not one, answering an empty list when nothing was produced.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
+          FROM graphitron_producer_outcome) o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.type_name = o.outcome_type_name
+   AND f.field_name <> o.errors_field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE f.non_null AND NOT f.is_list
+UNION ALL
+-- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
+-- is an exception a producer caught, and a row of a statement holds none.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_field_target ft
+  JOIN graphitron_result r
+    ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_errors_field e
+                WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
+                  AND e.field_name = ft.field_name)
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application de
+                WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
+                  AND de.directive_name = 'error')
+UNION ALL
+-- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
+-- holding one result, with neither a producer nor a reader. A field claiming two kinds or an upsert,
+-- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
+-- own defect instead.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_field f
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
+                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                   AND ro.operation IN ('QUERY', 'MUTATION'))
+        OR (SELECT COUNT(*) FROM graphitron_result r
+             WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name) = 1)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_fetcher fe
+                    WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
+                      AND fe.field_name = f.field_name)
+   AND (SELECT COUNT(DISTINCT c.kind) FROM graphitron_claim c
+         JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
+         WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
+   AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
+                      JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
+                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
+                      AND c.kind IN ('UPSERT', 'WRITE'));
+COMMENT ON VIEW graphitron_fetcher_entry_defect_rule IS 'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.';
+
 CREATE TABLE graphitron_outbox_message (
   graph_name                VARCHAR   NOT NULL,
   coordinate                VARCHAR   NOT NULL,
@@ -13361,7 +13582,7 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
   JOIN graphql_directive_application da
     ON da.graph_name = d.graph_name AND da.source_name = d.source_name
    AND da.source_line = d.source_line AND da.source_column = d.source_column
-  JOIN graphql_poly_member pm ON pm.graph_name = da.graph_name AND pm.container_name = da.coordinate
+  JOIN graphitron_type_member pm ON pm.graph_name = da.graph_name AND pm.container_name = da.coordinate
   LEFT JOIN graphitron_tabletype tt
     ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
  WHERE tt.type_name IS NULL
@@ -13375,6 +13596,197 @@ COMMENT ON VIEW graphitron_entry_defect_member_rule IS 'One member a @discrimina
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.code IS 'DISCRIMINATOR_MISSING or TABLE_INTERFACE_PARTICIPANT_UNBOUND';
 -- COMMENT ON COLUMN graphitron_entry_defect_member_rule.member_type_name IS 'the member the defect names';
+
+-- The table-types stage's own defects: what a type's bound table answers about the type's @node key,
+-- its node metadata and its @discriminate and @discriminator, at the application the author edits.
+CREATE VIEW graphitron_table_type_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- The members a @discriminate's per-member defects name, as graphitron_entry_defect_member_rule
+-- states them for the member rows written under each defect.
+WITH discriminate_member (graph_name, source_name, source_line, source_column, code, member_type_name) AS (
+  SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+         CASE WHEN tt.type_name IS NOT NULL THEN 'DISCRIMINATOR_MISSING'
+              ELSE 'TABLE_INTERFACE_PARTICIPANT_UNBOUND' END,
+         pm.member_type_name
+    FROM graphitron_ast_discriminate_entry d
+    JOIN graphql_directive_application da
+      ON da.graph_name = d.graph_name AND da.source_name = d.source_name
+     AND da.source_line = d.source_line AND da.source_column = d.source_column
+    JOIN graphitron_type_member pm ON pm.graph_name = da.graph_name AND pm.container_name = da.coordinate
+    LEFT JOIN graphitron_tabletype tt
+      ON tt.graph_name = pm.graph_name AND tt.type_name = pm.member_type_name
+   WHERE tt.type_name IS NULL
+      OR NOT EXISTS (SELECT 1 FROM graphql_directive_application va
+                      WHERE va.graph_name = pm.graph_name AND va.coordinate = pm.member_type_name
+                        AND va.directive_name = 'discriminator')
+)
+-- A @node(keyColumns:) naming a column the bound table cannot answer to with exactly one column,
+-- folded the way NodeKeyColumns folds: against the SQL name and the generated field name alike. One
+-- row per @node, naming the first spelling that fails in the order written; the pinned tier yields
+-- nothing for the whole list when any position fails, and the others are rows of
+-- graphitron_ast_node_keycolumn_entry under their own key rather than a list in this one. A type
+-- whose @table did not resolve has no binding to judge against and is that defect instead.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref, 'table-types'
+  FROM graphql_directive_application n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
+  JOIN graphitron_ast_node_keycolumn_entry e
+    ON e.graph_name = n.graph_name AND e.source_name = n.source_name
+   AND e.application_line = n.source_line AND e.application_column = n.source_column
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND (SELECT COUNT(*) FROM sql_column c
+         WHERE c.source_name = b.table_source_name AND c.table_schema = b.table_schema
+           AND c.table_name = b.table_name
+           AND (c.column_name_upper = UPPER(e.column_ref)
+                OR c.jooq_name_upper = UPPER(e.column_ref))) <> 1
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_keycolumn_entry f
+                    WHERE f.graph_name = e.graph_name AND f.source_name = e.source_name
+                      AND f.application_line = e.application_line
+                      AND f.application_column = e.application_column
+                      AND f.position < e.position
+                      AND (SELECT COUNT(*) FROM sql_column c
+                            WHERE c.source_name = b.table_source_name
+                              AND c.table_schema = b.table_schema AND c.table_name = b.table_name
+                              AND (c.column_name_upper = UPPER(f.column_ref)
+                                   OR c.jooq_name_upper = UPPER(f.column_ref))) <> 1)
+UNION ALL
+-- A @node with nothing to build an id from. It pinned no columns, its bound table publishes no node
+-- metadata, and the table has no primary key, which are the three tiers NodeKeyColumns tries in
+-- turn; with all three silent the node has no key. Metadata a class publishes and graphitron cannot
+-- use is no row of sql_node_metadata, so such a table is judged here as well as warned about by
+-- NODE_METADATA_UNREADABLE. The detail is the table.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_KEY', b.table_name, 'table-types'
+  FROM graphql_directive_application n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_keycolumn_entry e
+                    WHERE e.graph_name = n.graph_name AND e.source_name = n.source_name
+                      AND e.application_line = n.source_line
+                      AND e.application_column = n.source_column)
+   AND NOT EXISTS (SELECT 1 FROM sql_node_metadata m
+                    WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                      AND m.table_name = b.table_name)
+   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                    WHERE pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
+                      AND pk.table_name = b.table_name)
+UNION ALL
+-- A table whose class declares node metadata graphitron cannot use, so a type over it encodes its
+-- ids from the fallback tiers. Reported at each bound type's @table, on NODE_TYPE_ID_SHARED's terms,
+-- and saying that the attempt failed rather than how. The detail is the table.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_METADATA_UNREADABLE', b.table_name, 'table-types'
+  FROM graphitron_tabletype b
+  JOIN graphql_directive_application t
+    ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
+  JOIN sql_node_metadata_unreadable u
+    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
+   AND u.table_name = b.table_name
+UNION ALL
+-- A table whose class declares a legacy key-columns array graphitron cannot use. No tier falls back
+-- for it, so unlike NODE_METADATA_UNREADABLE it stops the build: every stored id in the old shape
+-- would otherwise fail to decode at runtime. Reported at each bound type's @table. The detail is the
+-- table.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_LEGACY_METADATA_UNREADABLE', b.table_name, 'table-types'
+  FROM graphitron_tabletype b
+  JOIN graphql_directive_application t
+    ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
+  JOIN sql_node_legacy_key_unreadable u
+    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
+   AND u.table_name = b.table_name
+UNION ALL
+-- A @discriminate's per-member defects, one at the @discriminate whichever members it names; the
+-- members are graphitron_entry_defect_member's.
+SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
+       CAST(NULL AS VARCHAR), 'table-types'
+  FROM discriminate_member m
+UNION ALL
+-- A @discriminate on a container with no table, which has no shared table to branch on, and one
+-- whose table has no column of the name written, by its SQL name or its jOOQ name; the detail is
+-- the name written.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN tt.type_name IS NULL THEN 'DISCRIMINATE_WITHOUT_TABLE' ELSE 'DISCRIMINATE_UNKNOWN_COLUMN' END,
+       CASE WHEN tt.type_name IS NULL THEN CAST(NULL AS VARCHAR) ELSE d.on_column END, 'table-types'
+  FROM graphitron_ast_discriminate_entry d
+  JOIN graphql_directive_application da
+    ON da.graph_name = d.graph_name AND da.source_name = d.source_name
+   AND da.source_line = d.source_line AND da.source_column = d.source_column
+  LEFT JOIN graphitron_tabletype tt ON tt.graph_name = da.graph_name AND tt.type_name = da.coordinate
+ WHERE tt.type_name IS NULL
+    OR NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
+                      AND c.table_name = tt.table_name
+                      AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column)))
+UNION ALL
+-- A @discriminator value that is not among the literals of the enum its container's column binds,
+-- the detail being the database enum type, whose literals are sql_enum_binding_literal's.
+SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_NOT_IN_DOMAIN',
+       eb.type_name, 'table-types'
+  FROM graphitron_ast_discriminator_entry v
+  JOIN graphql_directive_application va
+    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+   AND va.source_line = v.source_line AND va.source_column = v.source_column
+  JOIN graphitron_type_member m ON m.graph_name = va.graph_name AND m.member_type_name = va.coordinate
+  JOIN graphql_directive_application ca
+    ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name AND ca.directive_name = 'discriminate'
+  JOIN graphitron_ast_discriminate_entry d
+    ON d.graph_name = ca.graph_name AND d.source_name = ca.source_name
+   AND d.source_line = ca.source_line AND d.source_column = ca.source_column
+  JOIN graphitron_tabletype tt ON tt.graph_name = ca.graph_name AND tt.type_name = ca.coordinate
+  JOIN sql_column c
+    ON c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
+   AND c.table_name = tt.table_name
+   AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column))
+  JOIN sql_enum_binding eb ON eb.source_name = c.source_name AND eb.class_fqn = c.binding_type
+ WHERE NOT EXISTS (SELECT 1 FROM sql_enum_binding_literal el
+                    WHERE el.source_name = eb.source_name AND el.class_fqn = eb.class_fqn
+                      AND el.literal = v.discriminator_value);
+COMMENT ON VIEW graphitron_table_type_entry_defect_rule IS 'One row the table-types stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @discriminate on an interface whose @table did not resolve gives one DISCRIMINATE_WITHOUT_TABLE row at the @discriminate.';
+
+-- The nodes stage's own defects: two node types answering to one type id.
+CREATE VIEW graphitron_node_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- Two node types answering to one type id, so Query.node has an id it cannot dispatch. Reported at
+-- each type's @table, which every node carries where only some carry @node: a node the backing
+-- class publishes is a node without one. The detail is the shared id.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_TYPE_ID_SHARED', n.type_id, 'nodes'
+  FROM graphitron_node n
+  JOIN graphql_directive_application t
+    ON t.graph_name = n.graph_name AND t.coordinate = n.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
+ WHERE EXISTS (SELECT 1 FROM graphitron_node o
+                WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
+                  AND o.type_name <> n.type_name);
+COMMENT ON VIEW graphitron_node_entry_defect_rule IS 'One row the nodes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example Actor and Film both answering to the type id Shared give one NODE_TYPE_ID_SHARED row at each one''s @table.';
+
+-- The node-legacy-key-shapes stage's own defects: the verdicts NodeLegacyKeyShapes wrote into
+-- graphitron_node_legacy_key_defect, placed at the @node or @table the author edits.
+CREATE VIEW graphitron_node_legacy_key_shape_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A legacy key shape a @node states that breaks one of its rules, as NodeLegacyKeyShapes evaluated
+-- them: the stage that anchors the shapes wrote the verdict, so the rules are applied once and this
+-- arm only places the verdict at the application the author edits.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column, d.code, d.detail, 'node-legacy-key-shapes'
+  FROM graphitron_node_legacy_key_defect d
+  JOIN graphql_directive_application n
+    ON n.graph_name = d.graph_name AND n.coordinate = d.type_name
+   AND n.directive_name = 'node' AND n.ordinal = 0
+ WHERE d.site = 'NODE'
+UNION ALL
+-- The same for a shape a table class states, and for a type id a shape cannot belong to because
+-- two tables or two current keys answer to it: reported at each type's @table, which every
+-- contributor carries, on NODE_METADATA_UNREADABLE's terms.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column, d.code, d.detail, 'node-legacy-key-shapes'
+  FROM graphitron_node_legacy_key_defect d
+  JOIN graphql_directive_application t
+    ON t.graph_name = d.graph_name AND t.coordinate = d.type_name
+   AND t.directive_name = 'table' AND t.ordinal = 0
+ WHERE d.site = 'TABLE';
+COMMENT ON VIEW graphitron_node_legacy_key_shape_entry_defect_rule IS 'One row the node-legacy-key-shapes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an InventoryItem whose legacyKeyColumns leave out its current key column inventory_id gives one NODE_LEGACY_KEY_MISSES_KEY_COLUMN row at its @node, naming inventory_id.';
 
 -- The members a polymorphic @nodeId's per-member defects name, at the @nodeId: a table-bound
 -- member that is no node, and a member the id binds whose record the parameter or bean member
@@ -13466,14 +13878,14 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, d.code, d.st
   FROM graphitron_entry_defect d
   JOIN graphitron_spelled_table sp
     ON sp.graph_name = d.graph_name AND sp.spelling = d.detail
- WHERE d.code = 'TABLE_AMBIGUOUS' AND d.stage = 'entry-defects';
+ WHERE d.code = 'TABLE_AMBIGUOUS';
 COMMENT ON VIEW graphitron_entry_defect_table_rule IS 'One table a defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk. For example a TABLE_AMBIGUOUS defect whose spelling two schemas answer draws a row for each schema''s table.';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_name IS 'the @table''s file';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.source_column IS 'its column';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.code IS 'TABLE_AMBIGUOUS';
--- COMMENT ON COLUMN graphitron_entry_defect_table_rule.stage IS 'entry-defects, the stage raising it and writing its tables';
+-- COMMENT ON COLUMN graphitron_entry_defect_table_rule.stage IS 'the stage raising it, which writes its tables';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_source_name IS 'the catalog source of a candidate table';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_schema IS 'its schema';
 -- COMMENT ON COLUMN graphitron_entry_defect_table_rule.table_name IS 'its name';
@@ -13850,14 +14262,33 @@ SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_
    AND r.owner = oc.application_directive
  WHERE d.call_kind IN ('SERVICE', 'ROUTINE') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
  GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-          COALESCE(r.source_column, da.source_column), d.code;
+          COALESCE(r.source_column, da.source_column), d.code
+UNION ALL
+-- A re-read of what a delete removed, at the field that would re-read it: a field under the object
+-- type a delete returns re-reading its rows by key, or the delete's own field returning a @table
+-- type. The rows are gone once the delete runs; what it hands back is their keys.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer pp
+  JOIN graphitron_occurrence o
+    ON o.graph_name = pp.graph_name AND o.parent_coordinate = pp.coordinate
+  JOIN graphitron_occurrence_producer cp
+    ON cp.graph_name = o.graph_name AND cp.coordinate = o.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype b
+    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE pp.kind = 'DELETE' AND cp.start = 'CHILD' AND cp.kind IN ('SELECT', 'LOOKUP');
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading field''s';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or REREAD_OF_DELETED_ROWS';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, null for a re-read';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 
@@ -17244,213 +17675,7 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
   JOIN graphitron_directive_application da
     ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
    AND da.directive_name = 'condition' AND da.source_name IS NOT NULL
- WHERE d.code = 'LIST_CONDITION_BELOW_LIST';
-COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
-
-
-CREATE VIEW graphitron_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- The @routine that heads a chain: the last one written at a mutation-root field.
--- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
-WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
-  SELECT r.graph_name, fe.type_name, fe.field_name, r.coordinate, r.source_name, r.source_line,
-         r.source_column
-    FROM graphql_directive_application r
-    JOIN graphitron_ast_routine_entry re
-      ON re.graph_name = r.graph_name AND re.source_name = r.source_name
-     AND re.source_line = r.source_line AND re.source_column = r.source_column
-    JOIN graphql_field_element fe
-      ON fe.graph_name = r.graph_name AND fe.coordinate = r.coordinate
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
-     AND ro.operation = 'MUTATION'
-   WHERE r.directive_name = 'routine'
-     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphql_directive_application r2
-                        JOIN graphitron_ast_routine_entry re2
-                          ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
-                         AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
-                       WHERE r2.graph_name = r.graph_name AND r2.coordinate = r.coordinate
-                         AND r2.directive_name = 'routine')
-),
--- A root field's first @reference with no @routine written before it. A @routine establishes the
--- table-bound producer a @reference must be part of, and a root field has no source row, so a path
--- written there departs from nothing until a routine written ahead of it gives it one. A @routine
--- written only after the @reference starts its query too late for it, so that @reference is refused
--- as well.
-root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
-    FROM graphitron_field_reference_entry fr
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
-     AND ro.operation IN ('QUERY', 'MUTATION')
-   WHERE fr.source_name IS NOT NULL
-     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
-                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
-                          AND f2.field_name = fr.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application r
-                       JOIN graphitron_ast_routine_entry re
-                         ON re.graph_name = r.graph_name AND re.source_name = r.source_name
-                        AND re.source_line = r.source_line AND re.source_column = r.source_column
-                      WHERE r.graph_name = fr.graph_name
-                        AND r.coordinate = fr.type_name || '.' || fr.field_name
-                        AND r.directive_name = 'routine' AND r.source_name = fr.source_name
-                        AND (r.source_line < fr.source_line
-                             OR (r.source_line = fr.source_line
-                                 AND r.source_column < fr.source_column)))
-),
--- What the claim conflict rule weighs at each element. This rule's winners are the strongest claims
--- of each family, an overridden claim being no defect; beside them, a @routine a field's written
--- path steps through and no producer claim holds, which no claim can share a field with.
-contender (graph_name, coordinate, kind) AS (
-  SELECT DISTINCT c.graph_name, c.coordinate, c.kind
-    FROM graphitron_claim c
-    JOIN graphitron_claim_kind k ON k.kind = c.kind
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_claim s
-                       JOIN graphitron_claim_kind sk ON sk.kind = s.kind
-                      WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
-                        AND sk.family = k.family AND s.priority < c.priority)
-  UNION ALL
-  SELECT DISTINCT pc.graph_name, pc.element_coordinate, 'ROUTINE_STEP'
-    FROM graphitron_join_path_claim pc
-    JOIN graphitron_ast_path_entry pe
-      ON pe.graph_name = pc.graph_name AND pe.source_name = pc.source_name
-     AND pe.anchor_line = pc.source_line AND pe.anchor_column = pc.source_column
-    JOIN graphitron_ast_routine_entry re
-      ON re.graph_name = pe.graph_name AND re.source_name = pe.source_name
-     AND re.source_line = pe.element_line AND re.source_column = pe.element_column
-   WHERE pc.claim_kind = 'FIELD'
-     AND NOT EXISTS (SELECT 1 FROM graphitron_claim r
-                      WHERE r.graph_name = pc.graph_name AND r.coordinate = pc.element_coordinate
-                        AND r.kind = 'ROUTINE')
-),
--- Each element two contenders cannot share: CLAIMS_CONFLICT where any pair is one no inclusion row
--- admits, else the code the inclusion names for the pair it reports.
-claim_conflict (graph_name, coordinate, code) AS (
-  SELECT a.graph_name, a.coordinate,
-         CASE WHEN COUNT(*) > COUNT(i.kind_a) THEN 'CLAIMS_CONFLICT' ELSE MIN(i.code) END
-    FROM contender a
-    JOIN contender b
-      ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate AND b.kind > a.kind
-    LEFT JOIN graphitron_claim_inclusion i ON i.kind_a = a.kind AND i.kind_b = b.kind
-   WHERE i.kind_a IS NULL OR i.code IS NOT NULL
-   GROUP BY a.graph_name, a.coordinate
-)
--- More than one write on one field. The row sits at the head, the individual applications
--- being legal each on their own and the plurality being what has no emitter.
-SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'MULTIPLE_ROUTINE_NODES', NULL, 'entry-defects'
-  FROM head h
- WHERE 1 < (SELECT COUNT(*) FROM graphql_directive_application r2
-               JOIN graphitron_ast_routine_entry re2
-                 ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
-                AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
-             WHERE r2.graph_name = h.graph_name AND r2.coordinate = h.coordinate
-               AND r2.directive_name = 'routine')
-UNION ALL
--- A paginated return on a write. Stated for every write and not only for the chain shape:
--- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
--- so a coordinate the seat would have answered about its carrier says this as well.
-SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'CONNECTION_RETURN', NULL, 'entry-defects'
-  FROM head h
-  JOIN graphitron_field cf
-    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
-   AND cf.field_name = h.field_name
-  JOIN graphitron_connection ce
-    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
-UNION ALL
--- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
--- by the keys it returned, which is not a page, as a @routine write's are.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'CONNECTION_RETURN', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_directive_application da
-  JOIN graphitron_field f
-    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
-  JOIN graphitron_producer p
-    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
-   AND p.kind IN ('INSERT', 'UPDATE', 'DELETE')
-  JOIN graphitron_connection ce
-    ON ce.graph_name = f.graph_name AND ce.type_name = f.named_type
- WHERE da.directive_name = 'mutation' AND da.ordinal = 0 AND da.source_name IS NOT NULL
-UNION ALL
--- A field reading a member off what a write hands back, at the field: an insert, update, delete or
--- @routine write hands back its keys and not an object of a class, so a field under the object type
--- it returns reads nothing there. A field re-reading the written rows by those keys, an id encoded
--- from them and the errors field are what such a type holds.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'WRITE_RESULT_HOLDS_ONLY_KEYS', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_producer p
-  JOIN graphql_root_operation ro
-    ON ro.graph_name = p.graph_name AND ro.type_name = p.type_name AND ro.operation = 'MUTATION'
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
-  JOIN graphitron_reader rd
-    ON rd.graph_name = ft.graph_name AND rd.type_name = ft.target_type_name AND rd.reads = 'ACCESSOR'
-  JOIN graphitron_field f
-    ON f.graph_name = rd.graph_name AND f.type_name = rd.type_name AND f.field_name = rd.field_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
-   AND f.named_type <> 'ID'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
-                    WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                    WHERE rc.graph_name = ft.graph_name AND rc.type_name = ft.target_type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
-                      AND e.field_name = f.field_name)
-UNION ALL
--- A re-read of what a delete removed, at the field that would re-read it: a field under the object
--- type a delete returns re-reading its rows by key, or the delete's own field returning a @table
--- type. The rows are gone once the delete runs; what it hands back is their keys.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_occurrence_producer pp
-  JOIN graphitron_occurrence o
-    ON o.graph_name = pp.graph_name AND o.parent_coordinate = pp.coordinate
-  JOIN graphitron_occurrence_producer cp
-    ON cp.graph_name = o.graph_name AND cp.coordinate = o.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_tabletype b
-    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE pp.kind = 'DELETE' AND cp.start = 'CHILD' AND cp.kind IN ('SELECT', 'LOOKUP')
-UNION ALL
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_producer p
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
-  JOIN graphitron_tabletype b
-    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
-  JOIN graphitron_field f
-    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE p.kind = 'DELETE'
-UNION ALL
--- A read surface written on a write. Three sites state one, and each row sits at its own.
--- On the field or on one of its arguments, each at its own application.
-SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition', 'entry-defects'
-  FROM graphql_directive_application dc
-  JOIN graphql_element_field ef
-    ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
-  JOIN head h
-    ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
- WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
-UNION ALL
-SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
-       'READ_SURFACE_ON_WRITE', 'orderBy', 'entry-defects'
-  FROM graphql_directive_application ob
-  JOIN graphql_argument_element ae
-    ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
-  JOIN head h
-    ON h.graph_name = ae.graph_name AND h.type_name = ae.type_name AND h.field_name = ae.field_name
- WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0
+ WHERE d.code = 'LIST_CONDITION_BELOW_LIST'
 UNION ALL
 -- An output field's need for a table-bound type that no claim covers, neither one at the field nor
 -- one at the same-named field of an interface its type implements, between two tables the paths
@@ -17492,7 +17717,7 @@ SELECT u.graph_name, el.source_name, el.source_line, el.source_column,
                                 ELSE u.landing_first END
                         || ' to ' || CASE WHEN u.landing_last IS NULL OR u.start_last >= u.landing_last
                                           THEN COALESCE(u.start_last, u.landing_last)
-                                          ELSE u.landing_last END END), 'entry-defects'
+                                          ELSE u.landing_last END END), 'occurrence-depth-defects'
   FROM (SELECT x.graph_name, x.element_coordinate, x.start_schema, x.start_table,
                x.landing_source_name, x.landing_schema, x.landing_table, x.routes, x.missing_column, x.start_function,
                -- the first and last key by name declared on the start, and on the landing
@@ -17664,7 +17889,7 @@ UNION ALL
 -- implements whose same-named field has a claim covering the need, and that no other such interface
 -- extends, an extending interface's claim overriding the one it redeclares.
 SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITED_PATH_AMBIGUOUS',
-       MIN(a.first_interface) || ' and ' || MAX(a.last_interface), 'entry-defects'
+       MIN(a.first_interface) || ' and ' || MAX(a.last_interface), 'occurrence-depth-defects'
   FROM (SELECT n.graph_name, o.element_coordinate, n.target_type,
                MIN(ii.interface_name) AS first_interface, MAX(ii.interface_name) AS last_interface
           FROM graphitron_path_need_table n
@@ -17701,48 +17926,358 @@ SELECT a.graph_name, el.source_name, el.source_line, el.source_column, 'INHERITE
     ON el.graph_name = a.graph_name AND el.coordinate = a.element_coordinate
  GROUP BY a.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
--- A write the tables it is read on disagree about, at its @mutation: the table its return or the
--- fields re-reading its written rows bind and the one @mutation(table:) names are not one table, so
--- graphitron_producer_write states no table for it. A write read on no table at all is not this.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'WRITE_TABLES_DISAGREE', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_directive_application da
-  JOIN graphitron_field f
-    ON f.graph_name = da.graph_name AND f.coordinate = da.coordinate
-  JOIN graphitron_producer p
-    ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
- WHERE da.directive_name = 'mutation' AND da.ordinal = 0
-   AND p.kind IN ('INSERT', 'UPDATE', 'DELETE')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write w
-                    WHERE w.graph_name = p.graph_name AND w.type_name = p.type_name
-                      AND w.field_name = p.field_name)
-   AND da.source_name IS NOT NULL
-   AND (EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
-                  JOIN graphitron_spelled_table sp
-                    ON sp.graph_name = m.graph_name AND sp.spelling = m.table_ref
-                   AND sp.candidates = 1
-                 WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
-                   AND m.source_line = da.source_line AND m.source_column = da.source_column)
-        OR (p.kind IN ('INSERT', 'UPDATE')
-            AND (EXISTS (SELECT 1 FROM graphitron_tabletype b
-                          WHERE b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name)
-                 OR EXISTS (SELECT 1 FROM graphitron_producer rr
-                              JOIN graphitron_field_target rt
-                                ON rt.graph_name = rr.graph_name AND rt.type_name = rr.type_name
-                               AND rt.field_name = rr.field_name
-                              JOIN graphitron_tabletype b
-                                ON b.graph_name = rt.graph_name AND b.type_name = rt.target_type_name
-                             WHERE rr.graph_name = ft.graph_name AND rr.type_name = ft.target_type_name
-                               AND rr.kind = 'LOOKUP'))))
+-- The same at an argument or input field id: ID named for its target: the node its need reaches,
+-- over a table with a column of the name, an argument's only where its field returns that node.
+-- Reported at the declaration. The node is joined by name, the target's or the one over an input
+-- field's landing, rather than looked up by table for every need, which H2 drives from the needs.
+SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
+       COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column),
+       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name), 'occurrence-depth-defects'
+  FROM graphitron_occurrence o
+  JOIN graphitron_path_need_table pn
+    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
+   AND jp.target_type = pn.target_type
+  LEFT JOIN graphitron_node tn
+    ON tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type
+  LEFT JOIN graphitron_node_table ln
+    ON tn.type_name IS NULL AND o.kind = 'INPUT_FIELD'
+   AND ln.graph_name = pn.graph_name AND ln.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
+   AND ln.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND ln.table_name = COALESCE(jp.target_table, pn.landing_table)
+  JOIN graphitron_tabletype bt
+    ON bt.graph_name = pn.graph_name AND bt.type_name = COALESCE(tn.type_name, ln.node_type_name)
+  JOIN sql_column c
+    ON c.source_name = bt.table_source_name AND c.table_schema = bt.table_schema
+   AND c.table_name = bt.table_name
+   AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID')
+  LEFT JOIN graphql_field_element fe
+    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
+  LEFT JOIN graphql_field f
+    ON f.graph_name = fe.graph_name AND f.type_name = fe.type_name AND f.field_name = fe.field_name
+  LEFT JOIN graphql_argument_element ae
+    ON ae.graph_name = o.graph_name AND ae.coordinate = o.element_coordinate
+  LEFT JOIN graphql_argument a
+    ON a.graph_name = ae.graph_name AND a.type_name = ae.type_name
+   AND a.field_name = ae.field_name AND a.argument_name = ae.argument_name
+ WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
+   AND COALESCE(f.named_type, a.named_type) = 'ID'
+   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
+   AND COALESCE(f.source_line, a.source_line) IS NOT NULL
+   AND (o.kind = 'INPUT_FIELD'
+        OR NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
+                        WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
+                          AND p2.target_type <> pn.target_type))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind IN ('NODE_ID', 'COLUMN'))
+ GROUP BY COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
+          COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column);
+COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
+
+
+-- The anchor stage's own defects: the rules the documents and the gatherers ahead of this one
+-- decide alone, raised as the graphitron anchor phase's first stage ends, no later stage's facts
+-- being read.
+CREATE VIEW graphitron_anchor_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- The @routine that heads a chain: the last one written at a mutation-root field.
+-- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
+WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, fe.type_name, fe.field_name, r.coordinate, r.source_name, r.source_line,
+         r.source_column
+    FROM graphql_directive_application r
+    JOIN graphitron_ast_routine_entry re
+      ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+     AND re.source_line = r.source_line AND re.source_column = r.source_column
+    JOIN graphql_field_element fe
+      ON fe.graph_name = r.graph_name AND fe.coordinate = r.coordinate
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.directive_name = 'routine'
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphql_directive_application r2
+                        JOIN graphitron_ast_routine_entry re2
+                          ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
+                         AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
+                       WHERE r2.graph_name = r.graph_name AND r2.coordinate = r.coordinate
+                         AND r2.directive_name = 'routine')
+),
+-- A root field's first @reference with no @routine written before it. A @routine establishes the
+-- table-bound producer a @reference must be part of, and a root field has no source row, so a path
+-- written there departs from nothing until a routine written ahead of it gives it one. A @routine
+-- written only after the @reference starts its query too late for it, so that @reference is refused
+-- as well.
+root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
+    FROM graphitron_field_reference_entry fr
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
+     AND ro.operation IN ('QUERY', 'MUTATION')
+   WHERE fr.source_name IS NOT NULL
+     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
+                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
+                          AND f2.field_name = fr.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application r
+                       JOIN graphitron_ast_routine_entry re
+                         ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+                        AND re.source_line = r.source_line AND re.source_column = r.source_column
+                      WHERE r.graph_name = fr.graph_name
+                        AND r.coordinate = fr.type_name || '.' || fr.field_name
+                        AND r.directive_name = 'routine' AND r.source_name = fr.source_name
+                        AND (r.source_line < fr.source_line
+                             OR (r.source_line = fr.source_line
+                                 AND r.source_column < fr.source_column)))
+),
+-- Union membership and interface implementation as one container and member, as graphql_poly_member
+-- states them, read off the two tables holding them.
+poly_member (graph_name, container_name, member_type_name) AS (
+  SELECT graph_name, union_name, member_type_name FROM graphql_union_member
+  UNION ALL
+  SELECT graph_name, interface_name, type_name FROM graphql_implements_interface
+)
+-- More than one write on one field. The row sits at the head, the individual applications
+-- being legal each on their own and the plurality being what has no emitter.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'MULTIPLE_ROUTINE_NODES', NULL, 'anchor'
+  FROM head h
+ WHERE 1 < (SELECT COUNT(*) FROM graphql_directive_application r2
+               JOIN graphitron_ast_routine_entry re2
+                 ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
+                AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
+             WHERE r2.graph_name = h.graph_name AND r2.coordinate = h.coordinate
+               AND r2.directive_name = 'routine')
 UNION ALL
+-- A read surface written on a write. Three sites state one, and each row sits at its own.
+-- On the field or on one of its arguments, each at its own application.
+SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition', 'anchor'
+  FROM graphql_directive_application dc
+  JOIN graphql_field_element ef
+    ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
+  JOIN head h
+    ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
+ WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
+UNION ALL
+SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition', 'anchor'
+  FROM graphql_directive_application dc
+  JOIN graphql_argument_element ef
+    ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
+  JOIN head h
+    ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
+ WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
+UNION ALL
+SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
+       'READ_SURFACE_ON_WRITE', 'orderBy', 'anchor'
+  FROM graphql_directive_application ob
+  JOIN graphql_argument_element ae
+    ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
+  JOIN head h
+    ON h.graph_name = ae.graph_name AND h.type_name = ae.type_name AND h.field_name = ae.field_name
+ WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0
+UNION ALL
+-- A root field's path with nothing to depart from, at the @reference that starts it.
+SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
+       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR), 'anchor'
+  FROM root_reference rr
+UNION ALL
+-- A @node on a type that does not implement Node. The interface is the contract @node publishes to
+-- clients, so a type cannot be promoted to a node without it, a node this subgraph does not resolve
+-- included: resolvability is a fact of its own, and Query.node answers such a node's id with null.
+-- Reported at the @node, which is where an author decides between adding the interface and dropping
+-- the directive. A root operation type is a root before it is anything else. The interface also
+-- holds the type to an id field, so a node without one is a schema problem rather than a defect.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
+                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
+                      AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
+UNION ALL
+-- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
+-- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
+-- root operation type is a root before it is anything else. A type that also lacks the interface
+-- is both defects, each its own decision for the author.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphql_directive_application n
+ WHERE n.directive_name = 'node' AND n.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application t
+                    WHERE t.graph_name = n.graph_name AND t.coordinate = n.coordinate
+                      AND t.directive_name = 'table')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
+UNION ALL
+-- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
+-- period, or nothing on one side of the last one. Reported with the reference as written.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref, 'anchor'
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
+   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
+UNION ALL
+-- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
+-- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
+-- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part, 'anchor'
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                     JOIN code_class k ON k.source_name = g.source_name
+                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name)
+UNION ALL
+-- A @scalarType naming a class the reading read and a constant it does not declare as a public
+-- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
+-- declared as some other type are one refusal, and the reference is what the author edits.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref, 'anchor'
+  FROM graphql_directive_application a
+  JOIN graphitron_ast_scalar_type_entry e
+    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+   AND e.source_line = a.source_line AND e.source_column = a.source_column
+ WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND NOT EXISTS (SELECT 1 FROM code_graph_class k
+                     JOIN code_scalar_constant c
+                       ON c.source_name = k.source_name AND c.class_name = k.class_name
+                    WHERE k.graph_name = e.graph_name
+                      AND k.class_name = e.scalar_ref_class_part
+                      AND c.field_name = e.scalar_ref_field_part)
+UNION ALL
+-- A field on the subscription root, at the field's own declaration. Meaningful under the
+-- specification and under the directives alike: graphitron generates no subscription resolver
+-- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
+-- a type's name, a schema block binding the subscription root under another name being the same
+-- schema.
+SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
+       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphql_ast_field_definition_entry f
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+   AND ro.operation = 'SUBSCRIPTION'
+UNION ALL
+-- An upsert, at its @mutation: meaningful under the directives, and graphitron generates no upsert
+-- yet, so an author works around it rather than fixing it. Its claim still conflicts with a @service.
+SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
+       'MUTATION_UPSERT', CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphitron_ast_mutation_entry m
+ WHERE m.operation = 'UPSERT'
+UNION ALL
+-- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
+-- each application after the first written. Read off the entries within one file, a declaration and
+-- what is applied to it being written together, reaching the siblings through the parent position;
+-- the first is the anchor kept. The detail is the type.
+SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column,
+       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref, 'anchor'
+  FROM graphitron_ast_reference_for_entry r
+  JOIN graphql_ast_entry e
+    ON e.graph_name = r.graph_name AND e.source_name = r.source_name
+   AND e.source_line = r.source_line AND e.source_column = r.source_column
+  JOIN graphql_ast_entry e2
+    ON e2.graph_name = e.graph_name AND e2.source_name = e.source_name
+   AND e2.parent_line = e.parent_line AND e2.parent_column = e.parent_column
+  JOIN graphitron_ast_reference_for_entry r2
+    ON r2.graph_name = e2.graph_name AND r2.source_name = e2.source_name
+   AND r2.source_line = e2.source_line AND r2.source_column = e2.source_column
+ WHERE r2.participant_type_ref = r.participant_type_ref
+   AND (e2.source_line < e.source_line
+        OR (e2.source_line = e.source_line AND e2.source_column < e.source_column))
+UNION ALL
+-- A @discriminator on a type that is a member of no container writing @discriminate, so there is no
+-- column for the value to match.
+SELECT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_WITHOUT_DISCRIMINATE',
+       CAST(NULL AS VARCHAR), 'anchor'
+  FROM graphitron_ast_discriminator_entry v
+  JOIN graphql_directive_application va
+    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+   AND va.source_line = v.source_line AND va.source_column = v.source_column
+ WHERE NOT EXISTS (SELECT 1 FROM poly_member m
+                     JOIN graphql_directive_application ca
+                       ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name
+                      AND ca.directive_name = 'discriminate'
+                    WHERE m.graph_name = va.graph_name AND m.member_type_name = va.coordinate)
+UNION ALL
+-- A @discriminator value another member of the same discriminated container also writes, at each
+-- application, the detail being the container.
+SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_DUPLICATE',
+       m.container_name, 'anchor'
+  FROM graphitron_ast_discriminator_entry v
+  JOIN graphql_directive_application va
+    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
+   AND va.source_line = v.source_line AND va.source_column = v.source_column
+  JOIN poly_member m ON m.graph_name = va.graph_name AND m.member_type_name = va.coordinate
+  JOIN graphql_directive_application ca
+    ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name AND ca.directive_name = 'discriminate'
+  JOIN poly_member m2
+    ON m2.graph_name = m.graph_name AND m2.container_name = m.container_name
+   AND m2.member_type_name <> m.member_type_name
+  JOIN graphql_directive_application va2
+    ON va2.graph_name = m2.graph_name AND va2.coordinate = m2.member_type_name
+   AND va2.directive_name = 'discriminator'
+  JOIN graphitron_ast_discriminator_entry v2
+    ON v2.graph_name = va2.graph_name AND v2.source_name = va2.source_name
+   AND v2.source_line = va2.source_line AND v2.source_column = va2.source_column
+ WHERE v2.discriminator_value = v.discriminator_value
+UNION ALL
+-- @accept until its dispatch is generated: B's facts and published shape are derived, but nothing
+-- verifies a voucher yet, so a valid schema is refused here rather than reaching an emitter that does
+-- not exist.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
+       d.coordinate, 'anchor'
+  FROM graphql_directive_application d
+ WHERE d.directive_name = 'accept';
+COMMENT ON VIEW graphitron_anchor_entry_defect_rule IS 'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.';
+
+-- The defects the macro-expansion stage raises, off the expanded schema it has just written: its
+-- fields, connections, connection carriers and arguments, beside the transcription.
+CREATE VIEW graphitron_macro_expansion_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- The @routine that heads a chain: the last one written at a mutation-root field.
+-- An application counts where it names a routine, which is where it has a graphitron_ast_routine_entry.
+WITH head (graph_name, type_name, field_name, coordinate, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, fe.type_name, fe.field_name, r.coordinate, r.source_name, r.source_line,
+         r.source_column
+    FROM graphql_directive_application r
+    JOIN graphitron_ast_routine_entry re
+      ON re.graph_name = r.graph_name AND re.source_name = r.source_name
+     AND re.source_line = r.source_line AND re.source_column = r.source_column
+    JOIN graphql_field_element fe
+      ON fe.graph_name = r.graph_name AND fe.coordinate = r.coordinate
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fe.graph_name AND ro.type_name = fe.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.directive_name = 'routine'
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphql_directive_application r2
+                        JOIN graphitron_ast_routine_entry re2
+                          ON re2.graph_name = r2.graph_name AND re2.source_name = r2.source_name
+                         AND re2.source_line = r2.source_line AND re2.source_column = r2.source_column
+                       WHERE r2.graph_name = r.graph_name AND r2.coordinate = r.coordinate
+                         AND r2.directive_name = 'routine')
+)
 -- A condition on the step out of a @routine write's result, at the element that writes it. The
 -- write's statement holds its locks and joins nothing onward, so what it returns is re-read by its
 -- key in a statement of its own, which the function's result is not part of for a condition to
 -- join from; a later step's condition joins two tables of that statement and is no defect.
 SELECT ce.graph_name, ce.source_name, ce.source_line, ce.source_column,
-       'CONDITION_ON_WRITE_RESULT', CAST(NULL AS VARCHAR), 'entry-defects'
+       'CONDITION_ON_WRITE_RESULT', CAST(NULL AS VARCHAR), 'macro-expansion'
   FROM graphitron_field gf
   JOIN graphql_root_operation ro
     ON ro.graph_name = gf.graph_name AND ro.type_name = gf.type_name AND ro.operation = 'MUTATION'
@@ -17762,11 +18297,395 @@ SELECT ce.graph_name, ce.source_name, ce.source_line, ce.source_column,
     ON ce.graph_name = first_step.graph_name AND ce.source_name = first_step.source_name
    AND ce.source_line = first_step.element_line AND ce.source_column = first_step.element_column
 UNION ALL
--- A root field's path with nothing to depart from, at the @reference that starts it.
-SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
-       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM root_reference rr
+-- A paginated return on a write. Stated for every write and not only for the chain shape:
+-- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
+-- so a coordinate the seat would have answered about its carrier says this as well.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'CONNECTION_RETURN', NULL, 'macro-expansion'
+  FROM head h
+  JOIN graphitron_field cf
+    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
+   AND cf.field_name = h.field_name
+  JOIN graphitron_connection ce
+    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
 UNION ALL
+-- A connection carrier whose resolved first default is larger than the build's maximum page size,
+-- so the schema advertises a default no request can receive. Reported where the author wrote the
+-- default: at the first argument's declaration where the carrier declares first itself, and
+-- otherwise at the @asConnection application whose defaultFirstValue set it. The minted default
+-- never fires it, being lowered to the maximum where it is minted. The detail says which of the two
+-- was written, the value and the maximum. A connection type an author declared without @asConnection is no carrier and is not
+-- judged here; the runtime serves its oversized default at the maximum like any value a client
+-- sends.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
+       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail, 'macro-expansion'
+  FROM (SELECT c.graph_name,
+               COALESCE(el.source_name, c.source_name) AS source_name,
+               COALESCE(el.source_line, c.source_line) AS source_line,
+               COALESCE(el.source_column, c.source_column) AS source_column,
+               CASE WHEN el.source_line IS NOT NULL THEN 'first = ' ELSE 'defaultFirstValue: ' END
+                 || ga.default_value_sdl || ' against a maximum of ' || mx.max_page_size AS detail
+          FROM graphitron_connection_carrier c
+          JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
+          JOIN graphitron_argument ga
+            ON ga.graph_name = c.graph_name AND ga.type_name = c.type_name
+           AND ga.field_name = c.field_name AND ga.argument_name = 'first'
+          LEFT JOIN graphql_ast_element_entry el
+            ON el.graph_name = c.graph_name AND el.coordinate = c.coordinate || '(first:)'
+         -- An integer literal short enough to cast; a longer one is no Int at all, which the
+         -- schema build refuses on its own.
+         WHERE REGEXP_LIKE(ga.default_value_sdl, '^[0-9]{1,18}$')
+           AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
+ WHERE p.source_line IS NOT NULL
+UNION ALL
+-- @issue on a type a root operation field returns, directly or as a list: the vouched decision is
+-- the path from a parent A's rules admitted. A mutation payload's field is no root field.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISSUE_ON_ROOT_TYPE',
+       d.coordinate, 'macro-expansion'
+  FROM graphql_directive_application d
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+ WHERE d.directive_name = 'issue'
+   AND EXISTS (SELECT 1 FROM graphql_root_operation ro
+                 JOIN graphitron_field rf
+                   ON rf.graph_name = ro.graph_name AND rf.type_name = ro.type_name
+                WHERE ro.graph_name = i.graph_name AND rf.named_type = i.type_name);
+COMMENT ON VIEW graphitron_macro_expansion_entry_defect_rule IS 'One row the macro-expansion stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a mutation field returning [Film] @asConnection with a @routine gives one CONNECTION_RETURN row at its @routine.';
+
+-- The defects the directive-applications stage raises, off the applications it has just written
+-- across the expanded schema.
+CREATE VIEW graphitron_directive_application_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A @mutation with no verb, at the @mutation as written: the verb is the write graphitron
+-- generates, so without one there is none. Its claim, WRITE, still conflicts with a @service.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'MUTATION_WITHOUT_VERB', CAST(NULL AS VARCHAR), 'directive-applications'
+  FROM graphitron_directive_application da
+ WHERE da.directive_name = 'mutation' AND da.origin = 'AUTHORED'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
+                    WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
+                      AND m.source_line = da.source_line AND m.source_column = da.source_column);
+COMMENT ON VIEW graphitron_directive_application_entry_defect_rule IS 'One row the directive-applications stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @mutation written with no typeName gives one MUTATION_WITHOUT_VERB row at the @mutation.';
+
+-- The defects the federation-vocabulary stage raises, off graphitron_type once its federation types
+-- have joined the ones macro expansion wrote.
+CREATE VIEW graphitron_federation_vocabulary_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- Two types whose names differ only in case, among the types the generator writes a file for, which
+-- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
+-- two files are one, and neither name is the right one to keep. Reported at each authored type's
+-- base declaration; a minted type has none, and its authored sibling carries the row. The detail
+-- names a sibling, the first by name where there are several, the rest being rows of their own.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'TYPE_NAME_CASE_COLLISION',
+       (SELECT MIN(o.type_name) FROM graphitron_type o
+         WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
+           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name), 'federation-vocabulary'
+  FROM graphitron_type g
+  JOIN graphql_type_declaration d
+    ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
+ WHERE g.kind <> 'SCALAR'
+   AND EXISTS (SELECT 1 FROM graphitron_type o
+                WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
+                  AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name);
+COMMENT ON VIEW graphitron_federation_vocabulary_entry_defect_rule IS 'One row the federation-vocabulary stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example types Film and FILM in one graph give one TYPE_NAME_CASE_COLLISION row at each declaration.';
+
+-- The binding-claims stage's own defects: a @nodeId or a node's id the claims just written judge, at
+-- the position written.
+CREATE VIEW graphitron_binding_claim_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A bare @nodeId on an object type's field with no @reference, where the object type is no node:
+-- the id inherits its node from the type it is declared on, and there is none. A type carrying
+-- @node that did not resolve to one is no such type, its own defects saying why. Reported at the
+-- @nodeId, where the author either writes typeName: or makes the type a node.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_CONTAINING_TYPE_NOT_NODE', f.type_name, 'binding-claims'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_field f
+    ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind = 'OBJECT'
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
+                    WHERE nd.graph_name = f.graph_name AND nd.coordinate = f.type_name
+                      AND nd.directive_name = 'node')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application r
+                    WHERE r.graph_name = cl.graph_name AND r.coordinate = cl.coordinate
+                      AND r.directive_name = 'reference')
+UNION ALL
+-- A typeName: naming a type that is neither a node nor an interface or union, which the decode of
+-- a polymorphic id reads per member: there is no key to encode or decode. A type carrying @node
+-- that did not resolve is left to its own defects, and a stub left undeclared to the arm below.
+-- Reported at the @nodeId, the detail the name as written.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_TYPE_NAME_NOT_NODE', cl.named, 'binding-claims'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                    WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
+                    WHERE nd.graph_name = cl.graph_name AND nd.coordinate = cl.named
+                      AND nd.directive_name = 'node')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type c
+                    WHERE c.graph_name = cl.graph_name AND c.type_name = cl.named
+                      AND c.kind IN ('INTERFACE', 'UNION'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
+                     JOIN sql_node_metadata m
+                       ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                      AND m.table_name = b.table_name
+                    WHERE b.graph_name = cl.graph_name AND b.type_name = cl.named)
+UNION ALL
+-- The same name on a @table type over a table whose class publishes node metadata: another
+-- subgraph's entity, which a @node(resolvable: false) makes a node for its id. Reported at the
+-- @nodeId, the detail the name as written.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_TYPE_NAME_UNDECLARED_STUB', cl.named, 'binding-claims'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_tabletype b ON b.graph_name = cl.graph_name AND b.type_name = cl.named
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
+                    WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
+                    WHERE nd.graph_name = cl.graph_name AND nd.coordinate = cl.named
+                      AND nd.directive_name = 'node')
+   AND EXISTS (SELECT 1 FROM sql_node_metadata m
+                WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                  AND m.table_name = b.table_name)
+UNION ALL
+-- A typeName: on a node type's own id: ID, which is that node's identity by construction, so the
+-- argument names what the type already answers. Reported at the @nodeId.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_TYPE_NAME_ON_OWN_ID', f.type_name, 'binding-claims'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_field f
+    ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
+   AND f.field_name = 'id' AND f.named_type = 'ID' AND NOT f.is_list
+   AND (EXISTS (SELECT 1 FROM graphitron_node n
+                 WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name)
+        OR EXISTS (SELECT 1 FROM graphitron_directive_application nd
+                    WHERE nd.graph_name = f.graph_name AND nd.coordinate = f.type_name
+                      AND nd.directive_name = 'node'))
+UNION ALL
+-- A node type's own id: ID with neither @nodeId nor @field, over a table with a column of that name:
+-- the encoded id and the raw column are different values and the SDL has not said which is meant.
+-- Reported at the field, the detail the column.
+SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
+       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name), 'binding-claims'
+  FROM graphql_field f
+  JOIN graphitron_node n
+    ON n.graph_name = f.graph_name AND n.type_name = f.type_name
+  JOIN graphitron_tabletype bt
+    ON bt.graph_name = n.graph_name AND bt.type_name = n.type_name
+  JOIN sql_column c
+    ON c.source_name = bt.table_source_name AND c.table_schema = bt.table_schema
+   AND c.table_name = bt.table_name
+   AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID')
+ WHERE f.field_name = 'id' AND f.named_type = 'ID' AND f.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = f.graph_name
+                      AND x.coordinate = f.type_name || '.' || f.field_name
+                      AND x.kind IN ('NODE_ID', 'COLUMN'))
+ GROUP BY f.graph_name, f.source_name, f.source_line, f.source_column
+UNION ALL
+-- A @nodeId on a slot whose type is not ID: every encode and decode is an ID's, so the directive
+-- would bind the wire value undecoded. Reported at the @nodeId, the detail the type written.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_NOT_ID_TYPE', COALESCE(f.named_type, a.named_type), 'binding-claims'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  LEFT JOIN graphitron_field f
+    ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
+  LEFT JOIN graphitron_argument a
+    ON a.graph_name = cl.graph_name AND a.coordinate = cl.coordinate
+ WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
+   AND COALESCE(f.named_type, a.named_type) <> 'ID';
+COMMENT ON VIEW graphitron_binding_claim_entry_defect_rule IS 'One row the binding-claims stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a bare @nodeId on a field of an object type that is no node, with no @reference, gives one NODE_ID_CONTAINING_TYPE_NOT_NODE row at the @nodeId.';
+
+-- The spelled-tables stage's own defects: a written table name judged against what it resolves to,
+-- and an ordering whose @mutation(table:) exemption reads the same resolution.
+CREATE VIEW graphitron_spelled_table_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A @table naming a table-valued function. A type is not bound to a function: the field carrying
+-- @routine binds its return type to the routine's result, so the directive names something a type
+-- cannot stand on. Reported at the @table, with the spelling as written.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_NAMES_ROUTINE', COALESCE(te.table_ref, t.coordinate), 'spelled-tables'
+  FROM graphql_directive_application t
+  LEFT JOIN graphitron_ast_table_entry te
+    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
+   AND te.source_line = t.source_line AND te.source_column = t.source_column
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(te.table_ref, t.coordinate)
+  JOIN sql_table st
+    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
+   AND st.table_name = sp.table_name
+ WHERE t.directive_name = 'table' AND t.ordinal = 0
+   AND st.table_type = 'FUNCTION'
+UNION ALL
+-- A @table naming nothing the catalog holds: no candidate at all for its spelling. Reported at the
+-- @table with the spelling as written. A graph captured with no catalog has said nothing about any
+-- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_UNRESOLVED', COALESCE(te.table_ref, t.coordinate), 'spelled-tables'
+  FROM graphql_directive_application t
+  LEFT JOIN graphitron_ast_table_entry te
+    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
+   AND te.source_line = t.source_line AND te.source_column = t.source_column
+ WHERE t.directive_name = 'table' AND t.ordinal = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_spelled_table sp
+                    WHERE sp.graph_name = t.graph_name
+                      AND sp.spelling = COALESCE(te.table_ref, t.coordinate))
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN sql_table st ON st.source_name = g.source_name
+                WHERE g.graph_name = t.graph_name)
+UNION ALL
+-- A @table naming a table two schemas declare. The spelling has candidates and more than one, so
+-- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
+-- settles it. Reported once per @table.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_AMBIGUOUS', COALESCE(te.table_ref, t.coordinate), 'spelled-tables'
+  FROM graphql_directive_application t
+  LEFT JOIN graphitron_ast_table_entry te
+    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
+   AND te.source_line = t.source_line AND te.source_column = t.source_column
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(te.table_ref, t.coordinate)
+ WHERE t.directive_name = 'table' AND t.ordinal = 0
+   AND sp.candidates > 1
+UNION ALL
+-- A declared ordering on a field read once per participant, at the directive that declared it. The
+-- branches are combined on their primary keys and nothing carries the declaration down onto one, so
+-- the rows arrive in participant primary-key order whatever was declared. Graphitron does not
+-- lower it yet, which is why this rests on UNSUPPORTED. One case is lowered, and it is excluded
+-- by transcribing the classifier's precedence: a field on the query root, list-shaped (a list, or
+-- a connection, authored or @asConnection-built), that reaches the multitable read rather than an
+-- earlier route (@service, a Node named type, an argument @lookupKey, @routine). A new route ahead
+-- of that read owes a clause here.
+SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
+       'ORDERING_ACROSS_PARTICIPANTS', o.detail, 'spelled-tables'
+  FROM (SELECT d.graph_name, fe.type_name, fe.field_name,
+               d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
+          FROM graphql_directive_application d
+          JOIN graphql_field_element fe
+            ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
+         WHERE d.directive_name = 'defaultOrder' AND d.ordinal = 0
+        UNION ALL
+        SELECT ob.graph_name, ae.type_name, ae.field_name,
+               ob.source_name, ob.source_line, ob.source_column, 'orderBy'
+          FROM graphql_directive_application ob
+          JOIN graphql_argument_element ae
+            ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
+         WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0) o
+ WHERE o.source_name IS NOT NULL
+   -- Read once per participant: the target binds no table of its own and has a table-bound
+   -- member, and no @mutation(table:) names where the statement is rooted instead.
+   AND EXISTS (SELECT 1 FROM graphitron_field_target ft
+                 JOIN graphitron_type_member m
+                   ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
+                 JOIN graphitron_tabletype bt
+                   ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
+                WHERE ft.graph_name = o.graph_name AND ft.type_name = o.type_name
+                  AND ft.field_name = o.field_name
+                  AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
+                                   WHERE cb.graph_name = ft.graph_name
+                                     AND cb.type_name = ft.target_type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application mu
+                     JOIN graphitron_ast_mutation_entry me
+                       ON me.graph_name = mu.graph_name AND me.source_name = mu.source_name
+                      AND me.source_line = mu.source_line AND me.source_column = mu.source_column
+                     JOIN graphitron_spelled_table sp
+                       ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
+                      AND sp.candidates = 1
+                    WHERE mu.graph_name = o.graph_name
+                      AND mu.coordinate = o.type_name || '.' || o.field_name
+                      AND mu.directive_name = 'mutation' AND mu.ordinal = 0)
+   AND NOT (EXISTS (SELECT 1 FROM graphql_root_operation ro
+                     WHERE ro.graph_name = o.graph_name AND ro.operation = 'QUERY'
+                       AND ro.type_name = o.type_name)
+            AND EXISTS (SELECT 1 FROM graphitron_field f
+                          JOIN graphitron_field_target ft
+                            ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name
+                           AND ft.field_name = f.field_name
+                         WHERE f.graph_name = o.graph_name AND f.type_name = o.type_name
+                           AND f.field_name = o.field_name
+                           AND (f.is_list OR ft.wrapper_type_name IS NOT NULL)
+                           AND f.named_type <> 'Node')
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application se
+                             WHERE se.graph_name = o.graph_name
+                               AND se.coordinate = o.type_name || '.' || o.field_name
+                               AND se.directive_name = 'service')
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application lk
+                              JOIN graphql_argument_element ae
+                                ON ae.graph_name = lk.graph_name AND ae.coordinate = lk.coordinate
+                             WHERE lk.graph_name = o.graph_name AND lk.directive_name = 'lookupKey'
+                               AND ae.type_name = o.type_name AND ae.field_name = o.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application ra
+                              JOIN graphitron_ast_routine_entry re
+                                ON re.graph_name = ra.graph_name AND re.source_name = ra.source_name
+                               AND re.source_line = ra.source_line
+                               AND re.source_column = ra.source_column
+                             WHERE ra.graph_name = o.graph_name
+                               AND ra.coordinate = o.type_name || '.' || o.field_name
+                               AND ra.directive_name = 'routine'));
+COMMENT ON VIEW graphitron_spelled_table_entry_defect_rule IS 'One row the spelled-tables stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @table naming a table two schemas declare gives one TABLE_AMBIGUOUS row at the @table.';
+
+-- The path-claims stage's own defects: a path claim with no table to arrive at, and two claims an
+-- element cannot hold together, the path steps through a @routine among them.
+CREATE VIEW graphitron_path_claim_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- What the claim conflict rule weighs at each element. This rule's winners are the strongest claims
+-- of each family, an overridden claim being no defect; beside them, a @routine a field's written
+-- path steps through and no producer claim holds, which no claim can share a field with.
+WITH contender (graph_name, coordinate, kind) AS (
+  SELECT DISTINCT c.graph_name, c.coordinate, c.kind
+    FROM graphitron_claim c
+    JOIN graphitron_claim_kind k ON k.kind = c.kind
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_claim s
+                       JOIN graphitron_claim_kind sk ON sk.kind = s.kind
+                      WHERE s.graph_name = c.graph_name AND s.coordinate = c.coordinate
+                        AND sk.family = k.family AND s.priority < c.priority)
+  UNION ALL
+  SELECT DISTINCT pc.graph_name, pc.element_coordinate, 'ROUTINE_STEP'
+    FROM graphitron_join_path_claim pc
+    JOIN graphitron_ast_path_entry pe
+      ON pe.graph_name = pc.graph_name AND pe.source_name = pc.source_name
+     AND pe.anchor_line = pc.source_line AND pe.anchor_column = pc.source_column
+    JOIN graphitron_ast_routine_entry re
+      ON re.graph_name = pe.graph_name AND re.source_name = pe.source_name
+     AND re.source_line = pe.element_line AND re.source_column = pe.element_column
+   WHERE pc.claim_kind = 'FIELD'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_claim r
+                      WHERE r.graph_name = pc.graph_name AND r.coordinate = pc.element_coordinate
+                        AND r.kind = 'ROUTINE')
+),
+-- Each element two contenders cannot share: CLAIMS_CONFLICT where any pair is one no inclusion row
+-- admits, else the code the inclusion names for the pair it reports.
+claim_conflict (graph_name, coordinate, code) AS (
+  SELECT a.graph_name, a.coordinate,
+         CASE WHEN COUNT(*) > COUNT(i.kind_a) THEN 'CLAIMS_CONFLICT' ELSE MIN(i.code) END
+    FROM contender a
+    JOIN contender b
+      ON b.graph_name = a.graph_name AND b.coordinate = a.coordinate AND b.kind > a.kind
+    LEFT JOIN graphitron_claim_inclusion i ON i.kind_a = a.kind AND i.kind_b = b.kind
+   WHERE i.kind_a IS NULL OR i.code IS NOT NULL
+   GROUP BY a.graph_name, a.coordinate
+)
 -- A claim on an output field whose target type has no one table to arrive at, at the claim's written
 -- position: a path written on the field, or a @referenceFor naming a member, that reaches an object
 -- type with no table, a union, or an interface with no table of its own. A single-table interface
@@ -17775,7 +18694,7 @@ UNION ALL
 -- last table, so neither has a table to be missing; a path ending on a @routine lands on its
 -- function's derived table, which needs none. The detail is the target type.
 SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
-       'REFERENCE_WITHOUT_TARGET_TABLE', c.target_type, 'entry-defects'
+       'REFERENCE_WITHOUT_TARGET_TABLE', c.target_type, 'path-claims'
   FROM graphitron_join_path_claim c
   JOIN graphitron_field f
     ON f.graph_name = c.graph_name AND f.coordinate = c.element_coordinate
@@ -17803,11 +18722,33 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
                                          AND nx.anchor_column = lp.anchor_column
                                          AND nx.place > lp.place))
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
-                     JOIN graphql_element_field ef
+                     JOIN graphql_field_element ef
+                       ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
+                    WHERE ef.graph_name = f.graph_name AND ef.type_name = f.type_name
+                      AND ef.field_name = f.field_name AND da.directive_name = 'pivot')
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
+                     JOIN graphql_argument_element ef
                        ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
                     WHERE ef.graph_name = f.graph_name AND ef.type_name = f.type_name
                       AND ef.field_name = f.field_name AND da.directive_name = 'pivot')
 UNION ALL
+-- Two claims a field cannot hold together, at the field's own declaration.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'path-claims'
+  FROM claim_conflict x
+  JOIN graphitron_field f ON f.graph_name = x.graph_name AND f.coordinate = x.coordinate
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+UNION ALL
+-- Two claims a type cannot hold together, at its base declaration: an extension adds to the type
+-- it extends, and the author fixes the type where it is declared.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'path-claims'
+  FROM claim_conflict x
+  JOIN graphql_ast_type_declaration_entry d
+    ON d.graph_name = x.graph_name AND d.name = x.coordinate AND NOT d.is_extension;
+COMMENT ON VIEW graphitron_path_claim_entry_defect_rule IS 'One row the path-claims stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a field carrying both @service and @externalField gives one CLAIMS_CONFLICT row at the field''s declaration.';
+
+CREATE VIEW graphitron_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 -- A code reference that resolves to no one method, at the position it was written: exactly the
 -- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
 -- classpath holds under the names. No class, a class without the method, or more than one method;
@@ -17932,530 +18873,6 @@ SELECT y.graph_name, y.source_name, y.source_line, y.source_column,
  WHERE y.arities > 1 OR y.statics > 1 OR y.results > 1 OR y.clauses > 1
     OR y.first_position IS NOT NULL
 UNION ALL
--- A @table naming a table-valued function. A type is not bound to a function: the field carrying
--- @routine binds its return type to the routine's result, so the directive names something a type
--- cannot stand on. Reported at the @table, with the spelling as written.
-SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_NAMES_ROUTINE', COALESCE(te.table_ref, t.coordinate), 'entry-defects'
-  FROM graphql_directive_application t
-  LEFT JOIN graphitron_ast_table_entry te
-    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
-   AND te.source_line = t.source_line AND te.source_column = t.source_column
-  JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(te.table_ref, t.coordinate)
-  JOIN sql_table st
-    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
-   AND st.table_name = sp.table_name
- WHERE t.directive_name = 'table' AND t.ordinal = 0
-   AND st.table_type = 'FUNCTION'
-UNION ALL
--- A @node on a type that does not implement Node. The interface is the contract @node publishes to
--- clients, so a type cannot be promoted to a node without it, a node this subgraph does not resolve
--- included: resolvability is a fact of its own, and Query.node answers such a node's id with null.
--- Reported at the @node, which is where an author decides between adding the interface and dropping
--- the directive. A root operation type is a root before it is anything else. The interface also
--- holds the type to an id field, so a node without one is a schema problem rather than a defect.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphql_directive_application n
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
-                    WHERE i.graph_name = n.graph_name AND i.type_name = n.coordinate
-                      AND i.interface_name = 'Node')
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
-UNION ALL
--- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
--- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
--- root operation type is a root before it is anything else. A type that also lacks the interface
--- is both defects, each its own decision for the author.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphql_directive_application n
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application t
-                    WHERE t.graph_name = n.graph_name AND t.coordinate = n.coordinate
-                      AND t.directive_name = 'table')
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.coordinate)
-UNION ALL
--- A @node(keyColumns:) naming a column the bound table cannot answer to with exactly one column,
--- folded the way NodeKeyColumns folds: against the SQL name and the generated field name alike. One
--- row per @node, naming the first spelling that fails in the order written; the pinned tier yields
--- nothing for the whole list when any position fails, and the others are rows of
--- graphitron_ast_node_keycolumn_entry under their own key rather than a list in this one. A type
--- whose @table did not resolve has no binding to judge against and is that defect instead.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref, 'entry-defects'
-  FROM graphql_directive_application n
-  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
-  JOIN graphitron_ast_node_keycolumn_entry e
-    ON e.graph_name = n.graph_name AND e.source_name = n.source_name
-   AND e.application_line = n.source_line AND e.application_column = n.source_column
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND (SELECT COUNT(*) FROM sql_column c
-         WHERE c.source_name = b.table_source_name AND c.table_schema = b.table_schema
-           AND c.table_name = b.table_name
-           AND (c.column_name_upper = UPPER(e.column_ref)
-                OR c.jooq_name_upper = UPPER(e.column_ref))) <> 1
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_keycolumn_entry f
-                    WHERE f.graph_name = e.graph_name AND f.source_name = e.source_name
-                      AND f.application_line = e.application_line
-                      AND f.application_column = e.application_column
-                      AND f.position < e.position
-                      AND (SELECT COUNT(*) FROM sql_column c
-                            WHERE c.source_name = b.table_source_name
-                              AND c.table_schema = b.table_schema AND c.table_name = b.table_name
-                              AND (c.column_name_upper = UPPER(f.column_ref)
-                                   OR c.jooq_name_upper = UPPER(f.column_ref))) <> 1)
-UNION ALL
--- A @node with nothing to build an id from. It pinned no columns, its bound table publishes no node
--- metadata, and the table has no primary key, which are the three tiers NodeKeyColumns tries in
--- turn; with all three silent the node has no key. Metadata a class publishes and graphitron cannot
--- use is no row of sql_node_metadata, so such a table is judged here as well as warned about by
--- NODE_METADATA_UNREADABLE. The detail is the table.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_KEY', b.table_name, 'entry-defects'
-  FROM graphql_directive_application n
-  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.coordinate
- WHERE n.directive_name = 'node' AND n.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_node_keycolumn_entry e
-                    WHERE e.graph_name = n.graph_name AND e.source_name = n.source_name
-                      AND e.application_line = n.source_line
-                      AND e.application_column = n.source_column)
-   AND NOT EXISTS (SELECT 1 FROM sql_node_metadata m
-                    WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
-                      AND m.table_name = b.table_name)
-   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
-                    WHERE pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
-                      AND pk.table_name = b.table_name)
-UNION ALL
--- A @table naming nothing the catalog holds: no candidate at all for its spelling. Reported at the
--- @table with the spelling as written. A graph captured with no catalog has said nothing about any
--- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_UNRESOLVED', COALESCE(te.table_ref, t.coordinate), 'entry-defects'
-  FROM graphql_directive_application t
-  LEFT JOIN graphitron_ast_table_entry te
-    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
-   AND te.source_line = t.source_line AND te.source_column = t.source_column
- WHERE t.directive_name = 'table' AND t.ordinal = 0
-   AND NOT EXISTS (SELECT 1 FROM graphitron_spelled_table sp
-                    WHERE sp.graph_name = t.graph_name
-                      AND sp.spelling = COALESCE(te.table_ref, t.coordinate))
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN sql_table st ON st.source_name = g.source_name
-                WHERE g.graph_name = t.graph_name)
-UNION ALL
--- A @table naming a table two schemas declare. The spelling has candidates and more than one, so
--- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
--- settles it. Reported once per @table.
-SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_AMBIGUOUS', COALESCE(te.table_ref, t.coordinate), 'entry-defects'
-  FROM graphql_directive_application t
-  LEFT JOIN graphitron_ast_table_entry te
-    ON te.graph_name = t.graph_name AND te.source_name = t.source_name
-   AND te.source_line = t.source_line AND te.source_column = t.source_column
-  JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(te.table_ref, t.coordinate)
- WHERE t.directive_name = 'table' AND t.ordinal = 0
-   AND sp.candidates > 1
-UNION ALL
--- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
--- period, or nothing on one side of the last one. Reported with the reference as written.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref, 'entry-defects'
-  FROM graphql_directive_application a
-  JOIN graphitron_ast_scalar_type_entry e
-    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-   AND e.source_line = a.source_line AND e.source_column = a.source_column
- WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
-   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
-UNION ALL
--- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
--- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
--- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part, 'entry-defects'
-  FROM graphql_directive_application a
-  JOIN graphitron_ast_scalar_type_entry e
-    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-   AND e.source_line = a.source_line AND e.source_column = a.source_column
- WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
-   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
-                     JOIN code_class k ON k.source_name = g.source_name
-                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN code_class k ON k.source_name = g.source_name
-                WHERE g.graph_name = e.graph_name)
-UNION ALL
--- A @scalarType naming a class the reading read and a constant it does not declare as a public
--- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
--- declared as some other type are one refusal, and the reference is what the author edits.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref, 'entry-defects'
-  FROM graphql_directive_application a
-  JOIN graphitron_ast_scalar_type_entry e
-    ON e.graph_name = a.graph_name AND e.source_name = a.source_name
-   AND e.source_line = a.source_line AND e.source_column = a.source_column
- WHERE a.directive_name = 'scalarType' AND a.ordinal = 0
-   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN code_class k ON k.source_name = g.source_name
-                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND NOT EXISTS (SELECT 1 FROM code_graph_class k
-                     JOIN code_scalar_constant c
-                       ON c.source_name = k.source_name AND c.class_name = k.class_name
-                    WHERE k.graph_name = e.graph_name
-                      AND k.class_name = e.scalar_ref_class_part
-                      AND c.field_name = e.scalar_ref_field_part)
-UNION ALL
--- Two node types answering to one type id, so Query.node has an id it cannot dispatch. Reported at
--- each type's @table, which every node carries where only some carry @node: a node the backing
--- class publishes is a node without one. The detail is the shared id.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_TYPE_ID_SHARED', n.type_id, 'entry-defects'
-  FROM graphitron_node n
-  JOIN graphql_directive_application t
-    ON t.graph_name = n.graph_name AND t.coordinate = n.type_name
-   AND t.directive_name = 'table' AND t.ordinal = 0
- WHERE EXISTS (SELECT 1 FROM graphitron_node o
-                WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
-                  AND o.type_name <> n.type_name)
-UNION ALL
--- A table whose class declares node metadata graphitron cannot use, so a type over it encodes its
--- ids from the fallback tiers. Reported at each bound type's @table, on NODE_TYPE_ID_SHARED's terms,
--- and saying that the attempt failed rather than how. The detail is the table.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_METADATA_UNREADABLE', b.table_name, 'entry-defects'
-  FROM graphitron_tabletype b
-  JOIN graphql_directive_application t
-    ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
-   AND t.directive_name = 'table' AND t.ordinal = 0
-  JOIN sql_node_metadata_unreadable u
-    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
-   AND u.table_name = b.table_name
-UNION ALL
--- A legacy key shape a @node states that breaks one of its rules, as NodeLegacyKeyShapes evaluated
--- them: the stage that anchors the shapes wrote the verdict, so the rules are applied once and this
--- arm only places the verdict at the application the author edits.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column, d.code, d.detail, 'entry-defects'
-  FROM graphitron_node_legacy_key_defect d
-  JOIN graphql_directive_application n
-    ON n.graph_name = d.graph_name AND n.coordinate = d.type_name
-   AND n.directive_name = 'node' AND n.ordinal = 0
- WHERE d.site = 'NODE'
-UNION ALL
--- The same for a shape a table class states, and for a type id a shape cannot belong to because
--- two tables or two current keys answer to it: reported at each type's @table, which every
--- contributor carries, on NODE_METADATA_UNREADABLE's terms.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column, d.code, d.detail, 'entry-defects'
-  FROM graphitron_node_legacy_key_defect d
-  JOIN graphql_directive_application t
-    ON t.graph_name = d.graph_name AND t.coordinate = d.type_name
-   AND t.directive_name = 'table' AND t.ordinal = 0
- WHERE d.site = 'TABLE'
-UNION ALL
--- A table whose class declares a legacy key-columns array graphitron cannot use. No tier falls back
--- for it, so unlike NODE_METADATA_UNREADABLE it stops the build: every stored id in the old shape
--- would otherwise fail to decode at runtime. Reported at each bound type's @table. The detail is the
--- table.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_LEGACY_METADATA_UNREADABLE', b.table_name, 'entry-defects'
-  FROM graphitron_tabletype b
-  JOIN graphql_directive_application t
-    ON t.graph_name = b.graph_name AND t.coordinate = b.type_name
-   AND t.directive_name = 'table' AND t.ordinal = 0
-  JOIN sql_node_legacy_key_unreadable u
-    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
-   AND u.table_name = b.table_name
-UNION ALL
--- Two types whose names differ only in case, among the types the generator writes a file for, which
--- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
--- two files are one, and neither name is the right one to keep. Reported at each authored type's
--- base declaration; a minted type has none, and its authored sibling carries the row. The detail
--- names a sibling, the first by name where there are several, the rest being rows of their own.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'TYPE_NAME_CASE_COLLISION',
-       (SELECT MIN(o.type_name) FROM graphitron_type o
-         WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name), 'entry-defects'
-  FROM graphitron_type g
-  JOIN graphql_type_declaration d
-    ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
- WHERE g.kind <> 'SCALAR'
-   AND EXISTS (SELECT 1 FROM graphitron_type o
-                WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-                  AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
-UNION ALL
--- A declared ordering on a field read once per participant, at the directive that declared it. The
--- branches are combined on their primary keys and nothing carries the declaration down onto one, so
--- the rows arrive in participant primary-key order whatever was declared. Graphitron does not
--- lower it yet, which is why this rests on UNSUPPORTED. One case is lowered, and it is excluded
--- by transcribing the classifier's precedence: a field on the query root, list-shaped (a list, or
--- a connection, authored or @asConnection-built), that reaches the multitable read rather than an
--- earlier route (@service, a Node named type, an argument @lookupKey, @routine). A new route ahead
--- of that read owes a clause here.
-SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
-       'ORDERING_ACROSS_PARTICIPANTS', o.detail, 'entry-defects'
-  FROM (SELECT d.graph_name, fe.type_name, fe.field_name,
-               d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
-          FROM graphql_directive_application d
-          JOIN graphql_field_element fe
-            ON fe.graph_name = d.graph_name AND fe.coordinate = d.coordinate
-         WHERE d.directive_name = 'defaultOrder' AND d.ordinal = 0
-        UNION ALL
-        SELECT ob.graph_name, ae.type_name, ae.field_name,
-               ob.source_name, ob.source_line, ob.source_column, 'orderBy'
-          FROM graphql_directive_application ob
-          JOIN graphql_argument_element ae
-            ON ae.graph_name = ob.graph_name AND ae.coordinate = ob.coordinate
-         WHERE ob.directive_name = 'orderBy' AND ob.ordinal = 0) o
- WHERE o.source_name IS NOT NULL
-   -- Read once per participant: the target binds no table of its own and has a table-bound
-   -- member, and no @mutation(table:) names where the statement is rooted instead.
-   AND EXISTS (SELECT 1 FROM graphitron_field_target ft
-                 JOIN graphql_poly_member m
-                   ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-                 JOIN graphitron_tabletype bt
-                   ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-                WHERE ft.graph_name = o.graph_name AND ft.type_name = o.type_name
-                  AND ft.field_name = o.field_name
-                  AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype cb
-                                   WHERE cb.graph_name = ft.graph_name
-                                     AND cb.type_name = ft.target_type_name))
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application mu
-                     JOIN graphitron_ast_mutation_entry me
-                       ON me.graph_name = mu.graph_name AND me.source_name = mu.source_name
-                      AND me.source_line = mu.source_line AND me.source_column = mu.source_column
-                     JOIN graphitron_spelled_table sp
-                       ON sp.graph_name = me.graph_name AND sp.spelling = me.table_ref
-                      AND sp.candidates = 1
-                    WHERE mu.graph_name = o.graph_name
-                      AND mu.coordinate = o.type_name || '.' || o.field_name
-                      AND mu.directive_name = 'mutation' AND mu.ordinal = 0)
-   AND NOT (EXISTS (SELECT 1 FROM graphql_root_operation ro
-                     WHERE ro.graph_name = o.graph_name AND ro.operation = 'QUERY'
-                       AND ro.type_name = o.type_name)
-            AND EXISTS (SELECT 1 FROM graphitron_field f
-                          JOIN graphitron_field_target ft
-                            ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name
-                           AND ft.field_name = f.field_name
-                         WHERE f.graph_name = o.graph_name AND f.type_name = o.type_name
-                           AND f.field_name = o.field_name
-                           AND (f.is_list OR ft.wrapper_type_name IS NOT NULL)
-                           AND f.named_type <> 'Node')
-            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application se
-                             WHERE se.graph_name = o.graph_name
-                               AND se.coordinate = o.type_name || '.' || o.field_name
-                               AND se.directive_name = 'service')
-            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application lk
-                              JOIN graphql_argument_element ae
-                                ON ae.graph_name = lk.graph_name AND ae.coordinate = lk.coordinate
-                             WHERE lk.graph_name = o.graph_name AND lk.directive_name = 'lookupKey'
-                               AND ae.type_name = o.type_name AND ae.field_name = o.field_name)
-            AND NOT EXISTS (SELECT 1 FROM graphql_directive_application ra
-                              JOIN graphitron_ast_routine_entry re
-                                ON re.graph_name = ra.graph_name AND re.source_name = ra.source_name
-                               AND re.source_line = ra.source_line
-                               AND re.source_column = ra.source_column
-                             WHERE ra.graph_name = o.graph_name
-                               AND ra.coordinate = o.type_name || '.' || o.field_name
-                               AND ra.directive_name = 'routine'))
-UNION ALL
--- A connection carrier whose resolved first default is larger than the build's maximum page size,
--- so the schema advertises a default no request can receive. Reported where the author wrote the
--- default: at the first argument's declaration where the carrier declares first itself, and
--- otherwise at the @asConnection application whose defaultFirstValue set it. The minted default
--- never fires it, being lowered to the maximum where it is minted. The detail says which of the two
--- was written, the value and the maximum. A connection type an author declared without @asConnection is no carrier and is not
--- judged here; the runtime serves its oversized default at the maximum like any value a client
--- sends.
-SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
-       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail, 'entry-defects'
-  FROM (SELECT c.graph_name,
-               COALESCE(el.source_name, c.source_name) AS source_name,
-               COALESCE(el.source_line, c.source_line) AS source_line,
-               COALESCE(el.source_column, c.source_column) AS source_column,
-               CASE WHEN el.source_line IS NOT NULL THEN 'first = ' ELSE 'defaultFirstValue: ' END
-                 || ga.default_value_sdl || ' against a maximum of ' || mx.max_page_size AS detail
-          FROM graphitron_connection_carrier c
-          JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
-          JOIN graphitron_argument ga
-            ON ga.graph_name = c.graph_name AND ga.type_name = c.type_name
-           AND ga.field_name = c.field_name AND ga.argument_name = 'first'
-          LEFT JOIN graphql_ast_element_entry el
-            ON el.graph_name = c.graph_name AND el.coordinate = c.coordinate || '(first:)'
-         -- An integer literal short enough to cast; a longer one is no Int at all, which the
-         -- schema build refuses on its own.
-         WHERE REGEXP_LIKE(ga.default_value_sdl, '^[0-9]{1,18}$')
-           AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
- WHERE p.source_line IS NOT NULL
-UNION ALL
--- Two claims a field cannot hold together, at the field's own declaration.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM claim_conflict x
-  JOIN graphitron_field f ON f.graph_name = x.graph_name AND f.coordinate = x.coordinate
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
-UNION ALL
--- Two claims a type cannot hold together, at its base declaration: an extension adds to the type
--- it extends, and the author fixes the type where it is declared.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, x.code, CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM claim_conflict x
-  JOIN graphql_ast_type_declaration_entry d
-    ON d.graph_name = x.graph_name AND d.name = x.coordinate AND NOT d.is_extension
-UNION ALL
--- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
--- rule, and every field of the type would be fetched both ways. A row beside an object of classes
--- graphitron reads by accessor is the one mix it serves, each field dispatching on which it was
--- handed; an object of a table's own record, or of no class, is not.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM (SELECT graph_name, type_name FROM graphitron_result
-         GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
-  JOIN graphql_ast_type_declaration_entry d
-    ON d.graph_name = r.graph_name AND d.name = r.type_name
- WHERE NOT (EXISTS (SELECT 1 FROM graphitron_result_class rc
-                     WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_result_class rc
-                              JOIN sql_table st ON st.record_class_fqn = rc.class_name
-                              JOIN store_graph_source sg
-                                ON sg.graph_name = rc.graph_name AND sg.source_name = st.source_name
-                             WHERE rc.graph_name = r.graph_name AND rc.type_name = r.type_name))
-UNION ALL
--- A field whose union or interface lists an @error type, or whose type is one, but which is no errors
--- field, at its declaration, by the first rule it breaks: every member @error, a list, and a list
--- that may be null.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN EXISTS (SELECT 1 FROM graphql_poly_member pm
-                          WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
-                            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application de
-                                             WHERE de.graph_name = pm.graph_name
-                                               AND de.coordinate = pm.member_type_name
-                                               AND de.directive_name = 'error'))
-              THEN 'ERRORS_FIELD_MIXED_MEMBERS'
-            WHEN NOT f.is_list THEN 'ERRORS_FIELD_NOT_A_LIST'
-            ELSE 'ERRORS_FIELD_NON_NULL' END,
-       CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_field f
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE (EXISTS (SELECT 1 FROM graphql_poly_member pm
-                 JOIN graphitron_directive_application de
-                   ON de.graph_name = pm.graph_name AND de.coordinate = pm.member_type_name
-                  AND de.directive_name = 'error'
-                WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
-        OR EXISTS (SELECT 1 FROM graphitron_directive_application de
-                    WHERE de.graph_name = f.graph_name AND de.coordinate = f.named_type
-                      AND de.directive_name = 'error'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
-                      AND e.field_name = f.field_name)
-UNION ALL
--- A type with two errors fields, at the first: an outcome has one place for its errors.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_errors_field e
-  JOIN graphitron_field f
-    ON f.graph_name = e.graph_name AND f.type_name = e.type_name AND f.field_name = e.field_name
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = e.graph_name AND d.type_name = e.type_name AND d.name = e.field_name
- WHERE f.ordinal = (SELECT MIN(f2.ordinal)
-                      FROM graphitron_errors_field e2
-                      JOIN graphitron_field f2
-                        ON f2.graph_name = e2.graph_name AND f2.type_name = e2.type_name
-                       AND f2.field_name = e2.field_name
-                     WHERE e2.graph_name = e.graph_name AND e2.type_name = e.type_name
-                    HAVING COUNT(*) > 1)
-UNION ALL
--- A field of an outcome other than its errors field that may not be null, at its declaration: on
--- failure the value is absent, and graphql-java would drop the errors with it. A non-null list is
--- not one, answering an empty list when nothing was produced.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
-          FROM graphitron_producer_outcome) o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.type_name = o.outcome_type_name
-   AND f.field_name <> o.errors_field_name
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE f.non_null AND NOT f.is_list
-UNION ALL
--- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
--- is an exception a producer caught, and a row of a statement holds none.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_field_target ft
-  JOIN graphitron_result r
-    ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
- WHERE EXISTS (SELECT 1 FROM graphitron_errors_field e
-                WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
-                  AND e.field_name = ft.field_name)
-    OR EXISTS (SELECT 1 FROM graphitron_directive_application de
-                WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
-                  AND de.directive_name = 'error')
-UNION ALL
--- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
--- holding one result, with neither a producer nor a reader. A field claiming two kinds or an upsert,
--- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
--- own defect instead.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_field f
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_type tt
-    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
- WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
-                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-                   AND ro.operation IN ('QUERY', 'MUTATION'))
-        OR (SELECT COUNT(*) FROM graphitron_result r
-             WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name) = 1)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_fetcher fe
-                    WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
-                      AND fe.field_name = f.field_name)
-   AND (SELECT COUNT(DISTINCT c.kind) FROM graphitron_producer_claim c
-         WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate) < 2
-   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim c
-                    WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
-                      AND c.kind IN ('UPSERT', 'WRITE'))
-UNION ALL
--- A field on the subscription root, at the field's own declaration. Meaningful under the
--- specification and under the directives alike: graphitron generates no subscription resolver
--- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
--- a type's name, a schema block binding the subscription root under another name being the same
--- schema.
-SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
-       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphql_ast_field_definition_entry f
-  JOIN graphql_root_operation ro
-    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-   AND ro.operation = 'SUBSCRIPTION'
-UNION ALL
--- An upsert, at its @mutation: meaningful under the directives, and graphitron generates no upsert
--- yet, so an author works around it rather than fixing it. Its claim still conflicts with a @service.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column,
-       'MUTATION_UPSERT', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_ast_mutation_entry m
- WHERE m.operation = 'UPSERT'
-UNION ALL
--- A @mutation with no verb, at the @mutation as written: the verb is the write graphitron
--- generates, so without one there is none. Its claim, WRITE, still conflicts with a @service.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'MUTATION_WITHOUT_VERB', CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_directive_application da
- WHERE da.directive_name = 'mutation' AND da.origin = 'AUTHORED'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
-                    WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
-                      AND m.source_line = da.source_line AND m.source_column = da.source_column)
-UNION ALL
 -- A $session binding the session configuration cannot answer, at the written position of the
 -- string, once per code however many of its entries offend. Which entries, and what is wrong with
 -- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
@@ -18491,390 +18908,7 @@ SELECT site.graph_name, site.source_name, site.source_line, site.source_column,
    AND m.method_name = cr.method_name AND m.descriptor = cr.method_descriptor
  WHERE site.directive_name = 'service' AND NOT m.is_static
    AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable b
-                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name)
-UNION ALL
--- A written argMapping path projecting out of a node id that resolves to no one key column, where the
--- pair is written: once per string, the key columns it could have meant being
--- graphitron_entry_defect_key_column's under it.
-SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(u.detail), 'entry-defects'
-  FROM (SELECT k.graph_name, k.source_name, k.source_line, k.source_column, k.code,
-               CASE WHEN COUNT(DISTINCT k.bound) > 1
-                    THEN 'the id has a key per member of the interface or union it names'
-                    WHEN MIN(l.trailing_name) IS NOT NULL
-                    THEN '''' || MIN(l.trailing_name) || ''', which is not a key column of '''
-                         || MIN(n.node_type_name) || ''''
-                    ELSE MIN(n.node_type_name) || ', whose key is ' || COUNT(*) || ' columns' END AS detail
-          FROM graphitron_entry_defect_key_column_rule k
-          JOIN graphitron_occurrence_node_id n
-            ON n.graph_name = k.graph_name AND n.coordinate = k.landing_coordinate AND n.bound = k.bound
-           AND n.position = k.position
-          -- The landing of the pair written where the defect is.
-          JOIN graphitron_argmapping_landing l
-            ON l.graph_name = k.graph_name AND l.landing_coordinate = k.landing_coordinate
-          JOIN graphitron_argmapping_pair pr
-            ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
-           AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
-           AND pr.target_kind = l.target_kind AND pr.target_name = l.target_name AND pr.source_name = k.source_name
-           AND pr.source_line = k.source_line AND pr.source_column = k.source_column
-         GROUP BY k.graph_name, k.source_name, k.source_line, k.source_column, k.code, k.landing_coordinate) u
- GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column, u.code
-UNION ALL
--- A @referenceFor naming a type an earlier @referenceFor on the same declaration already names, at
--- each application after the first written. Read off the entries within one file, a declaration and
--- what is applied to it being written together, reaching the siblings through the parent position;
--- the first is the anchor kept. The detail is the type.
-SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column,
-       'REFERENCE_FOR_DUPLICATE_TYPE', r.participant_type_ref, 'entry-defects'
-  FROM graphitron_ast_reference_for_entry r
-  JOIN graphql_ast_entry e
-    ON e.graph_name = r.graph_name AND e.source_name = r.source_name
-   AND e.source_line = r.source_line AND e.source_column = r.source_column
-  JOIN graphql_ast_entry e2
-    ON e2.graph_name = e.graph_name AND e2.source_name = e.source_name
-   AND e2.parent_line = e.parent_line AND e2.parent_column = e.parent_column
-  JOIN graphitron_ast_reference_for_entry r2
-    ON r2.graph_name = e2.graph_name AND r2.source_name = e2.source_name
-   AND r2.source_line = e2.source_line AND r2.source_column = e2.source_column
- WHERE r2.participant_type_ref = r.participant_type_ref
-   AND (e2.source_line < e.source_line
-        OR (e2.source_line = e.source_line AND e2.source_column < e.source_column))
-UNION ALL
--- A bare @nodeId on an object type's field with no @reference, where the object type is no node:
--- the id inherits its node from the type it is declared on, and there is none. A type carrying
--- @node that did not resolve to one is no such type, its own defects saying why. Reported at the
--- @nodeId, where the author either writes typeName: or makes the type a node.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_CONTAINING_TYPE_NOT_NODE', f.type_name, 'entry-defects'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_field f
-    ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
-  JOIN graphitron_type t
-    ON t.graph_name = f.graph_name AND t.type_name = f.type_name AND t.kind = 'OBJECT'
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NULL AND da.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
-                    WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
-                    WHERE nd.graph_name = f.graph_name AND nd.coordinate = f.type_name
-                      AND nd.directive_name = 'node')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application r
-                    WHERE r.graph_name = cl.graph_name AND r.coordinate = cl.coordinate
-                      AND r.directive_name = 'reference')
-UNION ALL
--- A typeName: naming a type that is neither a node nor an interface or union, which the decode of
--- a polymorphic id reads per member: there is no key to encode or decode. A type carrying @node
--- that did not resolve is left to its own defects, and a stub left undeclared to the arm below.
--- Reported at the @nodeId, the detail the name as written.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TYPE_NAME_NOT_NODE', cl.named, 'entry-defects'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
-                    WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
-                    WHERE nd.graph_name = cl.graph_name AND nd.coordinate = cl.named
-                      AND nd.directive_name = 'node')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_type c
-                    WHERE c.graph_name = cl.graph_name AND c.type_name = cl.named
-                      AND c.kind IN ('INTERFACE', 'UNION'))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
-                     JOIN sql_node_metadata m
-                       ON m.source_name = b.table_source_name AND m.table_schema = b.table_schema
-                      AND m.table_name = b.table_name
-                    WHERE b.graph_name = cl.graph_name AND b.type_name = cl.named)
-UNION ALL
--- The same name on a @table type over a table whose class publishes node metadata: another
--- subgraph's entity, which a @node(resolvable: false) makes a node for its id. Reported at the
--- @nodeId, the detail the name as written.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TYPE_NAME_UNDECLARED_STUB', cl.named, 'entry-defects'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_tabletype b ON b.graph_name = cl.graph_name AND b.type_name = cl.named
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node n
-                    WHERE n.graph_name = cl.graph_name AND n.type_name = cl.named)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application nd
-                    WHERE nd.graph_name = cl.graph_name AND nd.coordinate = cl.named
-                      AND nd.directive_name = 'node')
-   AND EXISTS (SELECT 1 FROM sql_node_metadata m
-                WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
-                  AND m.table_name = b.table_name)
-UNION ALL
--- A typeName: on a node type's own id: ID, which is that node's identity by construction, so the
--- argument names what the type already answers. Reported at the @nodeId.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_TYPE_NAME_ON_OWN_ID', f.type_name, 'entry-defects'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_field f
-    ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
-   AND f.field_name = 'id' AND f.named_type = 'ID' AND NOT f.is_list
-   AND (EXISTS (SELECT 1 FROM graphitron_node n
-                 WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name)
-        OR EXISTS (SELECT 1 FROM graphitron_directive_application nd
-                    WHERE nd.graph_name = f.graph_name AND nd.coordinate = f.type_name
-                      AND nd.directive_name = 'node'))
-UNION ALL
--- A node type's own id: ID with neither @nodeId nor @field, over a table with a column of that name:
--- the encoded id and the raw column are different values and the SDL has not said which is meant.
--- Reported at the field, the detail the column.
-SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
-       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name), 'entry-defects'
-  FROM graphql_field f
-  JOIN graphitron_node n
-    ON n.graph_name = f.graph_name AND n.type_name = f.type_name
-  JOIN graphitron_tabletype bt
-    ON bt.graph_name = n.graph_name AND bt.type_name = n.type_name
-  JOIN sql_column c
-    ON c.source_name = bt.table_source_name AND c.table_schema = bt.table_schema
-   AND c.table_name = bt.table_name
-   AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID')
- WHERE f.field_name = 'id' AND f.named_type = 'ID' AND f.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = f.graph_name
-                      AND x.coordinate = f.type_name || '.' || f.field_name
-                      AND x.kind IN ('NODE_ID', 'COLUMN'))
- GROUP BY f.graph_name, f.source_name, f.source_line, f.source_column
-UNION ALL
--- The same at an argument or input field id: ID named for its target: the node its need reaches,
--- over a table with a column of the name, an argument's only where its field returns that node.
--- Reported at the declaration. The node is joined by name, the target's or the one over an input
--- field's landing, rather than looked up by table for every need, which H2 drives from the needs.
-SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
-       COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column),
-       'NODE_ID_SHADOWS_COLUMN', MIN(c.column_name), 'entry-defects'
-  FROM graphitron_occurrence o
-  JOIN graphitron_path_need_table pn
-    ON pn.graph_name = o.graph_name AND pn.coordinate = o.coordinate
-  LEFT JOIN graphitron_join_path jp
-    ON jp.graph_name = pn.graph_name AND jp.coordinate = pn.coordinate
-   AND jp.target_type = pn.target_type
-  LEFT JOIN graphitron_node tn
-    ON tn.graph_name = pn.graph_name AND tn.type_name = pn.target_type
-  LEFT JOIN graphitron_node_table ln
-    ON tn.type_name IS NULL AND o.kind = 'INPUT_FIELD'
-   AND ln.graph_name = pn.graph_name AND ln.table_source_name = COALESCE(jp.target_source_name, pn.landing_source_name)
-   AND ln.table_schema = COALESCE(jp.target_schema, pn.landing_schema) AND ln.table_name = COALESCE(jp.target_table, pn.landing_table)
-  JOIN graphitron_tabletype bt
-    ON bt.graph_name = pn.graph_name AND bt.type_name = COALESCE(tn.type_name, ln.node_type_name)
-  JOIN sql_column c
-    ON c.source_name = bt.table_source_name AND c.table_schema = bt.table_schema
-   AND c.table_name = bt.table_name
-   AND (c.column_name_upper = 'ID' OR c.jooq_name_upper = 'ID')
-  LEFT JOIN graphql_field_element fe
-    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
-  LEFT JOIN graphql_field f
-    ON f.graph_name = fe.graph_name AND f.type_name = fe.type_name AND f.field_name = fe.field_name
-  LEFT JOIN graphql_argument_element ae
-    ON ae.graph_name = o.graph_name AND ae.coordinate = o.element_coordinate
-  LEFT JOIN graphql_argument a
-    ON a.graph_name = ae.graph_name AND a.type_name = ae.type_name
-   AND a.field_name = ae.field_name AND a.argument_name = ae.argument_name
- WHERE o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT') AND o.name = 'id'
-   AND COALESCE(f.named_type, a.named_type) = 'ID'
-   AND COALESCE(jp.target_table, pn.landing_table) IS NOT NULL
-   AND COALESCE(f.source_line, a.source_line) IS NOT NULL
-   AND (o.kind = 'INPUT_FIELD'
-        OR NOT EXISTS (SELECT 1 FROM graphitron_path_need_table p2
-                        WHERE p2.graph_name = pn.graph_name AND p2.coordinate = pn.coordinate
-                          AND p2.target_type <> pn.target_type))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
-                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
-                      AND x.kind IN ('NODE_ID', 'COLUMN'))
- GROUP BY COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
-          COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column)
-UNION ALL
--- A named node id at an argument or input field with no route written, whose path to the node's
--- table is inferred over its one foreign key and lands every key column on a column of the slot's
--- table, the column its step pairs it with, where a landed pair disagrees on the Java type jOOQ binds
--- them as: no predicate compares the decoded value with the column it binds. A key landing only in
--- part, as over a key the node's table declares, is decoded against the node's own table, where no
--- landed column is compared. The exclusions are the no-route rule's. Reported once per @nodeId, the
--- detail the key column.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name), 'entry-defects'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  JOIN graphitron_occurrence o
-    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
-   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
-  JOIN graphitron_path p
-    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'INFERRED'
-  JOIN graphitron_occurrence_node_id k
-    ON k.graph_name = o.graph_name AND k.coordinate = o.coordinate
-  JOIN graphitron_join_path_step_column sc
-    ON sc.graph_name = p.graph_name AND sc.coordinate = p.coordinate
-   AND sc.target_type = p.target_type
-   AND sc.to_source_name = k.table_source_name AND sc.to_schema = k.table_schema
-   AND sc.to_table = k.table_name AND sc.to_column = k.column_name
-  JOIN sql_column lc
-    ON lc.source_name = sc.from_source_name AND lc.table_schema = sc.from_schema
-   AND lc.table_name = sc.from_table AND lc.column_name = sc.from_column
-  JOIN sql_column nc
-    ON nc.source_name = k.table_source_name AND nc.table_schema = k.table_schema
-   AND nc.table_name = k.table_name AND nc.column_name = k.column_name
- WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
-   AND lc.binding_type <> nc.binding_type
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
-                    WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
-                      AND k2.bound = k.bound
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column s2
-                                       WHERE s2.graph_name = sc.graph_name
-                                         AND s2.coordinate = sc.coordinate
-                                         AND s2.target_type = sc.target_type
-                                         AND s2.to_source_name = k2.table_source_name
-                                         AND s2.to_schema = k2.table_schema
-                                         AND s2.to_table = k2.table_name
-                                         AND s2.to_column = k2.column_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application dc
-                     JOIN graphitron_ast_input_value_condition_entry ce
-                       ON ce.graph_name = dc.graph_name AND ce.source_name = dc.source_name
-                      AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
-                    WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
-                      AND dc.directive_name = 'condition' AND ce.override)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
-                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
-                     JOIN graphitron_producer_claim pc
-                       ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
-                      AND pc.kind = 'SERVICE'
-                    WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate)
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
-UNION ALL
--- A @nodeId on a slot whose type is not ID: every encode and decode is an ID's, so the directive
--- would bind the wire value undecoded. Reported at the @nodeId, the detail the type written.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'NODE_ID_NOT_ID_TYPE', COALESCE(f.named_type, a.named_type), 'entry-defects'
-  FROM graphitron_binding_claim cl
-  JOIN graphitron_directive_application da
-    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
-   AND da.directive_name = 'nodeId' AND da.ordinal = 0
-  LEFT JOIN graphitron_field f
-    ON f.graph_name = cl.graph_name AND f.coordinate = cl.coordinate
-  LEFT JOIN graphitron_argument a
-    ON a.graph_name = cl.graph_name AND a.coordinate = cl.coordinate
- WHERE cl.kind = 'NODE_ID' AND da.source_line IS NOT NULL
-   AND COALESCE(f.named_type, a.named_type) <> 'ID'
-UNION ALL
--- A @discriminate's per-member defects, one at the @discriminate whichever members it names; the
--- members are graphitron_entry_defect_member's.
-SELECT DISTINCT m.graph_name, m.source_name, m.source_line, m.source_column, m.code,
-       CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_entry_defect_member_rule m
-UNION ALL
--- A @discriminate on a container with no table, which has no shared table to branch on, and one
--- whose table has no column of the name written, by its SQL name or its jOOQ name; the detail is
--- the name written.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN tt.type_name IS NULL THEN 'DISCRIMINATE_WITHOUT_TABLE' ELSE 'DISCRIMINATE_UNKNOWN_COLUMN' END,
-       CASE WHEN tt.type_name IS NULL THEN CAST(NULL AS VARCHAR) ELSE d.on_column END, 'entry-defects'
-  FROM graphitron_ast_discriminate_entry d
-  JOIN graphql_directive_application da
-    ON da.graph_name = d.graph_name AND da.source_name = d.source_name
-   AND da.source_line = d.source_line AND da.source_column = d.source_column
-  LEFT JOIN graphitron_tabletype tt ON tt.graph_name = da.graph_name AND tt.type_name = da.coordinate
- WHERE tt.type_name IS NULL
-    OR NOT EXISTS (SELECT 1 FROM sql_column c
-                    WHERE c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
-                      AND c.table_name = tt.table_name
-                      AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column)))
-UNION ALL
--- A @discriminator on a type that is a member of no container writing @discriminate, so there is no
--- column for the value to match.
-SELECT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_WITHOUT_DISCRIMINATE',
-       CAST(NULL AS VARCHAR), 'entry-defects'
-  FROM graphitron_ast_discriminator_entry v
-  JOIN graphql_directive_application va
-    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
-   AND va.source_line = v.source_line AND va.source_column = v.source_column
- WHERE NOT EXISTS (SELECT 1 FROM graphql_poly_member m
-                     JOIN graphql_directive_application ca
-                       ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name
-                      AND ca.directive_name = 'discriminate'
-                    WHERE m.graph_name = va.graph_name AND m.member_type_name = va.coordinate)
-UNION ALL
--- A @discriminator value another member of the same discriminated container also writes, at each
--- application, the detail being the container.
-SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_DUPLICATE',
-       m.container_name, 'entry-defects'
-  FROM graphitron_ast_discriminator_entry v
-  JOIN graphql_directive_application va
-    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
-   AND va.source_line = v.source_line AND va.source_column = v.source_column
-  JOIN graphql_poly_member m ON m.graph_name = va.graph_name AND m.member_type_name = va.coordinate
-  JOIN graphql_directive_application ca
-    ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name AND ca.directive_name = 'discriminate'
-  JOIN graphql_poly_member m2
-    ON m2.graph_name = m.graph_name AND m2.container_name = m.container_name
-   AND m2.member_type_name <> m.member_type_name
-  JOIN graphql_directive_application va2
-    ON va2.graph_name = m2.graph_name AND va2.coordinate = m2.member_type_name
-   AND va2.directive_name = 'discriminator'
-  JOIN graphitron_ast_discriminator_entry v2
-    ON v2.graph_name = va2.graph_name AND v2.source_name = va2.source_name
-   AND v2.source_line = va2.source_line AND v2.source_column = va2.source_column
- WHERE v2.discriminator_value = v.discriminator_value
-UNION ALL
--- A @discriminator value that is not among the literals of the enum its container's column binds,
--- the detail being the database enum type, whose literals are sql_enum_binding_literal's.
-SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DISCRIMINATOR_NOT_IN_DOMAIN',
-       eb.type_name, 'entry-defects'
-  FROM graphitron_ast_discriminator_entry v
-  JOIN graphql_directive_application va
-    ON va.graph_name = v.graph_name AND va.source_name = v.source_name
-   AND va.source_line = v.source_line AND va.source_column = v.source_column
-  JOIN graphql_poly_member m ON m.graph_name = va.graph_name AND m.member_type_name = va.coordinate
-  JOIN graphql_directive_application ca
-    ON ca.graph_name = m.graph_name AND ca.coordinate = m.container_name AND ca.directive_name = 'discriminate'
-  JOIN graphitron_ast_discriminate_entry d
-    ON d.graph_name = ca.graph_name AND d.source_name = ca.source_name
-   AND d.source_line = ca.source_line AND d.source_column = ca.source_column
-  JOIN graphitron_tabletype tt ON tt.graph_name = ca.graph_name AND tt.type_name = ca.coordinate
-  JOIN sql_column c
-    ON c.source_name = tt.table_source_name AND c.table_schema = tt.table_schema
-   AND c.table_name = tt.table_name
-   AND (c.column_name_upper = UPPER(d.on_column) OR c.jooq_name_upper = UPPER(d.on_column))
-  JOIN sql_enum_binding eb ON eb.source_name = c.source_name AND eb.class_fqn = c.binding_type
- WHERE NOT EXISTS (SELECT 1 FROM sql_enum_binding_literal el
-                    WHERE el.source_name = eb.source_name AND el.class_fqn = eb.class_fqn
-                      AND el.literal = v.discriminator_value)
-UNION ALL
--- @issue on a type a root operation field returns, directly or as a list: the vouched decision is
--- the path from a parent A's rules admitted. A mutation payload's field is no root field.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISSUE_ON_ROOT_TYPE',
-       d.coordinate, 'entry-defects'
-  FROM graphql_directive_application d
-  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
- WHERE d.directive_name = 'issue'
-   AND EXISTS (SELECT 1 FROM graphql_root_operation ro
-                 JOIN graphitron_field rf
-                   ON rf.graph_name = ro.graph_name AND rf.type_name = ro.type_name
-                WHERE ro.graph_name = i.graph_name AND rf.named_type = i.type_name)
-UNION ALL
--- @accept until its dispatch is generated: B's facts and published shape are derived, but nothing
--- verifies a voucher yet, so a valid schema is refused here rather than reaching an emitter that does
--- not exist.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
-       d.coordinate, 'entry-defects'
-  FROM graphql_directive_application d
- WHERE d.directive_name = 'accept';
+                    WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name);
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the graphitron gatherer''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 
 CREATE VIEW graphitron_occurrence_producer_result_rule
@@ -19609,6 +19643,24 @@ COMMENT ON COLUMN graphitron_occurrence_expression.touched_at IS 'the reading th
 -- against the one node over a table, where no node or several are, so no binding was written.
 CREATE VIEW graphitron_occurrence_binding_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- The key columns each unresolved argMapping projection could have meant, as
+-- graphitron_entry_defect_key_column_rule states them for the rows written under each defect.
+WITH key_column (graph_name, source_name, source_line, source_column, code, landing_coordinate, bound, position) AS (
+  SELECT DISTINCT pr.graph_name, pr.source_name, pr.source_line, pr.source_column,
+         'ARGMAPPING_KEY_COLUMN_UNRESOLVED', l.landing_coordinate, n.bound, n.position
+    FROM graphitron_argmapping_landing l
+    JOIN graphitron_argmapping_pair pr
+      ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+     AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+     AND pr.target_name = l.target_name AND pr.target_kind = l.target_kind
+    JOIN graphitron_occurrence_node_id n ON n.graph_name = l.graph_name AND n.coordinate = l.landing_coordinate
+   WHERE l.receives = 'COLUMN'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing_key_column kc
+                      WHERE kc.graph_name = l.graph_name AND kc.coordinate = l.coordinate
+                        AND kc.directive_name = l.directive_name AND kc.ordinal = l.ordinal
+                        AND kc.owner = l.owner AND kc.target_name = l.target_name AND kc.target_kind = l.target_kind
+                        AND kc.call_coordinate = l.call_coordinate)
+)
 -- A bare @nodeId at an argument or input field whose needs land where no node is: no target type a
 -- node and no node over any table they land on. A slot with no need at all is not judged here, its
 -- table being one a need has yet to state. Reported once per @nodeId, an occurrence in the detail.
@@ -19786,7 +19838,97 @@ SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_
    AND r.owner = oc.application_directive
  WHERE d.call_kind IN ('CONDITION') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
  GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-          COALESCE(r.source_column, da.source_column), d.code;
+          COALESCE(r.source_column, da.source_column), d.code
+UNION ALL
+-- A written argMapping path projecting out of a node id that resolves to no one key column, where the
+-- pair is written: once per string, the key columns it could have meant being
+-- graphitron_entry_defect_key_column's under it.
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.code, MIN(u.detail), 'occurrence-bindings'
+  FROM (SELECT k.graph_name, k.source_name, k.source_line, k.source_column, k.code,
+               CASE WHEN COUNT(DISTINCT k.bound) > 1
+                    THEN 'the id has a key per member of the interface or union it names'
+                    WHEN MIN(l.trailing_name) IS NOT NULL
+                    THEN '''' || MIN(l.trailing_name) || ''', which is not a key column of '''
+                         || MIN(n.node_type_name) || ''''
+                    ELSE MIN(n.node_type_name) || ', whose key is ' || COUNT(*) || ' columns' END AS detail
+          FROM key_column k
+          JOIN graphitron_occurrence_node_id n
+            ON n.graph_name = k.graph_name AND n.coordinate = k.landing_coordinate AND n.bound = k.bound
+           AND n.position = k.position
+          -- The landing of the pair written where the defect is.
+          JOIN graphitron_argmapping_landing l
+            ON l.graph_name = k.graph_name AND l.landing_coordinate = k.landing_coordinate
+          JOIN graphitron_argmapping_pair pr
+            ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+           AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+           AND pr.target_kind = l.target_kind AND pr.target_name = l.target_name AND pr.source_name = k.source_name
+           AND pr.source_line = k.source_line AND pr.source_column = k.source_column
+         GROUP BY k.graph_name, k.source_name, k.source_line, k.source_column, k.code, k.landing_coordinate) u
+ GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column, u.code
+UNION ALL
+-- A named node id at an argument or input field with no route written, whose path to the node's
+-- table is inferred over its one foreign key and lands every key column on a column of the slot's
+-- table, the column its step pairs it with, where a landed pair disagrees on the Java type jOOQ binds
+-- them as: no predicate compares the decoded value with the column it binds. A key landing only in
+-- part, as over a key the node's table declares, is decoded against the node's own table, where no
+-- landed column is compared. The exclusions are the no-route rule's. Reported once per @nodeId, the
+-- detail the key column.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'NODE_ID_LANDING_TYPE_DISAGREES', MIN(k.column_name), 'occurrence-bindings'
+  FROM graphitron_binding_claim cl
+  JOIN graphitron_directive_application da
+    ON da.graph_name = cl.graph_name AND da.coordinate = cl.coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  JOIN graphitron_occurrence o
+    ON o.graph_name = cl.graph_name AND o.element_coordinate = cl.coordinate
+   AND o.kind IN ('INPUT_FIELD', 'FIELD_ARGUMENT')
+  JOIN graphitron_path p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate AND p.origin = 'INFERRED'
+  JOIN graphitron_occurrence_node_id k
+    ON k.graph_name = o.graph_name AND k.coordinate = o.coordinate
+  JOIN graphitron_join_path_step_column sc
+    ON sc.graph_name = p.graph_name AND sc.coordinate = p.coordinate
+   AND sc.target_type = p.target_type
+   AND sc.to_source_name = k.table_source_name AND sc.to_schema = k.table_schema
+   AND sc.to_table = k.table_name AND sc.to_column = k.column_name
+  JOIN sql_column lc
+    ON lc.source_name = sc.from_source_name AND lc.table_schema = sc.from_schema
+   AND lc.table_name = sc.from_table AND lc.column_name = sc.from_column
+  JOIN sql_column nc
+    ON nc.source_name = k.table_source_name AND nc.table_schema = k.table_schema
+   AND nc.table_name = k.table_name AND nc.column_name = k.column_name
+ WHERE cl.kind = 'NODE_ID' AND cl.named IS NOT NULL AND da.source_line IS NOT NULL
+   AND lc.binding_type <> nc.binding_type
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
+                    WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
+                      AND k2.bound = k.bound
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column s2
+                                       WHERE s2.graph_name = sc.graph_name
+                                         AND s2.coordinate = sc.coordinate
+                                         AND s2.target_type = sc.target_type
+                                         AND s2.to_source_name = k2.table_source_name
+                                         AND s2.to_schema = k2.table_schema
+                                         AND s2.to_table = k2.table_name
+                                         AND s2.to_column = k2.column_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application dc
+                     JOIN graphitron_ast_input_value_condition_entry ce
+                       ON ce.graph_name = dc.graph_name AND ce.source_name = dc.source_name
+                      AND ce.source_line = dc.source_line AND ce.source_column = dc.source_column
+                    WHERE dc.graph_name = cl.graph_name AND dc.coordinate = cl.coordinate
+                      AND dc.directive_name = 'condition' AND ce.override)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.parent_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argmapping_landing l
+                    WHERE l.graph_name = o.graph_name AND l.landing_coordinate = o.argument_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence fo
+                     JOIN graphitron_claim pc
+                       ON pc.graph_name = fo.graph_name AND pc.coordinate = fo.element_coordinate
+                      AND pc.kind = 'SERVICE'
+                     JOIN graphitron_claim_kind pk ON pk.kind = pc.kind AND pk.family = 'PRODUCER'
+                    WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate)
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
@@ -23699,14 +23841,18 @@ ALTER TABLE graphitron_path_need_precedence ADD FOREIGN KEY (owner_stage)
 -- scaled fixture.
 INSERT INTO meta_stage_write VALUES
   ('anchor', 'graphitron_deprecated'),
+  ('anchor', 'graphitron_entry_defect'),
   ('code-references', 'graphitron_code_reference'),
   ('code-references', 'graphitron_entry_defect'),
   ('argmapping-sites', 'graphitron_argmapping_site'),
   ('argmapping-pairs', 'graphitron_argmapping_pair'),
   ('call-context-keys', 'graphitron_call_context_key'),
   ('table-types', 'graphitron_tabletype'),
+  ('table-types', 'graphitron_entry_defect'),
+  ('table-types', 'graphitron_entry_defect_member'),
   ('nodes', 'graphitron_node'),
   ('nodes', 'graphitron_node_table'),
+  ('nodes', 'graphitron_entry_defect'),
   ('minted-keys', 'graphitron_minted_key'),
   ('minted-keys', 'graphitron_entry_defect'),
   ('voucher-members', 'graphitron_voucher_member'),
@@ -23721,6 +23867,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_configured_tag'),
   ('directive-applications', 'graphitron_directive_application'),
   ('directive-applications', 'graphitron_directive_application_arg'),
+  ('directive-applications', 'graphitron_entry_defect'),
   ('macro-expansion', 'graphitron_element'),
   ('macro-expansion', 'graphitron_enum_value'),
   ('macro-expansion', 'graphitron_field'),
@@ -23733,16 +23880,19 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_edge'),
   ('macro-expansion', 'graphitron_connection'),
   ('macro-expansion', 'graphitron_field_position'),
+  ('macro-expansion', 'graphitron_entry_defect'),
   ('federation-imports', 'graphitron_federation_link_import'),
   ('federation-vocabulary', 'graphitron_directive'),
   ('federation-vocabulary', 'graphitron_directive_argument'),
   ('federation-vocabulary', 'graphitron_element'),
   ('federation-vocabulary', 'graphitron_federation_definition'),
   ('federation-vocabulary', 'graphitron_type'),
+  ('federation-vocabulary', 'graphitron_entry_defect'),
   ('argmapping-candidates', 'graphitron_argmapping_candidate'),
   ('node-key-columns', 'graphitron_node_keycolumn'),
   ('node-legacy-key-shapes', 'graphitron_node_legacy_key_defect'),
   ('node-legacy-key-shapes', 'graphitron_node_legacy_keycolumn'),
+  ('node-legacy-key-shapes', 'graphitron_entry_defect'),
   ('field-targets', 'graphitron_field_target'),
   ('field-targets', 'graphitron_field_many'),
   ('field-targets', 'graphitron_entry_defect'),
@@ -23750,8 +23900,11 @@ INSERT INTO meta_stage_write VALUES
   ('binding-claims', 'graphitron_binding_claim'),
   ('binding-claims', 'graphitron_binding_claim_container'),
   ('binding-claims', 'graphitron_claim'),
+  ('binding-claims', 'graphitron_entry_defect'),
   ('type-claims', 'graphitron_claim'),
   ('spelled-tables', 'graphitron_spelled_table'),
+  ('spelled-tables', 'graphitron_entry_defect'),
+  ('spelled-tables', 'graphitron_entry_defect_table'),
   ('path-elements', 'graphitron_path_element_key'),
   ('path-elements', 'graphitron_path_element_method'),
   ('path-elements', 'graphitron_path_element_primary_key'),
@@ -23763,6 +23916,9 @@ INSERT INTO meta_stage_write VALUES
   ('argmapping-landings', 'graphitron_argmapping_landing'),
   ('argmapping-landings', 'graphitron_argmapping_step'),
   ('path-claims', 'graphitron_join_path_claim'),
+  ('path-claims', 'graphitron_entry_defect'),
+  ('path-claims', 'graphitron_entry_defect_claim'),
+  ('path-claims', 'graphitron_entry_defect_path_step'),
   ('type-backings', 'graphitron_type_backing'),
   ('fetchers', 'graphitron_errors_field'),
   ('fetchers', 'graphitron_fetcher'),
@@ -23777,6 +23933,7 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_pivot'),
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
+  ('fetchers', 'graphitron_entry_defect'),
   ('occurrence-lists', 'graphitron_occurrence_list_element'),
   ('occurrence-lists', 'graphitron_occurrence_optional'),
   ('occurrence-lists', 'graphitron_occurrence_argument_step'),
@@ -23857,6 +24014,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-producers', 'graphitron_occurrence_producer'),
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift'),
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift_accessor'),
+  ('occurrence-bindings', 'graphitron_entry_defect_key_column'),
   ('occurrence-depths', 'graphitron_occurrence_producer_lift_candidate'),
   ('occurrence-producers', 'graphitron_occurrence_producer_result'),
   ('occurrence-producers', 'graphitron_occurrence_producer_empty'),
@@ -26275,6 +26433,50 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.',
    'The stage''s own defects, read off the route rule''s refused rows, so every root service call of a tenanted graph has a route or a defect.'),
+  ('graphitron_anchor_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.',
+   'The anchor stage''s own defects, decided from the transcription, the decoded entries, the classpath reading and the graph''s sources alone, none of which a graphitron stage writes, so they are raised by the phase''s first stage and wait for no later stage''s facts.'),
+  ('graphitron_macro_expansion_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the macro-expansion stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a mutation field returning [Film] @asConnection with a @routine gives one CONNECTION_RETURN row at its @routine.',
+   'The stage''s own defects, read off the expanded schema it has just written, its fields, connections, carriers and arguments, so a rule judging only those is raised where they are written rather than after the whole anchor phase.'),
+  ('graphitron_table_type_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the table-types stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a @discriminate on an interface whose @table did not resolve gives one DISCRIMINATE_WITHOUT_TABLE row at the @discriminate.',
+   'The table-types stage''s own defects, decided from the transcription, the capture entries, the catalog and the bindings the stage has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
+  ('graphitron_node_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the nodes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example Actor and Film both answering to the type id Shared give one NODE_TYPE_ID_SHARED row at each one''s @table.',
+   'The nodes stage''s own defects, read off the nodes the stage has just written, so a shared type id is raised where the ids are resolved rather than at the anchor phase''s end.'),
+  ('graphitron_directive_application_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the directive-applications stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a @mutation written with no typeName gives one MUTATION_WITHOUT_VERB row at the @mutation.',
+   'The stage''s own defects, read off the applications it has just written across the expanded schema, so a rule judging an application is raised where the application is written.'),
+  ('graphitron_federation_vocabulary_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the federation-vocabulary stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example types Film and FILM in one graph give one TYPE_NAME_CASE_COLLISION row at each declaration.',
+   'The stage''s own defects, read off graphitron_type once the federation types this stage writes have joined the ones macro expansion wrote, which is the first point every type the generator writes a file for is known.'),
+  ('graphitron_node_legacy_key_shape_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the node-legacy-key-shapes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example an InventoryItem whose legacyKeyColumns leave out its current key column inventory_id gives one NODE_LEGACY_KEY_MISSES_KEY_COLUMN row at its @node, naming inventory_id.',
+   'The stage''s own defects, placing the verdicts it has just written into graphitron_node_legacy_key_defect, so the rules are evaluated once, in the stage, and raised there.'),
+  ('graphitron_binding_claim_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the binding-claims stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a bare @nodeId on a field of an object type that is no node, with no @reference, gives one NODE_ID_CONTAINING_TYPE_NOT_NODE row at the @nodeId.',
+   'The stage''s own defects, judging each @nodeId and each node''s own id against the binding claims it has just written, so each reads only what is upstream of it.'),
+  ('graphitron_spelled_table_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the spelled-tables stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a @table naming a table two schemas declare gives one TABLE_AMBIGUOUS row at the @table.',
+   'The stage''s own defects, judging each written table name against the resolution it has just written, so each reads only what is upstream of it.'),
+  ('graphitron_path_claim_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the path-claims stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a field carrying both @service and @externalField gives one CLAIMS_CONFLICT row at the field''s declaration.',
+   'The stage''s own defects, decided from the path claims it has just written beside every claim the claim stages wrote before it, so each reads only what is upstream of it.'),
+  ('graphitron_fetcher_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.',
+   'The stage''s own defects, decided from the producers, readers, errors fields, outcomes and results it has just written, so each reads only what is upstream of it and none waits for a later stage''s facts.'),
   ('graphitron_voucher_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an @issue whose claims name a field the type does not declare gives one VOUCHER_CLAIM_NOT_ABSORBED row at the @issue.',

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.derive.EntryDefects;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -145,6 +146,8 @@ public final class MacroExpansion {
         store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION, GRAPHITRON_CONNECTION_RULE);
         // Then the positions their fields fill, which read both.
         store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_POSITION, GRAPHITRON_FIELD_POSITION_RULE);
+        // Last, the defects judging what was just written.
+        EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.MACRO_EXPANSION);
     }
 
     /**
@@ -153,6 +156,7 @@ public final class MacroExpansion {
      */
     public static void directives(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         applications(dsl, graphName, touchedAt);
+        EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.DIRECTIVE_APPLICATIONS);
     }
 
     /**

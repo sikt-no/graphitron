@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.derive.EntryDefects;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
@@ -41,6 +42,7 @@ final class FederationVocabulary {
         directives(dsl, graph, touchedAt);
         arguments(dsl, graph, touchedAt);
         types(dsl, graph, touchedAt);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FEDERATION_VOCABULARY);
     }
 
     private static void definitions(DSLContext dsl, String graph, LocalDateTime touchedAt) {

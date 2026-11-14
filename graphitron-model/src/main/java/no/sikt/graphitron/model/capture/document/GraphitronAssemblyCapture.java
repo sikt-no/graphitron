@@ -93,9 +93,12 @@ public final class GraphitronAssemblyCapture {
         // Over the nodes the anchor settled.
         new AnchorStage("node-key-columns", NodeKeyColumns.class,
             (dsl, graph, readAt) -> NodeKeyColumns.derive(dsl, graph)),
-        // The legacy key shape each type id answers to, against the current keys just written.
-        new AnchorStage("node-legacy-key-shapes", NodeLegacyKeyShapes.class,
-            (dsl, graph, readAt) -> NodeLegacyKeyShapes.derive(dsl, graph)),
+        // The legacy key shape each type id answers to, against the current keys just written; then
+        // the verdicts it wrote, placed at the @node or @table the author edits.
+        new AnchorStage("node-legacy-key-shapes", NodeLegacyKeyShapes.class, (dsl, graph, readAt) -> {
+            NodeLegacyKeyShapes.derive(dsl, graph);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.NODE_LEGACY_KEY_SHAPES);
+        }),
         // Each field's target type, over the population the generator emits.
         new AnchorStage("field-targets", GraphitronAssemblyCapture.class,
             GraphitronAssemblyCapture::targets),
@@ -113,8 +116,12 @@ public final class GraphitronAssemblyCapture {
         // The resolutions of written references, the base one first: what a written table name
         // resolves to against the catalog census, then the hops a @reference path element could
         // take, which read it.
-        new AnchorStage("spelled-tables", SpelledTables.class,
-            (dsl, graph, readAt) -> SpelledTables.derive(dsl, graph)),
+        new AnchorStage("spelled-tables", SpelledTables.class, (dsl, graph, readAt) -> {
+            SpelledTables.derive(dsl, graph);
+            // The defects a written table name's resolution judges, and an ambiguous one's candidates.
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.SPELLED_TABLES);
+            EntryDefectTables.derive(dsl, graph, readAt, EntryDefects.SPELLED_TABLES.stage());
+        }),
         // What each path element names, its spelling resolved against the catalog and classpath
         // once, keyed by the element.
         new AnchorStage("path-elements", PathElements.class,

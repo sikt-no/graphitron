@@ -29,8 +29,8 @@ import static org.jooq.impl.DSL.val;
  * What a claim defect is about, written under it: each claim the conflict rule weighed and found in
  * conflict, in {@code graphitron_entry_defect_claim}, and each {@code @routine} a field's written
  * path steps through beside them, in {@code graphitron_entry_defect_path_step}. The defect itself is
- * a row of the graphitron rule, which {@link EntryDefects} writes just before this runs in the
- * graphitron gatherer's anchor phase; this reads the rows that reading marked and marks its own with
+ * a row of {@link EntryDefects#PATH_CLAIMS}, which {@link EntryDefects} writes just before this runs in
+ * {@link PathClaims}; this reads the rows that reading marked and marks its own with
  * the same instant, and {@link EntryDefects#sweep} takes what the reading did not mark.
  *
  * <p>The claims are the ones the rule weighs: the strongest of each family at the element. An

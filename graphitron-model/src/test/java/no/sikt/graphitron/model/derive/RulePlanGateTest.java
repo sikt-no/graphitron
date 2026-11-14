@@ -77,10 +77,11 @@ class RulePlanGateTest {
 
     /** Partition reads on trunk when this gate landed, each to be indexed or exempted. */
     private static final Set<String> KNOWN = Set.of(
-        "GRAPHITRON_ENTRY_DEFECT_RULE SQL_TABLE",
+        "GRAPHITRON_SPELLED_TABLE_ENTRY_DEFECT_RULE SQL_TABLE",
         "GRAPHITRON_ENTRY_DEFECT_RULE CODE_CLASS",
-        "GRAPHITRON_ENTRY_DEFECT_RULE GRAPHITRON_NODE",
-        "GRAPHITRON_ENTRY_DEFECT_RULE GRAPHITRON_TYPE",
+        "GRAPHITRON_ANCHOR_ENTRY_DEFECT_RULE CODE_CLASS",
+        "GRAPHITRON_NODE_ENTRY_DEFECT_RULE GRAPHITRON_NODE",
+        "GRAPHITRON_FEDERATION_VOCABULARY_ENTRY_DEFECT_RULE GRAPHITRON_TYPE",
         "GRAPHITRON_FEDERATION_LINK_IMPORT_RULE GRAPHITRON_DIRECTIVE_APPLICATION");
 
     @Test
@@ -110,7 +111,7 @@ class RulePlanGateTest {
             dsl.execute("DROP INDEX graphql_ast_element_entry_coordinate_ix");
             assertThat(keys(unexplainedReads(dsl)))
                 .as("a field's declaration looked up by coordinate")
-                .contains("GRAPHITRON_ENTRY_DEFECT_RULE GRAPHQL_AST_ELEMENT_ENTRY");
+                .contains("GRAPHITRON_MACRO_EXPANSION_ENTRY_DEFECT_RULE GRAPHQL_AST_ELEMENT_ENTRY");
             dsl.execute("DROP INDEX sql_constraint_name_upper_ix");
             dsl.execute("DROP INDEX sql_constraint_jooq_name_upper_ix");
             assertThat(keys(unexplainedReads(dsl)))

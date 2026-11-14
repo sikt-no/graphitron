@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * Each step reads the ones before it: the columns skip what a node id binds, a table binding is
  * refused where a column or node id binds, and a condition is applied to the tables bound. Last,
  * the defects of a node id no binding could be written for and of an expression no call could be
- * pinned for, from the stage's own rule.
+ * pinned for, from the stage's own rule, and the key columns under each unresolved projection.
  */
 public final class OccurrenceBindings {
 
@@ -47,5 +47,6 @@ public final class OccurrenceBindings {
         OccurrenceExpressions.sweep(dsl, graph, touchedAt);
         OccurrenceTables.sweep(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS);
+        EntryDefectKeyColumns.derive(dsl, graph, touchedAt, EntryDefects.BINDINGS.stage());
     }
 }

@@ -13,8 +13,8 @@ import static org.jooq.impl.DSL.val;
 /**
  * The tables an ambiguous {@code @table}'s defect names, written under it in
  * {@code graphitron_entry_defect_table} from the rule view beside it. The defect itself is a row of
- * the graphitron rule, which {@link EntryDefects} writes just before this runs in the graphitron
- * gatherer's anchor phase; this reads the rows that reading marked and marks its own with the same
+ * {@link EntryDefects#SPELLED_TABLES}, which {@link EntryDefects} writes just before this runs in the
+ * spelled-tables stage; this reads the rows that reading marked and marks its own with the same
  * instant, and {@link EntryDefects#sweep} takes what the reading did not mark.
  */
 public final class EntryDefectTables {

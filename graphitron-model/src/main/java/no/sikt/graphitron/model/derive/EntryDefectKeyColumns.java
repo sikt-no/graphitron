@@ -13,8 +13,8 @@ import static org.jooq.impl.DSL.val;
 /**
  * The key columns an unresolved projection could have meant, written under its defect in
  * {@code graphitron_entry_defect_key_column} from the rule view beside it. The defect itself is a row
- * of the graphitron rule, which {@link EntryDefects} writes just before this runs in the graphitron
- * gatherer's anchor phase; this reads the rows that reading marked and marks its own with the same
+ * of {@link EntryDefects#BINDINGS}, which {@link EntryDefects} writes just before this runs in
+ * {@link OccurrenceBindings}; this reads the rows that reading marked and marks its own with the same
  * instant, and {@link EntryDefects#sweep} takes what the reading did not mark.
  */
 public final class EntryDefectKeyColumns {

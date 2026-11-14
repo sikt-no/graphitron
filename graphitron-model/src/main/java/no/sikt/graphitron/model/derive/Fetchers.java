@@ -39,9 +39,9 @@ import static org.jooq.impl.DSL.val;
  * {@link Results}, and the reader side that reads them, from the rule views
  * beside each, marking what this reading states and sweeping what it no longer does.
  *
- * <p>The last of the graphitron anchor's stages: the rules read the field targets, the resolved
- * bindings and the type backings the stages before it write, and each subtype rule reads the
- * producers this stage has just written.
+ * <p>The rules read the field targets, the resolved bindings and the type backings the stages before
+ * it write, and each subtype rule reads the producers this stage has just written. Last, the
+ * defects those facts break, through {@link EntryDefects#FETCHERS}.
  */
 public final class Fetchers {
 
@@ -178,6 +178,8 @@ public final class Fetchers {
             .where(fetcher.GRAPH_NAME.eq(graph))
             .and(fetcher.TOUCHED_AT.ne(touchedAt))
             .execute();
+
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.FETCHERS);
     }
 
     /**

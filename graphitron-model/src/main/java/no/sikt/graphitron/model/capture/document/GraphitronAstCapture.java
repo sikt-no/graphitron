@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.AnchorStage;
 import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.derive.EntryDefectMembers;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.MintedKeys;
 import no.sikt.graphitron.model.derive.VoucherMembers;
@@ -134,7 +135,11 @@ public final class GraphitronAstCapture {
      * stages that resolve against everything above and the catalog and classpath.
      */
     public static final List<AnchorStage> STAGES = Stream.concat(Stream.of(
-        new AnchorStage("anchor", GraphitronAnchor.class, GraphitronAnchor::write),
+        // The anchors, then the defects the documents and the gatherers ahead of this one decide alone.
+        new AnchorStage("anchor", GraphitronAnchor.class, (dsl, graph, readAt) -> {
+            GraphitronAnchor.write(dsl, graph, readAt);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.ANCHOR);
+        }),
         // The fields each @issue absorbs into its voucher, from the transcription alone, ahead of the
         // expansion whose authored sets withhold them.
         new AnchorStage("voucher-members", VoucherMembers.class,
@@ -160,12 +165,19 @@ public final class GraphitronAstCapture {
         new AnchorStage("call-context-keys", GraphitronCallContextKeys.class,
             GraphitronCallContextKeys::write),
         // Which types are bound to a table and which of those are nodes. Both read the anchors just
-        // written and corpora captured before this one, and the mint below reads the second.
-        new AnchorStage("table-types", TableTypes.class, (dsl, graph, readAt) -> TableTypes.derive(dsl, graph)),
+        // written and corpora captured before this one, and the mint below reads the second. Each
+        // then raises the defects its rows judge, the bindings' with the members they name.
+        new AnchorStage("table-types", TableTypes.class, (dsl, graph, readAt) -> {
+            TableTypes.derive(dsl, graph);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.TABLE_TYPES);
+            EntryDefectMembers.derive(dsl, graph, readAt, EntryDefectMembers.GRAPHITRON,
+                EntryDefects.TABLE_TYPES.stage());
+        }),
         new AnchorStage("nodes", Nodes.class, (dsl, graph, readAt) -> {
             Nodes.derive(dsl, graph);
             NodeTables.write(dsl, graph, readAt);
             NodeTables.sweep(dsl, graph, readAt);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.NODES);
         }),
         // Each voucher member's column and scalar and each claim's member, read over the tables and
         // nodes just written, with the issuing side's refusals.
