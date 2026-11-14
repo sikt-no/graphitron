@@ -661,6 +661,13 @@ static method needs no holder.
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
 * **`$tenant` in argMapping routes a service call** `open`, E's. The sigil on a pair's left side names
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
+  Stated: a pair's left side is a target of a kind, `$tenant` the kind `TENANT`; `@tenant` is read as
+  the same fact (Alf, 2026-11-14), `graphitron_occurrence_binding_tenant` the call each names, the
+  pair winning where both name one value and `TENANT_NAMED_TWICE` where they name two; every value a
+  call's tenant is read from, `graphitron_occurrence_tenant_slot`, authored, a jOOQ record's field on
+  the tenant column or a node id whose key holds it; and `graphitron_occurrence_optional`, which
+  values a call may be given none of. What is left: the walk parses the sigil, each call's route is
+  stated, and the fetcher routes by it.
   * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
@@ -2817,7 +2824,8 @@ A call states its method, the one overload every parameter of which is filled am
 `code_method` rows its class and name find; for an instance `@service`, its holder; and per
 parameter, what fills it: an input occurrence's value, the fill naming the occurrence it lands on,
 a table at the call's path end or a step's from and to table, the source row's columns
-or keys, `$context`, `$session`, `$tenant` or the jOOQ context. Each holder owns its parameter rows,
+or keys, `$context`, `$session` or the jOOQ context. A `$tenant` pair fills none: it names the
+value whose tenant the call runs on, a target of its own kind. Each holder owns its parameter rows,
 keyed by the holder, the method and the position.
 
 **A `@condition`'s fills** (Alf, 2026-11-09). The rules are the manual's, maintained in

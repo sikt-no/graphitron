@@ -1,0 +1,31 @@
+# A call's tenant named twice, by a $tenant pair and by @tenant on another argument; a value named as
+# the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer; and
+# $tenant written where nothing routes by it yet, a @condition.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  filmTwice(id: Int! @tenant, org: Int!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id, $tenant: org"})
+  filmMistyped(id: Int!, org: String!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id, $tenant: org"})
+  filmsOnCondition(filmId: Int): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmIdKeyEquals", argMapping: "$tenant: filmId"}, override: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code LIKE 'TENANT%'", rows: """
+  code,                        coordinate,             detail
+  TENANT_NAMED_TWICE,          Query.filmTwice,        Query.filmTwice(id:)
+  TENANT_VALUE_TYPE_DISAGREES, Query.filmMistyped,     java.lang.String where the tenant column is java.lang.Integer
+  TENANT_SITE_UNSUPPORTED,     Query.filmsOnCondition, condition
+  """)
+
+# The call named twice has no binding, so nothing routes it on a guess.
+extend schema @assertEmpty(relation: "graphitron_occurrence_binding_tenant",
+    where: "call_coordinate = 'Query.filmTwice'")

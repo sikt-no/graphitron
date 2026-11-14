@@ -176,6 +176,9 @@ class SupertypeSignatureGateTest {
         // stated before the pin that decides which call exists, so it cannot key into the call, and
         // the call keeps the kind its subtypes key on. Two grains, not one fact under two keys.
         Set.of("graphitron_occurrence_call", "graphitron_occurrence_call_candidate"),
+        // Two arms of one tenant slot supertype, each naming the binding its slot rests on by an
+        // occurrence and a bound: the authored arm a tenant binding, the record arm a column binding.
+        Set.of("graphitron_occurrence_tenant_slot_authored", "graphitron_occurrence_tenant_slot_record_column"),
         // How a join path's step joins, by which key it rode: a written foreign key and an inferred
         // one, and a table's own primary key ridden as a self-join and one matched by name from a
         // function's derived table. Siblings by decision, not a supertype owed: which relation holds

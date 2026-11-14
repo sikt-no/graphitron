@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.AnchorStage;
 import no.sikt.graphitron.model.derive.TenantColumns;
+import no.sikt.graphitron.model.derive.OccurrenceTenants;
 import no.sikt.graphitron.model.derive.ArgMappingCandidates;
 import no.sikt.graphitron.model.derive.BindingClaims;
 import no.sikt.graphitron.model.derive.ArgMappingLandings;
@@ -170,6 +171,9 @@ public final class GraphitronAssemblyCapture {
         // node id lands in, and the defects judging them, off the calls and parameters just pinned.
         new AnchorStage("occurrence-builds", OccurrenceBuilds.class,
             OccurrenceBuilds::derive),
+        // The call each $tenant or @tenant names the tenant of, and every value a call's tenant is read
+        // from, off the landings, the column and node id bindings and the classes just built.
+        new AnchorStage("occurrence-tenants", OccurrenceTenants.class, OccurrenceTenants::derive),
         // The defects judging a child producer's lift and a field's column, off the two stages above.
         new AnchorStage("occurrence-depth-defects", OccurrenceDepthDefects.class,
             OccurrenceDepthDefects::derive),

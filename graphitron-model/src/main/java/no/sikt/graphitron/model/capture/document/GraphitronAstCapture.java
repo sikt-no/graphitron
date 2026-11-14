@@ -149,9 +149,12 @@ public final class GraphitronAstCapture {
         // Where each written argMapping sits, which its readers join into views of their own.
         new AnchorStage("argmapping-sites", GraphitronArgMappingSites.class,
             GraphitronArgMappingSites::write),
-        // And each pair of each, named by its mapping and the parameter it binds.
-        new AnchorStage("argmapping-pairs", GraphitronArgMappingPairs.class,
-            GraphitronArgMappingPairs::write),
+        // And each pair of each, named by its mapping and the target it binds; then the pairs' own
+        // defects, a sigil the site does not read.
+        new AnchorStage("argmapping-pairs", GraphitronArgMappingPairs.class, (dsl, graph, readAt) -> {
+            GraphitronArgMappingPairs.write(dsl, graph, readAt);
+            EntryDefects.derive(dsl, graph, readAt, EntryDefects.ARGMAPPING_PAIRS);
+        }),
         // The context key filling each parameter of each call, which finds a pair's call through
         // the sites just written.
         new AnchorStage("call-context-keys", GraphitronCallContextKeys.class,

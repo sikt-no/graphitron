@@ -1,0 +1,54 @@
+# Every value a @service call's tenant is read from, under a database-per-tenant build whose tenant
+# column is film_id: an argument a $tenant pair names, one written @tenant, an input field a jOOQ
+# record binds to film_id, and a node id whose key is film_id. A value a call may be given none of
+# is said by graphitron_occurrence_optional, whatever its slot.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! title: String }
+
+input FilmIn @table(name: "film") {
+  filmId: Int @field(name: "film_id")
+  title: String
+}
+
+type Query {
+  filmByPair(id: Int!, org: Int!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id, $tenant: org"})
+  filmMarked(id: Int! @tenant): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+  filmByRecord(in: FilmIn): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmRecord"})
+  filmByNode(in: ID! @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
+      method: "modifyFilmRecord"})
+}
+
+# What an author wrote: the pair and the directive are one fact, told apart by where it was written.
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_tenant", rows: """
+  coordinate,             call_coordinate,  call,     origin,     key_position
+  Query.filmByPair(org:), Query.filmByPair, producer, ARGMAPPING,
+  Query.filmMarked(id:),  Query.filmMarked, producer, DIRECTIVE,
+  """)
+
+# Every value each call's tenant is read from, and how.
+extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows: """
+  call_coordinate,   kind,          coordinate,                    key_position
+  Query.filmByPair,  AUTHORED,      Query.filmByPair(org:),
+  Query.filmMarked,  AUTHORED,      Query.filmMarked(id:),
+  Query.filmByRecord, RECORD_COLUMN, Query.filmByRecord(in.filmId:),
+  Query.filmByNode,  NODE_ID_KEY,   Query.filmByNode(in:),         0
+  """)
+
+# The record's value is nullable, so a call may name no tenant through it; the others are required.
+extend schema @expectEquals(relation: "graphitron_occurrence_optional",
+    where: "coordinate LIKE 'Query.filmBy%'", rows: """
+  coordinate
+  Query.filmByRecord(in:)
+  Query.filmByRecord(in.filmId:)
+  Query.filmByRecord(in.title:)
+  """)

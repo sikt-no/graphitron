@@ -2373,7 +2373,8 @@ CREATE TABLE graphitron_ast_argmapping_pair_entry (
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
   CHECK (position >= 0),
-  CHECK (target_kind IN ('NAME'))
+  CHECK (target_kind IN ('NAME', 'TENANT')),
+  CHECK (target_kind <> 'TENANT' OR target_name = 'tenant')
 );
 COMMENT ON TABLE graphitron_ast_argmapping_pair_entry IS 'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this. For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -2382,7 +2383,7 @@ COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_line IS 'source li
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.source_column IS 'source column of the same. The four columns are that string''s key in graphql_ast_value_entry, which holds it verbatim, so the directive or reference it was written in is a join from here and the raw text is not repeated';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.position IS 'the entry''s 0-based position in the mapping as written, completing the key; the order an author wrote the entries in';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a mapping whose string went is swept with it';
-COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.target_kind IS 'what the entry''s left side is: NAME, a name the mapping''s site gives its meaning, a parameter at a call or a key at @outbox';
+COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.target_kind IS 'what the entry''s left side is: NAME, a name the mapping''s site gives its meaning, a parameter at a call or a key at @outbox; TENANT, the sigil $tenant, which names the value whose tenant the call runs on and fills nothing, its name then tenant';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.target_name IS 'the entry''s left side, as written: for a NAME a Java parameter at a code reference, a routine parameter at @routine, a payload key at @outbox';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.root_name IS 'the first segment of what the entry binds to, which at a site rooted on a field is the argument the value enters through. Generated, so nothing writes it and nothing can';
 COMMENT ON COLUMN graphitron_ast_argmapping_pair_entry.head_path IS 'what the entry binds to with its last segment removed, NULL where it is one segment. Generated. The position an author had resolved when the whole path does not';
@@ -4557,6 +4558,48 @@ COMMENT ON VIEW graphitron_occurrence_list_element_rule IS 'One row the list ele
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.list_coordinate IS 'the list_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.list_coordinate';
 
+CREATE TABLE graphitron_occurrence_optional (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_optional IS 'An argument or input-field occurrence a call may be given no value for: one row per such occurrence, where it is nullable, where an argument or input field above it is, or where it is read per element of a list whose elements are. For example Query.films(filter.title:) under a nullable filter draws a row, and Query.film(id:) declared ID! draws none.';
+COMMENT ON COLUMN graphitron_occurrence_optional.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_optional.coordinate IS 'the occurrence; with the graph, the grain';
+COMMENT ON COLUMN graphitron_occurrence_optional.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_occurrence_optional_rule (graph_name, coordinate) AS
+-- Nullable where it is declared.
+SELECT o.graph_name, o.coordinate
+  FROM graphitron_occurrence o
+  LEFT JOIN graphitron_argument a
+    ON o.kind = 'FIELD_ARGUMENT' AND a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field f
+    ON o.kind = 'INPUT_FIELD' AND f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+ WHERE NOT a.non_null OR NOT f.non_null
+UNION
+-- Under an argument or input field a call may be given no value for, the depth above's rows.
+SELECT o.graph_name, o.coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_optional p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+ WHERE o.kind = 'INPUT_FIELD'
+UNION
+-- Read per element of a list whose elements may be null.
+SELECT o.graph_name, o.coordinate
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+  LEFT JOIN graphitron_argument a
+    ON p.kind = 'FIELD_ARGUMENT' AND a.graph_name = p.graph_name AND a.coordinate = p.element_coordinate
+  LEFT JOIN graphitron_field f
+    ON p.kind = 'INPUT_FIELD' AND f.graph_name = p.graph_name AND f.coordinate = p.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD' AND (NOT a.item_non_null OR NOT f.item_non_null);
+COMMENT ON VIEW graphitron_occurrence_optional_rule IS 'One row the optional occurrence rule computes, in the shape graphitron_occurrence_optional stores: the rule itself, evaluated a depth at a time rather than read off disk. For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_optional, which is the name every reader spells.';
+
 CREATE TABLE graphitron_occurrence_overridden (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -4660,6 +4703,21 @@ COMMENT ON COLUMN graphitron_argmapping_pair.source_line IS 'source line of the 
 COMMENT ON COLUMN graphitron_argmapping_pair.source_column IS 'source column of the mapping string';
 COMMENT ON COLUMN graphitron_argmapping_pair.position IS 'the pair''s position in its mapping';
 COMMENT ON COLUMN graphitron_argmapping_pair.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The argMapping pairs stage's own defects, off the entries and the sites it names its pairs by.
+CREATE VIEW graphitron_argmapping_pair_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- $tenant names the tenant of a @service's call; anywhere else nothing reads it yet. The detail is
+-- the directive the mapping is written under.
+SELECT DISTINCT p.graph_name, p.source_name, p.source_line, p.source_column, 'TENANT_SITE_UNSUPPORTED',
+       s.directive_name, 'argmapping-pairs'
+  FROM graphitron_ast_argmapping_pair_entry p
+  JOIN graphitron_argmapping_site s
+    ON s.graph_name = p.graph_name AND s.source_name = p.source_name
+   AND s.source_line = p.source_line AND s.source_column = p.source_column
+ WHERE p.target_kind = 'TENANT'
+   AND NOT (s.directive_name = 'service' AND s.owner = 'service' AND s.kind = 'ROOT');
+COMMENT ON VIEW graphitron_argmapping_pair_entry_defect_rule IS 'One row the argMapping pairs stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant written in a @condition''s argMapping gives one TENANT_SITE_UNSUPPORTED row at the mapping, its detail condition.';
 
 CREATE VIEW graphitron_argmapping_call
   (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, call_coordinate,
@@ -11046,13 +11104,13 @@ CREATE TABLE graphitron_occurrence_binding (
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   CHECK (kind IN ('COLUMN', 'TABLE', 'NODE_ID', 'VALUE', 'MEMBER', 'EXPRESSION', 'RESULT_EXPRESSION',
-                  'VOUCHER', 'PARAMETER'))
+                  'VOUCHER', 'PARAMETER', 'TENANT'))
 );
 COMMENT ON TABLE graphitron_occurrence_binding IS 'One place an occurrence binds, and what kind of thing it takes there: one row per occurrence and bound place. For example Film.title binds the column title at public.film, and Query.film(id:), written @nodeId, binds the node identity it unpacks into film_id.';
 COMMENT ON COLUMN graphitron_occurrence_binding.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_binding.coordinate IS 'the binding occurrence, at its nested coordinate';
 COMMENT ON COLUMN graphitron_occurrence_binding.bound IS 'the place bound, spelled from names: the schema-qualified table for TABLE, COLUMN and NODE_ID, one row per table a forked end reaches; the method for EXPRESSION and RESULT_EXPRESSION; the class and member for VALUE. With the coordinate the key, since one occurrence can bind several places';
-COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs; VOUCHER, the voucher an @issue field carries, computed from its members'' columns and bound at the issuing table, with no subtype; PARAMETER, a call parameter an argument or input field supplies, bound at the parameter';
+COMMENT ON COLUMN graphitron_occurrence_binding.kind IS 'what is taken there: COLUMN, a column at the path''s end; TABLE, the table an inline object or list joins to; NODE_ID, a node identity unpacked into key columns; VALUE, a member''s value off the parent''s object; MEMBER, a member of the class an input object is built into, which the value fills; EXPRESSION, a value the producer computes in its query; RESULT_EXPRESSION, one a method computes over the result the producer produced. Each kind''s subtype carries what the kind needs; VOUCHER, the voucher an @issue field carries, computed from its members'' columns and bound at the issuing table, with no subtype; PARAMETER, a call parameter an argument or input field supplies, bound at the parameter; TENANT, the tenant of a call an argument or input field names, bound at the call';
 COMMENT ON COLUMN graphitron_occurrence_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The member each occurrence with an object source reads, off its accessor path.
@@ -15505,6 +15563,326 @@ COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the 
 -- The defects of what an input object is built into and how its fields fill it, read off the built
 -- classes and member bindings occurrence-builds writes, by that stage: a rule of its own, as the
 -- outbox's and the entity keys' are.
+-- The tenant a call runs on, as its authors name it and as its arguments carry it.
+CREATE TABLE graphitron_occurrence_binding_tenant (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  origin          VARCHAR   NOT NULL,
+  key_position    INT,
+  bound           VARCHAR GENERATED ALWAYS AS (call_coordinate || ' ' || call || ' tenant') NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound),
+  -- The key the writer upserts on, every column of it inserted: the primary key's bound is generated.
+  UNIQUE (graph_name, coordinate, call_coordinate, call),
+  FOREIGN KEY (graph_name, coordinate, bound, kind)
+    REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, call_coordinate, call)
+    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call) ON DELETE CASCADE,
+  CHECK (kind = 'TENANT'),
+  CHECK (origin IN ('ARGMAPPING', 'DIRECTIVE')),
+  CHECK (key_position IS NULL OR origin = 'ARGMAPPING')
+);
+COMMENT ON TABLE graphitron_occurrence_binding_tenant IS 'The call an argument or input field names the tenant of, as an author wrote it: one row per value occurrence and call. For example argMapping: "$tenant: input.org" on Mutation.rate binds Mutation.rate(input.org:) to the tenant of Mutation.rate''s producer call, and input.org written @tenant binds it the same way.';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.coordinate IS 'the argument or input-field occurrence whose value names the tenant, or holds it at key_position';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.call_coordinate IS 'the occurrence making the call; with call, the call whose tenant it names';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.call IS 'which of its calls, as graphitron_occurrence_call spells it';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.kind IS 'TENANT, pinned so the foreign key holds it to a binding of that kind';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.origin IS 'what an author wrote: ARGMAPPING, a $tenant pair in the call''s argMapping, or DIRECTIVE, @tenant on the argument or input field; where both name one occurrence the pair is the row, the form that stays';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.key_position IS 'where a $tenant path ends past a node id, the position in the node''s key the path names, the tenant being that key column''s value; NULL where the value itself is the tenant';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.bound IS 'the call spelled from its key and the word tenant; with the coordinate the key';
+COMMENT ON COLUMN graphitron_occurrence_binding_tenant.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_binding_tenant_rule
+  (graph_name, coordinate, call_coordinate, call, origin, key_position) AS
+-- A $tenant pair of a @service's argMapping, where its path lands under the call's occurrence, and
+-- where it ends past a node id, the key position it names.
+WITH argmapping (graph_name, coordinate, call_coordinate, call, key_position) AS (
+  SELECT l.graph_name, l.landing_coordinate, l.call_coordinate, c.call, kc.position
+    FROM graphitron_argmapping_landing l
+    JOIN graphitron_occurrence_call c
+      ON c.graph_name = l.graph_name AND c.coordinate = l.call_coordinate AND c.call_kind = 'SERVICE'
+    LEFT JOIN (SELECT graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name,
+                      call_coordinate, MIN(position) AS position
+                 FROM graphitron_argmapping_landing_key_column
+                GROUP BY graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name,
+                         call_coordinate) kc
+      ON kc.graph_name = l.graph_name AND kc.coordinate = l.coordinate
+     AND kc.directive_name = l.directive_name AND kc.ordinal = l.ordinal AND kc.owner = l.owner
+     AND kc.target_kind = l.target_kind AND kc.target_name = l.target_name
+     AND kc.call_coordinate = l.call_coordinate
+   WHERE l.target_kind = 'TENANT' AND l.directive_name = 'service' AND l.owner = 'service'
+),
+-- An argument or input field written @tenant, under the @service call of the field it is read by.
+directive (graph_name, coordinate, call_coordinate, call) AS (
+  SELECT o.graph_name, o.coordinate, c.coordinate, c.call
+    FROM graphql_directive_application da
+    JOIN graphitron_occurrence o
+      ON o.graph_name = da.graph_name AND o.element_coordinate = da.coordinate
+     AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+    JOIN graphitron_occurrence_call c
+      ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE'
+   WHERE da.directive_name = 'tenant'
+),
+-- A call the two forms name different values for: neither names its tenant, and the defect says so.
+named_twice (graph_name, call_coordinate, call) AS (
+  SELECT DISTINCT a.graph_name, a.call_coordinate, a.call
+    FROM argmapping a
+    JOIN directive d
+      ON d.graph_name = a.graph_name AND d.call_coordinate = a.call_coordinate AND d.call = a.call
+     AND d.coordinate <> a.coordinate
+)
+SELECT a.graph_name, a.coordinate, a.call_coordinate, a.call, 'ARGMAPPING', a.key_position
+  FROM argmapping a
+ WHERE NOT EXISTS (SELECT 1 FROM named_twice t
+                    WHERE t.graph_name = a.graph_name AND t.call_coordinate = a.call_coordinate
+                      AND t.call = a.call)
+UNION ALL
+SELECT d.graph_name, d.coordinate, d.call_coordinate, d.call, 'DIRECTIVE', CAST(NULL AS INT)
+  FROM directive d
+ WHERE NOT EXISTS (SELECT 1 FROM named_twice t
+                    WHERE t.graph_name = d.graph_name AND t.call_coordinate = d.call_coordinate
+                      AND t.call = d.call)
+   AND NOT EXISTS (SELECT 1 FROM argmapping a
+                    WHERE a.graph_name = d.graph_name AND a.coordinate = d.coordinate
+                      AND a.call_coordinate = d.call_coordinate AND a.call = d.call);
+COMMENT ON VIEW graphitron_occurrence_binding_tenant_rule IS 'One row the tenant binding rule computes, in the shape graphitron_occurrence_binding_tenant stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_binding_tenant, which are the names every reader spells.';
+
+CREATE TABLE graphitron_occurrence_tenant_slot (
+  graph_name      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  slot            VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  key_position    INT,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, call_coordinate, call, slot),
+  -- What each subtype references, so a subtype row can only hang under a slot of its own kind.
+  UNIQUE (graph_name, call_coordinate, call, slot, kind),
+  FOREIGN KEY (graph_name, call_coordinate, call)
+    REFERENCES graphitron_occurrence_call (graph_name, coordinate, call) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (kind IN ('AUTHORED', 'RECORD_COLUMN', 'NODE_ID_KEY'))
+);
+COMMENT ON TABLE graphitron_occurrence_tenant_slot IS 'One value a call''s tenant is read from: one row per call and value, an author''s $tenant or @tenant, a jOOQ record''s field on the tenant column, or a node id whose key holds it. For example Mutation.rateFilms, whose input is built into a film_rating record carrying film_id, the tenant column, reads its tenant from Mutation.rateFilms(input.filmId:).';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.call_coordinate IS 'the occurrence making the call';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.call IS 'which of its calls, as graphitron_occurrence_call spells it';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.slot IS 'the value spelled from its occurrence and how it is read, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.kind IS 'where the value comes from: AUTHORED, an author''s $tenant or @tenant; RECORD_COLUMN, an input field a jOOQ record binds to the tenant column; NODE_ID_KEY, a node id whose key holds the tenant column. Each has a subtype naming what it rests on';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.coordinate IS 'the argument or input-field occurrence the value is read from; whether it is always there is graphitron_occurrence_optional''s and graphitron_occurrence_list_element''s to say';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.key_position IS 'where the value is a node id, the position of the tenant column in its key; NULL where the value is the tenant';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_tenant_slot_authored (
+  graph_name      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  slot            VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  bound           VARCHAR GENERATED ALWAYS AS (call_coordinate || ' ' || call || ' tenant') NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, call_coordinate, call, slot),
+  FOREIGN KEY (graph_name, call_coordinate, call, slot, kind)
+    REFERENCES graphitron_occurrence_tenant_slot (graph_name, call_coordinate, call, slot, kind)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_tenant (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (kind = 'AUTHORED')
+);
+COMMENT ON TABLE graphitron_occurrence_tenant_slot_authored IS 'A tenant slot an author wrote: one row per slot resting on a tenant binding. For example the slot Mutation.rate(input.org:) of Mutation.rate''s producer call rests on the $tenant pair binding it.';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.call_coordinate IS 'the slot''s call occurrence, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.call IS 'the slot''s call, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.slot IS 'the slot, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.kind IS 'AUTHORED, pinned so the foreign key holds it to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.coordinate IS 'the bound occurrence; with bound, the tenant binding the slot rests on';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.bound IS 'the binding''s bound, spelled from the call as graphitron_occurrence_binding_tenant spells it';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_authored.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_tenant_slot_record_column (
+  graph_name      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  slot            VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  bound           VARCHAR   NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, call_coordinate, call, slot),
+  FOREIGN KEY (graph_name, call_coordinate, call, slot, kind)
+    REFERENCES graphitron_occurrence_tenant_slot (graph_name, call_coordinate, call, slot, kind)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_column (graph_name, coordinate, bound) ON DELETE CASCADE,
+  CHECK (kind = 'RECORD_COLUMN')
+);
+COMMENT ON TABLE graphitron_occurrence_tenant_slot_record_column IS 'A tenant slot a jOOQ record carries: one row per input field the call''s built record binds to the tenant column. For example Mutation.rateFilms(input.filmId:), bound to film_rating.film_id where film_id is the tenant column.';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.call_coordinate IS 'the slot''s call occurrence, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.call IS 'the slot''s call, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.slot IS 'the slot, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.kind IS 'RECORD_COLUMN, pinned so the foreign key holds it to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.coordinate IS 'the input-field occurrence; with bound, the column binding the slot rests on';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.bound IS 'the record''s table, as graphitron_occurrence_column spells the bound';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_record_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_tenant_slot_node_id_key (
+  graph_name      VARCHAR   NOT NULL,
+  call_coordinate VARCHAR   NOT NULL,
+  call            VARCHAR   NOT NULL,
+  slot            VARCHAR   NOT NULL,
+  kind            VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  bound           VARCHAR   NOT NULL,
+  position        INT       NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, call_coordinate, call, slot),
+  FOREIGN KEY (graph_name, call_coordinate, call, slot, kind)
+    REFERENCES graphitron_occurrence_tenant_slot (graph_name, call_coordinate, call, slot, kind)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, coordinate, bound, position)
+    REFERENCES graphitron_occurrence_node_id (graph_name, coordinate, bound, position) ON DELETE CASCADE,
+  CHECK (kind = 'NODE_ID_KEY')
+);
+COMMENT ON TABLE graphitron_occurrence_tenant_slot_node_id_key IS 'A tenant slot a node id carries: one row per node id under the call whose key holds the tenant column, at that key position. For example Mutation.rateFilmsAsRecords(input.film:), a Film id whose key is film_id, the tenant column.';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.call_coordinate IS 'the slot''s call occurrence, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.call IS 'the slot''s call, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.slot IS 'the slot, as on the supertype';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.kind IS 'NODE_ID_KEY, pinned so the foreign key holds it to a slot of that kind';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.coordinate IS 'the node id occurrence; with bound and position, the key column the slot rests on';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.bound IS 'the node''s table, as graphitron_occurrence_node_id spells the bound';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.position IS 'the tenant column''s position in the node''s key';
+COMMENT ON COLUMN graphitron_occurrence_tenant_slot_node_id_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_tenant_slot_authored_rule
+  (graph_name, call_coordinate, call, slot, kind, coordinate, key_position) AS
+SELECT b.graph_name, b.call_coordinate, b.call, b.coordinate || ' authored', 'AUTHORED', b.coordinate,
+       b.key_position
+  FROM graphitron_occurrence_binding_tenant b;
+COMMENT ON VIEW graphitron_occurrence_tenant_slot_authored_rule IS 'One row the authored tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.';
+
+CREATE VIEW graphitron_occurrence_tenant_slot_record_column_rule
+  (graph_name, call_coordinate, call, slot, kind, coordinate, key_position, bound) AS
+-- An input field of an input object built into a jOOQ record, bound to the tenant column of the
+-- record's table, under the @service call of the field it is read by.
+SELECT DISTINCT oc.graph_name, c.coordinate, c.call, oc.coordinate || ' column', 'RECORD_COLUMN',
+       oc.coordinate, CAST(NULL AS INT), oc.bound
+  FROM graphitron_occurrence_column oc
+  JOIN graphitron_tenant_column tc
+    ON tc.graph_name = oc.graph_name AND tc.source_name = oc.table_source_name
+   AND tc.table_schema = oc.table_schema AND tc.table_name = oc.table_name AND tc.column_name = oc.column_name
+  JOIN graphitron_occurrence o
+    ON o.graph_name = oc.graph_name AND o.coordinate = oc.coordinate AND o.kind = 'INPUT_FIELD'
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate
+   AND bc.record_source_name = oc.table_source_name AND bc.record_schema = oc.table_schema
+   AND bc.record_table = oc.table_name
+  JOIN graphitron_occurrence_call c
+    ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_tenant_slot_record_column_rule IS 'One row the record column tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.';
+
+CREATE VIEW graphitron_occurrence_tenant_slot_node_id_key_rule
+  (graph_name, call_coordinate, call, slot, kind, coordinate, key_position, bound) AS
+-- A node id argument or input field whose node's key holds the tenant column, under the @service
+-- call of the field it is read by.
+SELECT n.graph_name, c.coordinate, c.call, n.coordinate || ' ' || n.bound || ' ' || n.position,
+       'NODE_ID_KEY', n.coordinate, n.position, n.bound
+  FROM graphitron_occurrence_node_id n
+  JOIN graphitron_tenant_column tc
+    ON tc.graph_name = n.graph_name AND tc.source_name = n.table_source_name
+   AND tc.table_schema = n.table_schema AND tc.table_name = n.table_name AND tc.column_name = n.column_name
+  JOIN graphitron_occurrence o
+    ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate
+   AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+  JOIN graphitron_occurrence_call c
+    ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE';
+COMMENT ON VIEW graphitron_occurrence_tenant_slot_node_id_key_rule IS 'One row the node id key tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.';
+
+-- The occurrence-tenants stage's own defects, off the pairs, the directive applications and the
+-- bindings it has just written.
+CREATE VIEW graphitron_occurrence_tenant_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A call a $tenant pair and a @tenant name different values for, at the pair. The detail is the
+-- marked argument or input field.
+WITH argmapping (graph_name, coordinate, call_coordinate, call, source_name, source_line, source_column) AS (
+  SELECT l.graph_name, l.landing_coordinate, l.call_coordinate, c.call, pr.source_name, pr.source_line,
+         pr.source_column
+    FROM graphitron_argmapping_landing l
+    JOIN graphitron_argmapping_pair pr
+      ON pr.graph_name = l.graph_name AND pr.coordinate = l.coordinate
+     AND pr.directive_name = l.directive_name AND pr.ordinal = l.ordinal AND pr.owner = l.owner
+     AND pr.target_kind = l.target_kind AND pr.target_name = l.target_name
+    JOIN graphitron_occurrence_call c
+      ON c.graph_name = l.graph_name AND c.coordinate = l.call_coordinate AND c.call_kind = 'SERVICE'
+   WHERE l.target_kind = 'TENANT' AND l.directive_name = 'service' AND l.owner = 'service'
+),
+directive (graph_name, coordinate, element_coordinate, call_coordinate, call, source_name, source_line,
+           source_column) AS (
+  SELECT o.graph_name, o.coordinate, o.element_coordinate, c.coordinate, c.call, da.source_name,
+         da.source_line, da.source_column
+    FROM graphql_directive_application da
+    JOIN graphitron_occurrence o
+      ON o.graph_name = da.graph_name AND o.element_coordinate = da.coordinate
+     AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+    JOIN graphitron_occurrence_call c
+      ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE'
+   WHERE da.directive_name = 'tenant'
+)
+SELECT a.graph_name, a.source_name, a.source_line, a.source_column, 'TENANT_NAMED_TWICE',
+       MIN(d.element_coordinate), 'occurrence-tenants'
+  FROM argmapping a
+  JOIN directive d
+    ON d.graph_name = a.graph_name AND d.call_coordinate = a.call_coordinate AND d.call = a.call
+   AND d.coordinate <> a.coordinate
+ GROUP BY a.graph_name, a.source_name, a.source_line, a.source_column
+UNION ALL
+-- A value read as the tenant whose scalar arrives as another class than the tenant column's, at what
+-- the author wrote. The detail names both classes.
+SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_VALUE_TYPE_DISAGREES',
+       MIN(x.value_class || ' where the tenant column is ' || x.tenant_class), 'occurrence-tenants'
+  FROM (SELECT b.graph_name, COALESCE(a.source_name, d.source_name) AS source_name,
+               COALESCE(a.source_line, d.source_line) AS source_line,
+               COALESCE(a.source_column, d.source_column) AS source_column,
+               sc.java_class AS value_class,
+               k.binding_type AS tenant_class
+          FROM graphitron_occurrence_binding_tenant b
+          JOIN graphitron_occurrence o ON o.graph_name = b.graph_name AND o.coordinate = b.coordinate
+          LEFT JOIN graphitron_argument ga
+            ON o.kind = 'FIELD_ARGUMENT' AND ga.graph_name = o.graph_name AND ga.coordinate = o.element_coordinate
+          LEFT JOIN graphitron_field gf
+            ON o.kind = 'INPUT_FIELD' AND gf.graph_name = o.graph_name AND gf.coordinate = o.element_coordinate
+          LEFT JOIN graphitron_scalar_class sc
+            ON sc.graph_name = o.graph_name AND sc.type_name = COALESCE(ga.named_type, gf.named_type)
+          -- The tenant key's type, off the graph's tenant column; where those disagree the
+          -- configuration is at fault, which is not this rule's to say.
+          JOIN (SELECT tc.graph_name, MIN(sc2.binding_type) AS binding_type
+                  FROM graphitron_tenant_column tc
+                  JOIN sql_column sc2
+                    ON sc2.source_name = tc.source_name AND sc2.table_schema = tc.table_schema
+                   AND sc2.table_name = tc.table_name AND sc2.column_name = tc.column_name
+                 GROUP BY tc.graph_name
+                HAVING COUNT(DISTINCT sc2.binding_type) = 1) k
+            ON k.graph_name = b.graph_name
+          LEFT JOIN argmapping a
+            ON b.origin = 'ARGMAPPING' AND a.graph_name = b.graph_name AND a.coordinate = b.coordinate
+           AND a.call_coordinate = b.call_coordinate AND a.call = b.call
+          LEFT JOIN directive d
+            ON b.origin = 'DIRECTIVE' AND d.graph_name = b.graph_name AND d.coordinate = b.coordinate
+           AND d.call_coordinate = b.call_coordinate AND d.call = b.call
+         WHERE b.key_position IS NULL) x
+-- A scalar whose class is unknown is not judged here; its own rule says so.
+ WHERE x.value_class <> x.tenant_class AND x.source_name IS NOT NULL
+ GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column;
+COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
+
 CREATE VIEW graphitron_occurrence_build_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 WITH
@@ -21324,11 +21702,12 @@ INSERT INTO meta_stage VALUES
   ('occurrence-depths', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
   ('occurrence-bindings', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
   ('occurrence-builds', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-depth-defects', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 41, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 42, 'no.sikt.graphitron.model.derive.Outboxes'),
-  ('entry-defects', 'graphitron', 43, 'no.sikt.graphitron.model.derive.EntryDefects');
+  ('occurrence-tenants', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
+  ('occurrence-depth-defects', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 42, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 43, 'no.sikt.graphitron.model.derive.Outboxes'),
+  ('entry-defects', 'graphitron', 44, 'no.sikt.graphitron.model.derive.EntryDefects');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
@@ -21371,6 +21750,7 @@ INSERT INTO meta_stage_write VALUES
   ('vouchers', 'graphitron_voucher_claim'),
   ('vouchers', 'graphitron_accept_claim'),
   ('vouchers', 'graphitron_entry_defect'),
+  ('argmapping-pairs', 'graphitron_entry_defect'),
   ('federation-link', 'graphitron_federation_link'),
   ('macro-expansion', 'graphitron_argument'),
   ('macro-expansion', 'graphitron_carrier_directive'),
@@ -21432,8 +21812,16 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_result_table'),
   ('fetchers', 'graphitron_service_holder'),
   ('occurrence-lists', 'graphitron_occurrence_list_element'),
+  ('occurrence-lists', 'graphitron_occurrence_optional'),
   ('occurrence-overrides', 'graphitron_occurrence_overridden'),
   ('occurrence-depths', 'graphitron_entry_defect'),
+  ('occurrence-tenants', 'graphitron_entry_defect'),
+  ('occurrence-tenants', 'graphitron_occurrence_binding'),
+  ('occurrence-tenants', 'graphitron_occurrence_binding_tenant'),
+  ('occurrence-tenants', 'graphitron_occurrence_tenant_slot'),
+  ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_authored'),
+  ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_node_id_key'),
+  ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_record_column'),
   ('occurrence-builds', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_entry_defect_member'),
   ('occurrence-builds', 'graphitron_occurrence_binding'),
@@ -21980,6 +22368,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-overridden',
    'one occurrence at or under a @condition written with override: true, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('occurrence-optional',
+   'one argument or input-field occurrence a call may be given no value for, in one graph',
+   'graph_name, coordinate', 'sdl'),
   ('occurrence-list-element',
    'one input-field occurrence and one list above it that it is read once per element of, in one graph',
    'graph_name, coordinate, list_coordinate', 'sdl'),
@@ -22016,6 +22407,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence-participant',
    'one type the rows of one polymorphic occurrence may be, in one graph',
    'graph_name, coordinate, participant_type', 'sdl'),
+  ('graph-occurrence-tenant-slot',
+   'one value one call''s tenant is read from, in one graph',
+   'graph_name, call_coordinate, call, slot', 'sdl'),
   ('graph-occurrence-call',
    'one call one occurrence makes, in one graph',
    'graph_name, coordinate, call', 'sdl'),
@@ -22428,6 +22822,12 @@ INSERT INTO graphitron_defect_type VALUES
    'A @condition names a method whose overloads differ in more than their jOOQ table parameters, on the static modifier, the return type, the parameter count, the throws clause or a parameter that is a table in some and not others or differs in name or type, so the name stands for more than one call.'),
   ('CONTEXT_KEY_DUPLICATE', 'error', 'GRAPHITRON', 'GRAPHITRON_CONTEXT_KEY_DUPLICATE',
    'A call is given a context key for one parameter twice, by two contextArguments elements or by an element and a $context pair, so nothing says which fills it: write it once.'),
+  ('TENANT_NAMED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_NAMED_TWICE',
+   'A call''s tenant is named twice, by a $tenant pair and by @tenant on another argument or input field, so nothing says which it runs on: name it once.'),
+  ('TENANT_VALUE_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_VALUE_TYPE_DISAGREES',
+   'A value named as a call''s tenant arrives as another class than the tenant column''s, and a tenant is read as it was sent, with no conversion: declare it a scalar arriving as the column''s class, String or ID for a String key, Int for an Integer key.'),
+  ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
+   'An argMapping names $tenant where nothing routes by it yet: $tenant names the tenant of a @service''s call, so write it in the @service''s argMapping.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
    'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.'),
   ('DISCRIMINATE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_WITHOUT_TABLE',
@@ -23663,6 +24063,50 @@ INSERT INTO meta_relation VALUES
    'One row the minted-keys stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an @issue in a graph with no federation @link gives one VOUCHER_WITHOUT_FEDERATION_LINK row at the @issue.',
    'Owned by the stage that already reads the federation link for the keys it mints, so "this graph is federated" is read in one place for the key and the refusal alike.'),
+  ('graphitron_argmapping_pair_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the argMapping pairs stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example $tenant written in a @condition''s argMapping gives one TENANT_SITE_UNSUPPORTED row at the mapping, its detail condition.',
+   'The pairs stage''s own defects, decided from the entries and the sites, both written before it, so a sigil a site does not read is refused where the pairs are first named rather than at the last stage.'),
+  ('graphitron_occurrence_binding_tenant', 'graph-occurrence-binding', 'graphitron',
+   'The call an argument or input field names the tenant of, as an author wrote it: one row per value occurrence and call.',
+   'For example argMapping: "$tenant: input.org" on Mutation.rate binds Mutation.rate(input.org:) to the tenant of Mutation.rate''s producer call, and input.org written @tenant binds it the same way.',
+   'What an author wrote, kept apart from what is derived from it: $tenant and @tenant are one fact under two spellings, the pair winning where both name one value, and a call they name different values for has neither row, its defect saying why. Stored because the authored tenant slot rests on it and the type defect reads it. Written by the occurrence-tenants stage from graphitron_occurrence_binding_tenant_rule, marked and swept.'),
+  ('graphitron_occurrence_binding_tenant_rule', 'graph-occurrence-binding', 'graphitron',
+   'One row the tenant binding rule computes, in the shape graphitron_occurrence_binding_tenant stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-tenants stage writes this view''s rows for one graph into graphitron_occurrence_binding and graphitron_occurrence_binding_tenant, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_occurrence_tenant_slot', 'graph-occurrence-tenant-slot', 'graphitron',
+   'One value a call''s tenant is read from: one row per call and value, an author''s $tenant or @tenant, a jOOQ record''s field on the tenant column, or a node id whose key holds it.',
+   'For example Mutation.rateFilms, whose input is built into a film_rating record carrying film_id, the tenant column, reads its tenant from Mutation.rateFilms(input.filmId:).',
+   'Every way a call names its tenant, as one supertype a call''s route and its emitter read, each subtype resting on the fact it is derived from rather than carrying a tag saying where it came from. Whether a value is always there is the value occurrence''s chain, joined rather than copied.'),
+  ('graphitron_occurrence_tenant_slot_authored', 'graph-occurrence-tenant-slot', 'graphitron',
+   'A tenant slot an author wrote: one row per slot resting on a tenant binding.',
+   'For example the slot Mutation.rate(input.org:) of Mutation.rate''s producer call rests on the $tenant pair binding it.',
+   'The supertype''s authored arm, with only the reference to the binding it rests on.'),
+  ('graphitron_occurrence_tenant_slot_record_column', 'graph-occurrence-tenant-slot', 'graphitron',
+   'A tenant slot a jOOQ record carries: one row per input field the call''s built record binds to the tenant column.',
+   'For example Mutation.rateFilms(input.filmId:), bound to film_rating.film_id where film_id is the tenant column.',
+   'The supertype''s record arm, with the reference to the column binding it rests on.'),
+  ('graphitron_occurrence_tenant_slot_node_id_key', 'graph-occurrence-tenant-slot', 'graphitron',
+   'A tenant slot a node id carries: one row per node id under the call whose key holds the tenant column, at that key position.',
+   'For example Mutation.rateFilmsAsRecords(input.film:), a Film id whose key is film_id, the tenant column.',
+   'The supertype''s node id arm, with the reference to the key column it rests on.'),
+  ('graphitron_occurrence_tenant_slot_authored_rule', 'graph-occurrence-tenant-slot', 'graphitron',
+   'One row the authored tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_occurrence_tenant_slot_record_column_rule', 'graph-occurrence-tenant-slot', 'graphitron',
+   'One row the record column tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_occurrence_tenant_slot_node_id_key_rule', 'graph-occurrence-tenant-slot', 'graphitron',
+   'One row the node id key tenant slot rule computes, in the shape graphitron_occurrence_tenant_slot and its subtype store: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-tenants stage writes this view''s rows for one graph into both, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
+  ('graphitron_occurrence_tenant_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.',
+   'The stage''s own defects, decided from the pairs, the directive applications and the bindings it has just written, so each reads only what is upstream of it.'),
   ('graphitron_voucher_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the voucher stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example an @issue whose claims name a field the type does not declare gives one VOUCHER_CLAIM_NOT_ABSORBED row at the @issue.',
@@ -24261,6 +24705,14 @@ INSERT INTO meta_relation VALUES
    'One row the overridden rule computes, in the shape graphitron_occurrence_overridden stores: the rule itself, evaluated a depth at a time rather than read off disk.',
    'For example the occurrence-overrides stage inserts this view''s rows at one depth into graphitron_occurrence_overridden, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_occurrence_optional', 'occurrence-optional', 'graphitron',
+   'An argument or input-field occurrence a call may be given no value for: one row per such occurrence, where it is nullable, where an argument or input field above it is, or where it is read per element of a list whose elements are.',
+   'For example Query.films(filter.title:) under a nullable filter draws a row, and Query.film(id:) declared ID! draws none.',
+   'Whether a value is always there is a fact of the occurrence''s chain, settled where the chain is, so a reader joins a row rather than climbing the chain: a tenant slot is guaranteed only where its value occurrence has no row here and is read per element of no list. Row presence is the fact, on graphitron_occurrence_overridden''s terms.'),
+  ('graphitron_occurrence_optional_rule', 'occurrence-optional', 'graphitron',
+   'One row the optional occurrence rule computes, in the shape graphitron_occurrence_optional stores: the rule itself, evaluated a depth at a time rather than read off disk.',
+   'For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_optional, which is the name every reader spells.',
+   'An occurrence a call may leave out is one declared nullable, one under such an argument or input field, the depth above''s stored rows, or one read per element of a list whose elements are nullable, so each arm is one join.'),
   ('graphitron_occurrence_list_element', 'occurrence-list-element', 'graphitron',
    'An input field read once per element of a list above it: one row per input-field occurrence and each argument or input-field occurrence above it whose type is a list.',
    'For example Query.filmActorsByPairs(filter.pairs.actorId:) is read once per element of Query.filmActorsByPairs(filter.pairs:), and Query.filmsByFilter(filter.title:) draws no row.',

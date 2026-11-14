@@ -304,7 +304,19 @@ public final class ArgMappingSigil {
     }
 
     /** One entry of an argMapping as written: the parameter it names and what it binds it to. */
-    public record Entry(String parameter, String boundTo) {}
+    public record Entry(String parameter, String boundTo) {
+
+        /** The entry names the call's tenant rather than a parameter: its left side is {@code $tenant}. */
+        public boolean tenant() {
+            return TENANT_TARGET.equals(parameter);
+        }
+    }
+
+    /**
+     * The left-side sigil naming the value whose tenant a call runs on. It fills no parameter: the
+     * pair's right side is a path like any other, and what it lands on routes the call.
+     */
+    public static final String TENANT_TARGET = "$tenant";
 
     /**
      * Every entry of {@code raw} in the order it was written, judging nothing about the site.
@@ -329,8 +341,10 @@ public final class ArgMappingSigil {
             String piece = pieces[index];
             int colon = piece.indexOf(':');
             String rhs = colon < 0 ? "" : piece.substring(colon + 1).strip();
-            if (colon >= 0 && rhs.startsWith("$")) {
-                lifted.put(index, new Entry(piece.substring(0, colon).strip(), rhs));
+            // A sigil on either side is not a GraphQL name, so the entry is lifted as written.
+            String lhs = colon < 0 ? "" : piece.substring(0, colon).strip();
+            if (colon >= 0 && (rhs.startsWith("$") || lhs.startsWith("$"))) {
+                lifted.put(index, new Entry(lhs, rhs));
                 continue;
             }
             if (!residual.isEmpty()) {
