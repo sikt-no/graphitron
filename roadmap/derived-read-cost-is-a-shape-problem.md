@@ -2794,7 +2794,11 @@ by a join path, binding into the producer's query, or from a key row, producing.
 * A child `@service`: called with its parents' keys.
 * `@splitQuery`: the author starts from the parent's key a child that could have been joined; this
   is how `@splitQuery` changes the source and makes a producer of a field that would only bind. `@tenantFanOut` does the
-  same and is forced in effect, a fanned child running once per tenant.
+  same and is forced in effect, a fanned child running once per tenant. A split changes the source
+  and never the connection: the child runs on the key its producer hands down.
+* A child whose followed foreign key lands on the tenant column under a parent not on that tenant:
+  it fans out by the tenant each parent row names, written `@splitQuery` or not, because the tenant
+  facts decide the connection (Alf, 2026-11-14).
 * Shapes that start a producer although a join path could in theory continue the query, because the generator
   builds no inline form for them: a list or connection of a single-table discriminated interface, a
   list or connection of a multi-table interface or union with a table-bound participant, and a
