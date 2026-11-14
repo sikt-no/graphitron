@@ -88,8 +88,6 @@ The walk's read path is gone
 │   │   ├── An inline list's ordering is resolved at its occurrence
 │   │   └── An inline list states how it is narrowed
 │   └── A single child's null contract is stated
-│       └── An `@externalField` binds an expression at its occurrence, claimed by F
-│           └── An `@externalField` under a written path binds at the path's landing
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
     │   └── A producer's fetcher parts are emitted from the store
@@ -740,13 +738,9 @@ static method needs no holder.
     alike, and a nesting field selected twice merges, the consistent-argument check failing where the
     arguments beneath differ. The unit and the readers keep today's names until the readers move,
     so this lands with them, backwards compatible until then (Alf, 2026-11-13).
-  * **An `@externalField` binds an expression at its occurrence, claimed by F** `blocked`, on
-    "An `@externalField` under a written path binds at the path's landing". A subtype of
-    `graphitron_occurrence_binding` names the method `graphitron_code_reference` resolves and the
-    parameter its table fills, so the `EXPRESSION` kind has a writer and the arm a reader.
-    * **An `@externalField` under a written path binds at the path's landing** `open`. The walk
-      takes `@externalField` beside `@reference`, so the store binds the expression at the table
-      the path lands on rather than refusing it; it flips with `$project` (A, 2026-11-14).
+  * **An `@externalField` under a written path binds at the path's landing** `open`, off the
+    critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
+    walk does, and the expression binds at the table the path lands on instead.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
     tables a parameter fits is `code_method_parameter_table`, keyed by the method's classpath entry
     and the table's catalog: its generated class, or a public jOOQ table type in `code_jooq_class`
@@ -822,7 +816,7 @@ static method needs no holder.
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
     so the flip states it as a deferral, a stored defect of basis `UNSUPPORTED`, until this lands
     (Alf, 2026-11-13).
-  * **A single child's null contract is stated** `blocked`, on the expression and condition nodes.
+  * **A single child's null contract is stated** `blocked`, on the condition nodes.
     Nothing states when a nesting field or a single inline child is null, which the `__p_` probe
     decides today as a disjunction over its paths and expressions; it is modelled once those land.
   * **An input object is read once, by a reader of its own** `open`. One generated typed record per

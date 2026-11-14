@@ -191,7 +191,8 @@ and place it binds, keyed by the place and stating its kind.
 | A member of the class its parent input object is built into, which its value fills.
 
 | `EXPRESSION`
-| A value an `@externalField` method computes in its producer's query.
+| A value an `@externalField` method computes in its producer's query, bound at the table its
+values are rows of; the method is a call on that table, the table bound to its one parameter.
 
 | `RESULT_EXPRESSION`
 | A value computed over what its producer produced.
@@ -251,9 +252,6 @@ nowhere to go and is a defect. A child `@routine` is never a producer
 but a join, at least for now: the field's producer is the lift that starts a query from the
 parent's key, as for `@splitQuery`, and the routine is a step on that query's path, first or after a
 table, its arguments stated on the step. Only a root `@routine` is a call.
-
-The store does not state every binding yet: nothing writes an `@externalField`'s `EXPRESSION`
-binding, so such an occurrence has no row of that kind.
 
 '''
 
