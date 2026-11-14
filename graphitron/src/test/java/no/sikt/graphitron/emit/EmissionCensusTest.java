@@ -229,7 +229,6 @@ class EmissionCensusTest {
             "Store.customersByFirstName customer", "Store.customersByFirstNameSplit customer",
             "Store.customersByNodeId customer", "Store.customersByNodeIdSplit customer",
             "Store.customersSeenByUser customer");
-        assertThat(census.get("CONSUMED")).as("fields whose call or write takes their arguments").hasSize(45);
         // Each line goes as its shape is emitted from the store; a field moving between lines is a
         // change to look at, not to re-pin.
         assertThat(census)
@@ -253,7 +252,7 @@ class EmissionCensusTest {
                 "Query.languageByKey language", "Query.languageBySingleKey language",
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
-            .containsOnlyKeys("AUTHORED_NODE_ID", "CONSUMED", EMITTED, "NODE_ID_PARTICIPANT", "NOTHING");
+            .containsOnlyKeys("AUTHORED_NODE_ID", EMITTED, "NODE_ID_PARTICIPANT", "NOTHING");
     }
 
     /**

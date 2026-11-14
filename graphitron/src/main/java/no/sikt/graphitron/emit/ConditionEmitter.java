@@ -78,13 +78,10 @@ public final class ConditionEmitter {
     private static final Set<String> TAKEN = Set.of("table", "args", "conditions", "env", "dsl");
     private static final Pattern READ_LOCAL = Pattern.compile("[mles]\\d+");
 
-    /** The producers whose arguments a condition filters: a read, its lookup and its count. */
-    private static final Set<String> FILTERED = Set.of("SELECT", "LOOKUP", "COUNT");
-
     /** Why an occurrence's condition is not emitted here yet. */
     public enum Reason {
-        /** The field runs a call or a write, which takes its arguments rather than filtering by them. */
-        CONSUMED,
+        /** The field produces facets, whose condition is built term by term with each facet's. */
+        FACETS,
         /** A {@code @condition} takes an input object as a bean, built from the map before the call. */
         AUTHORED_BEAN,
         /**
@@ -141,8 +138,8 @@ public final class ConditionEmitter {
      */
     public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
                               FillEmitter.Runtime runtime, Map<BuildQuery.Root, BuildQuery.Result> builds) {
-        if (row.producerKind() != null && !FILTERED.contains(row.producerKind())) {
-            return new Result.NotYet(Reason.CONSUMED, row.coordinate());
+        if ("FACETS".equals(row.producerKind())) {
+            return new Result.NotYet(Reason.FACETS, row.coordinate());
         }
         var terms = row.terms().stream().filter(term -> !term.lookupKey()).toList();
         if (terms.isEmpty() && row.calls().isEmpty()) {

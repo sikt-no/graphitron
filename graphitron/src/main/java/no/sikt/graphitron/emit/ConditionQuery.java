@@ -15,7 +15,10 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BUILT_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
@@ -42,6 +45,7 @@ import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.notExists;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.countDistinct;
@@ -239,6 +243,10 @@ public final class ConditionQuery {
         // itself, or every input field under it.
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
         var le = GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
+        var bp = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER.as("bp");
+        var bc = GRAPHITRON_OCCURRENCE_BUILT_CLASS.as("bc");
+        var bcp = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER.as("bcp");
+        var sp = GRAPHITRON_JOIN_PATH_STEP_PARAMETER.as("sp");
         var listOccurrence = GRAPHITRON_OCCURRENCE.as("lo2");
         var argumentOccurrence = GRAPHITRON_OCCURRENCE.as("la2");
         var lists = multiset(select(le.LIST_COORDINATE, listOccurrence.DEPTH.minus(argumentOccurrence.DEPTH))
@@ -278,7 +286,19 @@ public final class ConditionQuery {
                 .where(o.GRAPH_NAME.eq(rbGraph), o.FIELD_COORDINATE.eq(rbCoordinate),
                     o.KIND.in("FIELD_ARGUMENT", "INPUT_FIELD"),
                     st.TABLE_SOURCE_NAME.eq(rbSource), st.TABLE_SCHEMA.eq(rbSchema),
-                    st.TABLE_NAME.eq(rbTable), oc.COORDINATE.isNotNull().or(nodeId))
+                    st.TABLE_NAME.eq(rbTable), oc.COORDINATE.isNotNull().or(nodeId),
+                    // What the field's own call binds, itself or as part of the object its parent is
+                    // built into at the parameter, or a routine its path steps through reads, it takes
+                    // rather than filters by: an argument named like a column is no filter for it.
+                    notExists(selectOne().from(bp)
+                        .where(bp.GRAPH_NAME.eq(o.GRAPH_NAME), bp.COORDINATE.eq(o.COORDINATE),
+                            bp.CALL_COORDINATE.eq(rbCoordinate), bp.CALL.eq(inline("producer")))),
+                    notExists(selectOne().from(bc).join(bcp).on(bcp.GRAPH_NAME.eq(bc.GRAPH_NAME),
+                            bcp.COORDINATE.eq(bc.BUILT_AT), bcp.CALL_COORDINATE.eq(rbCoordinate),
+                            bcp.CALL.eq(inline("producer")))
+                        .where(bc.GRAPH_NAME.eq(o.GRAPH_NAME), bc.COORDINATE.eq(o.PARENT_COORDINATE))),
+                    notExists(selectOne().from(sp)
+                        .where(sp.GRAPH_NAME.eq(o.GRAPH_NAME), sp.ARGUMENT_COORDINATE.eq(o.COORDINATE))))
                 .orderBy(o.COORDINATE));
 
         // The calls: the field's own and its arguments' and input fields' applied to the row's table,
