@@ -9,7 +9,7 @@ interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
 
 input FilmIn @table(name: "film") {
-  filmId: Int @field(name: "film_id")
+  filmId: Int! @field(name: "film_id")
   title: String
 }
 
@@ -20,7 +20,7 @@ type Query {
   filmMarked(id: Int! @tenant): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById"})
-  filmByRecord(in: FilmIn): String
+  filmByRecord(in: FilmIn!): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService",
       method: "modifyFilmRecord"})
   filmByNode(in: ID! @nodeId(typeName: "Film")): String
@@ -44,11 +44,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_tenant_slot", rows:
   Query.filmByNode,  NODE_ID_KEY,   Query.filmByNode(in:),         0
   """)
 
-# The record's value is nullable, so a call may name no tenant through it; the others are required.
+# Every tenant value here is required; the record's title, which names no tenant, may be left out.
 extend schema @expectEquals(relation: "graphitron_occurrence_optional",
     where: "coordinate LIKE 'Query.filmBy%'", rows: """
   coordinate
-  Query.filmByRecord(in:)
-  Query.filmByRecord(in.filmId:)
   Query.filmByRecord(in.title:)
   """)

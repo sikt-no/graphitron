@@ -91,8 +91,9 @@ The walk's read path is gone
 │   └── A single child's null contract is stated
 │       └── An `@externalField` binds an expression at its occurrence
 └── The walk's service path is gone
-    └── The service fields are emitted from the store
-        └── A producer's fetcher parts are emitted from the store
+    ├── The service fields are emitted from the store
+    │   └── A producer's fetcher parts are emitted from the store
+    └── A child call takes the connection key its producer chain hands down
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1008,7 +1009,12 @@ static method needs no holder.
     nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
     and reading nested classes reached through another class's members closes the one hop the census
     reads today.
-* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **A child call takes the connection key its producer chain hands down** `open`, E's. In a database-per-tenant
+  graph each occurrence states whether it takes the key its producer hands down or starts its own, the
+  whole key and not a part, for every producer kind, `SELECT` included, so a child `@service` is
+  emitted from the store; sis's `Studieprogram.navnAlleSprak` is the acceptance case, and the census's
+  child exclusion goes with it.
+* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child call takes the connection key its producer chain hands down". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
 * **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.

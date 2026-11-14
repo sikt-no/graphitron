@@ -1,0 +1,40 @@
+# Which connection each root @service call runs on under the tenant column film_id. A required value
+# names the tenant, so a call cannot come without one. A list argument names it per element, and a
+# call given an empty list answers the field's own empty list without a connection. @globalData says
+# the call runs on the request's own connection.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  filmByPair(id: Int!, org: Int!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id, $tenant: org"})
+  filmsByIds(ids: [Int!]!): [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds", argMapping: "ids: ids, $tenant: ids"})
+  filmGlobal(id: Int!): Film @globalData
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
+  coordinate,       call,     outcome
+  Query.filmByPair, producer, ROUTED
+  Query.filmsByIds, producer, ROUTED
+  Query.filmGlobal, producer, REQUEST
+  """)
+
+# A routed connection's key has a tenant part, and what a call naming no tenant gets is the part's.
+extend schema @expectEquals(relation: "graphitron_occurrence_connection_part", rows: """
+  coordinate,       part,   when_empty
+  Query.filmByPair, TENANT, UNREACHABLE
+  Query.filmsByIds, TENANT, EMPTY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_producer_empty",
+    where: "coordinate LIKE 'Query.film%'", rows: """
+  coordinate,       empty
+  Query.filmsByIds, LIST
+  """)

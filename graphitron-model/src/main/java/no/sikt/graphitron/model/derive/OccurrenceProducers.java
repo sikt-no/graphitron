@@ -10,6 +10,8 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE;
@@ -111,6 +113,8 @@ public final class OccurrenceProducers {
     private static void writeResults(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT_RULE,
             graph, null, touchedAt);
+        refresh(dsl, GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY, GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY_RULE,
+            graph, null, touchedAt);
     }
 
     /**
@@ -120,7 +124,8 @@ public final class OccurrenceProducers {
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE,
                 GRAPHITRON_OCCURRENCE_PRODUCER_ROUTINE, GRAPHITRON_OCCURRENCE_PRODUCER_WRITE,
-                GRAPHITRON_OCCURRENCE_PRODUCER_RESULT, GRAPHITRON_OCCURRENCE_PRODUCER)) {
+                GRAPHITRON_OCCURRENCE_PRODUCER_EMPTY, GRAPHITRON_OCCURRENCE_PRODUCER_RESULT,
+                GRAPHITRON_OCCURRENCE_PRODUCER)) {
             dsl.deleteFrom(t)
                 .where(t.field("GRAPH_NAME", String.class).eq(graph))
                 .and(t.field("TOUCHED_AT", LocalDateTime.class).ne(touchedAt))

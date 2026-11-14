@@ -1,6 +1,7 @@
 # A call's tenant named twice, by a $tenant pair and by @tenant on another argument; a value named as
-# the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer; and
-# $tenant written where nothing routes by it yet, a @condition.
+# the tenant whose scalar arrives as another class than the tenant column's, film_id an Integer;
+# $tenant written where nothing routes by it yet, a @condition; a call handed a connection, re-reading
+# film rows and naming no tenant; and one whose only tenant value may be left out.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
@@ -13,19 +14,29 @@ type Query {
   filmMistyped(id: Int!, org: String!): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById", argMapping: "id: id, $tenant: org"})
+  filmUnrouted(id: Int!): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById"})
+  filmOptional(id: Int!, org: Int): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmById", argMapping: "id: id, $tenant: org"})
   filmsOnCondition(filmId: Int): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmIdKeyEquals", argMapping: "$tenant: filmId"}, override: true)
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
-    where: "code LIKE 'TENANT%'", rows: """
+    where: "code LIKE 'TENANT%' OR code = 'UNROUTED_SERVICE_CALL'", rows: """
   code,                        coordinate,             detail
+  UNROUTED_SERVICE_CALL,       Query.filmUnrouted,
+  UNROUTED_SERVICE_CALL,       Query.filmTwice,
+  TENANT_SLOTS_OPTIONAL_ONLY,  Query.filmOptional,
   TENANT_NAMED_TWICE,          Query.filmTwice,        Query.filmTwice(id:)
   TENANT_VALUE_TYPE_DISAGREES, Query.filmMistyped,     java.lang.String where the tenant column is java.lang.Integer
   TENANT_SITE_UNSUPPORTED,     Query.filmsOnCondition, condition
   """)
 
-# The call named twice has no binding, so nothing routes it on a guess.
+# The call named twice has no binding, so nothing routes it on a guess: it is refused as unrouted
+# beside the pair's own defect.
 extend schema @assertEmpty(relation: "graphitron_occurrence_binding_tenant",
     where: "call_coordinate = 'Query.filmTwice'")

@@ -17,6 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTITY_KEY_ENTRY_DEFECT
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_ENTRY_DEFECT_RULE;
@@ -88,6 +89,10 @@ public final class EntryDefects {
     /** The build and decode-shape defects' rule, {@link OccurrenceBuilds}. */
     public static final Rule BUILDS = new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE);
 
+    /** The route defects' rule, {@link OccurrenceRoutes}. */
+    public static final Rule ROUTES =
+        new Rule("occurrence-routes", GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE);
+
     /** The tenant binding defects' rule, {@link OccurrenceTenants}. */
     public static final Rule TENANTS =
         new Rule("occurrence-tenants", GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE);
@@ -110,7 +115,7 @@ public final class EntryDefects {
         new Rule("argmapping-pairs", GRAPHITRON_ARGMAPPING_PAIR_ENTRY_DEFECT_RULE);
 
     /** Every raising stage's rule, one per stage. */
-    public static final List<Rule> RULES = List.of(ARGMAPPING_PAIRS, VOUCHERS, MINTED_KEYS, ENTITY_KEYS, BINDINGS, BUILDS, TENANTS, DEPTHS, OUTBOX, GRAPHITRON);
+    public static final List<Rule> RULES = List.of(ARGMAPPING_PAIRS, VOUCHERS, MINTED_KEYS, ENTITY_KEYS, BINDINGS, BUILDS, TENANTS, ROUTES, DEPTHS, OUTBOX, GRAPHITRON);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

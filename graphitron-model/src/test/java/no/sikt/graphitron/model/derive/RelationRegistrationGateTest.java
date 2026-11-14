@@ -461,6 +461,12 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_outbox_routine_target", Arm.DERIVED);
         registrations.put("graphitron_outbox_target_rule", Arm.DERIVED);
         registrations.put("graphitron_tenant_column", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_empty", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_producer_empty_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_connection", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_connection_part", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_connection_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_route_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_tenant", Arm.DERIVED);
         registrations.put("graphitron_occurrence_binding_tenant_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_tenant_slot", Arm.DERIVED);
