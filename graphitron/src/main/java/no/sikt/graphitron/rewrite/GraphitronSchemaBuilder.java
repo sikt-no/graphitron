@@ -201,9 +201,20 @@ public class GraphitronSchemaBuilder {
      * from a different call than the one the build actually classified.
      */
     public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx) {
+        return buildBundle(attributed, assembled, ctx, java.util.Set.of());
+    }
+
+    /**
+     * {@link #buildBundle(AttributedRegistry, GraphQLSchema, RunContext)}, the tenant fold reading the
+     * values {@code authoredTenants} names, a {@code $tenant} pair's as the store states them, as it
+     * reads a {@code @tenant} marker.
+     */
+    public static Bundle buildBundle(AttributedRegistry attributed, GraphQLSchema assembled, RunContext ctx,
+                                     java.util.Set<String> authoredTenants) {
         var registry = attributed.registry();
         boolean federationLink = attributed.federationLink();
         var bctx = new BuildContext(assembled, new JooqCatalog(ctx.jooqPackage(), ctx.codegenLoader()), ctx);
+        bctx.authoredTenants = java.util.Set.copyOf(authoredTenants);
         recordSdlScalarDirectives(registry, bctx);
         var svc = new ServiceCatalog(bctx);
         bctx.svc = svc;
@@ -361,7 +372,7 @@ public class GraphitronSchemaBuilder {
         var tenantBindings = TenantBindingIndex.compute(
             ctx.schema, SchemaReachability.reachableTypeNames(ctx.schema, ctx.nodeDeclaration),
             classifiedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
-            columnBindings);
+            columnBindings, ctx.authoredTenants);
         // The decode-coverage ledger's totality clause: every decoding @nodeId coordinate the walk
         // did not classify gets its NotReached row here, so an absent row downstream means one
         // thing only. Runs after the walk and writes only where a mint site left nothing.

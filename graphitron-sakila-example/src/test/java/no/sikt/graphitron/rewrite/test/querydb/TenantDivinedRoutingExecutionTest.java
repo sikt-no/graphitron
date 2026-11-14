@@ -583,6 +583,28 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
+    void service_tenantPairInArgMapping_routesAsTheMarkerDoes() {
+        var result = execute("mutation { rateFilmsByPairedFilmId(in: [{ filmId: 1, rating: 5 }]) {"
+            + " ranOn films { title inventories { inventoryId } } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmsByPairedFilmId");
+        assertThat(payload.get("ranOn")).as("the paired value names tenant 1").isEqualTo(SakilaDatabase.tenantName("tenant_1"));
+        var films = (List<Map<String, Object>>) payload.get("films");
+        assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant One Film");
+        assertThat((List<?>) films.get(0).get("inventories"))
+            .as("the tenant-scoped child under the wrapper inherits tenant 1").hasSize(2);
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void service_batchOfPairedValuesNamingTwoTenants_isRefusedBeforeTheServiceRuns() {
+        var result = execute("mutation { rateFilmsByPairedFilmId(in: [{ filmId: 1 }, { filmId: 2 }]) { ranOn } }");
+        assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("the service needs a connection, and none was acquired").isZero();
+    }
+
+    @Test
     void service_batchOfMarkedScalarsNamingTwoTenants_isRefusedBeforeTheServiceRuns() {
         var result = execute("mutation { rateFilmsByFilmId(in: [{ filmId: 1 }, { filmId: 2 }]) { ranOn } }");
         assertThat(result.getErrors().toString()).contains("Tenant bindings disagree");

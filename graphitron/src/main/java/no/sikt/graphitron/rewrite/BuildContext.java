@@ -371,6 +371,13 @@ class BuildContext {
      */
     final NodeDeclaration nodeDeclaration;
 
+    /**
+     * The arguments and input fields a {@code $tenant} pair names a call's tenant by, as the store
+     * states them, by schema coordinate; the tenant fold reads each as a {@code @tenant} marker.
+     * Empty where the build was handed none.
+     */
+    java.util.Set<String> authoredTenants = java.util.Set.of();
+
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RunContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
         // is required because every classifier the BuildContext fans into reads at least one of

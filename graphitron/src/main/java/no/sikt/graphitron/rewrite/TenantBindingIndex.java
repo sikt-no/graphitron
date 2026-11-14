@@ -114,19 +114,38 @@ public record TenantBindingIndex(
             TenantScopes scopes,
             OperationMemberRelation operationMembers,
             ColumnBindingLedger columnBindings) {
+        return compute(sdl, reachableTypes, fields, entitiesByType, types, scopes, operationMembers,
+            columnBindings, Set.of());
+    }
+
+    /**
+     * {@link #compute} where {@code authoredTenants} names the arguments and input fields a
+     * {@code $tenant} pair names a call's tenant by, as the store states them: each is read as a
+     * {@code @tenant} marker on that value is, the store being the one reader of the sigil.
+     */
+    public static TenantBindingIndex compute(
+            GraphQLSchema sdl,
+            Set<String> reachableTypes,
+            Map<FieldCoordinates, GraphitronField> fields,
+            Map<String, EntityResolution> entitiesByType,
+            Map<String, GraphitronType> types,
+            TenantScopes scopes,
+            OperationMemberRelation operationMembers,
+            ColumnBindingLedger columnBindings,
+            Set<String> authoredTenants) {
         if (sdl == null) {
             return EMPTY;
         }
         if (!(scopes instanceof TenantScopes.Configured configured)) {
             // The axis is absent, but a tenancy marker must not be silently ignored: the author
             // asked for tenant routing in a build with no tenants to route over.
-            var markerRejections = rejectMarkersWithoutTenancy(sdl);
+            var markerRejections = rejectMarkersWithoutTenancy(sdl, authoredTenants);
             return markerRejections.isEmpty()
                 ? EMPTY
                 : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
         }
         return new Fold(sdl, reachableTypes, fields, entitiesByType, types, configured,
-            operationMembers, columnBindings).run();
+            operationMembers, columnBindings, authoredTenants).run();
     }
 
     /**
@@ -215,11 +234,11 @@ public record TenantBindingIndex(
     }
 
     /** Every tenancy marker application in a single-tenant build is a validate-time error. */
-    private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl) {
+    private static List<ValidationError> rejectMarkersWithoutTenancy(GraphQLSchema sdl, Set<String> authoredTenants) {
         var rejections = new ArrayList<ValidationError>();
         forEachMarkerApplication(sdl, (marker, coordinate) -> rejections.add(markerRejection(
             List.of(marker.directive()), coordinate, marker.withoutTenancy().apply(coordinate))));
-        for (String definition : tenantMarkedDefinitions(sdl).keySet()) {
+        for (String definition : tenantMarkedDefinitions(sdl, authoredTenants).keySet()) {
             rejections.add(markerRejection(List.of(BuildContext.DIR_TENANT), definition,
                 "'" + definition + "' declares @tenant, but this build configures no"
                     + " <tenantColumn>: there is no tenant to route on. Remove the directive."));
@@ -232,27 +251,30 @@ public record TenantBindingIndex(
      * field carrying it, in schema order: the arguments of every object and interface field, and
      * the fields of every input object. The marker is legal on {@code ARGUMENT_DEFINITION}, which
      * also covers a directive definition's own arguments; those are no use site of a value and are
-     * not read.
+     * not read. A value {@code authoredTenants} names, a {@code $tenant} pair's, is marked alike.
      */
     private static Map<String, graphql.schema.GraphQLInputValueDefinition> tenantMarkedDefinitions(
-            GraphQLSchema sdl) {
+            GraphQLSchema sdl, Set<String> authoredTenants) {
         var marked = new LinkedHashMap<String, graphql.schema.GraphQLInputValueDefinition>();
         for (var type : sdl.getAllTypesAsList()) {
             if (type.getName().startsWith("__")) continue;
             if (type instanceof graphql.schema.GraphQLFieldsContainer container) {
                 for (GraphQLFieldDefinition field : container.getFieldDefinitions()) {
                     for (var argument : field.getArguments()) {
-                        if (argument.hasAppliedDirective(BuildContext.DIR_TENANT)) {
-                            marked.put(SchemaCoordinateSyntax.ofArgument(container.getName(),
-                                field.getName(), argument.getName()), argument);
+                        String coordinate = SchemaCoordinateSyntax.ofArgument(container.getName(),
+                            field.getName(), argument.getName());
+                        if (argument.hasAppliedDirective(BuildContext.DIR_TENANT)
+                                || authoredTenants.contains(coordinate)) {
+                            marked.put(coordinate, argument);
                         }
                     }
                 }
             } else if (type instanceof GraphQLInputObjectType input) {
                 for (var field : input.getFieldDefinitions()) {
-                    if (field.hasAppliedDirective(BuildContext.DIR_TENANT)) {
-                        marked.put(SchemaCoordinateSyntax.ofField(input.getName(), field.getName()),
-                            field);
+                    String coordinate = SchemaCoordinateSyntax.ofField(input.getName(), field.getName());
+                    if (field.hasAppliedDirective(BuildContext.DIR_TENANT)
+                            || authoredTenants.contains(coordinate)) {
+                        marked.put(coordinate, field);
                     }
                 }
             }
@@ -456,7 +478,8 @@ public record TenantBindingIndex(
              Map<String, GraphitronType> types,
              TenantScopes.Configured scopes,
              OperationMemberRelation operationMembers,
-             ColumnBindingLedger columnBindings) {
+             ColumnBindingLedger columnBindings,
+             Set<String> authoredTenants) {
             this.sdl = sdl;
             this.domain = domain;
             this.entitiesByType = entitiesByType;
@@ -480,7 +503,7 @@ public record TenantBindingIndex(
             this.columnBindings = columnBindings;
             this.sites = sitesOf(fields, operationMembers, classificationRejected);
             this.mutationRootName = sdl.getMutationType() == null ? null : sdl.getMutationType().getName();
-            this.tenantMarked = tenantMarkedDefinitions(sdl);
+            this.tenantMarked = tenantMarkedDefinitions(sdl, authoredTenants);
             recordRoot(sdl.getQueryType());
             recordRoot(sdl.getMutationType());
             recordRoot(sdl.getSubscriptionType());

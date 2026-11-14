@@ -226,6 +226,11 @@ public final class ArgMappingSigil {
             index++;
             int colon = piece.indexOf(':');
             String rhs = colon < 0 ? "" : piece.substring(colon + 1).strip();
+            // A $tenant entry names the call's tenant and fills no parameter: the store reads it, and
+            // judges where it may stand, so nothing here parses it.
+            if (colon >= 0 && TENANT_TARGET.equals(piece.substring(0, colon).strip())) {
+                continue;
+            }
             if (colon >= 0 && rhs.startsWith("$")) {
                 Binding binding;
                 if (SESSION_LITERAL.equals(rhs)) {

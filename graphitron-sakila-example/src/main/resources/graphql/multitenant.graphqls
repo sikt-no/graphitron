@@ -294,6 +294,12 @@ input RateByFilmIdInput {
     rating: Int
 }
 
+# The same input with nothing marked: the service's argMapping names the tenant with $tenant instead.
+input RateByPairedFilmIdInput {
+    filmId: Int!
+    rating: Int
+}
+
 # The marked value beside a decoded id: both name a tenant, and they must agree.
 input RateByFilmIdAndFilmInput {
     filmId: Int! @tenant
@@ -418,6 +424,9 @@ type Mutation {
     rateFilmsByFilmId(in: [RateByFilmIdInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmsByFilmId", argMapping: "ratings: in"})
+    rateFilmsByPairedFilmId(in: [RateByPairedFilmIdInput!]!): RateFilmsPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsByFilmId", argMapping: "ratings: in, $tenant: in.filmId"})
     rateFilmsByFilmIdAndFilm(in: [RateByFilmIdAndFilmInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmsByFilmIdAndFilm", argMapping: "ratings: in"})
