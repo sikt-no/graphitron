@@ -455,7 +455,8 @@ final class InlayFacts {
         return multiset(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME).from(f)
             .join(d).on(d.GRAPH_NAME.eq(f.GRAPH_NAME), d.COORDINATE.eq(f.COORDINATE), d.ORIGIN.eq("AUTHORED"))
             .join(r).on(r.GRAPH_NAME.eq(d.GRAPH_NAME), r.COORDINATE.eq(d.COORDINATE),
-                r.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME), r.ORDINAL.eq(d.ORDINAL), r.KIND.eq("ROOT"))
+                r.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME), r.ORDINAL.eq(d.ORDINAL), r.KIND.eq("ROOT"),
+                r.METHOD_DESCRIPTOR.isNotNull())
             .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
             .orderBy(f.TYPE_NAME, f.FIELD_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(MethodRow::new)));

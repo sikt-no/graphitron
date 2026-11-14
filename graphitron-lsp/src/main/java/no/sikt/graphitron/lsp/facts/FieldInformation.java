@@ -250,7 +250,8 @@ public final class FieldInformation {
         methods = multiset(select(d.DIRECTIVE_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME, r.METHOD_DESCRIPTOR)
             .from(d)
             .join(r).on(r.GRAPH_NAME.eq(d.GRAPH_NAME), r.COORDINATE.eq(d.COORDINATE),
-                r.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME), r.ORDINAL.eq(d.ORDINAL), r.KIND.eq("ROOT"))
+                r.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME), r.ORDINAL.eq(d.ORDINAL), r.KIND.eq("ROOT"),
+                r.METHOD_DESCRIPTOR.isNotNull())
             .where(d.GRAPH_NAME.eq(graph), d.COORDINATE.eq(coordinate), d.ORIGIN.eq("AUTHORED"))
             .orderBy(d.DIRECTIVE_NAME, d.ORDINAL))
             .convertFrom(rows -> rows.map(Records.mapping(Method::new)))
