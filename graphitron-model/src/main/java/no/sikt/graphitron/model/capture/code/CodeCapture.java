@@ -518,11 +518,16 @@ public final class CodeCapture {
             member -> val(member.source(), c.SOURCE_NAME),
             member -> val(member.className(), c.CLASS_NAME),
             member -> val(member.at().descriptor(), c.DESCRIPTOR),
+            member -> val(member.at().parameters().size(), c.WIDTH),
+            member -> val(isBuildable(member.at(), ancestry), c.IS_BUILDABLE),
             member -> val(touchedAt, c.TOUCHED_AT)));
         BindBatch.execute(dsl, constructorRows, markers ->
-            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.DESCRIPTOR, c.TOUCHED_AT)
+            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.DESCRIPTOR, c.WIDTH, c.IS_BUILDABLE,
+                    c.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
+                .set(c.WIDTH, excluded(c.WIDTH))
+                .set(c.IS_BUILDABLE, excluded(c.IS_BUILDABLE))
                 .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
 
         record At(Member member, ClassfileCensus.ParameterAt at) {}
@@ -556,6 +561,17 @@ public final class CodeCapture {
                 .set(p.ERASED_CLASS, excluded(p.ERASED_CLASS))
                 .set(p.ROLE, excluded(p.ROLE))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
+    }
+
+    /**
+     * Whether the run can call this constructor to make a holder: every position is the jOOQ
+     * context by the role {@link #roleOf} writes on its parameter row, at most once, so it takes
+     * nothing or one {@code DSLContext}. A position anything else fills, a context key included, is
+     * one the run cannot supply.
+     */
+    private static boolean isBuildable(ClassfileCensus.MethodAt constructor, ClassAncestry ancestry) {
+        return constructor.parameters().stream()
+            .allMatch(at -> at.position() == 0 && "DSL_CONTEXT".equals(roleOf(at, ancestry)));
     }
 
     /**

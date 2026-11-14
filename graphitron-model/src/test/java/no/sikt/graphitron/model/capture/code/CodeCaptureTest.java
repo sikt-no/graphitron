@@ -21,7 +21,6 @@ import org.jooq.DSLContext;
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR;
-import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_BUILDABLE;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
@@ -975,12 +974,16 @@ class CodeCaptureTest {
     @DisplayName("a buildable constructor takes nothing or one DSLContext")
     void aBuildableConstructorTakesOnlyTheJooqContext() {
         withReactorCapture(dsl -> {
-            var b = CODE_CONSTRUCTOR_BUILDABLE;
-            assertThat(dsl.select(b.DESCRIPTOR, b.WIDTH)
-                    .from(b)
-                    .where(b.CLASS_NAME.eq(HOLDERS))
-                    .fetch(r -> r.value1() + " " + r.value2()))
-                .containsExactly("(Lorg/jooq/DSLContext;)V 1");
+            var c = CODE_CONSTRUCTOR;
+            assertThat(dsl.select(c.DESCRIPTOR, c.WIDTH, c.IS_BUILDABLE)
+                    .from(c)
+                    .where(c.CLASS_NAME.eq(HOLDERS))
+                    .orderBy(c.DESCRIPTOR)
+                    .fetch(r -> r.value1() + " " + r.value2() + " " + r.value3()))
+                .containsExactly(
+                    "(Lorg/jooq/Configuration;)V 1 false",
+                    "(Lorg/jooq/DSLContext;)V 1 true",
+                    "(Lorg/jooq/DSLContext;Ljava/lang/String;)V 2 false");
         });
     }
 

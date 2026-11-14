@@ -6512,18 +6512,25 @@ COMMENT ON COLUMN code_construction.descriptor IS 'the constructor to call. At P
 COMMENT ON COLUMN code_construction.touched_at IS 'when the reading that produced this row ran; swept with the class it hangs on';
 
 CREATE TABLE code_constructor (
-  source_name VARCHAR   NOT NULL,
-  class_name  VARCHAR   NOT NULL,
-  descriptor  VARCHAR   NOT NULL,
-  touched_at  TIMESTAMP NOT NULL,
+  source_name  VARCHAR   NOT NULL,
+  class_name   VARCHAR   NOT NULL,
+  descriptor   VARCHAR   NOT NULL,
+  width        INT       NOT NULL,
+  is_buildable BOOLEAN   NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, descriptor),
   FOREIGN KEY (source_name, class_name)
-    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE,
+  CHECK (width >= 0),
+  -- The jOOQ context is the one value the run holds, so a buildable constructor takes at most one.
+  CHECK (NOT is_buildable OR width <= 1)
 );
 COMMENT ON TABLE code_constructor IS 'One public constructor of a class declaring an instance @service method: one row per class and constructor, overloads told apart by descriptor. For example SampleInstanceService(DSLContext), the one public constructor of a class whose titleByFilmId an instance @service names.';
 COMMENT ON COLUMN code_constructor.source_name IS 'the entry the class was read from, as on code_class; the key''s leading dimension';
 COMMENT ON COLUMN code_constructor.class_name IS 'the class the constructor makes, keyed into code_class, so a class the next reading does not find takes its constructors with it';
 COMMENT ON COLUMN code_constructor.descriptor IS 'the constructor''s descriptor, completing the key: a class may declare several public constructors, and the descriptor is what tells them apart';
+COMMENT ON COLUMN code_constructor.width IS 'how many parameters it takes, one per code_constructor_parameter row under it; what makes one buildable constructor wider than another';
+COMMENT ON COLUMN code_constructor.is_buildable IS 'whether the run can call it to make the object an instance service method runs on: every position is the jOOQ context, at most once, so it takes nothing or one DSLContext by exact type. Decided where the parameters are written, by their role rule, so the holder rule and the defect reporting a class with none read one answer. For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not';
 COMMENT ON COLUMN code_constructor.touched_at IS 'when the reading that produced this row ran; swept with the class it hangs on';
 
 CREATE TABLE code_constructor_parameter (
@@ -6555,18 +6562,11 @@ COMMENT ON COLUMN code_constructor_parameter.role IS 'what the position is for a
 COMMENT ON COLUMN code_constructor_parameter.touched_at IS 'when the reading that produced this row ran; swept with the constructor it hangs on';
 
 CREATE VIEW code_constructor_buildable (source_name, class_name, descriptor, width) AS
--- Every position is the jOOQ context, which the run holds one of: a DSLContext by exact type, at
--- most once, so the constructors this admits take nothing or one DSLContext and no two are equally
--- wide. A position anything else fills, a context key included, is one the run cannot supply.
-SELECT c.source_name, c.class_name, c.descriptor,
-       (SELECT COUNT(*) FROM code_constructor_parameter p
-         WHERE p.source_name = c.source_name AND p.class_name = c.class_name
-           AND p.descriptor = c.descriptor)
+-- The constructors code_constructor.is_buildable admits, which the code gatherer decides as it
+-- writes their parameters.
+SELECT c.source_name, c.class_name, c.descriptor, c.width
   FROM code_constructor c
- WHERE NOT EXISTS (SELECT 1 FROM code_constructor_parameter p
-                    WHERE p.source_name = c.source_name AND p.class_name = c.class_name
-                      AND p.descriptor = c.descriptor
-                      AND (p.role <> 'DSL_CONTEXT' OR p.position > 0));
+ WHERE c.is_buildable;
 COMMENT ON VIEW code_constructor_buildable IS 'One public constructor the run can call to make an object an instance service method runs on: every parameter the jOOQ context, at most once. For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not.';
 -- COMMENT ON COLUMN code_constructor_buildable.source_name IS 'the entry the class was read from, as on code_constructor';
 -- COMMENT ON COLUMN code_constructor_buildable.class_name IS 'the class the constructor makes';
@@ -11521,12 +11521,13 @@ SELECT s.graph_name, s.type_name, s.field_name, b.source_name, b.class_name, b.d
   JOIN code_method m
     ON m.source_name = s.method_source_name AND m.class_name = s.method_class_name
    AND m.method_name = s.method_name AND m.descriptor = s.method_descriptor
-  JOIN code_constructor_buildable b
+  JOIN code_constructor b
     ON b.source_name = s.method_source_name AND b.class_name = s.method_class_name
+   AND b.is_buildable
  WHERE NOT m.is_static
-   AND NOT EXISTS (SELECT 1 FROM code_constructor_buildable w
+   AND NOT EXISTS (SELECT 1 FROM code_constructor w
                     WHERE w.source_name = b.source_name AND w.class_name = b.class_name
-                      AND w.width > b.width);
+                      AND w.is_buildable AND w.width > b.width);
 COMMENT ON VIEW graphitron_service_holder_rule IS 'One row the holder rule computes, in the shape graphitron_service_holder stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron assembly inserts this view''s rows for one graph into graphitron_service_holder, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_service_holder_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_service_holder.graph_name';
 -- COMMENT ON COLUMN graphitron_service_holder_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_service_holder.type_name';
@@ -27482,11 +27483,11 @@ INSERT INTO meta_relation VALUES
   ('code_constructor', 'class-constructor', 'code',
    'One public constructor of a class declaring an instance @service method: one row per class and constructor, overloads told apart by descriptor.',
    'For example SampleInstanceService(DSLContext), the one public constructor of a class whose titleByFilmId an instance @service names.',
-   'What a generated fetcher calls to get the object an instance @service method runs on, so the holder a field needs is chosen from what the class offers rather than by reflecting on it when the schema is classified. Read only for the classes the reading already found an instance service method on, kept apart from the methods as the census keeps them, since a constructor is named by nothing an author writes.'),
+   'What a generated fetcher calls to get the object an instance @service method runs on, so the holder a field needs is chosen from what the class offers rather than by reflecting on it when the schema is classified. Read only for the classes the reading already found an instance service method on, kept apart from the methods as the census keeps them, since a constructor is named by nothing an author writes. Its width and whether the run can call it are stored on the row, decided where its parameters are written, because the holder rule and the defect reporting a class with no buildable constructor both build on them.'),
   ('code_constructor_buildable', 'class-constructor', 'code',
    'One public constructor the run can call to make an object an instance service method runs on: every parameter the jOOQ context, at most once.',
    'For example SampleInstanceService(DSLContext) and a no-argument constructor are buildable, and one taking a String is not.',
-   'Which constructors the generated code can call, stated once for the holder rule and the defect that reports a class with none, so the two cannot disagree. A view: its readers each look up one class, and nothing constrains it.'),
+   'Which constructors the generated code can call, read off code_constructor.is_buildable, which the code gatherer decides where it writes the parameters. A view over that one table, kept while a reader still names it.'),
   ('code_constructor_parameter', 'constructor-parameter', 'code',
    'One position in a public constructor''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
    'For example position 0 of SampleInstanceService(DSLContext), named ctx and playing the DSL_CONTEXT role.',
