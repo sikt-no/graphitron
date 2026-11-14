@@ -121,7 +121,8 @@ class ConditionEmitterExecutionTest {
         assertThat(conditions).containsOnlyKeys("filmsByTitle", "filmById", "filmsByLengths", "filmsByFilter",
             "filmsByKey", "customersByCityId", "filmsByCast", "filmsByBridgedActorFirstName", "filmByNodeId",
             "filmsByNodeIds", "filmActorsByNodeIds", "inventoriesByFilm", "filmsByRating", "filmsByTitlePrefix",
-            "filmsByLengthAndTitlePrefix", "filmsByTitleOverridden", "customersSeen", "filmsByTitleBean");
+            "filmsByLengthAndTitlePrefix", "filmsByTitleOverridden", "customersSeen", "filmsByTitleBean",
+            "projectNotesByProject", "filmsByOptionalLanguage");
     }
 
     @Test
@@ -303,6 +304,30 @@ class ConditionEmitterExecutionTest {
             .isNotEmpty()
             .isEqualTo(TestDatabase.dsl().select(inventory.INVENTORY_ID).from(inventory).where(inventory.FILM_ID.eq(1))
                 .orderBy(inventory.INVENTORY_ID).fetch(inventory.INVENTORY_ID));
+    }
+
+    @Test
+    @DisplayName("a node id's @condition on the table it identifies narrows by the composite key's EXISTS when the id is present, and not when absent")
+    void authoredOnTheNodesTable() throws Exception {
+        var note = Tables.PROJECT_NOTE;
+        var atlas = (Condition) conditions.get("projectNotesByProject").invoke(null, note,
+            args("filter", args("projectId", id("Project", 1, 100))));
+        var absent = (Condition) conditions.get("projectNotesByProject").invoke(null, note, args("filter", args()));
+        assertThat(TestDatabase.dsl().select(note.BODY).from(note).where(atlas).fetch(note.BODY))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3");
+        assertThat(TestDatabase.dsl().select(note.BODY).from(note).where(absent).fetch(note.BODY))
+            .containsExactlyInAnyOrder("Atlas-N1", "Atlas-N2", "Atlas-N3", "Beacon-N1", "Beacon-N2", "Cipher-N1");
+    }
+
+    @Test
+    @DisplayName("a @condition taking one key column projected out of a node id gets that column, null where the id is absent")
+    void authoredTakingAProjectedKeyColumn() throws Exception {
+        assertThat(films(condition("filmsByOptionalLanguage", args("pick", args()))))
+            .as("the method received null and constrained nothing").isEqualTo(films(DSL.noCondition()));
+        assertThat(films(condition("filmsByOptionalLanguage", args("pick", args("languageRef", id("LanguageNode", 1))))))
+            .isNotEmpty().isEqualTo(films(FILM.LANGUAGE_ID.eq(1)));
+        assertThat(films(condition("filmsByOptionalLanguage", args("pick", args("languageRef", id("LanguageNode", 2))))))
+            .isEmpty();
     }
 
     private static List<Integer> customers(Condition condition) {

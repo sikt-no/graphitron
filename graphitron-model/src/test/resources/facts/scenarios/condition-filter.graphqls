@@ -45,6 +45,36 @@ type Customer @table(name: "customer") {
     firstName: String @field(name: "first_name")
 }
 
+type LanguageNode implements Node @table(name: "language") @node {
+    id: ID!
+}
+
+# A node of a composite key, (org_id, project_id), which project_note references by a composite
+# foreign key.
+type Project implements Node @table(name: "project") @node {
+    id: ID!
+}
+
+type ProjectNote @table(name: "project_note") {
+    body: String
+}
+
+# A node id whose @condition is applied to the table it identifies, reached from project_note over
+# the composite foreign key, the method taking that table and the decoded key as a Row2.
+input ProjectNoteByProjectFilter {
+    projectId: ID @nodeId(typeName: "Project")
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "projectNameAtlas"
+        }, override: true)
+}
+
+# A node id a field's @condition takes one key column of, by an argMapping descending onto it.
+input OptionalLanguageFilter {
+    languageRef: ID @nodeId(typeName: "LanguageNode")
+        @reference(path: [{key: "film_language_id_fkey"}])
+}
+
 input FilmCastFilter {
     firstName: String @field(name: "first_name")
         @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
@@ -93,6 +123,18 @@ type Query {
     customersSeen: [Customer!]! @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
         method: "customerSeenByUser"}, contextArguments: ["userId"])
+    # The node id's @condition, called on project only where the id is present.
+    projectNotesByProject(filter: ProjectNoteByProjectFilter): [ProjectNote!]!
+        @defaultOrder(primaryKey: true)
+    # The projected key column, null where the client leaves the node id out; override: true leaves
+    # the method the only thing narrowing the rows.
+    filmsByOptionalLanguage(pick: OptionalLanguageFilter!): [Film!]!
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ProjectedKeyConditionFixtures",
+            method: "filmsOfOptionalLanguage",
+            argMapping: "languageId: pick.languageRef.language_id"
+        }, override: true)
+        @defaultOrder(primaryKey: true)
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
@@ -103,6 +145,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_node_id",
   Query.filmByNodeId(id:),             public.film,       0,        EXPLICIT_TYPE_NAME, Film,           film_id
   Query.filmsByNodeIds(ids:),          public.film,       0,        EXPLICIT_TYPE_NAME, Film,           film_id
   Query.inventoriesByFilm(filmId:),    public.film,       0,        EXPLICIT_TYPE_NAME, Film,           film_id
+  Query.filmsByOptionalLanguage(pick.languageRef:), public.language, 0, EXPLICIT_TYPE_NAME, LanguageNode, language_id
+  Query.projectNotesByProject(filter.projectId:),   public.project,  0, EXPLICIT_TYPE_NAME, Project,      org_id
+  Query.projectNotesByProject(filter.projectId:),   public.project,  1, EXPLICIT_TYPE_NAME, Project,      project_id
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_column",
@@ -142,6 +187,10 @@ extend schema @expectEquals(relation: "graphitron_path",
   Query.filmsByRating(filter.ratings:),            Film,        JOIN, EMPTY
   Query.filmsByRating(filter:),                    Film,        JOIN, EMPTY
   Query.inventoriesByFilm(filmId:),                Inventory,   JOIN, INFERRED
+  Query.filmsByOptionalLanguage(pick.languageRef:), Film,       JOIN, WRITTEN
+  Query.filmsByOptionalLanguage(pick:),            Film,        JOIN, EMPTY
+  Query.projectNotesByProject(filter.projectId:),  ProjectNote, JOIN, INFERRED
+  Query.projectNotesByProject(filter:),            ProjectNote, JOIN, EMPTY
   Query.filmById(filmId:),                   Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner.length:), Film,        JOIN, EMPTY
   Query.filmsByFilter(filter.inner:),        Film,        JOIN, EMPTY

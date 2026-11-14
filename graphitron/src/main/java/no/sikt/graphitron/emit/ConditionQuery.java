@@ -33,6 +33,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
@@ -47,6 +51,7 @@ import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.notExists;
+import static org.jooq.impl.DSL.selectDistinct;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.countDistinct;
@@ -158,32 +163,51 @@ public final class ConditionQuery {
     }
 
     /**
+     * How a node id lands at the parameter it fills, at one node table, as
+     * {@code graphitron_occurrence_node_id_shape} states it at the parameter's slot: the decode shape,
+     * the node table it decodes for, the generated name of the one key column an {@code argMapping}
+     * pair projects into the parameter where one does, and the parameter's erased class.
+     */
+    public record NodeIdShape(String shape, String bound, String projectedColumn, String erasedClass) {
+        public NodeIdShape {
+            Objects.requireNonNull(shape, "shape");
+            Objects.requireNonNull(bound, "bound");
+        }
+    }
+
+    /**
      * What fills one parameter of a {@code @condition}'s method: its position, its declared type and how
      * a value is coerced into it, the fill, and for an {@code ARGUMENT} the occurrence it takes, that
      * occurrence's path of names from its argument, its type's kind and whether it is a node id; for a
-     * {@code CONTEXT_KEY} the key, for a {@code SESSION_MEMBER} the member; and the class the parameter
-     * delivers once its containers are peeled off, as the census states it; and whether the occurrence
-     * it takes is read once per element of a list above it.
+     * {@code CONTEXT_KEY} the key, for a {@code SESSION_MEMBER} the member; the class the parameter
+     * delivers once its containers are peeled off, as the census states it; whether the occurrence
+     * it takes is read once per element of a list above it; and for a node id, how it lands at the
+     * parameter per node table, none where no shape fits.
      */
     public record Fill(int position, String parameterType, String extraction, String fill, String landing,
                        ArgumentPath path, String landingKind, boolean landingNodeId, String contextKey,
-                       String sessionMember, String element, boolean throughList) {
+                       String sessionMember, String element, boolean throughList, List<NodeIdShape> shapes) {
         public Fill {
             Objects.requireNonNull(parameterType, "parameterType");
             Objects.requireNonNull(fill, "fill");
+            shapes = List.copyOf(shapes);
         }
     }
 
     /**
      * One {@code @condition} applied to the row's table: the occurrence it is written on and its kind,
      * the kind of binding the table is to it, the class and method it calls, and what fills each of the
-     * method's parameters in position order, {@code UNFILLED} where nothing does.
+     * method's parameters in position order, {@code UNFILLED} where nothing does; the occurrence's path
+     * of names from its argument, none for a field's own; and for a call a node id applies to the table
+     * it identifies, the steps the node id's join path takes from the row's table to that table, none
+     * where the store states no such path.
      */
     public record Call(String coordinate, String occurrenceKind, String bindingKind, String className,
-                       String methodName, List<Fill> fills) {
+                       String methodName, List<Fill> fills, ArgumentPath path, List<Step> steps) {
         public Call {
             Objects.requireNonNull(coordinate, "coordinate");
             fills = List.copyOf(fills);
+            steps = List.copyOf(steps);
         }
     }
 
@@ -356,6 +380,31 @@ public final class ConditionQuery {
         var lf = GRAPHITRON_FIELD.as("lf");
         var lty = GRAPHITRON_TYPE.as("lty");
         var ln = GRAPHITRON_OCCURRENCE_NODE_ID.as("ln");
+        // A node id's landing at the parameter, per node table: the shape the store states at the
+        // parameter's slot, and the key column a pair projects into it where one does.
+        var nsp = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PARAMETER.as("nsp");
+        var nsl = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT.as("nsl");
+        var nsh = GRAPHITRON_OCCURRENCE_NODE_ID_SHAPE.as("nsh");
+        var npj = GRAPHITRON_OCCURRENCE_NODE_ID_SLOT_PROJECTION.as("npj");
+        var nkp = GRAPHITRON_OCCURRENCE_NODE_ID.as("nkp");
+        var nkc = SQL_COLUMN.as("nkc");
+        var shapes = multiset(
+            select(nsh.DECODE_SHAPE, nsh.BOUND, nkc.JOOQ_NAME, nsl.ERASED_CLASS)
+                .from(nsp)
+                .join(nsl).on(nsl.GRAPH_NAME.eq(nsp.GRAPH_NAME), nsl.COORDINATE.eq(nsp.COORDINATE),
+                    nsl.SLOT.eq(nsp.SLOT))
+                .join(nsh).on(nsh.GRAPH_NAME.eq(nsp.GRAPH_NAME), nsh.COORDINATE.eq(nsp.COORDINATE),
+                    nsh.SLOT.eq(nsp.SLOT))
+                .leftJoin(npj).on(npj.GRAPH_NAME.eq(nsp.GRAPH_NAME), npj.CALL_COORDINATE.eq(nsp.CALL_COORDINATE),
+                    npj.CALL.eq(nsp.CALL), npj.POSITION.eq(nsp.POSITION), npj.BOUND.eq(nsh.BOUND))
+                .leftJoin(nkp).on(nkp.GRAPH_NAME.eq(npj.GRAPH_NAME), nkp.COORDINATE.eq(npj.COORDINATE),
+                    nkp.BOUND.eq(npj.BOUND), nkp.POSITION.eq(npj.KEY_POSITION))
+                .leftJoin(nkc).on(nkc.SOURCE_NAME.eq(nkp.TABLE_SOURCE_NAME), nkc.TABLE_SCHEMA.eq(nkp.TABLE_SCHEMA),
+                    nkc.TABLE_NAME.eq(nkp.TABLE_NAME), nkc.COLUMN_NAME.eq(nkp.COLUMN_NAME))
+                .where(nsp.GRAPH_NAME.eq(cp.GRAPH_NAME), nsp.CALL_COORDINATE.eq(cp.COORDINATE),
+                    nsp.CALL.eq(cp.CALL), nsp.POSITION.eq(cp.POSITION))
+                .orderBy(nsh.BOUND))
+            .convertFrom(r -> r.map(Records.mapping(NodeIdShape::new)));
         var fills = multiset(
             select(mp.POSITION, mp.PARAMETER_TYPE, mp.EXTRACTION, coalesce(cp.FILL, inline("UNFILLED")),
                     cp.LANDING_COORDINATE, lty.KIND,
@@ -364,7 +413,8 @@ public final class ConditionQuery {
                     coalesce(mp.ELEMENT_CLASS, mp.ERASED_CLASS),
                     field(exists(selectOne().from(GRAPHITRON_OCCURRENCE_LIST_ELEMENT)
                         .where(GRAPHITRON_OCCURRENCE_LIST_ELEMENT.GRAPH_NAME.eq(cp.GRAPH_NAME),
-                            GRAPHITRON_OCCURRENCE_LIST_ELEMENT.COORDINATE.eq(cp.LANDING_COORDINATE)))))
+                            GRAPHITRON_OCCURRENCE_LIST_ELEMENT.COORDINATE.eq(cp.LANDING_COORDINATE)))),
+                    shapes)
                 .from(mp)
                 .leftJoin(cp).on(cp.GRAPH_NAME.eq(cc.GRAPH_NAME), cp.COORDINATE.eq(cc.COORDINATE), cp.CALL.eq(cc.CALL),
                     cp.POSITION.eq(mp.POSITION))
@@ -375,8 +425,26 @@ public final class ConditionQuery {
                 .where(mp.SOURCE_NAME.eq(cm.METHOD_SOURCE_NAME), mp.CLASS_NAME.eq(cm.METHOD_CLASS_NAME),
                     mp.METHOD_NAME.eq(cm.METHOD_NAME), mp.DESCRIPTOR.eq(cm.METHOD_DESCRIPTOR))
                 .orderBy(mp.POSITION));
+        // A call a node id applies to the table it identifies: the target type of the node id's join
+        // path from the row's table, where that path lands on the node id's table.
+        var cpn = GRAPHITRON_PATH_NEED_TABLE.as("cpn");
+        var cjp = GRAPHITRON_JOIN_PATH.as("cjp");
+        var cn = GRAPHITRON_OCCURRENCE_NODE_ID.as("cn");
+        var callTargets = multiset(
+            selectDistinct(cpn.TARGET_TYPE)
+                .from(cpn)
+                .join(cjp).on(cjp.GRAPH_NAME.eq(cpn.GRAPH_NAME), cjp.COORDINATE.eq(cpn.COORDINATE),
+                    cjp.TARGET_TYPE.eq(cpn.TARGET_TYPE))
+                .where(cpn.GRAPH_NAME.eq(cc.GRAPH_NAME), cpn.COORDINATE.eq(cc.COORDINATE), cb.KIND.eq("NODE_ID"),
+                    cpn.START_SOURCE_NAME.eq(rbSource), cpn.START_SCHEMA.eq(rbSchema), cpn.START_TABLE.eq(rbTable),
+                    exists(selectOne().from(cn).where(cn.GRAPH_NAME.eq(cc.GRAPH_NAME), cn.COORDINATE.eq(cc.COORDINATE),
+                        cn.BOUND.eq(cc.BOUND), cn.TABLE_SOURCE_NAME.eq(cjp.TARGET_SOURCE_NAME),
+                        cn.TABLE_SCHEMA.eq(cjp.TARGET_SCHEMA), cn.TABLE_NAME.eq(cjp.TARGET_TABLE))))
+                .orderBy(cpn.TARGET_TYPE))
+            .convertFrom(r -> r.map(org.jooq.Record1::value1));
         var calls = multiset(
-            select(cc.COORDINATE, co.KIND, cc.OVERRIDE_WRITTEN, cb.KIND, cm.METHOD_CLASS_NAME, cm.METHOD_NAME, fills)
+            select(cc.COORDINATE, co.KIND, cc.OVERRIDE_WRITTEN, cb.KIND, cm.METHOD_CLASS_NAME, cm.METHOD_NAME, fills,
+                    callTargets)
                 .from(cc)
                 .join(co).on(co.GRAPH_NAME.eq(cc.GRAPH_NAME), co.COORDINATE.eq(cc.COORDINATE))
                 .join(cb).on(cb.GRAPH_NAME.eq(cc.GRAPH_NAME), cb.COORDINATE.eq(cc.COORDINATE), cb.BOUND.eq(cc.BOUND))
@@ -403,7 +471,10 @@ public final class ConditionQuery {
                     k.value5(), k.value6(), k.value7().map(x -> new Fill(x.value1(), x.value2(), x.value3(),
                         x.value4(), x.value5(), x.value5() == null ? null : paths.get(x.value5()), x.value6(),
                         Boolean.TRUE.equals(x.value7()), x.value8(), x.value9(), x.value10(),
-                        Boolean.TRUE.equals(x.value11())))),
+                        Boolean.TRUE.equals(x.value11()), x.value12())),
+                    paths.get(k.value1()),
+                    k.value8().size() == 1 ? steps.getOrDefault(List.of(k.value1(), k.value8().getFirst()), List.of())
+                        : List.of()),
                     Boolean.TRUE.equals(k.value3())));
                 // An override: true written on a condition suppresses the terms at its occurrence and
                 // under it, read as written.
