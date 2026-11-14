@@ -1149,8 +1149,8 @@ pass and no stratum that clears and recomputes.
       `graphitron_entry_defect_rule`'s inferred-route arm at `entry-defects` for one no path is
       written for, each under its own stage now, two statements of one rule with nothing comparing
       them until the arm moves into the depth loop.
-    * **An arm belongs to the last stage whose facts it reads** `open`. Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
-      that writes the last relation it reads, its codes' `owner_stage` with it, as a refactor: every
+    * **An arm belongs to the last stage whose facts it reads, claimed by B** `open`. Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
+      that writes the last relation it reads, as a refactor: every
       fact document and sis write the same `graphitron_entry_defect` rows before and after. The
       checks that read only the documents (`TYPE_NAME_CASE_COLLISION`, `CONNECTION_RETURN`,
       `DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM`, the subscription arm) go to a stage of the anchor, and the
@@ -1161,8 +1161,8 @@ pass and no stratum that clears and recomputes.
       by a prepare tally per stage on a cold capture before and after, against the 0.5 s the single
       rule costs today; `graphitron_entry_defect_rule` and the `entry-defects` stage go when their
       last arm leaves.
-    * **The detail writers move with their codes** `blocked`, on
-      "An arm belongs to the last stage whose facts it reads". `EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
+    * **The detail writers move with their codes, claimed by B** `blocked`, on
+      "An arm belongs to the last stage whose facts it reads, claimed by B". `EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
       `ConditionShapeDefectMethods` and `ArgMappingPairDefects` each write their rows in the stage
       that owns the codes they detail, so no defect writer runs after the stages but the gatherer's
       one sweep.
@@ -1220,7 +1220,7 @@ pass and no stratum that clears and recomputes.
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one
       code (Alf, 2026-11-09).
-  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `blocked`, on "An arm belongs to the last stage whose facts it reads".
+  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `blocked`, on "An arm belongs to the last stage whose facts it reads, claimed by B".
     The split by stage comes first, writing the same rows, so the re-keying changes one grain inside
     rule views that are already small rather than a shape and a grain at once.
     `graphitron_occurrence_defect`, keyed (graph, coordinate, code) with a cascade from the occurrence,
