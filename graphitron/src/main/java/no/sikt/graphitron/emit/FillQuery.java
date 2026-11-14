@@ -3,7 +3,11 @@ package no.sikt.graphitron.emit;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Records;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -12,6 +16,7 @@ import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
@@ -84,6 +89,25 @@ public final class FillQuery {
                        String fill, String contextKey, String sessionMember, String landingCoordinate,
                        String typeKind, boolean nodeId) {}
 
+    /** Where a landing lies under its argument: the names from the argument down, and which are lists. */
+    private record LandingPath(List<String> names, Set<Integer> lists) {}
+
+    /** Each argument and input-field occurrence's path from its argument down, by coordinate. */
+    private static Map<String, LandingPath> landingPaths(StoreHandle store) {
+        var st = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+        var out = new LinkedHashMap<String, LandingPath>();
+        store.dsl().select(st.COORDINATE, st.DEPTH, st.NAME, st.IS_LIST)
+            .from(st)
+            .where(st.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(st.COORDINATE, st.DEPTH)
+            .forEach(r -> {
+                var path = out.computeIfAbsent(r.value1(), k -> new LandingPath(new ArrayList<>(), new HashSet<>()));
+                path.names().add(r.value3());
+                if (r.value4()) path.lists().add(r.value2());
+            });
+        return out;
+    }
+
     /** The graph's calls, by coordinate. */
     public static List<Row> read(StoreHandle store) {
         var s = GRAPHITRON_OCCURRENCE_CALL_METHOD;
@@ -96,7 +120,7 @@ public final class FillQuery {
         var lt = GRAPHITRON_TYPE;
         var n = GRAPHITRON_OCCURRENCE_NODE_ID;
         var graph = store.graphName();
-        var paths = ArgumentPaths.read(store);
+        var paths = landingPaths(store);
         var fills = multiset(
             select(c.POSITION, c.PARAMETER_NAME, p.PARAMETER_TYPE, p.ERASED_CLASS, c.FILL,
                 c.CONTEXT_KEY, c.SESSION_MEMBER, c.LANDING_COORDINATE, lt.KIND,

@@ -1,0 +1,18 @@
+# How a value is read off a field's arguments: each argument and input-field occurrence holds every
+# step from its argument down to itself, by depth, with the step's name and whether it is a list or
+# non-null. pairs is a non-null list, so filmId is read once per element and is there in each.
+
+type Film @table(name: "film") { title: String }
+
+input Pair { filmId: Int! @field(name: "film_id") length: Int @field(name: "length") }
+input PairFilter { pairs: [Pair!]! }
+
+type Query { films(filter: PairFilter): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_occurrence_argument_step",
+    where: "coordinate = 'Query.films(filter.pairs.filmId:)'", rows: """
+  depth, step_coordinate,                      name,    is_list, non_null
+  0,     Query.films(filter:),                 filter,  FALSE,   FALSE
+  1,     Query.films(filter.pairs:),           pairs,   TRUE,    TRUE
+  2,     Query.films(filter.pairs.filmId:),    filmId,  FALSE,   TRUE
+  """)

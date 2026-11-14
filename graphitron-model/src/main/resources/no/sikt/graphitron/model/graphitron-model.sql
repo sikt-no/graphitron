@@ -4559,6 +4559,53 @@ COMMENT ON VIEW graphitron_occurrence_list_element_rule IS 'One row the list ele
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_list_element_rule.list_coordinate IS 'the list_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_list_element.list_coordinate';
 
+CREATE TABLE graphitron_occurrence_argument_step (
+  graph_name      VARCHAR   NOT NULL,
+  coordinate      VARCHAR   NOT NULL,
+  depth           INT       NOT NULL,
+  step_coordinate VARCHAR   NOT NULL,
+  name            VARCHAR   NOT NULL,
+  is_list         BOOLEAN   NOT NULL,
+  non_null        BOOLEAN   NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, depth),
+  FOREIGN KEY (graph_name, coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, step_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
+  CHECK (depth >= 0)
+);
+COMMENT ON TABLE graphitron_occurrence_argument_step IS 'One step of the path from an argument down to an argument or input-field occurrence: one row per such occurrence and each argument or input field from its argument to itself. For example Query.films(filter.pairs.filmId:) has three steps, filter at depth 0, pairs at 1, a list, and filmId at 2.';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.coordinate IS 'the occurrence the path leads to';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.depth IS 'how many steps below its argument this step is, the argument at 0 and the occurrence itself the deepest; with the occurrence, the key';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.step_coordinate IS 'the argument or input-field occurrence at this step';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.name IS 'the step''s name, the key a value is read by at this step';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.is_list IS 'whether the step is declared a list, so what lies below it is read once per element';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.non_null IS 'whether the step is declared non-null, so a value is always there at it';
+COMMENT ON COLUMN graphitron_occurrence_argument_step.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_occurrence_argument_step_rule
+  (graph_name, coordinate, depth, step_coordinate, name, is_list, non_null) AS
+-- The occurrence's own step, at its depth below its argument.
+SELECT o.graph_name, o.coordinate, o.depth - ao.depth, o.coordinate, o.name,
+       COALESCE(a.is_list, f.is_list), COALESCE(a.non_null, f.non_null)
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence ao ON ao.graph_name = o.graph_name AND ao.coordinate = o.argument_coordinate
+  LEFT JOIN graphitron_argument a
+    ON o.kind = 'FIELD_ARGUMENT' AND a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+  LEFT JOIN graphitron_field f
+    ON o.kind = 'INPUT_FIELD' AND f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+UNION ALL
+-- An input field's steps above it are its parent's, the depth above's stored rows.
+SELECT o.graph_name, o.coordinate, p.depth, p.step_coordinate, p.name, p.is_list, p.non_null
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_argument_step p
+    ON p.graph_name = o.graph_name AND p.coordinate = o.parent_coordinate
+ WHERE o.kind = 'INPUT_FIELD';
+COMMENT ON VIEW graphitron_occurrence_argument_step_rule IS 'One row the argument step rule computes, in the shape graphitron_occurrence_argument_step stores: the rule itself, evaluated a depth at a time rather than read off disk. For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_argument_step, which is the name every reader spells.';
+
 CREATE TABLE graphitron_occurrence_optional (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -22588,6 +22635,7 @@ INSERT INTO meta_stage_write VALUES
   ('fetchers', 'graphitron_service_holder'),
   ('occurrence-lists', 'graphitron_occurrence_list_element'),
   ('occurrence-lists', 'graphitron_occurrence_optional'),
+  ('occurrence-lists', 'graphitron_occurrence_argument_step'),
   ('occurrence-overrides', 'graphitron_occurrence_overridden'),
   ('occurrence-depths', 'graphitron_entry_defect'),
   ('occurrence-routes', 'graphitron_entry_defect'),
@@ -23153,6 +23201,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-overridden',
    'one occurrence at or under a @condition written with override: true, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('occurrence-argument-step',
+   'one argument or input-field occurrence and one step of its path from its argument down, in one graph',
+   'graph_name, coordinate, depth', 'sdl'),
   ('occurrence-optional',
    'one argument or input-field occurrence a call may be given no value for, in one graph',
    'graph_name, coordinate', 'sdl'),
@@ -25568,6 +25619,14 @@ INSERT INTO meta_relation VALUES
    'One row the overridden rule computes, in the shape graphitron_occurrence_overridden stores: the rule itself, evaluated a depth at a time rather than read off disk.',
    'For example the occurrence-overrides stage inserts this view''s rows at one depth into graphitron_occurrence_overridden, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_occurrence_argument_step', 'occurrence-argument-step', 'graphitron',
+   'One step of the path from an argument down to an argument or input-field occurrence: one row per such occurrence and each argument or input field from its argument to itself.',
+   'For example Query.films(filter.pairs.filmId:) has three steps, filter at depth 0, pairs at 1, a list, and filmId at 2.',
+   'How a value is read off the arguments, stated once beside the chain it is read along: the fills, the conditions and a routed fetcher each read the names, the lists and whether a value is always there from rows rather than climbing the occurrence chain in Java, as a shared helper did. Written a depth at a time by the occurrence-lists stage, each depth reading the one above.'),
+  ('graphitron_occurrence_argument_step_rule', 'occurrence-argument-step', 'graphitron',
+   'One row the argument step rule computes, in the shape graphitron_occurrence_argument_step stores: the rule itself, evaluated a depth at a time rather than read off disk.',
+   'For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_argument_step, which is the name every reader spells.',
+   'An occurrence''s path is its own step and, for an input field, its parent''s path, the depth above''s stored rows, so each arm is one join.'),
   ('graphitron_occurrence_optional', 'occurrence-optional', 'graphitron',
    'An argument or input-field occurrence a call may be given no value for: one row per such occurrence, where it is nullable, where an argument or input field above it is, or where it is read per element of a list whose elements are.',
    'For example Query.films(filter.title:) under a nullable filter draws a row, and Query.film(id:) declared ID! draws none.',

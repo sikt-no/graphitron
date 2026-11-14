@@ -483,6 +483,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_tenant_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_pair_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_optional", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_argument_step", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_argument_step_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_optional_rule", Arm.DERIVED);
         registrations.put("graphitron_tenant_column_rule", Arm.DERIVED);
         registrations.put("graphitron_outbox_routine_target_rule", Arm.DERIVED);

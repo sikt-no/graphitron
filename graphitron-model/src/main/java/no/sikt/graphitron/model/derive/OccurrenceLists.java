@@ -7,6 +7,8 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_OPTIONAL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_OPTIONAL_RULE;
 import static org.jooq.impl.DSL.max;
@@ -41,12 +43,19 @@ public final class OccurrenceLists {
                 }
                 OccurrenceProducers.refresh(dsl, GRAPHITRON_OCCURRENCE_OPTIONAL,
                     GRAPHITRON_OCCURRENCE_OPTIONAL_RULE, graph, depth, touchedAt, noCondition());
+                OccurrenceProducers.refresh(dsl, GRAPHITRON_OCCURRENCE_ARGUMENT_STEP,
+                    GRAPHITRON_OCCURRENCE_ARGUMENT_STEP_RULE, graph, depth, touchedAt, noCondition());
             }
         }
         var l = GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
         dsl.deleteFrom(l)
             .where(l.GRAPH_NAME.eq(graph))
             .and(l.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        var st = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+        dsl.deleteFrom(st)
+            .where(st.GRAPH_NAME.eq(graph))
+            .and(st.TOUCHED_AT.ne(touchedAt))
             .execute();
         var op = GRAPHITRON_OCCURRENCE_OPTIONAL;
         dsl.deleteFrom(op)

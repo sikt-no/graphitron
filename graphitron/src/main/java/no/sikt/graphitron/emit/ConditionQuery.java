@@ -29,6 +29,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LIST_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
@@ -84,7 +85,7 @@ public final class ConditionQuery {
      * to the column's, none on an empty path, the record class of the table the path lands on,
      * which a node id decodes into, and the list occurrences above it it is read once per element of.
      */
-    public record Term(String coordinate, ArgumentPaths.Path path, Column column, String typeKind,
+    public record Term(String coordinate, ArgumentPath path, Column column, String typeKind,
                        int nodeIdBindings, boolean lookupKey, String origin, List<Step> steps,
                        String landingRecordClass, List<ListAbove> lists) {
         public Term {
@@ -112,6 +113,24 @@ public final class ConditionQuery {
         /** Whether every step is declared non-null, so the value is never absent. */
         public boolean present() {
             return path.present();
+        }
+    }
+
+    /**
+     * An argument or input-field occurrence's path from its argument down, as
+     * {@code graphitron_occurrence_argument_step} states it: the names, the positions on them that are
+     * lists and those that are non-null.
+     */
+    public record ArgumentPath(List<String> names, Set<Integer> lists, Set<Integer> nonNull) {
+        public ArgumentPath {
+            names = List.copyOf(names);
+            lists = Set.copyOf(lists);
+            nonNull = Set.copyOf(nonNull);
+        }
+
+        /** Whether every step is declared non-null, so the value at the end is never absent. */
+        boolean present() {
+            return nonNull.size() == names.size();
         }
     }
 
@@ -147,7 +166,7 @@ public final class ConditionQuery {
      * it takes is read once per element of a list above it.
      */
     public record Fill(int position, String parameterType, String extraction, String fill, String landing,
-                       ArgumentPaths.Path path, String landingKind, boolean landingNodeId, String contextKey,
+                       ArgumentPath path, String landingKind, boolean landingNodeId, String contextKey,
                        String sessionMember, String element, boolean throughList) {
         public Fill {
             Objects.requireNonNull(parameterType, "parameterType");
@@ -191,13 +210,35 @@ public final class ConditionQuery {
 
     private record Applied(Call call, boolean override) {}
 
+    /** Each argument and input-field occurrence's path from its argument down, by coordinate. */
+    private static Map<String, ArgumentPath> argumentPaths(StoreHandle store) {
+        var st = GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
+        record Steps(List<String> names, Set<Integer> lists, Set<Integer> nonNull) {}
+        var out = new LinkedHashMap<String, Steps>();
+        store.dsl().select(st.COORDINATE, st.DEPTH, st.NAME, st.IS_LIST, st.NON_NULL)
+            .from(st)
+            .where(st.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(st.COORDINATE, st.DEPTH)
+            .forEach(r -> {
+                var path = out.computeIfAbsent(r.value1(),
+                    k -> new Steps(new ArrayList<>(), new HashSet<>(), new HashSet<>()));
+                path.names().add(r.value3());
+                if (r.value4()) path.lists().add(r.value2());
+                if (r.value5()) path.nonNull().add(r.value2());
+            });
+        var paths = new LinkedHashMap<String, ArgumentPath>();
+        out.forEach((coordinate, path) -> paths.put(coordinate,
+            new ArgumentPath(path.names(), path.lists(), path.nonNull())));
+        return paths;
+    }
+
     /**
      * The graph's field occurrences with filters, by coordinate and table: one statement driven from
      * the fields' {@code TABLE} bindings, the terms read over each row's table and the calls applied to
      * it nested on its key.
      */
     public static List<Row> read(StoreHandle store) {
-        var paths = ArgumentPaths.read(store);
+        var paths = argumentPaths(store);
         var steps = steps(store);
         var parents = parents(store);
         // The rows: a field and each table it is bound to, where its query starts and its filter
