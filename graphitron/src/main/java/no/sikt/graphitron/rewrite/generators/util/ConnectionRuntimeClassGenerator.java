@@ -2016,6 +2016,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(collapseFanOut(self))
                 .addMethod(logFanOutFailure(self, errorRouter, mounts))
                 .addMethod(staticDslFor(self, tenantKey))
+                .addMethod(keyedDslFor(connectionKey))
+                .addMethod(staticKeyedDslFor(self, connectionKey))
                 .addMethod(dslGlobal)
                 .addMethod(staticDslGlobal(self))
                 .addMethod(namedTenant(tenantKey))
@@ -3060,6 +3062,57 @@ public final class ConnectionRuntimeClassGenerator {
                 + "with the checked acquisition failure wrapped unchecked.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
                 + "@param tenantKey the divined tenant value\n")
+            .build();
+    }
+
+    /**
+     * {@code DSLContext dslFor(ConnectionKey key)}: the carrier's keyed acquisition taking the key a
+     * fetcher built, every part of it, rather than one part to build the key from; a drop-in beside
+     * {@code dslFor(tenantKey)}, which goes when its last caller does.
+     */
+    private static MethodSpec keyedDslFor(ClassName connectionKey) {
+        return MethodSpec.methodBuilder("dslFor")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(connectionKey, "key")
+            .addException(SQL_EXCEPTION)
+            .addStatement("return enlist(key, entryFor(key))")
+            .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code key}, pinning and mounting one
+"
+                + "connection for it on first use and reusing it thereafter.
+"
+                + "@param key the connection key the fetcher built; a tenant outside the request's set raises
+"
+                + "before any SQL
+")
+            .build();
+    }
+
+    /**
+     * {@code static DSLContext dslFor(DataFetchingEnvironment env, ConnectionKey key)}: the routed
+     * acquisition an emitted fetcher site makes with the key it built, the checked acquisition failure
+     * wrapped as the tenant-keyed sibling wraps it.
+     */
+    private static MethodSpec staticKeyedDslFor(ClassName self, ClassName connectionKey) {
+        return MethodSpec.methodBuilder("dslFor")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(connectionKey, "key")
+            .beginControlFlow("try")
+            .addStatement("return of(env).dslFor(key)")
+            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+            .addStatement("throw new $T($S + key, e)", DATA_ACCESS_EXCEPTION,
+                "Acquiring the routed connection failed for connection key: ")
+            .endControlFlow()
+            .addJavadoc("Routed acquisition for emitted fetcher sites, by the key the site built: {@link #of} and
+"
+                + "the carrier's keyed {@code dslFor}, with the checked acquisition failure wrapped unchecked.
+"
+                + "@param env the field's {@code DataFetchingEnvironment}
+"
+                + "@param key the connection key
+")
             .build();
     }
 
