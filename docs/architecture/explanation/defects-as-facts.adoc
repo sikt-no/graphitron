@@ -82,7 +82,10 @@ rule needs work a view cannot state, as the `occurrence-depths` stage writes the
 the walk it takes. So no one statement reaches every relation a gatherer derives, and a stage's rule
 reads only what that stage and the stages before it wrote; one that read a later stage's relation
 would read the previous reading's rows. A rule reading several stages' facts belongs to the last of
-them. A stage whose own run has to stay lean writes no defects: its codes go to a stage of their own
+them, and a rule whose codes judge different stages' facts splits by code along them, each group going
+to the stage its own inputs end at: the argMapping pair defects' session, context and scope codes read
+only early relations, their path codes read what `argmapping-landings` writes, and only the outbox
+check waits for `outbox` (Alf, 2026-11-14). A stage whose own run has to stay lean writes no defects: its codes go to a stage of their own
 straight after it, which writes nothing but those defects, as `occurrence-depth-defects` does for the
 depth loop's `occurrence-depths` (Alf, 2026-11-12). Every row carries `touched_at`, the instant of the
 reading that found it. Each stage's rows are swept by the stage they name: the gatherer, once its
@@ -118,7 +121,11 @@ A defect often has more to say than a code and a string. Where it does, its owne
 keyed by the defect's key plus whatever the detail is about, with a foreign key to
 `graphitron_entry_defect` `ON DELETE CASCADE`, and any code it carries is registered in
 `graphitron_defect_type` like any other. When the owner sweeps a defect, its details go with it.
-The detail goes in such a relation, not packed into the detail string. A detail no longer found under a defect still found is the owner's to remove as well, by
+The detail goes in such a relation, not packed into the detail string. The defect is written first, so
+its details can key into it and go with it (Alf, 2026-11-14), which means a rule raising a defect from
+what its details say cannot read the stored detail relation: that relation is written after the
+defect. It computes the detail rows in a CTE of its own rule view and aggregates the defect from that
+CTE, and the detail writer, run after the stage writes its defects, writes the same rows under them. A detail no longer found under a defect still found is the owner's to remove as well, by
 marking and sweeping the detail rows or by rewriting them each reading.
 
 A detail relation is stored when a reader asks for it, and not before. The condition overload

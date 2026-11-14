@@ -128,6 +128,16 @@ The sign to watch for is a reader rebuilding a structure from many rows each tim
 window, or a "nothing was written before this one" test. That structure is usually a fact the corpus
 held whole. Capture it in the form the question needs, not the form the directives were written in.
 
+A relation that nearly holds a fact is extended rather than shadowed (Alf, 2026-11-14): "If an
+existing stored relation almost matches but misses facts then we should go back and capture that
+fact rather than create new relations." Before storing a view's rows as a relation of their own,
+look for one that already holds most of them, often the stored form of that view added earlier, and
+capture the missing columns into its writer, or make them generated columns where they are a
+function of the row. `graphitron_type_member` is the case: `macro-expansion` stores it so a rule
+asking a container's members joins one table rather than the `graphql_poly_member` view, and a
+reader that needs more of a member than it holds has that captured into it, not a second member
+relation beside it. A new relation is for a fact nothing stores yet.
+
 == Otherwise the facts are derived
 
 When the inputs are already in the store, the fact is a derivation. Nothing has to be read again and
