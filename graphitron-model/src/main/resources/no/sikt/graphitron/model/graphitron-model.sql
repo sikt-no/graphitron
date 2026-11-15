@@ -4446,7 +4446,7 @@ COMMENT ON TABLE graphitron_field_target IS 'A field''s target type, unwrapped f
 COMMENT ON COLUMN graphitron_field_target.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_target.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_target.field_name IS 'the field whose target this row states; with the two columns above the whole key, one row per field of the graph';
-COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''s name, unwrapped. A name and never a binding, so a reader joins graphitron_tabletype, graphql_poly_member or graphql_type on it according to what it needs to know';
+COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''s name, unwrapped. A name and never a binding, so a reader joins graphitron_tabletype, graphitron_type_member or graphql_type on it according to what it needs to know';
 COMMENT ON COLUMN graphitron_field_target.wrapper_type_name IS 'the connection type the target was unwrapped from, which is the field''s named type; null where the field returns its target directly. List and non-null wrapping are cardinality rather than a wrapper, and stay on graphitron_field';
 COMMENT ON COLUMN graphitron_field_target.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the coordinates a rewriting moved off; a field the author removed takes its row with it through the cascade above, so the two together are what let a second reading of one store land on the first''s rows rather than meeting them on the key';
 
@@ -9057,6 +9057,8 @@ COMMENT ON COLUMN graphitron_type_member.member_type_name IS 'the type the conta
 COMMENT ON COLUMN graphitron_type_member.member_kind IS 'OBJECT, or INTERFACE for an interface implementing another, pinned as the container''s kind is';
 COMMENT ON COLUMN graphitron_type_member.position IS 'the member''s place as its declaration states it: in the union''s list, or the interface''s place in the implementing type''s list, as graphql_union_member and graphql_implements_interface number them';
 COMMENT ON COLUMN graphitron_type_member.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+CREATE INDEX graphitron_type_member_member_ix ON graphitron_type_member (graph_name, member_type_name);
+COMMENT ON INDEX graphitron_type_member_member_ix IS 'A reader holding a type asks which unions and interfaces admit it, and the primary key, which leads with the container, serves none of that: graphitron_producer_rule lands a bound member on each polymorphic type it belongs to.';
 
 CREATE VIEW graphitron_type_member_rule
   (graph_name, container_name, container_kind, member_type_name, member_kind, position) AS
@@ -11277,7 +11279,7 @@ landing (graph_name, type_name) AS (
    WHERE t.kind NOT IN ('INTERFACE', 'UNION')
   UNION
   SELECT pm.graph_name, pm.container_name
-    FROM graphql_poly_member pm
+    FROM graphitron_type_member pm
     JOIN bound b ON b.graph_name = pm.graph_name AND b.type_name = pm.member_type_name
 ),
 -- The operation a root type serves; a type serving two answers with one.
@@ -14598,7 +14600,7 @@ SELECT o.graph_name, o.coordinate, m.member_type_name,
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_field_target ft
     ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphql_poly_member m ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
+  JOIN graphitron_type_member m ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
   -- A participant is table-bound; one that is not has no row, which the defects name.
   JOIN graphitron_tabletype mt ON mt.graph_name = m.graph_name AND mt.type_name = m.member_type_name
   -- The container's @discriminate, its table and the column it names there, by the column's SQL
@@ -14631,7 +14633,7 @@ SELECT o.graph_name, o.coordinate, m.member_type_name,
    AND (dc.container_name IS NULL
         OR (dc.column_name IS NOT NULL AND dv.discriminator_value IS NOT NULL
             AND NOT EXISTS (
-              SELECT 1 FROM graphql_poly_member m2
+              SELECT 1 FROM graphitron_type_member m2
                 JOIN graphql_directive_application va2
                   ON va2.graph_name = m2.graph_name AND va2.coordinate = m2.member_type_name
                  AND va2.directive_name = 'discriminator'
@@ -14993,7 +14995,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_
   JOIN graphitron_binding_claim cl
     ON cl.graph_name = kc.graph_name AND cl.coordinate = kc.coordinate AND cl.kind = kc.kind
    AND cl.claimer = kc.claimer
-  JOIN graphql_poly_member m
+  JOIN graphitron_type_member m
     ON m.graph_name = cl.graph_name AND m.container_name = cl.named
   JOIN graphitron_tabletype bt
     ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
@@ -15001,7 +15003,7 @@ SELECT o.graph_name, o.coordinate, k.table_schema || '.' || k.table_name, 'NODE_
     ON n.graph_name = m.graph_name AND n.type_name = m.member_type_name
   JOIN graphitron_node_keycolumn k
     ON k.graph_name = n.graph_name AND k.type_name = n.type_name
- WHERE NOT EXISTS (SELECT 1 FROM graphql_poly_member m2
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_type_member m2
                      JOIN graphitron_tabletype bt2
                        ON bt2.graph_name = m2.graph_name AND bt2.type_name = m2.member_type_name
                      JOIN graphitron_node n2
@@ -21689,9 +21691,9 @@ CREATE VIEW graphitron_errors_field_rule (graph_name, type_name, field_name, con
 SELECT f.graph_name, f.type_name, f.field_name, f.named_type
   FROM graphitron_field f
  WHERE f.is_list AND NOT f.non_null
-   AND ((EXISTS (SELECT 1 FROM graphql_poly_member pm
+   AND ((EXISTS (SELECT 1 FROM graphitron_type_member pm
                   WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
-         AND NOT EXISTS (SELECT 1 FROM graphql_poly_member pm
+         AND NOT EXISTS (SELECT 1 FROM graphitron_type_member pm
                           WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
                             AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application d
                                              WHERE d.graph_name = pm.graph_name
@@ -21846,7 +21848,7 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
          e.table_source_name, e.table_schema, e.table_name, e.pivot_type_name, e.pivot_field_name,
          e.producer_kind
     FROM edge e
-    JOIN graphql_poly_member pm
+    JOIN graphitron_type_member pm
       ON pm.graph_name = e.graph_name AND pm.container_name = e.target
     JOIN graphitron_type mt
       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name AND mt.kind = 'OBJECT'
@@ -28127,7 +28129,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_target', 'graph-field', 'graphitron',
    'A field''s target type, unwrapped from a connection where the field returns one, with the connection beside it: one row per field.',
    'For example films: [Film!]! @asConnection has the target Film and the wrapper the macro minted, and title: String has the target String and no wrapper.',
-   'A field has a target type, and a target type is what is bound to a table. Five rules spelled the same COALESCE over the synthesis record, and all five navigated a connection only where the generator had built it, so an author-declared connection fell through to its wrapper and bound nothing. Stated once here, the wrapper''s name and not a flag, so a reader asking about the connection joins it. Total over graphitron_field, minted fields and scalar returns included, so a reader joins this rather than left-joining it. Kind, participants and table are each a join on the target''s name rather than columns here: graphql_type, graphql_poly_member and graphitron_tabletype. A mutation''s target is its payload type; the refetch is the outcome''s LOOKUP field and that field''s own target. Stored rather than left to its rule view because readers join on the target''s name, which as a column an index can lead with.'),
+   'A field has a target type, and a target type is what is bound to a table. Five rules spelled the same COALESCE over the synthesis record, and all five navigated a connection only where the generator had built it, so an author-declared connection fell through to its wrapper and bound nothing. Stated once here, the wrapper''s name and not a flag, so a reader asking about the connection joins it. Total over graphitron_field, minted fields and scalar returns included, so a reader joins this rather than left-joining it. Kind, participants and table are each a join on the target''s name rather than columns here: graphql_type, graphitron_type_member and graphitron_tabletype. A mutation''s target is its payload type; the refetch is the outcome''s LOOKUP field and that field''s own target. Stored rather than left to its rule view because readers join on the target''s name, which as a column an index can lead with.'),
   ('graphitron_field_target_rule', 'graph-field', 'graphitron',
    'One row the field target rule computes, in the shape graphitron_field_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
