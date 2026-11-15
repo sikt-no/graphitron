@@ -9606,13 +9606,45 @@ COMMENT ON VIEW graphitron_occurrence_start_rule IS 'One occurrence a chain star
 -- COMMENT ON COLUMN graphitron_occurrence_start_rule.name IS 'the field name';
 -- COMMENT ON COLUMN graphitron_occurrence_start_rule.kind IS 'always FIELD';
 
+-- The types an occurrence's chain has passed through: the type declaring its own field, and every type on
+-- its parent's chain. Written a depth at a time, after that depth's occurrences and before the next step
+-- reads them, so the rule reads its parent's rows from the table it feeds.
+CREATE TABLE graphitron_occurrence_chain (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, type_name),
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphitron_occurrence (graph_name, coordinate)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_occurrence_chain IS 'A type one occurrence''s chain has passed through: one row per occurrence and type, its own field''s declaring type and every type on its parent''s chain. For example Film.actors.films.title passes through Film and Actor.';
+COMMENT ON COLUMN graphitron_occurrence_chain.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_chain.coordinate IS 'the occurrence';
+COMMENT ON COLUMN graphitron_occurrence_chain.type_name IS 'a type on its chain, completing the key: one declaring the field of the occurrence or of one above it';
+COMMENT ON COLUMN graphitron_occurrence_chain.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_occurrence_chain_rule (graph_name, coordinate, type_name) AS
+SELECT o.graph_name, o.coordinate, f.type_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+UNION
+SELECT o.graph_name, o.coordinate, ch.type_name
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_chain ch ON ch.graph_name = o.graph_name AND ch.coordinate = o.parent_coordinate;
+COMMENT ON VIEW graphitron_occurrence_chain_rule IS 'One row the occurrence chain rule computes, in the shape graphitron_occurrence_chain stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrences stage inserts this view''s rows for one depth of one graph into graphitron_occurrence_chain, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_chain_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_chain.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_chain_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_chain.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_chain_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_occurrence_chain.type_name';
+
 -- One step down from an occurrence this reading has written: into the fields of the object type with
 -- no table a field targets, the connection type for a field returning one rather than the element
 -- the target names, onto a field's arguments, and into the fields of the input type an argument
 -- or an input field is, spelled inside the argument's parentheses, so Type.field.x is only ever a
 -- nested output field. The chain grows only through a nested field, so a target with a table, an
--- interface or a union ends it, its participants' fields starting their own. The writer adds the
--- first-visit guard, which needs the types already on the chain and so a walk up it.
+-- interface or a union ends it, its participants' fields starting their own. A step enters no type
+-- already on its parent's chain, as graphitron_occurrence_chain states it: the occurrence that would
+-- close a cycle keeps its row and grows none.
 CREATE VIEW graphitron_occurrence_step_rule
   (graph_name, parent_coordinate, parent_depth, coordinate, element_coordinate, name, kind,
    entered_type_name) AS
@@ -9634,6 +9666,9 @@ SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '.' || c.field_name,
  WHERE p.kind = 'FIELD'
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype b
                     WHERE b.graph_name = t.graph_name AND b.type_name = t.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
+                    WHERE ch.graph_name = p.graph_name AND ch.coordinate = p.coordinate
+                      AND ch.type_name = t.type_name)
 UNION ALL
 SELECT p.graph_name, p.coordinate, p.depth, p.coordinate || '(' || a.argument_name || ':)',
        a.coordinate, a.argument_name, 'FIELD_ARGUMENT', CAST(NULL AS VARCHAR)
@@ -9652,6 +9687,9 @@ SELECT p.graph_name, p.coordinate, p.depth,
     ON t.graph_name = a.graph_name AND t.type_name = a.named_type AND t.kind = 'INPUT_OBJECT'
   JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
  WHERE p.kind = 'FIELD_ARGUMENT'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
+                    WHERE ch.graph_name = p.graph_name AND ch.coordinate = p.coordinate
+                      AND ch.type_name = t.type_name)
 UNION ALL
 SELECT p.graph_name, p.coordinate, p.depth,
        LEFT(p.coordinate, CHAR_LENGTH(p.coordinate) - 2) || '.' || c.field_name || ':)', c.coordinate,
@@ -9661,8 +9699,11 @@ SELECT p.graph_name, p.coordinate, p.depth,
   JOIN graphitron_type t
     ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INPUT_OBJECT'
   JOIN graphitron_field c ON c.graph_name = t.graph_name AND c.type_name = t.type_name
- WHERE p.kind = 'INPUT_FIELD';
-COMMENT ON VIEW graphitron_occurrence_step_rule IS 'One occurrence one step below an occurrence this reading wrote, before the first-visit guard: the rule the writer applies a depth at a time. For example Emne.navn.en under Emne.navn, Query.films(filter:) under Query.films, and Query.films(filter.cast:) under Query.films(filter:).';
+ WHERE p.kind = 'INPUT_FIELD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
+                    WHERE ch.graph_name = p.graph_name AND ch.coordinate = p.coordinate
+                      AND ch.type_name = t.type_name);
+COMMENT ON VIEW graphitron_occurrence_step_rule IS 'One occurrence one step below an occurrence this reading wrote, entering no type already on its chain: the rule the writer applies a depth at a time. For example Emne.navn.en under Emne.navn, Query.films(filter:) under Query.films, and Query.films(filter.cast:) under Query.films(filter:).';
 -- COMMENT ON COLUMN graphitron_occurrence_step_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_step_rule.parent_coordinate IS 'the occurrence stepped down from';
 -- COMMENT ON COLUMN graphitron_occurrence_step_rule.parent_depth IS 'its depth, which the writer''s pass selects on';
@@ -24486,6 +24527,7 @@ INSERT INTO meta_stage_write VALUES
   ('path-elements', 'graphitron_path_element_table'),
   ('routine-results', 'graphitron_routine_result'),
   ('occurrences', 'graphitron_occurrence'),
+  ('occurrences', 'graphitron_occurrence_chain'),
   ('occurrences', 'graphitron_occurrence_input_type'),
   ('argmapping-landings', 'graphitron_argmapping_landing'),
   ('argmapping-landings', 'graphitron_argmapping_step'),
@@ -24882,6 +24924,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-values', 'graphitron_occurrence_binding', 'graphitron_occurrence_value_rule'),
   ('occurrences', 'graphitron_occurrence', 'graphitron_occurrence_start_rule'),
   ('occurrences', 'graphitron_occurrence', 'graphitron_occurrence_step_rule'),
+  ('occurrences', 'graphitron_occurrence_chain', 'graphitron_occurrence_chain_rule'),
   ('occurrences', 'graphitron_occurrence_input_type', 'graphitron_occurrence_input_type_rule'),
   ('outbox', 'graphitron_argmapping_pair_defect', 'graphitron_outbox_entry_defect_pair_rule'),
   ('outbox', 'graphitron_entry_defect', 'graphitron_outbox_entry_defect_rule'),
@@ -25359,6 +25402,9 @@ INSERT INTO meta_grain VALUES
   ('graph-occurrence',
    'one use of one declared field, argument or input field reached along a chain, in one graph',
    'graph_name, coordinate', 'sdl'),
+  ('occurrence-chain',
+   'one type one occurrence''s chain has passed through, in one graph',
+   'graph_name, coordinate, type_name', 'sdl'),
   ('occurrence-overridden',
    'one occurrence at or under a @condition written with override: true, in one graph',
    'graph_name, coordinate', 'sdl'),
@@ -27988,14 +28034,22 @@ INSERT INTO meta_relation VALUES
    'One row the list element rule computes, in the shape graphitron_occurrence_list_element stores: the rule itself, evaluated a depth at a time rather than read off disk.',
    'For example the occurrence-lists stage inserts this view''s rows at one depth into graphitron_occurrence_list_element, which is the name every reader spells.',
    'An input field is read per element of its parent where the parent is a list, and of every list its parent is read per element of, which are the depth above''s stored rows, so each arm is one join and the rule never recurses. Kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
+  ('graphitron_occurrence_chain', 'occurrence-chain', 'graphitron',
+   'A type one occurrence''s chain has passed through: one row per occurrence and type, its own field''s declaring type and every type on its parent''s chain.',
+   'For example Film.actors.films.title passes through Film and Actor.',
+   'The first-visit guard''s fact, stated once a depth at a time where the step used to rebuild it by one join per ancestor on every pass, so the step rule reads it and its rows are the occurrences, with no choice made in the writer.'),
+  ('graphitron_occurrence_chain_rule', 'occurrence-chain', 'graphitron',
+   'One row the occurrence chain rule computes, in the shape graphitron_occurrence_chain stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrences stage inserts this view''s rows for one depth of one graph into graphitron_occurrence_chain, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; it reads its parent''s rows from the table it feeds, which the depth above wrote.'),
   ('graphitron_occurrence_start_rule', 'graph-occurrence', 'graphitron',
    'One occurrence a chain starts at, in the shape graphitron_occurrence stores at depth 0: the rule itself, evaluated on demand rather than read off disk.',
    'For example Film.title on the table-bound Film, and Mutation.createFilm on the root.',
    'The rule, kept in the catalog rather than in the step that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_occurrence_step_rule', 'graph-occurrence', 'graphitron',
-   'One occurrence one step below an occurrence this reading wrote, before the first-visit guard: the rule the writer applies a depth at a time.',
+   'One occurrence one step below an occurrence this reading wrote, entering no type already on its chain: the rule the writer applies a depth at a time.',
    'For example Emne.navn.en under Emne.navn, Query.films(filter:) under Query.films, and Query.films(filter.cast:) under Query.films(filter:).',
-   'The step, kept in the catalog so what it reads is visible to the gates; the writer applies it one depth at a time and adds the first-visit guard, which needs the types already on the chain and so a walk up it that a view over a cyclic graph cannot state safely.'),
+   'The step, kept in the catalog so what it reads is visible to the gates; the writer applies it one depth at a time, and the first-visit guard reads the chain graphitron_occurrence_chain stores for the depth above rather than a walk up the parents, so every row of the rule over a reading is an occurrence of it.'),
   ('graphitron_fetcher', 'graph-field', 'graphitron',
    'An output field''s fetcher, and whether it produces a result or reads one: one row per field.',
    'For example Query.films selects and so produces, and Film.title reads a column of the row its parent produced.',

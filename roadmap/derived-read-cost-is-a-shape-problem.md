@@ -1690,14 +1690,15 @@ grain, priced by `prepare_ms` on a cold capture. Two rule views are still read b
   `StageRuleGateTest` lists all three as debt, each to be stored or folded in, and the lists only
   shrink.
 * **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
-  part of a rule view's rows into a relation, a Java filter choosing them:
-  `graphitron_occurrence_step_rule` into `graphitron_occurrence`, and each call parameter rule into
+  part of a rule view's rows into a relation, a Java filter choosing them: each call parameter rule into
   `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an
   ambiguous overload leaves without fills. A subtype holding its supertype's rows with its own payload
   set, as `graphitron_result_table` and `graphitron_result_pivot` hold `graphitron_result_rule`'s and
   `graphitron_occurrence_connection` and its `_part` hold `graphitron_occurrence_connection_rule`'s, is no
   such choice: the subtype's `NOT NULL` columns state the projection, and the agreement reads each rule
-  view through the `NOT NULL` columns of its table. The filter is a decision the store
+  view through the `NOT NULL` columns of its table. The occurrence step's first-visit guard reads the
+  types on its parent's chain from the stored `graphitron_occurrence_chain`, so the step rule's rows are
+  the occurrences. The filter is a decision the store
   does not state. Each view is split into one per relation, its rows exactly that relation's, the
   shared part stored first where the split would otherwise read a view, extending a stored relation
   that nearly holds it. `StageAnswerAgreementTest.FILTERED_IN_JAVA` lists them and only shrinks.

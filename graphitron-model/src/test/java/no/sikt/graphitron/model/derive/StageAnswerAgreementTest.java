@@ -69,7 +69,6 @@ public class StageAnswerAgreementTest {
      * one its rules compute, but not every row of the view is the table's. The list only shrinks.
      */
     public static final Map<String, String> FILTERED_IN_JAVA = Map.of(
-        "graphitron_occurrence graphitron_occurrence_step_rule", ONE_RELATION,
         // The fills of the method a call pinned, by a join in Java; an ambiguous overload pins none.
         "graphitron_occurrence_call_parameter graphitron_occurrence_condition_parameter_rule", ONE_RELATION,
         // The claims of the needs the walk reaches.
