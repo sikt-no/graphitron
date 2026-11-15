@@ -986,9 +986,12 @@ class FactSchemaGateTest {
         var rows = new java.util.TreeSet<String>();
         for (String relationName : relationNames) {
             var relation = table(name(relationName.toUpperCase(Locale.ROOT)));
-            var query = dsl.select(columns).from(relation);
+            // A rule view read through the projection its table's NOT NULL columns state.
+            var held = relationName.equals(stage.target()) ? org.jooq.impl.DSL.noCondition()
+                : StageAnswerAgreementTest.projection(dsl, stage.target(), columns);
+            var query = dsl.select(columns).from(relation).where(held);
             rows.addAll(columnNames(dsl, relationName).contains("GRAPH_NAME")
-                ? query.where(graph.eq(graphName)).fetch(Record::toString)
+                ? query.and(graph.eq(graphName)).fetch(Record::toString)
                 : query.fetch(Record::toString));
         }
         return List.copyOf(rows);

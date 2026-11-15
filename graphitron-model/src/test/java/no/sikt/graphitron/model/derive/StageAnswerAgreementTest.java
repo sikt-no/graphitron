@@ -69,8 +69,6 @@ public class StageAnswerAgreementTest {
      * one its rules compute, but not every row of the view is the table's. The list only shrinks.
      */
     public static final Map<String, String> FILTERED_IN_JAVA = Map.of(
-        "graphitron_result_pivot graphitron_result_rule", ONE_RELATION,
-        "graphitron_result_table graphitron_result_rule", ONE_RELATION,
         "graphitron_occurrence_connection graphitron_occurrence_connection_rule", ONE_RELATION,
         "graphitron_occurrence_connection_part graphitron_occurrence_connection_rule", ONE_RELATION,
         "graphitron_occurrence graphitron_occurrence_step_rule", ONE_RELATION,
@@ -136,12 +134,12 @@ public class StageAnswerAgreementTest {
                         if (FILTERED_IN_JAVA.containsKey(stage.target() + " " + view)) {
                             continue;
                         }
-                        dsl.selectFrom(computed(dsl, view, columns, graph).except(held.apply(graph)))
+                        dsl.selectFrom(computed(dsl, stage.target(), view, columns, graph).except(held.apply(graph)))
                             .fetch().forEach(row -> disagreements.add(view + " computes a row "
                                 + stage.target() + " does not hold (" + graph + "): " + row));
                     }
                     var union = stage.ruleViews().stream()
-                        .<org.jooq.Select<org.jooq.Record>>map(view -> computed(dsl, view, columns, graph))
+                        .<org.jooq.Select<org.jooq.Record>>map(view -> computed(dsl, stage.target(), view, columns, graph))
                         .reduce((left, right) -> left.union(right)).orElseThrow();
                     dsl.selectFrom(held.apply(graph).except(union))
                         .fetch().forEach(row -> disagreements.add(stage.target() + " holds a row no rule"
@@ -329,9 +327,30 @@ public class StageAnswerAgreementTest {
             .and(staged ? field(name("STAGE"), String.class).in(stages) : org.jooq.impl.DSL.noCondition());
     }
 
-    private static org.jooq.Select<org.jooq.Record> computed(DSLContext dsl, String view,
+    private static org.jooq.Select<org.jooq.Record> computed(DSLContext dsl, String target, String view,
                                                             List<org.jooq.Field<Object>> columns, String graph) {
-        return select(columns).from(table(name(view.toUpperCase()))).where(inGraph(dsl, view, graph));
+        return select(columns).from(table(name(view.toUpperCase()))).where(inGraph(dsl, view, graph))
+            .and(projection(dsl, target, columns));
+    }
+
+    /**
+     * The rows of a rule view its table can hold: those whose values are set in every compared column
+     * the table declares {@code NOT NULL}. A subtype's payload is such a column, so a subtype written
+     * from its supertype's rule holds the rule's rows carrying that payload: a projection the schema
+     * states, not a choice the writer makes, and read here as the schema states it.
+     */
+    public static org.jooq.Condition projection(DSLContext dsl, String target,
+                                                List<org.jooq.Field<Object>> columns) {
+        var required = new TreeSet<>(dsl.select(field(name("COLUMN_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("TABLE_NAME"), String.class).eq(target.toUpperCase()))
+            .and(field(name("IS_NULLABLE"), String.class).eq("NO"))
+            .fetch(0, String.class));
+        return columns.stream()
+            .filter(column -> required.contains(column.getName()))
+            .map(org.jooq.Field::isNotNull)
+            .reduce(org.jooq.impl.DSL.noCondition(), org.jooq.Condition::and);
     }
 
     /**
