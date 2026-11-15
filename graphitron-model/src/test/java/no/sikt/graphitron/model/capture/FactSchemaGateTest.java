@@ -915,6 +915,7 @@ class FactSchemaGateTest {
             // writes beside the rules; the rest a capture fills from its rules alone.
             var stages = StageAnswerAgreementTest.stages(dsl).stream()
                 .filter(stage -> !columnNames(dsl, stage.target()).contains("STAGE"))
+                .filter(stage -> !StageAnswerAgreementTest.WALK_WRITTEN.contains(stage.target()))
                 .toList();
             assertThat(stages).as("stages inserting from a rule view").isNotEmpty();
             var siblingBefore = stages.stream()
@@ -930,10 +931,21 @@ class FactSchemaGateTest {
             for (int i = 0; i < stages.size(); i++) {
                 var stage = stages.get(i);
                 String target = stage.target();
-                assertThat(materializedRows(dsl, List.of(target), stage, "own"))
-                    .as("%s should hold exactly what %s compute for the capturing graph",
-                        target, stage.ruleViews())
-                    .isEqualTo(materializedRows(dsl, stage.ruleViews(), stage, "own"));
+                var held = materializedRows(dsl, List.of(target), stage, "own");
+                var computed = materializedRows(dsl, stage.ruleViews(), stage, "own");
+                // A view its stage filters in Java computes rows the table rightly lacks; each row
+                // held is still one its rules compute.
+                boolean filtered = stage.ruleViews().stream().anyMatch(view ->
+                    StageAnswerAgreementTest.FILTERED_IN_JAVA.contains(target + " " + view));
+                if (filtered) {
+                    assertThat(computed).as("%s holds only rows %s compute for the capturing graph",
+                            target, stage.ruleViews())
+                        .containsAll(held);
+                } else {
+                    assertThat(held).as("%s should hold exactly what %s compute for the capturing graph",
+                            target, stage.ruleViews())
+                        .isEqualTo(computed);
+                }
                 assertThat(materializedRows(dsl, List.of(target), stage, "sibling"))
                     .as("capturing 'own' must leave the sibling's partition of %s alone", target)
                     .isEqualTo(siblingBefore.get(i));
