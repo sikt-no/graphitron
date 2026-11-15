@@ -89,6 +89,7 @@ The walk's read path is gone
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
+    ├── A sort key's table element infers its key at the element
     └── What an occurrence takes is a binding, claimed by C
 ```
 
@@ -955,6 +956,14 @@ static method needs no holder.
     own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
     carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
     closes before the flip.
+  * **A sort key's table element infers its key at the element** `open`. A sort key's `path:`
+    element written `{table: ...}` names a table and leaves the foreign key to infer; the walk accepts
+    one with no condition, so it still generates at the flip. Today only the join path step rules
+    infer a key, and they are keyed to an occurrence's need, so a sort key's hop rows state nothing
+    for such an element and the projection emitter leaves its list unrendered. The inference moves to
+    the element's grain, extending `graphitron_field_first_key` and `graphitron_join_path_key_move`,
+    where E's first-key work started stating a key per written element, and the sort key's hop reads
+    it as it reads a `key:` element's.
   * **A narrowed inline list is emitted from the store** `open`.
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
