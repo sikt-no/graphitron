@@ -368,3 +368,45 @@ raised, and what this spec did:
   read with both flags, and `database_policy` foreign-keys it with `ON DELETE CASCADE`. The "tables
   differ" finding is now an anti-join over stored rows.
 * Adding `DATABASE` means updating the `source_kind` column comment: adopted.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, revisions requested (session_01WkW2JGNxszh8SZspUvi8xh, 2026-11-15)
+
+Question 1 passes: the goal reads on its own (an author sees a bound table's row security and
+policies in hover and `catalog.describe` when a database is configured, generation unchanged), and
+every symbol, relation, doc section and fixture the spec names exists as named. Question 2 fails on
+one point, the lifecycle of the reading record, which the readers' three arms rest on.
+
+1. **Nothing removes a `DATABASE` claim, so the "not read" arm cannot be reached once a reading has
+   happened (question 2).** The arms are decided by the graph's claim row, but the spec only ever
+   writes or updates that row. Two cases follow. A consumer who removes `<database>` gets no
+   gatherer run ("the gatherer does not run"), so the claim, its stamp and the rows stay, and hover
+   keeps saying `Row security: on` about a database they no longer configure. A consumer whose url
+   changes host, port or database name gets a second `source_name`, so the graph holds two
+   `DATABASE` claims and the readers' `(table_schema, table_name)` lookup returns both readings'
+   rows. The tree already has the shape for this: `JooqFactCapture.dropMembership` drops the
+   graph's claims of its own `source_kind` that the reading no longer holds, all of them when no
+   package is configured, and `SourceClaims.unclaimed` then lets the unclaimed source and its rows
+   go. Satisfied when the spec says who drops the graph's `DATABASE` claims it no longer holds,
+   including on a capture given no connector (and squares that with "Without connection settings
+   nothing changes"), and the Tests list carries the de-configure and url-change cases.
+
+2. **The value the claim's `stamp` carries on success is unstated (question 2).** The trusted arm is
+   "a claim with a stamp", and § The reading record leaves `store_source.stamp` null because "a hash
+   would vouch for nothing". The same argument reaches `store_graph_source.stamp`, whose column
+   comment defines it as "what this graph's rows of this source were derived from", and the spec
+   names no value for it. Note too that `JooqFactCapture` writes its own claim with a null stamp
+   and null `read_at` after a successful walk, so a null claim stamp does not mean "failed" across
+   kinds today; the arm is sound only scoped to `DATABASE`, which the readers do. Satisfied when the
+   spec names what is written to the stamp on a successful reading, in terms consistent with that
+   column comment, and what a first reading that fails writes (no prior claim, so no `read_at` and no
+   rows for the stale arm to show).
+
+Non-blocking:
+
+* `store_source.source_kind` is enforced by a `CHECK (source_kind IN (...))`, not only described by
+  its comment; the constraint gains `DATABASE` too.
+* `dev` re-captures on each round, so an unreachable database costs the driver's connect timeout on
+  every round, not once. Worth a bounded connect timeout on the gatherer's connection, or a sentence
+  saying the default is acceptable.
