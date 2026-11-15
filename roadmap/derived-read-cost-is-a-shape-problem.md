@@ -1692,16 +1692,16 @@ someone to profile.
   times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
   planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
 * **No view reads a view, and every rule view is simple, claimed by B** `open`. The store's rulings
-  (`fact-model.adoc` § Every relation has a grain) are not yet met: on 2026-11-15, 17 views read
-  another view, 4 of them rule views. A service call's parameter fills are stored at the candidate
+  (`fact-model.adoc` § Every relation has a grain) are not yet met: on 2026-11-15, 16 views read
+  another view, 3 of them rule views. A service call's parameter fills are stored at the candidate
   method's grain (`graphitron_occurrence_call_parameter_written`, `_candidate` and
   `graphitron_occurrence_call_candidate_fill`), so the call and call method rules each pin from stored
   rows, and the parameter rule reads the pinned method's fills with the record table each takes; a
   condition call's fills are still filtered to the pinned method in Java. The rules that read
   `graphitron_producer_claim` and `graphitron_synthesized_node_type_id`, filters of stored relations,
   state the filter themselves, and an argMapping pair stores its path's parts as generated columns,
-  so `graphitron_argmapping_step_head_rule` reads stored relations. `graphitron_outbox_key_rule`
-  reads `graphitron_session_handle_member`, and `graphitron_occurrence_route_entry_defect_rule` reads
+  so `graphitron_argmapping_step_head_rule` reads stored relations, and `graphitron_outbox_key_rule`
+  joins the session handle's accessors itself. `graphitron_occurrence_route_entry_defect_rule` reads
   `graphitron_occurrence_connection_rule`. The minting chain (`graphitron_minted_coinage_rule`,
   `graphitron_carrier_directive_rule` and the `_minted` and `_minted_candidate` views) reads
   `graphitron_carrier_facet_mint`, stored by extending `graphitron_connection_facet`. Outside the rules,
@@ -1717,7 +1717,12 @@ someone to profile.
   `graphitron_outbox_key_rule` and `graphitron_occurrence_condition_parameter_rule` (15k). A defect
   rule that large likely recomputes its stage's resolution to find where it fails, so the stage
   stores its outcome, failures included, and the rule filters it. Each is fixed by storing the
-  skipped derivation at its own grain, priced by `prepare_ms` on a cold capture. One rule view is
+  skipped derivation at its own grain, priced by `prepare_ms` on a cold capture. The order follows
+  the 2026-11-15 profile (R1131's C1): what a stage spends executing goes first, so the statements
+  inside `occurrence-depths`, `fetchers` and `occurrence-bindings`, the three costliest stages on sis,
+  are looked at one by one; then the views that derive a chain again, the minting chain first; and
+  the oversized rule views last, since on sis they cost heap and planning but little time, the stage
+  holding the 40k character rule running in 0.9 s. One rule view is
   still read by another view, `graphitron_occurrence_connection_rule` (by
   `graphitron_occurrence_route_entry_defect_rule`), and one view named a rule no stage writes from,
   `graphitron_entry_defect_parameter_rule`: `StageRuleGateTest` lists both as debt, each to be stored

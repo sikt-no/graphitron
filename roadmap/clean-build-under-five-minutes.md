@@ -291,6 +291,25 @@ for the first two minutes and 1.4 to 1.6 GB after, against 1.2 to 2.0 GB; the fo
 GCs costing 35 s of 776 s, against 331 costing 306 s of 1,058. So the view, not the cache size, was
 what held the heap, and the cache keeps its 1,024.
 
+*Profiled 2026-11-15, `932638c2b7` (before the dissolve) against `924c0f0341`* (the dissolve and the
+first view-over-view steps, with every other session's commits between). The machine was otherwise
+idle, load 2 to 7. `graphitron` alone at `-Xmx4g`, 4,590 tests on both: H2's parse tokens peak at 818
+MB before and 536 MB after (a third less), the live heap at 2.06 GB and 1.64 GB, with 14 and 12 full
+GCs and wall time 9:21 and 9:30, so at CI's fork size the collector costs neither side anything.
+Cold sis captures, three a side interleaved, medians with the range: the graphitron stages prepare
+in 2,139 ms (2,076 to 2,141) before and 2,343 ms (2,329 to 2,419) after, and execute in 37.2 s (36.1
+to 38.3) and 28.4 s (28.0 to 29.3). So the smaller statements kept their promise on heap and broke it
+on planning time, which more and smaller statements sum to more of. The execution gain is not
+statement size: 6.7 s of it is `graphitron_type_backing_rule` reading the stored
+`graphitron_code_reference` where it climbed a seven-join view three times, the dissolve itself nets
+about 1.7 s (3.5 s gone, 1.8 s back in the stages that took its branches), and a stored call fill
+another 0.1 s. Execution pays where a rule stops deriving again what a stage could store. The
+oversized rule views cost heap and planning, not time: `occurrence-depth-defects`, holding the 40k
+character rule, runs in 0.9 s, while `occurrence-depths` takes 9.4 s, `fetchers` 6.2 s and
+`occurrence-bindings` 3.6 s. `occurrence-depths` grew 1.1 s in the span, both from one rule's window
+rewritten as a correlated `NOT EXISTS`, six times slower on sis until the priority it compares is
+stored.
+
 ### Not in scope, and why
 
 * **An incremental build cache** (the Maven Build Cache Extension) makes an unchanged module free,
