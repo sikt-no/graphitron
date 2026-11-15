@@ -207,6 +207,12 @@ as its own commit.
 
 See xref:modeling-discipline.adoc[The modeling discipline] for what any stored relation owes.
 
+A name graphitron would mint is never silently withheld (Alf, 2026-11-15). A name the author gives a
+minted type, `@asConnection(connectionName:)` among them, must fit what the spec requires of that
+type; a connection named `PageInfo` does not, and is a defect saying so. Where the author declares
+a type graphitron would otherwise mint, graphitron does not mint it but checks the declared shape
+against what the spec requires, and a declared type that falls short is a defect of its own.
+
 == What is not a defect
 
 The classification walk still refuses schemas on its own, with typed rejections that reach the
