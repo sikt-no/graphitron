@@ -909,6 +909,14 @@ static method needs no holder.
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
     off its occurrence, and flips in the same pass as `$project` and the
     conditions, so every condition caller moves at once (Alf, 2026-11-08, 2026-11-13).
+* **A root's tenant is the input binding its table's tenant column, stated per producer** `open`, E's, off the critical path. A root's tenant is the argument or input field binding its table's
+  tenant column (Alf, 2026-11-15), so the store derives it, for a root query as for a root
+  service, and an author names `$tenant` only where nothing binds it: a plain value a service
+  hands its method as a parameter binds no column, so a service still names that one. The tenant
+  slot is keyed by the producer occurrence rather than by its call, and the readers of the call
+  key move in the same node: `ConnectionQuery`'s slot read and the connection rule's slot facts. Until it lands a
+  root query on a tenanted table stays on the walk, the rest flipping piece by piece (Alf,
+  2026-11-15).
 * **What a filter means does not depend on where it is written** `open`, off the critical path.
   Today an empty list drops its predicate where a polymorphic participant's all-foreign ids answer
   `falseCondition()`, the lenient node-id decode drops a malformed id with one of another type, a
