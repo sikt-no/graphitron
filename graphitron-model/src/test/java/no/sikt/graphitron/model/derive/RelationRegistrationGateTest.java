@@ -530,6 +530,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_call_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_candidate", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_candidate_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_call_candidate_fill", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_call_candidate_fill_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_method", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_method_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_list_element", Arm.DERIVED);
@@ -574,13 +576,14 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_call_parameter_pair_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_landing_key_column", Arm.DERIVED);
         registrations.put("graphitron_argmapping_landing_key_column_rule", Arm.DERIVED);
-        registrations.put("graphitron_occurrence_call_pin", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter", Arm.DERIVED);
         registrations.put("graphitron_occurrence_participant", Arm.DERIVED);
         registrations.put("graphitron_occurrence_participant_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_written", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_call_parameter_written_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_candidate", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_call_parameter_candidate_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_call_parameter_defect", Arm.DERIVED);
         registrations.put("graphitron_occurrence_service_parameter_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_routine_parameter_defect_rule", Arm.DERIVED);

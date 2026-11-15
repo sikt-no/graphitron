@@ -32,7 +32,6 @@ class StageRuleGateTest {
 
     /** Rule views other views read, each with its readers: debt, each to be stored or folded in. */
     private static final Map<String, String> READ_BY_VIEWS = Map.of(
-        "graphitron_occurrence_call_parameter_rule", "graphitron_occurrence_call_pin",
         "graphitron_occurrence_connection_rule", "graphitron_occurrence_route_entry_defect_rule");
 
     /** Views named a rule that no stage writes from, each with why: debt, each to be written or renamed. */

@@ -19,9 +19,15 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_ROU
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_FILL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_FILL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_METHOD_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_CANDIDATE_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_WRITTEN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_PARAMETER_WRITTEN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CALL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_SERVICE_RULE;
@@ -67,8 +73,9 @@ public final class OccurrenceProducers {
     }
 
     /**
-     * States the producers, then their starts, their calls' candidates and the calls and methods they
-     * pin; {@link #writeResults} states what they produce once the calls are filled.
+     * States the producers, then their starts, their calls' candidates, what fills each candidate's
+     * parameters, and the calls and methods they pin; {@link #writeResults} states what they produce
+     * once the calls are filled.
      */
     private static void write(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
@@ -93,6 +100,15 @@ public final class OccurrenceProducers {
                     kr.METHOD_NAME.eq(k.METHOD_NAME), kr.METHOD_DESCRIPTOR.eq(k.METHOD_DESCRIPTOR)))
             .execute();
         refresh(dsl, k, kr, graph, null, touchedAt);
+        // What fills each candidate's parameters, stored before the pin weighs it: the fills an author
+        // wrote, the arguments a parameter could take by type, then each position's fill, which reads
+        // the two. Each is swept as soon as it is stated, or the next would read a stale row.
+        refreshAndSweep(dsl, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_WRITTEN,
+            GRAPHITRON_OCCURRENCE_CALL_PARAMETER_WRITTEN_RULE, graph, touchedAt);
+        refreshAndSweep(dsl, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_CANDIDATE,
+            GRAPHITRON_OCCURRENCE_CALL_PARAMETER_CANDIDATE_RULE, graph, touchedAt);
+        refreshAndSweep(dsl, GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_FILL,
+            GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_FILL_RULE, graph, touchedAt);
         // The calls and the methods they pin, before the subtypes that are calls as well as producers;
         // a service's only, a condition's call waiting on the bindings.
         refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_RULE, graph, null, touchedAt,
@@ -140,6 +156,19 @@ public final class OccurrenceProducers {
                 .and(t.field("TOUCHED_AT", LocalDateTime.class).ne(touchedAt))
                 .execute();
         }
+    }
+
+    /**
+     * {@link #refresh} of the whole graph, then deletes the rows of {@code target} this reading did not
+     * mark.
+     */
+    private static void refreshAndSweep(DSLContext dsl, Table<?> target, Table<?> rule, String graph,
+                                        LocalDateTime touchedAt) {
+        refresh(dsl, target, rule, graph, null, touchedAt);
+        dsl.deleteFrom(target)
+            .where(target.field("GRAPH_NAME", String.class).eq(graph))
+            .and(target.field("TOUCHED_AT", LocalDateTime.class).ne(touchedAt))
+            .execute();
     }
 
     /**

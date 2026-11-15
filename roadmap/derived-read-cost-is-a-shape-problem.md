@@ -1656,13 +1656,12 @@ someone to profile.
   times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
   planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
 * **No view reads a view, and every rule view is simple, claimed by B** `open`. The store's rulings
-  (`fact-model.adoc` § Every relation has a grain) are not yet met: on 2026-11-15, 27 views read
-  another view, 11 of them rule views. The call parameter chain is the deepest:
-  `graphitron_occurrence_call_parameter_rule` and `graphitron_occurrence_service_parameter_defect_rule`
-  read `graphitron_occurrence_call_parameter_candidate` and `_written`, `graphitron_occurrence_call_pin`
-  reads the parameter rule, and `graphitron_occurrence_call_rule` and `_call_method_rule` read the pin;
-  the candidate is stored at its grain, and the written fill goes into the stored
-  `graphitron_occurrence_call_parameter` where it nearly holds it. `graphitron_producer_rule` and
+  (`fact-model.adoc` § Every relation has a grain) are not yet met: on 2026-11-15, 22 views read
+  another view, 7 of them rule views. A service call's parameter fills are stored at the candidate
+  method's grain (`graphitron_occurrence_call_parameter_written`, `_candidate` and
+  `graphitron_occurrence_call_candidate_fill`), so the call and call method rules each pin from stored
+  rows, and the parameter rule reads the pinned method's fills with the record table each takes; a
+  condition call's fills are still filtered to the pinned method in Java. `graphitron_producer_rule` and
   `graphitron_reader_rule` read `graphitron_producer_claim`, a filter of the stored claims each reader
   inlines. `graphitron_argmapping_step_head_rule` reads `graphitron_argmapping_call`, whose string
   parsing becomes generated columns on `graphitron_argmapping_pair`. `graphitron_outbox_key_rule`
@@ -1682,13 +1681,12 @@ someone to profile.
   `graphitron_occurrence_binding_entry_defect_rule` (16k), `graphitron_join_path_step_rule`,
   `graphitron_outbox_key_rule` and `graphitron_occurrence_condition_parameter_rule` (15k). A defect
   rule that large likely recomputes its stage's resolution to find where it fails, so the stage
-  stores its outcome, failures included, and the rule filters it. Each is fixed by storing the skipped derivation at its own
-grain, priced by `prepare_ms` on a cold capture. Two rule views are still read by another view,
-  `graphitron_occurrence_call_parameter_rule` (by `graphitron_occurrence_call_pin`) and
-  `graphitron_occurrence_connection_rule` (by `graphitron_occurrence_route_entry_defect_rule`), and
-  one view named a rule no stage writes from, `graphitron_entry_defect_parameter_rule`:
-  `StageRuleGateTest` lists all three as debt, each to be stored or folded in, and the lists only
-  shrink.
+  stores its outcome, failures included, and the rule filters it. Each is fixed by storing the
+  skipped derivation at its own grain, priced by `prepare_ms` on a cold capture. One rule view is
+  still read by another view, `graphitron_occurrence_connection_rule` (by
+  `graphitron_occurrence_route_entry_defect_rule`), and one view named a rule no stage writes from,
+  `graphitron_entry_defect_parameter_rule`: `StageRuleGateTest` lists both as debt, each to be stored
+  or folded in, and the lists only shrink.
 * **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them: each call parameter rule into
   `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an

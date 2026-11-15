@@ -54,10 +54,47 @@ public final class OccurrenceCallParameters {
 
     private static final String PARAMETER = "PARAMETER";
 
-    /** States what fills each parameter of the service calls, the method each pinned. */
+    /**
+     * States what fills each parameter of the service calls, the method each pinned. The rule states
+     * the pinned method's fills and the record table each takes, so its rows are written as they stand.
+     */
     public static void writeServices(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        unbind(dsl, graph, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE, "SERVICE");
-        write(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE);
+        var p = GRAPHITRON_OCCURRENCE_BINDING_PARAMETER;
+        var r = GRAPHITRON_OCCURRENCE_CALL_PARAMETER_RULE;
+        dsl.deleteFrom(p)
+            .where(p.GRAPH_NAME.eq(graph), p.CALL_KIND.eq("SERVICE"))
+            .andNotExists(selectOne().from(r)
+                .where(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.CALL_COORDINATE), r.CALL.eq(p.CALL),
+                    r.POSITION.eq(p.POSITION), r.FILL.eq(inline("ARGUMENT")),
+                    r.LANDING_COORDINATE.eq(p.COORDINATE)))
+            .execute();
+        var c = GRAPHITRON_OCCURRENCE_CALL_PARAMETER;
+        dsl.insertInto(c)
+            .columns(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.CALL_KIND, c.POSITION, c.PARAMETER_NAME, c.FILL,
+                c.LANDING_COORDINATE, c.CONTEXT_KEY, c.SESSION_MEMBER, c.RECORD_SOURCE_NAME, c.RECORD_SCHEMA,
+                c.RECORD_TABLE, c.TOUCHED_AT, c.RECORD_SOURCE_REF, c.RECORD_SCHEMA_REF, c.RECORD_TABLE_REF)
+            .select(dsl.select(r.GRAPH_NAME, r.COORDINATE, r.CALL, r.CALL_KIND, r.POSITION, r.PARAMETER_NAME,
+                    r.FILL, r.LANDING_COORDINATE, r.CONTEXT_KEY, r.SESSION_MEMBER, r.RECORD_SOURCE_NAME,
+                    r.RECORD_SCHEMA, r.RECORD_TABLE, val(touchedAt, c.TOUCHED_AT), r.RECORD_SOURCE_NAME,
+                    r.RECORD_SCHEMA, r.RECORD_TABLE)
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(c.GRAPH_NAME, c.COORDINATE, c.CALL, c.POSITION)
+            .doUpdate()
+            .set(c.CALL_KIND, excluded(c.CALL_KIND))
+            .set(c.PARAMETER_NAME, excluded(c.PARAMETER_NAME))
+            .set(c.FILL, excluded(c.FILL))
+            .set(c.LANDING_COORDINATE, excluded(c.LANDING_COORDINATE))
+            .set(c.CONTEXT_KEY, excluded(c.CONTEXT_KEY))
+            .set(c.SESSION_MEMBER, excluded(c.SESSION_MEMBER))
+            .set(c.RECORD_SOURCE_NAME, excluded(c.RECORD_SOURCE_NAME))
+            .set(c.RECORD_SCHEMA, excluded(c.RECORD_SCHEMA))
+            .set(c.RECORD_TABLE, excluded(c.RECORD_TABLE))
+            .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
+            .set(c.RECORD_SOURCE_REF, excluded(c.RECORD_SOURCE_REF))
+            .set(c.RECORD_SCHEMA_REF, excluded(c.RECORD_SCHEMA_REF))
+            .set(c.RECORD_TABLE_REF, excluded(c.RECORD_TABLE_REF))
+            .execute();
         pairs(dsl, graph, touchedAt, "SERVICE");
         bindings(dsl, graph, touchedAt, "SERVICE");
         defects(dsl, graph, touchedAt, GRAPHITRON_OCCURRENCE_SERVICE_PARAMETER_DEFECT_RULE);
@@ -357,7 +394,10 @@ public final class OccurrenceCallParameters {
             .execute();
     }
 
-    /** A fill rule's columns, read by name: every fill rule has graphitron_occurrence_call_parameter_rule's shape. */
+    /**
+     * A fill rule's columns, read by name: the condition and expression fill rules share one shape, a
+     * row per candidate method that {@link #write} narrows to the method each call pinned.
+     */
     private record RuleColumns(Field<String> GRAPH_NAME, Field<String> COORDINATE, Field<String> CALL,
                                Field<String> CALL_KIND, Field<String> METHOD_DESCRIPTOR,
                                Field<Integer> POSITION, Field<String> PARAMETER_NAME, Field<String> FILL,
