@@ -122,28 +122,39 @@ public class StageAnswerAgreementTest {
     @DisplayName("every stage-written table holds exactly its rules' rows, both directions")
     void everyStageAgreesWithTheRuleItInsertsFrom() {
         var disagreements = new ArrayList<String>();
+        // The listed entries that still disagree somewhere; one that agrees everywhere is stale.
+        var stillDisagreeing = new HashSet<String>();
         eachReading((graphs, dsl) -> {
             for (Stage stage : stages(dsl)) {
-                if (WALK_WRITTEN.contains(stage.target())) {
-                    continue;
-                }
+                boolean walked = WALK_WRITTEN.contains(stage.target());
                 var columns = sharedColumns(dsl, stage);
                 var held = held(dsl, stage, columns);
                 for (var graph : graphs) {
                     for (var view : stage.ruleViews()) {
-                        if (FILTERED_IN_JAVA.containsKey(stage.target() + " " + view)) {
+                        String pair = stage.target() + " " + view;
+                        var rows = dsl.selectFrom(computed(dsl, stage.target(), view, columns, graph)
+                            .except(held.apply(graph))).fetch();
+                        if (walked || FILTERED_IN_JAVA.containsKey(pair)) {
+                            if (rows.isNotEmpty()) {
+                                stillDisagreeing.add(walked ? stage.target() : pair);
+                            }
                             continue;
                         }
-                        dsl.selectFrom(computed(dsl, stage.target(), view, columns, graph).except(held.apply(graph)))
-                            .fetch().forEach(row -> disagreements.add(view + " computes a row "
-                                + stage.target() + " does not hold (" + graph + "): " + row));
+                        rows.forEach(row -> disagreements.add(view + " computes a row "
+                            + stage.target() + " does not hold (" + graph + "): " + row));
                     }
                     var union = stage.ruleViews().stream()
                         .<org.jooq.Select<org.jooq.Record>>map(view -> computed(dsl, stage.target(), view, columns, graph))
                         .reduce((left, right) -> left.union(right)).orElseThrow();
-                    dsl.selectFrom(held.apply(graph).except(union))
-                        .fetch().forEach(row -> disagreements.add(stage.target() + " holds a row no rule"
-                            + " of " + stage.ruleViews() + " computes (" + graph + "): " + row));
+                    var extra = dsl.selectFrom(held.apply(graph).except(union)).fetch();
+                    if (walked) {
+                        if (extra.isNotEmpty()) {
+                            stillDisagreeing.add(stage.target());
+                        }
+                        continue;
+                    }
+                    extra.forEach(row -> disagreements.add(stage.target() + " holds a row no rule"
+                        + " of " + stage.ruleViews() + " computes (" + graph + "): " + row));
                 }
             }
         });
@@ -151,6 +162,13 @@ public class StageAnswerAgreementTest {
             .as("a table's row its rules do not compute is a previous capture's row the stage did"
                 + " not clear, or one written twice; a rule's row its table lacks is one the stage"
                 + " did not write")
+            .isEmpty();
+        var stale = new TreeSet<String>(FILTERED_IN_JAVA.keySet());
+        stale.addAll(WALK_WRITTEN);
+        stale.removeAll(stillDisagreeing);
+        assertThat(stale)
+            .as("listed debt that now agrees with its rules everywhere: remove this entry, the lists only"
+                + " shrink")
             .isEmpty();
     }
 
