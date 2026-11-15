@@ -91,8 +91,6 @@ The walk's read path is gone
 │   ├── A narrowed inline list is emitted from the store
 │   ├── Every list states its order or is refused
 │   └── A single child's null contract is stated, claimed by F
-│       ├── A nullable single child's presence leaves are stated
-│       └── A nullable single child's collapse is blocked where its emptiness depends on the query
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
     │   └── A producer's fetcher parts are emitted from the store
@@ -857,23 +855,13 @@ static method needs no holder.
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
     so the flip states it as a deferral, a stored defect of basis `UNSUPPORTED`, until this lands
     (Alf, 2026-11-13).
-  * **A single child's null contract is stated, claimed by F** `blocked`, on its two children. The walk's
-    `Presence` decides it: a non-null single child is always an object, a list never collapses, and a
-    nullable single child, a nesting field or a table-bound child alike, is null where every presence
-    leaf of its subtree is absent, unless a child in it blocks the collapse. G's nullable single
-    children and lookups wait on it. The store states it per occurrence, and the projection and
-    lift readers render the presence columns and probe from it.
-    * **A nullable single child's presence leaves are stated** `open`. Per nullable single occurrence, the leaves
-      its subtree contributes: own-row columns (`graphitron_occurrence_column`, a node id's key columns
-      off `graphitron_occurrence_node_id`), a computed `@externalField` (`graphitron_occurrence_expression`),
-      and a probe over a join path for a reference or table child, reading the target's own column
-      leaves for a single one and any row for a list, narrowed by its stored condition calls.
-    * **A nullable single child's collapse is blocked where its emptiness depends on the query** `open`. The
-      children whose emptiness depends on the query or on code outside the table's rows, which the walk
-      lists as blockers: a paged or argument-ordered list, a connection, a lookup, a filter reading the
-      argument map, a path through a routine or lateral hop, a record-sourced batched child, a split
-      read on another connection, an `@externalField` with a path or an object result, and any other
-      field kind.
+  * **A single child's null contract is stated, claimed by F** `open`. A nullable single child is null exactly when its
+    read finds no row, and a nesting field, being its parent's row, is present wherever its parent is
+    (Alf, 2026-11-15, `code-generation-triggers.adoc`); the walk's `Presence`, which collapses a
+    reached row whose subtree's columns, expressions and probes are all absent, and lists blockers
+    where it gives up, emulates Graphitron 9 and goes. So the store states nothing new: the walk is
+    tried on the rule first and the FS subgraphs' tests run on it, and G's single join then renders a
+    nullable child as its non-null one, no row read as null.
   * **An input object is read once, by a reader of its own** `open`. One generated typed record per
     input type, built from the argument map with its node ids decoded, enums converted and lists
     walked, so a condition, a lookup's rows and a service's fills read `filter.range().fra()` rather
