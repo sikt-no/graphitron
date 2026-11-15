@@ -366,6 +366,12 @@ primary key (xref:../../manual/how-to/map-types-to-tables.adoc#parents-own-row[t
 row]). Graphitron never infers the parent's row; an unwritten same-table path rides the
 self-referencing key or fails. The fix for a schema that meets the refusal is in the schema.
 
+A single child below the root may be looked up by its `@lookupKey` arguments, read as the one row
+of its table they match or null (Alf, 2026-11-15). Its keys must cover an identifying key of that
+table, its primary key or a unique key whose columns are all not null; keys that could match several
+rows are refused rather than read as the first of them, and the schema makes the field a list or
+keys it on a unique column.
+
 Which connection a query runs on is decided by the tenant facts, never by `@splitQuery` (Alf,
 2026-11-14). A split splits a query and nothing else: the child runs on the connection key its
 producer hands down. At each occurrence the key is one of three things. It is inherited, which is
