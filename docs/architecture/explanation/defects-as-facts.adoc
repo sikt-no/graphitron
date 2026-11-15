@@ -211,7 +211,12 @@ A name graphitron would mint is never silently withheld (Alf, 2026-11-15). A nam
 minted type, `@asConnection(connectionName:)` among them, must fit what the spec requires of that
 type; a connection named `PageInfo` does not, and is a defect saying so. Where the author declares
 a type graphitron would otherwise mint, graphitron does not mint it but checks the declared shape
-against what the spec requires, and a declared type that falls short is a defect of its own.
+against what the spec requires, and a declared type that falls short is a defect of its own. What
+the spec requires is the external spec's fields only, Relay's `edges` and `pageInfo` for a connection,
+and graphitron's additions such as `nodes` or `totalCount` only where something uses them; where no
+external spec exists, as for a connection's facets type, graphitron's own shape is the requirement.
+The defect is raised at the application that asked for the type, `@asConnection` for a connection,
+naming the declared type and what it lacks, since that is where the author acts (Alf, 2026-11-15).
 
 == What is not a defect
 
