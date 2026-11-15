@@ -300,7 +300,6 @@ class SupertypeSignatureGateTest {
         // and an index are catalog facts of different kinds, and the order reads either by the
         // surface written, stored as the key's column subtype so its readers stop reconstructing it.
         "graphitron_occurrence_sort_key_column_rule|sql_constraint_column,sql_index_column",
-        "graphitron_occurrence_sort_key_rule|sql_constraint_column,sql_index_column",
         // The voucher stage's refusals, which judge both markers' claims by the rules they share,
         // an empty or repeated claim, and resolve each against its own marker's claim relation. The
         // supertype it reconstructs is the sibling pair recorded above, kept apart by decision.
