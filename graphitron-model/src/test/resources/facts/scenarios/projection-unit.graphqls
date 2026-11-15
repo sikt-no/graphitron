@@ -1,4 +1,4 @@
-"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs, its language's name down a path and, through the non-null nesting field facts, the length and release_year columns of the same film row and the language's name again. The participants of a discriminated interface write an interface field under the interface's name. Language.spoken is a nullable nesting field, whose null contract the store does not state yet."
+"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs, its language's name down a path and, through the non-null nesting field facts, the length and release_year columns of the same film row and the language's name again. The participants of a discriminated interface write an interface field under the interface's name. Language.spoken is a nullable nesting field, whose null contract the store does not state yet. Category lists its films inline, by title."
 
 interface Node { id: ID! }
 
@@ -51,10 +51,18 @@ type Language @table(name: "language") {
 "Read off the language row it is nested under."
 type LanguageNote { name: String }
 
+type Category @table(name: "category") {
+  name: String
+  "A list read inline in the order written, projected by Film's own unit."
+  films: [Film!]! @reference(path: [{table: "film_category"}, {table: "film"}])
+    @defaultOrder(fields: [{name: "title"}])
+}
+
 type Query {
   films: [Film!]!
   languages: [Language!]!
   items: [Item!]!
+  categories: [Category!]!
 }
 
 # The columns each occurrence binds on its unit's table, nested ones on the same row.

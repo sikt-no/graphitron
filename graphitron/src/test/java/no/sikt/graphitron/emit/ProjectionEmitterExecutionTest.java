@@ -45,13 +45,19 @@ class ProjectionEmitterExecutionTest {
     private static Map<String, ProjectionQuery.Unit> units;
     private static EmittedCodeHarness harness;
     private static Method project;
+    private static Method projectCategory;
+    private static final String CHOOSING = "choosing";
+    private static EmittedCodeHarness choosingHarness;
+    private static Method projectChoosingCategory;
 
     @BeforeAll
     static void emit() throws Exception {
         units = FACTS.read("scenarios/projection-unit", graph -> ProjectionQuery.read(graph.handle()));
-        var film = (ProjectionEmitter.Result.Emitted) ProjectionEmitter.emit(units.get("Film"), PACKAGE);
+        var emitted = ProjectionEmitter.emitAll(units, PACKAGE);
         var compiled = new HashMap<String, TypeSpec>();
-        compiled.put(PACKAGE + ".Film", film.unit());
+        for (var type : List.of("Film", "Category")) {
+            compiled.put(PACKAGE + "." + type, ((ProjectionEmitter.Result.Emitted) emitted.get(type)).unit());
+        }
         for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(PACKAGE)) {
             compiled.put(PACKAGE + ".util." + spec.name(), spec);
         }
@@ -61,11 +67,32 @@ class ProjectionEmitterExecutionTest {
         harness = EmittedCodeHarness.compileStrictly(compiled);
         project = harness.load(PACKAGE + ".Film").getMethod("$project", Map.class, FILM.getClass(),
             DataFetchingEnvironment.class);
+        projectCategory = harness.load(PACKAGE + ".Category").getMethod("$project", Map.class,
+            Tables.CATEGORY.getClass(), DataFetchingEnvironment.class);
+
+        // The choice is refused until the store's units replace the generated ones, so its schema
+        // is a defect document's, read and emitted beside the scenario's.
+        var choosing = ProjectionEmitter.emitAll(
+            FACTS.read("defects/inline-list-choice", graph -> ProjectionQuery.read(graph.handle())), CHOOSING);
+        var chosen = new HashMap<String, TypeSpec>();
+        for (var type : List.of("Film", "Category")) {
+            chosen.put(CHOOSING + "." + type, ((ProjectionEmitter.Result.Emitted) choosing.get(type)).unit());
+        }
+        for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(CHOOSING)) {
+            chosen.put(CHOOSING + ".util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
+            chosen.put(CHOOSING + ".schema." + spec.name(), spec);
+        }
+        choosingHarness = EmittedCodeHarness.compileStrictly(chosen);
+        projectChoosingCategory = choosingHarness.load(CHOOSING + ".Category").getMethod("$project", Map.class,
+            Tables.CATEGORY.getClass(), DataFetchingEnvironment.class);
     }
 
     @AfterAll
     static void close() {
         if (harness != null) harness.close();
+        if (choosingHarness != null) choosingHarness.close();
     }
 
     @Test
@@ -158,6 +185,42 @@ class ProjectionEmitterExecutionTest {
                 new ProjectionEmitter.Refusal("Region.validPeriod", ProjectionEmitter.Reason.NULL_CONTRACT))));
     }
 
+    @Test
+    @DisplayName("a list read inline is its films in the order written, each projected by Film's own unit")
+    void anInlineListInItsWrittenOrder() throws Exception {
+        assertThat(categoryFilms(projectCategory, field("films", field("title")), "__rk_films"))
+            .isEqualTo(inCategory().orderBy(FILM.TITLE).fetch(FILM.TITLE));
+    }
+
+    @Test
+    @DisplayName("a client's choice orders an inline list: an ascending choice reversed by its direction, a written direction kept, by primary key where it picks none")
+    void anInlineListInTheOrderAClientPicks() throws Exception {
+        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
+                Map.of("field", "LENGTH", "direction", "DESC"))), field("title")), "__rk_filmsChosen"))
+            .as("LENGTH, DESC").isEqualTo(inCategory().orderBy(FILM.LENGTH.desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
+        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
+                Map.of("field", "TITLE", "direction", "ASC"))), field("title")), "__rk_filmsChosen"))
+            .as("TITLE, written DESC, asked ASC").isEqualTo(inCategory().orderBy(FILM.TITLE.desc()).fetch(FILM.TITLE));
+        assertThat(categoryFilms(projectChoosingCategory, field("filmsChosen", field("title")), "__rk_filmsChosen"))
+            .as("nothing picked").isEqualTo(inCategory().orderBy(FILM.FILM_ID).fetch(FILM.TITLE));
+    }
+
+    /** Category 1's films, joined as the inline lists read them. */
+    private static org.jooq.SelectConditionStep<org.jooq.Record1<String>> inCategory() {
+        return TestDatabase.dsl().select(FILM.TITLE).from(FILM)
+            .join(Tables.FILM_CATEGORY).on(Tables.FILM_CATEGORY.FILM_ID.eq(FILM.FILM_ID))
+            .where(Tables.FILM_CATEGORY.CATEGORY_ID.eq(1));
+    }
+
+    /** The titles of category 1's films the inline list selected under {@code alias} reads, in its order. */
+    private static List<String> categoryFilms(Method project, SelectedField list, String alias) throws Exception {
+        @SuppressWarnings("unchecked")
+        var fields = (List<Field<?>>) project.invoke(null, grouped(list), Tables.CATEGORY, null);
+        var row = TestDatabase.dsl().select(fields).from(Tables.CATEGORY)
+            .where(Tables.CATEGORY.CATEGORY_ID.eq(1)).fetchOne();
+        return ((org.jooq.Result<?>) row.get(alias)).map(film -> film.get("title", String.class));
+    }
+
     @SuppressWarnings("unchecked")
     private static List<Field<?>> fields(Map<String, List<SelectedField>> grouped) throws Exception {
         return (List<Field<?>>) project.invoke(null, grouped, FILM, null);
@@ -179,6 +242,16 @@ class ProjectionEmitterExecutionTest {
 
     /** A selected field under {@code resultKey}, with its immediate children, as the selection adapters read one. */
     private static SelectedField aliased(String resultKey, String name, SelectedField... children) {
+        return selected(resultKey, name, Map.of(), children);
+    }
+
+    /** A selected field with the arguments a client passed. */
+    private static SelectedField argued(String name, Map<String, Object> arguments, SelectedField... children) {
+        return selected(name, name, arguments, children);
+    }
+
+    private static SelectedField selected(String resultKey, String name, Map<String, Object> arguments,
+                                          SelectedField... children) {
         var selectionSet = (DataFetchingFieldSelectionSet) Proxy.newProxyInstance(
             ProjectionEmitterExecutionTest.class.getClassLoader(), new Class<?>[] {DataFetchingFieldSelectionSet.class},
             (proxy, method, args) -> switch (method.getName()) {
@@ -191,7 +264,7 @@ class ProjectionEmitterExecutionTest {
                 case "getName" -> name;
                 case "getResultKey" -> resultKey;
                 case "getSelectionSet" -> selectionSet;
-                case "getArguments" -> Map.of();
+                case "getArguments" -> arguments;
                 case "toString" -> resultKey + ":" + name;
                 case "hashCode" -> System.identityHashCode(proxy);
                 case "equals" -> proxy == args[0];

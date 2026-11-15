@@ -815,8 +815,10 @@ static method needs no holder.
     correlated multiset over the rows its path reaches, in its `DEFAULT` order's sort keys or, where
     an `@orderBy` argument offers a choice, a run-time switch on its value over the `CHOICE` rows'
     keys in the client's direction. It reads every sort key of an order whatever its basis, so the
-    row key completion lands with no change here. The deferral, its `defect_type` row and the
-    multiset half of `requireResolvedOrderingsAreLowered` go; closes before the flip.
+    row key completion lands with no change here. The walk's units are what run until the flip, so
+    the deferral, its `defect_type` row and the multiset half of
+    `requireResolvedOrderingsAreLowered` go when the store's units replace them, and
+    `defects/inline-list-choice` pins the choice until then; closes before the flip.
   * **A list's order is completed with its row key** `open`. The walk completes every single-table
     list's fixed order, its default included, not only a connection's (`OrderByResolver.complete`):
     the row key's columns the order does not list follow it, in the direction of its last key,

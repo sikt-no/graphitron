@@ -10,7 +10,9 @@ import com.palantir.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 /**
@@ -21,7 +23,9 @@ import java.util.Objects;
  * <p>A unit is emitted whole or not at all. Its fields are the type's own and, inline beneath a
  * nesting field, the nesting type's, each nesting level a method of the unit's class rather than a
  * class of its own. A column is projected by its identity, as the walk's unit projects it, and a
- * node id by its key columns in key order, the encode being its reader's.
+ * node id by its key columns in key order, the encode being its reader's. A list read inline is a
+ * multiset over the rows its path reaches, projected by the listed type's own unit, so it is
+ * emitted only where that unit is.
  *
  * <p>Every reason is a fact not yet stated or a shape not yet rendered, and each closes as its node
  * lands; at the flip each that remains becomes a stored defect of basis {@code UNSUPPORTED}, and
@@ -43,9 +47,10 @@ public final class ProjectionEmitter {
          */
         CHILD_PRODUCER_COLUMNS,
         /**
-         * A child read inline down a path, a single join or a list multiset over the rows the path
-         * reaches, until its ordering and its {@code @lookupKey} narrowing are stated at the
-         * occurrence.
+         * A child read inline down a path not rendered yet: a single join, or a list whose path is
+         * not one chain of column-pair joins from the unit's row, whose order reads a key that is
+         * no column of its table, that an argument or a {@code @condition} narrows, or whose
+         * listed type's unit is not emitted.
          */
         INLINE_CHILD,
         /**
@@ -97,6 +102,7 @@ public final class ProjectionEmitter {
     private static final ClassName SET = ClassName.get("java.util", "Set");
     private static final ClassName LINKED_HASH_SET = ClassName.get("java.util", "LinkedHashSet");
     private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
+    private static final ClassName SORT_FIELD = ClassName.get("org.jooq", "SortField");
 
     /** The alias a unit projecting nothing selects, so its statement stays one column wide. */
     private static final String ROW_PRESENT = "__row_present__";
@@ -115,14 +121,43 @@ public final class ProjectionEmitter {
 
     /**
      * The unit's class in {@code outputPackage}, its fields read through the selection adapters in
-     * {@code <outputPackage>.util}, or the occurrences that keep it from being emitted.
+     * {@code <outputPackage>.util}, or the occurrences that keep it from being emitted; a list it
+     * reads inline is emitted only where it lists its own type.
      */
     public static Result emit(ProjectionQuery.Unit unit, String outputPackage) {
-        var refusals = new ArrayList<Refusal>();
-        refuse(unit, unit.arms(), refusals);
-        if (!refusals.isEmpty()) {
-            return new Result.NotYet(refusals);
+        return emitAll(Map.of(unit.type(), unit), outputPackage).get(unit.type());
+    }
+
+    /**
+     * Each of {@code units} emitted into {@code outputPackage} or refused, by type. A list read
+     * inline calls its listed type's unit, so a unit is emitted where its own occurrences render and
+     * every unit it lists is emitted too: the units that can be are found by striking out, until
+     * none is left to strike, each unit refusing an occurrence among those still standing, so two
+     * units listing each other are emitted together.
+     */
+    public static Map<String, Result> emitAll(Map<String, ProjectionQuery.Unit> units, String outputPackage) {
+        var callable = new LinkedHashMap<>(units);
+        boolean struck = true;
+        while (struck) {
+            struck = callable.values().removeIf(unit -> !refusals(unit, callable).isEmpty());
         }
+        var results = new LinkedHashMap<String, Result>();
+        for (var unit : units.values()) {
+            var refusals = refusals(unit, callable);
+            results.put(unit.type(), refusals.isEmpty() ? new Result.Emitted(render(unit, callable, outputPackage))
+                : new Result.NotYet(refusals));
+        }
+        return results;
+    }
+
+    private static List<Refusal> refusals(ProjectionQuery.Unit unit, Map<String, ProjectionQuery.Unit> callable) {
+        var refusals = new ArrayList<Refusal>();
+        refuse(unit, unit.arms(), callable, refusals);
+        return refusals;
+    }
+
+    private static TypeSpec render(ProjectionQuery.Unit unit, Map<String, ProjectionQuery.Unit> callable,
+                                   String outputPackage) {
         var occurrences = ClassName.get(outputPackage + ".util", "SelectionOccurrences");
         var table = ClassName.bestGuess(unit.table().tableClassName());
         var type = TypeSpec.classBuilder(unit.type())
@@ -141,30 +176,32 @@ public final class ProjectionEmitter {
                 .endControlFlow()
                 .addStatement("return new $T<>(fields)", ARRAY_LIST)
                 .build());
-        levels(type, List.of(), unit.arms(), table, occurrences, unit.key());
-        return new Result.Emitted(type.build());
+        levels(type, List.of(), unit.arms(), table, occurrences, unit.key(), callable, outputPackage);
+        return type.build();
     }
 
     /** Each arm beneath {@code arms} not yet rendered, with its reason, in the arms' order. */
-    private static void refuse(ProjectionQuery.Unit unit, List<ProjectionQuery.Arm> arms, List<Refusal> refusals) {
+    private static void refuse(ProjectionQuery.Unit unit, List<ProjectionQuery.Arm> arms,
+                               Map<String, ProjectionQuery.Unit> callable, List<Refusal> refusals) {
         for (var arm : arms) {
-            var reason = reasonFor(arm, unit.key());
+            var reason = reasonFor(arm, unit.key(), callable);
             if (reason != null) {
                 refusals.add(new Refusal(arm.coordinate(), reason));
             } else if (nesting(arm)) {
-                refuse(unit, arm.nested(), refusals);
+                refuse(unit, arm.nested(), callable, refusals);
             }
         }
     }
 
     /** Why {@code arm} is not rendered, or null where it is. */
-    private static Reason reasonFor(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable) {
+    private static Reason reasonFor(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable,
+                                    Map<String, ProjectionQuery.Unit> callable) {
         if (arm.pivot()) return Reason.PIVOT;
         if ("PRODUCER".equals(arm.side())) return handed(arm, unitTable) ? null : Reason.CHILD_PRODUCER_COLUMNS;
         if (arm.reads() == null) return Reason.UNSTATED;
         return switch (arm.reads()) {
             case "EXPRESSION" -> Reason.EXPRESSION;
-            case "NESTED" -> !nesting(arm) ? Reason.INLINE_CHILD
+            case "NESTED" -> !nesting(arm) ? (inlineList(arm, unitTable, callable) ? null : Reason.INLINE_CHILD)
                 : arm.nonNull() ? null : Reason.NULL_CONTRACT;
             case "COLUMN" -> sameRow(arm) && !projected(arm, unitTable).isEmpty() || terminal(arm, unitTable) != null
                 ? null : Reason.SCALAR_PATH;
@@ -188,6 +225,42 @@ public final class ProjectionEmitter {
         var landing = from;
         var columns = arm.columns().stream().filter(c -> c.table().equals(landing)).toList();
         return columns.size() == 1 ? columns.get(0) : null;
+    }
+
+    /**
+     * The table a path lands on where it is one chain of column-pair joins from the unit's table,
+     * else null.
+     */
+    private static ProjectionQuery.TableKey landing(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable) {
+        if (arm.steps().isEmpty()) return null;
+        var from = unitTable;
+        for (var step : arm.steps()) {
+            if (step.pairs().isEmpty() || !step.from().equals(from)) return null;
+            from = step.to();
+        }
+        return from;
+    }
+
+    /**
+     * A list of one table-bound type read inline down one chain of column-pair joins to that type's
+     * table, which nothing narrows, each of its orders' keys a column of that table, and whose
+     * type's unit is emitted.
+     */
+    private static boolean inlineList(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable,
+                                      Map<String, ProjectionQuery.Unit> callable) {
+        var list = arm.list();
+        if (arm.listDepth() != 1 || !arm.targetTable() || list == null || list.narrowed()
+                || list.bounds().size() != 1) {
+            return false;
+        }
+        var callee = callable.get(arm.targetType());
+        var landing = landing(arm, unitTable);
+        if (callee == null || landing == null || !landing.equals(callee.key())) return false;
+        var orders = new ArrayList<ProjectionQuery.Order>();
+        if (list.defaultOrder() != null) orders.add(list.defaultOrder());
+        if (list.choice() != null) orders.addAll(list.choice().orders());
+        return orders.stream().flatMap(o -> o.keys().stream())
+            .allMatch(k -> k.column() != null && k.column().table().equals(landing));
     }
 
     /**
@@ -219,7 +292,8 @@ public final class ProjectionEmitter {
 
     /** One method per nesting level, the unit's own fields first, each nesting field's beneath. */
     private static void levels(TypeSpec.Builder type, List<String> chain, List<ProjectionQuery.Arm> arms,
-                               ClassName table, ClassName occurrences, ProjectionQuery.TableKey unitTable) {
+                               ClassName table, ClassName occurrences, ProjectionQuery.TableKey unitTable,
+                               Map<String, ProjectionQuery.Unit> callable, String outputPackage) {
         var method = MethodSpec.methodBuilder(levelName(chain))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addParameter(ParameterizedTypeName.get(SET, fieldWildcard()), "fields")
@@ -232,7 +306,7 @@ public final class ProjectionEmitter {
         method.beginControlFlow("switch (sf.getName())");
         for (var arm : arms) {
             method.addCode("case $S -> ", arm.field());
-            method.addCode(armBody(arm, occurrences, unitTable));
+            method.addCode(armBody(arm, occurrences, unitTable, callable, outputPackage));
         }
         method.addCode("default -> { }\n");
         method.endControlFlow();
@@ -240,7 +314,7 @@ public final class ProjectionEmitter {
         type.addMethod(method.build());
         for (var arm : arms) {
             if (nesting(arm)) {
-                levels(type, arm.chain(), arm.nested(), table, occurrences, unitTable);
+                levels(type, arm.chain(), arm.nested(), table, occurrences, unitTable, callable, outputPackage);
             }
         }
     }
@@ -251,7 +325,11 @@ public final class ProjectionEmitter {
      * puts between the prefix and its own key, so every selection set nested into one row gets a
      * name space of its own; the readers compose the same name.
      */
-    private static CodeBlock armBody(ProjectionQuery.Arm arm, ClassName occurrences, ProjectionQuery.TableKey unitTable) {
+    private static CodeBlock armBody(ProjectionQuery.Arm arm, ClassName occurrences, ProjectionQuery.TableKey unitTable,
+                                     Map<String, ProjectionQuery.Unit> callable, String outputPackage) {
+        if ("NESTED".equals(arm.reads()) && !nesting(arm)) {
+            return multiset(arm, occurrences, outputPackage);
+        }
         if (nesting(arm)) {
             return CodeBlock.of("$L(fields, $T.mergeByResultKey(entry.getValue()), table, env, rkPath + entry.getKey() + $S);\n",
                 levelName(arm.chain()), occurrences, PATH_DELIMITER);
@@ -291,6 +369,84 @@ public final class ProjectionEmitter {
         body.addStatement("fields.add($T.field($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),
             aliasPrefix(arm.aliasOwner()));
         return body.unindent().add("}\n").build();
+    }
+
+    /**
+     * A list read inline as one correlated multiset: the steps joined in order, each on its column
+     * pairs, the first correlated to the unit's row, selecting the listed type's unit over the
+     * table the last step lands on, in the order the client picks or else the default, named for
+     * the field's result key under its owner. Each step's alias extends the row's own, so a list
+     * nested in a list of its own type never shadows the row it is correlated to.
+     */
+    private static CodeBlock multiset(ProjectionQuery.Arm arm, ClassName occurrences, String outputPackage) {
+        var steps = arm.steps();
+        var list = arm.list();
+        var body = CodeBlock.builder().add("{\n").indent();
+        for (int i = 0; i < steps.size(); i++) {
+            var step = steps.get(i);
+            body.addStatement("var x$L = $T.$L.as(table.getName() + $S)", i,
+                ClassName.bestGuess(step.constantsClassName()), step.javaFieldName(), "_" + i);
+        }
+        String listed = "x" + (steps.size() - 1);
+        body.addStatement("$T<$T<?>> order = new $T<>()", LIST, SORT_FIELD, ARRAY_LIST);
+        if (list.choice() != null) {
+            var choice = list.choice();
+            // The order is read off the field's own arguments, so every occurrence under its result
+            // key has to agree on them.
+            body.addStatement("$T.requireConsistentArguments(entry.getKey(), entry.getValue())", occurrences);
+            body.addStatement("$T chosen = sf.getArguments().get($S)", Object.class, choice.argument());
+            body.addStatement("$T<?> picks = chosen instanceof $T<?> many ? many : chosen == null ? $T.of() : $T.of(chosen)",
+                LIST, LIST, LIST, LIST);
+            body.beginControlFlow("for ($T one : picks)", Object.class);
+            body.beginControlFlow("if (!(one instanceof $T<?, ?> pick))", MAP);
+            body.addStatement("continue");
+            body.endControlFlow();
+            body.addStatement("boolean desc = $S.equals(String.valueOf(pick.get($S)))", "DESC", choice.directionField());
+            body.beginControlFlow("switch (String.valueOf(pick.get($S)))", choice.sortField());
+            for (var order : choice.orders()) {
+                body.add("case $S -> order.addAll($T.of($L));\n", order.value(), LIST, sortTerms(order, listed, true));
+            }
+            body.add("default -> { }\n");
+            body.endControlFlow();
+            body.endControlFlow();
+        }
+        if (list.defaultOrder() != null) {
+            body.beginControlFlow("if (order.isEmpty())");
+            body.addStatement("order.addAll($T.of($L))", LIST, sortTerms(list.defaultOrder(), listed, false));
+            body.endControlFlow();
+        }
+        var select = CodeBlock.builder().add("$T.select($T.$L($T.mergeByResultKey(entry.getValue()), $L, env)).from(x0)",
+            DSL, ClassName.get(outputPackage, arm.targetType()), "$project", occurrences, listed);
+        for (int i = 1; i < steps.size(); i++) {
+            select.add(".join(x$L).on($L)", i, pairs(steps.get(i).pairs(), "x" + (i - 1), "x" + i));
+        }
+        select.add(".where($L).orderBy(order)", pairs(steps.get(0).pairs(), "table", "x0"));
+        body.addStatement("fields.add($T.multiset($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),
+            aliasPrefix(arm.aliasOwner()));
+        return body.unindent().add("}\n").build();
+    }
+
+    /**
+     * An order's keys over {@code table}, each in its own direction, nulls last where its column
+     * admits them; where {@code flips} and every key is ascending, a client's {@code desc} reverses
+     * them all, an order mixing directions keeping the ones written.
+     */
+    private static CodeBlock sortTerms(ProjectionQuery.Order order, String table, boolean flips) {
+        var terms = CodeBlock.builder();
+        boolean reversible = flips && order.uniformAscending();
+        for (int i = 0; i < order.keys().size(); i++) {
+            var key = order.keys().get(i);
+            if (i > 0) terms.add(", ");
+            var column = key.collation() == null ? CodeBlock.of("$L.$L", table, key.column().javaName())
+                : CodeBlock.of("$L.$L.collate($S)", table, key.column().javaName(), key.collation());
+            String nulls = key.nullable() ? ".nullsLast()" : "";
+            if (reversible) {
+                terms.add("desc ? $L.desc()$L : $L.asc()$L", column, nulls, column, nulls);
+            } else {
+                terms.add("$L.$L()$L", column, "DESC".equals(key.direction()) ? "desc" : "asc", nulls);
+            }
+        }
+        return terms.build();
     }
 
     /** A step's column pairs as one condition, each pair's from column on {@code from} equal to its to column on {@code to}. */

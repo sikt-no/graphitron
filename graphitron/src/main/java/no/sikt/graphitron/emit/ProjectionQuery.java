@@ -6,18 +6,28 @@ import org.jooq.Records;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
@@ -86,6 +96,51 @@ public final class ProjectionQuery {
     }
 
     /**
+     * One key an order sorts by, in its order's sequence: the column it reads where it reads one,
+     * null for a key computed by a method or read down a path, with whether the column admits null,
+     * the key's direction and its collation, null where none is written.
+     */
+    public record SortKey(Column column, boolean nullable, String direction, String collation) {}
+
+    /**
+     * One order a list can be read in, its keys in sequence: the default, its value null, or one a
+     * client picks by the name of its sort enum's value.
+     */
+    public record Order(String value, List<SortKey> keys) {
+        public Order {
+            keys = List.copyOf(keys);
+        }
+
+        /** Every key ascending, so a client's direction reverses the order as a whole. */
+        public boolean uniformAscending() {
+            return keys.stream().allMatch(k -> "ASC".equals(k.direction()));
+        }
+    }
+
+    /**
+     * The argument a client picks a list's order through: its name, whether it takes a list of
+     * choices composed in sequence, the fields of its input object naming the sort enum's value and
+     * the direction, and the order each value picks.
+     */
+    public record Choice(String argument, boolean sequence, String sortField, String directionField,
+                         List<Order> orders) {
+        public Choice {
+            orders = List.copyOf(orders);
+        }
+    }
+
+    /**
+     * What a list states about reading it: the tables it reads, its default order where it has one,
+     * the argument a client picks one through where it has one, and whether anything else narrows
+     * it, an argument other than that one or a {@code @condition}.
+     */
+    public record ListRead(List<String> bounds, Order defaultOrder, Choice choice, boolean narrowed) {
+        public ListRead {
+            bounds = List.copyOf(bounds);
+        }
+    }
+
+    /**
      * One occurrence of the unit: its coordinate, the field's name at each step from the unit's
      * type down to it, whether the field is non-null and how many lists wrap it, the columns it
      * binds, the key columns its node id packs in key order, the origin of each path that meets
@@ -93,14 +148,15 @@ public final class ProjectionQuery {
      * way of reading, the type it returns and whether that type is table-bound or a pivot's result,
      * whether it is a nesting field, its fields read off its parent's row, its join path's steps
      * in order, the type owning the name a projection writes for it where that is not shared
-     * (an interface a discriminated participant's field is declared by, else the participant), and
-     * the occurrences nested beneath it in the order their fields are declared.
+     * (an interface a discriminated participant's field is declared by, else the participant), what
+     * it states about reading it as a list, null where it states no order, and the occurrences
+     * nested beneath it in the order their fields are declared.
      */
     public record Arm(String coordinate, List<String> chain, boolean nonNull, int listDepth,
                       List<Column> columns, List<Column> nodeKeys, List<String> pathOrigins, String side,
                       String producerKind, String reads, String targetType, boolean targetTable,
                       boolean pivot, boolean nesting, List<Step> steps, String aliasOwner, List<Column> liftColumns,
-                      List<Arm> nested) {
+                      ListRead list, List<Arm> nested) {
         public Arm {
             Objects.requireNonNull(coordinate, "coordinate");
             chain = List.copyOf(chain);
@@ -207,6 +263,8 @@ public final class ProjectionQuery {
                 r.value12(), r.value13(), r.value14(), r.value15() != null, Boolean.TRUE.equals(r.value16()),
                 Boolean.TRUE.equals(r.value17()), r.value18(), r.value19(), r.value20())));
 
+        var lists = lists(store);
+
         // A chain starts at an occurrence with no parent; the type declaring its field is the unit
         // it belongs to.
         var children = new LinkedHashMap<String, List<Fact>>();
@@ -222,13 +280,14 @@ public final class ProjectionQuery {
         for (var entry : tables.entrySet()) {
             String type = entry.getKey();
             units.put(type, new Unit(type, entry.getValue(), tableKeys.get(type),
-                arms(starts.getOrDefault(type, List.of()), List.of(), children)));
+                arms(starts.getOrDefault(type, List.of()), List.of(), children, lists)));
         }
         return units;
     }
 
     /** The arms of {@code facts}, siblings in declaration order, each with its nested arms beneath. */
-    private static List<Arm> arms(List<Fact> facts, List<String> above, Map<String, List<Fact>> children) {
+    private static List<Arm> arms(List<Fact> facts, List<String> above, Map<String, List<Fact>> children,
+                                  Map<String, ListRead> lists) {
         return facts.stream()
             .sorted(Comparator.comparingInt(Fact::ordinal).thenComparing(Fact::coordinate))
             .map(fact -> {
@@ -237,10 +296,90 @@ public final class ProjectionQuery {
                 return new Arm(fact.coordinate(), chain, fact.nonNull(), fact.listDepth(), fact.columns(),
                     fact.nodeKeys(), fact.pathOrigins(), fact.side(), fact.producerKind(), fact.reads(),
                     fact.targetType(), fact.targetTable(), fact.pivot(), fact.nesting(), fact.steps(), fact.aliasOwner(),
-                    fact.liftColumns(),
-                    arms(children.getOrDefault(fact.coordinate(), List.of()), chain, children));
+                    fact.liftColumns(), lists.get(fact.coordinate()),
+                    arms(children.getOrDefault(fact.coordinate(), List.of()), chain, children, lists));
             })
             .toList();
+    }
+
+    /**
+     * Each list occurrence's orders, each order's keys in sequence and the choices by the argument
+     * picking them, and whether an argument besides that one or a {@code @condition} narrows it.
+     */
+    private static Map<String, ListRead> lists(StoreHandle store) {
+        var r = GRAPHITRON_OCCURRENCE_ORDER;
+        var k = GRAPHITRON_OCCURRENCE_SORT_KEY;
+        var kc = GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+        var c = SQL_COLUMN;
+        var ev = GRAPHITRON_ENUM_VALUE;
+        var ao = GRAPHITRON_OCCURRENCE.as("ao");
+        var ga = GRAPHITRON_ARGUMENT;
+        var oi = GRAPHITRON_ORDER_INPUT;
+        var bounds = new LinkedHashMap<String, Set<String>>();
+        var defaults = new LinkedHashMap<String, List<SortKey>>();
+        var arguments = new LinkedHashMap<String, Choice>();
+        var picks = new LinkedHashMap<String, Map<String, List<SortKey>>>();
+        store.dsl()
+            .select(r.COORDINATE, r.BOUND, r.KIND, ev.VALUE_NAME, ao.NAME, ga.LIST_DEPTH, oi.SORT_FIELD_NAME,
+                oi.DIRECTION_FIELD_NAME, k.DIRECTION, k.COLLATION, kc.TABLE_SOURCE_NAME, kc.TABLE_SCHEMA,
+                kc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.NULLABLE)
+            .from(r)
+            .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.COORDINATE.eq(r.COORDINATE), k.BOUND.eq(r.BOUND),
+                k.CHOICE.eq(r.CHOICE))
+            .leftJoin(kc).on(kc.GRAPH_NAME.eq(k.GRAPH_NAME), kc.COORDINATE.eq(k.COORDINATE), kc.BOUND.eq(k.BOUND),
+                kc.CHOICE.eq(k.CHOICE), kc.POSITION.eq(k.POSITION))
+            .leftJoin(c).on(c.SOURCE_NAME.eq(kc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(kc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(kc.TABLE_NAME), c.COLUMN_NAME.eq(kc.COLUMN_NAME))
+            .leftJoin(ev).on(ev.GRAPH_NAME.eq(r.GRAPH_NAME), ev.COORDINATE.eq(r.CHOICE), r.KIND.eq("CHOICE"))
+            .leftJoin(ao).on(ao.GRAPH_NAME.eq(r.GRAPH_NAME), ao.COORDINATE.eq(r.ARGUMENT_COORDINATE))
+            .leftJoin(ga).on(ga.GRAPH_NAME.eq(ao.GRAPH_NAME), ga.COORDINATE.eq(ao.ELEMENT_COORDINATE))
+            .leftJoin(oi).on(oi.GRAPH_NAME.eq(ga.GRAPH_NAME), oi.TYPE_NAME.eq(ga.NAMED_TYPE))
+            .where(r.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(r.COORDINATE, r.BOUND, r.KIND, ev.ORDINAL, k.POSITION)
+            .forEach(row -> {
+                String coordinate = row.value1();
+                bounds.computeIfAbsent(coordinate, x -> new LinkedHashSet<>()).add(row.value2());
+                var column = row.value14() == null ? null
+                    : column(row.value11(), row.value12(), row.value13(), row.value14(), row.value15());
+                var key = new SortKey(column, Boolean.TRUE.equals(row.value16()), row.value9(), row.value10());
+                if ("DEFAULT".equals(row.value3())) {
+                    defaults.computeIfAbsent(coordinate, x -> new ArrayList<>()).add(key);
+                } else {
+                    arguments.putIfAbsent(coordinate, new Choice(row.value5(),
+                        row.value6() != null && row.value6() > 0, row.value7(), row.value8(), List.of()));
+                    picks.computeIfAbsent(coordinate, x -> new LinkedHashMap<>())
+                        .computeIfAbsent(row.value4(), x -> new ArrayList<>()).add(key);
+                }
+            });
+
+        // An argument besides the one picking the order, or a @condition at the occurrence, narrows it.
+        var o = GRAPHITRON_OCCURRENCE;
+        var cond = GRAPHITRON_OCCURRENCE_CONDITION;
+        var narrowed = new HashSet<String>();
+        store.dsl()
+            .select(o.PARENT_COORDINATE)
+            .from(o)
+            .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.eq("FIELD_ARGUMENT"))
+            .and(notExists(selectOne().from(r).where(r.GRAPH_NAME.eq(o.GRAPH_NAME),
+                r.COORDINATE.eq(o.PARENT_COORDINATE), r.ARGUMENT_COORDINATE.eq(o.COORDINATE))))
+            .union(select(cond.COORDINATE).from(cond).where(cond.GRAPH_NAME.eq(store.graphName())))
+            .forEach(row -> narrowed.add(row.value1()));
+
+        var lists = new LinkedHashMap<String, ListRead>();
+        bounds.forEach((coordinate, bound) -> {
+            var defaultKeys = defaults.get(coordinate);
+            var argument = arguments.get(coordinate);
+            Choice choice = null;
+            if (argument != null) {
+                var orders = new ArrayList<Order>();
+                picks.get(coordinate).forEach((value, keys) -> orders.add(new Order(value, keys)));
+                choice = new Choice(argument.argument(), argument.sequence(), argument.sortField(),
+                    argument.directionField(), orders);
+            }
+            lists.put(coordinate, new ListRead(List.copyOf(bound),
+                defaultKeys == null ? null : new Order(null, defaultKeys), choice, narrowed.contains(coordinate)));
+        });
+        return lists;
     }
 
     /** The occurrence's join path steps in path order, each with the column pairs it joins on. */

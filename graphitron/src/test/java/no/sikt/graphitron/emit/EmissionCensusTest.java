@@ -269,10 +269,10 @@ class EmissionCensusTest {
         var units = new java.util.HashMap<String, TypeSpec>();
         var emitted = new ArrayList<String>();
         var refused = new TreeMap<String, List<String>>();
-        for (var unit : projections.values()) {
-            switch (ProjectionEmitter.emit(unit, "census")) {
+        for (var result : ProjectionEmitter.emitAll(projections, "census").entrySet()) {
+            switch (result.getValue()) {
                 case ProjectionEmitter.Result.Emitted e -> {
-                    emitted.add(unit.type());
+                    emitted.add(result.getKey());
                     units.put("census." + e.unit().name(), e.unit());
                 }
                 case ProjectionEmitter.Result.NotYet n -> n.refusals().forEach(refusal ->
