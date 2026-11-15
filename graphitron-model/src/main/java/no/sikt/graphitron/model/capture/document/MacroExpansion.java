@@ -50,9 +50,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_AUTHORED;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT_MINTED_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_BINDING_ENTRY;
@@ -60,11 +57,14 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_AUTHORED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED;
@@ -137,6 +137,13 @@ public final class MacroExpansion {
         // The facets each carrier surfaces, which the facet mint reads: the applications, then the carriers'.
         store(dsl, graphName, touchedAt, GRAPHITRON_FACET_BINDING, GRAPHITRON_FACET_BINDING_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_FACET, GRAPHITRON_CONNECTION_FACET_RULE);
+        // What each arm of the mint states per carrier, which the conflicts and the sets read.
+        store(dsl, graphName, touchedAt, GRAPHITRON_TYPE_MINTED_CANDIDATE,
+            GRAPHITRON_TYPE_MINTED_CANDIDATE_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_MINTED_CANDIDATE,
+            GRAPHITRON_FIELD_MINTED_CANDIDATE_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE,
+            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE_RULE);
         // Then the conflicts, because every arm below withholds what this finds.
         conflicts(dsl, graphName);
         elements(dsl, graphName, touchedAt);
@@ -378,40 +385,49 @@ public final class MacroExpansion {
     private static void conflicts(DSLContext dsl, String graphName) {
         dsl.deleteFrom(GRAPHITRON_MINTED_CONFLICT)
             .where(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME.eq(graphName)).execute();
-        contested(dsl, graphName, GRAPHITRON_TYPE_MINTED_CANDIDATE.GRAPH_NAME,
-            GRAPHITRON_TYPE_MINTED_CANDIDATE.COORDINATE, GRAPHITRON_TYPE_MINTED_CANDIDATE,
-            "NAMED_TYPE");
-        contested(dsl, graphName, GRAPHITRON_FIELD_MINTED_CANDIDATE.GRAPH_NAME,
-            GRAPHITRON_FIELD_MINTED_CANDIDATE.COORDINATE, GRAPHITRON_FIELD_MINTED_CANDIDATE,
-            "FIELD");
-        contested(dsl, graphName, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.GRAPH_NAME,
-            GRAPHITRON_ARGUMENT_MINTED_CANDIDATE.COORDINATE, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE,
-            "FIELD_ARGUMENT");
+        var t = GRAPHITRON_TYPE_MINTED_CANDIDATE;
+        contested(dsl, graphName, t, t.GRAPH_NAME, t.COORDINATE, "NAMED_TYPE", t.DESCRIPTION);
+        var f = GRAPHITRON_FIELD_MINTED_CANDIDATE;
+        contested(dsl, graphName, f, f.GRAPH_NAME, f.COORDINATE, "FIELD", f.ORDINAL, f.TYPE_SDL,
+            f.NAMED_TYPE, f.NON_NULL, f.LIST_DEPTH, f.ITEM_NON_NULL, f.DESCRIPTION, f.REWRITE);
+        var a = GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
+        contested(dsl, graphName, a, a.GRAPH_NAME, a.COORDINATE, "FIELD_ARGUMENT", a.ORDINAL,
+            a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL, a.LIST_DEPTH, a.ITEM_NON_NULL,
+            a.DEFAULT_VALUE_SDL);
     }
 
     /**
-     * Records the coordinates one candidate set states more than one way.
+     * Records the coordinates one candidate relation states more than one way.
      *
-     * <p>A count of distinct payloads rather than of rows: the candidate views distinct their whole
-     * projection, so two carriers stating one shared type identically are already one row, and what
-     * survives to be counted here is genuine disagreement. Nothing is picked; the coordinate is
-     * withheld from the set and a row here says how many ways the schema disagreed with itself.
+     * <p>A count of distinct payloads rather than of rows: a candidate row is one carrier's arm, so
+     * two carriers stating one shared type identically are two rows and one payload, and what is
+     * counted here is genuine disagreement. The distinct treats two absent values as equal, as the
+     * payload's own comparison must. Nothing is picked; the coordinate is withheld from the set and a
+     * row here says how many ways the schema disagreed with itself.
      */
-    private static void contested(DSLContext dsl, String graphName,
-                                  org.jooq.Field<String> graphColumn,
-                                  org.jooq.Field<String> coordinateColumn,
-                                  org.jooq.Table<?> candidates, String elementKind) {
+    private static void contested(DSLContext dsl, String graphName, Table<?> candidates,
+                                  Field<String> graphColumn, Field<String> coordinateColumn,
+                                  String elementKind, Field<?>... payload) {
+        var projected = new ArrayList<Field<?>>();
+        projected.add(graphColumn);
+        projected.add(coordinateColumn);
+        projected.addAll(Arrays.asList(payload));
+        var readings = dsl.selectDistinct(projected)
+            .from(candidates)
+            .where(graphColumn.eq(graphName))
+            .asTable("readings");
+        var graph = readings.field(graphColumn);
+        var coordinate = readings.field(coordinateColumn);
         dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
             .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
                 GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
             .select(dsl
-                .select(graphColumn, coordinateColumn,
-                    org.jooq.impl.DSL.val(elementKind, GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND),
-                    org.jooq.impl.DSL.count().cast(org.jooq.impl.SQLDataType.INTEGER))
-                .from(candidates)
-                .where(graphColumn.eq(graphName))
-                .groupBy(graphColumn, coordinateColumn)
-                .having(org.jooq.impl.DSL.count().gt(1)))
+                .select(graph, coordinate,
+                    val(elementKind, GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND),
+                    count().cast(org.jooq.impl.SQLDataType.INTEGER))
+                .from(readings)
+                .groupBy(graph, coordinate)
+                .having(count().gt(1)))
             .execute();
     }
 
@@ -421,7 +437,9 @@ public final class MacroExpansion {
      * The anchor is the union of its sets, and nothing else.
      *
      * <p>Each set is a view naming what it contains, so what a population holds and what admits it
-     * are readable without reading the other three. This was four arms of one statement with two
+     * are readable without reading the other three. The minted ones are the type, field and argument
+     * sets, read at their coordinates with the kind each stands for; a rewritten carrier is the one
+     * minted field the authored set holds instead. This was four arms of one statement with two
      * precedence rules interleaved through them, and the legality of each arm lived in Java
      * predicates rather than anywhere a reader of the schema could find it.
      *
@@ -434,16 +452,15 @@ public final class MacroExpansion {
      * reading's stamp and provenance, a new one is inserted beside it, and {@link #sweep} removes
      * what this reading did not write.
      *
-     * <p>Each arm names its own view's columns rather than looking them up by string. The four
-     * views carry one shape, so one helper taking a table would have been shorter; it would also
-     * return null for a column whose name it got wrong, and produce a union that compiles and is
-     * silently missing a set.
+     * <p>Each arm names its own view's columns rather than looking them up by string. One helper
+     * taking a table would have been shorter; it would also return null for a column whose name it
+     * got wrong, and produce a union that compiles and is silently missing a set.
      */
     private static void elements(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         var authored = GRAPHITRON_ELEMENT_AUTHORED;
-        var mintedType = GRAPHITRON_ELEMENT_MINTED_TYPE;
-        var mintedField = GRAPHITRON_ELEMENT_MINTED_FIELD;
-        var mintedArgument = GRAPHITRON_ELEMENT_MINTED_ARGUMENT;
+        var mintedType = GRAPHITRON_TYPE_MINTED;
+        var mintedField = GRAPHITRON_FIELD_MINTED;
+        var mintedArgument = GRAPHITRON_ARGUMENT_MINTED;
         dsl.insertInto(GRAPHITRON_ELEMENT)
             .columns(GRAPHITRON_ELEMENT.GRAPH_NAME, GRAPHITRON_ELEMENT.COORDINATE,
                 GRAPHITRON_ELEMENT.ELEMENT_KIND, GRAPHITRON_ELEMENT.TOUCHED_AT)
@@ -454,17 +471,20 @@ public final class MacroExpansion {
                 .where(authored.GRAPH_NAME.eq(graphName))
                 .unionAll(dsl
                     .select(mintedType.GRAPH_NAME, mintedType.COORDINATE,
-                        mintedType.ELEMENT_KIND, val(touchedAt))
+                        inline("NAMED_TYPE"), val(touchedAt))
                     .from(mintedType)
                     .where(mintedType.GRAPH_NAME.eq(graphName)))
+                // A rewritten carrier is an authored element and a minted field at once: the
+                // transcription already anchors its coordinate, so the authored set holds it.
                 .unionAll(dsl
                     .select(mintedField.GRAPH_NAME, mintedField.COORDINATE,
-                        mintedField.ELEMENT_KIND, val(touchedAt))
+                        inline("FIELD"), val(touchedAt))
                     .from(mintedField)
-                    .where(mintedField.GRAPH_NAME.eq(graphName)))
+                    .where(mintedField.GRAPH_NAME.eq(graphName))
+                    .and(mintedField.REWRITE.isFalse()))
                 .unionAll(dsl
                     .select(mintedArgument.GRAPH_NAME, mintedArgument.COORDINATE,
-                        mintedArgument.ELEMENT_KIND, val(touchedAt))
+                        inline("FIELD_ARGUMENT"), val(touchedAt))
                     .from(mintedArgument)
                     .where(mintedArgument.GRAPH_NAME.eq(graphName))))
             .onDuplicateKeyUpdate()

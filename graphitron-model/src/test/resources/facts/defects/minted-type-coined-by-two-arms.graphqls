@@ -1,0 +1,44 @@
+# One carrier coining one name through two arms of the type mint. connectionName: "PageInfo" names
+# the connection after the page info the same carrier also states, and the two arms write different
+# descriptions, so the type candidates hold two PageInfo rows at Query.films told apart only by the
+# arm, and the disagreement is a conflict row: PageInfo is minted by neither arm. The author's own
+# PageInfo keeps the machinery fields on that name from landing on it. The coinage is the pairing
+# alone, so the two arms are one row there. The edge nobody else names is the control: it is minted.
+#
+# The folder is a guess left for the build to settle: a carrier whose rewrite returns a page info
+# type is expected to draw a defect downstream, which this document does not name.
+
+type Film @table(name: "film") { title: String }
+
+type PageInfo {
+  hasPreviousPage: Boolean!
+  hasNextPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+type Query {
+  films: [Film!]! @asConnection(connectionName: "PageInfo")
+}
+
+extend schema @expectEquals(relation: "graphitron_type_minted_candidate", where: "type_name = 'PageInfo'", rows: """
+  type_name, carrier_coordinate, arm,        description
+  PageInfo,  Query.films,        CONNECTION, A connection to a list of items.
+  PageInfo,  Query.films,        PAGE_INFO,  Information about pagination in a connection.
+  """)
+
+extend schema @expectEquals(relation: "graphitron_minted_conflict", rows: """
+  coordinate, element_kind, variants
+  PageInfo,   NAMED_TYPE,   2
+  """)
+
+extend schema @expectEquals(relation: "graphitron_minted_coinage", rows: """
+  type_name,    coordinate
+  PageInfo,     Query.films
+  PageInfoEdge, Query.films
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  PageInfoEdge
+  """)

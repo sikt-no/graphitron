@@ -351,9 +351,6 @@ class RelationRegistrationGateTest {
         // are, and covered by the same claim: a set is a view, so a producer cannot fill one
         // without filling what it feeds.
         registrations.put("graphitron_element_authored", Arm.DERIVED);
-        registrations.put("graphitron_element_minted_type", Arm.DERIVED);
-        registrations.put("graphitron_element_minted_field", Arm.DERIVED);
-        registrations.put("graphitron_element_minted_argument", Arm.DERIVED);
         registrations.put("graphitron_type_authored", Arm.DERIVED);
         registrations.put("graphitron_type_minted", Arm.DERIVED);
         registrations.put("graphitron_field_authored", Arm.DERIVED);
@@ -659,6 +656,9 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_field_minted_candidate", Arm.DERIVED);
         registrations.put("graphitron_argument_minted_candidate", Arm.DERIVED);
+        registrations.put("graphitron_type_minted_candidate_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_minted_candidate_rule", Arm.DERIVED);
+        registrations.put("graphitron_argument_minted_candidate_rule", Arm.DERIVED);
         registrations.put("graphitron_argument_reachable_input", Arm.DERIVED);
         registrations.put("code_delivery_container", Arm.UNSHADOWED);
         registrations.put("code_tuple_class", Arm.UNSHADOWED);
