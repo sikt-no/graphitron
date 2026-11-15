@@ -1066,7 +1066,11 @@ static method needs no holder.
   tables (the call, its tenant slots and their optionality, the result's scope) and writes
   `TENANT_SLOTS_OPTIONAL_ONLY` or `UNROUTED_SERVICE_CALL` into the defect family; the connection
   rule then states a row only for a root call with no such defect. One derivation, no refusal
-  relation beside the defect. The model goes past the architect at take-up.
+  relation beside the defect. The slot facts the verdict reads, whether a slot is guaranteed, read
+  per element, and through its own argument only, go onto the stored tenant slot as columns its
+  writer captures, an extended near-match rather than a relation beside it (Alf, 2026-11-14), so the
+  defect rule reads stored tables only. Done takes `graphitron_occurrence_connection_rule` off
+  `StageRuleGateTest.READ_BY_VIEWS`. The model goes past the architect at take-up.
 * **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child whose followed key lands on the tenant column is routed by its row's tenant". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
