@@ -730,8 +730,8 @@ static method needs no holder.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
-  * **A method read without parameter names is one defect that says to compile with -parameters**
-    `open`, off the critical path. A class compiled without `-parameters` carries no
+  * **A method read without parameter names is one defect that says to compile with -parameters,
+    claimed by G** `open`, off the critical path. A class compiled without `-parameters` carries no
     `MethodParameters` attribute, so `code_method_parameter.parameter_name` is null for every
     parameter of its methods and nothing binds one by name: today each such parameter of a
     `@service`, `@condition` or `@externalField` call no type or shape fills is its own
