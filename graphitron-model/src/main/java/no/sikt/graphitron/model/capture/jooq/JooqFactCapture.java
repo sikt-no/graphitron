@@ -6,6 +6,10 @@ import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.sink.BindBatch;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.jooq.RecordGetters;
+import no.sikt.graphitron.model.capture.code.ClasspathSourceCapture;
+import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.read.SourceStamp;
+import no.sikt.graphitron.model.sources.Observation;
 import org.jooq.DSLContext;
 import org.jooq.EnumType;
 import org.jooq.Field;
@@ -14,6 +18,7 @@ import org.jooq.Schema;
 import org.jooq.Table;
 import org.jooq.UniqueKey;
 
+import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -83,29 +88,127 @@ public final class JooqFactCapture {
      */
     public static void capture(DSLContext dsl, String graphName, String jooqPackage,
                                ClassLoader loader, LocalDateTime touchedAt) {
-        capture(dsl, graphName, jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader),
-            touchedAt);
+        var read = capture(dsl, graphName,
+            jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader), touchedAt);
+        vouch(dsl, read, null);
     }
 
-    private static void capture(DSLContext dsl, String graphName, JooqCatalog jooq,
-                                LocalDateTime touchedAt) {
+    /**
+     * {@link #capture(DSLContext, String, String, ClassLoader, LocalDateTime)}, leaving a catalog
+     * alone where the entry it is generated into is what it was last read from.
+     *
+     * <p>The catalog's bytes are its entry's, so its stamp is the entry's stamp, decided by
+     * {@link ClasspathSourceCapture#entryStamp} on the classpath reading's own terms, with the
+     * entry's path beside it: the same classes under another entry are another reading. A catalog
+     * left alone is still claimed, and its rows are not swept, the sweep being the reading's. The
+     * stamp is written once the reading has committed, so a capture stopped before it leaves the
+     * catalog unvouched and the next one reads it again.
+     *
+     * @param classpath   the graph's entries, inherited ones included, one of which holds the catalog
+     * @param observation what a dev session watches; null for a run watching nothing
+     */
+    public static void capture(DSLContext dsl, String graphName, String jooqPackage, ClassLoader loader,
+                               List<ClasspathEntry> classpath, Observation observation,
+                               LocalDateTime touchedAt) {
+        String stamp = jooqPackage == null ? null : stampOf(dsl, jooqPackage, loader, classpath, observation);
+        Set<String> current = stamp == null ? Set.of() : vouched(dsl, jooqPackage, stamp);
+        if (current.isEmpty()) {
+            var read = capture(dsl, graphName,
+                jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader), touchedAt);
+            vouch(dsl, read, stamp);
+            return;
+        }
         Progress.started(dsl, graphName, GATHERER);
         dsl.transaction(tx -> {
-            gather(tx.dsl(), graphName, jooq, touchedAt);
+            dropMembership(tx.dsl(), graphName, current);
+            graphSources(tx.dsl(), graphName, List.copyOf(current), touchedAt, false);
             NameMatchedKeys.derive(tx.dsl());
             ColumnSpellings.derive(tx.dsl());
         });
         Progress.completed(dsl, graphName, GATHERER);
     }
 
-    private static void gather(DSLContext dsl, String graphName, JooqCatalog jooq,
-                               LocalDateTime touchedAt) {
+    private static Set<String> capture(DSLContext dsl, String graphName, JooqCatalog jooq,
+                                       LocalDateTime touchedAt) {
+        Progress.started(dsl, graphName, GATHERER);
+        Set<String> read = dsl.transactionResult(tx -> {
+            var sources = gather(tx.dsl(), graphName, jooq, touchedAt);
+            NameMatchedKeys.derive(tx.dsl());
+            ColumnSpellings.derive(tx.dsl());
+            return sources;
+        });
+        Progress.completed(dsl, graphName, GATHERER);
+        return read;
+    }
+
+    /**
+     * The catalog's stamp: the stamp of the entry its {@code DefaultCatalog} class is loaded from,
+     * with that entry's path. Null where no entry of {@code classpath} holds it or the entry cannot be
+     * stamped, which reads as changed.
+     */
+    private static String stampOf(DSLContext dsl, String jooqPackage, ClassLoader loader,
+                                  List<ClasspathEntry> classpath, Observation observation) {
+        String resource = jooqPackage.replace('.', '/') + "/DefaultCatalog.class";
+        var url = loader.getResource(resource);
+        if (url == null) {
+            return null;
+        }
+        Path root;
+        try {
+            if ("jar".equals(url.getProtocol())) {
+                String spec = url.getPath();
+                root = Path.of(java.net.URI.create(spec.substring(0, spec.indexOf("!/"))));
+            } else if ("file".equals(url.getProtocol())) {
+                root = Path.of(url.toURI());
+                for (int i = 0; i < resource.split("/").length; i++) {
+                    root = root.getParent();
+                }
+            } else {
+                return null;
+            }
+        } catch (java.net.URISyntaxException | RuntimeException e) {
+            return null;
+        }
+        Path held = root.toAbsolutePath().normalize();
+        for (ClasspathEntry entry : classpath) {
+            if (entry.path().toAbsolutePath().normalize().equals(held)) {
+                String entryStamp = ClasspathSourceCapture.entryStamp(dsl, entry, observation);
+                return entryStamp == null ? null : SourceStamp.of((entry.path() + "\u0001" + entryStamp)
+                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            }
+        }
+        return null;
+    }
+
+    /** The package's catalog sources last read from the bytes {@code stamp} names. */
+    private static Set<String> vouched(DSLContext dsl, String jooqPackage, String stamp) {
+        var s = STORE_SOURCE;
+        return Set.copyOf(dsl.select(s.SOURCE_NAME).from(s)
+            .where(s.SOURCE_KIND.eq(JOOQ_SCHEMA), s.STAMP.eq(stamp))
+            .and(s.SOURCE_NAME.eq(jooqPackage).or(s.SOURCE_NAME.startsWith(jooqPackage + ".")))
+            .fetch(s.SOURCE_NAME));
+    }
+
+    /**
+     * Vouches for the catalog sources a committed reading wrote: they are derived from {@code stamp}.
+     * A reading with no stamp clears the one they held, which vouched for rows this reading replaced.
+     */
+    private static void vouch(DSLContext dsl, Set<String> read, String stamp) {
+        if (read.isEmpty()) {
+            return;
+        }
+        var s = STORE_SOURCE;
+        dsl.update(s).set(s.STAMP, stamp).where(s.SOURCE_NAME.in(read)).execute();
+    }
+
+    private static Set<String> gather(DSLContext dsl, String graphName, JooqCatalog jooq,
+                                      LocalDateTime touchedAt) {
         List<TableAt> tables = jooq == null ? List.of() : tablesOf(jooq);
         dropMembership(dsl, graphName, sourceNames(tables));
         if (tables.isEmpty()) {
-            return;
+            return Set.of();
         }
-        graphSources(dsl, graphName, tables, touchedAt);
+        graphSources(dsl, graphName, tables.stream().map(TableAt::source).distinct().toList(), touchedAt, true);
         // Parents before children, which the sweep then takes in reverse.
         sources(dsl, tables, touchedAt);
         schemas(dsl, jooq, tables, touchedAt);
@@ -134,6 +237,7 @@ public final class JooqFactCapture {
         recordAccessors(dsl, jooq, tables, touchedAt);
         enumBindings(dsl, tables, touchedAt);
         sweep(dsl, sourceNames(tables), touchedAt);
+        return sourceNames(tables);
     }
 
     // --------------------------------------------------------------- what a row is written about
@@ -907,23 +1011,26 @@ public final class JooqFactCapture {
      * so has to say it itself. Absent, the catalog is captured and every graph-scoped view over it
      * returns nothing, which reads as a capture that did not run.
      */
-    private static void graphSources(DSLContext dsl, String graphName, List<TableAt> tables,
-                                     LocalDateTime touchedAt) {
-        List<String> sources = tables.stream().map(TableAt::source).distinct().toList();
-
+    private static void graphSources(DSLContext dsl, String graphName, List<String> sources,
+                                     LocalDateTime touchedAt, boolean read) {
         var s = STORE_SOURCE;
-        var registry = sources.stream().collect(Rows.toRowList(
-            source -> val(source, s.SOURCE_NAME),
-            source -> val(JOOQ_SCHEMA, s.SOURCE_KIND),
-            source -> val(touchedAt, s.LAST_SEEN),
-            source -> val(touchedAt, s.READ_AT)));
-        BindBatch.execute(dsl, registry, markers ->
-            dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN, s.READ_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(s.SOURCE_KIND, excluded(s.SOURCE_KIND))
-                .set(s.LAST_SEEN, excluded(s.LAST_SEEN))
-                .set(s.READ_AT, excluded(s.READ_AT)));
+        if (read) {
+            var registry = sources.stream().collect(Rows.toRowList(
+                source -> val(source, s.SOURCE_NAME),
+                source -> val(JOOQ_SCHEMA, s.SOURCE_KIND),
+                source -> val(touchedAt, s.LAST_SEEN),
+                source -> val(touchedAt, s.READ_AT)));
+            BindBatch.execute(dsl, registry, markers ->
+                dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN, s.READ_AT)
+                    .values(markers)
+                    .onDuplicateKeyUpdate()
+                    .set(s.SOURCE_KIND, excluded(s.SOURCE_KIND))
+                    .set(s.LAST_SEEN, excluded(s.LAST_SEEN))
+                    .set(s.READ_AT, excluded(s.READ_AT)));
+        } else {
+            // Seen, not read: the row's read_at stays the reading the stamp vouches for.
+            dsl.update(s).set(s.LAST_SEEN, touchedAt).where(s.SOURCE_NAME.in(sources)).execute();
+        }
 
         if (graphName == null) {
             return;

@@ -450,6 +450,23 @@ public final class ClasspathSourceCapture {
     }
 
     /**
+     * The stamp of a classpath entry, on the terms this reading decides by: the stamp the store
+     * holds where {@link #vouchedFor} believes it without looking, one computed from the entry
+     * otherwise. Null where the entry cannot be stamped, which reads as changed.
+     *
+     * <p>For a gatherer whose corpus sits in an entry, so that what it last read is compared by the
+     * one rule. An entry this reading leaves to others, a {@code TRANSITIVE} one, is stamped on
+     * demand rather than read: the store holds no stamp of it, so one is computed.
+     */
+    public static String entryStamp(DSLContext dsl, ClasspathEntry entry, Observation observation) {
+        Held known = held(dsl).get(entry.path().toString());
+        if (known != null && vouchedFor(entry, known, observation)) {
+            return known.stamp();
+        }
+        return stampOf(entry);
+    }
+
+    /**
      * What the entry is, as something a later reading can compare. Computed only where nothing
      * already vouches for the stamp the store holds, a dev session's watcher being what can.
      *

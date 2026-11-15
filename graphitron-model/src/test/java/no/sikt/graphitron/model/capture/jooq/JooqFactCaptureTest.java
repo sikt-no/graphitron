@@ -1,13 +1,20 @@
 package no.sikt.graphitron.model.capture.jooq;
 
+import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.run.GraphitronStore;
+import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.SeededStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
+import java.net.URL;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
@@ -15,6 +22,8 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 
@@ -29,6 +38,7 @@ import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 class JooqFactCaptureTest {
 
     private static final String GRAPH = "jooq-capture";
+    private static final String OTHER = "jooq-capture-other";
     private static final LocalDateTime FIRST = LocalDateTime.of(2026, 1, 1, 12, 0);
     private static final LocalDateTime SECOND = FIRST.plusMinutes(1);
 
@@ -187,6 +197,118 @@ class JooqFactCaptureTest {
             assertThat(store.dsl().fetchCount(SQL_TABLE, SQL_TABLE.TABLE_NAME.eq("film")))
                 .as("and what it still describes stands").isEqualTo(1);
         }
+    }
+
+    /**
+     * A catalog is the bytes of the entry it is generated into, so a second graph reading the same
+     * entry leaves the rows the first one wrote and only claims them.
+     */
+    @Test
+    @DisplayName("a second graph on an unchanged catalog claims its rows without reading it")
+    void aSecondGraphOnAnUnchangedCatalogClaimsWithoutReading() {
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            SeededStore.seedGraph(dsl, GRAPH);
+            SeededStore.seedGraph(dsl, OTHER);
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
+            int tables = dsl.fetchCount(SQL_TABLE);
+
+            capture(dsl, OTHER, loader(), List.of(ClasspathCorpus.catalog()), SECOND);
+
+            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(FIRST)))
+                .as("the first reading's rows stand, neither rewritten nor swept").isEqualTo(tables).isPositive();
+            assertThat(claims(dsl, OTHER)).as("and the second graph claims the catalog")
+                .isEqualTo(claims(dsl, GRAPH)).isNotEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("a catalog whose entry is not what it was last read from is read again")
+    void aCatalogWhoseEntryChangedIsReadAgain() {
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            SeededStore.seedGraph(dsl, GRAPH);
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
+            // What an entry rebuilt since leaves: the stamp the catalog was read under is not its stamp.
+            dsl.update(STORE_SOURCE).set(STORE_SOURCE.STAMP, "sha256:00")
+                .where(STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA")).execute();
+
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), SECOND);
+
+            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.ne(SECOND)))
+                .as("every row is the second reading's").isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("a catalog whose reading committed but was never vouched for is read again")
+    void anUnvouchedCatalogIsReadAgain() {
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            SeededStore.seedGraph(dsl, GRAPH);
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
+            // What a capture stopped between the rows and the stamp leaves.
+            dsl.update(STORE_SOURCE).setNull(STORE_SOURCE.STAMP)
+                .where(STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA")).execute();
+
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), SECOND);
+
+            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.ne(SECOND)))
+                .as("every row is the second reading's").isZero();
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA")
+                    .and(STORE_SOURCE.STAMP.isNull())))
+                .as("and the catalog is vouched for now").isZero();
+        }
+    }
+
+    /**
+     * The stamp is the entry's, so the same classes found under another entry are another reading,
+     * however alike the bytes.
+     */
+    @Test
+    @DisplayName("a catalog found under another entry than the one it was read from is read again")
+    void aCatalogUnderAnotherEntryIsReadAgain(@TempDir Path elsewhere) throws Exception {
+        String resource = JOOQ_PACKAGE.replace('.', '/') + "/DefaultCatalog.class";
+        Path copy = elsewhere.resolve(resource);
+        Files.createDirectories(copy.getParent());
+        try (var in = loader().getResource(resource).openStream()) {
+            Files.copy(in, copy);
+        }
+        var moved = new ClassLoader(loader()) {
+            @Override
+            public URL getResource(String name) {
+                try {
+                    return name.equals(resource) ? copy.toUri().toURL() : super.getResource(name);
+                } catch (java.net.MalformedURLException e) {
+                    throw new IllegalStateException(e);
+                }
+            }
+        };
+        var other = new ClasspathEntry(elsewhere, ClasspathEntry.Origin.TRANSITIVE, "elsewhere", null);
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            SeededStore.seedGraph(dsl, GRAPH);
+            SeededStore.seedGraph(dsl, OTHER);
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
+
+            capture(dsl, OTHER, moved, List.of(ClasspathCorpus.catalog(), other), SECOND);
+
+            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.ne(SECOND)))
+                .as("every row is the second reading's").isZero();
+        }
+    }
+
+    private static void capture(DSLContext dsl, String graph, ClassLoader loader,
+                                List<ClasspathEntry> classpath, LocalDateTime touchedAt) {
+        JooqFactCapture.capture(dsl, graph, JOOQ_PACKAGE, loader, classpath, null, touchedAt);
+    }
+
+    private static List<String> claims(DSLContext dsl, String graph) {
+        return dsl.select(STORE_GRAPH_SOURCE.SOURCE_NAME).from(STORE_GRAPH_SOURCE)
+            .join(STORE_SOURCE).on(STORE_SOURCE.SOURCE_NAME.eq(STORE_GRAPH_SOURCE.SOURCE_NAME))
+            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graph), STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA"))
+            .orderBy(STORE_GRAPH_SOURCE.SOURCE_NAME)
+            .fetch(STORE_GRAPH_SOURCE.SOURCE_NAME);
     }
 
     private static void withCapture(LocalDateTime touchedAt, java.util.function.Consumer<DSLContext> body) {

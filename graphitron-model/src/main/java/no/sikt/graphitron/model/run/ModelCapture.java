@@ -75,7 +75,7 @@ public final class ModelCapture {
         StoreEntries.write(dsl, graph.name(), config, classpath, readAt);
 
         JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null), loader,
-            readAt);
+            classpath, observation, readAt);
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt, observation);
         CodeCapture.capture(dsl, classes, loader, readAt);
