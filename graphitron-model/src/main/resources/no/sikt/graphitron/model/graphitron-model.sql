@@ -27297,9 +27297,6 @@ COMMENT ON COLUMN graphitron_occurrence_order.read_source_name IS 'the catalog s
 COMMENT ON COLUMN graphitron_occurrence_order.read_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_order.read_table IS 'the table the order''s names, keys and index resolve against, stated once for every rule reading the order: the table the field reads, bound''s, but for a routine behind a plural identifying mutation, graphitron_occurrence_input_order''s WRITE_SHAPE, the routine''s function table, whose result the order keeps';
 COMMENT ON COLUMN graphitron_occurrence_order.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-CREATE INDEX graphitron_occurrence_order_application_ix
-  ON graphitron_occurrence_order (graph_name, application_coordinate, application_directive, application_ordinal);
-COMMENT ON INDEX graphitron_occurrence_order_application_ix IS 'An order looked up by the application it is read from: a sort key''s path is refused at the fields element that writes it, reached from the order through its application, and without this a rule reached the order by graph alone for every element.';
 
 -- The index an INDEX order sorts by: the one of the table the list reads whose name the application's
 -- index spelling meets, folded by case. An order whose index the table does not have has no row here,
@@ -28306,7 +28303,7 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key k
     ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
    AND k.choice = r.choice
-  JOIN graphitron_directive_application ra
+  LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
   JOIN graphitron_ast_order_field_entry fe
@@ -28333,7 +28330,7 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key k
     ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
    AND k.choice = r.choice
-  JOIN graphitron_directive_application ra
+  LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
   JOIN graphitron_ast_order_field_entry fe
@@ -28353,7 +28350,7 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key k
     ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
    AND k.choice = r.choice
-  JOIN graphitron_directive_application ra
+  LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
   JOIN graphitron_ast_order_field_entry fe
@@ -28390,7 +28387,7 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key_landing l
     ON l.graph_name = k.graph_name AND l.coordinate = k.coordinate AND l.bound = k.bound
    AND l.choice = k.choice AND l.position = k.position AND l.kind = k.kind
-  JOIN graphitron_directive_application ra
+  LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
   JOIN graphitron_ast_order_field_entry fe
