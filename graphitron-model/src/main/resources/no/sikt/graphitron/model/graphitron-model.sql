@@ -21062,13 +21062,13 @@ COMMENT ON COLUMN graphitron_order_input.touched_at IS 'the reading that last wr
 -- read, where exactly one is written; an application writing none or several states no order.
 CREATE VIEW graphitron_occurrence_order_rule
   (graph_name, coordinate, bound, choice, kind, surface, direction, application_coordinate,
-   application_directive, application_ordinal) AS
+   application_directive, application_ordinal, argument_coordinate) AS
 SELECT graph_name, coordinate, bound, choice, kind, surface, direction, application_coordinate,
-       application_directive, application_ordinal
+       application_directive, application_ordinal, argument_coordinate
   FROM (
     SELECT t.graph_name, t.coordinate, t.bound, o.element_coordinate, 'DEFAULT',
            oe.surface, oe.direction,
-           da.coordinate, da.directive_name, da.ordinal
+           da.coordinate, da.directive_name, da.ordinal, CAST(NULL AS VARCHAR)
       FROM graphitron_occurrence_binding_table t
       JOIN graphitron_occurrence o
         ON o.graph_name = t.graph_name AND o.coordinate = t.coordinate AND o.kind = 'FIELD'
@@ -21083,7 +21083,8 @@ SELECT graph_name, coordinate, bound, choice, kind, surface, direction, applicat
                 WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name)
     UNION ALL
     SELECT t.graph_name, t.coordinate, t.bound, o.element_coordinate, 'DEFAULT', 'IMPLICIT_PRIMARY_KEY',
-           CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS INT)
+           CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS INT),
+           CAST(NULL AS VARCHAR)
       FROM graphitron_occurrence_binding_table t
       JOIN graphitron_occurrence o
         ON o.graph_name = t.graph_name AND o.coordinate = t.coordinate AND o.kind = 'FIELD'
@@ -21099,7 +21100,7 @@ SELECT graph_name, coordinate, bound, choice, kind, surface, direction, applicat
     UNION ALL
     SELECT t.graph_name, t.coordinate, t.bound, ev.coordinate, 'CHOICE',
            oe.surface, oe.direction,
-           da.coordinate, da.directive_name, da.ordinal
+           da.coordinate, da.directive_name, da.ordinal, k.coordinate
       FROM graphitron_occurrence_binding_table t
       JOIN graphitron_occurrence o
         ON o.graph_name = t.graph_name AND o.coordinate = t.coordinate AND o.kind = 'FIELD'
@@ -21124,7 +21125,7 @@ SELECT graph_name, coordinate, bound, choice, kind, surface, direction, applicat
                       AND ob.directive_name = 'orderBy')
     UNION ALL
     SELECT t.graph_name, t.coordinate, t.bound, ev.coordinate, 'CHOICE', 'INDEX', CAST(NULL AS VARCHAR),
-           da.coordinate, da.directive_name, da.ordinal
+           da.coordinate, da.directive_name, da.ordinal, k.coordinate
       FROM graphitron_occurrence_binding_table t
       JOIN graphitron_occurrence o
         ON o.graph_name = t.graph_name AND o.coordinate = t.coordinate AND o.kind = 'FIELD'
@@ -21151,7 +21152,7 @@ SELECT graph_name, coordinate, bound, choice, kind, surface, direction, applicat
                         WHERE d.graph_name = ev.graph_name AND d.coordinate = ev.coordinate
                           AND d.directive_name = 'order')
   ) written (graph_name, coordinate, bound, choice, kind, surface, direction, application_coordinate,
-             application_directive, application_ordinal)
+             application_directive, application_ordinal, argument_coordinate)
  WHERE surface IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_order_rule IS 'One row the order rule computes, in the shape graphitron_occurrence_order stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_order, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_order_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_order.graph_name';
@@ -21164,6 +21165,7 @@ COMMENT ON VIEW graphitron_occurrence_order_rule IS 'One row the order rule comp
 -- COMMENT ON COLUMN graphitron_occurrence_order_rule.application_coordinate IS 'the application_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_order.application_coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_order_rule.application_directive IS 'the application_directive of a row of this rule, which the stage writes into graphitron_occurrence_order.application_directive';
 -- COMMENT ON COLUMN graphitron_occurrence_order_rule.application_ordinal IS 'the application_ordinal of a row of this rule, which the stage writes into graphitron_occurrence_order.application_ordinal';
+-- COMMENT ON COLUMN graphitron_occurrence_order_rule.argument_coordinate IS 'the argument_coordinate of a row of this rule, which the stage writes into graphitron_occurrence_order.argument_coordinate';
 
 CREATE TABLE graphitron_occurrence_order (
   graph_name    VARCHAR   NOT NULL,
@@ -21176,6 +21178,7 @@ CREATE TABLE graphitron_occurrence_order (
   application_coordinate VARCHAR,
   application_directive  VARCHAR,
   application_ordinal    INT,
+  argument_coordinate    VARCHAR,
   touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, bound, choice),
   -- What the index subtype references, so only an INDEX order has one.
@@ -21187,7 +21190,11 @@ CREATE TABLE graphitron_occurrence_order (
   FOREIGN KEY (graph_name, application_coordinate, application_directive, application_ordinal)
     REFERENCES graphitron_directive_application (graph_name, coordinate, directive_name, ordinal)
     ON DELETE CASCADE,
+  -- The argument a choice is picked through, so a choice goes with the argument.
+  FOREIGN KEY (graph_name, argument_coordinate)
+    REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   CHECK (kind IN ('DEFAULT', 'CHOICE')),
+  CHECK ((kind = 'CHOICE') = (argument_coordinate IS NOT NULL)),
   CHECK (surface IN ('PRIMARY_KEY', 'INDEX', 'FIELDS', 'IMPLICIT_PRIMARY_KEY')),
   CHECK (direction IN ('ASC', 'DESC')),
   CHECK ((surface = 'IMPLICIT_PRIMARY_KEY') = (application_coordinate IS NULL)),
@@ -21206,6 +21213,7 @@ COMMENT ON COLUMN graphitron_occurrence_order.direction IS 'the direction a @def
 COMMENT ON COLUMN graphitron_occurrence_order.application_coordinate IS 'the coordinate of the @defaultOrder, @order or @index application the order is read from, null exactly for IMPLICIT_PRIMARY_KEY, which nobody wrote';
 COMMENT ON COLUMN graphitron_occurrence_order.application_directive IS 'the application''s directive, defaultOrder, order or index, null with the coordinate';
 COMMENT ON COLUMN graphitron_occurrence_order.application_ordinal IS 'the application''s ordinal at its coordinate, null with the coordinate';
+COMMENT ON COLUMN graphitron_occurrence_order.argument_coordinate IS 'the @orderBy argument occurrence a CHOICE is picked through, beneath the field occurrence, for example Query.films(order:); null exactly for a DEFAULT';
 COMMENT ON COLUMN graphitron_occurrence_order.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- The index an INDEX order sorts by: the one of the table the list reads whose name the application's

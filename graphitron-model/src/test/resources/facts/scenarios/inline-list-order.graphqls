@@ -85,20 +85,20 @@ interface Node {
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_order", rows: """
-  coordinate, bound, choice, kind, surface
-  Film.actors, public.actor, Film.actors, DEFAULT, FIELDS
-  Film.actorsByIndex, public.actor, Film.actorsByIndex, DEFAULT, INDEX
-  Query.actorsOrdered, public.actor, ActorSort.ACTOR_ID, CHOICE, PRIMARY_KEY
-  Query.actorsOrdered, public.actor, ActorSort.BY_INDEX, CHOICE, INDEX
-  Query.actorsOrdered, public.actor, ActorSort.LAST_NAME, CHOICE, FIELDS
-  Query.actorsOrdered, public.actor, Query.actorsOrdered, DEFAULT, IMPLICIT_PRIMARY_KEY
-  Language.films, public.film, Language.films, DEFAULT, FIELDS
-  Query.films, public.film, Query.films, DEFAULT, IMPLICIT_PRIMARY_KEY
-  Query.holders, public.role_holder, Query.holders, DEFAULT, IMPLICIT_PRIMARY_KEY
-  Query.stints, public.stint, Query.stints, DEFAULT, FIELDS
-  Query.stores, public.store, Query.stores, DEFAULT, IMPLICIT_PRIMARY_KEY
-  RoleHolder.roles, public.role_assignment, RoleHolder.roles, DEFAULT, FIELDS
-  Store.films, public.film, Store.films, DEFAULT, FIELDS
+  coordinate, bound, choice, kind, surface, argument_coordinate
+  Film.actors, public.actor, Film.actors, DEFAULT, FIELDS,
+  Film.actorsByIndex, public.actor, Film.actorsByIndex, DEFAULT, INDEX,
+  Query.actorsOrdered, public.actor, ActorSort.ACTOR_ID, CHOICE, PRIMARY_KEY, Query.actorsOrdered(order:)
+  Query.actorsOrdered, public.actor, ActorSort.BY_INDEX, CHOICE, INDEX, Query.actorsOrdered(order:)
+  Query.actorsOrdered, public.actor, ActorSort.LAST_NAME, CHOICE, FIELDS, Query.actorsOrdered(order:)
+  Query.actorsOrdered, public.actor, Query.actorsOrdered, DEFAULT, IMPLICIT_PRIMARY_KEY,
+  Language.films, public.film, Language.films, DEFAULT, FIELDS,
+  Query.films, public.film, Query.films, DEFAULT, IMPLICIT_PRIMARY_KEY,
+  Query.holders, public.role_holder, Query.holders, DEFAULT, IMPLICIT_PRIMARY_KEY,
+  Query.stints, public.stint, Query.stints, DEFAULT, FIELDS,
+  Query.stores, public.store, Query.stores, DEFAULT, IMPLICIT_PRIMARY_KEY,
+  RoleHolder.roles, public.role_assignment, RoleHolder.roles, DEFAULT, FIELDS,
+  Store.films, public.film, Store.films, DEFAULT, FIELDS,
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key", rows: """
