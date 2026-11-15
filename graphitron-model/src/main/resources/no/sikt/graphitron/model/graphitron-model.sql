@@ -8400,6 +8400,9 @@ COMMENT ON COLUMN graphitron_code_reference.method_class_name IS 'the class decl
 COMMENT ON COLUMN graphitron_code_reference.method_name IS 'the resolved method''s name, equal to named_method while the method stands';
 COMMENT ON COLUMN graphitron_code_reference.method_descriptor IS 'the resolved method''s JVM descriptor, completing the copy of the code_method key; NOT NULL exactly where the reference resolved, so a reader wanting resolved references only filters on it. Not in the key: a reference matching two overloads resolves to neither';
 COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that derived this row ran. Swept per graph after the reading upserts, so a reference whose written form no longer derives a row leaves and the rest stay; a reference that stopped resolving stays with its method copy NULL, and one the author removed goes through the cascade on its written form';
+CREATE INDEX graphitron_code_reference_field_ix
+  ON graphitron_code_reference (graph_name, type_name, field_name, directive_name);
+COMMENT ON INDEX graphitron_code_reference_field_ix IS 'A reader holding a field asks for the reference a directive on it wrote, and the primary key, which leads with the coordinate of the element the application is on, serves none of that. graphitron_producer_service_rule asks it of every service producer and graphitron_outbox_key_rule of a field whose message reads $result, each for the @service reference.';
 
 -- The argMapping pairs stage's own defects, off the entries, the sites it names its pairs by, the
 -- code references and the classpath: a sigil naming something the graph does not offer.
@@ -12165,12 +12168,9 @@ SELECT p.graph_name, p.type_name, p.field_name, p.kind,
        cr.coordinate, cr.directive_name, cr.ordinal, cr.owner,
        cr.method_source_name, cr.method_class_name, cr.method_name, cr.method_descriptor
   FROM graphitron_producer p
-  JOIN graphitron_code_reference_site site
-    ON site.graph_name = p.graph_name AND site.type_name = p.type_name
-   AND site.field_name = p.field_name AND site.directive_name = 'service'
   JOIN graphitron_code_reference cr
-    ON cr.graph_name = site.graph_name AND cr.coordinate = site.coordinate
-   AND cr.directive_name = site.directive_name AND cr.ordinal = site.ordinal AND cr.owner = site.owner
+    ON cr.graph_name = p.graph_name AND cr.type_name = p.type_name
+   AND cr.field_name = p.field_name AND cr.directive_name = 'service'
  WHERE p.kind = 'SERVICE' AND cr.method_descriptor IS NOT NULL;
 COMMENT ON VIEW graphitron_producer_service_rule IS 'One row the service rule computes, in the shape graphitron_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_service, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_producer_service_rule.graph_name IS 'the owning graph''s partition';
@@ -15977,16 +15977,12 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
                       WHERE st.graph_name = rt.graph_name AND st.type_name = rt.target_type_name
                         AND st.kind IN ('SCALAR', 'ENUM'))
          -- The method the field's @service reference resolved to, read off the reference itself.
-         AND EXISTS (SELECT 1 FROM graphitron_code_reference_site cr
-                       JOIN graphitron_code_reference rr
-                         ON rr.graph_name = cr.graph_name AND rr.coordinate = cr.coordinate
-                        AND rr.directive_name = cr.directive_name AND rr.ordinal = cr.ordinal
-                        AND rr.owner = cr.owner
+         AND EXISTS (SELECT 1 FROM graphitron_code_reference rr
                        JOIN code_method mm
                          ON mm.source_name = rr.method_source_name AND mm.class_name = rr.method_class_name
                         AND mm.method_name = rr.method_name AND mm.descriptor = rr.method_descriptor
-                      WHERE cr.graph_name = r.graph_name AND cr.type_name = rf.type_name
-                        AND cr.field_name = rf.field_name AND cr.directive_name = 'service'
+                      WHERE rr.graph_name = r.graph_name AND rr.type_name = rf.type_name
+                        AND rr.field_name = rf.field_name AND rr.directive_name = 'service'
                         AND mm.result_erased_class IN (SELECT class_name FROM carriable)))
      OR (r.bound_to LIKE '$result.%' AND last.coordinate IS NOT NULL
          AND EXISTS (SELECT 1 FROM service_path sp
@@ -21987,13 +21983,10 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
   SELECT s.graph_name, f.named_type,
          CASE WHEN s.directive_name = 'service' THEN m.result_element_class
               ELSE m.result_first_argument_class END
-    FROM graphitron_code_reference_site s
-    JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.coordinate = s.coordinate
-     AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal AND r.owner = s.owner
+    FROM graphitron_code_reference s
     JOIN code_method m
-      ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
-     AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+      ON m.source_name = s.method_source_name AND m.class_name = s.method_class_name
+     AND m.method_name = s.method_name AND m.descriptor = s.method_descriptor
     JOIN graphql_field f
       ON f.graph_name = s.graph_name AND f.type_name = s.type_name AND f.field_name = s.field_name
     JOIN graphql_type t
@@ -22008,13 +22001,10 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
   -- object carrying no @table, an errors field being a list of a union or an interface; and the
   -- object passes through where the class has no member the data field's bound name finds.
   SELECT s.graph_name, d.target_type_name, m.result_element_class
-    FROM graphitron_code_reference_site s
-    JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.coordinate = s.coordinate
-     AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal AND r.owner = s.owner
+    FROM graphitron_code_reference s
     JOIN code_method m
-      ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
-     AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+      ON m.source_name = s.method_source_name AND m.class_name = s.method_class_name
+     AND m.method_name = s.method_name AND m.descriptor = s.method_descriptor
     JOIN graphitron_field_target pf
       ON pf.graph_name = s.graph_name AND pf.type_name = s.type_name AND pf.field_name = s.field_name
      AND pf.wrapper_type_name IS NULL
@@ -22051,13 +22041,10 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
                       WHERE v.graph_name = s.graph_name AND v.class_name = m.result_element_class)
   UNION
   SELECT s.graph_name, a.named_type, mp.element_class
-    FROM graphitron_code_reference_site s
-    JOIN graphitron_code_reference r
-      ON r.graph_name = s.graph_name AND r.coordinate = s.coordinate
-     AND r.directive_name = s.directive_name AND r.ordinal = s.ordinal AND r.owner = s.owner
+    FROM graphitron_code_reference s
     JOIN code_method_parameter mp
-      ON mp.source_name = r.method_source_name AND mp.class_name = r.method_class_name
-     AND mp.method_name = r.method_name AND mp.descriptor = r.method_descriptor
+      ON mp.source_name = s.method_source_name AND mp.class_name = s.method_class_name
+     AND mp.method_name = s.method_name AND mp.descriptor = s.method_descriptor
     -- The @service mapping written on this reference, if one names the parameter. Keyed to the
     -- reference the mapping is a field of rather than to the coordinate, so another directive's
     -- mapping on the same field redirects nothing here.
