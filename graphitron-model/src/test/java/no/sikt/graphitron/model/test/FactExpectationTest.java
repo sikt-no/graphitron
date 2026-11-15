@@ -55,7 +55,7 @@ class FactExpectationTest {
      * ruling, for {@code write-payload-member}: the store states its sources and the emitter does not
      * yet admit a union payload carrier.
      */
-    private static final int UNDECIDED_CEILING = 39;
+    private static final int UNDECIDED_CEILING = 38;
 
     /** Each scenario's claim, by its graph's name, which is its path. */
     private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();

@@ -63,6 +63,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_MINTED_CANDIDATE_
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_COINAGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_CONFLICT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MINTED_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -145,7 +146,7 @@ public final class MacroExpansion {
         store(dsl, graphName, touchedAt, GRAPHITRON_ARGUMENT_MINTED_CANDIDATE,
             GRAPHITRON_ARGUMENT_MINTED_CANDIDATE_RULE);
         // Then the conflicts, because every arm below withholds what this finds.
-        conflicts(dsl, graphName);
+        conflicts(dsl, graphName, touchedAt);
         elements(dsl, graphName, touchedAt);
         changedKinds(dsl, graphName);
         types(dsl, graphName);
@@ -374,61 +375,16 @@ public final class MacroExpansion {
      * mid-edit with no store rather than with a store and a diagnostic.
      *
      * <p>Nor may one of them be picked. That would put a shape in the emitted population no
-     * application asked for and nothing records. So the coordinate is withheld from every arm below
-     * and a row here says why. What each application would have written is not copied: the minted
-     * relations keep it, keyed by the coordinate that coined each.
+     * application asked for and nothing records. So the coordinate is withheld from every arm below,
+     * a row here says why, and the stage's defect rule raises {@code MINTED_NAME_CONTESTED} at each
+     * application coining it, so the withholding is never silent. What each application would have
+     * written is not copied: the candidate relations keep it, keyed by the carrier that coined each.
      *
-     * <p>Cleared and refilled rather than upserted, which the anchors themselves cannot be: nothing
-     * keys into this relation, so emptying it takes nothing with it, and a conflict an edit resolved
-     * has to stop being a row.
+     * <p>Stored from its rule, marked and swept like the relations beside it, so a conflict an edit
+     * resolved stops being a row.
      */
-    private static void conflicts(DSLContext dsl, String graphName) {
-        dsl.deleteFrom(GRAPHITRON_MINTED_CONFLICT)
-            .where(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME.eq(graphName)).execute();
-        var t = GRAPHITRON_TYPE_MINTED_CANDIDATE;
-        contested(dsl, graphName, t, t.GRAPH_NAME, t.COORDINATE, "NAMED_TYPE", t.DESCRIPTION);
-        var f = GRAPHITRON_FIELD_MINTED_CANDIDATE;
-        contested(dsl, graphName, f, f.GRAPH_NAME, f.COORDINATE, "FIELD", f.ORDINAL, f.TYPE_SDL,
-            f.NAMED_TYPE, f.NON_NULL, f.LIST_DEPTH, f.ITEM_NON_NULL, f.DESCRIPTION, f.REWRITE);
-        var a = GRAPHITRON_ARGUMENT_MINTED_CANDIDATE;
-        contested(dsl, graphName, a, a.GRAPH_NAME, a.COORDINATE, "FIELD_ARGUMENT", a.ORDINAL,
-            a.TYPE_SDL, a.NAMED_TYPE, a.NON_NULL, a.LIST_DEPTH, a.ITEM_NON_NULL,
-            a.DEFAULT_VALUE_SDL);
-    }
-
-    /**
-     * Records the coordinates one candidate relation states more than one way.
-     *
-     * <p>A count of distinct payloads rather than of rows: a candidate row is one carrier's arm, so
-     * two carriers stating one shared type identically are two rows and one payload, and what is
-     * counted here is genuine disagreement. The distinct treats two absent values as equal, as the
-     * payload's own comparison must. Nothing is picked; the coordinate is withheld from the set and a
-     * row here says how many ways the schema disagreed with itself.
-     */
-    private static void contested(DSLContext dsl, String graphName, Table<?> candidates,
-                                  Field<String> graphColumn, Field<String> coordinateColumn,
-                                  String elementKind, Field<?>... payload) {
-        var projected = new ArrayList<Field<?>>();
-        projected.add(graphColumn);
-        projected.add(coordinateColumn);
-        projected.addAll(Arrays.asList(payload));
-        var readings = dsl.selectDistinct(projected)
-            .from(candidates)
-            .where(graphColumn.eq(graphName))
-            .asTable("readings");
-        var graph = readings.field(graphColumn);
-        var coordinate = readings.field(coordinateColumn);
-        dsl.insertInto(GRAPHITRON_MINTED_CONFLICT)
-            .columns(GRAPHITRON_MINTED_CONFLICT.GRAPH_NAME, GRAPHITRON_MINTED_CONFLICT.COORDINATE,
-                GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND, GRAPHITRON_MINTED_CONFLICT.VARIANTS)
-            .select(dsl
-                .select(graph, coordinate,
-                    val(elementKind, GRAPHITRON_MINTED_CONFLICT.ELEMENT_KIND),
-                    count().cast(org.jooq.impl.SQLDataType.INTEGER))
-                .from(readings)
-                .groupBy(graph, coordinate)
-                .having(count().gt(1)))
-            .execute();
+    private static void conflicts(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_CONFLICT, GRAPHITRON_MINTED_CONFLICT_RULE);
     }
 
     // ---------------------------------------------------------------- the fills

@@ -1,0 +1,30 @@
+# Two carriers whose connection the author declared short of what the Relay specification requires.
+# The declaration stands in place of the mint, so each carrier asking for it draws
+# MINTED_TYPE_DECLARED_SHORT at its @asConnection, naming the type and the first thing it lacks by
+# name: QueryFilmsConnection lacks pageInfo, and a connectionName naming the element type, Film, is
+# checked as the connection it would be and lacks edges and pageInfo. nodes and totalCount are optional
+# and are not named. The edges nobody declared under the second name are minted.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  films: [Film!]! @asConnection @defaultOrder(primaryKey: true)
+  filmsNamedFilm: [Film!]! @asConnection(connectionName: "Film") @defaultOrder(primaryKey: true)
+}
+
+type QueryFilmsConnection { edges: [QueryFilmsConnectionEdge!]! }
+
+type QueryFilmsConnectionEdge { node: Film! cursor: String! }
+
+type PageInfo {
+  hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
+  endCursor: String
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'MINTED_TYPE_DECLARED_SHORT'", rows: """
+  code,                       coordinate,           detail
+  MINTED_TYPE_DECLARED_SHORT, Query.films,          QueryFilmsConnection lacks pageInfo
+  MINTED_TYPE_DECLARED_SHORT, Query.filmsNamedFilm, Film lacks edges
+  """)

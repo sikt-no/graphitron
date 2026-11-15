@@ -24,7 +24,7 @@ input DocumentOrder { title: String }
 
 type DocumentPage { edges: [DocumentEdge!]! pageInfo: PageInfo }
 type DocumentEdge { node: Document cursor: String }
-type PageInfo { hasNextPage: Boolean }
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
 
 type Holder @table(name: "language") {
   documents: [Document!]! @defaultOrder(primaryKey: true)

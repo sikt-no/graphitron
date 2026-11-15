@@ -1,4 +1,4 @@
-"Two applications landing on one connection name over different element types. They disagree about what the shared name's nodes and its edge's node are, and the anchor declines rather than picking: each contested coordinate draws a conflict row and no emitted row at all. The coordinates the two agree about are unaffected, which is what makes this a withholding rather than a failure."
+"Two applications landing on one connection name over different element types. They disagree about what the shared name's nodes and its edge's node are, and the anchor declines rather than picking: each contested coordinate draws a conflict row and no emitted row, and each carrier draws MINTED_NAME_CONTESTED at its @asConnection naming both, so nothing is withheld silently. The coordinates the two agree about are still minted."
 type Film @table(name: "film") { id: ID }
 type Language @table(name: "language") { id: ID }
 
@@ -31,4 +31,10 @@ extend schema @expectEquals(relation: "graphitron_field_minted", rows: """
   PageInfo,   endCursor,       3,       String
   Query,      films,           0,       Shared!
   Query,      tongues,         1,       Shared!
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'MINTED_NAME_CONTESTED'", rows: """
+  code,                  coordinate,    detail
+  MINTED_NAME_CONTESTED, Query.films,   Shared.nodes
+  MINTED_NAME_CONTESTED, Query.tongues, Shared.nodes
   """)

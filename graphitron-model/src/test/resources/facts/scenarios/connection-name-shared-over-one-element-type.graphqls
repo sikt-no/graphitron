@@ -1,0 +1,23 @@
+# Two root fields sharing one connectionName over the same element type, with different arguments:
+# the near miss of connection-mint-collision, and the shape sis's QueryEmneConnection has. Every name
+# they coin they state the same way, the arguments being each carrier's own, so the shared connection,
+# its edge and the page info are minted once each, nothing is contested, and no
+# MINTED_NAME_CONTESTED is raised.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  films(title: String): [Film!]! @asConnection(connectionName: "SharedFilms") @defaultOrder(primaryKey: true)
+  moreFilms: [Film!]! @asConnection(connectionName: "SharedFilms") @defaultOrder(primaryKey: true)
+}
+
+extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
+  type_name
+  SharedFilms
+  SharedFilmsEdge
+  PageInfo
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_minted_conflict")
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code = 'MINTED_NAME_CONTESTED'")

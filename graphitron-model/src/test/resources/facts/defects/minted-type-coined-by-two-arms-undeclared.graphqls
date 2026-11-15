@@ -1,7 +1,8 @@
 # One carrier coining one name through two arms of the type mint, with no type of that name declared:
 # connectionName: "PageInfo" collides with the page info the same carrier also states. Neither arm's
 # PageInfo is minted, and the machinery fields that would sit on it are withheld with it, so the
-# capture holds the conflict and no field of a type nobody holds.
+# capture holds the conflict and no field of a type nobody holds. The carrier draws
+# MINTED_NAME_CONTESTED at its @asConnection naming PageInfo, so the name is not withheld silently.
 
 type Film @table(name: "film") { title: String }
 
@@ -20,3 +21,4 @@ extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
   """)
 
 extend schema @assertEmpty(relation: "graphitron_field", where: "type_name = 'PageInfo'")
+

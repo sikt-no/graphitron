@@ -3536,8 +3536,9 @@ COMMENT ON COLUMN graphitron_directive_application_arg.touched_at IS 'when the r
 -- before any disagreement between them is resolved, and a minted set states what survives:
 -- graphitron_type_minted_candidate and graphitron_type_minted, and the field and argument pairs.
 -- graphitron_minted_coinage says which application coined each minted type. A coordinate the
--- applications disagree about is withheld from every set and recorded in graphitron_minted_conflict
--- below, so no shape enters the population that no application asked for.
+-- applications disagree about is withheld from every set, recorded in graphitron_minted_conflict
+-- below and raised as MINTED_NAME_CONTESTED at each application coining it, so no shape enters the
+-- population that no application asked for and no name is withheld silently.
 --
 -- Precedence lives in the sets rather than in a column. A mint fills a name nobody took, so an
 -- author's type or machinery field always survives; the one replacement is the carrier field an
@@ -3555,16 +3556,18 @@ CREATE TABLE graphitron_minted_conflict (
   coordinate   VARCHAR NOT NULL,
   element_kind VARCHAR NOT NULL,
   variants     INT     NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (element_kind IN ('NAMED_TYPE', 'FIELD', 'FIELD_ARGUMENT')),
   CHECK (variants >= 2)
 );
-COMMENT ON TABLE graphitron_minted_conflict IS 'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph. For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.';
+COMMENT ON TABLE graphitron_minted_conflict IS 'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph. For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here, no row in graphitron_field, and a MINTED_NAME_CONTESTED defect at each carrier.';
 COMMENT ON COLUMN graphitron_minted_conflict.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_minted_conflict.coordinate IS 'the contested coordinate, spelled as graphitron_element spells one. No foreign key there, and the absence is the fact: a contested coordinate is exactly the one the anchor declined to hold, so a key into the anchor could never be satisfied by a row of this relation';
+COMMENT ON COLUMN graphitron_minted_conflict.coordinate IS 'the contested coordinate, spelled as graphitron_element spells one. No foreign key there, and the absence is the fact: a contested coordinate is exactly the one the anchor declined to hold, so a key into the anchor could never be satisfied by a row of this relation. Never withheld silently: each carrier coining it draws MINTED_NAME_CONTESTED naming it';
 COMMENT ON COLUMN graphitron_minted_conflict.element_kind IS 'which kind of schema element the contested coordinate names, which is also which minted relation a reader joins to see what each application would have written. Three of the four the emitted family holds, an input field being minted by nothing today';
-COMMENT ON COLUMN graphitron_minted_conflict.variants IS 'how many distinct payloads were minted here, always at least two, which the CHECK holds. A count of readings and not of applications: two carriers minting one coordinate the same way are no conflict and draw no row, and three carriers holding two opinions between them are two. Carried rather than left to a reader''s own count, on graphitron_spelled_table.candidates'' terms, so a message can say how many ways the schema disagrees with itself';
+COMMENT ON COLUMN graphitron_minted_conflict.variants IS 'how many distinct readings were minted here, always at least two, which the CHECK holds: at a type the arms that coin it, at a field or an argument its distinct payloads. A count of readings and not of applications: two carriers minting one coordinate the same way are no conflict and draw no row, and three carriers holding two opinions between them are two. Carried rather than left to a reader''s own count, on graphitron_spelled_table.candidates'' terms, so a message can say how many ways the schema disagrees with itself';
+COMMENT ON COLUMN graphitron_minted_conflict.touched_at IS 'when the reading that last found this conflict ran: the mark the sweep reads, so a conflict an edit resolved stops being a row';
 
 -- ---- supertypes over the directive families ----------------------------------------
 -- Where one fact is authored at several kinds of site, the relations here are that fact, written
@@ -3648,6 +3651,9 @@ COMMENT ON COLUMN graphitron_connection_carrier.source_name IS 'the document the
 COMMENT ON COLUMN graphitron_connection_carrier.source_line IS 'the application''s line, on source_name''s terms';
 COMMENT ON COLUMN graphitron_connection_carrier.source_column IS 'the application''s column, on source_name''s terms';
 COMMENT ON COLUMN graphitron_connection_carrier.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+CREATE INDEX graphitron_connection_carrier_coordinate_ix
+  ON graphitron_connection_carrier (graph_name, coordinate);
+COMMENT ON INDEX graphitron_connection_carrier_coordinate_ix IS 'A minted name''s candidate rows name the carrier that coined it by its coordinate, and the contested-name defect reaches the carrier''s @asConnection position through it, which the primary key, the type and field names, does not serve.';
 
 CREATE VIEW graphitron_connection_carrier_rule
   (graph_name, type_name, field_name, coordinate, connection_name, edge_name,
@@ -4115,67 +4121,119 @@ COMMENT ON VIEW graphitron_field_authored IS 'One of the two sets graphitron_fie
 -- COMMENT ON COLUMN graphitron_field_authored.default_value_sdl IS 'the default as written, which an output field never has and an input field may; the one column the minted set cannot supply';
 -- COMMENT ON COLUMN graphitron_field_authored.description IS 'the docstring the author wrote, or nothing';
 
+-- The connection shape's positions and what each requires of a type an author declares where the
+-- expansion would mint one. SPECIFIED is the Relay Cursor Connections specification's requirement,
+-- stated here as the named type, list depth and nullability it fixes, a column it leaves free being
+-- NULL or FALSE. GRAPHITRON is graphitron's own shape where no external specification exists, the
+-- facets type and its buckets: the field the mint would write is the requirement. OPTIONAL is a field
+-- graphitron adds that nothing requires: nodes and totalCount are read where they are declared and
+-- never asked for.
+CREATE TABLE graphitron_connection_position (
+  position          VARCHAR NOT NULL,
+  role              VARCHAR NOT NULL,
+  field_name        VARCHAR,
+  requirement       VARCHAR NOT NULL,
+  named_type        VARCHAR,
+  list_depth        INT,
+  requires_non_null BOOLEAN NOT NULL,
+  shape_text        VARCHAR,
+  PRIMARY KEY (position),
+  UNIQUE (role, field_name),
+  CHECK (role IN ('CONNECTION', 'EDGE', 'PAGE_INFO', 'FACETS', 'BUCKET')),
+  -- The facets type's fields are named by the facets they count, so its one position names none.
+  CHECK ((field_name IS NULL) = (role = 'FACETS')),
+  CHECK (requirement IN ('SPECIFIED', 'GRAPHITRON', 'OPTIONAL')),
+  -- Only a specified position states a shape here; graphitron's own is the minted field's.
+  CHECK ((requirement = 'SPECIFIED') = (shape_text IS NOT NULL)),
+  CHECK (requirement = 'SPECIFIED'
+         OR (named_type IS NULL AND list_depth IS NULL AND NOT requires_non_null))
+);
+COMMENT ON TABLE graphitron_connection_position IS 'One position of the connection shape: the field a connection, its edge, its page info, its facets type or a facet bucket fills it with, and what a type an author declared in place of the mint must hold there. For example TOTAL_COUNT is a connection''s totalCount and optional, and HAS_NEXT_PAGE the page info''s hasNextPage, which the Relay specification requires as Boolean!.';
+COMMENT ON COLUMN graphitron_connection_position.position IS 'the position, the key a field filling it names';
+COMMENT ON COLUMN graphitron_connection_position.role IS 'the type of the shape the position is a field of: CONNECTION, EDGE, PAGE_INFO, FACETS for a connection''s facets type, or BUCKET for one facet''s value type; the same vocabulary as graphitron_type_minted_candidate.arm';
+COMMENT ON COLUMN graphitron_connection_position.field_name IS 'the name of the field that fills it, as the Relay Cursor Connections specification spells it (edges, pageInfo, node, cursor and the four page-info fields) or as graphitron adds it (nodes, totalCount, facets, a bucket''s value and count); NULL on the facets type''s one position, whose fields are named by the facets they count';
+COMMENT ON COLUMN graphitron_connection_position.requirement IS 'what a declared type owes at this position: SPECIFIED, the specification''s shape as the columns below state it; GRAPHITRON, the shape the mint would write, where no external specification exists; OPTIONAL, nothing';
+COMMENT ON COLUMN graphitron_connection_position.named_type IS 'the named type a SPECIFIED position fixes, Boolean for the page info''s two flags and PageInfo for a connection''s pageInfo; NULL where the specification leaves it free, a cursor being any type that serializes as a string and a node any output type';
+COMMENT ON COLUMN graphitron_connection_position.list_depth IS 'the list depth a SPECIFIED position fixes: 1 for a connection''s edges, 0 where the specification forbids a list; NULL where it states none';
+COMMENT ON COLUMN graphitron_connection_position.requires_non_null IS 'whether a SPECIFIED position must be non-null, as the page info''s flags and a connection''s pageInfo must; FALSE where either is allowed, which a declaration stricter than the specification also meets';
+COMMENT ON COLUMN graphitron_connection_position.shape_text IS 'the requirement as a defect states it, for example Boolean! or a list of edges; on a SPECIFIED position only, a GRAPHITRON one stating the minted field''s own type expression';
+INSERT INTO graphitron_connection_position VALUES
+  ('EDGES', 'CONNECTION', 'edges', 'SPECIFIED', NULL, 1, FALSE, 'a list of edges'),
+  ('NODES', 'CONNECTION', 'nodes', 'OPTIONAL', NULL, NULL, FALSE, NULL),
+  ('PAGE_INFO', 'CONNECTION', 'pageInfo', 'SPECIFIED', 'PageInfo', 0, TRUE, 'PageInfo!'),
+  ('TOTAL_COUNT', 'CONNECTION', 'totalCount', 'OPTIONAL', NULL, NULL, FALSE, NULL),
+  ('FACETS', 'CONNECTION', 'facets', 'GRAPHITRON', NULL, NULL, FALSE, NULL),
+  ('NODE', 'EDGE', 'node', 'SPECIFIED', NULL, 0, FALSE, 'a single item, not a list'),
+  ('CURSOR', 'EDGE', 'cursor', 'SPECIFIED', NULL, 0, FALSE, 'a single cursor, not a list'),
+  ('HAS_NEXT_PAGE', 'PAGE_INFO', 'hasNextPage', 'SPECIFIED', 'Boolean', 0, TRUE, 'Boolean!'),
+  ('HAS_PREVIOUS_PAGE', 'PAGE_INFO', 'hasPreviousPage', 'SPECIFIED', 'Boolean', 0, TRUE, 'Boolean!'),
+  ('START_CURSOR', 'PAGE_INFO', 'startCursor', 'SPECIFIED', NULL, 0, FALSE, 'a single cursor, not a list'),
+  ('END_CURSOR', 'PAGE_INFO', 'endCursor', 'SPECIFIED', NULL, 0, FALSE, 'a single cursor, not a list'),
+  ('FACET', 'FACETS', NULL, 'GRAPHITRON', NULL, NULL, FALSE, NULL),
+  ('VALUE', 'BUCKET', 'value', 'GRAPHITRON', NULL, NULL, FALSE, NULL),
+  ('COUNT', 'BUCKET', 'count', 'GRAPHITRON', NULL, NULL, FALSE, NULL);
+
 -- What the arms of the field mint state, one row per arm and carrier, on the type candidates'
 -- terms; the arm here is the type of the carrier's the field sits on, or CARRIER for the rewrite.
 CREATE VIEW graphitron_field_minted_candidate_rule
-  (graph_name, type_name, field_name, carrier_coordinate, arm, ordinal, type_sdl, named_type,
-   non_null, list_depth, item_non_null, description) AS
-SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, ordinal, type_sdl,
-       named_type, non_null, list_depth, item_non_null, description
+  (graph_name, type_name, field_name, carrier_coordinate, arm, position, ordinal, type_sdl,
+   named_type, non_null, list_depth, item_non_null, description) AS
+SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, position, ordinal,
+       type_sdl, named_type, non_null, list_depth, item_non_null, description
   FROM (
         -- The connection's own machinery.
         SELECT graph_name, connection_name AS type_name, 'edges' AS field_name,
-               coordinate AS carrier_coordinate, 'CONNECTION' AS arm, 0 AS ordinal,
+               coordinate AS carrier_coordinate, 'CONNECTION' AS arm, 'EDGES' AS position, 0 AS ordinal,
                '[' || edge_name || '!]!' AS type_sdl, edge_name AS named_type,
                TRUE AS non_null, 1 AS list_depth, TRUE AS item_non_null,
                'A list of edges.' AS description
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, connection_name, 'nodes', coordinate, 'CONNECTION', 1,
+        SELECT graph_name, connection_name, 'nodes', coordinate, 'CONNECTION', 'NODES', 1,
                '[' || item_sdl || ']!', element_type, TRUE, 1, item_non_null,
                'A list of nodes.'
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, connection_name, 'pageInfo', coordinate, 'CONNECTION', 2,
+        SELECT graph_name, connection_name, 'pageInfo', coordinate, 'CONNECTION', 'PAGE_INFO', 2,
                'PageInfo!', 'PageInfo', TRUE, 0, NULL,
                'Information to aid in pagination.'
           FROM graphitron_connection_carrier
          UNION ALL
         -- Nullable like the connection's other aggregate: a skipped count degrades to null rather
         -- than bubbling a failure through the connection.
-        SELECT graph_name, connection_name, 'totalCount', coordinate, 'CONNECTION', 3,
+        SELECT graph_name, connection_name, 'totalCount', coordinate, 'CONNECTION', 'TOTAL_COUNT', 3,
                'Int', 'Int', FALSE, 0, NULL,
                'Identifies the total count of items in the connection.'
           FROM graphitron_connection_carrier
          UNION ALL
         -- The edge's.
-        SELECT graph_name, edge_name, 'cursor', coordinate, 'EDGE', 0,
+        SELECT graph_name, edge_name, 'cursor', coordinate, 'EDGE', 'CURSOR', 0,
                'String!', 'String', TRUE, 0, NULL,
                'A cursor for use in pagination.'
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, edge_name, 'node', coordinate, 'EDGE', 1,
+        SELECT graph_name, edge_name, 'node', coordinate, 'EDGE', 'NODE', 1,
                item_sdl, element_type, item_non_null, 0, NULL,
                'The item at the end of the edge.'
           FROM graphitron_connection_carrier
          UNION ALL
         -- The page info every carrier states whole, which is why the set collapses them.
-        SELECT graph_name, 'PageInfo', 'hasNextPage', coordinate, 'PAGE_INFO', 0,
+        SELECT graph_name, 'PageInfo', 'hasNextPage', coordinate, 'PAGE_INFO', 'HAS_NEXT_PAGE', 0,
                'Boolean!', 'Boolean', TRUE, 0, NULL,
                'When paginating forwards, are there more items?'
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, 'PageInfo', 'hasPreviousPage', coordinate, 'PAGE_INFO', 1,
+        SELECT graph_name, 'PageInfo', 'hasPreviousPage', coordinate, 'PAGE_INFO', 'HAS_PREVIOUS_PAGE', 1,
                'Boolean!', 'Boolean', TRUE, 0, NULL,
                'When paginating backwards, are there more items?'
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, 'PageInfo', 'startCursor', coordinate, 'PAGE_INFO', 2,
+        SELECT graph_name, 'PageInfo', 'startCursor', coordinate, 'PAGE_INFO', 'START_CURSOR', 2,
                'String', 'String', FALSE, 0, NULL,
                'When paginating backwards, the cursor to continue.'
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, 'PageInfo', 'endCursor', coordinate, 'PAGE_INFO', 3,
+        SELECT graph_name, 'PageInfo', 'endCursor', coordinate, 'PAGE_INFO', 'END_CURSOR', 3,
                'String', 'String', FALSE, 0, NULL,
                'When paginating forwards, the cursor to continue.'
           FROM graphitron_connection_carrier
@@ -4183,7 +4241,7 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, ordi
         -- The facets the carrier surfaces: the connection's own field reaching the container, one
         -- row per facet collapsed by the distinct, the container's field per facet, and each
         -- bucket's value and count.
-        SELECT f.graph_name, c.connection_name, 'facets', c.coordinate, 'CONNECTION', 4,
+        SELECT f.graph_name, c.connection_name, 'facets', c.coordinate, 'CONNECTION', 'FACETS', 4,
                c.facets_name, c.facets_name, FALSE, 0, NULL,
                'Per-facet value counts for the items in the connection.'
           FROM graphitron_connection_facet f
@@ -4191,7 +4249,7 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, ordi
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
          UNION ALL
-        SELECT f.graph_name, c.facets_name, f.facet_field_name, c.coordinate, 'FACETS', f.position,
+        SELECT f.graph_name, c.facets_name, f.facet_field_name, c.coordinate, 'FACETS', 'FACET', f.position,
                '[' || f.bucket_type_name || '!]', f.bucket_type_name, FALSE, 1, TRUE,
                'Value counts for this facet, under the connection''s filter minus this facet''s own predicate.'
           FROM graphitron_connection_facet f
@@ -4199,7 +4257,7 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, ordi
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
          UNION ALL
-        SELECT f.graph_name, f.bucket_type_name, 'value', c.coordinate, 'BUCKET', 0,
+        SELECT f.graph_name, f.bucket_type_name, 'value', c.coordinate, 'BUCKET', 'VALUE', 0,
                f.value_type_name || CASE WHEN f.value_nullable THEN '' ELSE '!' END, f.value_type_name,
                NOT f.value_nullable, 0, NULL,
                'The facet value; feed it back into the filter to select this bucket.'
@@ -4208,7 +4266,7 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, ordi
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
          UNION ALL
-        SELECT f.graph_name, f.bucket_type_name, 'count', c.coordinate, 'BUCKET', 1,
+        SELECT f.graph_name, f.bucket_type_name, 'count', c.coordinate, 'BUCKET', 'COUNT', 1,
                'Int!', 'Int', TRUE, 0, NULL,
                'The number of items in this bucket.'
           FROM graphitron_connection_facet f
@@ -4218,7 +4276,7 @@ SELECT DISTINCT graph_name, type_name, field_name, carrier_coordinate, arm, ordi
          UNION ALL
         -- The rewrite: the carrier keeps its own coordinate, ordinal and docstring, and returns
         -- the connection under the nullability its author wrote.
-        SELECT graph_name, type_name, field_name, coordinate, 'CARRIER', ordinal,
+        SELECT graph_name, type_name, field_name, coordinate, 'CARRIER', CAST(NULL AS VARCHAR), ordinal,
                connection_name || CASE WHEN non_null THEN '!' ELSE '' END,
                connection_name, non_null, 0, NULL,
                description
@@ -4229,6 +4287,7 @@ COMMENT ON VIEW graphitron_field_minted_candidate_rule IS 'One row the field min
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_field_minted_candidate.field_name';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.carrier_coordinate IS 'the carrier_coordinate of a row of this rule, which the stage writes into graphitron_field_minted_candidate.carrier_coordinate';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.arm IS 'the arm of a row of this rule, which the stage writes into graphitron_field_minted_candidate.arm';
+-- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_field_minted_candidate.position';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_field_minted_candidate.ordinal';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.type_sdl IS 'the type_sdl of a row of this rule, which the stage writes into graphitron_field_minted_candidate.type_sdl';
 -- COMMENT ON COLUMN graphitron_field_minted_candidate_rule.named_type IS 'the named_type of a row of this rule, which the stage writes into graphitron_field_minted_candidate.named_type';
@@ -4243,6 +4302,7 @@ CREATE TABLE graphitron_field_minted_candidate (
   coordinate         VARCHAR   GENERATED ALWAYS AS (type_name || '.' || field_name) NOT NULL,
   carrier_coordinate VARCHAR   NOT NULL,
   arm                VARCHAR   NOT NULL,
+  position           VARCHAR,
   ordinal            INT       NOT NULL,
   type_sdl           VARCHAR   NOT NULL,
   named_type         VARCHAR   NOT NULL,
@@ -4254,7 +4314,10 @@ CREATE TABLE graphitron_field_minted_candidate (
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name, carrier_coordinate, arm),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (arm IN ('CONNECTION', 'EDGE', 'PAGE_INFO', 'FACETS', 'BUCKET', 'CARRIER'))
+  FOREIGN KEY (position) REFERENCES graphitron_connection_position (position),
+  CHECK (arm IN ('CONNECTION', 'EDGE', 'PAGE_INFO', 'FACETS', 'BUCKET', 'CARRIER')),
+  -- Every minted field fills a position; the restated carrier is the author's field, not a mint's.
+  CHECK ((position IS NULL) = (arm = 'CARRIER'))
 );
 COMMENT ON TABLE graphitron_field_minted_candidate IS 'One field one arm of the field mint states for one carrier, before any disagreement between the arms is resolved. For example two carriers naming one connection through connectionName over different element types are two Shared.nodes rows here, one per carrier, whose type expressions disagree, so graphitron_minted_conflict holds Shared.nodes and graphitron_field_minted does not.';
 COMMENT ON COLUMN graphitron_field_minted_candidate.graph_name IS 'the owning graph''s partition, carried from the carrier';
@@ -4263,6 +4326,7 @@ COMMENT ON COLUMN graphitron_field_minted_candidate.field_name IS 'the field''s 
 COMMENT ON COLUMN graphitron_field_minted_candidate.coordinate IS 'Type.field, what graphitron_minted_conflict counts disagreements at. Generated from the two columns above, so nothing writes it';
 COMMENT ON COLUMN graphitron_field_minted_candidate.carrier_coordinate IS 'the carrier whose application the arm read, on graphitron_connection_carrier.coordinate''s terms';
 COMMENT ON COLUMN graphitron_field_minted_candidate.arm IS 'which of the carrier''s types the field sits on, in graphitron_type_minted_candidate.arm''s vocabulary, or CARRIER for the carrier field the expansion restates';
+COMMENT ON COLUMN graphitron_field_minted_candidate.position IS 'the position of the connection shape the field fills, which says what a type the author declared in place of the mint owes there; NULL on the restated carrier, which fills none';
 COMMENT ON COLUMN graphitron_field_minted_candidate.ordinal IS 'where the arm puts it among the type''s fields; the carrier''s own position on the rewrite';
 COMMENT ON COLUMN graphitron_field_minted_candidate.type_sdl IS 'the type expression the arm writes, wrappers included';
 COMMENT ON COLUMN graphitron_field_minted_candidate.named_type IS 'the name at the bottom of that expression';
@@ -4299,8 +4363,8 @@ SELECT m.graph_name, m.type_name, m.field_name, m.coordinate, m.ordinal, m.type_
    AND (m.rewrite
         OR NOT EXISTS (SELECT 1 FROM graphql_type_element a
                         WHERE a.graph_name = m.graph_name AND a.type_name = m.type_name))
-   -- And one whose own type a conflict withheld: a field of a type nobody holds, the conflict being
-   -- the defect.
+   -- And one whose own type a conflict withheld: a field of a type nobody holds, the conflict's
+   -- MINTED_NAME_CONTESTED saying why.
    AND (m.rewrite
         OR NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict tc
                         WHERE tc.graph_name = m.graph_name AND tc.coordinate = m.type_name));
@@ -4434,6 +4498,44 @@ COMMENT ON COLUMN graphitron_argument_minted_candidate.list_depth IS 'how many l
 COMMENT ON COLUMN graphitron_argument_minted_candidate.item_non_null IS 'whether a list''s items are non-null, and nothing where it is not a list';
 COMMENT ON COLUMN graphitron_argument_minted_candidate.default_value_sdl IS 'the default the arm writes: the page size on first, nothing on after';
 COMMENT ON COLUMN graphitron_argument_minted_candidate.touched_at IS 'when the reading that last found this row ran: the mark the sweep reads, so a row still stated survives a reading and one no longer stated goes';
+CREATE INDEX graphitron_field_minted_candidate_coordinate_ix
+  ON graphitron_field_minted_candidate (graph_name, coordinate);
+COMMENT ON INDEX graphitron_field_minted_candidate_coordinate_ix IS 'The contested-name defect holds a contested field coordinate and asks for the carriers that state it, which the primary key, leading with the type and field names, does not serve.';
+CREATE INDEX graphitron_field_minted_candidate_carrier_ix
+  ON graphitron_field_minted_candidate (graph_name, type_name, carrier_coordinate, arm);
+COMMENT ON INDEX graphitron_field_minted_candidate_carrier_ix IS 'A rule holding a declared type a carrier would mint asks for the fields that carrier''s arm mints on it, and the primary key, which puts the field name before the carrier, serves only its graph: MINTED_TYPE_DECLARED_SHORT reads it.';
+CREATE INDEX graphitron_argument_minted_candidate_coordinate_ix
+  ON graphitron_argument_minted_candidate (graph_name, coordinate);
+COMMENT ON INDEX graphitron_argument_minted_candidate_coordinate_ix IS 'The contested-name defect holds a contested argument coordinate and asks for the field it sits on, which the primary key, leading with the type and field names, does not serve.';
+
+-- A coordinate the arms state more than one way. At a type, the arms that coin it: two carriers
+-- coining one name through one arm agree, and one carrier coining it through two arms does not,
+-- whatever the docstrings say. At a field or an argument, its distinct payloads. Aggregates over
+-- each candidate relation, no window, so a stage's graph filter reaches the grouping key.
+CREATE VIEW graphitron_minted_conflict_rule (graph_name, coordinate, element_kind, variants) AS
+SELECT graph_name, coordinate, 'NAMED_TYPE', CAST(COUNT(*) AS INT)
+  FROM (SELECT DISTINCT graph_name, coordinate, arm FROM graphitron_type_minted_candidate) r
+ GROUP BY graph_name, coordinate
+HAVING COUNT(*) > 1
+ UNION ALL
+SELECT graph_name, coordinate, 'FIELD', CAST(COUNT(*) AS INT)
+  FROM (SELECT DISTINCT graph_name, coordinate, ordinal, type_sdl, named_type, non_null,
+               list_depth, item_non_null, description, rewrite
+          FROM graphitron_field_minted_candidate) r
+ GROUP BY graph_name, coordinate
+HAVING COUNT(*) > 1
+ UNION ALL
+SELECT graph_name, coordinate, 'FIELD_ARGUMENT', CAST(COUNT(*) AS INT)
+  FROM (SELECT DISTINCT graph_name, coordinate, ordinal, type_sdl, named_type, non_null,
+               list_depth, item_non_null, default_value_sdl
+          FROM graphitron_argument_minted_candidate) r
+ GROUP BY graph_name, coordinate
+HAVING COUNT(*) > 1;
+COMMENT ON VIEW graphitron_minted_conflict_rule IS 'One row the minted conflict rule computes, in the shape graphitron_minted_conflict stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_minted_conflict, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_minted_conflict_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_minted_conflict.graph_name';
+-- COMMENT ON COLUMN graphitron_minted_conflict_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_minted_conflict.coordinate';
+-- COMMENT ON COLUMN graphitron_minted_conflict_rule.element_kind IS 'the element_kind of a row of this rule, which the stage writes into graphitron_minted_conflict.element_kind';
+-- COMMENT ON COLUMN graphitron_minted_conflict_rule.variants IS 'the variants of a row of this rule, which the stage writes into graphitron_minted_conflict.variants';
 
 CREATE VIEW graphitron_argument_minted (graph_name, type_name, field_name, argument_name,
                                         coordinate, ordinal, type_sdl, named_type, non_null,
@@ -9240,31 +9342,6 @@ COMMENT ON VIEW graphitron_occurrence_input_type_rule IS 'One row the occurrence
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.type_kind IS 'the type_kind of a row of this rule, which the stage writes into graphitron_occurrence_input_type.type_kind';
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.is_list IS 'the is_list of a row of this rule, which the stage writes into graphitron_occurrence_input_type.is_list';
 -- COMMENT ON COLUMN graphitron_occurrence_input_type_rule.java_class IS 'the java_class of a row of this rule, which the stage writes into graphitron_occurrence_input_type.java_class';
-
-CREATE TABLE graphitron_connection_position (
-  position   VARCHAR NOT NULL,
-  role       VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  PRIMARY KEY (position),
-  UNIQUE (role, field_name),
-  CHECK (role IN ('CONNECTION', 'EDGE', 'PAGE_INFO'))
-);
-COMMENT ON TABLE graphitron_connection_position IS 'One position of the connection shape: the field a connection, its edge or its page info fills it with. For example TOTAL_COUNT is a connection''s totalCount, NODE an edge''s node and END_CURSOR the page info''s endCursor.';
-COMMENT ON COLUMN graphitron_connection_position.position IS 'the position, the key a field filling it names';
-COMMENT ON COLUMN graphitron_connection_position.role IS 'the type of the shape the position is a field of: CONNECTION, EDGE or PAGE_INFO';
-COMMENT ON COLUMN graphitron_connection_position.field_name IS 'the name of the field that fills it, as the Relay Cursor Connections specification spells it (edges, pageInfo, node, cursor and the four page-info fields) or as graphitron adds it (nodes, totalCount, facets)';
-INSERT INTO graphitron_connection_position VALUES
-  ('EDGES', 'CONNECTION', 'edges'),
-  ('NODES', 'CONNECTION', 'nodes'),
-  ('PAGE_INFO', 'CONNECTION', 'pageInfo'),
-  ('TOTAL_COUNT', 'CONNECTION', 'totalCount'),
-  ('FACETS', 'CONNECTION', 'facets'),
-  ('NODE', 'EDGE', 'node'),
-  ('CURSOR', 'EDGE', 'cursor'),
-  ('HAS_NEXT_PAGE', 'PAGE_INFO', 'hasNextPage'),
-  ('HAS_PREVIOUS_PAGE', 'PAGE_INFO', 'hasPreviousPage'),
-  ('START_CURSOR', 'PAGE_INFO', 'startCursor'),
-  ('END_CURSOR', 'PAGE_INFO', 'endCursor');
 
 CREATE TABLE graphitron_edge (
   graph_name     VARCHAR   NOT NULL,
@@ -19008,6 +19085,34 @@ SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
            AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
  WHERE p.source_line IS NOT NULL
 UNION ALL
+-- A name the expansion would mint that its applications disagree about. The coordinate is in
+-- graphitron_minted_conflict and nothing is minted there, so each application coining it is told so
+-- at its @asConnection, one row per carrier naming the first contested coordinate it coins by name. An
+-- argument's carrier is the field the argument sits on.
+SELECT k.graph_name, c.source_name, c.source_line, c.source_column,
+       'MINTED_NAME_CONTESTED', MIN(k.coordinate),
+       'macro-expansion'
+  FROM (SELECT t.graph_name, t.carrier_coordinate, t.type_name AS coordinate
+          FROM graphitron_minted_conflict m
+          JOIN graphitron_type_minted_candidate t
+            ON t.graph_name = m.graph_name AND t.type_name = m.coordinate
+         WHERE m.element_kind = 'NAMED_TYPE'
+        UNION
+        SELECT f.graph_name, f.carrier_coordinate, f.coordinate
+          FROM graphitron_minted_conflict m
+          JOIN graphitron_field_minted_candidate f
+            ON f.graph_name = m.graph_name AND f.coordinate = m.coordinate
+         WHERE m.element_kind = 'FIELD'
+        UNION
+        SELECT a.graph_name, a.type_name || '.' || a.field_name, a.coordinate
+          FROM graphitron_minted_conflict m
+          JOIN graphitron_argument_minted_candidate a
+            ON a.graph_name = m.graph_name AND a.coordinate = m.coordinate
+         WHERE m.element_kind = 'FIELD_ARGUMENT') k
+  JOIN graphitron_connection_carrier c
+    ON c.graph_name = k.graph_name AND c.coordinate = k.carrier_coordinate
+ GROUP BY k.graph_name, c.source_name, c.source_line, c.source_column
+UNION ALL
 -- @issue on a type a root operation field returns, directly or as a list: the vouched decision is
 -- the path from a parent A's rules admitted. A mutation payload's field is no root field.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ISSUE_ON_ROOT_TYPE',
@@ -19056,7 +19161,59 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
  WHERE g.kind <> 'SCALAR'
    AND EXISTS (SELECT 1 FROM graphitron_type o
                 WHERE o.graph_name = g.graph_name AND o.type_name_folded = g.type_name_folded
-                  AND o.kind <> 'SCALAR' AND o.type_name <> g.type_name);
+                  AND o.kind <> 'SCALAR' AND o.type_name <> g.type_name)
+UNION ALL
+-- A type the expansion would mint that the author declared instead, judged here because this stage
+-- is the last to write graphitron_type, whose authored rows are the declaration. The declaration stands and the
+-- mint stands down, so the declaration is checked against what each position owes: the Relay
+-- specification's shape where it states one, graphitron's own where none does, nothing where the
+-- position is optional. Raised at each @asConnection asking for the type, one row per carrier naming
+-- the first shortfall by name. A name the applications contest is MINTED_NAME_CONTESTED's.
+SELECT s.graph_name, c.source_name, c.source_line, c.source_column,
+       'MINTED_TYPE_DECLARED_SHORT', MIN(s.detail),
+       'federation-vocabulary'
+  FROM (SELECT t.graph_name, t.carrier_coordinate, t.type_name || ' is not an object type' AS detail
+          FROM graphitron_type_minted_candidate t
+          -- The author's declaration, as the anchor holds it: a type the mint stood down to.
+          JOIN graphitron_type d
+            ON d.graph_name = t.graph_name AND d.type_name = t.type_name AND d.origin = 'AUTHORED'
+         WHERE d.kind <> 'OBJECT'
+           AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict m
+                            WHERE m.graph_name = t.graph_name AND m.coordinate = t.type_name)
+        UNION
+        SELECT t.graph_name, t.carrier_coordinate,
+               CASE WHEN df.field_name IS NULL THEN t.type_name || ' lacks ' || f.field_name
+                    ELSE f.coordinate || ' is not ' || COALESCE(p.shape_text, f.type_sdl) END
+          FROM graphitron_type_minted_candidate t
+          JOIN graphitron_type d
+            ON d.graph_name = t.graph_name AND d.type_name = t.type_name AND d.origin = 'AUTHORED'
+           AND d.kind = 'OBJECT'
+          JOIN graphitron_field_minted_candidate f
+            ON f.graph_name = t.graph_name AND f.type_name = t.type_name
+           AND f.carrier_coordinate = t.carrier_coordinate AND f.arm = t.arm
+          JOIN graphitron_connection_position p
+            ON p.position = f.position AND p.requirement <> 'OPTIONAL'
+          -- Its fields as the anchor holds them: no machinery field is minted on a type the author
+          -- declared.
+          LEFT JOIN graphitron_field df
+            ON df.graph_name = f.graph_name AND df.type_name = f.type_name
+           AND df.field_name = f.field_name
+         WHERE NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict m
+                            WHERE m.graph_name = t.graph_name AND m.coordinate = t.type_name)
+           AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict m
+                            WHERE m.graph_name = f.graph_name AND m.coordinate = f.coordinate)
+           -- Missing, or of another shape: a column the position leaves free compares as NULL and
+           -- decides nothing.
+           AND (df.field_name IS NULL
+                OR CASE WHEN p.requirement = 'GRAPHITRON' THEN f.named_type ELSE p.named_type END
+                     <> df.named_type
+                OR CASE WHEN p.requirement = 'GRAPHITRON' THEN f.list_depth ELSE p.list_depth END
+                     <> df.list_depth
+                OR (CASE WHEN p.requirement = 'GRAPHITRON' THEN f.non_null ELSE p.requires_non_null END = TRUE
+                    AND NOT df.non_null))) s
+  JOIN graphitron_connection_carrier c
+    ON c.graph_name = s.graph_name AND c.coordinate = s.carrier_coordinate
+ GROUP BY s.graph_name, c.source_name, c.source_line, c.source_column;
 COMMENT ON VIEW graphitron_federation_vocabulary_entry_defect_rule IS 'One row the federation-vocabulary stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example types Film and FILM in one graph give one TYPE_NAME_CASE_COLLISION row at each declaration.';
 
 -- The binding-claims stage's own defects: a @nodeId or a node's id the claims just written judge, at
@@ -24510,9 +24667,9 @@ INSERT INTO meta_stated_relation VALUES
    'For example SERVICE is a PRODUCER kind and NODE_ID a BINDING kind.',
    'The vocabulary every claim is in, declared once so a claim''s kind is a key and its family a join rather than a CHECK repeated per family. Which kinds exist and which question each answers is a property of this generator and not of anybody''s schema, graphitron_defect_type''s reason beside it.'),
   ('graphitron_connection_position',
-   'One position of the connection shape: the field a connection, its edge or its page info fills it with.',
-   'For example TOTAL_COUNT is a connection''s totalCount, NODE an edge''s node and END_CURSOR the page info''s endCursor.',
-   'The shape is the Relay Cursor Connections specification''s, with the fields graphitron adds beside it (nodes, totalCount, facets), so no corpus a capture reads states it: it is a constant, and the rules asking which position a field fills read it rather than spelling the names. The connection and edge recognition rules keep their literal edges and node: a name read through this table is no constant to the planner, which then probes graphitron_field by graph alone instead of seeking the index graphitron_field carries on its graph and field name.'),
+   'One position of the connection shape: the field a connection, its edge, its page info, its facets type or a facet bucket fills it with, and what a type an author declared in place of the mint must hold there.',
+   'For example TOTAL_COUNT is a connection''s totalCount and optional, and HAS_NEXT_PAGE the page info''s hasNextPage, which the Relay specification requires as Boolean!.',
+   'The shape is the Relay Cursor Connections specification''s, with the fields graphitron adds beside it, so no corpus a capture reads states it: it is a constant, and the rules asking which position a field fills, or what a declared type owes there, read it rather than spelling the names. The requirement is the specification''s alone where one exists and graphitron''s own shape only where none does, so a schema the specification accepts draws nothing. The connection and edge recognition rules keep their literal edges and node: a name read through this table is no constant to the planner, which then probes graphitron_field by graph alone instead of seeking the index graphitron_field carries on its graph and field name.'),
   ('code_delivery_container',
    'One class a declared type delivers something through, with the type-argument position its element sits at and whether passing through it makes the delivery many.',
    'For example java.util.List delivers its argument at position 0, many.',
@@ -25651,6 +25808,7 @@ INSERT INTO meta_stage_rule VALUES
   ('macro-expansion', 'graphitron_field_position', 'graphitron_field_position_rule'),
   ('macro-expansion', 'graphitron_inherited_directive', 'graphitron_inherited_directive_rule'),
   ('macro-expansion', 'graphitron_minted_coinage', 'graphitron_minted_coinage_rule'),
+  ('macro-expansion', 'graphitron_minted_conflict', 'graphitron_minted_conflict_rule'),
   ('macro-expansion', 'graphitron_type_minted_candidate', 'graphitron_type_minted_candidate_rule'),
   ('macro-expansion', 'graphitron_field_minted_candidate', 'graphitron_field_minted_candidate_rule'),
   ('macro-expansion', 'graphitron_argument_minted_candidate', 'graphitron_argument_minted_candidate_rule'),
@@ -26978,6 +27136,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
    'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
+  ('MINTED_NAME_CONTESTED', 'error', 'GRAPHITRON', 'GRAPHITRON_MINTED_NAME_CONTESTED',
+   'A name @asConnection would mint is coined more than one way, a type in two roles or a field or argument in two shapes, so graphitron mints none of them: give the connections distinct names, or their carriers one element type.'),
+  ('MINTED_TYPE_DECLARED_SHORT', 'error', 'GRAPHITRON', 'GRAPHITRON_MINTED_TYPE_DECLARED_SHORT',
+   'A type @asConnection would generate is declared in the schema, so graphitron uses the declaration, and the declaration lacks a field the shape requires or gives one the wrong type: Relay''s edges and pageInfo on a connection, node and cursor on an edge and the four page-info fields, and graphitron''s own facets shape where the connection has facets. Add or correct the field, or remove the declaration and let graphitron generate the type.'),
   ('DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', 'error', 'GRAPHITRON', 'GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM',
    'A connection''s default page size is larger than the build''s <maxAllowedPageSize>, so the schema advertises a default no request can receive, every page being served at the maximum: lower the default, or raise the maximum.'),
   ('OUTBOX_NOT_A_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NOT_A_WRITE',
@@ -28570,8 +28732,12 @@ INSERT INTO meta_relation VALUES
    'A decode of one directive application, keyed by the application''s own position. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed: whether the class is on the classpath and whether it declares that method are questions for the classpath census. The override argument is NULL where the author wrote none rather than carrying the definition''s false, which keeps the difference between a default taken and a value written; the default itself stands in graphql_directive_argument.default_value_sdl. The context arguments are a relation of their own, one row per list position, so deleting this row takes them.'),
   ('graphitron_minted_conflict', 'minted-conflict', 'graphitron',
    'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
-   'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',
-   'Two applications minting one coordinate the same way are the ordinary case and the whole reason the minted relations key by their source, shared machinery being stated whole by every carrier. Two that disagree are not, and neither of them may win. Picking one would put a shape in the emitted population that no application asked for and that nothing records, which is the class of silence this line of work exists to remove; refusing outright would be worse, because the schema is one an author can write and capture runs before assembly and for readers that never run it, so the store has to exist for the diagnostic to sit in. So the coordinate is withheld and this row is what says why, on the claim conflict''s terms, which is the same shape one increment earlier: a contested coordinate, neither claimant, and a relation naming it. What each application would have written is not copied here; the minted relations keep it, keyed by the coordinate that coined each, so the readings are a join away rather than a duplicate.'),
+   'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here, no row in graphitron_field, and a MINTED_NAME_CONTESTED defect at each carrier.',
+   'Two applications minting one coordinate the same way are the ordinary case and the whole reason the minted relations key by their source, shared machinery being stated whole by every carrier. Two that disagree are not, and neither of them may win. Picking one would put a shape in the emitted population that no application asked for and that nothing records, which is the class of silence this line of work exists to remove; refusing outright would be worse, because the schema is one an author can write and capture runs before assembly and for readers that never run it, so the store has to exist for the diagnostic to sit in. So the coordinate is withheld, this row says why, and each application coining it draws a MINTED_NAME_CONTESTED defect, on the claim conflict''s terms, which is the same shape one increment earlier: a contested coordinate, neither claimant, and a relation naming it. What each application would have written is not copied here; the minted relations keep it, keyed by the coordinate that coined each, so the readings are a join away rather than a duplicate.'),
+  ('graphitron_minted_conflict_rule', 'minted-conflict', 'graphitron',
+   'One row the minted conflict rule computes, in the shape graphitron_minted_conflict stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_minted_conflict, which is the name every reader spells.',
+   'The rule, on graphitron_type_minted_candidate_rule''s terms. The relation was cleared and refilled in Java; stored from its rule it is marked and swept like its neighbours, and the count it states is readable in the catalog.'),
   ('graphitron_element', 'expanded-element', 'graphitron',
    'A schema element the generator emits exists in this graph, whether an author declared it or macro expansion minted it: the supertype of the four element relations beside it, keyed by the schema coordinate the GraphQL specification spells for it.',
    'For example a QueryFilmsConnection no author wrote is the row QueryFilmsConnection here and no row at all in graphql_element, and the field carrying the macro is one row in each.',

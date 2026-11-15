@@ -215,6 +215,52 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Compile the class's module with `-parameters`, as `<parameters>true</parameters>` on `maven-compiler-plugin` does, and rebuild it before graphitron reads it.
 
+[#minted-name-contested]
+=== A name `@asConnection` would mint, coined two ways (`MINTED_NAME_CONTESTED`)
+
+*What it says.* `A name @asConnection would mint is coined more than one way, a type in two roles or a field or argument in two shapes, so graphitron mints none of them`, at each `@asConnection` that coins the name, naming the first contested coordinate it coins, by name, in the detail.
+
+*Cause.* Graphitron generates the Connection, Edge and `PageInfo` types and their fields for each `@asConnection` field, and several fields may generate the same name, which is fine as long as they all describe it the same way. Two shapes make them disagree:
+
+* Two fields share a `connectionName:` over different element types, so the shared Connection's `nodes` and its Edge's `node` would have two types:
++
+[source,graphql]
+----
+type Query {
+  films: [Film!]! @asConnection(connectionName: "Shared")
+  tongues: [Language!]! @asConnection(connectionName: "Shared")
+}
+----
++
+Both fields draw the code, each naming `Shared.nodes; SharedEdge.node`.
+* A `connectionName:` names a type the same field also generates in another role, such as `@asConnection(connectionName: "PageInfo")`: the Connection and the page info would be one type.
+
+Graphitron generates none of the contested names rather than picking one, and stops the build.
+
+*Next step.* Give the connections distinct names, usually by dropping the deprecated `connectionName:` so each field gets its own, or give the fields sharing one name the same element type. xref:directives/asConnection.adoc#constraints[`@asConnection` constraints] lists the rules.
+
+[#minted-type-declared-short]
+=== A declared type `@asConnection` would generate, short of its shape (`MINTED_TYPE_DECLARED_SHORT`)
+
+*What it says.* `A type @asConnection would generate is declared in the schema, so graphitron uses the declaration, and the declaration lacks a field the shape requires or gives one the wrong type`, at each `@asConnection` that asks for the type, naming the type and what it lacks in the detail.
+
+*Cause.* Where the schema declares a Connection, Edge, `PageInfo` or facets type that an `@asConnection` field would otherwise generate, graphitron uses the declaration as written and checks it against what the shape requires. Where the Relay Cursor Connections specification states the shape, that is the requirement and nothing more: `edges` (a list) and `pageInfo` (`PageInfo!`) on a connection, `node` and `cursor` (neither a list) on an edge, and `hasNextPage: Boolean!`, `hasPreviousPage: Boolean!`, `startCursor` and `endCursor` on `PageInfo`. `nodes` and `totalCount` are optional. Where no external specification exists, the facets type of a connection with facets and its value types, graphitron's own shape is the requirement. For example:
+
+[source,graphql]
+----
+type Query {
+  films: [Film!]! @asConnection
+}
+
+type QueryFilmsConnection {
+  edges: [QueryFilmsConnectionEdge!]!
+}
+----
+
+draws the code at the `@asConnection`, reading `QueryFilmsConnection lacks pageInfo`. A `connectionName:` naming a type that is not a connection at all, such as the element type itself (`@asConnection(connectionName: "Film")`), draws it too, the detail listing every field the type lacks.
+
+*Next step.* Add or correct the fields the detail names, or remove the declaration and let graphitron generate the type. xref:directives/asConnection.adoc#constraints[`@asConnection` constraints] lists the rules.
+
 [#lookup-key-refusals]
 === A `@lookupKey` that names no key of the field's rows
 

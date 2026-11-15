@@ -1,0 +1,16 @@
+# A declared connection with what the Relay specification requires and nothing else: no nodes and no
+# totalCount, which graphitron reads where they are declared and requires nowhere, so nothing is short.
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  films: [Film!]! @asConnection @defaultOrder(primaryKey: true)
+}
+
+type QueryFilmsConnection { edges: [QueryFilmsConnectionEdge!]! pageInfo: PageInfo! }
+
+type QueryFilmsConnectionEdge { cursor: String! node: Film! }
+
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code = 'MINTED_TYPE_DECLARED_SHORT'")

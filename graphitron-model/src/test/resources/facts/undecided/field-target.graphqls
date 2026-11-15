@@ -13,7 +13,7 @@ type Query { films: [Film!]! @asConnection }
 extend type Query { pages: FilmPage }
 type FilmPage { edges: [FilmPageEdge!]! pageInfo: PageInfo }
 type FilmPageEdge { node: Film cursor: String }
-type PageInfo { hasNextPage: Boolean }
+type PageInfo { hasNextPage: Boolean! hasPreviousPage: Boolean! startCursor: String endCursor: String }
 
 # A field returning what it names, a union and a scalar among them: the relation is total.
 extend type Query { firstFilm: Film media: [Media!]! }
