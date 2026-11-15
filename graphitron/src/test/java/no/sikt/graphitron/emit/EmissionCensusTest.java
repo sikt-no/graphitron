@@ -307,31 +307,36 @@ class EmissionCensusTest {
         // Each line goes as its fact lands; an occurrence moving between lines is a change to look at,
         // not to re-pin.
         assertThat(refused)
-            .containsEntry("EXPRESSION", List.of("ComputedTitleFilm.title", "FanLabelled.label",
-                "FanLabelledAlpha.label", "FanLabelledBeta.label", "Film.isEnglish", "Film.titleByName",
+            .containsEntry("EXPRESSION", List.of("ComputedTitleFilm.title", "Customer.location.occupantAddressId",
+                "FanLabelled.label", "FanLabelledAlpha.label", "FanLabelledBeta.label", "Film.isEnglish",
+                "Film.projected.inner.isEnglish", "Film.projected.isEnglish", "Film.titleByName",
                 "HostLabelsComputedRow.nb", "HostLabelsComputedRow.nn", "HostLanguageNames.englishName",
                 "HostLanguageNames.italianName", "Inventory.filmCardData", "Inventory.filmCardDataMaybeMissing",
-                "Inventory.filmRef"))
-            .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Category.children",
-                "Category.parent", "Customer.address", "Customer.addressByCondition", "Customer.storeAddress",
-                "DivergedRefChild.organisation", "DivergedRefOrg.children", "FanAlpha.target", "FanBeta.target",
-                "Film.Length", "Film.castActorsViaChain", "Film.castFilms", "Film.sameRow", "FilmActor.actor",
+                "Inventory.filmRef", "PivotNestingHost.labelsComputed.nb", "PivotNestingHost.labelsComputed.nn",
+                "PivotNestingHost.labelsMixed.nb", "Store.location.occupantAddressId"))
+            .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Customer.addressByCondition",
+                "Film.Length", "Film.castActorsViaChain", "Film.castFilms", "Film.filmDetails.language",
+                "Film.inlineBundle.language", "Film.inlineBundle.languageFiltered", "Film.original.language",
+                "Film.sameRow", "Film.sameRowNested.row", "Film.spoken.language", "FilmActor.actor",
                 "FilmSameRow.film", "FilmSameRow.language", "HostLabelsWithFilms.languageFilms",
                 "Language.filmsInlineByLatestStock", "Language.filmsInlineByOriginalLanguage",
                 "Language.filmsInlineByOriginalLanguageDesc", "PivotNestingHost.labelsComputedRow",
-                "PivotNestingHost.labelsRow", "PivotNestingHost.labelsWithFilms", "PivotNestingHost.languageNames",
-                "PresenceHost.detail", "PresenceHost.detailNode", "PresenceHost.detailRequired",
-                "PresenceHostRefs.detail", "SplitFilterParent.targetInline", "Store.customers"))
+                "PivotNestingHost.labelsWithFilms", "PivotNestingHost.languageNames",
+                "PivotNestingHost.origin.language", "Store.customers"))
             .containsEntry("NARROWED_LIST", List.of("Actor.recentFilms", "Actor.recentFilmsInferred",
                 "FanAlpha.details", "FanAlpha.marks", "FanBeta.details", "FanBeta.marks", "FanItem.details",
-                "Film.actors", "Film.actorsGenerated", "Film.castRecentFilms", "Language.filmsByMixedFilter",
-                "SessionStore.customersOfPrincipal", "Store.customersByAddressDistrict", "Store.customersByFirstName",
-                "Store.customersByNodeId", "Store.customersFirstN"))
+                "Film.actors", "Film.actorsGenerated", "Film.castRecentFilms", "Film.filmDetails.actorsByLookup",
+                "Film.inlineBundle.actorsByKey", "Film.inlineBundle.actorsByKeyViaJunctionCondition",
+                "Language.filmsByMixedFilter", "SessionStore.customersOfPrincipal",
+                "Store.customersByAddressDistrict", "Store.customersByFirstName", "Store.customersByNodeId",
+                "Store.customersFirstN"))
             .containsEntry("PIVOT", List.of("Film.prices", "Film.pricesSplit", "Film.taglineTranslations",
                 "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
             .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
                 "Film.soleActorFirstName"))
-            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH");
+            .containsEntry("UNSTATED", List.of("Film.blurb.description", "PivotNestingHost.texts.en",
+                "PivotNestingHost.texts.nb", "PivotNestingHost.texts.nn", "PivotNestingHost.texts.se"))
+            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH", "UNSTATED");
     }
 
     /**
