@@ -918,15 +918,19 @@ static method needs no holder.
       for utdanningsregisteret's `searchVektingstallRange` and `filterUtdanningsinstanserByVarighet`,
       so it lands after the typed forms, with a `BREAKING-CHANGE` footer naming the migration.
   * **A sort key's path is resolved at its occurrence, claimed by C** `open`. A `fields` element's `path:` (about
-    twenty sakila sites) is a `PATH` sort key with no column: the path family's decode extends to
-    `FieldSort.path`, so the join path need and step relations resolve it, the to-one refusal
-    included, and the key gains a subtype naming its hops and the column they land on. Closes before
-    the flip, which keeps no fallback for it. Whether a hop reaches one row is
-    `sql_referential_constraint_reach`'s, stated once in the sql family, and the table an order's
-    names resolve against is `graphitron_occurrence_order`'s own read table, stated by the order rule
-    at occurrence-orderings, so no rule tests a write's shape to find it (Alf, 2026-11-25). Only
-    `ROUTINE_WRITE_PLURAL_UNORDERED` keeps that test: it fires where no order row exists, so there is
-    no read table to join, and the shape is what the defect means.
+    twenty sakila sites) is a `PATH` sort key with no column. Its elements are captured in the one
+    reference-path grammar, the element entries' parent widened to any AST anchor, and resolved by
+    the shared element relations. The key keeps its own grain, an order's position at an occurrence
+    and table rather than an occurrence's need, so it gains a subtype naming the column it lands on
+    and hop rows naming each step's foreign key and direction, written by `occurrence-orderings`;
+    a hop the walk refuses, a condition, a routine, a to-many step or a column off the landing
+    table, is refused there. The emitter reads them as a correlated scalar subselect in the sort
+    term. Closes before the flip, which keeps no fallback for it (Alf, 2026-11-15, via A). Whether a
+    hop reaches one row is `sql_referential_constraint_reach`'s, stated once in the sql family, and
+    the table an order's names resolve against is `graphitron_occurrence_order`'s own read table,
+    stated by the order rule at occurrence-orderings, so no rule tests a write's shape to find it
+    (Alf, 2026-11-25). Only `ROUTINE_WRITE_PLURAL_UNORDERED` keeps that test: it fires where no order
+    row exists, so there is no read table to join, and the shape is what the defect means.
   * **An inline list is emitted from the store in its stated or chosen order, claimed by E** `open`. The walk
     resolves an `@orderBy` argument on a list read inside its parent's statement and cannot lower it
     onto the multiset: `LauncherCommands.requireResolvedOrderingsAreLowered` throws a generator bug
