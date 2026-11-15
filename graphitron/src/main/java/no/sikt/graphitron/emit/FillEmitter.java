@@ -141,9 +141,11 @@ public final class FillEmitter {
                 case "DSL_CONTEXT" -> arguments.add(CONFIGURATION.equals(fill.erasedClass())
                     ? CodeBlock.of("dsl.configuration()") : CodeBlock.of("dsl"));
                 case "SOURCE" -> {
+                    // The frame types its keys off this same parameter, so they cannot disagree; a SOURCE
+                    // fill without keys is a child the store states no source for, which it refuses.
                     if (keysType.isEmpty() || !keysType.get().equals(type)) {
-                        return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
-                            "the call takes its keys as " + type + ", and the frame hands them over as "
+                        throw new IllegalStateException(row.fieldCoordinate() + ": the call takes its keys as "
+                            + type + ", and the frame hands them over as "
                             + keysType.map(TypeName::toString).orElse("nothing"));
                     }
                     arguments.add(CodeBlock.of("keys"));

@@ -18512,6 +18512,35 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                          WHERE n2.graph_name = m2.graph_name AND n2.coordinate = m2.coordinate))
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
+-- Two input fields writing one column of a jOOQ record, neither deprecated, which nothing says how
+-- to choose between: a live field is preferred over a deprecated one, and two live ones are this.
+-- The record being the one both parents' built classes build, a grouping's its parent's. At the
+-- later field by coordinate, the detail the column.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MEMBER_FILLED_TWICE', MIN(c2.column_name), 'occurrence-builds'
+  FROM graphitron_occurrence_column c1
+  JOIN graphitron_occurrence o1
+    ON o1.graph_name = c1.graph_name AND o1.coordinate = c1.coordinate AND o1.kind = 'INPUT_FIELD'
+  JOIN graphitron_occurrence_built_class p1
+    ON p1.graph_name = o1.graph_name AND p1.coordinate = o1.parent_coordinate
+   AND p1.record_source_name = c1.table_source_name AND p1.record_schema = c1.table_schema
+   AND p1.record_table = c1.table_name
+  JOIN graphitron_occurrence_column c2
+    ON c2.graph_name = c1.graph_name AND c2.table_source_name = c1.table_source_name
+   AND c2.table_schema = c1.table_schema AND c2.table_name = c1.table_name
+   AND c2.column_name = c1.column_name AND c2.coordinate > c1.coordinate
+  JOIN graphitron_occurrence o2
+    ON o2.graph_name = c2.graph_name AND o2.coordinate = c2.coordinate AND o2.kind = 'INPUT_FIELD'
+  JOIN graphitron_occurrence_built_class p2
+    ON p2.graph_name = o2.graph_name AND p2.coordinate = o2.parent_coordinate
+   AND p2.record_table = p1.record_table AND p2.built_at = p1.built_at
+  JOIN graphql_ast_element_entry el ON el.graph_name = o2.graph_name AND el.coordinate = o2.element_coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_deprecated d
+                    WHERE d.graph_name = o1.graph_name AND d.coordinate = o1.element_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_deprecated d
+                    WHERE d.graph_name = o2.graph_name AND d.coordinate = o2.element_coordinate)
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
 -- A @service's or a @condition's method whose parameter a pair projects a node id's key column into,
 -- where no decode shape fits: the parameter is not of the column's type, or not a List of it for a
 -- list of ids. Under some occurrence of the call, at the reference: once per reference, the
@@ -23547,7 +23576,11 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SO
    AND (EXISTS (SELECT 1 FROM graphitron_tabletype tt
                  WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
         OR EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim_object co
-                    WHERE co.graph_name = op.graph_name AND co.coordinate = op.coordinate))
+                    WHERE co.graph_name = op.graph_name AND co.coordinate = op.coordinate)
+        -- Or the table the producer's keys are filled from under a plain object, the parent the
+        -- service frame keys its batch by, so every child the frame batches is held to a source.
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_producer_lift pl
+                    WHERE pl.graph_name = op.graph_name AND pl.coordinate = op.coordinate))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
                     WHERE cp.graph_name = op.graph_name AND cp.coordinate = op.coordinate
                       AND cp.fill = 'SOURCE')

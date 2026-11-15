@@ -52,6 +52,8 @@ public final class CallEmitter {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName SET = ClassName.get("java.util", "Set");
+    private static final ClassName COLLECTION = ClassName.get("java.util", "Collection");
+    private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
 
     /**
@@ -301,6 +303,9 @@ public final class CallEmitter {
             var keysType = ParameterizedTypeName.get(collection, element);
             if (SET.equals(collection)) {
                 method.addStatement("$T keys = new $T<>(converted)", keysType, ClassName.get("java.util", "LinkedHashSet"));
+            } else if (RESULT.equals(collection)) {
+                method.addStatement("$T keys = dsl.newResult($T.$L)", keysType, frame.tablesClass(), frame.tableField())
+                    .addStatement("keys.addAll(converted)");
             } else {
                 method.addStatement("$T keys = converted", keysType);
             }
@@ -348,11 +353,17 @@ public final class CallEmitter {
         }
     }
 
-    /** The batch for a method taking {@code source} and answering {@code answer}, or why there is none. */
+    /**
+     * The batch for a method taking {@code source} and answering {@code answer}, or why there is none: its
+     * keys in any container the store's {@code code_delivery_container} delivers many through, a jOOQ
+     * {@code Result} of the parent's table records among them, and its answer a Map by key or a List,
+     * a jOOQ {@code Result} included, in the keys' order.
+     */
     private static Object batch(FrameKey frame, TypeName source, TypeName answer, String coordinate) {
         if (!(source instanceof ParameterizedTypeName taken)
-            || !(SET.equals(taken.rawType()) || LIST.equals(taken.rawType()))) {
-            return coordinate + " takes its keys as " + source + ", neither a Set nor a List of them";
+            || !(SET.equals(taken.rawType()) || LIST.equals(taken.rawType())
+                || COLLECTION.equals(taken.rawType()) || RESULT.equals(taken.rawType()))) {
+            return coordinate + " takes its keys as " + source + ", in no container delivering many";
         }
         var element = taken.typeArguments().getFirst();
         CodeBlock conversion;
@@ -364,13 +375,17 @@ public final class CallEmitter {
         } else {
             conversion = CodeBlock.of("k.into($T.$L)", frame.tablesClass(), frame.tableField());
         }
+        if (RESULT.equals(taken.rawType()) && !conversion.toString().startsWith("k.into(")) {
+            return coordinate + " takes its keys as " + source + ", a Result of something other than the"
+                + " parent's table records";
+        }
         if (!(answer instanceof ParameterizedTypeName answered)) {
             return coordinate + " answers " + answer + ", neither a Map by key nor a List in the keys' order";
         }
         if (MAP.equals(answered.rawType())) {
             return new Batch(taken.rawType(), element, conversion, true, answered.typeArguments().get(1));
         }
-        if (LIST.equals(answered.rawType())) {
+        if (LIST.equals(answered.rawType()) || RESULT.equals(answered.rawType())) {
             return new Batch(taken.rawType(), element, conversion, false, answered.typeArguments().getFirst());
         }
         return coordinate + " answers " + answer + ", neither a Map by key nor a List in the keys' order";

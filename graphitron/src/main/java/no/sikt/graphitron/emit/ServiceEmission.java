@@ -113,6 +113,8 @@ public final class ServiceEmission {
     private static final ValidationEmitter.Runtime CENSUS_VALIDATION = new ValidationEmitter.Runtime(
         CENSUS_HOST, CENSUS_HOST, env -> CodeBlock.of("null"));
 
+    /** Every service producer occurrence the store states, by coordinate: what the census reads. */
+    private final Set<String> services;
     private final Map<String, FrameQuery.Row> frames;
     private final Map<String, CallQuery.Row> calls;
     private final Map<String, FillQuery.Row> fills;
@@ -129,12 +131,13 @@ public final class ServiceEmission {
     /** The tenant column's Java type, in a database-per-tenant graph whose tables agree on one. */
     private final Optional<String> tenantType;
 
-    private ServiceEmission(Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
+    private ServiceEmission(Set<String> services, Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
                             Map<String, String> excluded,
                             Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated,
                             Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
+        this.services = services;
         this.frames = frames;
         this.calls = calls;
         this.fills = fills;
@@ -150,7 +153,7 @@ public final class ServiceEmission {
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+        return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
             Map.of(), Optional.empty());
     }
 
@@ -162,7 +165,10 @@ public final class ServiceEmission {
         var lifts = byCoordinate(LiftQuery.read(store), LiftQuery.Row::coordinate);
         var targets = new HashMap<String, String>();
         lifts.forEach((coordinate, row) -> targets.put(coordinate, row.targetType()));
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         return new ServiceEmission(
+            Set.copyOf(store.dsl().select(p.COORDINATE).from(p)
+                .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE")).fetch(p.COORDINATE)),
             byCoordinate(FrameQuery.read(store), FrameQuery.Row::coordinate),
             byCoordinate(CallQuery.read(store), CallQuery.Row::coordinate),
             byCoordinate(FillQuery.read(store), FillQuery.Row::coordinate),
@@ -262,12 +268,13 @@ public final class ServiceEmission {
     }
 
     /**
-     * Every service the store states a frame for, with {@link #EMITTED} or why it is not emitted here
-     * yet, by coordinate.
+     * Every service producer the store states, with {@link #EMITTED} or why it is not emitted here
+     * yet, by coordinate: one with no frame is {@code NO_FRAME}, which on a graph the store accepts is
+     * a regression rather than a deferral.
      */
     public Map<String, String> census() {
         var out = new java.util.TreeMap<String, String>();
-        frames.keySet().forEach(c -> out.put(c, verdict(c)));
+        services.forEach(c -> out.put(c, verdict(c)));
         return out;
     }
 

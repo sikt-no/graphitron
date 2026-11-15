@@ -35,6 +35,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * {@link FillEmitter}'s fills, compiled and run: each parameter's value read off a real fetch, a
@@ -217,10 +218,12 @@ class FillEmitterTest {
     }
 
     @Test
-    void keysInAnotherShapeAreLeftToBuilding() {
-        // Its source takes films whole, which keys of the frame's shape are not.
+    void keysInAnotherShapeThanTheSourceParameterBreakAnInvariant() {
+        // Its source takes films whole, and the frame types its keys off that same parameter, so keys of
+        // another shape cannot reach it: handing them over is a broken invariant, not a deferral.
         var row = row("Film.titleTitlecase");
-        assertThat(FillEmitter.emit(row, Optional.of(KEYS), RUNTIME))
-            .isInstanceOf(FillEmitter.Result.NeedsBuilding.class);
+        assertThatThrownBy(() -> FillEmitter.emit(row, Optional.of(KEYS), RUNTIME))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("the frame hands them over as");
     }
 }
