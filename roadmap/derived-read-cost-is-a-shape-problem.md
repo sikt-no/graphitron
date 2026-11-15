@@ -96,6 +96,7 @@ The walk's read path is gone
     └── The service fields are emitted from the store
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
+            └── An input field binding no column is refused by the store
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1085,6 +1086,17 @@ static method needs no holder.
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
     `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
     `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
+    * **An input field binding no column is refused by the store** `open`, E's. `BuildQuery.bind` refuses in Java an input field of
+      an input built into a jOOQ record that binds no column, while the store's record-input arm of
+      `COLUMN_UNRESOLVED` checks the spelling against `sql_column_spelling` rather than the binding in
+      `graphitron_occurrence_column`, so a spelling that exists on the table passes the store and the
+      walk emits the call. Reading the binding makes it a stored defect. In sis
+      (`sis/upgrade-graphitron` 68d0313ebf) it refuses inputs the census found binding no column:
+      `telefonnummertype` on `PERSON_TELEFON` under `opprettStudenter` (claiming `telefonnrtypekode`),
+      `registrerInnreisendeUtvekslinger` and `registrerInnreisendeUtvekslingerGittPersonId`; and
+      `leggTilBegrensningerForEmnevalgIStudieoppbygningsdeler`'s `studienivaIntervall.fraStudienivaId`
+      on `EMNEVALG_I_EMNEKOMBINASJON`, which `NODE_ID_TYPE_NAME_UNDECLARED_STUB` already refuses. That
+      breaks sis's build where it builds today, so whether and when is Alf's and Filip's call.
 * **A routine write's re-read keeps its rows in the order the write returned them** `open`, off the critical path. A routine write's rows are re-read by
   the keys it returned through an unordered `IN`, so they can come back in another order than the
   write handed them; the re-read keeps the write's order. A fix of its own, not a gate on the
