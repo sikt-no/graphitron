@@ -1071,6 +1071,12 @@ static method needs no holder.
     The producer rule decides the fan-out before `occurrence-depths` writes the steps, so it reads the
     field's reference or foreign key joined to `graphitron_tenant_column` from facts upstream of the
     producers, captured there where they are not yet.
+  * **A field's followed claim is stored per field and target type** `open`, E's. Which claim a field
+    follows, its own `@referenceFor` or field claim or one inherited from an interface field, is
+    decided per need by `graphitron_join_path_claimed_rule`, whose target types come from the depth
+    loop's needs. Stored per field and target type ahead of the producers, with the claimed rule reading
+    it, a field's first key covers an inherited path too; until then an inherited path's first key is
+    the walk's, and an inherited path that would fan out stays excluded under the fan-out's reason.
 * **A routine write's routing is named by the connection key** `open`, F's, off the critical path.
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
