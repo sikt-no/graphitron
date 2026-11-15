@@ -84,9 +84,10 @@ of the window.
 The driver is loaded from the consumer's project classpath through `ServiceLoader`, bypassing
 `DriverManager`, as `DevQueryExecutor.openConnection` does. `dev` already resolves test scope, because
 Quarkus applications often declare the driver there. `generate`, `validate` and `capture` resolve
-`COMPILE` today. They widen to `TEST` only when `<database>` is configured, if Maven allows that
-conditionally; otherwise the driver must be on the compile classpath for those goals, and the manual
-says so. Implementation settles which.
+`COMPILE` today, and keep that static scope. When `<database>` is configured, the mojo resolves the
+test classpath on demand through Maven's `ProjectDependenciesResolver` and loads the driver from it, so
+a driver declared at test scope is found by every goal. Without `<database>` nothing extra is resolved,
+and a build that configures no database pays nothing.
 
 A configured url with no driver that accepts it fails the goal: that is a misconfiguration, the same
 on every machine.
@@ -111,21 +112,33 @@ that opens a `java.sql.Connection`. The model module gains no driver dependency.
 ### Relations
 
 Each is keyed like `sql_table`, on `(source_name, table_schema, table_name)` plus its own grain, with
-`source_name` a foreign key to `store_source` (`ON DELETE CASCADE`) and a `touched_at` mark. The rows
-that hang off a policy (`database_policy_role`) also carry a foreign key to that policy's key with
-`ON DELETE CASCADE`, so the sweep of a policy is what collects them.
+`source_name` a foreign key to `store_source` (`ON DELETE CASCADE`) and a `touched_at` mark. Each child
+relation also carries a foreign key to its parent's key with `ON DELETE CASCADE`, so sweeping a table
+collects its policies and sweeping a policy collects its roles.
 
-* `database_table_security`: one row per table the database secures by row, with whether that
-  security is forced. A table absent here, in a reading that happened, does not secure its rows.
-* `database_policy`: one row per policy a table declares. Columns: command (`ALL`, `SELECT`,
-  `INSERT`, `UPDATE`, `DELETE`), mode (`PERMISSIVE`, `RESTRICTIVE`), and the `USING` and `WITH CHECK`
-  text as the database renders it, and the policy's comment. Each of those three columns is display material, never a dimension, and the DDL says so in the same words; no reader
-  string-searches it. A follow-up that needs structure from an expression captures it at capture, beside the text, never by parsing the stored text.
-  A table may declare policies while its row security is off, and the database then does not apply
-  them. So `database_policy` has no foreign key to `database_table_security`: such policies are
-  stored, and the readers show them as declared but not in force.
-* `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row. It has a foreign key
-  to its `database_policy` row (`ON DELETE CASCADE`), so sweeping a policy collects its roles.
+* `database_table`: one row per table the reading saw, with whether the table secures its rows and
+  whether that is forced. Row security off is a stored fact, not a missing row; a table absent here
+  is one the reading did not see. Every ordinary and partitioned table outside the system schemas is
+  read, not only the secured ones, so the readers ask one row rather than evaluating absence, and a
+  table one side has and the other lacks is an anti-join over stored rows (see Matching `sql_table`).
+* `database_policy`: one row per policy a table declares, with a foreign key to its `database_table`
+  row. Columns: command (`ALL`, `SELECT`, `INSERT`, `UPDATE`, `DELETE`), mode (`PERMISSIVE`,
+  `RESTRICTIVE`), the `USING` and `WITH CHECK` text as the database renders it, and the policy's
+  comment. Each of those three columns is display material, never a dimension, and the DDL says so in
+  the same words; no reader string-searches it. A table may declare policies while its row security is
+  off, and the database then does not apply them: such policies are stored under their table's row,
+  whose flag says they are not in force.
+* `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row.
+
+A follow-up that needs structure from an expression extracts the direct facts during the reading and
+stores them as rows beside the text: a policy reads a setting, a policy calls a function, a function
+reads a setting, a function calls a function. The parse happens once, at capture, over what the
+database returns: the expression's node tree where the database exposes one, a function's source text
+where it does not. That passes the recompute test in `docs/architecture/explanation/fact-model.adoc`
+§ "Gatherers build the model in a declared order", because the store holds neither the node tree nor
+the function source; the stored `pg_get_expr` text is display only and no reader parses it. Which
+functions a policy reaches transitively is recomputable from those rows, so that closure is anchor-phase
+work, not capture.
 
 Names are stored as the database spells them (`pg_namespace.nspname`, `pg_class.relname`), which is
 how `sql_table` stores jOOQ's `getSchema().getName()` and `getName()`. That makes a name match exact.
@@ -144,30 +157,34 @@ up the `database_` rows by its schema and name. Two jOOQ packages carrying the s
 then read the same security, which is correct: it is one table in one database.
 
 A table one side has and the other lacks would show the jOOQ classes are stale against the database.
-This item stores nothing for it, because the finding has no SDL position to hang a defect on (see
-Open questions).
+Because `database_table` holds every table the reading saw, that finding is an anti-join between two
+sets of stored rows. This item reports it nowhere, because it has no SDL position to hang a defect on
+(see Open questions); the rows make it ready for whoever decides where it goes.
 
 ### The reading record
 
 * `source_name` is a credential-free rendering of the connection, `<dialect>://<host>:<port>/<database>`,
   built from the parsed url. Never the raw url, which can carry `password=` and other parameters; the
   store is readable by agents through `store.console`.
-* A `store_source` row of `source_kind` `DATABASE`, with `read_at` and a `stamp` that hashes the
-  captured rows. The stamp commits after the facts it vouches for, in the same transaction.
-* A `store_graph_source` row claims the source for the graph, and a `store_graph_progress` row records
-  the gatherer's start and completion, as for every gatherer.
+* A `store_source` row of `source_kind` `DATABASE`, its stamp left null as `jooq` leaves it: no
+  reading is ever skipped on a stamp (§ Cadence), so a hash would vouch for nothing. The `source_kind`
+  column comment describes a closed taxonomy, and gains `DATABASE`.
+* A `store_graph_source` row claims the source for the graph. Its `stamp` and `read_at` carry the
+  reading's outcome in the meanings those columns already have: a stamp is set when this graph's
+  transcription of the source can be trusted, and `read_at` is when the graph last transcribed it,
+  which is the last successful reading.
+* A `store_graph_progress` row records the gatherer's start and completion, as for every gatherer.
 
-Readers answer in three arms:
+Readers answer in three arms, all read from the graph's claim row:
 
-* no `DATABASE` source claimed by the graph: not read, and the readers say nothing about row
-  security;
-* a source with a stamp: read, and a table with no `database_table_security` row does not secure its
-  rows;
-* a source without a stamp: the last reading failed (see Unreachable database).
+* no `DATABASE` claim for the graph: not read, and the readers say nothing about row security;
+* a claim with a stamp: read, and each table's `database_table` row says whether it is secured;
+* a claim without a stamp: the last reading failed, and the rows are from the reading at `read_at`
+  (see Unreachable database).
 
 ### Cadence
 
-Every capture that is given a connector re-reads. The reading is three catalog queries, cheaper than
+Every capture that is given a connector re-reads. The reading is two catalog queries, cheaper than
 working out whether anything changed. Rows are upserted with the round's `touched_at`, and the
 gatherer sweeps its own family for this source, as `JooqFactCapture.sweep` does for `sql_`.
 
@@ -175,23 +192,23 @@ gatherer sweeps its own family for this source, as `JooqFactCapture.sweep` does 
 
 When the connection or a query fails, the goal logs a warning naming the source and the cause, and
 continues: output does not depend on these facts, so a database that is down must not stop a build.
-The gatherer clears the source's stamp and keeps its rows, so the readers can say the facts are from
-an earlier reading and when. Whether stale rows should be kept or swept is an open question for Alf
-and Filip; keeping them is this spec's default.
+The gatherer clears the graph's claim stamp and keeps the rows and the claim's `read_at`, which
+therefore still names the last successful reading, so the readers can say the facts are from an earlier
+reading and when. Whether stale rows should be kept or swept is an open question for Alf and Filip;
+keeping them is this spec's default.
 
 ### Postgres reading
 
-One read-only transaction, three statements:
+One read-only transaction, two statements:
 
-* `pg_class` joined to `pg_namespace` where `relrowsecurity`, `relkind` in `r`/`p`, outside
-  `pg_catalog`, `information_schema` and `pg_toast`: schema, table, `relforcerowsecurity`.
-* `pg_policy` joined to `pg_class` and `pg_namespace`: the policy name, `polcmd` and `polpermissive`
-  decoded at capture into the words the table holds, `polroles` with the `{0}` entry read as `PUBLIC`,
-  `polqual` and `polwithcheck` rendered by `pg_get_expr`, and the policy's comment. The catalog is read
-  directly, not through the `pg_policies` view, which derives from the same catalog and adds role names
-  and a fixed layout; the reading keeps the raw codes it decodes itself. Role names come from `pg_roles`,
-  which the connecting role can read.
-* `pg_roles`, for the role names `polroles` points at, as the previous bullet resolves them.
+* `pg_class` joined to `pg_namespace` where `relkind` is `r` or `p`, outside `pg_catalog`,
+  `information_schema` and `pg_toast`: schema, table, `relrowsecurity`, `relforcerowsecurity`.
+* `pg_policy` joined to `pg_class` and `pg_namespace`: the policy name; `polcmd` and
+  `polpermissive` decoded at capture into the words the table holds; `polroles` resolved to names
+  through `pg_roles`, which the connecting role can read, with the `{0}` entry read as `PUBLIC`;
+  `polqual` and `polwithcheck` rendered by `pg_get_expr`; and the policy's comment. The catalog is read
+  directly rather than through the `pg_policies` view, which derives from the same catalog with a fixed
+  layout, so the reading keeps the raw codes and decodes them itself.
 
 With dialect `ORACLE` the gatherer does not run and logs that Oracle is not read yet. Oracle's VPD
 (`ALL_POLICIES`) fits the same relations later. Grants (one row per table, grantee and privilege) fit
@@ -199,9 +216,10 @@ the same gatherer later too.
 
 ### Place in the capture
 
-In this item the gatherer is a crawler: what it captures about the database may not vary with any
-other corpus, so it declares no `meta_gatherer_dependency` rows. It writes its own `store_source` and
-`store_graph_source` rows, as `jooq` does without an edge.
+In this item the gatherer is a crawler. The `meta_gatherer_dependency` table comment states the rule:
+"A crawler's capture carries no edges: its rows about its own corpus may not vary with any other
+corpus's contents." Its `meta_gatherer_corpus` row (`database`, `database`) is what makes it a crawler.
+It writes its own `store_source` and `store_graph_source` rows, as `jooq` does without an edge.
 
 Its edges arrive with its anchor stages. A follow-up's defect rule reads the policy facts together with
 the catalog and the schema, so that follow-up adds `jooq` and `graphitron` edges, and the stage runs
@@ -221,7 +239,7 @@ stage lands without moving the call.
   in force;
 * read, secured: `Row security: on` (`forced` when it is), then one line per policy: name, command,
   mode, roles, `USING`, `WITH CHECK`;
-* stale (stamp cleared): the same, marked as from the reading at `read_at`.
+* stale (claim stamp cleared): the same, marked as from the reading at `read_at`.
 
 ### MCP
 
@@ -259,17 +277,16 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 ## Tests
 
 * `DatabaseFactCaptureTest` (`@ExecutionTier`, local PostgreSQL): reads sakila and asserts the
-  `database_` rows for `secure_note`. Two readings exercise the sweep: the second, after a policy is
+  `database_` rows for `secure_note`, and a `database_table` row with row security off for a table
+  without it. Two readings exercise the sweep: the second, after a policy is
   dropped inside the test's own transaction, removes its rows.
 * `graphitron-sakila-db/src/main/resources/init.sql` gains what the arms need: a table with forced row
   security, a restrictive policy, a policy for one command, and a policy for a named role besides
   `PUBLIC`. `secure_note` keeps its role as the permissive `ALL` case.
 * Reading record: no connector leaves no source row; a connector whose url refuses connections leaves
-  a warning, a source without a stamp, and the previous rows.
+  a warning, a claim without a stamp whose `read_at` is unchanged, and the previous rows.
 * `source_name` never contains the user, the password or the url's query parameters.
 * `polroles` entries resolve to role names through `pg_roles`, and `{0}` reads as `PUBLIC`.
-* Enforcement fixtures act as an application role (`SET ROLE`), not as the owner: the owner bypasses
-  row security unless the table is forced, so a read as the owner says nothing about enforcement.
 * Mojo configuration tests over the injected environment map: `<database>` alone; env overriding POM;
   `<devDatabase>` alone (works, warns); `<devDatabase>` with `<database>` (fails); legacy variables as
   fallback (works, warns); no url (gatherer and `execute` absent); a url with no accepting driver
@@ -282,7 +299,10 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 
 Each is its own rule with its own codes, fact document and near miss. Each raises warning defects
 from an anchor stage of the `database` gatherer, which is the first stage holding every fact the rule
-reads, so the `graphitron` gatherer gains no edge to an optional upstream:
+reads, so the `graphitron` gatherer gains no edge to an optional upstream. A follow-up whose fixture
+shows what the database enforces acts as an application role (`SET ROLE`), not as the owner: the owner
+bypasses row security unless the table is forced, so a read as the owner says nothing about
+enforcement. The candidates:
 
 * a non-null field reached through `@reference` into a row-secured table, which resolves to null when
   a policy hides the target row, even where the foreign key is `NOT NULL`;
@@ -290,10 +310,11 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream:
   returns nothing (the `secure_note` case), and a row-secured table with no policy for the mutation's
   command, which the database denies by default;
 * a policy reading a session setting without treating `NULL` and `''` alike as no identity, the
-  fail-closed rule in `docs/security.adoc`. This one captures each policy's setting reads at capture,
-  beside the text, and the functions a policy reaches with them: the walk over function bodies and the
-  edges it produces move here, since this is their first reader. Checking setting names against the
-  `SessionState` mount needs a new fact, since the store does not record what the mount writes;
+  fail-closed rule in `docs/security.adoc`. This one captures the direct facts § Relations names
+  (setting reads and function calls, of policies and of functions) and derives which functions a policy
+  reaches in its anchor stage; the capture and that closure move here, since this is their first
+  reader. Checking setting names against the `SessionState` mount needs a new fact, since the store
+  does not record what the mount writes;
 * a `@table` on an unsecured table whose neighbours are secured;
 * the database-side rules an internal pgTAP suite already runs over row security: a forced table, more
   than one policy for one command, a view without `security_invoker`, a policy that is `true` throughout,
@@ -319,7 +340,8 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream:
 
 ## Principles-architect consultation
 
-Consulted at filing and at take-up. What it raised, and what this spec did:
+Consulted at filing, at take-up, and before handing over for the Spec -> Ready review. What it
+raised, and what this spec did:
 
 * A live database is a new corpus, needing its own `meta_corpus` row, family prefix and refresh unit:
   adopted (`database`, `database_`, a `store_source` row per connection).
@@ -334,3 +356,18 @@ Consulted at filing and at take-up. What it raised, and what this spec did:
 * `source_name` must never be the raw url: adopted.
 * The stale-versus-sweep choice, what configuration may enter the store, and the home of the
   "tables differ" finding have no ruling on record: carried as open questions.
+* Before review: extracting structure at capture passes the recompute test, because the store holds
+  neither the node tree nor the function source; the transitive closure over the direct facts is
+  anchor work: adopted, in § Relations and the fail-closed follow-up.
+* The zero-edge crawler rests on the `meta_gatherer_dependency` comment, not only on the `jooq`
+  precedent: adopted, cited in § Place in the capture. (Alf ruled separately that the question is what
+  this gatherer depends on, not who depends on it.)
+* A null `store_source.stamp` already has meanings, and reusing it as "the last reading failed" would
+  add a third; `store_graph_source.stamp` and `read_at` already mean an untrusted claim and the last
+  transcription: adopted. The `store_source` stamp stays null as `jooq` leaves it, and the readers'
+  arms read the graph's claim row.
+* Row security off as a missing row makes every reader evaluate absence, and leaves policies unable to
+  key into their table: adopted. `database_table_security` became `database_table`, one row per table
+  read with both flags, and `database_policy` foreign-keys it with `ON DELETE CASCADE`. The "tables
+  differ" finding is now an anti-join over stored rows.
+* Adding `DATABASE` means updating the `source_kind` column comment: adopted.
