@@ -94,7 +94,8 @@ The walk's read path is gone
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
     └── The service fields are emitted from the store
-        └── A producer's fetcher parts are emitted from the store
+        ├── A producer's fetcher parts are emitted from the store
+        └── Every service verdict is emitted or a stored deferral
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1069,6 +1070,25 @@ static method needs no holder.
     nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
     and reading nested classes reached through another class's members closes the one hop the census
     reads today.
+  * **Every service verdict is emitted or a stored deferral** `open`, E's. The service flip completes by refusal (Alf, 2026-11-15:
+    "we refuse it so we can flip"): every verdict `ServiceEmission.verdict` returns other than
+    `EMITTED` is a stored defect of basis `UNSUPPORTED` with a code of its own, raised by the first
+    stage holding its facts: the row-tenant fan-out of a child service (`graphitron_field_tenant_fan_out`,
+    at fetchers), a connection page (a branch of occurrence-producers' rule view), several occurrences,
+    a discriminated target, no call, incomplete fills, a refused build, an argument path and a value
+    still to be built, with `BuildQuery`'s two Java refusals and `DiscriminatedQuery.Row.refusal`.
+    It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
+    `ServiceEmission.excluded` goes, and `GraphQLRewriteGenerator.unemittedProjections` and
+    `unemittedOutboxes` go in the same commit. Unused in FS-plattform for the two measured so far: sis
+    73 and opptak 251 service producers, none returning a connection, none fanning out by row tenant.
+    What of `ServiceCatalog` stays when the walk's service path goes, and who owns it, is named in the
+    model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
+    `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
+    `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
+* **A routine write's re-read keeps its rows in the order the write returned them** `open`, off the critical path. A routine write's rows are re-read by
+  the keys it returned through an unordered `IN`, so they can come back in another order than the
+  write handed them; the re-read keeps the write's order. A fix of its own, not a gate on the
+  service flip.
 * **A field's followed claim is stored per field and target type** `open`, E's, off the critical path.
   Which claim a field follows, its own `@referenceFor` or field claim or one inherited from an
   interface field, is decided per need by `graphitron_join_path_claimed_rule`, whose target types come
