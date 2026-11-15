@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-14
+last-updated: 2026-11-15
 ---
 
 # A clean build runs in under five minutes
@@ -282,6 +282,14 @@ statements are individually huge. Smaller statements both plan better and cache 
 2026-11-14), so the lever is the views, with the cache setting chosen after. R876's node
 "An arm belongs to the last stage whose facts it reads, claimed by B"
 takes `graphitron_entry_defect_rule` first, 87k characters in 65 branches.
+
+*Measured 2026-11-15 on the first step of that.* With 60 of the rule's 65 branches moved into the rule
+views of the stages whose facts they read, every view they read replaced by stored relations, and
+the statement cache left at 1,024, `graphitron` alone at `-Xmx2g` passes: 4,588 tests, no
+OutOfMemoryError, where the same trunk died at 3,149. The live heap after a full GC stays at 0.9 GB
+for the first two minutes and 1.4 to 1.6 GB after, against 1.2 to 2.0 GB; the fork ran 46 full
+GCs costing 35 s of 776 s, against 331 costing 306 s of 1,058. So the view, not the cache size, was
+what held the heap, and the cache keeps its 1,024.
 
 ### Not in scope, and why
 
