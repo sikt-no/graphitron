@@ -18951,11 +18951,13 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SO
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
  WHERE op.kind = 'SERVICE' AND op.start = 'CHILD'
    -- Under a parent the batch is keyed by: a table's row, or an object of a known class. A type
-   -- nothing hands a value to has no parents to batch.
+   -- nothing hands a value to has no parents to batch. The object is the one the object rules claim
+   -- at this occurrence, off its parent's producer or accessor path: a claim, not the source, since
+   -- the field's own service record outranks it there and a table's record outranks it as a row.
    AND (EXISTS (SELECT 1 FROM graphitron_tabletype tt
                  WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name)
-        OR EXISTS (SELECT 1 FROM graphitron_result_class rc
-                    WHERE rc.graph_name = f.graph_name AND rc.type_name = f.type_name))
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim_object co
+                    WHERE co.graph_name = op.graph_name AND co.coordinate = op.coordinate))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
                     WHERE cp.graph_name = op.graph_name AND cp.coordinate = op.coordinate
                       AND cp.fill = 'SOURCE')
