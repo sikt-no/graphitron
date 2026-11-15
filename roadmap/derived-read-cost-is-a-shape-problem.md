@@ -1208,7 +1208,7 @@ pass and no stratum that clears and recomputes.
       `graphitron_occurrence_depth_entry_defect_rule`'s inferred-route arm at
       `occurrence-depth-defects` for one no path is written for, each under its own stage, two statements of one rule with nothing comparing
       them until the arm moves into the depth loop.
-    * **The store states every stage's rule views** `open`. `meta_stage_rule` names the rule views a
+    * **The store states every stage's rule views, claimed by G** `open`. `meta_stage_rule` names the rule views a
       stage inserts a relation from, and holds only the binding rows today, half a fact. Every
       stage's rule views go in, the defect rule views among them, and `EntryDefects.RULES` and
       `StageAnswerAgreementTest.STAGES` are read from it rather than kept as Java lists, so a defect
