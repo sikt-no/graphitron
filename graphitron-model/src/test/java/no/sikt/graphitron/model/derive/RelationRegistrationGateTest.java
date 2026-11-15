@@ -367,6 +367,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_column_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_need_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_filter_entry_defect_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_sort_key_path_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_value_rule", Arm.DERIVED);
         registrations.put("graphitron_path_need_object", Arm.DERIVED);
         registrations.put("graphitron_join_path_step", Arm.DERIVED);
@@ -648,6 +649,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_occurrence_sort_key_column_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_sort_key_method", Arm.DERIVED);
         registrations.put("graphitron_occurrence_sort_key_method_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_sort_key_hop", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_sort_key_hop_rule", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_sort_key_path", Arm.DERIVED);
+        registrations.put("graphitron_occurrence_sort_key_path_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_identifying_key_column", Arm.DERIVED);
         registrations.put("graphitron_occurrence_identifying_key_column_rule", Arm.DERIVED);
         registrations.put("graphitron_occurrence_sort_key_completion", Arm.DERIVED);

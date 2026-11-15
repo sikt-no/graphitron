@@ -57,6 +57,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_ENTRY_DEFE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_READ_ORDER_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_PATH_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_DEPTH_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_FILTER_ENTRY_DEFECT_RULE;
@@ -180,6 +181,13 @@ public final class EntryDefects {
     /** Which rows a read hands back, and in what order, where nothing written decides it. */
     public static final Rule READ_ORDERS =
         new Rule("occurrence-orderings", GRAPHITRON_OCCURRENCE_READ_ORDER_ENTRY_DEFECT_RULE);
+
+    /**
+     * What a sort key's path cannot state, raised by {@link OccurrenceOrderings} beside
+     * {@link #ORDERINGS} rather than as arms of it, as {@link #ROUTINE_WRITES} is beside its stage's rule.
+     */
+    public static final Rule SORT_KEY_PATHS =
+        new Rule("occurrence-orderings", GRAPHITRON_OCCURRENCE_SORT_KEY_PATH_ENTRY_DEFECT_RULE);
 
     /**
      * The node id slot defects' rule, {@link OccurrenceBuilds}: where a decoded id meets the parameter

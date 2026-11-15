@@ -318,7 +318,10 @@ resolutions and links built beside it are gone.
   neither a result table nor a key row starts the walk.
 * **Nothing resolves a path but the walk** `open`. The step hops and `graphitron_condition_method_route`
   are gone; `graphitron_path_element_*` goes last, and the `@reference` page says a path is read from
-  source to target only.
+  source to target only. Its readers move with it: `graphitron_join_path_step_rule`,
+  `graphitron_join_path_key_move_rule`, `graphitron_occurrence_producer_lift_rule` and
+  `graphitron_occurrence_sort_key_hop_rule`, which reads `graphitron_path_element_key` for a sort key
+  path's written keys.
 * **Every field has a path, the written one or the one discovery implies** `open`. Inference is
   stored as path rows; what is left is the editor's omitted-`@reference` hint (`InlayHints`), which
   fills in from those rows rather than discovering for itself.

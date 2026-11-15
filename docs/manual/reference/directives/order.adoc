@@ -96,9 +96,9 @@ The enum's parent type is determined by where the enum is referenced from (the x
 
 * Exactly one of `index`, `fields`, or `primaryKey` must be set per enum value. Setting two, or none, fails the build.
 * `index` requires jOOQ index generation. With `<includeIndexes>true</includeIndexes>` disabled, the lookup throws at startup with a "no matching index" error.
-* `fields[].name` must be a real column on the bound table, or on the table its `path` lands on. Resolution mirrors xref:field.adoc[`@field`]: case-sensitive against the jOOQ-generated identifiers.
+* `fields[].name` must be a real column on the bound table, or on the table its `path` lands on (`SORT_KEY_COLUMN_OFF_PATH`). Resolution mirrors xref:field.adoc[`@field`]: case-sensitive against the jOOQ-generated identifiers.
 * Each `FieldSort` sets exactly one of `name` and `method`, and `path` only beside `name`. Any other combination fails the build.
-* Every hop of a `path` must be to-one, proven from the jOOQ catalog: the hop's join columns cover a primary or unique key of the table it reaches. A to-many hop or a hop with a `condition:` fails the build and points at `method`.
+* Every hop of a `path` must be to-one, proven from the jOOQ catalog: the hop's join columns cover a primary or unique key of the table it reaches. A to-many hop (`SORT_KEY_PATH_TO_MANY`) or a hop with a `condition:` (`SORT_KEY_PATH_CONDITION`) fails the build and points at `method`, and so does a key that does not join the table the path stands on (`SORT_KEY_PATH_UNRESOLVED`).
 * A `method` names a public static method taking the field's jOOQ table and returning a parameterised `Field<X>`. `method` is required inside the reference and `argMapping` is rejected.
 * `path` and `method` are not available on a multi-table interface or union, or over a table-valued function result.
 * `collate` is passed verbatim to the database; misspelled collations surface only at query time.

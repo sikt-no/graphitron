@@ -18,6 +18,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_PATH_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
@@ -42,7 +46,8 @@ import static org.jooq.impl.DSL.val;
  * before it wrote: the table a list's binding reads, the code references the anchor resolved, and the
  * catalog. Each relation is written after the one its rule reads, the argument shapes before the
  * orders their choices are, the orders before their keys, a key before its column or method, and the
- * keys identifying a list's rows before the completion that reads them and the written columns.
+ * keys identifying a list's rows before the completion that reads them and the written columns. A
+ * sort key's path is written a hop at a time after the keys, and its landing column after its hops.
  */
 public final class OccurrenceOrderings {
 
@@ -59,12 +64,43 @@ public final class OccurrenceOrderings {
             touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD, GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD_RULE, graph,
             touchedAt);
+        hops(dsl, graph, touchedAt);
+        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_PATH, GRAPHITRON_OCCURRENCE_SORT_KEY_PATH_RULE, graph,
+            touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE,
             graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION, GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION_RULE, graph,
             touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.ORDERINGS);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.READ_ORDERS);
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.SORT_KEY_PATHS);
+    }
+
+    /**
+     * The sort keys' hops, a hop at a time: the rule reads the hop before from the table it feeds, so
+     * each pass writes the hops whose predecessor the pass before wrote. Nothing references a hop, so
+     * the graph's rows go first and each reading writes them anew.
+     */
+    @SuppressWarnings("unchecked")
+    private static void hops(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var h = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+        var r = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP_RULE;
+        dsl.deleteFrom(h).where(h.GRAPH_NAME.eq(graph)).execute();
+        var columns = new ArrayList<Field<?>>();
+        var selected = new ArrayList<Field<?>>();
+        for (Field<?> column : h.fields()) {
+            if (column.equals(h.TOUCHED_AT)) continue;
+            columns.add(column);
+            selected.add(r.field(column.getName()));
+        }
+        columns.add(h.TOUCHED_AT);
+        selected.add(val(touchedAt, h.TOUCHED_AT));
+        int hop = 0;
+        while (dsl.insertInto(h).columns(columns)
+                .select(dsl.select(selected).from(r).where(r.GRAPH_NAME.eq(graph), r.HOP.eq(hop)))
+                .execute() > 0) {
+            hop++;
+        }
     }
 
     /**

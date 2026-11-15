@@ -1,0 +1,3 @@
+A key in a `fields` element's `path`, named in the detail, does not join the table the path stands on at that hop, the field's own table at the first.
+
+include::_ordering.adoc[]

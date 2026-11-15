@@ -1,0 +1,3 @@
+A `fields` element's `name` is not a column of the table its `path` lands on, named in the detail.
+
+include::_ordering.adoc[]
