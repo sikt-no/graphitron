@@ -730,6 +730,16 @@ static method needs no holder.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
+  * **A method read without parameter names is one defect that says to compile with -parameters**
+    `open`, off the critical path. A class compiled without `-parameters` carries no
+    `MethodParameters` attribute, so `code_method_parameter.parameter_name` is null for every
+    parameter of its methods and nothing binds one by name: today each such parameter of a
+    `@service`, `@condition` or `@externalField` call no type or shape fills is its own
+    `PARAMETER_UNFILLED`, which tells the author to rename what has no name. On a sis capture whose
+    service jar was built without the flag that was 290 of 651 errors. The capture already states
+    the fact; the stage writing a kind's parameter outcomes raises one defect per method reference
+    instead, naming the class and saying to compile it with `-parameters`, and states no
+    `PARAMETER_UNFILLED` for a nameless parameter.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
     tables a parameter fits is `code_method_parameter_table`, keyed by the method's classpath entry
     and the table's catalog: its generated class, or a public jOOQ table type in `code_jooq_class`
