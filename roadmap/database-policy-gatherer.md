@@ -199,10 +199,15 @@ the same gatherer later too.
 
 ### Place in the capture
 
-`ModelCapture.capture` calls `DatabaseFactCapture.capture` last, after `FactCapture.derive`, so it is
-nobody's upstream. Its `meta_gatherer_dependency` rows: `store` (the source rows). Nothing depends on
-it in this item. A follow-up's defect stages are this gatherer's anchor stages and add `jooq` and
-`graphitron` edges then (§ Follow-ups).
+In this item the gatherer is a crawler: what it captures about the database may not vary with any
+other corpus, so it declares no `meta_gatherer_dependency` rows. It writes its own `store_source` and
+`store_graph_source` rows, as `jooq` does without an edge.
+
+Its edges arrive with its anchor stages. A follow-up's defect rule reads the policy facts together with
+the catalog and the schema, so that follow-up adds `jooq` and `graphitron` edges, and the stage runs
+after both (§ Follow-ups). `ModelCapture.capture` therefore calls `DatabaseFactCapture.capture` after the
+`graphitron` gatherer: a crawler's position is free, and placing it there now means the first anchor
+stage lands without moving the call.
 
 ## Readers
 
