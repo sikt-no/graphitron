@@ -1691,11 +1691,11 @@ grain, priced by `prepare_ms` on a cold capture. Two rule views are still read b
   shrink.
 * **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them:
-  `graphitron_occurrence_connection_rule` into `graphitron_occurrence_connection` and its `_part`,
   `graphitron_occurrence_step_rule` into `graphitron_occurrence`, and each call parameter rule into
   `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an
   ambiguous overload leaves without fills. A subtype holding its supertype's rows with its own payload
-  set, as `graphitron_result_table` and `graphitron_result_pivot` hold `graphitron_result_rule`'s, is no
+  set, as `graphitron_result_table` and `graphitron_result_pivot` hold `graphitron_result_rule`'s and
+  `graphitron_occurrence_connection` and its `_part` hold `graphitron_occurrence_connection_rule`'s, is no
   such choice: the subtype's `NOT NULL` columns state the projection, and the agreement reads each rule
   view through the `NOT NULL` columns of its table. The filter is a decision the store
   does not state. Each view is split into one per relation, its rows exactly that relation's, the
