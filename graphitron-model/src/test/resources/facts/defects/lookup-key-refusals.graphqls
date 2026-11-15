@@ -1,10 +1,11 @@
 # What a @lookupKey asks that no key can state: a lookup on a field returning a connection, which
-# pages where the keys answer one row each; a lookup on a field below the root returning one value,
-# which graphitron does not generate; and a node id argument of a node on another table than the
-# field reads, which unpacks into no key of its rows. Each is refused at the application. Beside them
-# the near misses: a single-valued lookup at the root and a node id of the field's own node, both
-# keys; an input object's node id of another table's node, carried back through the foreign key, is
-# a key too, stated in scenarios/inline-list-lookup-key.
+# pages where the keys answer one row each; a lookup on a field below the root returning one value by
+# a column that identifies no row, which several rows could match; and a node id argument of a node on
+# another table than the field reads, which unpacks into no key of its rows. Each is refused at the
+# application. Beside them the near misses: a single child looked up by its table's primary key, a
+# single-valued lookup at the root and a node id of the field's own node, all keys; an input object's
+# node id of another table's node, carried back through the foreign key, is a key too, stated in
+# scenarios/inline-list-lookup-key.
 
 type Store implements Node @table(name: "store") @node(typeId: "Store", keyColumns: ["store_id"]) {
     id: ID!
@@ -18,8 +19,11 @@ type Film implements Node @table(name: "film") @node(typeId: "Film", keyColumns:
     id: ID!
     title: String
 
-    # Below the root, one value.
+    # Below the root, one value, by the film's primary key.
     sequel(film_id: Int @lookupKey @field(name: "film_id")): Film
+        @reference(path: [{key: "film_original_language_id_fkey"}, {key: "film_language_id_fkey"}])
+    # The same by its title, which identifies no film.
+    sequelByTitle(title: String @lookupKey @field(name: "title")): Film
         @reference(path: [{key: "film_original_language_id_fkey"}, {key: "film_language_id_fkey"}])
 }
 
@@ -39,14 +43,15 @@ interface Node {
 
 extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   source_line, code,                       detail
-  22,          LOOKUP_KEY_ON_SINGLE_CHILD,
-  27,          LOOKUP_KEY_ON_CONNECTION,
-  29,           LOOKUP_KEY_OFF_TABLE,       public.store
+  26,          LOOKUP_KEY_NOT_IDENTIFYING, public.film
+  31,          LOOKUP_KEY_ON_CONNECTION,
+  33,          LOOKUP_KEY_OFF_TABLE,       public.store
   """)
 
 extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", rows: """
   coordinate,       bound,       key_coordinate,             key_bound,   key_kind, argument_ordinal, field_ordinal
   Film.sequel,      public.film, Film.sequel(film_id:),      public.film, COLUMN,   0,                -1
+  Film.sequelByTitle, public.film, Film.sequelByTitle(title:), public.film, COLUMN, 0,              -1
   Query.filmsPaged, public.film, Query.filmsPaged(film_id:), public.film, COLUMN,   0,                -1
   Query.filmByKey,  public.film, Query.filmByKey(film_id:),  public.film, COLUMN,   0,                -1
   Query.filmsById,  public.film, Query.filmsById(id:),       public.film, NODE_ID,  0,                -1

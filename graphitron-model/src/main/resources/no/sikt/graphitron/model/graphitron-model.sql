@@ -21218,8 +21218,7 @@ COMMENT ON COLUMN graphitron_occurrence_lookup_key.touched_at IS 'the reading th
 
 -- What a written @lookupKey says wrong before any occurrence reads it, raised by field-targets, the
 -- first stage holding the field targets it is judged by: a @lookupKey on a field returning a
--- connection, which pages where the keys answer one row each; and the deferral, a @lookupKey on a field
--- of a table-bound type returning one table-bound object, which the walk does not generate a lookup for.
+-- connection, which pages where the keys answer one row each.
 CREATE VIEW graphitron_field_target_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
@@ -21228,24 +21227,7 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
   JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
   JOIN graphitron_field_target ft
     ON ft.graph_name = a.graph_name AND ft.type_name = a.type_name AND ft.field_name = a.field_name
- WHERE da.directive_name = 'lookupKey' AND ft.wrapper_type_name IS NOT NULL
-UNION ALL
-SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
-       'LOOKUP_KEY_ON_SINGLE_CHILD', CAST(NULL AS VARCHAR), 'field-targets'
-  FROM graphql_directive_application da
-  JOIN graphitron_argument a ON a.graph_name = da.graph_name AND a.coordinate = da.coordinate
-  JOIN graphitron_field f
-    ON f.graph_name = a.graph_name AND f.type_name = a.type_name AND f.field_name = a.field_name
-  -- Below a table-bound parent, returning one table-bound object: the walk checks cardinality there
-  -- alone, a child under a record or a plain type being classified by other rules.
-  JOIN graphitron_tabletype pt ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_tabletype rt
-    ON rt.graph_name = ft.graph_name AND rt.type_name = ft.target_type_name AND rt.named_type_kind = 'OBJECT'
- WHERE da.directive_name = 'lookupKey'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_many m
-                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name);
+ WHERE da.directive_name = 'lookupKey' AND ft.wrapper_type_name IS NOT NULL;
 COMMENT ON VIEW graphitron_field_target_entry_defect_rule IS 'One row the field target defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the field-targets stage inserts this view''s rows for one graph into graphitron_entry_defect, a @lookupKey on an argument of a field returning a connection giving one LOOKUP_KEY_ON_CONNECTION row at the application.';
 
 -- What a @lookupKey the keys above cannot state, at the application: a node id of a node on another
@@ -21772,10 +21754,11 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_column.table_name IS 'the table
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.column_name IS 'the column, as the catalog spells it: a primary key''s or an index''s own, or the one a written name reaches through sql_column_spelling';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
--- The keys identifying a row of the one table a list reads, ranked: its primary key, the node key of
--- the type it returns where that type's table is the list's, and each unique key none of whose columns
--- admits NULL, in the order the generated model enumerates them. The best ranked is the row key an
--- order is completed with. A list over several tables is completed by none. Stated at the occurrence
+-- The keys identifying a row of the one table a list or a looked-up single child reads, ranked: its
+-- primary key, the node key of the type it returns where that type's table is its own, and each unique
+-- key none of whose columns admits NULL, in the order the generated model enumerates them. The best
+-- ranked is the row key an order is completed with; a single child's lookup keys must cover one. A
+-- read over several tables is completed by none. Stated at the occurrence
 -- rather than the table because the ranking includes the node key of the type the occurrence returns,
 -- a type-grain fact, so the pick is only decided where table and type meet; the table-grain half, a
 -- primary key and the unique keys whose columns refuse NULL, is a join over the captured catalog the
@@ -21792,8 +21775,10 @@ SELECT t.graph_name, t.coordinate, t.bound, -2, cc.position, 'PRIMARY_KEY', pk.c
   JOIN sql_constraint_column cc
     ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
    AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
- WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_order r
-                WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+ WHERE (EXISTS (SELECT 1 FROM graphitron_occurrence_order r
+                 WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key l
+                    WHERE l.graph_name = t.graph_name AND l.coordinate = t.coordinate AND l.bound = t.bound))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table x
                     WHERE x.graph_name = t.graph_name AND x.coordinate = t.coordinate AND x.bound <> t.bound)
 UNION ALL
@@ -21808,8 +21793,10 @@ SELECT t.graph_name, t.coordinate, t.bound, -1, nk.position, 'NODE_KEY', nk.type
     ON nk.graph_name = ft.graph_name AND nk.type_name = ft.target_type_name
    AND nk.table_source_name = t.table_source_name AND nk.table_schema = t.table_schema
    AND nk.table_name = t.table_name
- WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_order r
-                WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+ WHERE (EXISTS (SELECT 1 FROM graphitron_occurrence_order r
+                 WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key l
+                    WHERE l.graph_name = t.graph_name AND l.coordinate = t.coordinate AND l.bound = t.bound))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table x
                     WHERE x.graph_name = t.graph_name AND x.coordinate = t.coordinate AND x.bound <> t.bound)
 UNION ALL
@@ -21830,8 +21817,10 @@ SELECT t.graph_name, t.coordinate, t.bound, c.key_position, cc.position, 'UNIQUE
                     WHERE nc.source_name = c.source_name AND nc.table_schema = c.table_schema
                       AND nc.table_name = c.table_name AND nc.constraint_name = c.constraint_name
                       AND col.nullable)
-   AND EXISTS (SELECT 1 FROM graphitron_occurrence_order r
-                WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+   AND (EXISTS (SELECT 1 FROM graphitron_occurrence_order r
+                 WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_lookup_key l
+                    WHERE l.graph_name = t.graph_name AND l.coordinate = t.coordinate AND l.bound = t.bound))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table x
                     WHERE x.graph_name = t.graph_name AND x.coordinate = t.coordinate AND x.bound <> t.bound);
 COMMENT ON VIEW graphitron_occurrence_identifying_key_column_rule IS 'One row the identifying key column rule computes, in the shape graphitron_occurrence_identifying_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_identifying_key_column, which is the name every reader spells.';
@@ -22147,7 +22136,55 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                       AND d.directive_name = 'defaultOrder')
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table t2
                     WHERE t2.graph_name = t.graph_name AND t2.coordinate = t.coordinate
-                      AND t2.bound <> t.bound);
+                      AND t2.bound <> t.bound)
+UNION ALL
+-- A field below the root returning one object, looked up by keys covering no identifying key of its
+-- table, its keys' columns direct, a node id's own or carried back: several rows could match.
+SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column, 'LOOKUP_KEY_NOT_IDENTIFYING',
+       lk.bound, 'occurrence-orderings'
+  FROM graphitron_occurrence_lookup_key lk
+  JOIN graphitron_occurrence o ON o.graph_name = lk.graph_name AND o.coordinate = lk.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence ao
+    ON ao.graph_name = lk.graph_name AND ao.parent_coordinate = lk.coordinate AND ao.kind = 'FIELD_ARGUMENT'
+  JOIN graphql_directive_application da
+    ON da.graph_name = ao.graph_name AND da.coordinate = ao.element_coordinate AND da.directive_name = 'lookupKey'
+ WHERE o.parent_coordinate IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_many m
+                    WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column ik
+                    WHERE ik.graph_name = lk.graph_name AND ik.coordinate = lk.coordinate AND ik.bound = lk.bound
+                      AND NOT EXISTS (
+                        SELECT 1 FROM graphitron_occurrence_identifying_key_column ic
+                         WHERE ic.graph_name = ik.graph_name AND ic.coordinate = ik.coordinate
+                           AND ic.bound = ik.bound AND ic.rank = ik.rank
+                           AND NOT EXISTS (
+                             SELECT 1 FROM graphitron_occurrence_lookup_key k
+                              WHERE k.graph_name = lk.graph_name AND k.coordinate = lk.coordinate
+                                AND k.bound = lk.bound
+                                AND (EXISTS (SELECT 1 FROM graphitron_occurrence_column kc
+                                              WHERE k.key_kind = 'COLUMN' AND kc.graph_name = k.graph_name
+                                                AND kc.coordinate = k.key_coordinate AND kc.bound = k.key_bound
+                                                AND kc.table_source_name = ic.table_source_name
+                                                AND kc.table_schema = ic.table_schema
+                                                AND kc.table_name = ic.table_name
+                                                AND kc.column_name = ic.column_name)
+                                  OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id kn
+                                              WHERE k.key_kind = 'NODE_ID' AND k.key_bound = k.bound
+                                                AND kn.graph_name = k.graph_name
+                                                AND kn.coordinate = k.key_coordinate AND kn.bound = k.key_bound
+                                                AND kn.table_source_name = ic.table_source_name
+                                                AND kn.table_schema = ic.table_schema
+                                                AND kn.table_name = ic.table_name
+                                                AND kn.column_name = ic.column_name)
+                                  OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id_carried kr
+                                              WHERE k.key_kind = 'NODE_ID' AND kr.graph_name = k.graph_name
+                                                AND kr.coordinate = k.key_coordinate AND kr.bound = k.key_bound
+                                                AND kr.table_source_name = ic.table_source_name
+                                                AND kr.table_schema = ic.table_schema
+                                                AND kr.table_name = ic.table_name
+                                                AND kr.column_name = ic.column_name)))));
+
 COMMENT ON VIEW graphitron_occurrence_order_entry_defect_rule IS 'One row the ordering defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_entry_defect, @defaultOrder(primaryKey: true) on a list over a table with no primary key giving one ORDER_PRIMARY_KEY_MISSING row at the application.';
 -- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_order_entry_defect_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect.source_name';
@@ -26669,8 +26706,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field declares a list over what its producer hands back once: a service whose method returns one value, or a write returning an object, so there is nothing to list; declare one.'),
   ('LOOKUP_KEY_ON_CONNECTION', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_ON_CONNECTION',
    'A @lookupKey argument sits on a field returning a connection, and a lookup answers the keys it is given where a connection pages through rows, so the two cannot both hold: drop @asConnection or drop @lookupKey.'),
-  ('LOOKUP_KEY_ON_SINGLE_CHILD', 'error', 'UNSUPPORTED', 'GRAPHITRON_LOOKUP_KEY_ON_SINGLE_CHILD',
-   'A @lookupKey argument sits on a field of a table-bound type returning one table-bound object, and graphitron generates a lookup there only for a list: return a list, or drop @lookupKey.'),
+  ('LOOKUP_KEY_NOT_IDENTIFYING', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_NOT_IDENTIFYING',
+   'A field below the root returning one table-bound object is looked up by keys that cover no key identifying a row of its table, its primary key or a unique key whose columns refuse NULL, so several rows could match the one value it returns: key it by such a key, or return a list.'),
   ('LOOKUP_KEY_OFF_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_LOOKUP_KEY_OFF_TABLE',
    'A @lookupKey argument is a node id of a node on another table than the one the field reads, or takes an input object with such a field that no one foreign key from the field''s table carries back to its columns, so it unpacks into no key of the field''s rows and there is nothing for it to narrow by: drop @lookupKey, which leaves the id a filter through the foreign key, put the id in an input object the field''s table points from, or key on the field''s own node.'),
   ('ORDER_SURFACES', 'error', 'GRAPHITRON', 'GRAPHITRON_ORDER_SURFACES',
