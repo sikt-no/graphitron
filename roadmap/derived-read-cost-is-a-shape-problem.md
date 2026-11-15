@@ -1703,10 +1703,6 @@ grain, priced by `prepare_ms` on a cold capture. Two rule views are still read b
   the table is written
   from its rule, or the rule states what the walk takes; `StageAnswerAgreementTest.WALK_WRITTEN`
   lists the steps, and `FILTERED_IN_JAVA` the claims; both only shrink.
-* **`graphitron_claim` states the stage that wrote it as a `meta_stage` name, or not at all, claimed by G** `open`,
-  off the critical path. Its `stage` column holds the writing class's simple name, `BindingClaims`,
-  `TypeClaims` or `ProducerClaims`, a name read off the code where `defects-as-facts.adoc` reads which
-  stage raised a row off `meta_stage`; each stage sweeps its claims by it.
 * **An outbox target's name is matched once** `open`, off the critical path. The table or routine an
   outbox names is resolved by one match in `graphitron_outbox_target_rule`, one in
   `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the
@@ -3148,6 +3144,10 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A claim names its writing stage as a `meta_stage` row** (2026-11-15). `graphitron_claim.stage` holds
+`producer-claims`, `binding-claims` or `type-claims`, a foreign key into `meta_stage`, rather than the
+writing class's simple name.
 
 **The store states every stage's rule views** (2026-11-15). `meta_stage_rule` names the rule view
 each stage inserts each relation from, every stage's and not only the bindings', and the Java lists

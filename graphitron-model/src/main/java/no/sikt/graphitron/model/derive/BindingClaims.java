@@ -26,7 +26,7 @@ import static org.jooq.impl.DSL.val;
 public final class BindingClaims {
 
     /** The stage's name on the claims it writes and sweeps. */
-    static final String STAGE = "BindingClaims";
+    static final String STAGE = "binding-claims";
 
     /** What an author wrote, the strongest claim there is. */
     static final int WRITTEN = 0;

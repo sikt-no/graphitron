@@ -5309,7 +5309,7 @@ COMMENT ON COLUMN graphitron_claim.coordinate IS 'the declared element claimed f
 COMMENT ON COLUMN graphitron_claim.kind IS 'what is claimed, a graphitron_claim_kind; with the element the key, so another spelling of the same claim changes no row';
 COMMENT ON COLUMN graphitron_claim.claimer IS 'the element whose fact implies the claim: the element itself for a claim written on it, the argument for a @lookupKey, which claims its field';
 COMMENT ON COLUMN graphitron_claim.priority IS 'how strong the claim is, claimed by the stage that writes it: 0 for a claim an author wrote, an inference at the strength its stage claims, a lower number stronger. The relation decides nothing; each reader picks its own winner from the claims and their priorities';
-COMMENT ON COLUMN graphitron_claim.stage IS 'the stage that wrote the claim, by its class''s simple name: ProducerClaims, BindingClaims or TypeClaims. Each stage sweeps only its own claims';
+COMMENT ON COLUMN graphitron_claim.stage IS 'the stage that wrote the claim, a meta_stage row: producer-claims, binding-claims or type-claims. Each stage sweeps only its own claims';
 COMMENT ON COLUMN graphitron_claim.source_name IS 'the file the claim was written in; null for a claim nobody wrote';
 COMMENT ON COLUMN graphitron_claim.source_line IS 'the claim''s source line, 1-based';
 COMMENT ON COLUMN graphitron_claim.source_column IS 'the claim''s source column: where the application claiming the kind was written. The first written of two one claimer makes of one kind is kept. An attribute and not a reference, for a defect to point at';
@@ -24400,6 +24400,9 @@ COMMENT ON COLUMN meta_stage_rule.rule_view IS 'the rule view the stage inserts 
 ALTER TABLE graphitron_occurrence_source_precedence ADD FOREIGN KEY (owner_stage)
   REFERENCES meta_stage (stage_name);
 ALTER TABLE graphitron_path_need_precedence ADD FOREIGN KEY (owner_stage)
+  REFERENCES meta_stage (stage_name);
+-- And the claims name the stage that wrote them.
+ALTER TABLE graphitron_claim ADD FOREIGN KEY (stage)
   REFERENCES meta_stage (stage_name);
 
 -- Seeded from the anchor phase's writes over the fact documents, the classification corpus and the

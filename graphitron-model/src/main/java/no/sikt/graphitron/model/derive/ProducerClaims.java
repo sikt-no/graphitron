@@ -22,7 +22,7 @@ import static org.jooq.impl.DSL.val;
 public final class ProducerClaims {
 
     /** The stage's name on the claims it writes and sweeps. */
-    static final String STAGE = "ProducerClaims";
+    static final String STAGE = "producer-claims";
 
     /** What an author wrote, the strongest claim there is. */
     static final int WRITTEN = 0;
