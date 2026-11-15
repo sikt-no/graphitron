@@ -1205,26 +1205,9 @@ pass and no stratum that clears and recomputes.
     a swept defect takes its details with it.
     * **A route defect has one writer** `open`. `ROUTE_AMBIGUOUS` and `NO_ROUTE_TO_TARGET` are
       raised by `occurrence-depths` for a route the walk takes from a written path and by
-      `graphitron_entry_defect_rule`'s inferred-route arm at `entry-defects` for one no path is
-      written for, each under its own stage now, two statements of one rule with nothing comparing
+      `graphitron_occurrence_depth_entry_defect_rule`'s inferred-route arm at
+      `occurrence-depth-defects` for one no path is written for, each under its own stage, two statements of one rule with nothing comparing
       them until the arm moves into the depth loop.
-    * **An arm belongs to the last stage whose facts it reads, claimed by B** `open`. Each arm of `graphitron_entry_defect_rule` moves into a rule view of the stage
-      that writes the last relation it reads, as a refactor: every
-      fact document and sis write the same `graphitron_entry_defect` rows before and after. The
-      checks that read only the documents (`TYPE_NAME_CASE_COLLISION`, `CONNECTION_RETURN`,
-      `DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM`, the subscription arm) go to a stage of the anchor, and the
-      depth loop's go to `occurrence-depth-defects`, the stage straight after it, so the loop itself
-      stays lean (Alf, 2026-11-12); the lift and column families are there already, and the build
-      defects are `occurrence-builds`'. A stage's
-      arms that expand one view several times read it once, from a table the stage writes. Priced
-      by a prepare tally per stage on a cold capture before and after, against the 0.5 s the single
-      rule costs today; `graphitron_entry_defect_rule` and the `entry-defects` stage go when their
-      last arm leaves.
-    * **The detail writers move with their codes, claimed by B** `blocked`, on
-      "An arm belongs to the last stage whose facts it reads, claimed by B". `EntryDefectClaims`, `EntryDefectMembers`, `EntryDefectTables`,
-      `ConditionShapeDefectMethods` and `ArgMappingPairDefects` each write their rows in the stage
-      that owns the codes they detail, so no defect writer runs after the stages but the gatherer's
-      one sweep.
     * **The store states every stage's rule views** `open`. `meta_stage_rule` names the rule views a
       stage inserts a relation from, and holds only the binding rows today, half a fact. Every
       stage's rule views go in, the defect rule views among them, and `EntryDefects.RULES` and
@@ -1279,8 +1262,8 @@ pass and no stratum that clears and recomputes.
       `COLUMN_UNRESOLVED`, `CODE_REFERENCE_METHOD_NOT_FOUND` and `ELEMENT_UNRESOLVED` each state a
       written name resolving to nothing, the position saying what was named, so they fold into one
       code (Alf, 2026-11-09).
-  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `blocked`, on "An arm belongs to the last stage whose facts it reads, claimed by B".
-    The split by stage comes first, writing the same rows, so the re-keying changes one grain inside
+  * **A defect is keyed by the occurrence it judges, with the written position where there is one** `open`.
+    The split by stage came first, writing the same rows, so the re-keying changes one grain inside
     rule views that are already small rather than a shape and a grain at once.
     `graphitron_occurrence_defect`, keyed (graph, coordinate, code) with a cascade from the occurrence,
     carries the written position as an attribute where the problem was written, the element's

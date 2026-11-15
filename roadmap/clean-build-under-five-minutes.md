@@ -279,9 +279,9 @@ live heap at 0.7 to 1.3 GB and the tokens at 290 to 530 MB; but it took 29:41, a
 1,024 cache at `-Xmx4g` under other load. The cache count matters, and the size of what is cached
 matters as much: at 64 entries a connection the tokens are still 40% of the heap, so a few cached
 statements are individually huge. Smaller statements both plan better and cache fewer tokens (Alf,
-2026-11-14), so the lever is the views, with the cache setting chosen after. R876's node
-"An arm belongs to the last stage whose facts it reads, claimed by B"
-takes `graphitron_entry_defect_rule` first, 87k characters in 65 branches.
+2026-11-14), so the lever is the views, with the cache setting chosen after. R876 took
+`graphitron_entry_defect_rule` first, 87k characters in 65 branches, moving each into the rule view
+of the stage whose facts it reads; the rule and its stage are gone.
 
 *Measured 2026-11-15 on the first step of that.* With 60 of the rule's 65 branches moved into the rule
 views of the stages whose facts they read, every view they read replaced by stored relations, and
