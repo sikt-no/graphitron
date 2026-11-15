@@ -85,7 +85,7 @@ The walk's read path is gone
     ├── An argument binds the call parameter it supplies
     ├── The root query fetchers are emitted from the store, claimed by C
     ├── A child read inline is emitted from the store, claimed by E
-    │   ├── A sort key's path is resolved at its occurrence
+    │   ├── A sort key's path is resolved at its occurrence, claimed by C
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
@@ -826,7 +826,7 @@ static method needs no holder.
     `ProjectionQuery` decides a field's alias owner itself, the declaring interface where a
     discriminating participant recognises the type; a stored owner per field occurrence is read
     instead.
-  * **A child read inline is emitted from the store, claimed by E** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by E" and "A single child is looked up by its keys, claimed by E". A
+  * **A child read inline is emitted from the store, claimed by E** `blocked`, on "A sort key's path is resolved at its occurrence, claimed by C", "An inline list is emitted from the store in its stated or chosen order, claimed by E" and "A single child is looked up by its keys, claimed by E". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -917,7 +917,7 @@ static method needs no holder.
       pass-through and `ConditionBeanAtInputField` go, and typed-rejection.adoc says so. Breaking
       for utdanningsregisteret's `searchVektingstallRange` and `filterUtdanningsinstanserByVarighet`,
       so it lands after the typed forms, with a `BREAKING-CHANGE` footer naming the migration.
-  * **A sort key's path is resolved at its occurrence** `open`. A `fields` element's `path:` (about
+  * **A sort key's path is resolved at its occurrence, claimed by C** `open`. A `fields` element's `path:` (about
     twenty sakila sites) is a `PATH` sort key with no column: the path family's decode extends to
     `FieldSort.path`, so the join path need and step relations resolve it, the to-one refusal
     included, and the key gains a subtype naming its hops and the column they land on. Closes before
