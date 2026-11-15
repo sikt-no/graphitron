@@ -203,7 +203,10 @@ final class InlayFacts {
             if (!tables.isEmpty()) return Optional.empty();
             var classes = sourceClasses.stream().filter(row -> row.typeName().equals(typeName))
                 .map(SourceClassRow::className).distinct().toList();
-            return classes.size() == 1 ? Optional.of(simpleName(classes.getFirst())) : Optional.empty();
+            // The store keeps the binary name; an author writes a nested class Outer.Inner.
+            return classes.size() == 1
+                ? Optional.of(simpleName(classes.getFirst()).replace('$', '.'))
+                : Optional.empty();
         }
 
         /**

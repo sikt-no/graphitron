@@ -29,8 +29,9 @@ final class TypeInformationMarkdown {
             }
             lines.add(line("Is read from", source.toString()));
         }
+        // The store keeps the binary name; an author writes a nested class Outer.Inner.
         for (var cls : info.classes()) {
-            lines.add(line("Is read from", "an instance of `" + cls + "`"));
+            lines.add(line("Is read from", "an instance of `" + cls.replace('$', '.') + "`"));
         }
         for (var node : info.nodes()) {
             lines.add(line("Node", "id `" + node.typeId() + "`"

@@ -32,6 +32,9 @@ class OccurrenceSourceReadersTest {
     private static final String SOURCES = "scenarios/occurrence-source";
     private static final String CONNECTIONS = "scenarios/connection-producers";
     private static final String TWO_TABLES = "scenarios/occurrence-source-two-tables";
+    private static final String KEY_ROWS = "scenarios/field-key-row";
+    private static final String INTERFACES = "scenarios/multitable-interface";
+    private static final String PATH_WITHOUT_TABLE = "defects/reference-without-target-table";
 
     @Test
     @DisplayName("a table-bound type no field returns is read from its table")
@@ -106,6 +109,70 @@ class OccurrenceSourceReadersTest {
             .contains("**Target** `Row` → `public.films_for_actor`")
             .doesNotContain("`public.film`");
         assertThat(labels(TWO_TABLES, root)).containsExactly("→ films_for_actor");
+    }
+
+    @Test
+    @DisplayName("an @error type is read from nothing its hover names, an errors field having no source")
+    void anErrorTypeShowsNoSource() {
+        var file = file("""
+            type FilmInvalid @error(handlers: [{handler: DATABASE}]) { path: [String!]!, message: String! }
+            """);
+        assertThat(hoverAt(SOURCES, file, 0, "type FilmInv".length()))
+            .contains("`type FilmInvalid`")
+            .doesNotContain("**Is read from**");
+    }
+
+    @Test
+    @DisplayName("a @pivot type is read from the table its slots read, the path's last")
+    void aPivotTypeIsReadFromItsSlotsTable() {
+        var file = file("""
+            type TranslatedTexts { nn: String en: String }
+            """);
+        assertThat(hoverAt(SOURCES, file, 0, "type Translat".length()))
+            .contains("**Is read from** a row of `public.film_translation`")
+            .doesNotContain("`public.film`");
+        assertThat(labels(SOURCES, file)).first().isEqualTo("film_translation");
+    }
+
+    @Test
+    @DisplayName("a plain type behind a written path is read from where the path arrives, not its parent's table")
+    void aPlainTypeBehindAPathIsReadFromThePathsTarget() {
+        // The schema is refused, REFERENCE_WITHOUT_TARGET_TABLE at Film.summary; the editor answers on it
+        // all the same.
+        var file = file("""
+            type Summary { name: String }
+            """);
+        assertThat(hoverAt(PATH_WITHOUT_TABLE, file, 0, "type Summ".length()))
+            .contains("**Is read from** a row of `public.language`")
+            .doesNotContain("`public.film`");
+    }
+
+    @Test
+    @DisplayName("a nested class is named as an author writes it, Outer.Inner, though the store keeps its binary name")
+    void aNestedClassIsNamedAsWritten() {
+        var file = file("""
+            type NestedFilmsPayload {
+                films: [Film!]!
+            }
+            """);
+        assertThat(hoverAt(KEY_ROWS, file, 0, "type NestedFilms".length()))
+            .contains("**Is read from** an instance of "
+                + "`no.sikt.graphitron.rewrite.test.services.NestedFilmsPayloadHolder.Payload`")
+            .doesNotContain("$");
+        assertThat(labels(KEY_ROWS, file)).first().isEqualTo("NestedFilmsPayloadHolder.Payload");
+    }
+
+    @Test
+    @DisplayName("an interface no table backs is read from nothing its hover names")
+    void aNonTableInterfaceShowsNoSource() {
+        var file = file("""
+            interface Searchable {
+                title: String
+            }
+            """);
+        assertThat(hoverAt(INTERFACES, file, 0, "interface Searc".length()))
+            .contains("`interface Searchable`")
+            .doesNotContain("**Is read from**");
     }
 
     // ===== Helpers =====
