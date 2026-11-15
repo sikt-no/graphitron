@@ -88,6 +88,7 @@ The walk's read path is gone
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
 │   │   ├── A list's order is completed with its row key
 │   │   └── A single child is looked up by its keys
+│   ├── A narrowed inline list is emitted from the store
 │   ├── Every list states its order or is refused
 │   └── A single child's null contract is stated
 └── The walk's service path is gone
@@ -733,7 +734,10 @@ static method needs no holder.
     response key takes a suffix by its position in the selection set, which writer and reader compute
     alike, and a nesting field selected twice merges, the consistent-argument check failing where the
     arguments beneath differ. The unit and the readers keep today's names until the readers move,
-    so this lands with them, backwards compatible until then (Alf, 2026-11-13).
+    so this lands with them, backwards compatible until then (Alf, 2026-11-13). The table aliases an
+    inline list's multiset declares extend its row's own alias by each step's position, so a list
+    nested in its own type never shadows its correlation; they lengthen with depth and are named
+    here too.
   * **An `@externalField` under a written path binds at the path's landing** `open`, off the
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
@@ -835,6 +839,11 @@ static method needs no holder.
     as the deferral `LOOKUP_KEY_ON_SINGLE_CHILD`; the child is read as the one row its keys match, or
     the rule is stated as one graphitron keeps (basis `GRAPHITRON`) and the deferral goes. Which is
     Alf's call; closes before the flip either way.
+  * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by F".
+    An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
+    `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
+    bindings that narrow it, the positive facts, rather than the reader's present test of any other
+    argument, and the line closes with it.
   * **Every list states its order or is refused** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a

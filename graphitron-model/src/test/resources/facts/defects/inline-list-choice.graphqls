@@ -22,6 +22,8 @@ enum FilmSort {
     LENGTH @order(fields: [{name: "length"}, {name: "film_id"}])
     # Written descending, so a client's direction leaves it.
     TITLE  @order(fields: [{name: "title", direction: DESC}])
+    # Compared under the collation written, which the database applies as given.
+    NAME_C @order(fields: [{name: "title", collate: "C"}])
 }
 
 type Query {
@@ -32,6 +34,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "coo
   choice,                        kind,    surface,              argument_coordinate
   Category.filmsChosen,          DEFAULT, IMPLICIT_PRIMARY_KEY,
   FilmSort.LENGTH,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
+  FilmSort.NAME_C,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
   FilmSort.TITLE,                CHOICE,  FIELDS,               Category.filmsChosen(order:)
   """)
 

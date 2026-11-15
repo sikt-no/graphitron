@@ -49,10 +49,14 @@ public final class ProjectionEmitter {
         /**
          * A child read inline down a path not rendered yet: a single join, or a list whose path is
          * not one chain of column-pair joins from the unit's row, whose order reads a key that is
-         * no column of its table, that an argument or a {@code @condition} narrows, or whose
-         * listed type's unit is not emitted.
+         * no column of its table, or whose listed type's unit is not emitted.
          */
         INLINE_CHILD,
+        /**
+         * A list read inline that an argument other than its {@code @orderBy} or a
+         * {@code @condition} narrows: the multiset renders no filter yet.
+         */
+        NARROWED_LIST,
         /**
          * A nullable nesting field, read off its parent's row: nothing states when it is null. A
          * non-null one is rendered.
@@ -201,7 +205,8 @@ public final class ProjectionEmitter {
         if (arm.reads() == null) return Reason.UNSTATED;
         return switch (arm.reads()) {
             case "EXPRESSION" -> Reason.EXPRESSION;
-            case "NESTED" -> !nesting(arm) ? (inlineList(arm, unitTable, callable) ? null : Reason.INLINE_CHILD)
+            case "NESTED" -> !nesting(arm) ? (narrowed(arm) ? Reason.NARROWED_LIST
+                    : inlineList(arm, unitTable, callable) ? null : Reason.INLINE_CHILD)
                 : arm.nonNull() ? null : Reason.NULL_CONTRACT;
             case "COLUMN" -> sameRow(arm) && !projected(arm, unitTable).isEmpty() || terminal(arm, unitTable) != null
                 ? null : Reason.SCALAR_PATH;
@@ -241,16 +246,19 @@ public final class ProjectionEmitter {
         return from;
     }
 
+    /** A list read inline that an argument besides its order's or a {@code @condition} narrows. */
+    private static boolean narrowed(ProjectionQuery.Arm arm) {
+        return arm.listDepth() > 0 && arm.list() != null && arm.list().narrowed();
+    }
+
     /**
      * A list of one table-bound type read inline down one chain of column-pair joins to that type's
-     * table, which nothing narrows, each of its orders' keys a column of that table, and whose
-     * type's unit is emitted.
+     * table, each of its orders' keys a column of that table, and whose type's unit is emitted.
      */
     private static boolean inlineList(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable,
                                       Map<String, ProjectionQuery.Unit> callable) {
         var list = arm.list();
-        if (arm.listDepth() != 1 || !arm.targetTable() || list == null || list.narrowed()
-                || list.bounds().size() != 1) {
+        if (arm.listDepth() != 1 || !arm.targetTable() || list == null || list.bounds().size() != 1) {
             return false;
         }
         var callee = callable.get(arm.targetType());

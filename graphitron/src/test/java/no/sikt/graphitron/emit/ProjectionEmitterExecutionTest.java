@@ -203,6 +203,10 @@ class ProjectionEmitterExecutionTest {
             .as("TITLE, written DESC, asked ASC").isEqualTo(inCategory().orderBy(FILM.TITLE.desc()).fetch(FILM.TITLE));
         assertThat(categoryFilms(projectChoosingCategory, field("filmsChosen", field("title")), "__rk_filmsChosen"))
             .as("nothing picked").isEqualTo(inCategory().orderBy(FILM.FILM_ID).fetch(FILM.TITLE));
+        assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
+                Map.of("field", "NAME_C", "direction", "DESC"))), field("title")), "__rk_filmsChosen"))
+            .as("NAME_C, collated C, DESC")
+            .isEqualTo(inCategory().orderBy(FILM.TITLE.collate("C").desc()).fetch(FILM.TITLE));
     }
 
     /** Category 1's films, joined as the inline lists read them. */
