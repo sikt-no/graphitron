@@ -49,50 +49,98 @@ class ProjectionEmitterExecutionTest {
     private static final String CHOOSING = "choosing";
     private static EmittedCodeHarness choosingHarness;
     private static Method projectChoosingCategory;
+    private static Method projectAddress;
+    private static final String LOOKING = "looking";
+    private static EmittedCodeHarness lookingHarness;
+    private static Method projectLookingAddress;
 
     @BeforeAll
     static void emit() throws Exception {
         units = FACTS.read("scenarios/projection-unit", graph -> ProjectionQuery.read(graph.handle()));
-        var emitted = ProjectionEmitter.emitAll(units, PACKAGE);
-        var compiled = new HashMap<String, TypeSpec>();
-        for (var type : List.of("Film", "Category")) {
-            compiled.put(PACKAGE + "." + type, ((ProjectionEmitter.Result.Emitted) emitted.get(type)).unit());
-        }
-        for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(PACKAGE)) {
-            compiled.put(PACKAGE + ".util." + spec.name(), spec);
-        }
-        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
-            compiled.put(PACKAGE + ".schema." + spec.name(), spec);
-        }
-        harness = EmittedCodeHarness.compileStrictly(compiled);
+        harness = compile(PACKAGE, ProjectionEmitter.emitAll(units, PACKAGE), "Film", "Category", "City", "AddressRow");
         project = harness.load(PACKAGE + ".Film").getMethod("$project", Map.class, FILM.getClass(),
             DataFetchingEnvironment.class);
         projectCategory = harness.load(PACKAGE + ".Category").getMethod("$project", Map.class,
             Tables.CATEGORY.getClass(), DataFetchingEnvironment.class);
+        projectAddress = harness.load(PACKAGE + ".AddressRow").getMethod("$project", Map.class,
+            Tables.ADDRESS.getClass(), DataFetchingEnvironment.class);
 
-        // The choice is refused until the store's units replace the generated ones, so its schema
-        // is a defect document's, read and emitted beside the scenario's.
-        var choosing = ProjectionEmitter.emitAll(
-            FACTS.read("defects/inline-list-choice", graph -> ProjectionQuery.read(graph.handle())), CHOOSING);
-        var chosen = new HashMap<String, TypeSpec>();
-        for (var type : List.of("Film", "Category")) {
-            chosen.put(CHOOSING + "." + type, ((ProjectionEmitter.Result.Emitted) choosing.get(type)).unit());
-        }
-        for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(CHOOSING)) {
-            chosen.put(CHOOSING + ".util." + spec.name(), spec);
-        }
-        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
-            chosen.put(CHOOSING + ".schema." + spec.name(), spec);
-        }
-        choosingHarness = EmittedCodeHarness.compileStrictly(chosen);
+        // A choice on an inline list and a lookup on a single child are refused until the store's
+        // units replace the generated ones, so their schemas are defect documents', read and emitted
+        // beside the scenario's.
+        choosingHarness = compile(CHOOSING, ProjectionEmitter.emitAll(
+            FACTS.read("defects/inline-list-choice", graph -> ProjectionQuery.read(graph.handle())), CHOOSING),
+            "Film", "Category");
         projectChoosingCategory = choosingHarness.load(CHOOSING + ".Category").getMethod("$project", Map.class,
             Tables.CATEGORY.getClass(), DataFetchingEnvironment.class);
+        lookingHarness = compile(LOOKING, ProjectionEmitter.emitAll(
+            FACTS.read("defects/single-child-lookup", graph -> ProjectionQuery.read(graph.handle())), LOOKING),
+            "City", "AddressRow");
+        projectLookingAddress = lookingHarness.load(LOOKING + ".AddressRow").getMethod("$project", Map.class,
+            Tables.ADDRESS.getClass(), DataFetchingEnvironment.class);
+    }
+
+    /** The emitted units of {@code types} compiled into {@code pkg} beside the selection adapters they read. */
+    private static EmittedCodeHarness compile(String pkg, Map<String, ProjectionEmitter.Result> emitted,
+                                              String... types) {
+        var compiled = new HashMap<String, TypeSpec>();
+        for (var type : types) {
+            compiled.put(pkg + "." + type, ((ProjectionEmitter.Result.Emitted) emitted.get(type)).unit());
+        }
+        for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(pkg)) {
+            compiled.put(pkg + ".util." + spec.name(), spec);
+        }
+        for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
+            compiled.put(pkg + ".schema." + spec.name(), spec);
+        }
+        return EmittedCodeHarness.compileStrictly(compiled);
     }
 
     @AfterAll
     static void close() {
         if (harness != null) harness.close();
         if (choosingHarness != null) choosingHarness.close();
+        if (lookingHarness != null) lookingHarness.close();
+    }
+
+    @Test
+    @DisplayName("a non-null single child is the one row its path reaches, projected by its type's own unit")
+    void aNonNullSingleChild() throws Exception {
+        var city = TestDatabase.dsl().select(Tables.CITY.CITY_).from(Tables.CITY).join(Tables.ADDRESS)
+            .on(Tables.ADDRESS.CITY_ID.eq(Tables.CITY.CITY_ID)).where(Tables.ADDRESS.ADDRESS_ID.eq(1))
+            .fetchOne(Tables.CITY.CITY_);
+        assertThat(addressCity(projectAddress, field("city", field("name")), "__rk_city")).isEqualTo(city);
+    }
+
+    @Test
+    @DisplayName("a single child looked up by its key is the row among those its path reaches that the key names")
+    void aSingleChildLookedUpByItsKey() throws Exception {
+        var sameCountry = TestDatabase.dsl().select(Tables.CITY.CITY_ID, Tables.CITY.CITY_).from(Tables.CITY)
+            .where(Tables.CITY.COUNTRY_ID.eq(TestDatabase.dsl().select(Tables.CITY.COUNTRY_ID).from(Tables.CITY)
+                .join(Tables.ADDRESS).on(Tables.ADDRESS.CITY_ID.eq(Tables.CITY.CITY_ID))
+                .where(Tables.ADDRESS.ADDRESS_ID.eq(1))))
+            .orderBy(Tables.CITY.CITY_ID.desc()).limit(1).fetchOne();
+        assertThat(addressCity(projectLookingAddress, argued("neighbour", Map.of("city_id", sameCountry.value1()),
+            field("name")), "__rk_neighbour")).isEqualTo(sameCountry.value2());
+    }
+
+    @Test
+    @DisplayName("a nullable single child, looked up by its key or not, is held back by its null contract")
+    void aNullableSingleChildWaitsOnItsNullContract() {
+        var film = FACTS.read("defects/lookup-key-refusals", graph -> ProjectionQuery.read(graph.handle()).get("Film"));
+        assertThat(ProjectionEmitter.emit(film, PACKAGE))
+            .isInstanceOfSatisfying(ProjectionEmitter.Result.NotYet.class, notYet -> assertThat(notYet.refusals())
+                .contains(new ProjectionEmitter.Refusal("Film.sequel", ProjectionEmitter.Reason.NULL_CONTRACT)));
+    }
+
+    /** The name of the city address 1's single child selected under {@code alias} reads, or null. */
+    private static String addressCity(Method project, SelectedField child, String alias) throws Exception {
+        @SuppressWarnings("unchecked")
+        var fields = (List<Field<?>>) project.invoke(null, grouped(child), Tables.ADDRESS, null);
+        var row = TestDatabase.dsl().select(fields).from(Tables.ADDRESS).where(Tables.ADDRESS.ADDRESS_ID.eq(1))
+            .fetchOne();
+        var rows = (org.jooq.Result<?>) row.get(alias);
+        return rows.isEmpty() ? null : rows.get(0).get("city", String.class);
     }
 
     @Test

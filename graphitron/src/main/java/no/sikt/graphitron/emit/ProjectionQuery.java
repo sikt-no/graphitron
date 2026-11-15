@@ -22,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NESTING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
@@ -150,6 +151,21 @@ public final class ProjectionQuery {
         }
     }
 
+    /** One key a single child is looked up by: the argument the caller passes it in, and the column it matches. */
+    public record LookupColumn(String argument, Column column) {}
+
+    /**
+     * What a single child states about reading it: the column keys it is looked up by, in key order,
+     * empty where it is none; whether a key is one the multiset does not render yet, a node id or a
+     * field of an input object; and whether anything else narrows it, an argument that is no key or a
+     * {@code @condition}.
+     */
+    public record SingleRead(List<LookupColumn> keys, boolean otherKeys, boolean narrowed) {
+        public SingleRead {
+            keys = List.copyOf(keys);
+        }
+    }
+
     /**
      * One occurrence of the unit: its coordinate, the field's name at each step from the unit's
      * type down to it, whether the field is non-null and how many lists wrap it, the columns it
@@ -159,14 +175,15 @@ public final class ProjectionQuery {
      * whether it is a nesting field, its fields read off its parent's row, its join path's steps
      * in order, the type owning the name a projection writes for it where that is not shared
      * (an interface a discriminated participant's field is declared by, else the participant), what
-     * it states about reading it as a list, null where it states no order, and the occurrences
-     * nested beneath it in the order their fields are declared.
+     * it states about reading it as a list, null where it states no order, what it states about
+     * reading it as a single child, and the occurrences nested beneath it in the order their fields
+     * are declared.
      */
     public record Arm(String coordinate, List<String> chain, boolean nonNull, int listDepth,
                       List<Column> columns, List<Column> nodeKeys, List<String> pathOrigins, String side,
                       String producerKind, String reads, String targetType, boolean targetTable,
                       boolean pivot, boolean nesting, List<Step> steps, String aliasOwner, List<Column> liftColumns,
-                      ListRead list, List<Arm> nested) {
+                      ListRead list, SingleRead single, List<Arm> nested) {
         public Arm {
             Objects.requireNonNull(coordinate, "coordinate");
             chain = List.copyOf(chain);
@@ -274,6 +291,7 @@ public final class ProjectionQuery {
                 Boolean.TRUE.equals(r.value17()), r.value18(), r.value19(), r.value20())));
 
         var lists = lists(store);
+        var singles = singles(store);
 
         // A chain starts at an occurrence with no parent; the type declaring its field is the unit
         // it belongs to.
@@ -290,14 +308,14 @@ public final class ProjectionQuery {
         for (var entry : tables.entrySet()) {
             String type = entry.getKey();
             units.put(type, new Unit(type, entry.getValue(), tableKeys.get(type),
-                arms(starts.getOrDefault(type, List.of()), List.of(), children, lists)));
+                arms(starts.getOrDefault(type, List.of()), List.of(), children, lists, singles)));
         }
         return units;
     }
 
     /** The arms of {@code facts}, siblings in declaration order, each with its nested arms beneath. */
     private static List<Arm> arms(List<Fact> facts, List<String> above, Map<String, List<Fact>> children,
-                                  Map<String, ListRead> lists) {
+                                  Map<String, ListRead> lists, Map<String, SingleRead> singles) {
         return facts.stream()
             .sorted(Comparator.comparingInt(Fact::ordinal).thenComparing(Fact::coordinate))
             .map(fact -> {
@@ -307,7 +325,8 @@ public final class ProjectionQuery {
                     fact.nodeKeys(), fact.pathOrigins(), fact.side(), fact.producerKind(), fact.reads(),
                     fact.targetType(), fact.targetTable(), fact.pivot(), fact.nesting(), fact.steps(), fact.aliasOwner(),
                     fact.liftColumns(), lists.get(fact.coordinate()),
-                    arms(children.getOrDefault(fact.coordinate(), List.of()), chain, children, lists));
+                    singles.getOrDefault(fact.coordinate(), NOT_NARROWED),
+                    arms(children.getOrDefault(fact.coordinate(), List.of()), chain, children, lists, singles));
             })
             .toList();
     }
@@ -430,6 +449,68 @@ public final class ProjectionQuery {
                 List.copyOf(identifying.getOrDefault(coordinate, Map.of()).values())));
         });
         return lists;
+    }
+
+    /** A single child nothing looks up or narrows. */
+    private static final SingleRead NOT_NARROWED = new SingleRead(List.of(), false, false);
+
+    /**
+     * Each occurrence's lookup keys, a column bound by an argument of its own taken whole, and
+     * whether it carries others, or an argument that is no key or a {@code @condition} narrowing it.
+     * Read for every occurrence; the emitter reads it only for a single child.
+     */
+    private static Map<String, SingleRead> singles(StoreHandle store) {
+        var lk = GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
+        var ko = GRAPHITRON_OCCURRENCE.as("ko");
+        var oc = GRAPHITRON_OCCURRENCE_COLUMN;
+        var c = SQL_COLUMN;
+        var keys = new LinkedHashMap<String, List<LookupColumn>>();
+        var other = new HashSet<String>();
+        store.dsl()
+            .select(lk.COORDINATE, lk.KEY_KIND, lk.FIELD_ORDINAL, ko.NAME, oc.TABLE_SOURCE_NAME, oc.TABLE_SCHEMA,
+                oc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME)
+            .from(lk)
+            .join(ko).on(ko.GRAPH_NAME.eq(lk.GRAPH_NAME), ko.COORDINATE.eq(lk.KEY_COORDINATE))
+            .leftJoin(oc).on(oc.GRAPH_NAME.eq(lk.GRAPH_NAME), oc.COORDINATE.eq(lk.KEY_COORDINATE),
+                oc.BOUND.eq(lk.KEY_BOUND), lk.KEY_KIND.eq("COLUMN"))
+            .leftJoin(c).on(c.SOURCE_NAME.eq(oc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(oc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(oc.TABLE_NAME), c.COLUMN_NAME.eq(oc.COLUMN_NAME))
+            .where(lk.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(lk.COORDINATE, lk.ARGUMENT_ORDINAL, lk.FIELD_ORDINAL)
+            .forEach(row -> {
+                if ("COLUMN".equals(row.value2()) && row.value3() == -1 && row.value8() != null) {
+                    keys.computeIfAbsent(row.value1(), x -> new ArrayList<>()).add(new LookupColumn(row.value4(),
+                        column(row.value5(), row.value6(), row.value7(), row.value8(), row.value9())));
+                } else {
+                    other.add(row.value1());
+                }
+            });
+
+        // An argument that is no key's, or a @condition at the occurrence, narrows it.
+        var o = GRAPHITRON_OCCURRENCE;
+        var cond = GRAPHITRON_OCCURRENCE_CONDITION;
+        var l = GRAPHITRON_OCCURRENCE_LOOKUP_KEY;
+        var narrowed = new HashSet<String>();
+        store.dsl()
+            .select(o.PARENT_COORDINATE)
+            .from(o)
+            .where(o.GRAPH_NAME.eq(store.graphName()), o.KIND.eq("FIELD_ARGUMENT"))
+            .and(notExists(selectOne().from(l).where(l.GRAPH_NAME.eq(o.GRAPH_NAME),
+                l.COORDINATE.eq(o.PARENT_COORDINATE), l.KEY_COORDINATE.eq(o.COORDINATE)
+                    .or(l.KEY_COORDINATE.like(o.COORDINATE.concat(".%"))))))
+            .union(select(cond.COORDINATE).from(cond).where(cond.GRAPH_NAME.eq(store.graphName())))
+            .forEach(row -> narrowed.add(row.value1()));
+
+        var singles = new LinkedHashMap<String, SingleRead>();
+        var coordinates = new LinkedHashSet<String>();
+        coordinates.addAll(keys.keySet());
+        coordinates.addAll(other);
+        coordinates.addAll(narrowed);
+        for (var coordinate : coordinates) {
+            singles.put(coordinate, new SingleRead(keys.getOrDefault(coordinate, List.of()), other.contains(coordinate),
+                narrowed.contains(coordinate)));
+        }
+        return singles;
     }
 
     /** An order's written keys followed by the row-key columns completing it, where any do. */

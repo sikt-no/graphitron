@@ -47,9 +47,10 @@ public final class ProjectionEmitter {
          */
         CHILD_PRODUCER_COLUMNS,
         /**
-         * A child read inline down a path not rendered yet: a single join, or a list whose path is
-         * not one chain of column-pair joins from the unit's row, whose order reads a key that is
-         * no column of its table, or whose listed type's unit is not emitted.
+         * A child read inline down a path not rendered yet: one whose path is not one chain of
+         * column-pair joins from the unit's row to its type's table, whose type's unit is not
+         * emitted, a list whose order reads a key that is no column of its table, or a single child
+         * looked up by a key the read does not render, a node id or an input object's field.
          */
         INLINE_CHILD,
         /**
@@ -58,8 +59,9 @@ public final class ProjectionEmitter {
          */
         NARROWED_LIST,
         /**
-         * A nullable nesting field, read off its parent's row: nothing states when it is null. A
-         * non-null one is rendered.
+         * A nullable nesting field, read off its parent's row, or a nullable single child read down
+         * a path: nothing states when it is null, which for a reached row depends on its fields'
+         * values too. A non-null one is rendered.
          */
         NULL_CONTRACT,
         /**
@@ -206,8 +208,7 @@ public final class ProjectionEmitter {
         if (arm.reads() == null) return Reason.UNSTATED;
         return switch (arm.reads()) {
             case "EXPRESSION" -> Reason.EXPRESSION;
-            case "NESTED" -> !nesting(arm) ? (narrowed(arm) ? Reason.NARROWED_LIST
-                    : inlineList(arm, unitTable, callable) ? null : Reason.INLINE_CHILD)
+            case "NESTED" -> !nesting(arm) ? inlineReason(arm, unitTable, callable)
                 : arm.nonNull() ? null : Reason.NULL_CONTRACT;
             case "COLUMN" -> sameRow(arm) && !projected(arm, unitTable).isEmpty() || terminal(arm, unitTable) != null
                 ? null : Reason.SCALAR_PATH;
@@ -245,6 +246,30 @@ public final class ProjectionEmitter {
             from = step.to();
         }
         return from;
+    }
+
+    /** Why a child read inline down a path is not rendered, or null where it is. */
+    private static Reason inlineReason(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable,
+                                       Map<String, ProjectionQuery.Unit> callable) {
+        if (arm.listDepth() > 0) {
+            return narrowed(arm) ? Reason.NARROWED_LIST : inlineList(arm, unitTable, callable) ? null : Reason.INLINE_CHILD;
+        }
+        if (!singleChild(arm, unitTable, callable)) return Reason.INLINE_CHILD;
+        return arm.nonNull() ? null : Reason.NULL_CONTRACT;
+    }
+
+    /**
+     * A single object of a table-bound type read down one chain of column-pair joins to its type's
+     * table, nothing narrowing it but lookup keys its read renders, and its type's unit emitted.
+     */
+    private static boolean singleChild(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable,
+                                       Map<String, ProjectionQuery.Unit> callable) {
+        var single = arm.single();
+        if (!arm.targetTable() || single.narrowed() || single.otherKeys()) return false;
+        var callee = callable.get(arm.targetType());
+        var landing = landing(arm, unitTable);
+        return callee != null && landing != null && landing.equals(callee.key())
+            && single.keys().stream().allMatch(k -> k.column().table().equals(landing));
     }
 
     /** A list read inline that an argument besides its order's or a {@code @condition} narrows. */
@@ -337,7 +362,7 @@ public final class ProjectionEmitter {
     private static CodeBlock armBody(ProjectionQuery.Arm arm, ClassName occurrences, ProjectionQuery.TableKey unitTable,
                                      Map<String, ProjectionQuery.Unit> callable, String outputPackage) {
         if ("NESTED".equals(arm.reads()) && !nesting(arm)) {
-            return multiset(arm, occurrences, outputPackage);
+            return arm.listDepth() > 0 ? multiset(arm, occurrences, outputPackage) : singleRow(arm, occurrences, outputPackage);
         }
         if (nesting(arm)) {
             return CodeBlock.of("$L(fields, $T.mergeByResultKey(entry.getValue()), table, env, rkPath + entry.getKey() + $S);\n",
@@ -477,6 +502,43 @@ public final class ProjectionEmitter {
             names.add("$S", column.sqlName());
         }
         return names.build();
+    }
+
+    /**
+     * A single child read inline as the readers read one: a multiset of the listed type's unit over
+     * the table the steps land on, correlated to the unit's row and narrowed by its lookup keys, each
+     * a column equal to the value its argument passes, at most one row of it. Its keys identify a
+     * row, or its path reaches one row; a path that fans out reads its first row, as the walk's does.
+     */
+    private static CodeBlock singleRow(ProjectionQuery.Arm arm, ClassName occurrences, String outputPackage) {
+        var steps = arm.steps();
+        var keys = arm.single().keys();
+        var body = CodeBlock.builder().add("{\n").indent();
+        for (int i = 0; i < steps.size(); i++) {
+            var step = steps.get(i);
+            body.addStatement("var x$L = $T.$L.as(table.getName() + $S)", i,
+                ClassName.bestGuess(step.constantsClassName()), step.javaFieldName(), "_" + i);
+        }
+        String listed = "x" + (steps.size() - 1);
+        if (!keys.isEmpty()) {
+            // The keys are read off the field's own arguments, so every occurrence under its result
+            // key has to agree on them.
+            body.addStatement("$T.requireConsistentArguments(entry.getKey(), entry.getValue())", occurrences);
+        }
+        var select = CodeBlock.builder().add("$T.select($T.$L($T.mergeByResultKey(entry.getValue()), $L, env)).from(x0)",
+            DSL, ClassName.get(outputPackage, arm.targetType()), "$project", occurrences, listed);
+        for (int i = 1; i < steps.size(); i++) {
+            select.add(".join(x$L).on($L)", i, pairs(steps.get(i).pairs(), "x" + (i - 1), "x" + i));
+        }
+        select.add(".where($L)", pairs(steps.get(0).pairs(), "table", "x0"));
+        for (var key : keys) {
+            select.add(".and($L.$L.eq($T.val(sf.getArguments().get($S), $L.$L)))", listed, key.column().javaName(), DSL,
+                key.argument(), listed, key.column().javaName());
+        }
+        select.add(".limit(1)");
+        body.addStatement("fields.add($T.multiset($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),
+            aliasPrefix(arm.aliasOwner()));
+        return body.unindent().add("}\n").build();
     }
 
     /**

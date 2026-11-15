@@ -720,7 +720,11 @@ static method needs no holder.
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
     it has one; the census's `INLINE_CHILD` line closes with it. The list multiset is its child's,
-    "An inline list is emitted from the store in its stated or chosen order, claimed by G"; the single join is what is left here.
+    "An inline list is emitted from the store in its stated or chosen order, claimed by G". A non-null
+    single child is the single join, rendered as the readers read one today, a multiset of the child's
+    unit with `.limit(1)` under its result key; the flip of the readers replaces it with a plain
+    correlated row, which a single child's identifying lookup keys or its to-one path make exact. A
+    nullable one is the census's `NULL_CONTRACT` line until "A single child's null contract is stated".
   * **A projection's SQL names read like the schema** `open`, off the critical path. The generated
     SQL is to be easy to read; a hashed name is hostile to that (Alf, 2026-11-13). Today an aliased
     term is named `__rk_`, an owner, and the response keys from its row's owner down to it, so a deep
@@ -821,11 +825,15 @@ static method needs no holder.
     the deferral, its `defect_type` row and the multiset half of
     `requireResolvedOrderingsAreLowered` go when the store's units replace them, and
     `defects/inline-list-choice` pins the choice until then; closes before the flip.
-  * **A single child is looked up by its keys, claimed by G** `open`. A `@lookupKey` on a field of a table-bound
-    type returning one table-bound object is refused by the walk as not supported, and by the store
-    as the deferral `LOOKUP_KEY_ON_SINGLE_CHILD`; the child is read as the one row its keys match, or
-    the rule is stated as one graphitron keeps (basis `GRAPHITRON`) and the deferral goes. Which is
-    Alf's call; closes before the flip either way.
+  * **A single child is looked up by its keys, claimed by G** `blocked`, on "A single child's null contract is stated".
+    A `@lookupKey` on a field of a table-bound type returning one table-bound object is read as the
+    one row its keys match (Alf, 2026-11-15). The store's deferral is gone; keys covering no
+    identifying key of the table are `LOOKUP_KEY_NOT_IDENTIFYING`, and the walk refuses the shape
+    itself until the flip. A non-null child looked up by column keys is rendered; what is left is a
+    nullable one, which most are, once its null contract is stated, and a node id key, the child's
+    own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
+    carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
+    closes before the flip.
   * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by F".
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
