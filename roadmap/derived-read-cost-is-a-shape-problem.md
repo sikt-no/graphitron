@@ -86,7 +86,7 @@ The walk's read path is gone
 │   ├── A child read inline is emitted from the store
 │   │   ├── A sort key's path is resolved at its occurrence
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
-│   │   ├── A list's order is completed with its row key
+│   │   ├── A list's order is completed with its row key, claimed by G
 │   │   └── A single child is looked up by its keys
 │   ├── A narrowed inline list is emitted from the store
 │   ├── Every list states its order or is refused
@@ -717,7 +717,7 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
-  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G", "A list's order is completed with its row key" and "A single child is looked up by its keys". A
+  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G", "A list's order is completed with its row key, claimed by G" and "A single child is looked up by its keys". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -823,7 +823,7 @@ static method needs no holder.
     the deferral, its `defect_type` row and the multiset half of
     `requireResolvedOrderingsAreLowered` go when the store's units replace them, and
     `defects/inline-list-choice` pins the choice until then; closes before the flip.
-  * **A list's order is completed with its row key** `open`. The walk completes every single-table
+  * **A list's order is completed with its row key, claimed by G** `open`. The walk completes every single-table
     list's fixed order, its default included, not only a connection's (`OrderByResolver.complete`):
     the row key's columns the order does not list follow it, in the direction of its last key,
     unless it already lists an identifying key in full, own-table columns alone counting. What
