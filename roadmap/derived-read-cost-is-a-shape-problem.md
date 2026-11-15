@@ -1689,7 +1689,7 @@ grain, priced by `prepare_ms` on a cold capture. Two rule views are still read b
   one view named a rule no stage writes from, `graphitron_entry_defect_parameter_rule`:
   `StageRuleGateTest` lists all three as debt, each to be stored or folded in, and the lists only
   shrink.
-* **A rule view's rows are exactly one relation's** `open`, off the critical path. A stage inserts
+* **A rule view's rows are exactly one relation's, claimed by G** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them: `graphitron_result_rule`
   into `graphitron_result_table` and `graphitron_result_pivot` by shape,
   `graphitron_occurrence_connection_rule` into `graphitron_occurrence_connection` and its `_part`,
