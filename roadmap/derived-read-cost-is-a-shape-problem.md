@@ -88,6 +88,7 @@ The walk's read path is gone
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
 │   │   └── A single child is looked up by its keys, claimed by G
 │   ├── A narrowed inline list is emitted from the store
+│   ├── A nesting field's leaves state how they're read
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
@@ -833,6 +834,14 @@ static method needs no holder.
     own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
     carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
     closes before the flip.
+  * **A nesting field's leaves state how they're read** `open`. The census's `UNSTATED` line: a field
+    of a nesting type the store states no read for at its occurrence, so the unit cannot project it.
+    `Film.blurb.description` reads `film.description` off the film row here and a `FilmBlurb`
+    accessor where `FilmBlurbHolder.blurb` reaches the same type, and the field-keyed reader states
+    neither; `PivotNestingHost.texts`' leaves are the pivot's columns by language. Each occurrence's
+    read is stated where its reach is known, beside "The producer's readers read the occurrence
+    producer, and the field-keyed family goes" for the first and the pivot nodes for the second, and
+    the line closes.
   * **A narrowed inline list is emitted from the store** `blocked`, on "The filter conditions are emitted from the store, claimed by F".
     An inline list an argument besides its `@orderBy` or a `@condition` narrows is the census's
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
