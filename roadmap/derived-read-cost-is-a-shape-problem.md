@@ -88,8 +88,7 @@ The walk's read path is gone
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
 │   │   └── A single child is looked up by its keys, claimed by G
 │   ├── A narrowed inline list is emitted from the store
-│   ├── Every list states its order or is refused, claimed by F
-│   └── A single child's null contract is stated, claimed by F
+│   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
     │   └── A producer's fetcher parts are emitted from the store
@@ -707,8 +706,8 @@ static method needs no holder.
     landed, each closing as its fact lands. Landed: the query, the emitter rendering columns, node id
     keys and non-null nesting fields inline, the census over the example and
     `scenarios/projection-unit` run against PostgreSQL; utdanningsregisteret's shape is
-    `scenarios/node-nesting-field-named-like-a-range`, its refusal pinned until its null contract and
-    expressions are stated. A scalar's column down a path is a correlated subselect over its steps'
+    `scenarios/node-nesting-field-named-like-a-range`, its refusal pinned until its expressions are
+    stated. A scalar's column down a path is a correlated subselect over its steps'
     column pairs, capped at one row, named by today's result-key formula with its owner stamped from
     the declaring type, so a discriminated participant writes an interface's field under the
     interface's name and a lift can pass no shared fields. Left (`SCALAR_PATH`): a path stepping by a
@@ -850,13 +849,6 @@ static method needs no holder.
     written and the slots bind no column. Deferred past the flip: no FS-plattform graph uses `@pivot`,
     so the flip states it as a deferral, a stored defect of basis `UNSUPPORTED`, until this lands
     (Alf, 2026-11-13).
-  * **A single child's null contract is stated, claimed by F** `open`. A nullable single child is null exactly when its
-    read finds no row, and a nesting field, being its parent's row, is present wherever its parent is
-    (Alf, 2026-11-15, `code-generation-triggers.adoc`); the walk's `Presence`, which collapses a
-    reached row whose subtree's columns, expressions and probes are all absent, and lists blockers
-    where it gives up, emulates Graphitron 9 and goes. So the store states nothing new: the walk is
-    tried on the rule first and the FS subgraphs' tests run on it, and G's single join then renders a
-    nullable child as its non-null one, no row read as null.
   * **An input object is read once, by a reader of its own** `open`. One generated typed record per
     input type, built from the argument map with its node ids decoded, enums converted and lists
     walked, so a condition, a lookup's rows and a service's fills read `filter.range().fra()` rather
@@ -987,9 +979,8 @@ static method needs no holder.
   basis `UNSUPPORTED`, owned by the stage writing `graphitron_occurrence_participant`. That
   commit deletes `DiscriminatedQuery.Row.refusal` and the `IllegalArgumentException` in
   `LiftEmitter.discriminatedLift`. opptak's `settMeldingLest`/`settMeldingUlest` lift through their
-  participants' projection units, where the nullable `avsender` is a nesting field whose null contract
-  "A single child's null contract is stated, claimed by F" decides: the flip leaves them emitted only once that node
-  lands, or they go back to refused.
+  participants' projection units, where the nullable `avsender` is a nesting field, present wherever
+  its parent is (Alf, 2026-11-15), so the flip leaves them emitted.
   The fold's shared-alias set (`DiscriminatedQuery.Row.sharedAliasFieldNames` and the selective
   `restrictTo` in `LiftEmitter.discriminatedLift`) exists because the walk's projection units alias a
   nesting field's or an interface-declared field's terms with no owner. F's store-fed units stamp
@@ -3186,6 +3177,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A single child's null contract** (2026-11-15). A nullable single child is null exactly when its read
+finds no row, and a nesting field is present wherever its parent is (Alf, `code-generation-triggers.adoc`).
+The store states nothing for it: the projection emitter reads a nullable single child as it reads a
+non-null one and a nullable nesting field as a non-null one, and its `NULL_CONTRACT` refusal is gone.
+The walk's `Presence`, its leaves, probes and blockers, emulated Graphitron 9's left joins and goes.
 
 **A list's order is completed with its row key in the store** (2026-11-15). The keys identifying the
 rows of a list over one table are `graphitron_occurrence_identifying_key_column`, ranked: the primary
