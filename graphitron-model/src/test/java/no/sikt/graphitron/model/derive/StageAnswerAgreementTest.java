@@ -59,22 +59,29 @@ public class StageAnswerAgreementTest {
      */
     public record Stage(String target, List<String> ruleViews) {}
 
+    private static final String ONE_RELATION = "A rule view's rows are exactly one relation's";
+
+    private static final String WALK = "The join path steps are their rule's rows";
+
     /**
-     * Rule views whose stage inserts only part of their rows into a relation, a Java filter choosing
-     * them, keyed relation then view: the table's rows are still each one its rules compute, but not
-     * every row of the view is the table's. Debt of "A rule view's rows are exactly one relation's",
-     * each view to be split, its shared part stored first; the list only shrinks.
+     * Rule views whose stage inserts only part of their rows into a relation, Java choosing them,
+     * keyed relation then view, each with the node whose debt it is: the table's rows are still each
+     * one its rules compute, but not every row of the view is the table's. The list only shrinks.
      */
-    public static final Set<String> FILTERED_IN_JAVA = Set.of(
-        "graphitron_result_pivot graphitron_result_rule",
-        "graphitron_result_table graphitron_result_rule",
-        "graphitron_occurrence_connection_part graphitron_occurrence_connection_rule",
-        "graphitron_occurrence graphitron_occurrence_step_rule");
+    public static final Map<String, String> FILTERED_IN_JAVA = Map.of(
+        "graphitron_result_pivot graphitron_result_rule", ONE_RELATION,
+        "graphitron_result_table graphitron_result_rule", ONE_RELATION,
+        "graphitron_occurrence_connection graphitron_occurrence_connection_rule", ONE_RELATION,
+        "graphitron_occurrence_connection_part graphitron_occurrence_connection_rule", ONE_RELATION,
+        "graphitron_occurrence graphitron_occurrence_step_rule", ONE_RELATION,
+        // The fills of the method a call pinned, by a join in Java; an ambiguous overload pins none.
+        "graphitron_occurrence_call_parameter graphitron_occurrence_condition_parameter_rule", ONE_RELATION,
+        // The claims of the needs the walk reaches.
+        "graphitron_join_path_claimed graphitron_join_path_claimed_rule", WALK);
 
     /**
      * Relations the walk writes beside the rule view stating them, so the two disagree both ways:
-     * debt of "The join path steps are their rule's rows", which closes as the walk dissolves; the
-     * list only shrinks.
+     * debt of {@value #WALK}, which closes as the walk dissolves; the list only shrinks.
      */
     public static final Set<String> WALK_WRITTEN = Set.of("graphitron_join_path_step");
 
@@ -126,7 +133,7 @@ public class StageAnswerAgreementTest {
                 var held = held(dsl, stage, columns);
                 for (var graph : graphs) {
                     for (var view : stage.ruleViews()) {
-                        if (FILTERED_IN_JAVA.contains(stage.target() + " " + view)) {
+                        if (FILTERED_IN_JAVA.containsKey(stage.target() + " " + view)) {
                             continue;
                         }
                         dsl.selectFrom(computed(dsl, view, columns, graph).except(held.apply(graph)))

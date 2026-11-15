@@ -1670,17 +1670,25 @@ someone to profile.
 * **A rule view's rows are exactly one relation's** `open`, off the critical path. A stage inserts
   part of a rule view's rows into a relation, a Java filter choosing them: `graphitron_result_rule`
   into `graphitron_result_table` and `graphitron_result_pivot` by shape,
-  `graphitron_occurrence_connection_rule` into `graphitron_occurrence_connection_part`, and
-  `graphitron_occurrence_step_rule` into `graphitron_occurrence`. The filter is a decision the store
+  `graphitron_occurrence_connection_rule` into `graphitron_occurrence_connection` and its `_part`,
+  `graphitron_occurrence_step_rule` into `graphitron_occurrence`, and each call parameter rule into
+  `graphitron_occurrence_call_parameter` by a join to the method the call pinned, which an
+  ambiguous overload leaves without fills. The filter is a decision the store
   does not state. Each view is split into one per relation, its rows exactly that relation's, the
   shared part stored first where the split would otherwise read a view, extending a stored relation
   that nearly holds it. `StageAnswerAgreementTest.FILTERED_IN_JAVA` lists them and only shrinks.
 * **The join path steps are their rule's rows** `open`, closing with the walk. `Steps.take` writes
   `graphitron_join_path_step` from the walk's state beside `graphitron_join_path_step_rule`, and the
   two disagree both ways over the fact documents: the rule computes steps the walk does not take,
-  and the walk writes steps the rule does not compute. As the walk dissolves the table is written
+  and the walk writes steps the rule does not compute. `graphitron_join_path_claimed` holds only the
+  claims of the needs the walk reaches, which its rule states for every need. As the walk dissolves
+  the table is written
   from its rule, or the rule states what the walk takes; `StageAnswerAgreementTest.WALK_WRITTEN`
-  lists it and only shrinks.
+  lists the steps, and `FILTERED_IN_JAVA` the claims; both only shrink.
+* **`graphitron_claim` states the stage that wrote it as a `meta_stage` name, or not at all** `open`,
+  off the critical path. Its `stage` column holds the writing class's simple name, `BindingClaims`,
+  `TypeClaims` or `ProducerClaims`, a name read off the code where `defects-as-facts.adoc` reads which
+  stage raised a row off `meta_stage`; each stage sweeps its claims by it.
 * **An outbox target's name is matched once** `open`, off the critical path. The table or routine an
   outbox names is resolved by one match in `graphitron_outbox_target_rule`, one in
   `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the

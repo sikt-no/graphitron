@@ -936,7 +936,7 @@ class FactSchemaGateTest {
                 // A view its stage filters in Java computes rows the table rightly lacks; each row
                 // held is still one its rules compute.
                 boolean filtered = stage.ruleViews().stream().anyMatch(view ->
-                    StageAnswerAgreementTest.FILTERED_IN_JAVA.contains(target + " " + view));
+                    StageAnswerAgreementTest.FILTERED_IN_JAVA.containsKey(target + " " + view));
                 if (filtered) {
                     assertThat(computed).as("%s holds only rows %s compute for the capturing graph",
                             target, stage.ruleViews())
