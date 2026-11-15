@@ -28,13 +28,15 @@ import java.util.Map;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * A node id naming one node type, filtering a field over a union, emitted from the store and run
  * against PostgreSQL on every table the field's rows are on: each participant decodes the id alike
  * and selects what the same filter written by hand by jOOQ selects there, over a foreign key of its
- * own or over the path it states. An id each participant decodes as a node of its own is not emitted
- * yet. Read over the {@code scenarios/condition-participant} fact document.
+ * own or over the path it states. An id each participant decodes as a node of its own goes to the
+ * participant whose type id it carries, every other answering no row for it. Read over the
+ * {@code scenarios/condition-participant} fact document.
  */
 @ExecutionTier
 class ConditionParticipantExecutionTest {
@@ -116,19 +118,97 @@ class ConditionParticipantExecutionTest {
     }
 
     @Test
-    @DisplayName("an id of one node type is emitted on every table the field's rows are on; one each participant decodes as its own is not yet")
-    void oneNodeTypeIsEmittedOnEveryTable() {
+    @DisplayName("a node id is emitted on every table the field's rows are on, of one node type or one per participant")
+    void everyNodeIdIsEmittedOnEveryTable() {
         assertThat(results).containsOnlyKeys("occupantById_customer", "occupantById_staff",
+            "occupantByOptionalId_customer", "occupantByOptionalId_staff",
+            "occupantsByIds_customer", "occupantsByIds_staff",
             "occupantsByAddress_customer", "occupantsByAddress_staff",
             "stockByLanguage_film", "stockByLanguage_inventory");
-        assertThat(results).allSatisfy((name, result) -> {
-            if (name.startsWith("occupantById")) {
-                assertThat(result).as(name).isEqualTo(new ConditionEmitter.Result.NotYet(
-                    ConditionEmitter.Reason.NODE_ID_PARTICIPANT, "Query.occupantById(id:)"));
-            } else {
-                assertThat(result).as(name).isInstanceOf(ConditionEmitter.Result.Emitted.class);
-            }
-        });
+        assertThat(results).allSatisfy((name, result) ->
+            assertThat(result).as(name).isInstanceOf(ConditionEmitter.Result.Emitted.class));
+    }
+
+    @Test
+    @DisplayName("a list of customer and staff ids selects on each participant only the rows its own ids name")
+    void aMixedListSelectsEachParticipantsOwnRows() throws Exception {
+        var customer = Tables.CUSTOMER;
+        var staff = Tables.STAFF;
+        var args = Map.<String, Object>of("ids", List.of(id("Customer", 1), id("Staff", 2), id("Customer", 3)));
+
+        assertThat(keys(customer, customer.CUSTOMER_ID, condition("occupantsByIds_customer", customer, args)))
+            .containsExactly(1, 3);
+        assertThat(keys(staff, staff.STAFF_ID, condition("occupantsByIds_staff", staff, args)))
+            .containsExactly(2);
+    }
+
+    @Test
+    @DisplayName("a list of staff ids alone selects no customer, and a list of nulls no row on either")
+    void aListOfOtherTypesSelectsNothing() throws Exception {
+        var customer = Tables.CUSTOMER;
+        var staff = Tables.STAFF;
+        var staffOnly = Map.<String, Object>of("ids", List.of(id("Staff", 1), id("Staff", 2)));
+
+        assertThat(keys(customer, customer.CUSTOMER_ID, condition("occupantsByIds_customer", customer, staffOnly)))
+            .isEmpty();
+        assertThat(keys(staff, staff.STAFF_ID, condition("occupantsByIds_staff", staff, staffOnly)))
+            .containsExactly(1, 2);
+        var nulls = new HashMap<String, Object>();
+        nulls.put("ids", java.util.Arrays.asList((Object) null));
+        assertThat(keys(customer, customer.CUSTOMER_ID, condition("occupantsByIds_customer", customer, nulls)))
+            .isEmpty();
+        assertThat(keys(staff, staff.STAFF_ID, condition("occupantsByIds_staff", staff, nulls)))
+            .isEmpty();
+    }
+
+    @Test
+    @DisplayName("an empty or absent id list, or an absent optional id, filters neither participant")
+    void anEmptyOrAbsentIdFiltersNothing() throws Exception {
+        var customer = Tables.CUSTOMER;
+        var staff = Tables.STAFF;
+        var everyCustomer = keys(customer, customer.CUSTOMER_ID, DSL.noCondition());
+        var everyStaff = keys(staff, staff.STAFF_ID, DSL.noCondition());
+
+        for (var args : List.<Map<String, Object>>of(Map.of("ids", List.of()), Map.of())) {
+            assertThat(keys(customer, customer.CUSTOMER_ID, condition("occupantsByIds_customer", customer, args)))
+                .as("customers by %s", args).isEqualTo(everyCustomer).isNotEmpty();
+            assertThat(keys(staff, staff.STAFF_ID, condition("occupantsByIds_staff", staff, args)))
+                .as("staff by %s", args).isEqualTo(everyStaff).isNotEmpty();
+        }
+        assertThat(keys(customer, customer.CUSTOMER_ID, condition("occupantByOptionalId_customer", customer, Map.of())))
+            .isEqualTo(everyCustomer);
+        assertThat(keys(staff, staff.STAFF_ID, condition("occupantByOptionalId_staff", staff, Map.of())))
+            .isEqualTo(everyStaff);
+    }
+
+    @Test
+    @DisplayName("a single id selects its row on its own participant and none on the other")
+    void aSingleIdOfTheOtherTypeSelectsNothing() throws Exception {
+        var customer = Tables.CUSTOMER;
+        var staff = Tables.STAFF;
+        for (var field : List.of("occupantById", "occupantByOptionalId")) {
+            var staffId = Map.<String, Object>of("id", id("Staff", 2));
+            var customerId = Map.<String, Object>of("id", id("Customer", 2));
+            assertThat(keys(customer, customer.CUSTOMER_ID, condition(field + "_customer", customer, staffId)))
+                .as(field).isEmpty();
+            assertThat(keys(staff, staff.STAFF_ID, condition(field + "_staff", staff, staffId)))
+                .as(field).containsExactly(2);
+            assertThat(keys(customer, customer.CUSTOMER_ID, condition(field + "_customer", customer, customerId)))
+                .as(field).containsExactly(2);
+            assertThat(keys(staff, staff.STAFF_ID, condition(field + "_staff", staff, customerId)))
+                .as(field).isEmpty();
+        }
+    }
+
+    @Test
+    @DisplayName("an id of a participant's own type that does not decode is refused there")
+    void anUndecodableIdOfItsOwnTypeIsRefused() throws Exception {
+        var args = Map.<String, Object>of("ids", List.of(id("Customer", "not-a-key")));
+        assertThatThrownBy(() -> condition("occupantsByIds_customer", Tables.CUSTOMER, args))
+            .isInstanceOf(java.lang.reflect.InvocationTargetException.class)
+            .cause().hasMessageContaining("not a valid Customer id");
+        assertThat(keys(Tables.STAFF, Tables.STAFF.STAFF_ID, condition("occupantsByIds_staff", Tables.STAFF, args)))
+            .isEmpty();
     }
 
     @Test

@@ -52,7 +52,9 @@ import java.util.regex.Pattern;
  * <p>A node id is decoded through a helper of its own into a record, refused as the client's error
  * where it is not an id of its type, and its key compared as a row value where it has several
  * columns: on the condition's own table where the id decodes onto it, its own key or the one foreign
- * key referencing the node, and otherwise on the table its path lands on.
+ * key referencing the node, and otherwise on the table its path lands on. A node id each participant
+ * of the field decodes as a node of its own is dispatched by the type id: each participant decodes
+ * only the ids carrying its own type id, and an id of another participant's type answers no row there.
  *
  * <p>A list of input objects compares each element as one row, its fields grouped under the list the
  * store says they are read through: the column, or the row of columns, a member of the elements' rows
@@ -102,13 +104,6 @@ public final class ConditionEmitter {
         REACHED,
         /** A term is a node id the store cannot state a decode of into the table it lands on. */
         NODE_ID,
-        /**
-         * A term is a node id each participant of its field decodes as a node of its own, binding one
-         * node table per participant, where an id of another participant's type answers no row on
-         * that branch rather than a refusal. A node id naming one node type binds one table and is
-         * decoded on every participant alike.
-         */
-        NODE_ID_PARTICIPANT,
         /**
          * A term is read through a list of input objects whose elements cannot be compared as rows: an
          * element field that is a list, under a second list, a node id or bound to no column, or element
@@ -204,6 +199,11 @@ public final class ConditionEmitter {
         var helpers = new java.util.ArrayList<MethodSpec>();
         for (var term : plain) {
             var local = local(term, locals);
+            if (term.nodeIdBindings() > 1) {
+                participant(method, adds, helpers, term, participantDecode(row, term, decodes).orElseThrow(),
+                    name + "_" + local, local, locals, counter, runtime.decode());
+                continue;
+            }
             if (term.nodeId()) {
                 var decode = decodeOnto(row, term, decodes).orElseThrow();
                 var onOwn = decode.recordClass().equals(row.table().recordClassName());
@@ -603,7 +603,10 @@ public final class ConditionEmitter {
     private static Optional<Reason> reasonFor(ConditionQuery.Row row, ConditionQuery.Term term,
                                               NodeIdDecodeQuery decodes) {
         if (term.nodeId()) {
-            if (term.nodeIdBindings() > 1) return Optional.of(Reason.NODE_ID_PARTICIPANT);
+            if (term.nodeIdBindings() > 1) {
+                return participantDecode(row, term, decodes).isPresent() ? Optional.empty()
+                    : Optional.of(Reason.NODE_ID);
+            }
             if (decodeOnto(row, term, decodes).isEmpty()) return Optional.of(Reason.NODE_ID);
             return Optional.empty();
         }
@@ -645,6 +648,75 @@ public final class ConditionEmitter {
     }
 
     /**
+     * Where a node id each participant decodes as a node of its own decodes on the row's table: onto
+     * the table itself, as the node the id binds there, which carries the type id an id must carry to
+     * be decoded there. Empty where the id binds no node on the row's table or the decode is not stated.
+     */
+    private static Optional<NodeIdDecodeQuery.Decode> participantDecode(ConditionQuery.Row row,
+                                                                        ConditionQuery.Term term,
+                                                                        NodeIdDecodeQuery decodes) {
+        if (term.ownTypeId() == null) return Optional.empty();
+        return decodes.resolve(term.coordinate(), row.bound(), Optional.of(row.table().recordClassName()))
+            instanceof NodeIdDecodeQuery.Resolution.Resolved own ? Optional.of(own.decode()) : Optional.empty();
+    }
+
+    /**
+     * A node id term each participant decodes as a node of its own: of the ids on the wire, this
+     * participant keeps those carrying its own type id, peeked off each id, and decodes only those onto
+     * its table, so an id goes to the participant whose type id it carries and no other decodes it. An
+     * id of this participant's type that does not decode is a client error, as any node id's is.
+     *
+     * <p>Absent, or a list empty on the wire, filters nothing. A list whose ids all name other types,
+     * or a single id of another type, answers no row on this participant.
+     */
+    private static void participant(MethodSpec.Builder method, CodeBlock.Builder adds, List<MethodSpec> helpers,
+                                    ConditionQuery.Term term, NodeIdDecodeQuery.Decode decode, String helper,
+                                    String local, Set<String> locals, int[] counter,
+                                    NodeIdDecodeEmitter.Runtime runtime) {
+        var record = SessionIdentityRows.classOf(decode.recordClass());
+        var type = term.list() ? ParameterizedTypeName.get(LIST, record) : record;
+        var decoder = helper + "Decode";
+        helpers.add(NodeIdDecodeEmitter.parameterHelper(decoder, type,
+            new BuildQuery.Result.Decoded(List.of(decode), "RECORD", Optional.empty(),
+                term.list() ? "java.util.List" : decode.recordClass()),
+            runtime));
+        var own = MethodSpec.methodBuilder(helper)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(type)
+            .addParameter(Object.class, "wire");
+        if (term.list()) {
+            own.addStatement("if (!(wire instanceof $T<?> ids) || ids.isEmpty()) return null",
+                    ClassName.get("java.util", "Collection"))
+                .addStatement("$T<$T> kept = new $T<>()", LIST, String.class, ARRAY_LIST)
+                .beginControlFlow("for ($T element : ids)", Object.class)
+                .addStatement("if (element instanceof $T id && $S.equals($T.peekTypeId(id))) kept.add(id)",
+                    String.class, term.ownTypeId(), runtime.nodeIdEncoder())
+                .endControlFlow()
+                .addStatement("return $L(kept)", decoder);
+        } else {
+            own.addStatement("if (!(wire instanceof $T id) || !$S.equals($T.peekTypeId(id))) return null",
+                    String.class, term.ownTypeId(), runtime.nodeIdEncoder())
+                .addStatement("return $L(id)", decoder);
+        }
+        helpers.add(own.build());
+        var compare = keyCompare(term, decode, local, "table", counter);
+        if (term.list()) {
+            // Null where the wire list is absent or empty; empty where it names only other types.
+            method.addStatement("$T $L = $L($L)", type, local, helper, read(term.names(), counter));
+            adds.addStatement("if ($L != null) conditions.add($L.isEmpty() ? $T.falseCondition() : $L)",
+                local, local, DSL, compare);
+            return;
+        }
+        // Null where the id is absent or of another type; the wire tells the two apart.
+        var wire = fresh(local + "Wire", locals);
+        method.addStatement("$T $L = $L", Object.class, wire, read(term.names(), counter));
+        method.addStatement("$T $L = $L($L)", type, local, helper, wire);
+        var predicate = CodeBlock.of("$L == null ? $T.falseCondition() : $L", local, DSL, compare);
+        adds.addStatement(term.present() ? CodeBlock.of("conditions.add($L)", predicate)
+            : CodeBlock.of("if ($L != null) conditions.add($L)", wire, predicate));
+    }
+
+    /**
      * A node id term: its id decoded, through a helper of its own, into a record of the table its path
      * lands on, or a list of them, whose key columns are compared with the same columns of that table:
      * by equality or membership, as a row value where the key has several columns. An id the decode
@@ -660,6 +732,17 @@ public final class ConditionEmitter {
                 term.list() ? "java.util.List" : decode.recordClass()),
             runtime));
         method.addStatement("$T $L = $L($L)", type, local, helper, read(term.names(), counter));
+        return keyCompare(term, decode, local, alias, counter);
+    }
+
+    /**
+     * The decoded record, or list of records, in {@code local} compared on the key columns of
+     * {@code alias}: by equality or membership, as a row value where the key has several columns; a
+     * null element of a list compares as a key of nulls, matching nothing.
+     */
+    private static CodeBlock keyCompare(ConditionQuery.Term term, NodeIdDecodeQuery.Decode decode, String local,
+                                        String alias, int[] counter) {
+        var record = SessionIdentityRows.classOf(decode.recordClass());
         var tables = SessionIdentityRows.classOf(decode.tablesClass());
         var keys = decode.columnJavaNames().stream()
             .map(c -> CodeBlock.of("$T.$L.$L", tables, decode.tableField(), c)).toList();

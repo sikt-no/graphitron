@@ -28,6 +28,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP_ROUTINE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ARGUMENT_STEP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_COLUMN;
@@ -88,11 +89,13 @@ public final class ConditionQuery {
      * a node id there binds, none where it is no node id, whether it is a {@code @lookupKey}, its
      * path's origin, the steps the path takes from the field's table
      * to the column's, none on an empty path, the record class of the table the path lands on,
-     * which a node id decodes into, and the list occurrences above it it is read once per element of.
+     * which a node id decodes into, the list occurrences above it it is read once per element of,
+     * and for a node id binding the row's own table, the type id of the node it binds there, which an
+     * id must carry to be decoded on that table.
      */
     public record Term(String coordinate, ArgumentPath path, Column column, String typeKind,
                        int nodeIdBindings, boolean lookupKey, String origin, List<Step> steps,
-                       String landingRecordClass, List<ListAbove> lists) {
+                       String landingRecordClass, List<ListAbove> lists, String ownTypeId) {
         public Term {
             Objects.requireNonNull(coordinate, "coordinate");
             Objects.requireNonNull(path, "path");
@@ -213,16 +216,18 @@ public final class ConditionQuery {
 
     /**
      * One field occurrence's filters on one table its rows are, a row of its {@code TABLE} binding: the
-     * occurrence, what it produces where it produces anything, the table, the generated terms in
+     * occurrence, the table's bound name as the binding spells it, what it produces where it produces
+     * anything, the table, the generated terms in
      * coordinate order but those an {@code override: true} suppresses, the {@code @condition} calls
      * applied there in coordinate order, a condition on a node id's table among them, and whether a
      * call reads the request context or the session, which the emitted
      * method then takes.
      */
-    public record Row(String coordinate, String producerKind, LiftQuery.Table table, List<Term> terms,
-                      List<Call> calls, boolean takesEnv, boolean takesDsl) {
+    public record Row(String coordinate, String bound, String producerKind, LiftQuery.Table table,
+                      List<Term> terms, List<Call> calls, boolean takesEnv, boolean takesDsl) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
+            Objects.requireNonNull(bound, "bound");
             Objects.requireNonNull(table, "table");
             terms = List.copyOf(terms);
             calls = List.copyOf(calls);
@@ -230,7 +235,8 @@ public final class ConditionQuery {
     }
 
     private record Raw(String coordinate, Column column, String typeKind, int nodeIdBindings, boolean lookupKey,
-                       String origin, String targetType, String landingRecordClass, List<ListAbove> lists) {}
+                       String origin, String targetType, String landingRecordClass, List<ListAbove> lists,
+                       String ownTypeId) {}
 
     private record Applied(Call call, boolean override) {}
 
@@ -304,6 +310,14 @@ public final class ConditionQuery {
         // where each decodes the id as a node of its own.
         var nodeIdBindings = field(select(countDistinct(n.BOUND)).from(n)
             .where(n.GRAPH_NAME.eq(o.GRAPH_NAME), n.COORDINATE.eq(o.COORDINATE)));
+        // The type id of the node a node id binds on the row's own table, which an id must carry to be
+        // decoded there; none where it binds no node on that table.
+        var nt = GRAPHITRON_OCCURRENCE_NODE_ID.as("nt");
+        var gn = GRAPHITRON_NODE;
+        var ownTypeId = field(selectDistinct(gn.TYPE_ID).from(nt)
+            .join(gn).on(gn.GRAPH_NAME.eq(nt.GRAPH_NAME), gn.TYPE_NAME.eq(nt.NODE_TYPE_NAME))
+            .where(nt.GRAPH_NAME.eq(o.GRAPH_NAME), nt.COORDINATE.eq(o.COORDINATE),
+                nt.TABLE_SOURCE_NAME.eq(rbSource), nt.TABLE_SCHEMA.eq(rbSchema), nt.TABLE_NAME.eq(rbTable)));
         // A term is a lookup's key where the argument it is read from carries @lookupKey: the argument
         // itself, or every input field under it.
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
@@ -328,7 +342,7 @@ public final class ConditionQuery {
                 field(exists(selectOne().from(ao).join(d).on(d.GRAPH_NAME.eq(ao.GRAPH_NAME),
                         d.COORDINATE.eq(ao.ELEMENT_COORDINATE), d.DIRECTIVE_NAME.eq("lookupKey"))
                     .where(ao.GRAPH_NAME.eq(o.GRAPH_NAME), ao.COORDINATE.eq(o.ARGUMENT_COORDINATE)))),
-                p.ORIGIN, oc.TABLE_NAME, pn.TARGET_TYPE, lt.RECORD_CLASS_FQN, lists)
+                p.ORIGIN, oc.TABLE_NAME, pn.TARGET_TYPE, lt.RECORD_CLASS_FQN, lists, ownTypeId)
                 .from(o)
                 .join(st).on(st.GRAPH_NAME.eq(o.GRAPH_NAME), st.COORDINATE.eq(o.COORDINATE))
                 .leftJoin(pn).on(pn.GRAPH_NAME.eq(o.GRAPH_NAME), pn.COORDINATE.eq(o.COORDINATE),
@@ -457,7 +471,7 @@ public final class ConditionQuery {
         var out = new ArrayList<Row>();
         store.dsl()
             .select(rbCoordinate, rp.KIND, rt.TABLE_NAME, rt.CLASS_FQN, rs.TABLES_CLASS_FQN, rt.JOOQ_NAME,
-                rt.RECORD_CLASS_FQN, terms, calls)
+                rt.RECORD_CLASS_FQN, terms, calls, rbBound)
             .from(rb)
             .join(fo).on(fo.GRAPH_NAME.eq(rbGraph), fo.COORDINATE.eq(rbCoordinate), fo.KIND.eq("FIELD"))
             .join(rt).on(rt.SOURCE_NAME.eq(rbSource), rt.TABLE_SCHEMA.eq(rbSchema),
@@ -482,19 +496,20 @@ public final class ConditionQuery {
                 var written = r.value8().stream()
                     .map(t -> new Raw(t.value1(), t.value2() == null ? null : new Column(t.value9(), t.value2(),
                         t.value3(), t.value4()), t.value5(), t.value6() == null ? 0 : t.value6(),
-                        Boolean.TRUE.equals(t.value7()), t.value8(), t.value10(), t.value11(), t.value12()))
+                        Boolean.TRUE.equals(t.value7()), t.value8(), t.value10(), t.value11(), t.value12(),
+                        t.value13()))
                     .filter(raw -> overriding.stream().noneMatch(at -> under(raw.coordinate(), at, parents)))
                     .map(raw -> new Term(raw.coordinate(), paths.get(raw.coordinate()), raw.column(), raw.typeKind(),
                         raw.nodeIdBindings(), raw.lookupKey(), raw.origin(),
                         steps.getOrDefault(List.of(raw.coordinate(), String.valueOf(raw.targetType())), List.of()),
-                        raw.landingRecordClass(), raw.lists()))
+                        raw.landingRecordClass(), raw.lists(), raw.ownTypeId()))
                     .toList();
                 var made = applied.stream().map(Applied::call).toList();
                 if (r.value8().isEmpty() && made.isEmpty()) {
                     return;
                 }
                 var kinds = made.stream().flatMap(x -> x.fills().stream()).map(Fill::fill).toList();
-                out.add(new Row(r.value1(), r.value2(),
+                out.add(new Row(r.value1(), r.value10(), r.value2(),
                     new LiftQuery.Table(r.value3(), r.value4(), r.value5(), r.value6(), r.value7()), written, made,
                     kinds.contains("CONTEXT_KEY"),
                     kinds.contains("SESSION") || kinds.contains("SESSION_MEMBER")));

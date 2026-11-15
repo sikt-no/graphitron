@@ -212,12 +212,17 @@ class EmissionCensusTest {
             "Query.filmsWithMultiImplicit film", "Query.filmsWithNestedImplicit film",
             "Query.inventoryItemsByIds inventory", "Query.languagesByKeyFiltered language",
             "Query.languagesByKeyGenerated language", "Query.levelIntervals level_interval",
+            "Query.occupantById customer", "Query.occupantById staff",
+            "Query.occupantByOptionalId customer", "Query.occupantByOptionalId staff",
             "Query.occupantsByAddress customer", "Query.occupantsByAddress staff",
             "Query.occupantsByFilter customer", "Query.occupantsByFilter staff",
+            "Query.occupantsByIds customer", "Query.occupantsByIds staff",
+            "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",
             "Query.occupantsByMixedNamePrefix customer", "Query.occupantsByMixedNamePrefix staff",
             "Query.occupantsByName customer", "Query.occupantsByName staff",
             "Query.occupantsByNameConnection customer", "Query.occupantsByNameConnection staff",
             "Query.occupantsByNamePrefix customer", "Query.occupantsByNamePrefix staff",
+            "Query.occupantsByNullableIds customer", "Query.occupantsByNullableIds staff",
             "Query.occupantsByStoreId customer", "Query.occupantsByStoreId staff",
             "Query.occupantsByTypedNamePrefix customer", "Query.occupantsByTypedNamePrefix staff",
             "Query.occupantsStartingWithM customer", "Query.occupantsStartingWithM staff",
@@ -242,10 +247,6 @@ class EmissionCensusTest {
                 "Query.customersByMultiFieldFilter customer", "Query.stockByLanguageOverride film",
                 "Query.stockByLanguageOverride inventory", "Store.customersByAddressDistrict customer",
                 "Store.customersByAddressDistrictSplit customer"))
-            .containsEntry("NODE_ID_PARTICIPANT", List.of("Query.occupantById customer", "Query.occupantById staff", "Query.occupantByOptionalId customer",
-                "Query.occupantByOptionalId staff", "Query.occupantsByIds customer", "Query.occupantsByIds staff",
-                "Query.occupantsByIdsConnection customer", "Query.occupantsByIdsConnection staff",
-                "Query.occupantsByNullableIds customer", "Query.occupantsByNullableIds staff"))
             .containsEntry("NOTHING", List.of("Film.actors actor", "Film.actorsBySplitLookup actor", "Film.actorsOrderedBySplitLookup actor",
                 "Film.filmDetails.actorsByLookup actor", "Film.info.castByKey actor",
                 "Film.inlineBundle.actorsByKey actor", "Film.inlineBundle.actorsByKeyViaJunctionCondition actor",
@@ -255,7 +256,7 @@ class EmissionCensusTest {
                 "Query.languageByKey language", "Query.languageBySingleKey language",
                 "Query.presenceDetailByKey presence_detail", "Query.storeById store",
                 "RoleHolder.rolesByCode role_assignment"))
-            .containsOnlyKeys("AUTHORED_NODE_ID", EMITTED, "NODE_ID_PARTICIPANT", "NOTHING");
+            .containsOnlyKeys("AUTHORED_NODE_ID", EMITTED, "NOTHING");
     }
 
     /**
