@@ -315,25 +315,27 @@ class EmissionCensusTest {
                 "Film.summary", "PivotNestingHost.labels", "PivotNestingHost.labelsComputed",
                 "PivotNestingHost.labelsMixed", "PivotNestingHost.origin", "PivotNestingHost.texts",
                 "PresenceHost.detailRefs", "PresenceHost.holdings", "PresenceHost.holdingsSplit", "Store.location"))
-            .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Actor.recentFilms",
-                "Actor.recentFilmsInferred", "Category.children", "Category.parent", "Customer.address",
-                "Customer.addressByCondition", "Customer.storeAddress", "DivergedRefChild.organisation",
-                "DivergedRefOrg.children", "FanAlpha.details", "FanAlpha.marks", "FanAlpha.target", "FanBeta.details",
-                "FanBeta.marks", "FanBeta.target", "FanItem.details", "Film.Length", "Film.actors",
-                "Film.actorsGenerated", "Film.castActorsViaChain", "Film.castFilms", "Film.castRecentFilms",
-                "Film.sameRow", "FilmActor.actor", "FilmSameRow.film", "FilmSameRow.language",
-                "HostLabelsWithFilms.languageFilms", "Language.filmsByMixedFilter", "Language.filmsInlineByLatestStock",
-                "Language.filmsInlineByOriginalLanguage", "Language.filmsInlineByOriginalLanguageDesc",
-                "PivotNestingHost.labelsComputedRow", "PivotNestingHost.labelsRow", "PivotNestingHost.labelsWithFilms",
-                "PivotNestingHost.languageNames", "PresenceHost.detail", "PresenceHost.detailNode",
-                "PresenceHost.detailRequired", "PresenceHostRefs.detail", "SessionStore.customersOfPrincipal",
-                "SplitFilterParent.targetInline", "Store.customers", "Store.customersByAddressDistrict",
-                "Store.customersByFirstName", "Store.customersByNodeId", "Store.customersFirstN"))
+            .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Category.children",
+                "Category.parent", "Customer.address", "Customer.addressByCondition", "Customer.storeAddress",
+                "DivergedRefChild.organisation", "DivergedRefOrg.children", "FanAlpha.target", "FanBeta.target",
+                "Film.Length", "Film.castActorsViaChain", "Film.castFilms", "Film.sameRow", "FilmActor.actor",
+                "FilmSameRow.film", "FilmSameRow.language", "HostLabelsWithFilms.languageFilms",
+                "Language.filmsInlineByLatestStock", "Language.filmsInlineByOriginalLanguage",
+                "Language.filmsInlineByOriginalLanguageDesc", "PivotNestingHost.labelsComputedRow",
+                "PivotNestingHost.labelsRow", "PivotNestingHost.labelsWithFilms", "PivotNestingHost.languageNames",
+                "PresenceHost.detail", "PresenceHost.detailNode", "PresenceHost.detailRequired",
+                "PresenceHostRefs.detail", "SplitFilterParent.targetInline", "Store.customers"))
+            .containsEntry("NARROWED_LIST", List.of("Actor.recentFilms", "Actor.recentFilmsInferred",
+                "FanAlpha.details", "FanAlpha.marks", "FanBeta.details", "FanBeta.marks", "FanItem.details",
+                "Film.actors", "Film.actorsGenerated", "Film.castRecentFilms", "Language.filmsByMixedFilter",
+                "SessionStore.customersOfPrincipal", "Store.customersByAddressDistrict", "Store.customersByFirstName",
+                "Store.customersByNodeId", "Store.customersFirstN"))
             .containsEntry("PIVOT", List.of("Film.prices", "Film.pricesSplit", "Film.taglineTranslations",
                 "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
             .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
                 "Film.soleActorFirstName"))
-            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NULL_CONTRACT", "PIVOT", "SCALAR_PATH");
+            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "NULL_CONTRACT", "PIVOT",
+                "SCALAR_PATH");
     }
 
     /**
