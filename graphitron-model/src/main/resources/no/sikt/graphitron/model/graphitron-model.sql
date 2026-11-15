@@ -8260,8 +8260,12 @@ SELECT t.graph_name, t.type_name, 'nodeType',
               WHERE d.graph_name = t.graph_name AND d.coordinate = t.type_name
                 AND d.directive_name = 'nodeType') AS INT),
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
-  FROM graphitron_synthesized_node_type_id t
+  -- The node types publishing their wire type id: resolvable, in a graph composing @nodeType.
+  FROM graphitron_node t
   JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name
+ WHERE t.resolvable
+   AND EXISTS (SELECT 1 FROM graphitron_ast_compose_directive_entry c
+                WHERE c.graph_name = t.graph_name AND c.directive_name = '@nodeType')
 UNION ALL
 -- The voucher field of an ISSUE or ACCEPT key is kept from the client schema.
 SELECT k.graph_name, k.type_name || '.' || k.fields, 'inaccessible',
@@ -8330,8 +8334,12 @@ SELECT t.graph_name, t.type_name, 'nodeType',
               WHERE d.graph_name = t.graph_name AND d.coordinate = t.type_name
                 AND d.directive_name = 'nodeType') AS INT),
        'typeId', '"' || REPLACE(REPLACE(t.type_id, '\', '\\'), '"', '\"') || '"'
-  FROM graphitron_synthesized_node_type_id t
-  JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name;
+  -- The node types publishing their wire type id: resolvable, in a graph composing @nodeType.
+  FROM graphitron_node t
+  JOIN graphitron_element e ON e.graph_name = t.graph_name AND e.coordinate = t.type_name
+ WHERE t.resolvable
+   AND EXISTS (SELECT 1 FROM graphitron_ast_compose_directive_entry c
+                WHERE c.graph_name = t.graph_name AND c.directive_name = '@nodeType');
 COMMENT ON VIEW graphitron_directive_application_arg_minted IS 'One of the three sets graphitron_directive_application_arg is the union of: an argument macro expansion passes to an application it adds. For example the fields: "id" and resolvable: true of a synthesised @key are two rows here.';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_minted.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_directive_application_arg_minted.coordinate IS 'the owning application''s coordinate';
@@ -11302,7 +11310,8 @@ COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answ
 CREATE VIEW graphitron_producer_rule (graph_name, type_name, field_name, kind) AS
 WITH claim_count (graph_name, type_name, field_name, claims, kind) AS (
   SELECT f.graph_name, f.type_name, f.field_name, COUNT(DISTINCT c.kind), MIN(c.kind)
-    FROM graphitron_producer_claim c
+    FROM graphitron_claim c
+    JOIN graphitron_claim_kind ck ON ck.kind = c.kind AND ck.family = 'PRODUCER'
     JOIN graphitron_field f ON f.graph_name = c.graph_name AND f.coordinate = c.coordinate
    GROUP BY f.graph_name, f.type_name, f.field_name
 ),
@@ -11393,11 +11402,14 @@ SELECT graph_name, type_name, field_name, kind
                            JOIN graphitron_field pff
                              ON pff.graph_name = pf.graph_name AND pff.type_name = pf.type_name
                             AND pff.field_name = pf.field_name
-                           JOIN graphitron_producer_claim pc
+                           JOIN graphitron_claim pc
                              ON pc.graph_name = pff.graph_name AND pc.coordinate = pff.coordinate
                             AND pc.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
+                           JOIN graphitron_claim_kind pck ON pck.kind = pc.kind AND pck.family = 'PRODUCER'
                           WHERE pf.graph_name = f.graph_name AND pf.target_type_name = f.type_name
-                            AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim pc2
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_claim pc2
+                                              JOIN graphitron_claim_kind pck2
+                                                ON pck2.kind = pc2.kind AND pck2.family = 'PRODUCER'
                                              WHERE pc2.graph_name = pc.graph_name
                                                AND pc2.coordinate = pc.coordinate
                                                AND pc2.kind <> pc.kind))
@@ -22246,7 +22258,8 @@ SELECT f.graph_name, f.type_name, f.field_name,
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_producer p
                     WHERE p.graph_name = f.graph_name AND p.type_name = f.type_name
                       AND p.field_name = f.field_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim c
+   AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
+                     JOIN graphitron_claim_kind ck ON ck.kind = c.kind AND ck.family = 'PRODUCER'
                     WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate)
    -- A union or interface under a row is fetched per table-bound participant, so one with none
    -- reads nothing off the row and nothing fetches it: the field is left without a fetcher. Its own
