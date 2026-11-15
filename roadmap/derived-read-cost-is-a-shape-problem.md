@@ -1698,6 +1698,11 @@ someone to profile.
   `graphitron_connection_facet` and `graphitron_inherited_directive`, plain views, are checked for
   whether a stage writes from them. Each lands as a refactor: the fact documents and a sis capture
   hold the same rows before and after. The two `intent_` views go with their family.
+  * **An outbox target's name is matched once** `open`, off the critical path. The table or routine an
+    outbox names is resolved by one match in `graphitron_outbox_target_rule`, one in
+    `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the
+    configured name into its namespace and name with `REGEXP`. Capture stores the two halves, and one
+    stored relation states the match and how many candidates it met, which all three read.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
 
