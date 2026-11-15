@@ -23,18 +23,14 @@ final class TypeInformationMarkdown {
         if (description != null && !description.isBlank()) sb.append("\n\n").append(description.strip());
         var lines = new ArrayList<String>();
         for (var row : info.rows()) {
-            var held = new StringBuilder("a row of `").append(row.schema()).append(".").append(row.table()).append("`");
+            var source = new StringBuilder("a row of `").append(row.schema()).append(".").append(row.table()).append("`");
             if (row.description() != null && !row.description().isBlank()) {
-                held.append(" · ").append(row.description().strip());
+                source.append(" · ").append(row.description().strip());
             }
-            lines.add(line("Holds", held.toString()));
+            lines.add(line("Is read from", source.toString()));
         }
         for (var cls : info.classes()) {
-            lines.add(line("Holds", "an instance of `" + cls + "`"));
-        }
-        // An object with no class of its own is a carrier graphitron builds: a connection or a payload.
-        if (info.shapes().contains("OBJECT") && info.classes().isEmpty()) {
-            lines.add(line("Holds", "an object graphitron builds"));
+            lines.add(line("Is read from", "an instance of `" + cls + "`"));
         }
         for (var node : info.nodes()) {
             lines.add(line("Node", "id `" + node.typeId() + "`"

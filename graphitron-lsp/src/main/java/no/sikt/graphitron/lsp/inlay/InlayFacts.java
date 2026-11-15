@@ -30,8 +30,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
@@ -101,7 +102,7 @@ final class InlayFacts {
             declaredTypeNames.add(typeName);
         }
 
-        /** A visible type declaration, whose label is the result it holds. */
+        /** A visible type declaration, whose label is what its fields are read from. */
         void typeDeclaration(String typeName) {
             declaredTypeNames.add(typeName);
             backingTypeNames.add(typeName);
@@ -138,11 +139,11 @@ final class InlayFacts {
 
     // ===== The rows the arms return =====
 
-    /** A table whose rows a type holds; several rows are a type reached from several tables. */
-    record ResultTableRow(String typeName, String tableName) {}
+    /** A table a type's fields are read from; several rows are a type reached from several tables. */
+    record SourceTableRow(String typeName, String tableName) {}
 
-    /** A class whose instances a type holds; several rows are producers returning different classes. */
-    record ResultClassRow(String typeName, String className) {}
+    /** A class a type's fields are read from; several rows are producers returning different classes. */
+    record SourceClassRow(String typeName, String className) {}
 
     /** The column a scalar field reads, on the table holding it. */
     record TargetColumnRow(String typeName, String fieldName, String tableName, String columnName) {}
@@ -178,8 +179,8 @@ final class InlayFacts {
 
     /** Every question the region asked, answered. */
     record Answers(
-        List<ResultTableRow> resultTables,
-        List<ResultClassRow> resultClasses,
+        List<SourceTableRow> sourceTables,
+        List<SourceClassRow> sourceClasses,
         List<TargetColumnRow> targetColumns,
         List<MethodRow> methods,
         List<TargetTableRow> targetTables,
@@ -192,16 +193,16 @@ final class InlayFacts {
     ) {
 
         /**
-         * What a type holds, as one word: the table whose rows it holds, else the simple name of the
-         * class whose instances it holds, and nothing where it holds several or none.
+         * What a type is read from, as one word: the table whose rows its fields read, else the simple
+         * name of the class whose instances they read, and nothing where they read several or none.
          */
         Optional<String> typeLabel(String typeName) {
-            var tables = resultTables.stream().filter(row -> row.typeName().equals(typeName))
-                .map(ResultTableRow::tableName).distinct().toList();
+            var tables = sourceTables.stream().filter(row -> row.typeName().equals(typeName))
+                .map(SourceTableRow::tableName).distinct().toList();
             if (tables.size() == 1) return Optional.of(tables.getFirst());
             if (!tables.isEmpty()) return Optional.empty();
-            var classes = resultClasses.stream().filter(row -> row.typeName().equals(typeName))
-                .map(ResultClassRow::className).distinct().toList();
+            var classes = sourceClasses.stream().filter(row -> row.typeName().equals(typeName))
+                .map(SourceClassRow::className).distinct().toList();
             return classes.size() == 1 ? Optional.of(simpleName(classes.getFirst())) : Optional.empty();
         }
 
@@ -320,8 +321,8 @@ final class InlayFacts {
         String graph = store.graphName();
         return store.dsl()
             .select(
-                resultTableArm(store, questions.declaredTypeNames),
-                resultClassArm(store, questions.declaredTypeNames),
+                sourceTableArm(store, questions.declaredTypeNames),
+                sourceClassArm(store, questions.declaredTypeNames),
                 targetColumnArm(store, questions.declaredTypeNames),
                 methodArm(store, questions.declaredTypeNames),
                 targetTableArm(store, questions.declaredTypeNames),
@@ -412,22 +413,37 @@ final class InlayFacts {
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
     }
 
-    /** The tables whose rows the region's types hold. */
-    private static Field<List<ResultTableRow>> resultTableArm(StoreHandle store, Collection<String> typeNames) {
-        var t = GRAPHITRON_RESULT_TABLE;
-        return multiset(selectDistinct(t.TYPE_NAME, t.TABLE_NAME).from(t)
-            .where(t.GRAPH_NAME.eq(store.graphName()), t.TYPE_NAME.in(typeNames))
-            .orderBy(t.TYPE_NAME, t.TABLE_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(ResultTableRow::new)));
+    /**
+     * The tables the region's types' fields are read from, over every occurrence of each. A source an
+     * occurrence's own producer claims, a child's own service record or a root's routine, is what that
+     * field produces and not what its type is read from.
+     */
+    private static Field<List<SourceTableRow>> sourceTableArm(StoreHandle store, Collection<String> typeNames) {
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE;
+        var t = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        return multiset(selectDistinct(f.TYPE_NAME, t.TABLE_NAME).from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE),
+                s.RULE.notIn("ownServiceRecord", "rootRoutine"))
+            .join(t).on(t.GRAPH_NAME.eq(s.GRAPH_NAME), t.COORDINATE.eq(s.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
+            .orderBy(f.TYPE_NAME, t.TABLE_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(SourceTableRow::new)));
     }
 
-    /** The classes whose instances the region's types hold. */
-    private static Field<List<ResultClassRow>> resultClassArm(StoreHandle store, Collection<String> typeNames) {
-        var c = GRAPHITRON_RESULT_CLASS;
-        return multiset(selectDistinct(c.TYPE_NAME, c.CLASS_NAME).from(c)
-            .where(c.GRAPH_NAME.eq(store.graphName()), c.TYPE_NAME.in(typeNames))
-            .orderBy(c.TYPE_NAME, c.CLASS_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(ResultClassRow::new)));
+    /** The classes the region's types' fields are read from, over every occurrence of each. */
+    private static Field<List<SourceClassRow>> sourceClassArm(StoreHandle store, Collection<String> typeNames) {
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var c = GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
+        return multiset(selectDistinct(f.TYPE_NAME, c.CLASS_NAME).from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(c).on(c.GRAPH_NAME.eq(o.GRAPH_NAME), c.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
+            .orderBy(f.TYPE_NAME, c.CLASS_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(SourceClassRow::new)));
     }
 
     /** The columns the region's scalar fields read, on the tables holding them. */
@@ -476,7 +492,10 @@ final class InlayFacts {
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         var ft = GRAPHITRON_FIELD_TARGET;
-        var rt = GRAPHITRON_RESULT_TABLE;
+        var xf = GRAPHITRON_FIELD.as("target_field");
+        var xo = GRAPHITRON_OCCURRENCE.as("target_occurrence");
+        var xs = GRAPHITRON_OCCURRENCE_SOURCE.as("target_source");
+        var xt = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("target_source_table");
         var um = GRAPHQL_UNION_MEMBER;
         var ii = GRAPHQL_IMPLEMENTS_INTERFACE;
         var mt = GRAPHITRON_TABLETYPE.as("member_table");
@@ -494,12 +513,19 @@ final class InlayFacts {
                 .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE), p.START.eq("ROOT"))
                 .join(r).on(r.GRAPH_NAME.eq(p.GRAPH_NAME), r.COORDINATE.eq(p.COORDINATE), r.TABLE_NAME.isNotNull())
                 .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames)))
-            // A root producing a connection or records of no one table: its target's rows' tables.
-            .union(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, rt.TABLE_NAME).from(f)
+            // A root producing a connection or records of no one table: the tables its target's fields
+            // are read from, at the occurrences below this one or, for a target starting chains of its
+            // own, at depth 0. A source a field's own producer claims is what that field produces.
+            .union(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, xt.TABLE_NAME).from(f)
                 .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
                 .join(p).on(p.GRAPH_NAME.eq(o.GRAPH_NAME), p.COORDINATE.eq(o.COORDINATE), p.START.eq("ROOT"))
                 .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME), ft.FIELD_NAME.eq(f.FIELD_NAME))
-                .join(rt).on(rt.GRAPH_NAME.eq(ft.GRAPH_NAME), rt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+                .join(xf).on(xf.GRAPH_NAME.eq(ft.GRAPH_NAME), xf.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+                .join(xo).on(xo.GRAPH_NAME.eq(xf.GRAPH_NAME), xo.ELEMENT_COORDINATE.eq(xf.COORDINATE),
+                    xo.KIND.eq("FIELD"), xo.DEPTH.eq(0).or(xo.COORDINATE.startsWith(o.COORDINATE.concat("."))))
+                .join(xs).on(xs.GRAPH_NAME.eq(xo.GRAPH_NAME), xs.COORDINATE.eq(xo.COORDINATE),
+                    xs.RULE.notIn("ownServiceRecord", "rootRoutine"))
+                .join(xt).on(xt.GRAPH_NAME.eq(xs.GRAPH_NAME), xt.COORDINATE.eq(xs.COORDINATE))
                 .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames)))
             // A root returning a union or an interface that binds no table: each member that binds one.
             .union(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, mt.TABLE_NAME).from(f)

@@ -161,7 +161,7 @@ class DeclarationHoverStatementCountTest {
         // covering the second block: a hover that rendered only the classification would also cost one.
         var hover = hover(file, 0, "type Fi".length());
         assertThat(hover).isPresent();
-        assertThat(hover.get()).contains("**Holds** a row of").contains("rental catalogue");
+        assertThat(hover.get()).contains("**Is read from** a row of").contains("rental catalogue");
         assertThat(statementsForHoverAt(file, 0, "type Fi".length())).isEqualTo(1);
     }
 
@@ -176,7 +176,7 @@ class DeclarationHoverStatementCountTest {
             """);
         var hover = hover(file, 0, "type FilmCa".length());
         assertThat(hover).isPresent();
-        assertThat(hover.get()).contains("**Holds** an instance of");
+        assertThat(hover.get()).contains("**Is read from** an instance of");
         assertThat(statementsForHoverAt(file, 0, "type FilmCa".length())).isEqualTo(1);
     }
 

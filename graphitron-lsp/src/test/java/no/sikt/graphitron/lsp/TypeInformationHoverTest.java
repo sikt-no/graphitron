@@ -104,7 +104,7 @@ class TypeInformationHoverTest {
             """);
         assertThat(hoverAt(file, 0, "type Fi".length()))
             .contains("`type Film`")
-            .contains("**Holds** a row of `public.film`")
+            .contains("**Is read from** a row of `public.film`")
             .doesNotContain("TABLE**")
             .doesNotContain("**Node**");
     }
@@ -118,7 +118,7 @@ class TypeInformationHoverTest {
             """);
         assertThat(hoverAt(file, 0, "type Langu".length()))
             .contains("A language a film is spoken in.")
-            .contains("**Holds** a row of `public.language`")
+            .contains("**Is read from** a row of `public.language`")
             .contains("**Node** id `Language` · keys `language_id`");
     }
 
@@ -158,7 +158,7 @@ class TypeInformationHoverTest {
             """);
         assertThat(hoverAt(file, 0, "type FilmCa".length()))
             .contains("`type FilmCard`")
-            .contains("**Holds** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
+            .contains("**Is read from** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
     }
 
     @Test
@@ -169,8 +169,8 @@ class TypeInformationHoverTest {
             }
             """);
         assertThat(hoverAt(file, 0, "type Conte".length()))
-            .contains("**Holds** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmPojo`")
-            .contains("**Holds** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
+            .contains("**Is read from** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmPojo`")
+            .contains("**Is read from** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
     }
 
     @Test
@@ -182,7 +182,7 @@ class TypeInformationHoverTest {
             """);
         assertThat(hoverAt(file, 0, "type No".length()))
             .contains("`type Note`")
-            .doesNotContain("**Holds**");
+            .doesNotContain("**Is read from**");
     }
 
     @Test
@@ -218,7 +218,7 @@ class TypeInformationHoverTest {
                 title: String
             }
             """);
-        assertThat(hoverAt(file, 0, "extend type Fi".length())).contains("**Holds** a row of `public.film`");
+        assertThat(hoverAt(file, 0, "extend type Fi".length())).contains("**Is read from** a row of `public.film`");
         assertThat(hoverAt(file, 1, "    titl".length())).contains("**Column** `film.title`");
     }
 

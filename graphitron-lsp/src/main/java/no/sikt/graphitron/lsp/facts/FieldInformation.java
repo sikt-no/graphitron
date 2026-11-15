@@ -22,7 +22,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_NEED_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_IMPLEMENTS_INTERFACE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_UNION_MEMBER;
@@ -171,7 +171,10 @@ public final class FieldInformation {
         var jt = GRAPHITRON_TYPE.as("info_landed_type");
         var rp = GRAPHITRON_OCCURRENCE_PRODUCER;
         var pr2 = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
-        var rt = GRAPHITRON_RESULT_TABLE;
+        var xf = GRAPHITRON_FIELD.as("info_target_field");
+        var xo = GRAPHITRON_OCCURRENCE.as("info_target_occurrence");
+        var xs = GRAPHITRON_OCCURRENCE_SOURCE.as("info_target_source");
+        var xt = GRAPHITRON_OCCURRENCE_SOURCE_TABLE.as("info_target_source_table");
         var um = GRAPHQL_UNION_MEMBER;
         var ii = GRAPHQL_IMPLEMENTS_INTERFACE;
         var mt = GRAPHITRON_TABLETYPE.as("info_member_table");
@@ -193,12 +196,19 @@ public final class FieldInformation {
                     t.FIELD_NAME.eq(fieldName))
                 .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD"),
                     pr2.TABLE_NAME.isNotNull()))
-            // A root producing a connection or records of no one table: its target's rows' tables.
-            .union(selectDistinct(t.TARGET_TYPE_NAME, rt.TABLE_SCHEMA, rt.TABLE_NAME).from(o)
+            // A root producing a connection or records of no one table: the tables its target's fields
+            // are read from, at the occurrences below this one or, for a target starting chains of its
+            // own, at depth 0. A source a field's own producer claims is what that field produces.
+            .union(selectDistinct(t.TARGET_TYPE_NAME, xt.TABLE_SCHEMA, xt.TABLE_NAME).from(o)
                 .join(rp).on(rp.GRAPH_NAME.eq(o.GRAPH_NAME), rp.COORDINATE.eq(o.COORDINATE), rp.START.eq("ROOT"))
                 .join(t).on(t.GRAPH_NAME.eq(o.GRAPH_NAME), t.TYPE_NAME.eq(typeName),
                     t.FIELD_NAME.eq(fieldName))
-                .join(rt).on(rt.GRAPH_NAME.eq(t.GRAPH_NAME), rt.TYPE_NAME.eq(t.TARGET_TYPE_NAME))
+                .join(xf).on(xf.GRAPH_NAME.eq(t.GRAPH_NAME), xf.TYPE_NAME.eq(t.TARGET_TYPE_NAME))
+                .join(xo).on(xo.GRAPH_NAME.eq(xf.GRAPH_NAME), xo.ELEMENT_COORDINATE.eq(xf.COORDINATE),
+                    xo.KIND.eq("FIELD"), xo.DEPTH.eq(0).or(xo.COORDINATE.startsWith(o.COORDINATE.concat("."))))
+                .join(xs).on(xs.GRAPH_NAME.eq(xo.GRAPH_NAME), xs.COORDINATE.eq(xo.COORDINATE),
+                    xs.RULE.notIn("ownServiceRecord", "rootRoutine"))
+                .join(xt).on(xt.GRAPH_NAME.eq(xs.GRAPH_NAME), xt.COORDINATE.eq(xs.COORDINATE))
                 .where(o.GRAPH_NAME.eq(graph), o.ELEMENT_COORDINATE.eq(coordinate), o.KIND.eq("FIELD")))
             // A root returning a union or an interface that binds no table: each member that binds one.
             .union(selectDistinct(mt.TYPE_NAME, mt.TABLE_SCHEMA, mt.TABLE_NAME).from(o)

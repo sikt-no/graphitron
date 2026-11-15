@@ -38,8 +38,8 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *       omitted {@code name:}, renders the resolved value as a resolution overlay: text drawn beside
  *       the buffer that the buffer does not contain. {@code @reference}'s omitted {@code path:}
  *       renders nothing until the path discovery implies is stored.</li>
- *   <li><b>Label arm</b>: at a type declaration, what it holds, the table whose rows it holds or the
- *       class whose instances it does; at a field declaration, what it reads, its column, the method
+ *   <li><b>Label arm</b>: at a type declaration, what its fields are read from, the table whose rows
+ *       or the class whose instances they read; at a field declaration, what it reads, its column, the method
  *       it calls or the table its statement lands on.</li>
  *   <li><b>Separate-fetch arm</b>: at a field whose rows come from a statement of its own,
  *       renders one marker word. Its own toggle rather than a second label, because whether a field
@@ -84,7 +84,7 @@ public final class InlayHints {
 
         Position position();
 
-        /** What a visible type declaration holds: its table, or the class of its instances. */
+        /** What a visible type declaration is read from: its table, or the class of its instances. */
         record TypeLabel(Position position, String typeName) implements Pending {}
 
         /** What a visible field declaration reads: its column, the method it calls, or its target table. */
@@ -206,11 +206,11 @@ public final class InlayHints {
 
     /**
      * Labels each visible declaration with what the store states it is: a type with the table whose
-     * rows it holds, or the simple name of the class whose instances it holds; a field with the
-     * column it reads, the method it calls, or the table its statement lands on. A declaration the
-     * store states none of gets no hint, and neither does a type holding several, which is the
-     * hover's to list. The label names a fact, never a category, so it cannot fall out of step with
-     * the generator.
+     * rows its fields are read from, or the simple name of the class whose instances they are read
+     * from; a field with the column it reads, the method it calls, or the table its statement lands
+     * on. A declaration the store states none of gets no hint, and neither does a type read from
+     * several, which is the hover's to list. The label names a fact, never a category, so it cannot
+     * fall out of step with the generator.
      */
     private static void collectClassificationLabels(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file, List<ClaimSite> sites

@@ -190,7 +190,7 @@ class SourceCadenceHoverAndDefinitionTest {
                 }
                 """);
             assertThat(hoverText(store, file, namePos, true))
-                .contains("**Holds** a row of `public.actor`")
+                .contains("**Is read from** a row of `public.actor`")
                 .doesNotContain("The actor table.");
 
             var loc = DeclarationDefinitions.compute(file, store.handle(), namePos).orElseThrow();

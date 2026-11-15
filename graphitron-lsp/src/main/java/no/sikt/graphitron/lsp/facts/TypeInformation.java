@@ -15,9 +15,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -36,7 +38,7 @@ public final class TypeInformation {
     /** The type as declared: its kind and its description, null where none is written. */
     public record Signature(String kind, String description) {}
 
-    /** A row of a table the type holds, with the table's own comment. */
+    /** A table the type's fields are read from, with the table's own comment. */
     public record RowOf(String schema, String table, String description) {}
 
     /** The type's node identity: its type id and key columns in key order. */
@@ -47,7 +49,7 @@ public final class TypeInformation {
 
     /** Everything one statement read about the type. */
     public record Information(
-        Signature signature, List<String> shapes, List<RowOf> rows, List<String> classes, List<Node> nodes,
+        Signature signature, List<RowOf> rows, List<String> classes, List<Node> nodes,
         List<Handler> handlers, List<FieldInformation.Added> added, List<String> defects
     ) {
         /** The store does not know the type, which is a declaration with no block. */
@@ -57,7 +59,6 @@ public final class TypeInformation {
     }
 
     private final Field<List<Signature>> signature;
-    private final Field<List<String>> shapes;
     private final Field<List<RowOf>> rows;
     private final Field<List<String>> classes;
     private final Field<List<Node>> nodes;
@@ -74,27 +75,33 @@ public final class TypeInformation {
             .convertFrom(r -> r.map(Records.mapping(Signature::new)))
             .as("type_info_signature");
 
-        var res = GRAPHITRON_RESULT;
-        shapes = multiset(select(res.SHAPE).from(res)
-            .where(res.GRAPH_NAME.eq(graph), res.TYPE_NAME.eq(typeName))
-            .orderBy(res.SHAPE))
-            .convertFrom(r -> r.map(Record1::value1))
-            .as("type_info_shapes");
-
-        var rt = GRAPHITRON_RESULT_TABLE;
-        var st = SQL_TABLE;
-        rows = multiset(select(rt.TABLE_SCHEMA, rt.TABLE_NAME, st.DESCRIPTION).from(rt)
-            .join(st).on(st.SOURCE_NAME.eq(rt.TABLE_SOURCE_NAME), st.TABLE_SCHEMA.eq(rt.TABLE_SCHEMA),
-                st.TABLE_NAME.eq(rt.TABLE_NAME))
-            .where(rt.GRAPH_NAME.eq(graph), rt.TYPE_NAME.eq(typeName))
-            .orderBy(rt.TABLE_SCHEMA, rt.TABLE_NAME))
+        // What the type's fields are read from, over every occurrence of each: the tables whose rows
+        // they read and the classes whose instances they do. A source an occurrence's own producer
+        // claims, a child's own service record or a root's routine, is what that field produces and
+        // not what the type is read from.
+        var f = GRAPHITRON_FIELD;
+        var o = GRAPHITRON_OCCURRENCE;
+        var s = GRAPHITRON_OCCURRENCE_SOURCE;
+        var st = GRAPHITRON_OCCURRENCE_SOURCE_TABLE;
+        var sql = SQL_TABLE;
+        rows = multiset(selectDistinct(st.TABLE_SCHEMA, st.TABLE_NAME, sql.DESCRIPTION).from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(s).on(s.GRAPH_NAME.eq(o.GRAPH_NAME), s.COORDINATE.eq(o.COORDINATE),
+                s.RULE.notIn("ownServiceRecord", "rootRoutine"))
+            .join(st).on(st.GRAPH_NAME.eq(s.GRAPH_NAME), st.COORDINATE.eq(s.COORDINATE))
+            .join(sql).on(sql.SOURCE_NAME.eq(st.TABLE_SOURCE_NAME), sql.TABLE_SCHEMA.eq(st.TABLE_SCHEMA),
+                sql.TABLE_NAME.eq(st.TABLE_NAME))
+            .where(f.GRAPH_NAME.eq(graph), f.TYPE_NAME.eq(typeName))
+            .orderBy(st.TABLE_SCHEMA, st.TABLE_NAME))
             .convertFrom(r -> r.map(Records.mapping(RowOf::new)))
             .as("type_info_rows");
 
-        var rc = GRAPHITRON_RESULT_CLASS;
-        classes = multiset(select(rc.CLASS_NAME).from(rc)
-            .where(rc.GRAPH_NAME.eq(graph), rc.TYPE_NAME.eq(typeName))
-            .orderBy(rc.CLASS_NAME))
+        var so = GRAPHITRON_OCCURRENCE_SOURCE_OBJECT;
+        classes = multiset(selectDistinct(so.CLASS_NAME).from(f)
+            .join(o).on(o.GRAPH_NAME.eq(f.GRAPH_NAME), o.ELEMENT_COORDINATE.eq(f.COORDINATE), o.KIND.eq("FIELD"))
+            .join(so).on(so.GRAPH_NAME.eq(o.GRAPH_NAME), so.COORDINATE.eq(o.COORDINATE))
+            .where(f.GRAPH_NAME.eq(graph), f.TYPE_NAME.eq(typeName))
+            .orderBy(so.CLASS_NAME))
             .convertFrom(r -> r.map(Record1::value1))
             .as("type_info_classes");
 
@@ -163,13 +170,13 @@ public final class TypeInformation {
 
     /** The arms, in the order the block renders them. */
     public List<Field<?>> fields() {
-        return List.of(signature, shapes, rows, classes, nodes, handlers, added, defects);
+        return List.of(signature, rows, classes, nodes, handlers, added, defects);
     }
 
     /** The information, read off the record the caller's statement returned. */
     public Information read(Record row) {
         var signatures = row.get(signature);
-        return new Information(signatures.isEmpty() ? null : signatures.getFirst(), row.get(shapes),
+        return new Information(signatures.isEmpty() ? null : signatures.getFirst(),
             row.get(rows), row.get(classes), row.get(nodes), row.get(handlers), row.get(added),
             row.get(defects));
     }

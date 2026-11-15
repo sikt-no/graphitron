@@ -28,7 +28,7 @@ import java.util.Optional;
  * <p>A declaration's hover is the information the store states about it, and no classification.
  * A field's is {@link FieldInformation}: its signature, what its fetcher runs or reads, the column or
  * type it reads, where its query starts, the target's node identity, the code it calls, what
- * graphitron adds at it, its written path and its defects. A type's is {@link TypeInformation}: its signature, the result it holds, its node
+ * graphitron adds at it, its written path and its defects. A type's is {@link TypeInformation}: its signature, what its fields are read from, its node
  * identity, its handlers, what graphitron adds at it and its defects. Every line is a key lookup in
  * a stored relation and none reads a view, which {@code EditorReadsNoViewTest} holds, and
  * either hover is one statement, which {@code DeclarationHoverStatementCountTest} holds.

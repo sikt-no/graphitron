@@ -1,0 +1,24 @@
+# A plain type two fields reach, each handing it rows of a different table: Query.rows hands Row the
+# rows films_for_actor returns, and Film.row the film row it is nested in. Each occurrence of Row's
+# field reads what its own parent hands it, so the type is read from both tables and each field
+# returning it from one.
+
+type Row { title: String }
+
+type Film @table(name: "film") {
+  row: Row
+}
+
+type Query {
+  films: [Film!]!
+  rows(actorId: Int!, minLength: Int!): [Row!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_source_table",
+    where: "coordinate IN ('Film.row.title', 'Query.rows.title')", rows: """
+  coordinate,        table_schema, table_name
+  Film.row.title,    public,       film
+  Query.rows.title,  public,       films_for_actor
+  """)
