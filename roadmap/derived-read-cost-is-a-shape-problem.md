@@ -1208,12 +1208,6 @@ pass and no stratum that clears and recomputes.
       `graphitron_occurrence_depth_entry_defect_rule`'s inferred-route arm at
       `occurrence-depth-defects` for one no path is written for, each under its own stage, two statements of one rule with nothing comparing
       them until the arm moves into the depth loop.
-    * **The store states every stage's rule views, claimed by G** `open`. `meta_stage_rule` names the rule views a
-      stage inserts a relation from, and holds only the binding rows today, half a fact. Every
-      stage's rule views go in, the defect rule views among them, and `EntryDefects.RULES` and
-      `StageAnswerAgreementTest.STAGES` are read from it rather than kept as Java lists, so a defect
-      rule view moving between stages moves one row, and the gates comparing a table with its rule
-      and holding a stage to its declared kinds cover a stage the day it lands.
     * **A routine write's refusals are codes a stage writes** `open`. A path the write's result
       leads on is the path family's to judge, `NO_ROUTE_TO_TARGET` at a landing or a payload data
       field no hop reaches and `REFERENCE_WITHOUT_TARGET_TABLE` at a path on a payload return, so
@@ -1667,7 +1661,12 @@ someone to profile.
   Oversized rule views, each a derivation skipped upstream:
   `graphitron_occurrence_condition_parameter_rule`, `graphitron_occurrence_producer_lift_rule` and
   `graphitron_join_path_step_rule`. Each is fixed by storing the skipped derivation at its own
-  grain, priced by `prepare_ms` on a cold capture.
+  grain, priced by `prepare_ms` on a cold capture. Two rule views are still read by another view,
+  `graphitron_occurrence_call_parameter_rule` (by `graphitron_occurrence_call_pin`) and
+  `graphitron_occurrence_connection_rule` (by `graphitron_occurrence_route_entry_defect_rule`), and
+  one view named a rule no stage writes from, `graphitron_entry_defect_parameter_rule`:
+  `StageRuleGateTest` lists all three as debt, each to be stored or folded in, and the lists only
+  shrink.
 * **An outbox target's name is matched once** `open`, off the critical path. The table or routine an
   outbox names is resolved by one match in `graphitron_outbox_target_rule`, one in
   `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the
@@ -3109,6 +3108,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**The store states every stage's rule views** (2026-11-15). `meta_stage_rule` names the rule view
+each stage inserts each relation from, every stage's and not only the bindings', and the Java lists
+beside the gates are gone: `EntryDefects.RULES`, `StageAnswerAgreementTest.STAGES` and its `rule`
+discriminator. The agreement test compares a table with the union of its rules, a supertype's arms
+or two stages' halves of one relation together, and `StageRuleGateTest` holds the rows to the
+catalog's views.
 
 **No rule view uses a window function** (2026-11-15). What a window ranked is stated: a first pick is
 a `NOT EXISTS` against an earlier candidate, a winning priority one against a better priority, a

@@ -1,7 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.capture.code.CodeCapture;
-import no.sikt.graphitron.model.derive.EntryDefects;
 import no.sikt.graphitron.model.derive.ViewReferences;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
@@ -28,7 +27,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * to the roster here. The declared writes are held to what the stages write by
  * {@code StageWriteGateTest}, over every fact document's captures.
  *
- * <p>The rule views checked are the owner stages' defect rules, {@link EntryDefects#RULES}; a stage
+ * <p>The rule views checked are the owner stages' defect rules, {@code meta_stage_rule}; a stage
  * whose rule is Java code states no read set this gate can see, as {@code StageOrderGateTest} says of
  * the derivation gatherer.
  */
@@ -80,14 +79,14 @@ class StageRosterGateTest {
             var declared = declaredWrites(dsl);
             var kinds = declaredKinds(dsl);
             var violations = new TreeSet<String>();
-            for (var rule : EntryDefects.RULES) {
+            for (var rule : no.sikt.graphitron.model.derive.StageAnswerAgreementTest.defectRules(dsl)) {
                 var stage = dsl.selectFrom(META_STAGE)
                     .where(META_STAGE.STAGE_NAME.eq(rule.stage())).fetchSingle();
                 var later = dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
                     .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
                     .and(META_STAGE.POSITION.gt(stage.getPosition()))
                     .fetch(META_STAGE.STAGE_NAME);
-                String view = rule.view().getName().toLowerCase(Locale.ROOT);
+                String view = rule.view();
                 var reached = ViewReferences.tablesReachedBy(dsl, view);
                 for (String laterStage : later) {
                     for (String written : declared.getOrDefault(laterStage, Set.of())) {

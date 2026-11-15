@@ -52,194 +52,102 @@ public class StageAnswerAgreementTest {
 
 
     /**
-     * One stage: the table it writes and the view stating the rule it inserts from, and where several
-     * rules write one table, the value of its {@code rule} column that is this rule's rows.
+     * One stage-written table and the rule views its stages insert it from, as {@code meta_stage_rule}
+     * states them: the table holds exactly what their rules compute together. Several views writing
+     * one table, a supertype's rule arms or two stages' halves of a relation split by kind, are
+     * compared as their union, each view's rows being the table's.
      */
-    public record Stage(String target, String ruleView, String rule) {
-        public Stage(String target, String ruleView) {
-            this(target, ruleView, null);
-        }
+    public record Stage(String target, List<String> ruleViews) {}
+
+    /**
+     * Every stage-written table and its rule views, read from the store's own statement of them, so
+     * a stage taking a rule view of its own is compared the day its row lands.
+     */
+    public static List<Stage> stages(DSLContext dsl) {
+        var byTarget = new TreeMap<String, List<String>>();
+        dsl.select(META_STAGE_RULE.RELATION_NAME, META_STAGE_RULE.RULE_VIEW).from(META_STAGE_RULE)
+            .orderBy(META_STAGE_RULE.RELATION_NAME, META_STAGE_RULE.RULE_VIEW)
+            .fetch()
+            .forEach(r -> byTarget.computeIfAbsent(r.value1(), x -> new ArrayList<>()).add(r.value2()));
+        return byTarget.entrySet().stream()
+            .map(e -> new Stage(e.getKey(), List.copyOf(new TreeSet<>(e.getValue()))))
+            .toList();
+    }
+
+    /** One stage's rule view inserting {@code graphitron_entry_defect}. */
+    public record DefectRule(String stage, String view) {}
+
+    /** The defect rule views and the stages raising from them, as {@code meta_stage_rule} states them. */
+    public static List<DefectRule> defectRules(DSLContext dsl) {
+        return dsl.select(META_STAGE_RULE.STAGE_NAME, META_STAGE_RULE.RULE_VIEW).from(META_STAGE_RULE)
+            .where(META_STAGE_RULE.RELATION_NAME.eq("graphitron_entry_defect"))
+            .orderBy(META_STAGE_RULE.STAGE_NAME)
+            .fetch(r -> new DefectRule(r.value1(), r.value2()));
     }
 
     /**
-     * The defect table several stages write, each from a rule view of its own, beside the walk,
-     * which writes its defects as it goes and has no view. Each rule's rows are held, and every held
-     * row one of the rules' stages raised is one some rule computes, each row naming the stage that
-     * raised it.
+     * The stages that insert {@code target} from a rule view, where its rows name the stage that wrote
+     * them: the defects, raised beside the walk, which writes its own as it goes and has no view.
      */
-    public static final String DEFECTS = "graphitron_entry_defect";
-
-    /**
-     * The defect rule views and the stages that run them, read from the writer's own list so a stage
-     * taking codes of its own is compared the day it lands.
-     */
-    private static final Map<String, String> DEFECT_RULES = EntryDefects.RULES.stream()
-        .collect(java.util.stream.Collectors.toMap(
-            rule -> rule.view().getName().toLowerCase(java.util.Locale.ROOT), EntryDefects.Rule::stage));
-
-    /**
-     * The stage-written tables and their rules, in stage order. Public because the scoping half of
-     * the same equality, across two graphs in one store, is checked in the generator's module.
-     */
-    public static final List<Stage> STAGES = List.of(
-        new Stage("code_graph_class", "code_graph_class_rule"),
-        new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
-        new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
-        new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
-        new Stage("graphitron_carrier_directive", "graphitron_carrier_directive_rule"),
-        new Stage("graphitron_inherited_directive", "graphitron_inherited_directive_rule"),
-        new Stage("graphitron_connection_carrier", "graphitron_connection_carrier_rule"),
-        new Stage("graphitron_facet_binding", "graphitron_facet_binding_rule"),
-        new Stage("graphitron_connection_facet", "graphitron_connection_facet_rule"),
-        new Stage("graphitron_type_member", "graphitron_type_member_rule"),
-        new Stage("graphitron_scalar_class", "graphitron_scalar_class_rule"),
-        new Stage("graphitron_occurrence_input_type", "graphitron_occurrence_input_type_rule"),
-        new Stage("graphitron_edge", "graphitron_edge_rule"),
-        new Stage("graphitron_occurrence_nesting", "graphitron_occurrence_nesting_rule"),
-        new Stage("graphitron_connection", "graphitron_connection_rule"),
-        new Stage("graphitron_field_position", "graphitron_field_position_rule"),
-        new Stage("graphitron_field_target", "graphitron_field_target_rule"),
-        new Stage("graphitron_path_element_key", "graphitron_path_element_key_rule"),
-        new Stage("graphitron_path_element_primary_key", "graphitron_path_element_primary_key_rule"),
-        new Stage("graphitron_path_element_table", "graphitron_path_element_table_rule"),
-        new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
-        new Stage("graphitron_occurrence_list_element", "graphitron_occurrence_list_element_rule"),
-        new Stage("graphitron_occurrence_overridden", "graphitron_occurrence_overridden_rule"),
-        new Stage("graphitron_occurrence_list_element_defect", "graphitron_occurrence_list_element_defect_rule"),
-        new Stage("graphitron_occurrence_lookup_key", "graphitron_occurrence_lookup_key_rule"),
-        new Stage("graphitron_occurrence_node_id_carried", "graphitron_occurrence_node_id_carried_rule"),
-        new Stage("graphitron_field_many", "graphitron_field_many_rule"),
-        new Stage("graphitron_sort_enum", "graphitron_sort_enum_rule"),
-        new Stage("graphitron_order_input", "graphitron_order_input_rule"),
-        new Stage("graphitron_occurrence_order", "graphitron_occurrence_order_rule"),
-        new Stage("graphitron_occurrence_order_index", "graphitron_occurrence_order_index_rule"),
-        new Stage("graphitron_occurrence_sort_key", "graphitron_occurrence_sort_key_rule"),
-        new Stage("graphitron_occurrence_sort_key_column", "graphitron_occurrence_sort_key_column_rule"),
-        new Stage("graphitron_occurrence_sort_key_method", "graphitron_occurrence_sort_key_method_rule"),
-        new Stage("graphitron_field_handed_class", "graphitron_field_handed_class_rule"),
-        new Stage("graphitron_field_handed_record", "graphitron_field_handed_record_rule"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_declaring_table_rule", "declaringTable"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_root_routine_rule", "rootRoutine"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_root_routine_rule", "rootRoutine"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_own_service_record_rule", "ownServiceRecord"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_own_service_record_rule", "ownServiceRecord"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_record_parameter_rule", "recordParameter"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_record_parameter_rule", "recordParameter"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_target_rule", "argumentTarget"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_target_rule", "argumentTarget"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_member_rule", "argumentMember"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_member_rule", "argumentMember"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_write_rule", "argumentWrite"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_write_rule", "argumentWrite"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_record_rule", "record"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_record_rule", "record"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_object_rule", "object"),
-        new Stage("graphitron_occurrence_source_claim_object", "graphitron_occurrence_source_claim_object_rule", "object"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_object_member_rule", "objectMember"),
-        new Stage("graphitron_occurrence_source_claim_object", "graphitron_occurrence_source_claim_object_member_rule", "objectMember"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_write_payload_rule", "writePayload"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_write_payload_rule", "writePayload"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_write_payload_member_rule", "writePayloadMember"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_write_payload_member_rule", "writePayloadMember"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_nested_copy_rule", "nestedCopy"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_nested_copy_rule", "nestedCopy"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_nested_path_rule", "nestedPath"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_nested_path_rule", "nestedPath"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_copy_rule", "argumentCopy"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_copy_rule", "argumentCopy"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_argument_path_rule", "argumentPath"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_argument_path_rule", "argumentPath"),
-        new Stage("graphitron_occurrence_source_claim", "graphitron_occurrence_source_claim_input_field_copy_rule", "inputFieldCopy"),
-        new Stage("graphitron_occurrence_source_claim_table", "graphitron_occurrence_source_claim_input_field_copy_rule", "inputFieldCopy"),
-        new Stage("graphitron_occurrence_source", "graphitron_occurrence_source_rule"),
-        new Stage("graphitron_occurrence_source_table", "graphitron_occurrence_source_table_rule"),
-        new Stage("graphitron_occurrence_source_object", "graphitron_occurrence_source_object_rule"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_field_table_bound_rule", "fieldTableBound"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_field_member_rule", "fieldMember"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_field_unbound_rule", "fieldUnbound"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_argument_copy_rule", "argumentCopy"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_record_parameter_rule", "recordParameter"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_argument_table_bound_rule", "argumentTableBound"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_argument_member_rule", "argumentMember"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_argument_unbound_rule", "argumentUnbound"),
-        new Stage("graphitron_path_need_claim", "graphitron_path_need_claim_input_field_copy_rule", "inputFieldCopy"),
-        new Stage("graphitron_path_need_table", "graphitron_path_need_table_rule"),
-        new Stage(DEFECTS, "graphitron_entity_key_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_occurrence_lookup_key_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_occurrence_order_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_occurrence_build_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_occurrence_depth_entry_defect_rule"),
-        new Stage(DEFECTS, "graphitron_outbox_entry_defect_rule"));
+    private static Set<String> ruleStages(DSLContext dsl, String target) {
+        return new TreeSet<>(dsl.selectDistinct(META_STAGE_RULE.STAGE_NAME).from(META_STAGE_RULE)
+            .where(META_STAGE_RULE.RELATION_NAME.eq(target)).fetch(META_STAGE_RULE.STAGE_NAME));
+    }
 
     @Test
-    @DisplayName("every stage-written table holds exactly its rule's rows, both directions")
+    @DisplayName("every stage-written table holds exactly its rules' rows, both directions")
     void everyStageAgreesWithTheRuleItInsertsFrom() {
         var disagreements = new ArrayList<String>();
         eachReading((graphs, dsl) -> {
-            for (Stage stage : STAGES) {
-                if (stage.target().equals(DEFECTS)) {
-                    continue;
-                }
+            for (Stage stage : stages(dsl)) {
+                var columns = sharedColumns(dsl, stage);
+                var held = held(dsl, stage, columns);
                 for (var graph : graphs) {
-                    difference(dsl, graph, stage, true).forEach(row ->
-                        disagreements.add(stage.target() + " holds a row " + stage.ruleView()
-                            + " does not compute (" + graph + "): " + row));
+                    for (var view : stage.ruleViews()) {
+                        dsl.selectFrom(computed(view, columns, graph).except(held.apply(graph)))
+                            .fetch().forEach(row -> disagreements.add(view + " computes a row "
+                                + stage.target() + " does not hold (" + graph + "): " + row));
+                    }
+                    var union = stage.ruleViews().stream()
+                        .<org.jooq.Select<org.jooq.Record>>map(view -> computed(view, columns, graph))
+                        .reduce((left, right) -> left.union(right)).orElseThrow();
+                    dsl.selectFrom(held.apply(graph).except(union))
+                        .fetch().forEach(row -> disagreements.add(stage.target() + " holds a row no rule"
+                            + " of " + stage.ruleViews() + " computes (" + graph + "): " + row));
                 }
-                for (var graph : graphs) {
-                    difference(dsl, graph, stage, false).forEach(row ->
-                        disagreements.add(stage.ruleView() + " computes a row " + stage.target()
-                            + " does not hold (" + graph + "): " + row));
-                }
-            }
-            for (var rule : DEFECT_RULES.keySet()) {
-                for (var graph : graphs) {
-                    dsl.selectFrom(defectRule(dsl, graph, rule).except(defectTable(dsl, graph)))
-                        .fetch().forEach(row -> disagreements.add(rule + " computes a row " + DEFECTS
-                            + " does not hold (" + graph + "): " + row));
-                }
-            }
-            for (var graph : graphs) {
-                var computed = DEFECT_RULES.keySet().stream()
-                    .<org.jooq.Select<org.jooq.Record>>map(rule -> defectRule(dsl, graph, rule))
-                    .reduce((left, right) -> left.union(right)).orElseThrow();
-                dsl.selectFrom(defectTable(dsl, graph)
-                        .and(field(name("STAGE"), String.class).in(DEFECT_RULES.values()))
-                        .except(computed))
-                    .fetch().forEach(row -> disagreements.add(DEFECTS + " holds a row the rules'"
-                        + " stages raised that no rule computes (" + graph + "): " + row));
             }
         });
         assertThat(disagreements)
-            .as("a table's row its rule does not compute is a previous capture's row the stage did"
+            .as("a table's row its rules do not compute is a previous capture's row the stage did"
                 + " not clear, or one written twice; a rule's row its table lacks is one the stage"
                 + " did not write")
             .isEmpty();
     }
 
     /**
-     * Every stage's table holds rows somewhere, so no agreement above is between two empty
-     * relations. The floor every conversion
-     * owes and the one a new stage cannot land without meeting: a stage no document reaches wants
-     * a document that reaches it.
+     * Every stage's rule view yields rows somewhere, so no agreement above is between two empty
+     * relations. The floor every conversion owes and the one a new stage cannot land without meeting:
+     * a rule no document reaches wants a document that reaches it.
      */
     @Test
-    @DisplayName("every stage-written table holds rows")
+    @DisplayName("every stage's rule view yields rows")
     void noStageIsComparedOverAnEmptyRelation() {
+        var views = new TreeSet<String>();
         var populated = new HashSet<String>();
         eachReading((graphs, dsl) -> {
-            for (var stage : STAGES) {
+            stages(dsl).forEach(stage -> views.addAll(stage.ruleViews()));
+            for (var view : views) {
                 for (var graph : graphs) {
-                    if (populated.contains(stage.ruleView())) {
+                    if (populated.contains(view)) {
                         break;
                     }
-                    if (dsl.fetchExists(table(name(stage.ruleView().toUpperCase())), inGraph(graph))) {
-                        populated.add(stage.ruleView());
+                    if (dsl.fetchExists(table(name(view.toUpperCase())), inGraph(graph))) {
+                        populated.add(view);
                     }
                 }
             }
         });
-        assertThat(STAGES.stream().map(Stage::ruleView).filter(t -> !populated.contains(t)).toList())
+        assertThat(views.stream().filter(view -> !populated.contains(view)).toList())
             .as("stage rules no fact document reaches; add a document that reaches one")
             .isEmpty();
     }
@@ -338,38 +246,36 @@ public class StageAnswerAgreementTest {
     }
 
     /**
-     * The rows the stage's table holds and its rule does not compute ({@code tableSide}), or the
-     * reverse, compared on the rule's own columns. A table marking and sweeping carries the
-     * reading's instant beside what the rule states, and the instant is the writer's, not the
-     * rule's, so it is no part of whether the two agree.
+     * The columns the table and every rule view writing it carry: what they are compared over. A
+     * table marking and sweeping carries the reading's instant beside what the rules state, and the
+     * instant is the writer's, not the rules', so it is no part of whether they agree; a supertype
+     * holding several rules' rows carries the rule's key and not its payload, which its subtype
+     * compares.
      */
-    private static List<String> difference(DSLContext dsl, String graph, Stage stage, boolean tableSide) {
-        // The columns both carry: a supertype holding several rules' rows carries the rule's key and
-        // not its payload, which the subtype beside it compares.
-        var targetColumns = columns(dsl, stage.target()).stream().map(org.jooq.Field::getName).toList();
-        var columns = columns(dsl, stage.ruleView()).stream()
-            .filter(column -> targetColumns.contains(column.getName())).toList();
-        var held = select(columns).from(table(name(stage.target().toUpperCase()))).where(inGraph(graph))
-            .and(stage.rule() == null ? org.jooq.impl.DSL.noCondition()
-                : field(name("RULE"), String.class).eq(stage.rule()));
-        var computed = select(columns).from(table(name(stage.ruleView().toUpperCase())))
-            .where(inGraph(graph));
-        return (tableSide ? dsl.selectFrom(held.except(computed)) : dsl.selectFrom(computed.except(held)))
-            .fetch().stream()
-            .map(Object::toString)
-            .toList();
+    private static List<org.jooq.Field<Object>> sharedColumns(DSLContext dsl, Stage stage) {
+        var shared = new ArrayList<>(columns(dsl, stage.target()).stream().map(org.jooq.Field::getName).toList());
+        for (var view : stage.ruleViews()) {
+            var names = columns(dsl, view).stream().map(org.jooq.Field::getName).toList();
+            shared.retainAll(names);
+        }
+        return shared.stream().map(column -> field(name(column))).toList();
     }
 
-    private static org.jooq.SelectConditionStep<org.jooq.Record> defectRule(DSLContext dsl, String graph,
-                                                                            String rule) {
-        return select(columns(dsl, rule)).from(table(name(rule.toUpperCase()))).where(inGraph(graph));
+    /**
+     * The table's rows for a graph, over {@code columns}: where its rows name the stage that wrote
+     * them, only those the rule views' stages wrote.
+     */
+    private static java.util.function.Function<String, org.jooq.Select<org.jooq.Record>> held(
+            DSLContext dsl, Stage stage, List<org.jooq.Field<Object>> columns) {
+        boolean staged = columns(dsl, stage.target()).stream().anyMatch(c -> c.getName().equals("STAGE"));
+        var stages = staged ? ruleStages(dsl, stage.target()) : Set.<String>of();
+        return graph -> select(columns).from(table(name(stage.target().toUpperCase()))).where(inGraph(graph))
+            .and(staged ? field(name("STAGE"), String.class).in(stages) : org.jooq.impl.DSL.noCondition());
     }
 
-    /** The table's rows in a rule view's columns, every stage's rule view carrying the same ones. */
-    private static org.jooq.SelectConditionStep<org.jooq.Record> defectTable(DSLContext dsl, String graph) {
-        return select(columns(dsl, DEFECT_RULES.keySet().iterator().next()))
-            .from(table(name(DEFECTS.toUpperCase())))
-            .where(inGraph(graph));
+    private static org.jooq.Select<org.jooq.Record> computed(String view, List<org.jooq.Field<Object>> columns,
+                                                            String graph) {
+        return select(columns).from(table(name(view.toUpperCase()))).where(inGraph(graph));
     }
 
     private static org.jooq.Condition inGraph(String graph) {

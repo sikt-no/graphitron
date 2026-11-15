@@ -911,12 +911,14 @@ class FactSchemaGateTest {
             var dsl = store.dsl();
             captureStageFixture(dsl, "sibling", siblingDir);
 
-            var stages = StageAnswerAgreementTest.STAGES.stream()
-                .filter(stage -> !stage.target().equals(StageAnswerAgreementTest.DEFECTS))
+            // The tables whose rows name the stage that wrote them are the defects, which the walk
+            // writes beside the rules; the rest a capture fills from its rules alone.
+            var stages = StageAnswerAgreementTest.stages(dsl).stream()
+                .filter(stage -> !columnNames(dsl, stage.target()).contains("STAGE"))
                 .toList();
             assertThat(stages).as("stages inserting from a rule view").isNotEmpty();
             var siblingBefore = stages.stream()
-                .map(stage -> materializedRows(dsl, stage.target(), stage, "sibling"))
+                .map(stage -> materializedRows(dsl, List.of(stage.target()), stage, "sibling"))
                 .toList();
             assertThat(siblingBefore.stream().filter(rows -> !rows.isEmpty()).count())
                 .as("stages the fixture populates in the sibling graph; with none, the scoping"
@@ -928,12 +930,11 @@ class FactSchemaGateTest {
             for (int i = 0; i < stages.size(); i++) {
                 var stage = stages.get(i);
                 String target = stage.target();
-                String rule = stage.ruleView();
-                assertThat(materializedRows(dsl, target, stage, "own"))
-                    .as("%s should hold exactly what %s computes for the capturing graph",
-                        target, rule)
-                    .isEqualTo(materializedRows(dsl, rule, stage, "own"));
-                assertThat(materializedRows(dsl, target, stage, "sibling"))
+                assertThat(materializedRows(dsl, List.of(target), stage, "own"))
+                    .as("%s should hold exactly what %s compute for the capturing graph",
+                        target, stage.ruleViews())
+                    .isEqualTo(materializedRows(dsl, stage.ruleViews(), stage, "own"));
+                assertThat(materializedRows(dsl, List.of(target), stage, "sibling"))
                     .as("capturing 'own' must leave the sibling's partition of %s alone", target)
                     .isEqualTo(siblingBefore.get(i));
             }
@@ -959,33 +960,26 @@ class FactSchemaGateTest {
     }
 
     /**
-     * A relation's rows for one graph, sorted, as strings, over the columns the stage's rule view and
-     * table both carry. Content rather than order: a target is a bag its view fills, and neither side
-     * promises an order. A table several rules write is read as this rule's rows, by its
-     * {@code rule} column, and a supertype among them carries the rule's key and not its payload.
+     * The rows the relations hold for one graph together, distinct and sorted, as strings, over the
+     * columns the table and every rule view writing it carry. Content rather than order: a target is
+     * the set its views fill, and neither side promises an order; a supertype several rules write
+     * carries the rule's key and not its payload, which its subtype compares.
      */
-    private static List<String> materializedRows(DSLContext dsl, String relationName,
+    private static List<String> materializedRows(DSLContext dsl, List<String> relationNames,
                                                  StageAnswerAgreementTest.Stage stage, String graphName) {
-        var relation = table(name(relationName.toUpperCase(Locale.ROOT)));
-        var targetColumns = columnNames(dsl, stage.target());
-        var columns = columnNames(dsl, stage.ruleView()).stream()
-            .filter(targetColumns::contains)
-            .map(column -> field(name(column)))
-            .toList();
+        var shared = new java.util.ArrayList<>(columnNames(dsl, stage.target()));
+        stage.ruleViews().forEach(view -> shared.retainAll(columnNames(dsl, view)));
+        var columns = shared.stream().map(column -> field(name(column))).toList();
         var graph = field(name("GRAPH_NAME"), String.class);
-        boolean partitioned = dsl.fetchExists(dsl.selectOne()
-            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-            .and(field(name("TABLE_NAME"), String.class).eq(relationName.toUpperCase(Locale.ROOT)))
-            .and(field(name("COLUMN_NAME"), String.class).eq("GRAPH_NAME")));
-        var scope = stage.rule() == null || !relationName.equals(stage.target())
-            ? org.jooq.impl.DSL.noCondition()
-            : field(name("RULE"), String.class).eq(stage.rule());
-        var query = dsl.select(columns).from(relation);
-        var rows = partitioned
-            ? query.where(graph.eq(graphName)).and(scope).fetch(Record::toString)
-            : query.where(scope).fetch(Record::toString);
-        return rows.stream().sorted().toList();
+        var rows = new java.util.TreeSet<String>();
+        for (String relationName : relationNames) {
+            var relation = table(name(relationName.toUpperCase(Locale.ROOT)));
+            var query = dsl.select(columns).from(relation);
+            rows.addAll(columnNames(dsl, relationName).contains("GRAPH_NAME")
+                ? query.where(graph.eq(graphName)).fetch(Record::toString)
+                : query.fetch(Record::toString));
+        }
+        return List.copyOf(rows);
     }
 
     private static List<String> columnNames(DSLContext dsl, String relationName) {

@@ -5,7 +5,6 @@ import org.jooq.Field;
 import org.jooq.Table;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_CLAIM;
@@ -56,8 +55,8 @@ import static org.jooq.impl.DSL.val;
  * raise one code, each its own rows. Each raising stage has its own rule view, whose rows name the
  * stage, given in a {@link Rule} beside the stage that runs it, and the writer is one statement over
  * that view; the sweep is the gatherer's, once after its last stage, taking the rows its stages raised.
- * A stage raising defects adds its view and a {@link Rule} to {@link #RULES} and calls {@link #derive}
- * as its last statement, touching no other stage's rows. What this class adds is who evaluates a rule
+ * A stage raising defects adds its view, a {@link Rule} and the view's {@code meta_stage_rule} row, and
+ * calls {@link #derive} as its last statement, touching no other stage's rows. What this class adds is who evaluates a rule
  * and when.
  *
  * <p>{@link Outboxes} raises the {@code OUTBOX_} codes its relations judge, from
@@ -206,13 +205,6 @@ public final class EntryDefects {
 
     /** The fetchers stage's rule, {@link Fetchers}: the writes', errors fields', outcomes' and results' defects. */
     public static final Rule FETCHERS = new Rule("fetchers", GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE);
-
-    /** Every raising stage's rule, one per stage, in the order the stages run. */
-    public static final List<Rule> RULES = List.of(ANCHOR, MACRO_EXPANSION, CODE_REFERENCES, ARGMAPPING_PAIRS,
-        CALL_CONTEXT_KEYS, TABLE_TYPES, NODES, VOUCHERS, MINTED_KEYS, DIRECTIVE_APPLICATIONS,
-        FEDERATION_VOCABULARY, NODE_LEGACY_KEY_SHAPES, FIELD_TARGETS, BINDING_CLAIMS, SPELLED_TABLES,
-        ARGMAPPING_LANDINGS, PATH_CLAIMS, FETCHERS, PRODUCERS, BINDINGS, LOOKUP_KEYS, ORDERINGS, BUILDS, TENANTS,
-        ROUTES, DEPTHS, ENTITY_KEYS, OUTBOX);
 
     /**
      * Writes the graph's rows of {@code rule}'s view, each marked with {@code readAt}: a row already

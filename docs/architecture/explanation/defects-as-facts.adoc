@@ -105,10 +105,12 @@ rule view. `argmapping-pairs` judges the session, context and scope sigils, `cal
 `$context` pair's duplicate key, `argmapping-landings` a path that lands nowhere, and `outbox` a
 source that cannot fill a payload key.
 
-`DefectStageGateTest` holds this together: every stage raising defects has one rule view, whose rows
-name that stage and no other, or a Java writer stating its stage; every such stage declares the
-write; every declared code is raised by some stage; and the gatherer owning a rule view may read
-what it reaches. An author reads one finding per position and code: `graphitron_entry_defect_site`
+Which rule view a stage raises its defects from is a row of `meta_stage_rule`, beside every other
+relation a stage inserts from a rule view, so moving a defect rule view between stages moves its row
+and the gates follow it. `DefectStageGateTest` holds this together: every stage raising defects has
+one rule view, whose rows name that stage and no other, or a Java writer stating its stage; every
+such stage declares the write; every declared code is raised by some stage; and the gatherer owning
+a rule view may read what it reaches. An author reads one finding per position and code: `graphitron_entry_defect_site`
 collapses the stages, two stages raising one rule word it alike, and `FactExpectationTest` holds
 every fact document to that.
 `StageRosterGateTest` holds the order: the gatherer runs the stages its roster states, and no

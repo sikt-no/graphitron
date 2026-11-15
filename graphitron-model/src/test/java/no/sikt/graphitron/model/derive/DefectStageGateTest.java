@@ -31,7 +31,7 @@ import static org.jooq.impl.DSL.table;
  * code the vocabulary declares is raised by some stage.
  *
  * <p>Read off the store's own definitions rather than a roster kept here. A stored writer is a stage's
- * rule view, one per stage in {@link EntryDefects#RULES}: the codes it emits are the code literals in
+ * rule view, one per stage in {@code meta_stage_rule}: the codes it emits are the code literals in
  * the view bodies its read expands, and the {@code CHECK} lists of the tables it reaches that carry a
  * code column, which is how a defect relation of its own feeds a rule. A Java writer states its stage
  * and codes as constants beside the statement that writes them, and is listed here.
@@ -46,7 +46,7 @@ class DefectStageGateTest {
     private static final Pattern STAGE_LITERAL = Pattern.compile("'([a-z][a-z0-9-]*)'");
 
     @Test
-    @DisplayName("every stage's rule view is a rule EntryDefects writes, one per stage")
+    @DisplayName("every defect rule view is one meta_stage_rule states, one per stage")
     void everyRuleViewIsWritten() {
         ThreadConfinedStore.run(dsl -> {
             var declared = new TreeSet<String>(dsl.select(field(name("TABLE_NAME"), String.class))
@@ -55,16 +55,17 @@ class DefectStageGateTest {
                 .and(field(name("TABLE_NAME"), String.class).endsWith(RULE_SUFFIX))
                 .fetch(0, String.class));
             var written = new TreeSet<String>();
-            for (var rule : EntryDefects.RULES) {
-                written.add(rule.view().getName().toUpperCase(java.util.Locale.ROOT));
+            for (var rule : StageAnswerAgreementTest.defectRules(dsl)) {
+                written.add(rule.view().toUpperCase(java.util.Locale.ROOT));
             }
-            assertThat(written).as("the rule views EntryDefects.RULES names, against the views"
+            assertThat(written).as("the defect rule views meta_stage_rule names, against the views"
                     + " named *" + RULE_SUFFIX.toLowerCase() + " in the store; a view no Rule names"
                     + " is a rule nobody writes")
                 .isEqualTo(declared);
-            assertThat(EntryDefects.RULES.stream().map(EntryDefects.Rule::stage).distinct().count())
+            var rules = StageAnswerAgreementTest.defectRules(dsl);
+            assertThat(rules.stream().map(StageAnswerAgreementTest.DefectRule::stage).distinct().count())
                 .as("one rule per stage")
-                .isEqualTo(EntryDefects.RULES.size());
+                .isEqualTo(rules.size());
         });
     }
 
@@ -74,9 +75,9 @@ class DefectStageGateTest {
         ThreadConfinedStore.run(dsl -> {
             var stages = new HashSet<>(dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
                 .fetch(META_STAGE.STAGE_NAME));
-            for (var rule : EntryDefects.RULES) {
-                String view = rule.view().getName().toLowerCase(java.util.Locale.ROOT);
-                assertThat(rule.view().field("STAGE")).as(view + " has a stage column").isNotNull();
+            for (var rule : StageAnswerAgreementTest.defectRules(dsl)) {
+                String view = rule.view();
+                assertThat(definitionColumns(dsl, view)).as(view + " has a stage column").contains("STAGE");
                 var named = new TreeSet<String>();
                 // A literal compared against, a directive name such as 'outbox' among them, names
                 // what the rule reads, not the stage its rows name.
@@ -113,7 +114,7 @@ class DefectStageGateTest {
     void everyRaisingStageDeclaresTheWrite() {
         ThreadConfinedStore.run(dsl -> {
             var raising = new TreeSet<String>(javaWriters().keySet());
-            EntryDefects.RULES.forEach(rule -> raising.add(rule.stage()));
+            StageAnswerAgreementTest.defectRules(dsl).forEach(rule -> raising.add(rule.stage()));
             var declared = new TreeSet<String>(dsl.select(META_STAGE_WRITE.STAGE_NAME).from(META_STAGE_WRITE)
                 .where(META_STAGE_WRITE.RELATION_NAME.eq("graphitron_entry_defect"))
                 .fetch(META_STAGE_WRITE.STAGE_NAME));
@@ -128,8 +129,8 @@ class DefectStageGateTest {
     void everyCodeIsRaised() {
         ThreadConfinedStore.run(dsl -> {
             var raised = new TreeSet<String>();
-            for (var rule : EntryDefects.RULES) {
-                raised.addAll(codesEmittedBy(dsl, rule.view().getName().toLowerCase(java.util.Locale.ROOT)));
+            for (var rule : StageAnswerAgreementTest.defectRules(dsl)) {
+                raised.addAll(codesEmittedBy(dsl, rule.view()));
             }
             javaWriters().values().forEach(raised::addAll);
             var declared = new TreeSet<String>(dsl.select(GRAPHITRON_DEFECT_TYPE.CODE)
@@ -143,8 +144,8 @@ class DefectStageGateTest {
     @DisplayName("each rule's gatherer may read every table its rule reaches")
     void eachRulesGathererCanReadItsInputs() {
         ThreadConfinedStore.run(dsl -> {
-            for (var rule : EntryDefects.RULES) {
-                String view = rule.view().getName().toLowerCase(java.util.Locale.ROOT);
+            for (var rule : StageAnswerAgreementTest.defectRules(dsl)) {
+                String view = rule.view();
                 String gatherer = gathererOf(dsl, rule.stage());
                 assertThat(gatherer).as("the gatherer running " + view + "'s stage is the view's owner")
                     .isEqualTo(ownerOf(dsl, view));
@@ -251,5 +252,13 @@ class DefectStageGateTest {
             }
         }
         return out;
+    }
+
+    /** The view's columns, upper case, as the catalog lists them. */
+    private static java.util.Set<String> definitionColumns(org.jooq.DSLContext dsl, String view) {
+        return new java.util.TreeSet<>(dsl.select(field(name("COLUMN_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_NAME"), String.class).eq(view.toUpperCase(java.util.Locale.ROOT)))
+            .fetch(0, String.class));
     }
 }
