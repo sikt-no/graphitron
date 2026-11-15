@@ -13,7 +13,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_CANDIDATE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONDITION_RULE;
 import static org.jooq.impl.DSL.noCondition;
-import static org.jooq.impl.DSL.selectOne;
 
 /**
  * Writes the {@code @condition} calls the occurrences make, one per table each binds: the candidate
@@ -34,14 +33,8 @@ public final class OccurrenceConditions {
         var k = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
         var kr = GRAPHITRON_OCCURRENCE_CONDITION_CANDIDATE_RULE;
         // A candidate this reading no longer states goes before the pin reads them.
-        dsl.deleteFrom(k)
-            .where(k.GRAPH_NAME.eq(graph), k.CALL_KIND.eq("CONDITION"))
-            .andNotExists(selectOne().from(kr)
-                .where(kr.GRAPH_NAME.eq(k.GRAPH_NAME), kr.COORDINATE.eq(k.COORDINATE), kr.CALL.eq(k.CALL),
-                    kr.METHOD_SOURCE_NAME.eq(k.METHOD_SOURCE_NAME), kr.METHOD_CLASS_NAME.eq(k.METHOD_CLASS_NAME),
-                    kr.METHOD_NAME.eq(k.METHOD_NAME), kr.METHOD_DESCRIPTOR.eq(k.METHOD_DESCRIPTOR)))
-            .execute();
         OccurrenceProducers.refresh(dsl, k, kr, graph, null, touchedAt, noCondition());
+        OccurrenceProducers.sweepCandidates(dsl, graph, touchedAt, "CONDITION");
         OccurrenceProducers.refresh(dsl, GRAPHITRON_OCCURRENCE_CALL, GRAPHITRON_OCCURRENCE_CALL_RULE, graph, null,
             touchedAt, GRAPHITRON_OCCURRENCE_CALL_RULE.CALL_KIND.eq("CONDITION"));
         OccurrenceProducers.refresh(dsl, GRAPHITRON_OCCURRENCE_CALL_METHOD, GRAPHITRON_OCCURRENCE_CALL_METHOD_RULE,

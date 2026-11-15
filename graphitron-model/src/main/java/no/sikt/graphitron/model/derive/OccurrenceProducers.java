@@ -92,14 +92,8 @@ public final class OccurrenceProducers {
         // reading no longer states goes now, or the pin would weigh it.
         var k = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
         var kr = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE_RULE;
-        dsl.deleteFrom(k)
-            .where(k.GRAPH_NAME.eq(graph), k.CALL_KIND.eq("SERVICE"))
-            .andNotExists(selectOne().from(kr)
-                .where(kr.GRAPH_NAME.eq(k.GRAPH_NAME), kr.COORDINATE.eq(k.COORDINATE), kr.CALL.eq(k.CALL),
-                    kr.METHOD_SOURCE_NAME.eq(k.METHOD_SOURCE_NAME), kr.METHOD_CLASS_NAME.eq(k.METHOD_CLASS_NAME),
-                    kr.METHOD_NAME.eq(k.METHOD_NAME), kr.METHOD_DESCRIPTOR.eq(k.METHOD_DESCRIPTOR)))
-            .execute();
         refresh(dsl, k, kr, graph, null, touchedAt);
+        sweepCandidates(dsl, graph, touchedAt, "SERVICE");
         // What fills each candidate's parameters, stored before the pin weighs it: the fills an author
         // wrote, the arguments a parameter could take by type, then each position's fill, which reads
         // the two. Each is swept as soon as it is stated, or the next would read a stale row.
@@ -156,6 +150,17 @@ public final class OccurrenceProducers {
                 .and(t.field("TOUCHED_AT", LocalDateTime.class).ne(touchedAt))
                 .execute();
         }
+    }
+
+    /**
+     * Deletes the call candidates of {@code callKind} this reading did not mark, once the kind's rule
+     * has refreshed them: a candidate the rule no longer states goes before the pin weighs it.
+     */
+    static void sweepCandidates(DSLContext dsl, String graph, LocalDateTime touchedAt, String callKind) {
+        var k = GRAPHITRON_OCCURRENCE_CALL_CANDIDATE;
+        dsl.deleteFrom(k)
+            .where(k.GRAPH_NAME.eq(graph), k.CALL_KIND.eq(callKind), k.TOUCHED_AT.ne(touchedAt))
+            .execute();
     }
 
     /**
