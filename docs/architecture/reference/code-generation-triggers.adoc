@@ -395,6 +395,11 @@ empty, for a table no tenant column scopes; which connection that is, the consum
 hook decides (Alf, 2026-11-14). The author never writes a split to make routing work;
 the facts already say where a query fans out.
 
+A root's tenant is the input that binds its table's tenant column, and that input is the `$tenant`
+whether or not the author names it (Alf, 2026-11-15). The store derives it, from an argument or input
+field bound to the tenant column as from an authored `$tenant`, so an author never names a tenant
+the bindings already state; this holds for a root query as for a root `@service`.
+
 '''
 
 == What the facts generate
@@ -411,7 +416,9 @@ Each producer becomes a data fetcher, and each producer kind decides what that f
 
 | `LOOKUP`
 | The same query, keyed by the values the caller supplies, returning one result per key in the order
-  given.
+  given, a key matching no row being a null in its place. A root field with `@lookupKey` arguments
+  is this producer, whatever table it lands on (Alf, 2026-11-15): its target table is derived as any
+  root's is, and only the semantics differ from `SELECT`.
 
 | `COUNT`, `FACETS`
 | A count or a facet aggregation over the same rows and arguments as the connection that carries it.
