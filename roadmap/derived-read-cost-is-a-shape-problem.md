@@ -1703,7 +1703,7 @@ grain, priced by `prepare_ms` on a cold capture. Two rule views are still read b
   the table is written
   from its rule, or the rule states what the walk takes; `StageAnswerAgreementTest.WALK_WRITTEN`
   lists the steps, and `FILTERED_IN_JAVA` the claims; both only shrink.
-* **`graphitron_claim` states the stage that wrote it as a `meta_stage` name, or not at all** `open`,
+* **`graphitron_claim` states the stage that wrote it as a `meta_stage` name, or not at all, claimed by G** `open`,
   off the critical path. Its `stage` column holds the writing class's simple name, `BindingClaims`,
   `TypeClaims` or `ProducerClaims`, a name read off the code where `defects-as-facts.adoc` reads which
   stage raised a row off `meta_stage`; each stage sweeps its claims by it.
