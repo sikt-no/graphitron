@@ -82,7 +82,7 @@ The walk's read path is gone
 │   ├── A projection unit is emitted from the store, censused
 │   ├── The filter conditions are emitted from the store, claimed by F
 │   │   └── An argument binds the call parameter it supplies
-│   ├── The root query fetchers are emitted from the store
+│   ├── The root query fetchers are emitted from the store, claimed by F
 │   ├── A child read inline is emitted from the store
 │   │   ├── A sort key's path is resolved at its occurrence
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
@@ -892,7 +892,7 @@ static method needs no holder.
       `PARAMETER` binding in `graphitron_occurrence_binding_parameter`, written by the stage owning
       the call's kind (Alf, 2026-11-13); its readers move off the fill's `landing_coordinate`, which
       then goes, after the flips.
-  * **The root query fetchers are emitted from the store** `blocked`, on the filter conditions and
+  * **The root query fetchers are emitted from the store, claimed by F** `blocked`, on the filter conditions and
     the ordering node. A root `SELECT` or `LOOKUP` producer's fetcher, its condition, order, page
     and facets, and the call parameters its own arguments bind, a `@lookupKey`'s among them, is read
     off its occurrence, and flips in the same pass as `$project` and the
@@ -1599,7 +1599,7 @@ output package they are written to are settled.
     value source and the schema class's scalar form fail rather than fall back, ahead of the variants
     losing their forms.
 * **`TypeFetcherGenerator` reads the store, one family of field at a time** `open`. Root queries
-  (taken by "The root query fetchers are emitted from the store"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
+  (taken by "The root query fetchers are emitted from the store, claimed by F"), services, DML writes, routine writes, projected child fields, batched fetches, polymorphic
   fields, pivots and the errors field each render from a query at the grain they emit, the
   launcher's routine row reading the facts R704 captured, with
   `ConditionGlueRenderer` and `ProjectionUnitRenderer` folded into the families that use them.
