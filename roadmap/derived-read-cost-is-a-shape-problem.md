@@ -724,7 +724,7 @@ static method needs no holder.
     single child is the single join, rendered as the readers read one today, a multiset of the child's
     unit with `.limit(1)` under its result key; the flip of the readers replaces it with a plain
     correlated row, which a single child's identifying lookup keys or its to-one path make exact. A
-    nullable one is the census's `NULL_CONTRACT` line until "A single child's null contract is stated".
+    nullable one is read the same way, null exactly where its read finds no row (Alf, 2026-11-15).
   * **A projection's SQL names read like the schema** `open`, off the critical path. The generated
     SQL is to be easy to read; a hashed name is hostile to that (Alf, 2026-11-13). Today an aliased
     term is named `__rk_`, an owner, and the response keys from its row's owner down to it, so a deep
@@ -825,12 +825,12 @@ static method needs no holder.
     the deferral, its `defect_type` row and the multiset half of
     `requireResolvedOrderingsAreLowered` go when the store's units replace them, and
     `defects/inline-list-choice` pins the choice until then; closes before the flip.
-  * **A single child is looked up by its keys, claimed by G** `blocked`, on "A single child's null contract is stated".
+  * **A single child is looked up by its keys, claimed by G** `open`.
     A `@lookupKey` on a field of a table-bound type returning one table-bound object is read as the
     one row its keys match (Alf, 2026-11-15). The store's deferral is gone; keys covering no
     identifying key of the table are `LOOKUP_KEY_NOT_IDENTIFYING`, and the walk refuses the shape
-    itself until the flip. A non-null child looked up by column keys is rendered; what is left is a
-    nullable one, which most are, once its null contract is stated, and a node id key, the child's
+    itself until the flip. A child looked up by column keys is rendered, null where its keys match no
+    row; what is left is a node id key, the child's
     own node's decoded through `NodeIdDecodeEmitter` from the projection query's own read, one
     carried back from another table's node read from `graphitron_occurrence_node_id_carried`;
     closes before the flip.

@@ -125,12 +125,17 @@ class ProjectionEmitterExecutionTest {
     }
 
     @Test
-    @DisplayName("a nullable single child, looked up by its key or not, is held back by its null contract")
-    void aNullableSingleChildWaitsOnItsNullContract() {
+    @DisplayName("a single child whose key matches no row reads none, which its reader reads as null")
+    void aSingleChildMatchingNoRowIsNull() throws Exception {
+        assertThat(addressCity(projectLookingAddress, argued("neighbour", Map.of("city_id", -1), field("name")),
+            "__rk_neighbour")).isNull();
+    }
+
+    @Test
+    @DisplayName("a nullable single child is rendered as a non-null one is, null exactly where no row is read")
+    void aNullableSingleChildIsRendered() {
         var film = FACTS.read("defects/lookup-key-refusals", graph -> ProjectionQuery.read(graph.handle()).get("Film"));
-        assertThat(ProjectionEmitter.emit(film, PACKAGE))
-            .isInstanceOfSatisfying(ProjectionEmitter.Result.NotYet.class, notYet -> assertThat(notYet.refusals())
-                .contains(new ProjectionEmitter.Refusal("Film.sequel", ProjectionEmitter.Reason.NULL_CONTRACT)));
+        assertThat(ProjectionEmitter.emit(film, PACKAGE)).isInstanceOf(ProjectionEmitter.Result.Emitted.class);
     }
 
     /** The name of the city address 1's single child selected under {@code alias} reads, or null. */
@@ -216,21 +221,18 @@ class ProjectionEmitterExecutionTest {
     }
 
     @Test
-    @DisplayName("a nullable nesting field keeps its unit back, as the null contract it waits on")
-    void aNullableNestingFieldIsNotYet() {
+    @DisplayName("a nullable nesting field is rendered, present wherever its parent is")
+    void aNullableNestingFieldIsRendered() {
         assertThat(ProjectionEmitter.emit(units.get("Language"), PACKAGE))
-            .isEqualTo(new ProjectionEmitter.Result.NotYet(List.of(
-                new ProjectionEmitter.Refusal("Language.spoken", ProjectionEmitter.Reason.NULL_CONTRACT))));
+            .isInstanceOf(ProjectionEmitter.Result.Emitted.class);
     }
 
     @Test
-    @DisplayName("a node's nullable nesting field named like a daterange column keeps its unit back")
+    @DisplayName("a node's nullable nesting field named like a daterange column is rendered")
     void aNodesNestingFieldNamedLikeARange() {
         var region = FACTS.read("scenarios/node-nesting-field-named-like-a-range",
             graph -> ProjectionQuery.read(graph.handle()).get("Region"));
-        assertThat(ProjectionEmitter.emit(region, PACKAGE))
-            .isEqualTo(new ProjectionEmitter.Result.NotYet(List.of(
-                new ProjectionEmitter.Refusal("Region.validPeriod", ProjectionEmitter.Reason.NULL_CONTRACT))));
+        assertThat(ProjectionEmitter.emit(region, PACKAGE)).isInstanceOf(ProjectionEmitter.Result.Emitted.class);
     }
 
     @Test

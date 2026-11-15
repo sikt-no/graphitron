@@ -59,12 +59,6 @@ public final class ProjectionEmitter {
          */
         NARROWED_LIST,
         /**
-         * A nullable nesting field, read off its parent's row, or a nullable single child read down
-         * a path: nothing states when it is null, which for a reached row depends on its fields'
-         * values too. A non-null one is rendered.
-         */
-        NULL_CONTRACT,
-        /**
          * A scalar whose column lies down a path that is not one subselect of column-pair joins
          * from the unit's row: a step joining by a condition method or a routine, or a node id down
          * a path.
@@ -208,8 +202,7 @@ public final class ProjectionEmitter {
         if (arm.reads() == null) return Reason.UNSTATED;
         return switch (arm.reads()) {
             case "EXPRESSION" -> Reason.EXPRESSION;
-            case "NESTED" -> !nesting(arm) ? inlineReason(arm, unitTable, callable)
-                : arm.nonNull() ? null : Reason.NULL_CONTRACT;
+            case "NESTED" -> nesting(arm) ? null : inlineReason(arm, unitTable, callable);
             case "COLUMN" -> sameRow(arm) && !projected(arm, unitTable).isEmpty() || terminal(arm, unitTable) != null
                 ? null : Reason.SCALAR_PATH;
             default -> Reason.UNSTATED;
@@ -254,8 +247,7 @@ public final class ProjectionEmitter {
         if (arm.listDepth() > 0) {
             return narrowed(arm) ? Reason.NARROWED_LIST : inlineList(arm, unitTable, callable) ? null : Reason.INLINE_CHILD;
         }
-        if (!singleChild(arm, unitTable, callable)) return Reason.INLINE_CHILD;
-        return arm.nonNull() ? null : Reason.NULL_CONTRACT;
+        return singleChild(arm, unitTable, callable) ? null : Reason.INLINE_CHILD;
     }
 
     /**
