@@ -167,20 +167,45 @@ sets of stored rows. This item reports it nowhere, because it has no SDL positio
   built from the parsed url. Never the raw url, which can carry `password=` and other parameters; the
   store is readable by agents through `store.console`.
 * A `store_source` row of `source_kind` `DATABASE`, its stamp left null as `jooq` leaves it: no
-  reading is ever skipped on a stamp (§ Cadence), so a hash would vouch for nothing. The `source_kind`
-  column comment describes a closed taxonomy, and gains `DATABASE`.
+  reading is ever skipped on a stamp (§ Cadence), so a hash there would vouch for nothing. The
+  `source_kind` column's `CHECK (source_kind IN (...))` and its comment both gain `DATABASE`.
 * A `store_graph_source` row claims the source for the graph. Its `stamp` and `read_at` carry the
-  reading's outcome in the meanings those columns already have: a stamp is set when this graph's
-  transcription of the source can be trusted, and `read_at` is when the graph last transcribed it,
-  which is the last successful reading.
+  reading's outcome in the meanings those columns already have. On a successful reading the stamp is
+  a hash over the rows the reading captured, computed in the reading's transaction and written last:
+  that is "what this graph's rows of this source were derived from", in the column comment's words,
+  and it commits after the facts it vouches for. `read_at` is the reading's instant, so it always
+  names the last successful reading.
 * A `store_graph_progress` row records the gatherer's start and completion, as for every gatherer.
 
-Readers answer in three arms, all read from the graph's claim row:
+### Who drops a claim
 
-* no `DATABASE` claim for the graph: not read, and the readers say nothing about row security;
+The gatherer owns the graph's `DATABASE` claims, on the shape `JooqFactCapture.dropMembership` gives
+the `JOOQ_SCHEMA` kind. Every capture calls it, connector or not:
+
+* With a connector, it claims the source the connector names and drops the graph's other `DATABASE`
+  claims. A url that changes host, port or database therefore leaves one claim, never two, and the
+  readers' `(table_schema, table_name)` lookup sees one reading.
+* Without a connector, it reads nothing and drops every `DATABASE` claim the graph holds. A consumer
+  who removes `<database>` stops seeing the facts on the next capture.
+
+Dropping a claim leaves the source and its rows to the existing release: once no graph claims the
+source, the delete scoped by `SourceClaims.unclaimed()` takes it, and the `database_` rows go with it
+through their `ON DELETE CASCADE` from `store_source`. "Without connection settings nothing changes"
+in § Goal is about what an author sees and what is generated; in the store, a graph that never had a
+connector holds no claim, so the call is a no-op for it.
+
+### Reader arms
+
+The readers decide from the graph's `DATABASE` claim, scoped to that kind. The arms do not carry over
+to other kinds: `jooq` writes its own claims with a null stamp and null `read_at` after a successful
+walk.
+
+* no claim: not read, and the readers say nothing about row security;
 * a claim with a stamp: read, and each table's `database_table` row says whether it is secured;
-* a claim without a stamp: the last reading failed, and the rows are from the reading at `read_at`
-  (see Unreachable database).
+* a claim without a stamp but with a `read_at`: the last reading failed, and the rows are from the
+  reading at `read_at` (see Unreachable database);
+* a claim with neither: no reading has succeeded yet, so there are no rows, and the readers say the
+  database could not be read.
 
 ### Cadence
 
@@ -192,10 +217,20 @@ gatherer sweeps its own family for this source, as `JooqFactCapture.sweep` does 
 
 When the connection or a query fails, the goal logs a warning naming the source and the cause, and
 continues: output does not depend on these facts, so a database that is down must not stop a build.
-The gatherer clears the graph's claim stamp and keeps the rows and the claim's `read_at`, which
-therefore still names the last successful reading, so the readers can say the facts are from an earlier
-reading and when. Whether stale rows should be kept or swept is an open question for Alf and Filip;
-keeping them is this spec's default.
+
+* With a prior successful reading of this source, the gatherer clears the claim's stamp and keeps the
+  rows and the claim's `read_at`, so the readers can say the facts are from an earlier reading and
+  when.
+* With none (a first reading, or the url just changed), it writes the claim with neither stamp nor
+  `read_at`, and there are no rows to keep.
+
+Whether stale rows should be kept or swept is an open question for Alf and Filip; keeping them is this
+spec's default.
+
+`dev` re-captures every round, so a database that is down would cost the driver's connect timeout each
+round. The connector therefore sets a bounded connect timeout of five seconds through the driver's
+own property (`connectTimeout` for PostgreSQL), so an unreachable database delays a round by at most
+that.
 
 ### Postgres reading
 
@@ -239,7 +274,8 @@ stage lands without moving the call.
   in force;
 * read, secured: `Row security: on` (`forced` when it is), then one line per policy: name, command,
   mode, roles, `USING`, `WITH CHECK`;
-* stale (claim stamp cleared): the same, marked as from the reading at `read_at`.
+* stale (claim stamp cleared, `read_at` kept): the same, marked as from the reading at `read_at`;
+* never read successfully (neither): `Row security: the database could not be read`.
 
 ### MCP
 
@@ -283,15 +319,26 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * `graphitron-sakila-db/src/main/resources/init.sql` gains what the arms need: a table with forced row
   security, a restrictive policy, a policy for one command, and a policy for a named role besides
   `PUBLIC`. `secure_note` keeps its role as the permissive `ALL` case.
-* Reading record: no connector leaves no source row; a connector whose url refuses connections leaves
-  a warning, a claim without a stamp whose `read_at` is unchanged, and the previous rows.
+* Reading record, one capture after another against the same store:
+  * no connector, never configured: no claim and no source row;
+  * a successful reading: a claim whose stamp is the hash of the rows and whose `read_at` is the
+    reading's instant;
+  * the url then refuses connections: a warning, the claim's stamp cleared, `read_at` unchanged, the
+    previous rows kept;
+  * a first reading that fails: a claim with neither stamp nor `read_at`, and no rows;
+  * de-configured (no connector after a reading): the claim dropped, and once no graph claims the
+    source, the source and its `database_` rows gone;
+  * the url changed to another database: one `DATABASE` claim for the graph, the new one, and the
+    old source released the same way.
+* The connect timeout bounds an unreachable reading: a url pointing at a port nothing answers on
+  fails within the timeout.
 * `source_name` never contains the user, the password or the url's query parameters.
 * `polroles` entries resolve to role names through `pg_roles`, and `{0}` reads as `PUBLIC`.
 * Mojo configuration tests over the injected environment map: `<database>` alone; env overriding POM;
   `<devDatabase>` alone (works, warns); `<devDatabase>` with `<database>` (fails); legacy variables as
   fallback (works, warns); no url (gatherer and `execute` absent); a url with no accepting driver
   (fails).
-* Hover: the four arms, with the statement-count and no-view tests still green.
+* Hover: the five arms, with the statement-count and no-view tests still green.
 * MCP: `catalog.describe` on `secure_note` with and without a reading.
 * The two generation gates above.
 
