@@ -5256,7 +5256,8 @@ COMMENT ON VIEW graphitron_producer_claim IS 'One producer claim a field has: on
 -- COMMENT ON COLUMN graphitron_producer_claim.source_column IS 'its column';
 
 -- What each field's written directives claim it runs, an application at a time, the first written
--- of two one claimer makes of one kind kept.
+-- of two one claimer makes of one kind kept: an application none of its directive at its coordinate
+-- was written before, an authored one before a minted one.
 CREATE VIEW graphitron_producer_claim_rule (graph_name, coordinate, kind, claimer, source_name,
                                             source_line, source_column, element_graph_ref,
                                             element_coordinate_ref) AS
@@ -5268,6 +5269,13 @@ SELECT f.graph_name, f.coordinate, 'SERVICE', f.coordinate, da.source_name, da.s
   JOIN graphitron_directive_application da
     ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
    AND da.directive_name = 'service'
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application e
+                    WHERE e.graph_name = da.graph_name AND e.coordinate = da.coordinate
+                      AND e.directive_name = da.directive_name
+                      AND ((e.source_name IS NOT NULL AND da.source_name IS NULL)
+                        OR (e.source_name, e.source_line, e.source_column)
+                           < (da.source_name, da.source_line, da.source_column)
+                        OR (e.source_name IS NULL AND da.source_name IS NULL AND e.ordinal < da.ordinal)))
 UNION ALL
 -- @routine on a query or mutation root field, or on a child @splitQuery takes out of its parent's
 -- statement. Below a root and not split, a routine is a lateral in the parent's statement, which
@@ -5278,12 +5286,19 @@ SELECT f.graph_name, f.coordinate, 'ROUTINE', f.coordinate, da.source_name, da.s
   JOIN graphitron_directive_application da
     ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
    AND da.directive_name = 'routine'
- WHERE EXISTS (SELECT 1 FROM graphql_root_operation ro
+ WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
                   AND ro.operation IN ('QUERY', 'MUTATION'))
     OR EXISTS (SELECT 1 FROM graphitron_directive_application s
                 WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
-                  AND s.directive_name = 'splitQuery')
+                  AND s.directive_name = 'splitQuery'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application e
+                    WHERE e.graph_name = da.graph_name AND e.coordinate = da.coordinate
+                      AND e.directive_name = da.directive_name
+                      AND ((e.source_name IS NOT NULL AND da.source_name IS NULL)
+                        OR (e.source_name, e.source_line, e.source_column)
+                           < (da.source_name, da.source_line, da.source_column)
+                        OR (e.source_name IS NULL AND da.source_name IS NULL AND e.ordinal < da.ordinal)))
 UNION ALL
 -- @mutation on a mutation-root field, by the verb written: graphitron generates the write, so it
 -- conflicts with a @service, whose author provides the code, whichever verb is written. A verb the
@@ -5301,6 +5316,13 @@ SELECT f.graph_name, f.coordinate,
   LEFT JOIN graphitron_ast_mutation_entry m
     ON m.graph_name = da.graph_name AND m.source_name = da.source_name
    AND m.source_line = da.source_line AND m.source_column = da.source_column
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application e
+                    WHERE e.graph_name = da.graph_name AND e.coordinate = da.coordinate
+                      AND e.directive_name = da.directive_name
+                      AND ((e.source_name IS NOT NULL AND da.source_name IS NULL)
+                        OR (e.source_name, e.source_line, e.source_column)
+                           < (da.source_name, da.source_line, da.source_column)
+                        OR (e.source_name IS NULL AND da.source_name IS NULL AND e.ordinal < da.ordinal)))
 UNION ALL
 -- @lookupKey on an argument, at the query root or on a split child, where the argument's
 -- application was written; inline below a root, the keys narrow the parent's statement and the
@@ -5313,22 +5335,23 @@ SELECT f.graph_name, f.coordinate, 'LOOKUP', a.coordinate, da.source_name, da.so
   JOIN graphitron_directive_application da
     ON da.graph_name = a.graph_name AND da.coordinate = a.coordinate
    AND da.directive_name = 'lookupKey'
- WHERE EXISTS (SELECT 1 FROM graphql_root_operation ro
+ WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
                   AND ro.operation = 'QUERY')
     OR EXISTS (SELECT 1 FROM graphitron_directive_application s
                 WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
-                  AND s.directive_name = 'splitQuery')
+                  AND s.directive_name = 'splitQuery'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application e
+                    WHERE e.graph_name = da.graph_name AND e.coordinate = da.coordinate
+                      AND e.directive_name = da.directive_name
+                      AND ((e.source_name IS NOT NULL AND da.source_name IS NULL)
+                        OR (e.source_name, e.source_line, e.source_column)
+                           < (da.source_name, da.source_line, da.source_column)
+                        OR (e.source_name IS NULL AND da.source_name IS NULL AND e.ordinal < da.ordinal)))
 )
 SELECT graph_name, coordinate, kind, claimer, source_name, source_line, source_column, graph_name,
        coordinate
-  FROM (SELECT c.graph_name, c.coordinate, c.kind, c.claimer, c.source_name, c.source_line,
-               c.source_column,
-               ROW_NUMBER() OVER (PARTITION BY c.graph_name, c.coordinate, c.kind, c.claimer
-                                  ORDER BY c.source_name NULLS LAST, c.source_line,
-                                           c.source_column) AS written
-          FROM claimed c) first_written
- WHERE written = 1;
+  FROM claimed;
 COMMENT ON VIEW graphitron_producer_claim_rule IS 'One producer claim the rule computes, in the shape graphitron_claim stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_claim, at the priority and under the stage ProducerClaims claims.';
 -- COMMENT ON COLUMN graphitron_producer_claim_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_producer_claim_rule.coordinate IS 'the declared field claimed';
@@ -7569,14 +7592,13 @@ COMMENT ON COLUMN graphitron_federation_link_import.touched_at IS 'the reading t
 
 CREATE VIEW graphitron_federation_link_rule
   (graph_name, origin, version, source_name, source_line, source_column) AS
-WITH authored (graph_name, version, source_name, source_line, source_column, rank) AS (
-  SELECT graph_name, version, source_name, source_line, source_column,
-         ROW_NUMBER() OVER (PARTITION BY graph_name
-                            ORDER BY source_name, source_line, source_column)
-    FROM graphitron_ast_federation_link_entry)
-SELECT graph_name, 'AUTHORED', version, source_name, source_line, source_column
-  FROM authored
- WHERE rank = 1
+-- The first @link written, by file and then position, none written before it.
+SELECT a.graph_name, 'AUTHORED', a.version, a.source_name, a.source_line, a.source_column
+  FROM graphitron_ast_federation_link_entry a
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_link_entry b
+                    WHERE b.graph_name = a.graph_name
+                      AND (b.source_name, b.source_line, b.source_column)
+                          < (a.source_name, a.source_line, a.source_column))
 UNION ALL
 -- The configured link names the version graphitron writes, as the federation gatherer recorded it
 -- under the library the graph claims.
@@ -7586,7 +7608,7 @@ SELECT g.graph_name, 'CONFIGURED',
          WHERE m.graph_name = g.graph_name),
        CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
   FROM (SELECT DISTINCT graph_name FROM store_graph_source_input WHERE tag IS NOT NULL) g
- WHERE NOT EXISTS (SELECT 1 FROM authored a WHERE a.graph_name = g.graph_name);
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_link_entry a WHERE a.graph_name = g.graph_name);
 COMMENT ON VIEW graphitron_federation_link_rule IS 'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_federation_link_rule.graph_name IS 'the graph opting in';
 -- COMMENT ON COLUMN graphitron_federation_link_rule.origin IS 'AUTHORED or CONFIGURED, on graphitron_federation_link''s terms';
@@ -23002,14 +23024,15 @@ COMMENT ON VIEW graphitron_occurrence_source_claim_input_field_copy_rule IS 'One
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_input_field_copy_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
 
 CREATE VIEW graphitron_occurrence_source_rule (graph_name, coordinate, kind, rule) AS
--- The claim of smallest priority value among the occurrence's claims takes effect. A window: join it on its
--- key, never correlate it per row, which evaluates it whole once per row.
+-- The claim of smallest priority value among the occurrence's claims takes effect: one no claim at the
+-- same occurrence outranks.
 SELECT c.graph_name, c.coordinate, c.kind, c.rule
-  FROM (SELECT c.graph_name, c.coordinate, c.kind, c.rule, cp.priority,
-               MIN(cp.priority) OVER (PARTITION BY c.graph_name, c.coordinate) AS winning
-          FROM graphitron_occurrence_source_claim c
-          JOIN graphitron_occurrence_source_precedence cp ON cp.rule = c.rule) c
- WHERE c.priority = c.winning;
+  FROM graphitron_occurrence_source_claim c
+  JOIN graphitron_occurrence_source_precedence cp ON cp.rule = c.rule
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_claim b
+                     JOIN graphitron_occurrence_source_precedence bp ON bp.rule = b.rule
+                    WHERE b.graph_name = c.graph_name AND b.coordinate = c.coordinate
+                      AND bp.priority < cp.priority);
 COMMENT ON VIEW graphitron_occurrence_source_rule IS 'One row the occurrence source rule computes, in the shape graphitron_occurrence_source stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_occurrence_source, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source.coordinate';
@@ -23330,17 +23353,15 @@ COMMENT ON VIEW graphitron_path_need_claim_input_field_copy_rule IS 'One claim t
 
 CREATE VIEW graphitron_path_need_table_rule (graph_name, coordinate, target_type, start_source_name, start_schema, start_table, landing_source_name, landing_schema, landing_table, rule) AS
 -- The claims of the rule of smallest priority value among the occurrence's claims, at any target type, take
--- effect. A window: join it on its key, never correlate it per row, which evaluates it whole once per
--- row.
+-- effect: those no claim at the same occurrence outranks.
 SELECT c.graph_name, c.coordinate, c.target_type, c.start_source_name, c.start_schema, c.start_table,
        c.landing_source_name, c.landing_schema, c.landing_table, c.rule
-  FROM (SELECT c.graph_name, c.coordinate, c.target_type, c.start_source_name, c.start_schema,
-               c.start_table, c.landing_source_name, c.landing_schema, c.landing_table, c.rule,
-               cp.priority,
-               MIN(cp.priority) OVER (PARTITION BY c.graph_name, c.coordinate) AS winning
-          FROM graphitron_path_need_claim c
-          JOIN graphitron_path_need_precedence cp ON cp.rule = c.rule) c
- WHERE c.priority = c.winning;
+  FROM graphitron_path_need_claim c
+  JOIN graphitron_path_need_precedence cp ON cp.rule = c.rule
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_path_need_claim b
+                     JOIN graphitron_path_need_precedence bp ON bp.rule = b.rule
+                    WHERE b.graph_name = c.graph_name AND b.coordinate = c.coordinate
+                      AND bp.priority < cp.priority);
 COMMENT ON VIEW graphitron_path_need_table_rule IS 'One row the path need table rule computes, in the shape graphitron_path_need_table stores: the claims that took effect. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_table, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_table.graph_name';
 -- COMMENT ON COLUMN graphitron_path_need_table_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_table.coordinate';
