@@ -34,6 +34,7 @@ type Query {
 
     filmByKey(film_id: Int! @lookupKey @field(name: "film_id")): Film
     filmsById(id: [ID] @nodeId(typeName: "Film") @lookupKey): [Film]
+    addresses: [AddressRow!]!
     node(id: ID!): Node
 }
 

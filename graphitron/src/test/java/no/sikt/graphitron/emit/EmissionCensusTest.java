@@ -289,18 +289,21 @@ class EmissionCensusTest {
         java.util.Collections.sort(emitted);
         refused.values().forEach(java.util.Collections::sort);
         assertThat(emitted).as("the units the store emits").containsExactly("ActorCondMember", "ActorMember",
-            "ActorNode", "Address", "AppAccount", "Catalogue", "CatalogueItem", "CatalogueShelf", "CategoryLabel",
-            "CategoryNode", "City", "Company", "Content", "ConverterCampus", "ConverterCampusTerm", "ConverterIdChange",
-            "ConverterOrg", "ConverterSite", "DisplayAccount", "DisplayPerson", "DivergedCampusRef", "DivergedChildRef",
-            "DivergedLabelSide", "DivergedOrgSide", "Email", "FanDetail", "FanMark", "FanOwner", "FanTarget",
-            "FilmBookmark", "FilmCategoryNode", "FilmContent", "FilmEndorsement", "FilmEndorsementNode", "FilmInventory",
-            "HostLabelsRow", "Individual", "InvCondMember", "InventoryItem", "InventoryUnit", "KeyedNode",
-            "LanguageAlias", "LanguageNode", "LevelInterval", "Mailbox", "PagedA", "PagedB", "Party",
-            "PaymentLegacyProbe", "Person", "PresenceDetail", "PresenceDetailNode", "PresenceItem", "Project",
-            "ProjectEvent", "ProjectNote", "Rental", "RoleAssignment", "RoleHolder", "SecureNote", "SessionCustomer",
-            "ShortContent", "SplitFilterTarget", "SplitKeyChild", "SplitKeyParent", "SplitParent", "SplitParentTag",
-            "SquadMember", "Staff", "StockFilm", "StockInventory", "StorageBin", "StoreLocation", "StoreManager",
-            "StudyLevel", "Subject", "ValidityPeriod", "XlatChild", "XlatCompChild", "XlatCompParent", "XlatParent");
+            "ActorNode", "Address", "AppAccount", "Catalogue", "CatalogueItem", "CatalogueShelf", "Category",
+            "CategoryLabel", "CategoryNode", "City", "Company", "Content", "ConverterCampus",
+            "ConverterCampusTerm", "ConverterIdChange", "ConverterOrg", "ConverterSite", "DisplayAccount",
+            "DisplayPerson", "DivergedCampusRef", "DivergedChildRef", "DivergedLabelSide", "DivergedOrgSide",
+            "DivergedRefChild", "DivergedRefOrg", "Email", "FanDetail", "FanMark", "FanOwner", "FanTarget",
+            "FilmBookmark", "FilmCategoryNode", "FilmContent", "FilmEndorsement", "FilmEndorsementNode",
+            "FilmInventory", "HostLabelsRow", "Individual", "InvCondMember", "InventoryItem",
+            "InventoryUnit", "KeyedNode", "LanguageAlias", "LanguageNode", "LevelInterval", "Mailbox",
+            "PagedA", "PagedB", "Party", "PaymentLegacyProbe", "Person", "PresenceDetail",
+            "PresenceDetailNode", "PresenceHost", "PresenceHostRefs", "PresenceItem", "Project",
+            "ProjectEvent", "ProjectNote", "Rental", "RoleAssignment", "RoleHolder", "SecureNote",
+            "SessionCustomer", "ShortContent", "SplitFilterParent", "SplitFilterTarget", "SplitKeyChild",
+            "SplitKeyParent", "SplitParent", "SplitParentTag", "SquadMember", "Staff", "StockFilm",
+            "StockInventory", "StorageBin", "StoreLocation", "StoreManager", "StudyLevel", "Subject",
+            "ValidityPeriod", "XlatChild", "XlatCompChild", "XlatCompParent", "XlatParent");
         // Each line goes as its fact lands; an occurrence moving between lines is a change to look at,
         // not to re-pin.
         assertThat(refused)
@@ -309,12 +312,6 @@ class EmissionCensusTest {
                 "HostLabelsComputedRow.nb", "HostLabelsComputedRow.nn", "HostLanguageNames.englishName",
                 "HostLanguageNames.italianName", "Inventory.filmCardData", "Inventory.filmCardDataMaybeMissing",
                 "Inventory.filmRef"))
-            .containsEntry("NULL_CONTRACT", List.of("Customer.location", "FanAlpha.alphaPlacement",
-                "FanBeta.betaPlacement", "Film.blurb", "Film.detailsForMethod", "Film.filmDetails", "Film.info",
-                "Film.inlineBundle", "Film.original", "Film.projected", "Film.sameRowNested", "Film.spoken",
-                "Film.summary", "PivotNestingHost.labels", "PivotNestingHost.labelsComputed",
-                "PivotNestingHost.labelsMixed", "PivotNestingHost.origin", "PivotNestingHost.texts",
-                "PresenceHost.detailRefs", "PresenceHost.holdings", "PresenceHost.holdingsSplit", "Store.location"))
             .containsEntry("INLINE_CHILD", List.of("Actor.films", "Actor.filmsNested", "Category.children",
                 "Category.parent", "Customer.address", "Customer.addressByCondition", "Customer.storeAddress",
                 "DivergedRefChild.organisation", "DivergedRefOrg.children", "FanAlpha.target", "FanBeta.target",
@@ -334,8 +331,7 @@ class EmissionCensusTest {
                 "Film.titleTranslations", "Film.titleTranslationsSplit", "FilmActor.noteTranslations"))
             .containsEntry("SCALAR_PATH", List.of("Customer.addressNodeId", "Customer.districtByCondition",
                 "Film.soleActorFirstName"))
-            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "NULL_CONTRACT", "PIVOT",
-                "SCALAR_PATH");
+            .containsOnlyKeys("EXPRESSION", "INLINE_CHILD", "NARROWED_LIST", "PIVOT", "SCALAR_PATH");
     }
 
     /**

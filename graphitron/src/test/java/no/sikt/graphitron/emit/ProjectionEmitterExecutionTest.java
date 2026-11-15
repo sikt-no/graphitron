@@ -85,7 +85,10 @@ class ProjectionEmitterExecutionTest {
                                               String... types) {
         var compiled = new HashMap<String, TypeSpec>();
         for (var type : types) {
-            compiled.put(pkg + "." + type, ((ProjectionEmitter.Result.Emitted) emitted.get(type)).unit());
+            if (!(emitted.get(type) instanceof ProjectionEmitter.Result.Emitted unit)) {
+                throw new IllegalStateException(type + " is not emitted: " + emitted.get(type));
+            }
+            compiled.put(pkg + "." + type, unit.unit());
         }
         for (TypeSpec spec : SelectionOccurrencesClassGenerator.generate(pkg)) {
             compiled.put(pkg + ".util." + spec.name(), spec);
