@@ -92,10 +92,10 @@ The walk's read path is gone
 │   ├── A narrowed inline list is emitted from the store
 │   ├── A nesting field's leaves state how they're read
 │   └── Every list states its order or is refused, claimed by F
+├── A child whose followed key lands on the tenant column is routed by its row's tenant
 └── The walk's service path is gone
-    ├── The service fields are emitted from the store
-    │   └── A producer's fetcher parts are emitted from the store
-    └── A child whose followed key lands on the tenant column is routed by its row's tenant
+    └── The service fields are emitted from the store
+        └── A producer's fetcher parts are emitted from the store
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1097,7 +1097,7 @@ static method needs no holder.
   writer captures, an extended near-match rather than a relation beside it (Alf, 2026-11-14), so the
   defect rule reads stored tables only. Done takes `graphitron_occurrence_connection_rule` off
   `StageRuleGateTest.READ_BY_VIEWS`. The model goes past the architect at take-up.
-* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store" and "A child whose followed key lands on the tenant column is routed by its row's tenant". The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
+* **The walk's service path is gone** `blocked`, E's, on "The service fields are emitted from the store". The walk's service path dissolves without waiting for tenant routing (Alf, 2026-11-15): a service shape the store cannot emit yet is a stored deferral, a child service routed by its row's tenant among them. The subtract: `ServiceCatalog`'s decode, claim and bind, the ten service leaves,
   `MethodRef.Service`, `ServiceMethodCall` and `ServiceMethodCallEmitter` go; `@service` then admits
   a `$context` pair, reading `graphitron_call_context_key`.
 * **A routine call is stated per occurrence and emitted from the store, as a service call is** `open`, F's.
