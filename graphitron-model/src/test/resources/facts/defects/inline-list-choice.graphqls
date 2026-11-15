@@ -1,6 +1,7 @@
 # A list read inline in the orders a client composes: the store states each choice and the
 # projection emitter applies the one picked, but graphitron's generated fetchers do not render it
-# until the store's units replace them, so the choice stays refused where the argument is written.
+# until the store's units replace them, so the choice stays refused where the argument is written,
+# as ordering-refusals pins. This document holds the schema the emitter's execution test reads.
 
 type Film @table(name: "film") {
     title: String
@@ -36,9 +37,4 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "coo
   FilmSort.LENGTH,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
   FilmSort.NAME_C,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
   FilmSort.TITLE,                CHOICE,  FIELDS,               Category.filmsChosen(order:)
-  """)
-
-extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
-  source_line, code
-  12,          ORDER_CHOICE_ON_INLINE_LIST
   """)
