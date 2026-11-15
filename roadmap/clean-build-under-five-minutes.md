@@ -248,7 +248,7 @@ therefore also this item's largest lever: no view reads a view, rule views stay 
 derivation that would need a complex rule is stored upstream.
 
 This item does not do that work. R876 does, under:
-- "No view reads a view, and every rule view is simple";
+- "No view reads a view, and every rule view is simple, claimed by B";
 - "A per-depth rule is planned once per depth";
 - the per-depth writer nodes F leads.
 

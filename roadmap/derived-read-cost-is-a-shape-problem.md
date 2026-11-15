@@ -1651,17 +1651,35 @@ someone to profile.
   into two upserts and `OccurrenceSources.write` into four, so H2 plans the whole union that many
   times a depth; together they are a sixth to a fifth of the verification build's CPU, all of it
   planning (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
-* **No view reads a view, and every rule view is simple** `open`. The store's rulings
-  (`fact-model.adoc` § Every relation has a grain) are not yet met. Views reading views:
-  `graphitron_occurrence_call_pin` (and `_call_rule`, `_call_method_rule` reading it),
-  `graphitron_entry_defect_parameter_rule`, `graphitron_outbox_key_rule`,
-  `graphitron_argmapping_pair_defect_rule`, `graphitron_entry_defect_member_rule` (over
-  `graphql_poly_member`), `graphitron_occurrence_call_parameter_rule`
-  and `_defect`, `graphitron_argmapping_step_head_rule` and `graphitron_occurrence_node_id_rule`.
-  Oversized rule views, each a derivation skipped upstream:
-  `graphitron_occurrence_condition_parameter_rule`, `graphitron_occurrence_producer_lift_rule` and
-  `graphitron_join_path_step_rule`. Each is fixed by storing the skipped derivation at its own
-  grain, priced by `prepare_ms` on a cold capture. Two rule views are still read by another view,
+* **No view reads a view, and every rule view is simple, claimed by B** `open`. The store's rulings
+  (`fact-model.adoc` § Every relation has a grain) are not yet met: on 2026-11-15, 27 views read
+  another view, 11 of them rule views. The call parameter chain is the deepest:
+  `graphitron_occurrence_call_parameter_rule` and `graphitron_occurrence_service_parameter_defect_rule`
+  read `graphitron_occurrence_call_parameter_candidate` and `_written`, `graphitron_occurrence_call_pin`
+  reads the parameter rule, and `graphitron_occurrence_call_rule` and `_call_method_rule` read the pin;
+  the candidate is stored at its grain, and the written fill goes into the stored
+  `graphitron_occurrence_call_parameter` where it nearly holds it. `graphitron_producer_rule` and
+  `graphitron_reader_rule` read `graphitron_producer_claim`, a filter of the stored claims each reader
+  inlines. `graphitron_argmapping_step_head_rule` reads `graphitron_argmapping_call`, whose string
+  parsing becomes generated columns on `graphitron_argmapping_pair`. `graphitron_outbox_key_rule`
+  reads `graphitron_session_handle_member`, and `graphitron_occurrence_route_entry_defect_rule` reads
+  `graphitron_occurrence_connection_rule`. The minting chain (`graphitron_minted_coinage_rule`,
+  `graphitron_carrier_directive_rule` and the `_minted` and `_minted_candidate` views) reads
+  `graphitron_carrier_facet_mint`, stored by extending `graphitron_connection_facet`, and
+  `graphitron_synthesized_node_type_id`, which its two readers inline. Outside the rules,
+  `graphitron_code_reference_site`, `graphitron_entry_defect_site` and `graphitron_argmapping_match`
+  read `graphql_element_field`, and `diagnostic` reads the build warning views. The rule views that
+  read `graphql_poly_member` read `graphitron_type_member`, and those that read
+  `graphitron_code_reference_site` read `graphitron_code_reference`, its stored form; both views go
+  when their Java readers in the editor and the MCP server move. Oversized rule views, each a
+  derivation skipped upstream, by size: `graphitron_occurrence_depth_entry_defect_rule` (40k
+  characters), `graphitron_occurrence_build_entry_defect_rule` (26k),
+  `graphitron_occurrence_producer_lift_rule` (21k), `graphitron_outbox_entry_defect_rule` and
+  `graphitron_occurrence_binding_entry_defect_rule` (16k), `graphitron_join_path_step_rule`,
+  `graphitron_outbox_key_rule` and `graphitron_occurrence_condition_parameter_rule` (15k). A defect
+  rule that large likely recomputes its stage's resolution to find where it fails, so the stage
+  stores its outcome, failures included, and the rule filters it. Each is fixed by storing the skipped derivation at its own
+grain, priced by `prepare_ms` on a cold capture. Two rule views are still read by another view,
   `graphitron_occurrence_call_parameter_rule` (by `graphitron_occurrence_call_pin`) and
   `graphitron_occurrence_connection_rule` (by `graphitron_occurrence_route_entry_defect_rule`), and
   one view named a rule no stage writes from, `graphitron_entry_defect_parameter_rule`:
