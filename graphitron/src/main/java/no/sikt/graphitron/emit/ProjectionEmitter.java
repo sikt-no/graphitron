@@ -274,7 +274,8 @@ public final class ProjectionEmitter {
 
     /**
      * A list of one table-bound type read inline down one chain of column-pair joins to that type's
-     * table, each of its orders' keys a column of that table, and whose type's unit is emitted.
+     * table, each of its orders' keys a column of that table or of the table its whole path lands on,
+     * and whose type's unit is emitted.
      */
     private static boolean inlineList(ProjectionQuery.Arm arm, ProjectionQuery.TableKey unitTable,
                                       Map<String, ProjectionQuery.Unit> callable) {
@@ -289,7 +290,7 @@ public final class ProjectionEmitter {
         if (list.defaultOrder() != null) orders.add(list.defaultOrder());
         if (list.choice() != null) orders.addAll(list.choice().orders());
         return orders.stream().flatMap(o -> o.keys().stream())
-            .allMatch(k -> k.column() != null && k.column().table().equals(landing));
+            .allMatch(k -> k.column() != null && ("PATH".equals(k.kind()) || k.column().table().equals(landing)));
     }
 
     /**
@@ -449,7 +450,9 @@ public final class ProjectionEmitter {
                 var last = order.keys().get(order.keys().size() - 1);
                 body.add("case $S -> {\n", order.value()).indent();
                 body.addStatement("order.addAll($T.of($L))", LIST, sortTerms(order, listed, true));
-                body.addStatement("columns.addAll($T.of($L))", LIST, columnNames(order.keys()));
+                // A key read down a path counts for nothing toward an identifying key.
+                body.addStatement("columns.addAll($T.of($L))", LIST,
+                    columnNames(order.keys().stream().filter(k -> !"PATH".equals(k.kind())).toList()));
                 body.addStatement("lastDesc = $L", order.uniformAscending() ? "desc" : "DESC".equals(last.direction()));
                 body.unindent().add("}\n");
             }
@@ -488,6 +491,32 @@ public final class ProjectionEmitter {
         body.addStatement("fields.add($T.multiset($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),
             aliasPrefix(arm.aliasOwner()));
         return body.unindent().add("}\n").build();
+    }
+
+    /**
+     * A path key's column as one correlated scalar subselect from the row of {@code table}: its hops
+     * joined in order on their column pairs, each aliased after the row's own alias, the first
+     * correlated to the row, reading the column the last one lands on. Every hop is to-one, so the
+     * subselect reads at most one row.
+     */
+    private static CodeBlock pathColumn(ProjectionQuery.SortKey key, String table) {
+        var hops = key.hops();
+        if (hops.isEmpty()) {
+            throw new IllegalStateException("The PATH sort key reading " + key.column().javaName()
+                + " has a column but no hops; the store writes the column only where its whole path lands");
+        }
+        var aliases = new ArrayList<String>();
+        for (int i = 0; i < hops.size(); i++) {
+            var hop = hops.get(i);
+            aliases.add(CodeBlock.of("$T.$L.as($L.getName() + $S)", ClassName.bestGuess(hop.constantsClassName()),
+                hop.javaFieldName(), table, "_k" + i).toString());
+        }
+        var select = CodeBlock.builder().add("$T.field($T.select($L.$L).from($L)", DSL, DSL,
+            aliases.get(aliases.size() - 1), key.column().javaName(), aliases.get(0));
+        for (int i = 1; i < hops.size(); i++) {
+            select.add(".join($L).on($L)", aliases.get(i), pairs(hops.get(i).pairs(), aliases.get(i - 1), aliases.get(i)));
+        }
+        return select.add(".where($L))", pairs(hops.get(0).pairs(), table, aliases.get(0))).build();
     }
 
     /** The SQL names of {@code keys}' columns, as string literals. */
@@ -552,8 +581,9 @@ public final class ProjectionEmitter {
         for (int i = 0; i < order.keys().size(); i++) {
             var key = order.keys().get(i);
             if (i > 0) terms.add(", ");
-            var column = key.collation() == null ? CodeBlock.of("$L.$L", table, key.column().javaName())
-                : CodeBlock.of("$L.$L.collate($S)", table, key.column().javaName(), key.collation());
+            var read = "PATH".equals(key.kind()) ? pathColumn(key, table)
+                : CodeBlock.of("$L.$L", table, key.column().javaName());
+            var column = key.collation() == null ? read : CodeBlock.of("$L.collate($S)", read, key.collation());
             String nulls = key.nullable() ? ".nullsLast()" : "";
             if (reversible) {
                 terms.add("desc ? $L.desc()$L : $L.asc()$L", column, nulls, column, nulls);

@@ -1,4 +1,4 @@
-"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs, its language's name down a path and, through the non-null nesting field facts, the length and release_year columns of the same film row and the language's name again. The participants of a discriminated interface write an interface field under the interface's name. Language.spoken is a nullable nesting field, present wherever the language row is. Category lists its films inline, by title, and AddressRow reads its one city inline."
+"A table-bound type's projection unit is its fields' occurrences and, inline beneath a nesting field, the nesting type's: Film projects its title's column, the key column its node id packs, its language's name down a path and, through the non-null nesting field facts, the length and release_year columns of the same film row and the language's name again. The participants of a discriminated interface write an interface field under the interface's name. Language.spoken is a nullable nesting field, present wherever the language row is. Category lists its films inline, by title or by a column down a path, and AddressRow reads its one city inline."
 
 interface Node { id: ID! }
 
@@ -64,6 +64,9 @@ type Category @table(name: "category") {
   "A list read inline in the order written, projected by Film's own unit."
   films: [Film!]! @reference(path: [{table: "film_category"}, {table: "film"}])
     @defaultOrder(fields: [{name: "title"}])
+  "A list read inline in the order of a column down a path, its original language's name."
+  filmsByOriginalLanguage: [Film!]! @reference(path: [{table: "film_category"}, {table: "film"}])
+    @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
 }
 
 type Query {

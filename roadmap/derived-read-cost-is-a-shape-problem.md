@@ -85,7 +85,6 @@ The walk's read path is gone
     ├── An argument binds the call parameter it supplies
     ├── The root query fetchers are emitted from the store, claimed by C
     ├── A child read inline is emitted from the store, claimed by E
-    │   ├── A sort key's path is resolved at its occurrence, claimed by C
     │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by E
     │   └── A single child is looked up by its keys, claimed by E
     ├── A narrowed inline list is emitted from the store
@@ -830,7 +829,7 @@ static method needs no holder.
     `ProjectionQuery` decides a field's alias owner itself, the declaring interface where a
     discriminating participant recognises the type; a stored owner per field occurrence is read
     instead.
-  * **A child read inline is emitted from the store, claimed by E** `blocked`, on "A sort key's path is resolved at its occurrence, claimed by C", "An inline list is emitted from the store in its stated or chosen order, claimed by E" and "A single child is looked up by its keys, claimed by E". A
+  * **A child read inline is emitted from the store, claimed by E** `blocked`, on "An inline list is emitted from the store in its stated or chosen order, claimed by E" and "A single child is looked up by its keys, claimed by E". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -921,20 +920,6 @@ static method needs no holder.
       pass-through and `ConditionBeanAtInputField` go, and typed-rejection.adoc says so. Breaking
       for utdanningsregisteret's `searchVektingstallRange` and `filterUtdanningsinstanserByVarighet`,
       so it lands after the typed forms, with a `BREAKING-CHANGE` footer naming the migration.
-  * **A sort key's path is resolved at its occurrence, claimed by C** `open`. A `fields` element's `path:` (about
-    twenty sakila sites) is a `PATH` sort key with no column. Its elements are captured in the one
-    reference-path grammar, the element entries' parent widened to any AST anchor, and resolved by
-    the shared element relations. The key keeps its own grain, an order's position at an occurrence
-    and table rather than an occurrence's need, so it gains a subtype naming the column it lands on
-    and hop rows naming each step's foreign key and direction, written by `occurrence-orderings`;
-    a hop the walk refuses, a condition, a routine, a to-many step or a column off the landing
-    table, is refused there. The emitter reads them as a correlated scalar subselect in the sort
-    term. Closes before the flip, which keeps no fallback for it (Alf, 2026-11-15, via A). Whether a
-    hop reaches one row is `sql_referential_constraint_reach`'s, stated once in the sql family, and
-    the table an order's names resolve against is `graphitron_occurrence_order`'s own read table,
-    stated by the order rule at occurrence-orderings, so no rule tests a write's shape to find it
-    (Alf, 2026-11-25). Only `ROUTINE_WRITE_PLURAL_UNORDERED` keeps that test: it fires where no order
-    row exists, so there is no read table to join, and the shape is what the defect means.
   * **An inline list is emitted from the store in its stated or chosen order, claimed by E** `open`. The walk
     resolves an `@orderBy` argument on a list read inside its parent's statement and cannot lower it
     onto the multiset: `LauncherCommands.requireResolvedOrderingsAreLowered` throws a generator bug
@@ -3487,6 +3472,17 @@ bindings. `ConditionCommand` keeps its coordinate, table, glue and facets, and s
 from its predicates, until the callers and `PlanCompileGraph` read the store's rows. A whole node id at a
 `@condition` parameter of a key column's type is refused (`NODE_ID_KEY_ARITY_EXCEEDS_SLOT`); the column
 is projected with `argMapping`.
+
+**A sort key's path is resolved at its occurrence** (2026-11-25). A `fields` element's `path:` is a
+`PATH` sort key whose elements are captured in the one reference-path grammar and resolved by the
+shared element relations. `graphitron_occurrence_sort_key_hop` names each hop's foreign key and
+direction at the sort key's grain, `graphitron_occurrence_sort_key_column` names the column the last
+hop lands on, and `SORT_KEY_PATH_CONDITION`, `SORT_KEY_PATH_TO_MANY`, `SORT_KEY_PATH_UNRESOLVED` and
+`SORT_KEY_COLUMN_OFF_PATH` refuse what the walk refuses. `ProjectionEmitter` reads the key as a
+correlated scalar subselect in the sort term, so the flip keeps no fallback for it. Whether a hop reaches
+one row is `sql_referential_constraint_reach`'s, and the table an order reads is the order's own
+`read_table` (Alf, 2026-11-25); the hop rule reads the written key off `graphitron_path_element_key`
+until "Nothing resolves a path but the walk" moves its readers. Carried from G's range by C.
 
 **A parameter's table fit is held only for a method a call names** (2026-11-16). Which catalog tables a
 parameter can be handed is `graphitron_call_parameter_table`, keyed by the graph and written by the

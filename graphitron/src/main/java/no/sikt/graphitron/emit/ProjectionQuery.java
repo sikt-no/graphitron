@@ -29,6 +29,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_NODE_ID;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ORDER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_STEP;
@@ -43,6 +44,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_PIVOT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
@@ -102,11 +104,18 @@ public final class ProjectionQuery {
     }
 
     /**
-     * One key an order sorts by, in its order's sequence: the column it reads where it reads one,
-     * null for a key computed by a method or read down a path, with whether the column admits null,
-     * the key's direction and its collation, null where none is written.
+     * One key an order sorts by, in its order's sequence: the column it reads where it reads one, null
+     * for a key computed by a method or a path that does not resolve, what it reads as the store kinds
+     * it, {@code COLUMN}, {@code PATH} or {@code METHOD}, with whether its value can be null, the key's
+     * direction and its collation, null where none is written, and the hops a {@code PATH} key reads
+     * its column through, from the list's row, empty for any other.
      */
-    public record SortKey(Column column, boolean nullable, String direction, String collation) {}
+    public record SortKey(Column column, String kind, boolean nullable, String direction, String collation,
+                          List<Step> hops) {
+        public SortKey {
+            hops = List.copyOf(hops);
+        }
+    }
 
     /**
      * One order a list can be read in, its keys in sequence: the default, its value null, or one a
@@ -347,6 +356,7 @@ public final class ProjectionQuery {
         var ao = GRAPHITRON_OCCURRENCE.as("ao");
         var ga = GRAPHITRON_ARGUMENT;
         var oi = GRAPHITRON_ORDER_INPUT;
+        var hops = hops(store);
         var bounds = new LinkedHashMap<String, Set<String>>();
         var defaults = new LinkedHashMap<String, List<SortKey>>();
         var arguments = new LinkedHashMap<String, Choice>();
@@ -354,7 +364,7 @@ public final class ProjectionQuery {
         store.dsl()
             .select(r.COORDINATE, r.BOUND, r.KIND, ev.VALUE_NAME, ao.NAME, ga.LIST_DEPTH, oi.SORT_FIELD_NAME,
                 oi.DIRECTION_FIELD_NAME, k.DIRECTION, k.COLLATION, kc.TABLE_SOURCE_NAME, kc.TABLE_SCHEMA,
-                kc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.NULLABLE)
+                kc.TABLE_NAME, c.COLUMN_NAME, c.JOOQ_NAME, c.NULLABLE, r.CHOICE, k.POSITION, k.KIND)
             .from(r)
             .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.COORDINATE.eq(r.COORDINATE), k.BOUND.eq(r.BOUND),
                 k.CHOICE.eq(r.CHOICE))
@@ -373,7 +383,12 @@ public final class ProjectionQuery {
                 bounds.computeIfAbsent(coordinate, x -> new LinkedHashSet<>()).add(row.value2());
                 var column = row.value14() == null ? null
                     : column(row.value11(), row.value12(), row.value13(), row.value14(), row.value15());
-                var key = new SortKey(column, Boolean.TRUE.equals(row.value16()), row.value9(), row.value10());
+                var path = hops.getOrDefault(java.util.Arrays.asList(coordinate, row.value17(), row.value18()),
+                    List.of());
+                // A path's value is null where a hop reaches no row, so it sorts its nulls last whatever the
+                // column admits, as the walk's path key does.
+                var key = new SortKey(column, row.value19(), !path.isEmpty() || Boolean.TRUE.equals(row.value16()),
+                    row.value9(), row.value10(), path);
                 if ("DEFAULT".equals(row.value3())) {
                     defaults.computeIfAbsent(coordinate, x -> new ArrayList<>()).add(key);
                 } else {
@@ -402,7 +417,7 @@ public final class ProjectionQuery {
             .forEach(row -> completions.computeIfAbsent(java.util.Arrays.asList(row.value1(), row.value2()),
                     x -> new ArrayList<>())
                 .add(new SortKey(column(row.value4(), row.value5(), row.value6(), row.value7(), row.value8()),
-                    false, row.value3(), null)));
+                    "COLUMN", false, row.value3(), null, List.of())));
 
         // The keys identifying each list's rows, the row key first.
         var ik = GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
@@ -513,6 +528,56 @@ public final class ProjectionQuery {
                 narrowed.contains(coordinate)));
         }
         return singles;
+    }
+
+    /**
+     * Each path sort key's hops, by its occurrence, order and position, in hop order: the table each
+     * reaches and the column pairs it joins on, from the side it leaves to the side it reaches.
+     */
+    private static Map<List<Object>, List<Step>> hops(StoreHandle store) {
+        var h = GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
+        var t = SQL_TABLE;
+        var sch = SQL_SCHEMA;
+        var rcc = SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+        var hc = SQL_CONSTRAINT_COLUMN.as("hc");
+        var rfc = SQL_CONSTRAINT_COLUMN.as("rfc");
+        var hcol = SQL_COLUMN.as("hcol");
+        var rcol = SQL_COLUMN.as("rcol");
+        // The key's columns in its order, the holding table's beside the referenced one's.
+        var pairs = multiset(select(hcol.JOOQ_NAME, rcol.JOOQ_NAME, hcol.BINDING_TYPE, rcol.BINDING_TYPE)
+            .from(rcc)
+            .join(hc).on(hc.SOURCE_NAME.eq(rcc.SOURCE_NAME), hc.TABLE_SCHEMA.eq(rcc.TABLE_SCHEMA),
+                hc.TABLE_NAME.eq(rcc.TABLE_NAME), hc.CONSTRAINT_NAME.eq(rcc.CONSTRAINT_NAME), hc.POSITION.eq(rcc.POSITION))
+            .join(rfc).on(rfc.SOURCE_NAME.eq(rcc.REFERENCED_SOURCE_NAME), rfc.TABLE_SCHEMA.eq(rcc.REFERENCED_SCHEMA),
+                rfc.TABLE_NAME.eq(rcc.REFERENCED_TABLE), rfc.CONSTRAINT_NAME.eq(rcc.REFERENCED_CONSTRAINT_NAME),
+                rfc.POSITION.eq(rcc.REFERENCED_POSITION))
+            .join(hcol).on(hcol.SOURCE_NAME.eq(hc.SOURCE_NAME), hcol.TABLE_SCHEMA.eq(hc.TABLE_SCHEMA),
+                hcol.TABLE_NAME.eq(hc.TABLE_NAME), hcol.COLUMN_NAME.eq(hc.COLUMN_NAME))
+            .join(rcol).on(rcol.SOURCE_NAME.eq(rfc.SOURCE_NAME), rcol.TABLE_SCHEMA.eq(rfc.TABLE_SCHEMA),
+                rcol.TABLE_NAME.eq(rfc.TABLE_NAME), rcol.COLUMN_NAME.eq(rfc.COLUMN_NAME))
+            .where(rcc.SOURCE_NAME.eq(h.CONSTRAINT_SOURCE_NAME), rcc.TABLE_SCHEMA.eq(h.CONSTRAINT_SCHEMA),
+                rcc.TABLE_NAME.eq(h.CONSTRAINT_TABLE), rcc.CONSTRAINT_NAME.eq(h.CONSTRAINT_NAME))
+            .orderBy(rcc.POSITION));
+        var hops = new LinkedHashMap<List<Object>, List<Step>>();
+        store.dsl()
+            .select(h.COORDINATE, h.CHOICE, h.POSITION, h.HOP, h.DIRECTION, h.FROM_SOURCE_NAME, h.FROM_SCHEMA,
+                h.FROM_TABLE, h.TO_SOURCE_NAME, h.TO_SCHEMA, h.TO_TABLE, sch.TABLES_CLASS_FQN, t.JOOQ_NAME, pairs)
+            .from(h)
+            .join(t).on(t.SOURCE_NAME.eq(h.TO_SOURCE_NAME), t.TABLE_SCHEMA.eq(h.TO_SCHEMA), t.TABLE_NAME.eq(h.TO_TABLE))
+            .join(sch).on(sch.SOURCE_NAME.eq(t.SOURCE_NAME), sch.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
+            .where(h.GRAPH_NAME.eq(store.graphName()))
+            .orderBy(h.COORDINATE, h.CHOICE, h.POSITION, h.HOP)
+            .forEach(row -> {
+                boolean forward = "FORWARD".equals(row.value5());
+                var joined = row.value14().map(pair -> forward
+                    ? new Pair(pair.value1(), pair.value2(), pair.value3(), pair.value4())
+                    : new Pair(pair.value2(), pair.value1(), pair.value4(), pair.value3()));
+                hops.computeIfAbsent(java.util.Arrays.asList(row.value1(), row.value2(), row.value3()),
+                        x -> new ArrayList<>())
+                    .add(new Step(row.value4(), new TableKey(row.value6(), row.value7(), row.value8()),
+                        new TableKey(row.value9(), row.value10(), row.value11()), row.value12(), row.value13(), joined));
+            });
+        return hops;
     }
 
     /** An order's written keys followed by the row-key columns completing it, where any do. */

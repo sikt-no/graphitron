@@ -272,6 +272,19 @@ class ProjectionEmitterExecutionTest {
             .isEqualTo(inCategory().orderBy(FILM.TITLE.collate("C").desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
     }
 
+    @Test
+    @DisplayName("a list read inline in the order of a column down a path, missing values last, then the row key")
+    void anInlineListOrderedDownAPath() throws Exception {
+        var original = Tables.LANGUAGE.as("original");
+        var expected = TestDatabase.dsl().select(FILM.TITLE).from(FILM)
+            .join(Tables.FILM_CATEGORY).on(Tables.FILM_CATEGORY.FILM_ID.eq(FILM.FILM_ID))
+            .leftJoin(original).on(original.LANGUAGE_ID.eq(FILM.ORIGINAL_LANGUAGE_ID))
+            .where(Tables.FILM_CATEGORY.CATEGORY_ID.eq(1))
+            .orderBy(original.NAME.asc().nullsLast(), FILM.FILM_ID).fetch(FILM.TITLE);
+        assertThat(categoryFilms(projectCategory, field("filmsByOriginalLanguage", field("title")),
+            "__rk_filmsByOriginalLanguage")).isEqualTo(expected);
+    }
+
     /** Category 1's films, joined as the inline lists read them. */
     private static org.jooq.SelectConditionStep<org.jooq.Record1<String>> inCategory() {
         return TestDatabase.dsl().select(FILM.TITLE).from(FILM)
