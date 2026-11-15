@@ -8064,26 +8064,21 @@ COMMENT ON COLUMN graphitron_carrier_directive.touched_at IS 'when the reading t
 
 CREATE VIEW graphitron_inherited_directive_rule
   (graph_name, type_name, directive_name, ordinal, value_sdl) AS
-WITH carriers (graph_name, type_name, carrier_count, first_carrier) AS (
-  SELECT graph_name, type_name, COUNT(DISTINCT coordinate), MIN(coordinate)
-    FROM graphitron_minted_coinage
-   GROUP BY graph_name, type_name),
-kept (graph_name, type_name, value_sdl) AS (
-  SELECT d.graph_name, d.type_name, d.value_sdl
-    FROM graphitron_carrier_directive d
-    JOIN carriers c ON c.graph_name = d.graph_name AND c.type_name = d.type_name
-   WHERE d.directive_name = 'tag' AND d.value_sdl IS NOT NULL
-   GROUP BY d.graph_name, d.type_name, d.value_sdl, c.carrier_count
-  HAVING COUNT(DISTINCT d.coordinate) = c.carrier_count),
--- Each kept tag at its place on the first carrier.
-placed (graph_name, type_name, value_sdl, first_carrier, first_ordinal) AS (
-  SELECT k.graph_name, k.type_name, k.value_sdl, MIN(c.first_carrier), MIN(f.ordinal)
-    FROM kept k
-    JOIN carriers c ON c.graph_name = k.graph_name AND c.type_name = k.type_name
-    JOIN graphitron_carrier_directive f
-      ON f.graph_name = k.graph_name AND f.type_name = k.type_name
-     AND f.coordinate = c.first_carrier AND f.directive_name = 'tag' AND f.value_sdl = k.value_sdl
-   GROUP BY k.graph_name, k.type_name, k.value_sdl)
+-- Each tag the first carrier carries, the carrier of least coordinate, that every carrier carries.
+WITH placed (graph_name, type_name, value_sdl, first_carrier, first_ordinal) AS (
+  SELECT f.graph_name, f.type_name, f.value_sdl, f.coordinate, MIN(f.ordinal)
+    FROM graphitron_carrier_directive f
+   WHERE f.directive_name = 'tag' AND f.value_sdl IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM graphitron_minted_coinage e
+                      WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                        AND e.coordinate < f.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_minted_coinage mc
+                      WHERE mc.graph_name = f.graph_name AND mc.type_name = f.type_name
+                        AND NOT EXISTS (SELECT 1 FROM graphitron_carrier_directive d
+                                         WHERE d.graph_name = mc.graph_name AND d.type_name = mc.type_name
+                                           AND d.coordinate = mc.coordinate AND d.directive_name = 'tag'
+                                           AND d.value_sdl = f.value_sdl))
+   GROUP BY f.graph_name, f.type_name, f.value_sdl, f.coordinate)
 -- A tag every carrier carries, in the first carrier's order: placed by how many other tags the first
 -- carrier carries before it that every carrier carries too, dense from zero.
 SELECT p.graph_name, p.type_name, 'tag',
