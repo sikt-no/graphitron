@@ -1684,25 +1684,12 @@ someone to profile.
   Oversized rule views, each a derivation skipped upstream:
   `graphitron_occurrence_condition_parameter_rule`, `graphitron_occurrence_producer_lift_rule` and
   `graphitron_join_path_step_rule`. Each is fixed by storing the skipped derivation at its own
-  grain, priced by `prepare_ms` on a cold capture. The window functions are "No rule view uses a window function, claimed by G".
-* **No rule view uses a window function, claimed by G** `open`. What a window ranked is stated
-  instead, a stored ordinal or a `NOT EXISTS` against the row that wins (Alf, 2026-11-15). Thirteen
-  views still use one, by kind: a first pick by `ROW_NUMBER` (`graphitron_argmapping_pair_rule`,
-  `graphitron_producer_claim_rule`, `graphitron_federation_link_rule`, `graphitron_outbox_key_rule`)
-  becomes a `NOT EXISTS` against an earlier candidate; a
-  `ROW_NUMBER` used as an ordinal (`graphitron_federation_link_import_rule`,
-  `graphitron_configured_tag_rule`, `graphitron_minted_key_rule`) reads a stored one, captured where
-  missing; a `COUNT(*) OVER` (`graphitron_outbox_target_rule`, `graphitron_outbox_routine_target_rule`)
-  becomes a grouped join; a `MIN(priority) OVER` (`graphitron_occurrence_source_rule`,
-  `graphitron_path_need_table_rule`) becomes a `NOT EXISTS` against a better priority; and
-  `graphitron_connection_facet` and `graphitron_inherited_directive`, plain views, are checked for
-  whether a stage writes from them. Each lands as a refactor: the fact documents and a sis capture
-  hold the same rows before and after. The two `intent_` views go with their family.
-  * **An outbox target's name is matched once** `open`, off the critical path. The table or routine an
-    outbox names is resolved by one match in `graphitron_outbox_target_rule`, one in
-    `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the
-    configured name into its namespace and name with `REGEXP`. Capture stores the two halves, and one
-    stored relation states the match and how many candidates it met, which all three read.
+  grain, priced by `prepare_ms` on a cold capture.
+* **An outbox target's name is matched once** `open`, off the critical path. The table or routine an
+  outbox names is resolved by one match in `graphitron_outbox_target_rule`, one in
+  `graphitron_outbox_routine_target_rule` and one in the outbox defect rule, each splitting the
+  configured name into its namespace and name with `REGEXP`. Capture stores the two halves, and one
+  stored relation states the match and how many candidates it met, which all three read.
 * **A dev session's store is compacted when it ends** `open`. Compaction at close runs before H2's
   own shutdown hook closes the database, so a long session's store does not keep growing.
 
@@ -3139,6 +3126,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**No rule view uses a window function** (2026-11-15). What a window ranked is stated: a first pick is
+a `NOT EXISTS` against an earlier candidate, a winning priority one against a better priority, a
+count of candidates a grouped join, and an ordinal the stored order or a count of the rows before
+it. `graphitron_facet_binding`, `graphitron_connection_facet` and `graphitron_inherited_directive`
+are tables written from their rule views by `macro-expansion`. A minted accepting `@key` on a type
+with no node key is numbered one past the authored keys.
 
 **The generated connection carrier is `OwnedConnections`** (2026-11-14). `TenantConnections`,
 `TENANT_CONNECTIONS_CLASS_NAME` and `ServiceEmission.Tenancy` go; the tenant is one part of the

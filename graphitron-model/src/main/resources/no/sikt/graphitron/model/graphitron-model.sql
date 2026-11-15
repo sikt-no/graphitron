@@ -4699,19 +4699,18 @@ COMMENT ON VIEW graphitron_occurrence_overridden_rule IS 'One row the overridden
 CREATE VIEW graphitron_argmapping_pair_rule
   (graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, bound_to,
    source_name, source_line, source_column, position) AS
-SELECT graph_name, coordinate, directive_name, ordinal, owner, target_kind, target_name, bound_to,
-       source_name, source_line, source_column, position
-  FROM (SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner,
-               e.target_kind, e.target_name AS target_name, e.bound_to, e.source_name, e.source_line,
-               e.source_column, e.position,
-               ROW_NUMBER() OVER (PARTITION BY s.graph_name, s.coordinate, s.directive_name,
-                                  s.ordinal, s.owner, e.target_kind, e.target_name
-                                  ORDER BY e.position) AS written
-          FROM graphitron_ast_argmapping_pair_entry e
-          JOIN graphitron_argmapping_site s
-            ON s.graph_name = e.graph_name AND s.source_name = e.source_name
-           AND s.source_line = e.source_line AND s.source_column = e.source_column) first_written
- WHERE written = 1;
+SELECT s.graph_name, s.coordinate, s.directive_name, s.ordinal, s.owner, e.target_kind, e.target_name,
+       e.bound_to, e.source_name, e.source_line, e.source_column, e.position
+  FROM graphitron_ast_argmapping_pair_entry e
+  JOIN graphitron_argmapping_site s
+    ON s.graph_name = e.graph_name AND s.source_name = e.source_name
+   AND s.source_line = e.source_line AND s.source_column = e.source_column
+ -- No entry of the same mapping names the parameter earlier.
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry b
+                    WHERE b.graph_name = e.graph_name AND b.source_name = e.source_name
+                      AND b.source_line = e.source_line AND b.source_column = e.source_column
+                      AND b.target_kind = e.target_kind AND b.target_name = e.target_name
+                      AND b.position < e.position);
 COMMENT ON VIEW graphitron_argmapping_pair_rule IS 'One row the argMapping pair rule computes, in the shape graphitron_argmapping_pair stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_pair, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_argmapping_pair_rule.coordinate IS 'the element the mapping''s application is on';
