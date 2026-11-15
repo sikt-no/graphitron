@@ -2227,18 +2227,21 @@ CREATE TABLE graphitron_ast_reference_element_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
+  -- The value holding the path: a @reference or @referenceFor application, or a fields element of an
+  -- @order or @defaultOrder writing a path in the same grammar; one parent shape for every path, as
+  -- graphitron_ast_path_entry anchors its elements.
   FOREIGN KEY (graph_name, source_name, application_line, application_column)
-    REFERENCES graphitron_ast_reference_entry (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
   CHECK (position >= 0)
 );
-COMMENT ON TABLE graphitron_ast_reference_element_entry IS 'One element of the path an application of @reference or @referenceFor wrote, at its index in the list, whatever it says. For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.';
+COMMENT ON TABLE graphitron_ast_reference_element_entry IS 'One element of a written path, an application of @reference or @referenceFor or a fields element of an @order or @defaultOrder, at its index in the list, whatever it says. For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.source_name IS 'the file the element was written in, which is the application''s file too';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.source_line IS 'source line of the element, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose application went is swept with it';
-COMMENT ON COLUMN graphitron_ast_reference_element_entry.application_line IS 'source line of the application the element was written in, the first half of its key in graphitron_ast_reference_entry; the file is the element''s own';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.application_line IS 'source line of the value the path was written in, a @reference or @referenceFor application, keyed in graphitron_ast_reference_entry, or a fields element of an ordering, keyed in graphitron_ast_order_field_entry; the file is the element''s own';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.application_column IS 'source column of the same';
 COMMENT ON COLUMN graphitron_ast_reference_element_entry.position IS 'the index the element was written at in its path, from 0. A path written as one object rather than a list is a list of that one object, at 0';
 
@@ -36364,7 +36367,7 @@ INSERT INTO meta_relation VALUES
    'For example @reference(path: [{table: "film_actor"}, {table: "actor"}]) on Film.actors gives one row at its at sign.',
    'A key-only decode, and not empty for being one: a path''s elements hang from it and cascade with it, so a path has an application to belong to rather than reaching one through the value tree''s holder chain. Both directives carry the same path and are written at a field, an argument and an input field alike, so one relation serves the six combinations, the directive and the site being the applied-directive row''s to say.'),
   ('graphitron_ast_reference_element_entry', 'sdl-written-value', 'graphitron',
-   'One element of the path an application of @reference or @referenceFor wrote, at its index in the list, whatever it says.',
+   'One element of a written path, an application of @reference or @referenceFor or a fields element of an @order or @defaultOrder, at its index in the list, whatever it says.',
    'For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.',
    'Entries capture and do not validate, so an element exists whatever it names: one naming none of a table, a key and a condition, which the element type allows, is a row here and a defect for a detection to state, where before it was in no relation at all and a path read through the step relations had a hole at its index. A field the element type does not declare is not admitted by the definition, so assembly reports it and DirectiveLegality keeps the application out of the entries. The step relations are its subtypes, one per thing an element can name.'),
   ('graphitron_ast_field_path_entry', 'sdl-field-path-position', 'graphitron',

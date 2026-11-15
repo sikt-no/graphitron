@@ -5,6 +5,7 @@ import graphql.language.BooleanValue;
 import graphql.language.Directive;
 import graphql.language.EnumValue;
 import graphql.language.IntValue;
+import graphql.language.Node;
 import graphql.language.NullValue;
 import graphql.language.ObjectField;
 import graphql.language.ObjectValue;
@@ -243,7 +244,7 @@ public final class GraphitronAstEntries {
     }
 
     /** One value of one application's list argument, whatever its shape, at its index. */
-    record Listed(Directive application, Value<?> node, int position) {}
+    record Listed(Node<?> application, Value<?> node, int position) {}
 
     /**
      * Every value in {@code argumentName} across {@code applications}, at its index. Unlike
@@ -257,6 +258,31 @@ public final class GraphitronAstEntries {
             for (Object written : list(application, argumentName)) {
                 if (written instanceof Value<?> value) {
                     listed.add(new Listed(application, value, position));
+                }
+                position++;
+            }
+        }
+        return listed;
+    }
+
+    /**
+     * Every value in the field {@code fieldName} of each of {@code holders}, at its index, the
+     * object holding the list standing where an application stands for {@link #listedIn}; a lone
+     * value is a list of that one value, at 0.
+     */
+    static List<Listed> listedUnder(List<ObjectValue> holders, String fieldName) {
+        var listed = new ArrayList<Listed>();
+        for (ObjectValue holder : holders) {
+            List<?> written = switch (inside(holder, fieldName)) {
+                case null -> List.of();
+                case NullValue ignored -> List.of();
+                case ArrayValue array -> array.getValues();
+                case Value<?> lone -> List.of(lone);
+            };
+            int position = 0;
+            for (Object value : written) {
+                if (value instanceof Value<?> v) {
+                    listed.add(new Listed(holder, v, position));
                 }
                 position++;
             }
@@ -289,20 +315,28 @@ public final class GraphitronAstEntries {
      * element identically, and both are written at more than one site, so the decode is shared and
      * only the relation the rows land in differs.
      */
-    record Step(Directive application, ObjectValue node, String tableRef, String keyRef,
+    record Step(Node<?> application, ObjectValue node, String tableRef, String keyRef,
                 boolean conditionWritten, String className, String method, String argMapping) {}
 
     /** The path elements of {@code applications}, each naming the element it decodes. */
     static List<Step> steps(List<Directive> applications) {
         return elementsOf(applications, "path").stream()
-            .map(element -> new Step(element.application(), element.node(),
-                stringOf(inside(element.node(), "table")),
-                stringOf(inside(element.node(), "key")),
-                inside(element.node(), "condition") instanceof ObjectValue,
-                inside(element.node(), "condition", "className"),
-                inside(element.node(), "condition", "method"),
-                inside(element.node(), "condition", "argMapping")))
+            .map(element -> step(element.application(), element.node()))
             .toList();
+    }
+
+    /** The path elements written in the field {@code fieldName} of each of {@code holders}. */
+    static List<Step> stepsUnder(List<ObjectValue> holders, String fieldName) {
+        return listedUnder(holders, fieldName).stream()
+            .filter(listed -> listed.node() instanceof ObjectValue)
+            .map(listed -> step(listed.application(), (ObjectValue) listed.node()))
+            .toList();
+    }
+
+    private static Step step(Node<?> application, ObjectValue node) {
+        return new Step(application, node, stringOf(inside(node, "table")), stringOf(inside(node, "key")),
+            inside(node, "condition") instanceof ObjectValue, inside(node, "condition", "className"),
+            inside(node, "condition", "method"), inside(node, "condition", "argMapping"));
     }
 
     /**

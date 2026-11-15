@@ -4,6 +4,7 @@ import graphql.language.Directive;
 import graphql.language.FieldDefinition;
 import graphql.language.InputValueDefinition;
 import graphql.language.Node;
+import graphql.language.ObjectValue;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
@@ -28,6 +29,8 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.app
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.conditioned;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.keyed;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.listedIn;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.listedUnder;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stepsUnder;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.steps;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.tabled;
@@ -38,7 +41,10 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * The writer of the path family: every element of every {@code path} a document writes, and the
- * participant each {@code @referenceFor} names, whichever site the directive was written at.
+ * participant each {@code @referenceFor} names, whichever site the directive was written at. A
+ * {@code fields} element of an {@code @order} or {@code @defaultOrder} writes a path too, in the same
+ * grammar, its elements and segments decoded here under the element as their parent; only a
+ * {@code @reference} or {@code @referenceFor} path is anchored to a declaration for the claims.
  *
  * <p>Not a site's writer. {@code @reference} and {@code @referenceFor} both carry
  * {@code path: [ReferenceElement!]!}, and a path is one grammar wherever it is written, so each
@@ -68,12 +74,21 @@ final class GraphitronReferencePathEntries {
         var carryingPaths = new ArrayList<Directive>(applied(applications, "reference"));
         carryingPaths.addAll(applied(applications, "referenceFor"));
         references(dsl, graph, touchedAt, carryingPaths);
-        var elements = listedIn(carryingPaths, "path");
+        var sorted = new ArrayList<Directive>(applied(applications, "order"));
+        sorted.addAll(applied(applications, "defaultOrder"));
+        var sortFields = listedIn(sorted, "fields").stream()
+            .map(GraphitronAstEntries.Listed::node)
+            .filter(ObjectValue.class::isInstance)
+            .map(ObjectValue.class::cast)
+            .toList();
+        var elements = new ArrayList<>(listedIn(carryingPaths, "path"));
+        elements.addAll(listedUnder(sortFields, "path"));
         GraphitronAstEntries.clearDisplaced(dsl, GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY, graph, source,
             elements);
         elements(dsl, graph, touchedAt, elements);
         var referenceFor = wrote(applied(applications, "referenceFor"), "type");
-        var steps = steps(carryingPaths);
+        var steps = new ArrayList<>(steps(carryingPaths));
+        steps.addAll(stepsUnder(sortFields, "path"));
         tableSteps(dsl, graph, touchedAt, tabled(steps));
         keySteps(dsl, graph, touchedAt, keyed(steps));
         conditionSteps(dsl, graph, touchedAt, conditioned(steps));

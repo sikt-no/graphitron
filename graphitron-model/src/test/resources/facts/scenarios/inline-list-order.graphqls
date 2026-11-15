@@ -161,6 +161,16 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_completion
   Store.films,        Store.films,        0,        ASC,       film_id
   """)
 
+# A sort key's path is written in the one path grammar and its key resolved as any written key is.
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'film_original_language_id_fkey')
+  """, rows: """
+  constraint_table, constraint_name
+  film,             film_original_language_id_fkey
+  """)
+
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_method", rows: """
   coordinate, choice, position, application_coordinate, directive_name, ordinal, owner
   Language.films, Language.films, 0, Language.films, defaultOrder, 0, fields.0
