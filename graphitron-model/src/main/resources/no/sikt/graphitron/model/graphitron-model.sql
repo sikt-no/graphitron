@@ -11640,6 +11640,147 @@ CREATE INDEX graphitron_type_backing_class_ix ON graphitron_type_backing (graph_
 COMMENT ON INDEX graphitron_type_backing_class_ix IS 'The class is a join key for the readers that go from a class to the types it backs: a generated record read back as its table, and the members a class offers. The primary key puts the type before the class and cannot serve that, so the planner probed the graph''s whole backing once per catalog column. The type closes the index because those readers also filter on it, and without it the planner preferred the primary key for its type list. Measured: the language server''s diagnostics statement over forty bound types scanned twelve thousand rows here through the primary key and eight hundred through this index.';
 COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answered, a closed three-value domain: BOUND_TABLE for the resolved table binding read through its table''s record class, PRODUCER for a class a @service or @externalField method delivers for the field''s type, or for the data element a service''s object passes through to, or takes for an argument''s, ACCESSOR for a class reached by reading a field off a class already backing its parent. Provenance, never a preference: a type the populations answer differently has a row from each, and a reader wanting one filters on this column';
 
+CREATE TABLE graphitron_tenant_column (
+  graph_name   VARCHAR   NOT NULL,
+  source_name  VARCHAR   NOT NULL,
+  table_schema VARCHAR   NOT NULL,
+  table_name   VARCHAR   NOT NULL,
+  column_name  VARCHAR   NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_tenant_column (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_tenant_column IS 'One catalog table of one graph that carries the configured tenant column, naming the column it carries. For example <tenantColumn>film_id</tenantColumn> gives public.film and public.film_actor a row each, naming film_id, and public.language none.';
+COMMENT ON COLUMN graphitron_tenant_column.graph_name IS 'the configuring graph''s partition, anchored by store_graph_tenant_column, so a graph whose configuration stops naming a tenant column loses its rows';
+COMMENT ON COLUMN graphitron_tenant_column.source_name IS 'the catalog partition the table was read from, the first column of the sql_column key this row names';
+COMMENT ON COLUMN graphitron_tenant_column.table_schema IS 'the table''s SQL schema';
+COMMENT ON COLUMN graphitron_tenant_column.table_name IS 'the table''s SQL name';
+COMMENT ON COLUMN graphitron_tenant_column.column_name IS 'the column the configured name reaches on the table, as the catalog spells it; its Java type is read off sql_column rather than copied here';
+COMMENT ON COLUMN graphitron_tenant_column.touched_at IS 'when the reading that resolved this row ran; the tenant-columns stage deletes the graph''s rows a reading did not mark, so a table the configuration or the catalog no longer resolves goes';
+
+CREATE VIEW graphitron_tenant_column_rule
+  (graph_name, source_name, table_schema, table_name, column_name) AS
+SELECT t.graph_name, sp.source_name, sp.table_schema, sp.table_name, sp.column_name
+  FROM store_graph_tenant_column t
+  JOIN store_graph_source m ON m.graph_name = t.graph_name
+  -- The store's one column-match fold: the SQL name where a column of the table carries it, else
+  -- the jOOQ name. A spelling reaching two columns of one table resolves neither.
+  JOIN sql_column_spelling sp
+    ON sp.source_name = m.source_name AND sp.spelling_upper = UPPER(t.column_name) AND sp.reach = 1;
+COMMENT ON VIEW graphitron_tenant_column_rule IS 'One row the tenant column rule computes, in the shape graphitron_tenant_column stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_column, which is the name every reader spells.';
+
+-- A foreign key that fans out by the parent row's tenant: one of its column pairs lands on the tenant
+-- column of the table a tenant column scopes, from a table none scopes, so the parent row's value in
+-- that column names the tenant the child's rows lie in. A composite key counts by that one column, its
+-- other columns naming the row within the tenant (Alf, 2026-11-15). Its reader waits: the producer
+-- rule that makes a field whose first key is one of these a producer grouping its parents by tenant.
+CREATE TABLE graphitron_tenant_fan_out_key (
+  graph_name             VARCHAR   NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  parent_on_key_table    BOOLEAN   NOT NULL,
+  parent_column          VARCHAR   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_tenant_column (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_tenant_fan_out_key IS 'A foreign key whose rows fan out by their tenant: one row per foreign key joining a table no tenant column scopes to the tenant column of one it scopes. For example under film_id a key from film_endorsement.endorsed_film to film.film_id fans out with the parent holding the key, and under INSTITUSJONSNR a key from a scoped table''s INSTITUSJONSNR to a global table''s key fans out with the parent the referenced side.';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.graph_name IS 'the owning graph''s partition, one configuring a tenant column';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_table IS 'the table holding the key, the referencing side';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_name IS 'the key''s SQL name; with the three columns before it, sql_referential_constraint''s key and this row''s';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.parent_on_key_table IS 'TRUE where the parent, the side no tenant column scopes, is the table holding the key and the scoped side the one it references; FALSE the other way round';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.parent_column IS 'the parent''s column whose value names the tenant: the one paired with the scoped side''s tenant column';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- Each column pair of each foreign key, in each graph configuring a tenant column, with the tenant
+-- column each side's table carries, if any.
+CREATE VIEW graphitron_tenant_fan_out_key_rule
+  (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name,
+   parent_on_key_table, parent_column) AS
+WITH pair (graph_name, source_name, table_schema, table_name, constraint_name, key_column,
+           referenced_column, key_tenant, referenced_tenant) AS (
+  SELECT g.graph_name, rcc.source_name, rcc.table_schema, rcc.table_name, rcc.constraint_name,
+         oc.column_name, rcol.column_name, kt.column_name, rt.column_name
+    FROM store_graph_tenant_column g
+    CROSS JOIN sql_referential_constraint_column rcc
+    JOIN sql_constraint_column oc
+      ON oc.source_name = rcc.source_name AND oc.table_schema = rcc.table_schema
+     AND oc.table_name = rcc.table_name AND oc.constraint_name = rcc.constraint_name
+     AND oc.position = rcc.position
+    JOIN sql_constraint_column rcol
+      ON rcol.source_name = rcc.referenced_source_name AND rcol.table_schema = rcc.referenced_schema
+     AND rcol.table_name = rcc.referenced_table AND rcol.constraint_name = rcc.referenced_constraint_name
+     AND rcol.position = rcc.referenced_position
+    LEFT JOIN graphitron_tenant_column kt
+      ON kt.graph_name = g.graph_name AND kt.source_name = rcc.source_name
+     AND kt.table_schema = rcc.table_schema AND kt.table_name = rcc.table_name
+    LEFT JOIN graphitron_tenant_column rt
+      ON rt.graph_name = g.graph_name AND rt.source_name = rcc.referenced_source_name
+     AND rt.table_schema = rcc.referenced_schema AND rt.table_name = rcc.referenced_table
+)
+-- The parent is the side no tenant column scopes; its column paired with the other side's tenant
+-- column names the tenant.
+SELECT graph_name, source_name, table_schema, table_name, constraint_name,
+       CASE WHEN key_tenant IS NULL THEN TRUE ELSE FALSE END,
+       CASE WHEN key_tenant IS NULL THEN key_column ELSE referenced_column END
+  FROM pair
+ WHERE (key_tenant IS NULL AND referenced_column = referenced_tenant)
+    OR (referenced_tenant IS NULL AND key_column = key_tenant);
+COMMENT ON VIEW graphitron_tenant_fan_out_key_rule IS 'One row the tenant fan-out key rule computes, in the shape graphitron_tenant_fan_out_key stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_fan_out_key.';
+
+-- A field whose path starts with a key fanning out by the parent row's tenant: its first key, ridden
+-- from the side no tenant column scopes, is a graphitron_tenant_fan_out_key. Stated once per field
+-- and target type, since the producer rule, the fetchers' defect rule, the routes rule and the
+-- generator all build on it; the parent's column naming the tenant beside it.
+CREATE TABLE graphitron_field_tenant_fan_out (
+  graph_name             VARCHAR   NOT NULL,
+  element_coordinate     VARCHAR   NOT NULL,
+  target_type            VARCHAR   NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  parent_column          VARCHAR   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, element_coordinate, target_type),
+  FOREIGN KEY (graph_name, element_coordinate, target_type)
+    REFERENCES graphitron_field_first_key (graph_name, element_coordinate, target_type) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES graphitron_tenant_fan_out_key (graph_name, constraint_source_name, constraint_schema,
+                                              constraint_table, constraint_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_tenant_fan_out IS 'A field routed by its parent row''s tenant: one row per field and target type whose first key fans out by tenant, with the parent''s column naming it. For example under film_id FilmEndorsement.film fans out by film_endorsement.endorsed_film, and FilmBookmark.film by film_bookmark.bookmarked_film.';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.element_coordinate IS 'the output field, as graphitron_field_first_key keys it';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.target_type IS 'the type its path reaches; with the coordinate the key, the field''s first key''s';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.constraint_table IS 'the table holding the key';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.constraint_name IS 'the key''s SQL name; with the three columns before it, the fan-out key';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.parent_column IS 'the column of the parent''s table, the field''s declaring type''s, whose value names the tenant the child''s rows lie in';
+COMMENT ON COLUMN graphitron_field_tenant_fan_out.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_field_tenant_fan_out_rule
+  (graph_name, element_coordinate, target_type, constraint_source_name, constraint_schema,
+   constraint_table, constraint_name, parent_column) AS
+SELECT k.graph_name, k.element_coordinate, k.target_type, k.constraint_source_name, k.constraint_schema,
+       k.constraint_table, k.constraint_name, f.parent_column
+  FROM graphitron_field_first_key k
+  JOIN graphitron_tenant_fan_out_key f
+    ON f.graph_name = k.graph_name AND f.constraint_source_name = k.constraint_source_name
+   AND f.constraint_schema = k.constraint_schema AND f.constraint_table = k.constraint_table
+   AND f.constraint_name = k.constraint_name AND f.parent_on_key_table = k.fk_on_from;
+COMMENT ON VIEW graphitron_field_tenant_fan_out_rule IS 'One row the field tenant fan-out rule computes, in the shape graphitron_field_tenant_fan_out stores: the rule itself, evaluated on demand rather than read off disk. For example the path-claims stage inserts this view''s rows for one graph into graphitron_field_tenant_fan_out.';
+
 -- Which kind of producer each field is: its one claim where it has exactly one, and otherwise what
 -- its position and its target make it. A field with two claims is no producer here and a defect
 -- path-claims raises; @lookupKey with @routine is deferred and has no row either.
@@ -11754,13 +11895,17 @@ SELECT graph_name, type_name, field_name, kind
               AND EXISTS (SELECT 1 FROM bound b
                            WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
                THEN 'LOOKUP'
-             -- Taken out of the parent's statement: split, fanned out across tenants, or a child
-             -- connection, which is always split. A union or an interface with no table-bound
-             -- participant lands nowhere, so it runs nothing and the field is left without one.
+             -- Taken out of the parent's statement: split, fanned out across tenants, a child
+             -- connection, which is always split, or routed by its parent row's tenant, written split
+             -- or not. A union or an interface with no table-bound participant lands nowhere, so it
+             -- runs nothing and the field is left without one.
              WHEN (EXISTS (SELECT 1 FROM graphitron_directive_application s
                             WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
                               AND s.directive_name IN ('splitQuery', 'tenantFanOut'))
-                   OR ft.wrapper_type_name IS NOT NULL)
+                   OR ft.wrapper_type_name IS NOT NULL
+                   OR EXISTS (SELECT 1 FROM graphitron_field_tenant_fan_out tf
+                               WHERE tf.graph_name = f.graph_name AND tf.element_coordinate = f.coordinate
+                                 AND tf.target_type = ft.target_type_name))
               AND (COALESCE(tt.kind, '') NOT IN ('INTERFACE', 'UNION')
                    OR EXISTS (SELECT 1 FROM landing l
                                WHERE l.graph_name = f.graph_name AND l.type_name = ft.target_type_name))
@@ -11857,6 +12002,18 @@ COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last
 -- and results the stage has just written. The detail is NULL; the code says why.
 CREATE VIEW graphitron_fetcher_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A field routed by its parent row's tenant and written inline, at the field: it is a producer of its
+-- own, grouping its parents by the tenant they name, which the generator emits only split until its
+-- producer is emitted from the store.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'TENANT_FAN_OUT_INLINE_UNSUPPORTED', CAST(NULL AS VARCHAR), 'fetchers'
+  FROM graphitron_field_tenant_fan_out tf
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = tf.graph_name AND el.coordinate = tf.element_coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application s
+                    WHERE s.graph_name = tf.graph_name AND s.coordinate = tf.element_coordinate
+                      AND s.directive_name = 'splitQuery')
+UNION ALL
 -- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
 -- by the keys it returned, which is not a page, as a @routine write's are.
 SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
@@ -12108,102 +12265,6 @@ SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, COALESCE(e.event
  WHERE a.directive_name = 'outbox';
 COMMENT ON VIEW graphitron_outbox_message_rule IS 'One row the outbox message rule computes, in the shape graphitron_outbox_message stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_message, which is the name every reader spells.';
 
-CREATE TABLE graphitron_tenant_column (
-  graph_name   VARCHAR   NOT NULL,
-  source_name  VARCHAR   NOT NULL,
-  table_schema VARCHAR   NOT NULL,
-  table_name   VARCHAR   NOT NULL,
-  column_name  VARCHAR   NOT NULL,
-  touched_at   TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, source_name, table_schema, table_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_tenant_column (graph_name) ON DELETE CASCADE,
-  FOREIGN KEY (source_name, table_schema, table_name, column_name)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_tenant_column IS 'One catalog table of one graph that carries the configured tenant column, naming the column it carries. For example <tenantColumn>film_id</tenantColumn> gives public.film and public.film_actor a row each, naming film_id, and public.language none.';
-COMMENT ON COLUMN graphitron_tenant_column.graph_name IS 'the configuring graph''s partition, anchored by store_graph_tenant_column, so a graph whose configuration stops naming a tenant column loses its rows';
-COMMENT ON COLUMN graphitron_tenant_column.source_name IS 'the catalog partition the table was read from, the first column of the sql_column key this row names';
-COMMENT ON COLUMN graphitron_tenant_column.table_schema IS 'the table''s SQL schema';
-COMMENT ON COLUMN graphitron_tenant_column.table_name IS 'the table''s SQL name';
-COMMENT ON COLUMN graphitron_tenant_column.column_name IS 'the column the configured name reaches on the table, as the catalog spells it; its Java type is read off sql_column rather than copied here';
-COMMENT ON COLUMN graphitron_tenant_column.touched_at IS 'when the reading that resolved this row ran; the tenant-columns stage deletes the graph''s rows a reading did not mark, so a table the configuration or the catalog no longer resolves goes';
-
-CREATE VIEW graphitron_tenant_column_rule
-  (graph_name, source_name, table_schema, table_name, column_name) AS
-SELECT t.graph_name, sp.source_name, sp.table_schema, sp.table_name, sp.column_name
-  FROM store_graph_tenant_column t
-  JOIN store_graph_source m ON m.graph_name = t.graph_name
-  -- The store's one column-match fold: the SQL name where a column of the table carries it, else
-  -- the jOOQ name. A spelling reaching two columns of one table resolves neither.
-  JOIN sql_column_spelling sp
-    ON sp.source_name = m.source_name AND sp.spelling_upper = UPPER(t.column_name) AND sp.reach = 1;
-COMMENT ON VIEW graphitron_tenant_column_rule IS 'One row the tenant column rule computes, in the shape graphitron_tenant_column stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_column, which is the name every reader spells.';
-
--- A foreign key that fans out by the parent row's tenant: one of its column pairs lands on the tenant
--- column of the table a tenant column scopes, from a table none scopes, so the parent row's value in
--- that column names the tenant the child's rows lie in. A composite key counts by that one column, its
--- other columns naming the row within the tenant (Alf, 2026-11-15). Its reader waits: the producer
--- rule that makes a field whose first key is one of these a producer grouping its parents by tenant.
-CREATE TABLE graphitron_tenant_fan_out_key (
-  graph_name             VARCHAR   NOT NULL,
-  constraint_source_name VARCHAR   NOT NULL,
-  constraint_schema      VARCHAR   NOT NULL,
-  constraint_table       VARCHAR   NOT NULL,
-  constraint_name        VARCHAR   NOT NULL,
-  parent_on_key_table    BOOLEAN   NOT NULL,
-  parent_column          VARCHAR   NOT NULL,
-  touched_at             TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_tenant_column (graph_name) ON DELETE CASCADE,
-  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
-    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_tenant_fan_out_key IS 'A foreign key whose rows fan out by their tenant: one row per foreign key joining a table no tenant column scopes to the tenant column of one it scopes. For example under film_id a key from film_endorsement.endorsed_film to film.film_id fans out with the parent holding the key, and under INSTITUSJONSNR a key from a scoped table''s INSTITUSJONSNR to a global table''s key fans out with the parent the referenced side.';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.graph_name IS 'the owning graph''s partition, one configuring a tenant column';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_source_name IS 'the catalog partition of the table holding the key';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_schema IS 'the SQL schema of the table holding the key';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_table IS 'the table holding the key, the referencing side';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_name IS 'the key''s SQL name; with the three columns before it, sql_referential_constraint''s key and this row''s';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.parent_on_key_table IS 'TRUE where the parent, the side no tenant column scopes, is the table holding the key and the scoped side the one it references; FALSE the other way round';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.parent_column IS 'the parent''s column whose value names the tenant: the one paired with the scoped side''s tenant column';
-COMMENT ON COLUMN graphitron_tenant_fan_out_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
--- Each column pair of each foreign key, in each graph configuring a tenant column, with the tenant
--- column each side's table carries, if any.
-CREATE VIEW graphitron_tenant_fan_out_key_rule
-  (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name,
-   parent_on_key_table, parent_column) AS
-WITH pair (graph_name, source_name, table_schema, table_name, constraint_name, key_column,
-           referenced_column, key_tenant, referenced_tenant) AS (
-  SELECT g.graph_name, rcc.source_name, rcc.table_schema, rcc.table_name, rcc.constraint_name,
-         oc.column_name, rcol.column_name, kt.column_name, rt.column_name
-    FROM store_graph_tenant_column g
-    CROSS JOIN sql_referential_constraint_column rcc
-    JOIN sql_constraint_column oc
-      ON oc.source_name = rcc.source_name AND oc.table_schema = rcc.table_schema
-     AND oc.table_name = rcc.table_name AND oc.constraint_name = rcc.constraint_name
-     AND oc.position = rcc.position
-    JOIN sql_constraint_column rcol
-      ON rcol.source_name = rcc.referenced_source_name AND rcol.table_schema = rcc.referenced_schema
-     AND rcol.table_name = rcc.referenced_table AND rcol.constraint_name = rcc.referenced_constraint_name
-     AND rcol.position = rcc.referenced_position
-    LEFT JOIN graphitron_tenant_column kt
-      ON kt.graph_name = g.graph_name AND kt.source_name = rcc.source_name
-     AND kt.table_schema = rcc.table_schema AND kt.table_name = rcc.table_name
-    LEFT JOIN graphitron_tenant_column rt
-      ON rt.graph_name = g.graph_name AND rt.source_name = rcc.referenced_source_name
-     AND rt.table_schema = rcc.referenced_schema AND rt.table_name = rcc.referenced_table
-)
--- The parent is the side no tenant column scopes; its column paired with the other side's tenant
--- column names the tenant.
-SELECT graph_name, source_name, table_schema, table_name, constraint_name,
-       CASE WHEN key_tenant IS NULL THEN TRUE ELSE FALSE END,
-       CASE WHEN key_tenant IS NULL THEN key_column ELSE referenced_column END
-  FROM pair
- WHERE (key_tenant IS NULL AND referenced_column = referenced_tenant)
-    OR (referenced_tenant IS NULL AND key_column = key_tenant);
-COMMENT ON VIEW graphitron_tenant_fan_out_key_rule IS 'One row the tenant fan-out key rule computes, in the shape graphitron_tenant_fan_out_key stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_fan_out_key.';
 
 CREATE TABLE graphitron_outbox_target (
   graph_name           VARCHAR   NOT NULL,
@@ -19825,9 +19886,9 @@ CREATE TABLE graphitron_occurrence_connection_part (
 COMMENT ON TABLE graphitron_occurrence_connection_part IS 'One part of the key a routed call''s connection is keyed by: one row per routed call and part. For example Mutation.rateFilms''s connection has a TENANT part, read from its tenant slots, which a call naming no tenant cannot reach.';
 COMMENT ON COLUMN graphitron_occurrence_connection_part.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_connection_part.coordinate IS 'the producer''s occurrence; with the part, the key';
-COMMENT ON COLUMN graphitron_occurrence_connection_part.part IS 'which part of the key: TENANT, the tenant, read from the producer''s call''s rows of graphitron_occurrence_tenant_slot; with the producer, the key';
+COMMENT ON COLUMN graphitron_occurrence_connection_part.part IS 'which part of the key: TENANT, the tenant, read at a root from the producer''s call''s rows of graphitron_occurrence_tenant_slot, and under an object off the parent row, from the column graphitron_field_tenant_fan_out names for the producer''s field; with the producer, the key';
 COMMENT ON COLUMN graphitron_occurrence_connection_part.outcome IS 'ROUTED, pinned so the foreign key holds the part to a routed connection';
-COMMENT ON COLUMN graphitron_occurrence_connection_part.when_empty IS 'what a call whose sources name none gets: UNREACHABLE where a source is always there; EMPTY where every source is read per element of its own argument''s list and the producer has an empty answer, which it returns without a connection; REFUSE otherwise, a client error naming the arguments';
+COMMENT ON COLUMN graphitron_occurrence_connection_part.when_empty IS 'what a call whose sources name none gets: UNREACHABLE where a source is always there, a parent column that may not be null among them; EMPTY where every source is read per element of its own argument''s list and the producer has an empty answer, which it returns without a connection, or where the parent row''s column may be null, its child then answering empty; REFUSE otherwise, a client error naming the arguments';
 COMMENT ON COLUMN graphitron_occurrence_connection_part.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_connection_rule
@@ -19927,12 +19988,16 @@ SELECT graph_name, coordinate, outcome,
        refusal
   FROM verdict
 UNION ALL
--- A child producer of a graph with a tenant column: the key its producer chain hands down, unless
--- every table its rows come from and the one it answers with lie in no tenant scope, when it runs on
--- the key with an empty tenant part. A child whose rows come from unscoped tables but which answers
--- with scoped ones is routed by its row's tenant, which the store does not state yet; it has no row.
-SELECT x.graph_name, x.coordinate, CASE WHEN x.inherits THEN 'INHERIT' ELSE 'UNSCOPED' END,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+-- A child producer of a graph with a tenant column: routed by its parent row's tenant where its
+-- field's first key fans out, the part EMPTY where the parent's column may hold none; else the key
+-- its producer chain hands down, unless every table its rows come from and the one it answers with
+-- lie in no tenant scope, when it runs on the key with an empty tenant part. Any other child whose
+-- rows come from unscoped tables but which answers with scoped ones has no row.
+SELECT x.graph_name, x.coordinate,
+       CASE WHEN x.fans_out THEN 'ROUTED' WHEN x.inherits THEN 'INHERIT' ELSE 'UNSCOPED' END,
+       CASE WHEN NOT x.fans_out THEN CAST(NULL AS VARCHAR)
+            WHEN x.parent_nullable THEN 'EMPTY' ELSE 'UNREACHABLE' END,
+       CAST(NULL AS VARCHAR)
   FROM (SELECT p.graph_name, p.coordinate,
                NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st
                             WHERE st.graph_name = p.graph_name AND st.coordinate = p.coordinate)
@@ -19941,7 +20006,9 @@ SELECT x.graph_name, x.coordinate, CASE WHEN x.inherits THEN 'INHERIT' ELSE 'UNS
                                 ON tc.graph_name = st.graph_name AND tc.source_name = st.table_source_name
                                AND tc.table_schema = st.table_schema AND tc.table_name = st.table_name
                              WHERE st.graph_name = p.graph_name AND st.coordinate = p.coordinate) AS inherits,
-               rtc.table_name IS NOT NULL AS scoped_result
+               rtc.table_name IS NOT NULL AS scoped_result,
+               tf.parent_column IS NOT NULL AS fans_out,
+               COALESCE(pc.nullable, FALSE) AS parent_nullable
           FROM graphitron_occurrence_producer p
           JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
           LEFT JOIN graphitron_occurrence_producer_result pr
@@ -19949,8 +20016,21 @@ SELECT x.graph_name, x.coordinate, CASE WHEN x.inherits THEN 'INHERIT' ELSE 'UNS
           LEFT JOIN graphitron_tenant_column rtc
             ON rtc.graph_name = pr.graph_name AND rtc.source_name = pr.table_source_name
            AND rtc.table_schema = pr.table_schema AND rtc.table_name = pr.table_name
+          -- The field the producer is an occurrence of, routed by its parent row's tenant where its
+          -- first key fans out, the parent's column naming the tenant and an empty one naming none.
+          JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+          LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+          LEFT JOIN graphitron_field_target ft
+            ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+          LEFT JOIN graphitron_field_tenant_fan_out tf
+            ON tf.graph_name = f.graph_name AND tf.element_coordinate = f.coordinate
+           AND tf.target_type = ft.target_type_name
+          LEFT JOIN graphitron_tabletype dt ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+          LEFT JOIN sql_column pc
+            ON pc.source_name = dt.table_source_name AND pc.table_schema = dt.table_schema
+           AND pc.table_name = dt.table_name AND pc.column_name = tf.parent_column
          WHERE p.start = 'CHILD') x
- WHERE x.inherits OR NOT x.scoped_result;
+ WHERE x.fans_out OR x.inherits OR NOT x.scoped_result;
 COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer of a database-per-tenant graph: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none. For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.';
 
 -- The occurrence-routes stage's own defects: a call it cannot route, at the field making it. The detail
@@ -19964,7 +20044,28 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, v.r
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE v.refusal IS NOT NULL;
+ WHERE v.refusal IS NOT NULL
+UNION ALL
+-- A field of a nesting type, one with no table of its own, whose path from where it is nested starts
+-- with a key fanning out by the parent row's tenant, at the field: routing it by that row's tenant
+-- waits on a nesting start being stated per occurrence, so it is refused until then (Alf, 2026-11-15).
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'TENANT_FAN_OUT_NESTED_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-routes'
+  -- The column pairs the path's first step joins on, whatever kind of key it rode: one landing on
+  -- the tenant column of a table it scopes, from a table none scopes.
+  FROM graphitron_join_path_step_column sc
+  JOIN graphitron_tenant_column tc
+    ON tc.graph_name = sc.graph_name AND tc.source_name = sc.to_source_name
+   AND tc.table_schema = sc.to_schema AND tc.table_name = sc.to_table AND tc.column_name = sc.to_column
+  JOIN graphitron_occurrence o ON o.graph_name = sc.graph_name AND o.coordinate = sc.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE sc.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column ptc
+                    WHERE ptc.graph_name = sc.graph_name AND ptc.source_name = sc.from_source_name
+                      AND ptc.table_schema = sc.from_schema AND ptc.table_name = sc.from_table)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype t WHERE t.graph_name = f.graph_name AND t.type_name = f.type_name);
 COMMENT ON VIEW graphitron_occurrence_route_entry_defect_rule IS 'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.';
 
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
@@ -25604,6 +25705,7 @@ INSERT INTO meta_stage_write VALUES
   ('path-claims', 'graphitron_join_path_claim'),
   ('path-claims', 'graphitron_join_path_key_move'),
   ('path-claims', 'graphitron_field_first_key'),
+  ('path-claims', 'graphitron_field_tenant_fan_out'),
   ('path-claims', 'graphitron_entry_defect'),
   ('path-claims', 'graphitron_entry_defect_claim'),
   ('path-claims', 'graphitron_entry_defect_path_step'),
@@ -26020,6 +26122,7 @@ INSERT INTO meta_stage_rule VALUES
   ('path-claims', 'graphitron_entry_defect', 'graphitron_path_claim_entry_defect_rule'),
   ('path-claims', 'graphitron_join_path_key_move', 'graphitron_join_path_key_move_rule'),
   ('path-claims', 'graphitron_field_first_key', 'graphitron_field_first_key_rule'),
+  ('path-claims', 'graphitron_field_tenant_fan_out', 'graphitron_field_tenant_fan_out_rule'),
   ('path-elements', 'graphitron_path_element_key', 'graphitron_path_element_key_rule'),
   ('path-elements', 'graphitron_path_element_method', 'graphitron_path_element_method_rule'),
   ('path-elements', 'graphitron_path_element_primary_key', 'graphitron_path_element_primary_key_rule'),
@@ -26328,6 +26431,9 @@ INSERT INTO meta_grain VALUES
   ('tenant-fan-out-key',
    'one foreign key joining a table no tenant column scopes to a scoped table''s tenant column, in one graph',
    'graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name', 'catalog'),
+  ('field-tenant-fan-out',
+   'one output field toward one target type routed by its parent row''s tenant, in one graph',
+   'graph_name, element_coordinate, target_type', 'sdl'),
   ('occurrence-source-table',
    'one table one occurrence''s values are rows of, in one graph',
    'graph_name, coordinate, table_source_name, table_schema, table_name', 'sdl'),
@@ -27014,6 +27120,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A call''s tenant is named twice, by a $tenant pair and by @tenant on another argument or input field, so nothing says which it runs on: name it once.'),
   ('TENANT_VALUE_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_VALUE_TYPE_DISAGREES',
    'A value named as a call''s tenant arrives as another class than the tenant column''s, and a tenant is read as it was sent, with no conversion: declare it a scalar arriving as the column''s class, String or ID for a String key, Int for an Integer key.'),
+  ('TENANT_FAN_OUT_NESTED_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_NESTED_UNSUPPORTED',
+   'A field of a type nested under a global table reaches a tenant''s rows by a key landing on the tenant column, which is not routed by the parent row''s tenant yet: declare the field on a type with its own @table, or read the rows through an argument naming the tenant.'),
+  ('TENANT_FAN_OUT_INLINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_INLINE_UNSUPPORTED',
+   'A field whose foreign key reaches a tenant''s rows from a global table is routed by its parent row''s tenant, and needs @splitQuery until its producer is emitted from the store: write @splitQuery on the field.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
    'An argMapping names $tenant where nothing routes by it yet: $tenant names the tenant of a @service''s call, so write it in the @service''s argMapping.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
@@ -27270,6 +27380,14 @@ INSERT INTO graphitron_defect_type VALUES
    'An argMapping entry reads $session or one of its members into a parameter that is not declared as what the handle or the member yields, so the generated call would not compile: declare the parameter as that type, a primitive member being allowed its boxed type.');
 
 INSERT INTO meta_relation VALUES
+  ('graphitron_field_tenant_fan_out', 'field-tenant-fan-out', 'graphitron',
+   'A field routed by its parent row''s tenant: one row per field and target type whose first key fans out by tenant, with the parent''s column naming it.',
+   'For example under film_id FilmEndorsement.film fans out by film_endorsement.endorsed_film, and FilmBookmark.film by film_bookmark.bookmarked_film.',
+   'The producer rule, the fetchers'' deferral defect, the routes rule and the generator each ask whether a field''s first key fans out by its row''s tenant; a fact more than one rule builds on is stored (Alf, 2026-11-14), at the field''s grain since the first key is the field''s, and a part routed off the parent row reaches its column through the producer''s field here as a call''s part reaches its tenant slots.'),
+  ('graphitron_field_tenant_fan_out_rule', 'field-tenant-fan-out', 'graphitron',
+   'One row the field tenant fan-out rule computes, in the shape graphitron_field_tenant_fan_out stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the path-claims stage inserts this view''s rows for one graph into graphitron_field_tenant_fan_out.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_tenant_fan_out_key', 'tenant-fan-out-key', 'graphitron',
    'A foreign key whose rows fan out by their tenant: one row per foreign key joining a table no tenant column scopes to the tenant column of one it scopes.',
    'For example under film_id a key from film_endorsement.endorsed_film to film.film_id fans out with the parent holding the key, and under INSTITUSJONSNR a key from a scoped table''s INSTITUSJONSNR to a global table''s key fans out with the parent the referenced side.',

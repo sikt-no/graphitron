@@ -115,13 +115,15 @@ public record TenantBindingIndex(
             OperationMemberRelation operationMembers,
             ColumnBindingLedger columnBindings) {
         return compute(sdl, reachableTypes, fields, entitiesByType, types, scopes, operationMembers,
-            columnBindings, Set.of());
+            columnBindings, Set.of(), Map.of());
     }
 
     /**
      * {@link #compute} where {@code authoredTenants} names the arguments and input fields a
      * {@code $tenant} pair names a call's tenant by, as the store states them: each is read as a
-     * {@code @tenant} marker on that value is, the store being the one reader of the sigil.
+     * {@code @tenant} marker on that value is, the store being the one reader of the sigil; and where
+     * {@code rowTenants} names the fields routed by their parent row's tenant, each to the parent's
+     * column naming it, the store being the one decider of that routing.
      */
     public static TenantBindingIndex compute(
             GraphQLSchema sdl,
@@ -132,7 +134,8 @@ public record TenantBindingIndex(
             TenantScopes scopes,
             OperationMemberRelation operationMembers,
             ColumnBindingLedger columnBindings,
-            Set<String> authoredTenants) {
+            Set<String> authoredTenants,
+            Map<String, String> rowTenants) {
         if (sdl == null) {
             return EMPTY;
         }
@@ -145,7 +148,7 @@ public record TenantBindingIndex(
                 : new TenantBindingIndex(Map.of(), Map.of(), markerRejections);
         }
         return new Fold(sdl, reachableTypes, fields, entitiesByType, types, configured,
-            operationMembers, columnBindings, authoredTenants).run();
+            operationMembers, columnBindings, authoredTenants, rowTenants).run();
     }
 
     /**
@@ -464,6 +467,8 @@ public record TenantBindingIndex(
 
         /** Every {@code @tenant} application, by the coordinate of the argument or input field. */
         private final Map<String, graphql.schema.GraphQLInputValueDefinition> tenantMarked;
+        /** The fields routed by their parent row's tenant, as the store states them, to the parent's column. */
+        private final Map<String, String> rowTenants;
         /** The {@code @tenant} uses the fold minted a slot from: the marker sweep's verdict set. */
         private final Set<TenantMarkerUse> consumedTenantMarkers = new HashSet<>();
         /** The {@code @tenant} uses the fold found bound into a jOOQ record parameter. */
@@ -479,8 +484,10 @@ public record TenantBindingIndex(
              TenantScopes.Configured scopes,
              OperationMemberRelation operationMembers,
              ColumnBindingLedger columnBindings,
-             Set<String> authoredTenants) {
+             Set<String> authoredTenants,
+             Map<String, String> rowTenants) {
             this.sdl = sdl;
+            this.rowTenants = rowTenants;
             this.domain = domain;
             this.entitiesByType = entitiesByType;
             this.types = types;
@@ -954,8 +961,7 @@ public record TenantBindingIndex(
             }
             String detail = "no argument or input field maps to tenant column '"
                 + scopes.columnName() + "', and no ancestor established a tenant context.";
-            if (out instanceof ChildField.TableField inline
-                    && parentRowTenantSlot(inline.parentCorrelation(), inline.joinPath()) != null) {
+            if (out instanceof ChildField.TableField && rowTenantColumn(coordinate) != null) {
                 detail += " Its foreign key lands on the tenant column, so the parent row names the"
                     + " tenant, but an inline reference runs inside its parent's statement on the"
                     + " parent's connection. Mark it @" + BuildContext.DIR_SPLIT_QUERY
@@ -1135,49 +1141,14 @@ public record TenantBindingIndex(
         // ===== The parent-row binding =====
 
         /**
-         * The first-hop slot through which a global parent row names the tenant of the child row
-         * it references, or {@code null}. Matches when the correlation joins on column pairs
-         * ({@link ParentCorrelation.OnFkSlots}, so the batch key is the first hop's parent-side
-         * columns), the parent's rows live on the default source, every hop lands on a
-         * tenant-scoped table (so the whole statement runs in one tenant database), and one
-         * first-hop slot has the tenant column as its target side. A condition hop or a hop-0
-         * filter names no column whose value equals the tenant by construction, and a tenant
-         * column first paired on a later hop pairs with an intermediate table, not the parent
-         * row; none of those match.
-         *
-         * <p>Reads only the field's own correlation and path plus the configured scopes, never
-         * ancestor context, so the ancestor fold can call it before any arm is assigned. Serves
-         * both the batched arm and the inline rejection's {@code @splitQuery} hint, so the two
-         * cannot drift.
-         */
-        private JoinSlot.FkSlot parentRowTenantSlot(ParentCorrelation correlation,
-                                                    List<JoinStep> joinPath) {
-            if (!(correlation instanceof ParentCorrelation.OnFkSlots fk)) {
-                return null;
-            }
-            TableRef parent = fk.parentKeyOwnerTable();
-            if (parent == null || tenantScoped(parent)) {
-                return null;
-            }
-            for (JoinStep step : joinPath) {
-                if (!(step instanceof JoinStep.Hop hop)
-                        || hop.targetTable() == null || !tenantScoped(hop.targetTable())) {
-                    return null;
-                }
-            }
-            return fk.slots().slots().stream()
-                .filter(slot -> matchesTenantColumn(slot.targetSide()))
-                .findFirst()
-                .orElse(null);
-        }
-
-        /**
          * The {@link TenantBinding.ParentRowBound} arm for {@code site}, or {@code null}: a
          * table-sourced {@link ChildField.BatchedTableField} (its own statement on its own
-         * connection) carrying no tenancy marker, whose correlation {@link #parentRowTenantSlot}
-         * matches. Its own arguments do not exclude it: an argument naming the tenant column only
-         * filters inside the tenant the parent row names. Shared by {@link #armOf} and the two edge
-         * predicates, so the arm and the context it establishes derive from one test.
+         * connection) carrying no tenancy marker, which the store states is routed by its parent
+         * row's tenant ({@code graphitron_field_tenant_fan_out}), its first hop's slot whose source
+         * side is the parent's column the store names. Its own arguments do not exclude it: an
+         * argument naming the tenant column only filters inside the tenant the parent row names.
+         * Shared by {@link #armOf} and the two edge predicates, so the arm and the context it
+         * establishes derive from one test.
          */
         private TenantBinding.ParentRowBound parentRowBinding(Site site) {
             if (!(site.field() instanceof ChildField.BatchedTableField field)
@@ -1185,8 +1156,28 @@ public record TenantBindingIndex(
                     || fanMarked(site.coord()) || globalMarked(site.coord())) {
                 return null;
             }
-            var slot = parentRowTenantSlot(field.parentCorrelation(), field.joinPath());
-            return slot == null ? null : mintParentRowBound(field, slot);
+            String column = rowTenantColumn(site.coord().getTypeName() + "." + site.coord().getFieldName());
+            if (column == null) {
+                return null;
+            }
+            var slot = field.parentCorrelation() instanceof ParentCorrelation.OnFkSlots fk
+                ? fk.slots().slots().stream()
+                    .filter(s -> s.sourceSide().sqlName().equalsIgnoreCase(column))
+                    .findFirst()
+                    .orElse(null)
+                : null;
+            if (slot == null) {
+                throw new IllegalStateException(
+                    "Graphitron generator bug (tenant routing): the store routes '" + site.coord()
+                    + "' by its parent row's column " + column + ", which none of its first hop's"
+                    + " slots reads; got " + field.parentCorrelation());
+            }
+            return mintParentRowBound(field, slot);
+        }
+
+        /** The parent's column the store routes the field at {@code coordinate} by, or {@code null} where it routes none so. */
+        private String rowTenantColumn(String coordinate) {
+            return rowTenants.get(coordinate);
         }
 
         /**

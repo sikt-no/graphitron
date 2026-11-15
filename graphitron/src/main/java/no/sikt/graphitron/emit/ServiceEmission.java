@@ -206,12 +206,13 @@ public final class ServiceEmission {
         boolean tenanted = store.dsl().fetchExists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(store.graphName())));
         if (tenanted) {
             // Each service runs on the connection the store states for it; a root without one is refused
-            // there, and a child without one is routed by its row's tenant, which the store does not
-            // state yet, so the walk keeps emitting it.
+            // there. A child routed by its row's tenant, or without a connection, is a frame grouping its
+            // parents by tenant, which is not emitted here yet, so the walk keeps emitting it.
             var cn = GRAPHITRON_OCCURRENCE_CONNECTION;
             store.dsl().select(p.COORDINATE, p.START,
                     field(exists(selectOne().from(cn).where(cn.GRAPH_NAME.eq(p.GRAPH_NAME),
-                        cn.COORDINATE.eq(p.COORDINATE)))))
+                        cn.COORDINATE.eq(p.COORDINATE),
+                        p.START.ne("CHILD").or(cn.OUTCOME.ne("ROUTED"))))))
                 .from(p)
                 .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
                 .forEach(r -> {

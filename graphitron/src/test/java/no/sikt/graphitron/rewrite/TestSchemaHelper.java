@@ -63,6 +63,18 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * {@link #buildSchema(String, RunContext)} routing by its parent row's tenant each field
+     * {@code rowTenants} names, to the parent's column naming it, as a run does off the store: the
+     * answer a fact document in the shared population states, read once, never a store of the test's own.
+     */
+    public static GraphitronSchema buildSchema(String schemaText, RunContext ctx, java.util.Map<String, String> rowTenants) {
+        TypeDefinitionRegistry registry = new SchemaParser().parse(prelude(schemaText) + schemaText);
+        return GraphitronSchemaBuilder.buildBundle(AttributedRegistry.from(registry),
+            GraphitronSchemaBuilder.assembleOrFail(no.sikt.graphitron.model.schema.SchemaAssembly.of(registry)),
+            ctx, java.util.Set.of(), rowTenants).model();
+    }
+
+    /**
      * The build-time diagnostics rendered one per line as {@code coordinate: message}, for assertions
      * about a cause that is reported at the coordinate carrying it rather than on the consuming
      * field. Input-field failures are minted there, one located diagnostic per failure, while the

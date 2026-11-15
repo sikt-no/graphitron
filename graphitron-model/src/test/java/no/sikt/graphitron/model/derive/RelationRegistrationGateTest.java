@@ -304,6 +304,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_first_key_rule", Arm.DERIVED);
         registrations.put("graphitron_tenant_fan_out_key", Arm.DERIVED);
         registrations.put("graphitron_tenant_fan_out_key_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_tenant_fan_out", Arm.DERIVED);
+        registrations.put("graphitron_field_tenant_fan_out_rule", Arm.DERIVED);
         registrations.put("graphitron_path_need", Arm.DERIVED);
         registrations.put("graphitron_path_need_table", Arm.DERIVED);
         registrations.put("graphitron_path", Arm.DERIVED);

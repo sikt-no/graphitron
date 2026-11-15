@@ -1,0 +1,60 @@
+# A child read from a global table by a key landing on the tenant column film_id is routed by its
+# parent row's tenant: the endorsement's endorsed_film and the bookmark's bookmarked_film name the
+# tenant holding the film. Each field is a producer grouping its parents by the tenant they name, its
+# connection routed with a tenant part read off the parent row. A bookmark of no film names no tenant,
+# so its child answers empty without a connection; an endorsement always names one. A written path
+# whose first key lands there routes the same way, as a list or a connection.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmEndorsement @table(name: "film_endorsement") {
+  note: String
+  film: Film @splitQuery
+  inventories: [Inventory!]! @splitQuery @reference(path: [
+    {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
+  inventoriesConnection: [Inventory!]! @asConnection @splitQuery @reference(path: [
+    {key: "film_endorsement_endorsed_film_fkey"}, {key: "inventory_film_id_fkey"}])
+    @defaultOrder(primaryKey: true)
+}
+
+type Inventory @table(name: "inventory") {
+  inventoryId: Int @field(name: "inventory_id")
+}
+
+type FilmBookmark @table(name: "film_bookmark") {
+  note: String
+  film: Film @splitQuery
+}
+
+type Query {
+  endorsements: [FilmEndorsement!]!
+  bookmarks: [FilmBookmark!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_field_tenant_fan_out", rows: """
+  element_coordinate,                    target_type, constraint_name,                     parent_column
+  FilmBookmark.film,                     Film,        film_bookmark_bookmarked_film_fkey,  bookmarked_film
+  FilmEndorsement.film,                  Film,        film_endorsement_endorsed_film_fkey, endorsed_film
+  FilmEndorsement.inventories,           Inventory,   film_endorsement_endorsed_film_fkey, endorsed_film
+  FilmEndorsement.inventoriesConnection, Inventory,   film_endorsement_endorsed_film_fkey, endorsed_film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_connection", where: "coordinate LIKE 'Film%'", rows: """
+  coordinate,                            outcome
+  FilmBookmark.film,                     ROUTED
+  FilmEndorsement.film,                  ROUTED
+  FilmEndorsement.inventories,           ROUTED
+  FilmEndorsement.inventoriesConnection, ROUTED
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_connection_part", where: "coordinate LIKE 'Film%'", rows: """
+  coordinate,                            part,   when_empty
+  FilmBookmark.film,                     TENANT, EMPTY
+  FilmEndorsement.film,                  TENANT, UNREACHABLE
+  FilmEndorsement.inventories,           TENANT, UNREACHABLE
+  FilmEndorsement.inventoriesConnection, TENANT, UNREACHABLE
+  """)

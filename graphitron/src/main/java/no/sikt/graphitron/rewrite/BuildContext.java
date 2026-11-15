@@ -378,6 +378,13 @@ class BuildContext {
      */
     java.util.Set<String> authoredTenants = java.util.Set.of();
 
+    /**
+     * The fields routed by their parent row's tenant, as the store states them, by schema coordinate,
+     * each to the column of the parent's table whose value names the tenant. Empty where the build was
+     * handed none.
+     */
+    java.util.Map<String, String> rowTenants = java.util.Map.of();
+
     BuildContext(GraphQLSchema schema, JooqCatalog catalog, RunContext ctx) {
         // schema and catalog stay nullable for tests that focus on plumbing the other half; ctx
         // is required because every classifier the BuildContext fans into reads at least one of

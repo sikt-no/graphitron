@@ -1,0 +1,30 @@
+# A field of a nesting type under a global table whose key lands on the tenant column film_id:
+# EndorsementAbout.film is read from film_endorsement's row by endorsed_film, which fans out by that
+# row's tenant. Routing a nesting type's field so waits on its start being stated per occurrence, so
+# it is refused at the field until then (Alf, 2026-11-15).
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmEndorsement @table(name: "film_endorsement") {
+  note: String
+  about: EndorsementAbout
+}
+
+type EndorsementAbout {
+  film: Film @splitQuery
+}
+
+type Query {
+  endorsements: [FilmEndorsement!]!
+}
+
+extend schema @assertEmpty(relation: "graphitron_field_tenant_fan_out")
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code = 'TENANT_FAN_OUT_NESTED_UNSUPPORTED'", rows: """
+  code,                              stage
+  TENANT_FAN_OUT_NESTED_UNSUPPORTED, occurrence-routes
+  """)

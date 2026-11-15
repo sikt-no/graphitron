@@ -92,7 +92,6 @@ The walk's read path is gone
 │   ├── A narrowed inline list is emitted from the store
 │   ├── A nesting field's leaves state how they're read
 │   └── Every list states its order or is refused, claimed by F
-├── A child whose followed key lands on the tenant column is routed by its row's tenant
 └── The walk's service path is gone
     └── The service fields are emitted from the store
         └── A producer's fetcher parts are emitted from the store
@@ -972,8 +971,9 @@ static method needs no holder.
   deferred, since sis's port to the rewrite, Filip's `sis/upgrade-graphitron` at 68d0313ebf,
   configures `INSTITUSJONSNR_EIER` and has 73 services with a frame: a root call runs on the
   connection the store states for it, `graphitron_occurrence_connection`, and so does a child call,
-  inheriting the key its producer chain hands down or running unscoped, save the fan-out by a row's
-  tenant, which waits on "A child whose followed key lands on the tenant column is routed by its row's tenant", censused `FAN_OUT_BY_ROW_TENANT`. That census also found four sis inputs whose field binds no column of the record's
+  inheriting the key its producer chain hands down or running unscoped, save a child service routed by
+  its row's tenant, which the store routes but no frame emitted from the store groups by tenant yet,
+  censused `FAN_OUT_BY_ROW_TENANT`. That census also found four sis inputs whose field binds no column of the record's
   table, to show Filip: `Mutation.leggTilBegrensningerForEmnevalgIStudieoppbygningsdeler`'s
   `studienivaIntervall.fraStudienivaId` on `EMNEVALG_I_EMNEKOMBINASJON`, and `telefonnummertype` on
   `PERSON_TELEFON` under `opprettStudenter`, `registrerInnreisendeUtvekslinger` and
@@ -1061,22 +1061,15 @@ static method needs no holder.
     nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
     and reading nested classes reached through another class's members closes the one hop the census
     reads today.
-* **A child whose followed key lands on the tenant column is routed by its row's tenant** `open`, E's.
-  Where a followed foreign key lands on the tenant column under a parent not on that tenant, the
-  child is a producer grouping its parents by tenant, written `@splitQuery` or not, its connection
-  `ROUTED` with a `TENANT` part read off the parent row (`code-generation-triggers.adoc`, Alf,
-  2026-11-14). The commit shipping it rewrites `tenant-scoping.adoc`'s `@splitQuery` sections. The
-  producer rule reads `graphitron_field_first_key` joined to `graphitron_tenant_fan_out_key`, both
-  stored ahead of the producers; it is the reader their WRITTEN rows and the fan-out keys wait for.
-  Interim debt, agreed to go with the depth loop: `Paths` still counts keys off `sql_table_reference`
-  for a need starting anywhere but its field's declaring table, and `Paths.declaringStart` restates in
-  Java the first key rule's predicate for a field no claim covers.
-  * **A field's followed claim is stored per field and target type** `open`, E's. Which claim a field
-    follows, its own `@referenceFor` or field claim or one inherited from an interface field, is
-    decided per need by `graphitron_join_path_claimed_rule`, whose target types come from the depth
-    loop's needs. Stored per field and target type ahead of the producers, with the claimed rule reading
-    it, a field's first key covers an inherited path too; until then an inherited path's first key is
-    the walk's, and an inherited path that would fan out stays excluded under the fan-out's reason.
+* **A field's followed claim is stored per field and target type** `open`, E's, off the critical path.
+  Which claim a field follows, its own `@referenceFor` or field claim or one inherited from an
+  interface field, is decided per need by `graphitron_join_path_claimed_rule`, whose target types come
+  from the depth loop's needs. Stored per field and target type ahead of the producers, with the
+  claimed rule reading it, a field's first key covers an inherited path too; until then an inherited
+  path's first key is the walk's, and an inherited path that would fan out by its row's tenant is not
+  routed so. Interim debt, agreed to go with the depth loop: `Paths` still counts keys off
+  `sql_table_reference` for a need starting anywhere but its field's declaring table, and
+  `Paths.declaringStart` restates in Java the first key rule's predicate for a field no claim covers.
 * **A routine write's routing is named by the connection key** `open`, F's, off the critical path.
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any

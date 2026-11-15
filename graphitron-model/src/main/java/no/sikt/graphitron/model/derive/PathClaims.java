@@ -13,6 +13,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_FIRST_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_FIRST_KEY_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TENANT_FAN_OUT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TENANT_FAN_OUT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_KEY_MOVE;
@@ -195,6 +197,7 @@ public final class PathClaims {
             .execute();
         keyMoves(dsl, graphName, touchedAt);
         firstKeys(dsl, graphName, touchedAt);
+        tenantFanOuts(dsl, graphName, touchedAt);
         EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.PATH_CLAIMS);
         EntryDefectClaims.derive(dsl, graphName, touchedAt, EntryDefects.PATH_CLAIMS.stage());
     }
@@ -223,6 +226,32 @@ public final class PathClaims {
         dsl.deleteFrom(k)
             .where(k.GRAPH_NAME.eq(graphName))
             .and(k.TOUCHED_AT.ne(touchedAt))
+            .execute();
+    }
+
+    /** The fields whose first key fans out by the parent row's tenant, off {@code graphitron_field_tenant_fan_out_rule}, marked and swept. */
+    private static void tenantFanOuts(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_FIELD_TENANT_FAN_OUT;
+        var r = GRAPHITRON_FIELD_TENANT_FAN_OUT_RULE;
+        dsl.insertInto(t)
+            .columns(t.GRAPH_NAME, t.ELEMENT_COORDINATE, t.TARGET_TYPE, t.CONSTRAINT_SOURCE_NAME,
+                t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE, t.CONSTRAINT_NAME, t.PARENT_COLUMN, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.ELEMENT_COORDINATE, r.TARGET_TYPE, r.CONSTRAINT_SOURCE_NAME,
+                    r.CONSTRAINT_SCHEMA, r.CONSTRAINT_TABLE, r.CONSTRAINT_NAME, r.PARENT_COLUMN,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graphName)))
+            .onDuplicateKeyUpdate()
+            .set(t.CONSTRAINT_SOURCE_NAME, excluded(t.CONSTRAINT_SOURCE_NAME))
+            .set(t.CONSTRAINT_SCHEMA, excluded(t.CONSTRAINT_SCHEMA))
+            .set(t.CONSTRAINT_TABLE, excluded(t.CONSTRAINT_TABLE))
+            .set(t.CONSTRAINT_NAME, excluded(t.CONSTRAINT_NAME))
+            .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(t.TOUCHED_AT.ne(touchedAt))
             .execute();
     }
 

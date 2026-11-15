@@ -1,0 +1,28 @@
+# A child routed by its parent row's tenant, written inline: FilmEndorsement.film's key lands on the
+# tenant column film_id from the global film_endorsement, so the field is a producer of its own, which
+# the generator emits only split until its producer is emitted from the store.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmEndorsement @table(name: "film_endorsement") {
+  note: String
+  film: Film
+}
+
+type Query {
+  endorsements: [FilmEndorsement!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_producer", where: "type_name = 'FilmEndorsement'", rows: """
+  type_name,       field_name, kind
+  FilmEndorsement, film,       SELECT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code = 'TENANT_FAN_OUT_INLINE_UNSUPPORTED'", rows: """
+  code,                              stage
+  TENANT_FAN_OUT_INLINE_UNSUPPORTED, fetchers
+  """)

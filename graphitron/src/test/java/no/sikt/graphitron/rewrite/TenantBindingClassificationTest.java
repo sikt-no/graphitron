@@ -26,6 +26,25 @@ class TenantBindingClassificationTest {
             sdl, TestConfiguration.testContext().withTenantColumn("film_id"));
     }
 
+    @org.junit.jupiter.api.extension.RegisterExtension
+    static final no.sikt.graphitron.model.test.FactGraphs.Reader FACTS = no.sikt.graphitron.model.test.FactGraphs.reader();
+
+    /**
+     * The fields the store routes by their parent row's tenant, as the shared scenario
+     * tenant-row-routes states them under film_id: the walk mints its parent-row arm off this.
+     */
+    private static final class RowTenants {
+        static final java.util.Map<String, String> STATED = FACTS
+            .read("scenarios/tenant-row-routes",
+                graph -> no.sikt.graphitron.emit.RowTenantsQuery.read(graph.handle()));
+    }
+
+    /** {@link #build} routing by the parent row where the store says so. */
+    private static GraphitronSchema buildRouted(String sdl) {
+        return TestSchemaHelper.buildSchema(
+            sdl, TestConfiguration.testContext().withTenantColumn("film_id"), RowTenants.STATED);
+    }
+
     @Test
     void argumentMappingToTenantColumnYieldsArgumentBound() {
         var schema = build("""
@@ -2988,9 +3007,13 @@ class TenantBindingClassificationTest {
         return build(ENDORSEMENTS.formatted(filmDirectives, filmFields));
     }
 
+    private static GraphitronSchema endorsementsRouted(String filmDirectives, String filmFields) {
+        return buildRouted(ENDORSEMENTS.formatted(filmDirectives, filmFields));
+    }
+
     @Test
     void aBatchedReferenceLandingOnTheTenantColumnRoutesOnTheParentRow() {
-        var schema = endorsements(" @splitQuery", "");
+        var schema = endorsementsRouted(" @splitQuery", "");
 
         var binding = schema.tenantBindingOf("FilmEndorsement", "film");
         assertThat(binding).isInstanceOf(TenantBinding.ParentRowBound.class);
@@ -3016,7 +3039,7 @@ class TenantBindingClassificationTest {
 
     @Test
     void aListOrConnectionWhoseFirstHopLandsOnTheTenantColumnRoutesOnTheParentRow() {
-        var schema = build("""
+        var schema = buildRouted("""
             type FilmEndorsement @table(name: "film_endorsement") {
                 note: String
                 inventories: [Inventory!]! @splitQuery @reference(path: [
@@ -3039,7 +3062,7 @@ class TenantBindingClassificationTest {
 
     @Test
     void anInlineReferenceLandingOnTheTenantColumnNamesSplitQueryInItsRejection() {
-        var schema = endorsements("", "");
+        var schema = endorsementsRouted("", "");
 
         assertThat(schema.tenantBindingOf("FilmEndorsement", "film")).isNull();
         assertRejects(schema, "FilmEndorsement.film", "Mark it @splitQuery");
@@ -3047,7 +3070,7 @@ class TenantBindingClassificationTest {
 
     @Test
     void theParentRowDecidesEvenWhereEveryPathIsBound() {
-        var schema = build("""
+        var schema = buildRouted("""
             type FilmEndorsement @table(name: "film_endorsement") {
                 note: String
                 film: Film @splitQuery
@@ -3178,18 +3201,17 @@ class TenantBindingClassificationTest {
         type Query { endorsements: [FilmEndorsement!]! }
         """;
 
+    /**
+     * A nesting type's field is not routed by its parent row's tenant yet (Alf, 2026-11-15): the store
+     * refuses it as TENANT_FAN_OUT_NESTED_UNSUPPORTED, and the walk, which reads that routing off the
+     * store, mints no parent-row arm and rejects the field as unrouted.
+     */
     @Test
-    void aNestedSplitQueryFieldUnderAGlobalParentRoutesOnTheParentRow() {
+    void aNestedSplitQueryFieldUnderAGlobalParentIsNotRoutedOnTheParentRowYet() {
         var schema = build(ENDORSEMENT_ABOUT.formatted("\n    film: Film @splitQuery"));
 
-        assertThat(schema.tenantBindingOf("EndorsementAbout", "film"))
-            .isInstanceOfSatisfying(TenantBinding.ParentRowBound.class, parentRow -> {
-                assertThat(parentRow.parentTable().tableName()).isEqualToIgnoringCase("film_endorsement");
-                assertThat(parentRow.slot().sourceSide().sqlName()).isEqualToIgnoringCase("endorsed_film");
-            });
-        // The nested edge establishes context for its own subtree exactly as a flat one does.
-        assertInherited(schema, "Film", "inventories");
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(schema.tenantBindingOf("EndorsementAbout", "film")).isNull();
+        assertRejects(schema, "EndorsementAbout.film", "no ancestor established a tenant context");
     }
 
     @Test
@@ -3207,11 +3229,11 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aNestedInlineReferenceUnderAGlobalParentNamesSplitQueryInItsRejection() {
+    void aNestedInlineReferenceUnderAGlobalParentRejectsAsUnrouted() {
         var schema = build(ENDORSEMENT_ABOUT.formatted("\n    film: Film"));
 
         assertThat(schema.tenantBindingOf("EndorsementAbout", "film")).isNull();
-        assertRejects(schema, "EndorsementAbout.film", "Mark it @splitQuery");
+        assertRejects(schema, "EndorsementAbout.film", "no ancestor established a tenant context");
     }
 
     @Test
@@ -3239,7 +3261,7 @@ class TenantBindingClassificationTest {
             .filteredOn(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
                 && r.coordinate().equals("FilmMention.film"))
             .hasSize(1);
-        assertRejects(schema, "FilmMention.film", "Mark it @splitQuery");
+        assertRejects(schema, "FilmMention.film", "no ancestor established a tenant context");
     }
 
     // ===== A parent that supplies a tenant outranks the child's own argument =====
@@ -3268,8 +3290,8 @@ class TenantBindingClassificationTest {
 
     @Test
     void aChildArgumentNamingTheTenantColumnDoesNotOutrankTheParentRow() {
-        var bare = endorsements(" @splitQuery", "");
-        var withArgument = build(ENDORSEMENTS.replace("film: Film%s",
+        var bare = endorsementsRouted(" @splitQuery", "");
+        var withArgument = buildRouted(ENDORSEMENTS.replace("film: Film%s",
             "film(filmId: Int @field(name: \"film_id\")): Film%s").formatted(" @splitQuery", ""));
 
         var expected = (TenantBinding.ParentRowBound) bare.tenantBindingOf("FilmEndorsement", "film");

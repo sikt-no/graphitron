@@ -24,8 +24,8 @@ type Language @table(name: "language") {
 
 type FilmEndorsement @table(name: "film_endorsement") {
   note: String
-  film: Film
-  endorsed: Film @reference(path: [{key: "film_endorsement_endorsed_film_fkey"}])
+  film: Film @splitQuery
+  endorsed: Film @splitQuery @reference(path: [{key: "film_endorsement_endorsed_film_fkey"}])
 }
 
 type FilmBookmark implements FilmPointer @table(name: "film_bookmark") {

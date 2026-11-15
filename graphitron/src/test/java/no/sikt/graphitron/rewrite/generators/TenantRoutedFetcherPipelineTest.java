@@ -447,8 +447,12 @@ class TenantRoutedFetcherPipelineTest {
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
+    /**
+     * A nesting type's field is not routed by its parent row's tenant yet (Alf, 2026-11-15): the store
+     * refuses it, TENANT_FAN_OUT_NESTED_UNSUPPORTED, and the walk mints no parent-row arm for it.
+     */
     @Test
-    void aNestingTypeUnderAGlobalParentCarriesTheParentRowArm() {
+    void aNestingTypeUnderAGlobalParentCarriesNoParentRowArmYet() {
         var schema = multiTenant("""
             type FilmEndorsement @table(name: "film_endorsement") {
                 note: String
@@ -461,9 +465,7 @@ class TenantRoutedFetcherPipelineTest {
             type Query { endorsements: [FilmEndorsement!]! }
             """);
 
-        assertThat(schema.tenantBindingOf("EndorsementAbout", "film"))
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ParentRowBound.class);
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
+        assertThat(schema.tenantBindingOf("EndorsementAbout", "film")).isNull();
     }
 
     /**

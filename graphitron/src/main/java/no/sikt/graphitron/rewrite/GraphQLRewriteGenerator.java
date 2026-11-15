@@ -548,7 +548,8 @@ public class GraphQLRewriteGenerator {
         }
 
         var bundle = GraphitronSchemaBuilder.buildBundle(attributed, accepted, ctx,
-            no.sikt.graphitron.emit.AuthoredTenantsQuery.read(store));
+            no.sikt.graphitron.emit.AuthoredTenantsQuery.read(store),
+            no.sikt.graphitron.emit.RowTenantsQuery.read(store));
         var schema = bundle.model();
         boolean federationLink = bundle.federationLink();
         var assembled = emittedSchema();
