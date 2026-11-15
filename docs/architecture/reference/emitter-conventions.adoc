@@ -37,6 +37,9 @@ signatures, structurally committing to selection-aware queries:
 - *Inline nesting*: use jOOQ `multiset(select(columns).from(CHILD).where(...)).as("alias")`
   returning `Field<?>` (type-erased). Use type erasure at every helper method boundary ; jOOQ
   generic types compound badly with nesting depth, causing slow compile times.
+- *Single child*: the same `multiset`, with `limit(1)`, never a `row` (Alf, 2026-11-15). jOOQ 3.19
+  passed a `row` to PostgreSQL as a row type, which came back with no field names; the single-row
+  `multiset` keeps them. The unit's shape otherwise stays as it is through the `$project` flip.
 - *`@splitQuery`*: separate DataLoader; parent fetches FK/PK columns, child batches by those keys.
 
 Selection-driven queries produce different SQL per request, preventing cached query-plan reuse.
