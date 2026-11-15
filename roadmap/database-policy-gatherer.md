@@ -111,18 +111,21 @@ that opens a `java.sql.Connection`. The model module gains no driver dependency.
 ### Relations
 
 Each is keyed like `sql_table`, on `(source_name, table_schema, table_name)` plus its own grain, with
-`source_name` a foreign key to `store_source` (`ON DELETE CASCADE`) and a `touched_at` mark.
+`source_name` a foreign key to `store_source` (`ON DELETE CASCADE`) and a `touched_at` mark. The rows
+that hang off a policy (`database_policy_role`) also carry a foreign key to that policy's key with
+`ON DELETE CASCADE`, so the sweep of a policy is what collects them.
 
 * `database_table_security`: one row per table the database secures by row, with whether that
   security is forced. A table absent here, in a reading that happened, does not secure its rows.
 * `database_policy`: one row per policy a table declares. Columns: command (`ALL`, `SELECT`,
   `INSERT`, `UPDATE`, `DELETE`), mode (`PERMISSIVE`, `RESTRICTIVE`), and the `USING` and `WITH CHECK`
-  text as the database renders it. The text is display material and never a dimension: no reader
-  string-searches it. A follow-up that needs to reason over it derives a relation from it.
+  text as the database renders it, and the policy's comment. Each of those three columns is display material, never a dimension, and the DDL says so in the same words; no reader
+  string-searches it. A follow-up that needs structure from an expression captures it at capture, beside the text, never by parsing the stored text.
   A table may declare policies while its row security is off, and the database then does not apply
   them. So `database_policy` has no foreign key to `database_table_security`: such policies are
   stored, and the readers show them as declared but not in force.
-* `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row.
+* `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row. It has a foreign key
+  to its `database_policy` row (`ON DELETE CASCADE`), so sweeping a policy collects its roles.
 
 Names are stored as the database spells them (`pg_namespace.nspname`, `pg_class.relname`), which is
 how `sql_table` stores jOOQ's `getSchema().getName()` and `getName()`. That makes a name match exact.
@@ -182,9 +185,13 @@ One read-only transaction, three statements:
 
 * `pg_class` joined to `pg_namespace` where `relrowsecurity`, `relkind` in `r`/`p`, outside
   `pg_catalog`, `information_schema` and `pg_toast`: schema, table, `relforcerowsecurity`.
-* `pg_policies`: `schemaname`, `tablename`, `policyname`, `permissive`, `cmd`, `qual`,
-  `with_check`, already rendered as text by the database.
-* `unnest(roles)` from `pg_policies` for the role rows, where `public` reads as `PUBLIC`.
+* `pg_policy` joined to `pg_class` and `pg_namespace`: the policy name, `polcmd` and `polpermissive`
+  decoded at capture into the words the table holds, `polroles` with the `{0}` entry read as `PUBLIC`,
+  `polqual` and `polwithcheck` rendered by `pg_get_expr`, and the policy's comment. The catalog is read
+  directly, not through the `pg_policies` view, which derives from the same catalog and adds role names
+  and a fixed layout; the reading keeps the raw codes it decodes itself. Role names come from `pg_roles`,
+  which the connecting role can read.
+* `pg_roles`, for the role names `polroles` points at, as the previous bullet resolves them.
 
 With dialect `ORACLE` the gatherer does not run and logs that Oracle is not read yet. Oracle's VPD
 (`ALL_POLICIES`) fits the same relations later. Grants (one row per table, grantee and privilege) fit
@@ -255,6 +262,9 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * Reading record: no connector leaves no source row; a connector whose url refuses connections leaves
   a warning, a source without a stamp, and the previous rows.
 * `source_name` never contains the user, the password or the url's query parameters.
+* `polroles` entries resolve to role names through `pg_roles`, and `{0}` reads as `PUBLIC`.
+* Enforcement fixtures act as an application role (`SET ROLE`), not as the owner: the owner bypasses
+  row security unless the table is forced, so a read as the owner says nothing about enforcement.
 * Mojo configuration tests over the injected environment map: `<database>` alone; env overriding POM;
   `<devDatabase>` alone (works, warns); `<devDatabase>` with `<database>` (fails); legacy variables as
   fallback (works, warns); no url (gatherer and `execute` absent); a url with no accepting driver
@@ -275,10 +285,16 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream:
   returns nothing (the `secure_note` case), and a row-secured table with no policy for the mutation's
   command, which the database denies by default;
 * a policy reading a session setting without treating `NULL` and `''` alike as no identity, the
-  fail-closed rule in `docs/security.adoc`. This one derives a `database_policy_setting_read`
-  relation from the policy text. Checking setting names against the `SessionState` mount needs a new
-  fact, since the store does not record what the mount writes;
+  fail-closed rule in `docs/security.adoc`. This one captures each policy's setting reads at capture,
+  beside the text, and the functions a policy reaches with them: the walk over function bodies and the
+  edges it produces move here, since this is their first reader. Checking setting names against the
+  `SessionState` mount needs a new fact, since the store does not record what the mount writes;
 * a `@table` on an unsecured table whose neighbours are secured;
+* the database-side rules an internal pgTAP suite already runs over row security: a forced table, more
+  than one policy for one command, a view without `security_invoker`, a policy that is `true` throughout,
+  a policy reading an `app.` setting through a function, and a policy calling a function that takes no
+  argument. Each is its own item and its own warning; the list is a candidate set from practice, not a
+  ruling.
 * removing `<devDatabase>` at the end of the migration window.
 
 ## Open questions for Alf and Filip
@@ -292,6 +308,9 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream:
 * The application role. Policies apply `TO` roles, and without knowing which role the runtime
   connects as, the follow-up diagnostics must assume any policy may apply. A `<database>` field
   naming the runtime role(s) is the obvious home; it is left to the follow-ups.
+* Views and their options. Some of the candidate rules (a view without `security_invoker`, a view
+  reading an `app.` setting) reach past policies, and this item stores no view facts. Whether they join
+  this family or a later one is for the follow-up that needs them.
 
 ## Principles-architect consultation
 
