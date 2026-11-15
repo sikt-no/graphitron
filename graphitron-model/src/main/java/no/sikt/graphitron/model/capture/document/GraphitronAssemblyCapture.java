@@ -227,10 +227,10 @@ public final class GraphitronAssemblyCapture {
         var rule = GRAPHITRON_FIELD_TARGET_RULE;
         dsl.insertInto(target)
             .columns(target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME,
-                target.TARGET_TYPE_NAME, target.WRAPPER_TYPE_NAME, target.TOUCHED_AT)
+                target.TARGET_TYPE_NAME, target.WRAPPER_TYPE_NAME, target.SINGLE_VALUED, target.TOUCHED_AT)
             .select(dsl
                 .select(rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME,
-                    rule.TARGET_TYPE_NAME, rule.WRAPPER_TYPE_NAME,
+                    rule.TARGET_TYPE_NAME, rule.WRAPPER_TYPE_NAME, rule.SINGLE_VALUED,
                     val(touchedAt, target.TOUCHED_AT))
                 .from(rule)
                 .where(rule.GRAPH_NAME.eq(graph)))
@@ -239,6 +239,8 @@ public final class GraphitronAssemblyCapture {
                 excluded(target.TARGET_TYPE_NAME))
             .set(target.WRAPPER_TYPE_NAME,
                 excluded(target.WRAPPER_TYPE_NAME))
+            .set(target.SINGLE_VALUED,
+                excluded(target.SINGLE_VALUED))
             .set(target.TOUCHED_AT,
                 excluded(target.TOUCHED_AT))
             .execute();

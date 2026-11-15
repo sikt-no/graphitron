@@ -298,6 +298,12 @@ class RelationRegistrationGateTest {
         // The paths keyed per need, derived from the entries and the catalog; what pins them is the
         // schema's own keys and checks.
         registrations.put("graphitron_join_path_claim", Arm.DERIVED);
+        registrations.put("graphitron_join_path_key_move", Arm.DERIVED);
+        registrations.put("graphitron_join_path_key_move_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_first_key", Arm.DERIVED);
+        registrations.put("graphitron_field_first_key_rule", Arm.DERIVED);
+        registrations.put("graphitron_tenant_fan_out_key", Arm.DERIVED);
+        registrations.put("graphitron_tenant_fan_out_key_rule", Arm.DERIVED);
         registrations.put("graphitron_path_need", Arm.DERIVED);
         registrations.put("graphitron_path_need_table", Arm.DERIVED);
         registrations.put("graphitron_path", Arm.DERIVED);

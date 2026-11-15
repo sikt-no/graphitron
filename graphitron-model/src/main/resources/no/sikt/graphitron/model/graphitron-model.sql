@@ -4433,6 +4433,7 @@ CREATE TABLE graphitron_field_target (
   field_name        VARCHAR NOT NULL,
   target_type_name  VARCHAR NOT NULL,
   wrapper_type_name VARCHAR,
+  single_valued     BOOLEAN,
   touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name)
@@ -4448,6 +4449,7 @@ COMMENT ON COLUMN graphitron_field_target.type_name IS 'the type owning the fiel
 COMMENT ON COLUMN graphitron_field_target.field_name IS 'the field whose target this row states; with the two columns above the whole key, one row per field of the graph';
 COMMENT ON COLUMN graphitron_field_target.target_type_name IS 'the target type''s name, unwrapped. A name and never a binding, so a reader joins graphitron_tabletype, graphitron_type_member or graphql_type on it according to what it needs to know';
 COMMENT ON COLUMN graphitron_field_target.wrapper_type_name IS 'the connection type the target was unwrapped from, which is the field''s named type; null where the field returns its target directly. List and non-null wrapping are cardinality rather than a wrapper, and stay on graphitron_field';
+COMMENT ON COLUMN graphitron_field_target.single_valued IS 'whether the field reads one row: TRUE where it is no list and returns no connection, or its type is a scalar or an enum; null where its named type is none the graph has. Which way a key from a table to itself is ridden turns on it, away from its declaring table for one row and toward it for many';
 COMMENT ON COLUMN graphitron_field_target.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the coordinates a rewriting moved off; a field the author removed takes its row with it through the cascade above, so the two together are what let a second reading of one store land on the first''s rows rather than meeting them on the key';
 
 -- Whether a field returns many: a list, or a connection over its target. Both inputs are this field's
@@ -9323,21 +9325,26 @@ COMMENT ON VIEW graphitron_field_position_rule IS 'One row the field position ru
 -- COMMENT ON COLUMN graphitron_field_position_rule.position IS 'the position it fills';
 
 CREATE VIEW graphitron_field_target_rule
-  (graph_name, type_name, field_name, target_type_name, wrapper_type_name) AS
+  (graph_name, type_name, field_name, target_type_name, wrapper_type_name, single_valued) AS
 SELECT f.graph_name, f.type_name, f.field_name,
        COALESCE(ed.item_type_name, f.named_type),
-       CASE WHEN ed.item_type_name IS NOT NULL THEN f.named_type END
+       CASE WHEN ed.item_type_name IS NOT NULL THEN f.named_type END,
+       CASE WHEN nt.kind IS NULL THEN CAST(NULL AS BOOLEAN)
+            WHEN NOT (f.is_list OR ed.item_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM')
+            THEN TRUE ELSE FALSE END
   FROM graphitron_field f
   LEFT JOIN graphitron_connection cn
     ON cn.graph_name = f.graph_name AND cn.type_name = f.named_type
   LEFT JOIN graphitron_edge ed
-    ON ed.graph_name = cn.graph_name AND ed.type_name = cn.edge_type_name;
+    ON ed.graph_name = cn.graph_name AND ed.type_name = cn.edge_type_name
+  LEFT JOIN graphitron_type nt ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type;
 COMMENT ON VIEW graphitron_field_target_rule IS 'One row the field target rule computes, in the shape graphitron_field_target stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_target, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_field_target_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
 -- COMMENT ON COLUMN graphitron_field_target_rule.type_name IS 'the type owning the field';
 -- COMMENT ON COLUMN graphitron_field_target_rule.field_name IS 'the field whose target this row states';
 -- COMMENT ON COLUMN graphitron_field_target_rule.target_type_name IS 'the connection''s item where the field''s named type is a connection, and the named type otherwise';
 -- COMMENT ON COLUMN graphitron_field_target_rule.wrapper_type_name IS 'the field''s named type where it is a connection, and null otherwise';
+-- COMMENT ON COLUMN graphitron_field_target_rule.single_valued IS 'whether the field reads one row, as graphitron_field_target.single_valued';
 
 -- graphitron_field_target is declared ahead of the connections, so the reference from a wrapper to
 -- the connection it names is added here: a field's wrapper is a recognised connection or nothing.
@@ -9931,6 +9938,7 @@ CREATE TABLE graphitron_join_path_claim (
   source_column          INT       NOT NULL,
   first_place            INT       NOT NULL,
   last_place             INT       NOT NULL,
+  single_valued          BOOLEAN,
   touched_at             TIMESTAMP NOT NULL,
   element_graph_ref      VARCHAR,
   element_coordinate_ref VARCHAR,
@@ -9964,11 +9972,215 @@ COMMENT ON COLUMN graphitron_join_path_claim.source_line IS 'the claim''s source
 COMMENT ON COLUMN graphitron_join_path_claim.source_column IS 'the claim''s source column; with the two columns before it, the claim position graphitron_ast_path_entry keys its elements by within this file. An attribute and not a reference: a position is only a key within its own file, and the claim is named by the coordinate and the target type';
 COMMENT ON COLUMN graphitron_join_path_claim.first_place IS 'the place the path starts at: 1 where place 0 is a root field''s leading @routine, its producer''s call and so no step of the path, else 0';
 COMMENT ON COLUMN graphitron_join_path_claim.last_place IS 'the last place written under the claim''s position; the claim writes a path where it is at least first_place, so a root field writing only its leading @routine writes none';
+COMMENT ON COLUMN graphitron_join_path_claim.single_valued IS 'whether the element the path is written on reads one row: a field''s graphitron_field_target.single_valued, an argument holding one value or a scalar or enum; null where its type is none the graph has. A key from a table to itself is ridden away from its declaring table for one row and toward it for many';
 COMMENT ON COLUMN graphitron_join_path_claim.touched_at IS 'when the reading that last stated this claim ran: the mark the sweep reads, so a claim a reading no longer finds goes with the paths following it';
 COMMENT ON COLUMN graphitron_join_path_claim.element_graph_ref IS 'the graph half of the element''s key, nullable so the element''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_join_path_claim.element_coordinate_ref IS 'the coordinate half of the element''s key, equal to element_coordinate while the element stands';
 COMMENT ON COLUMN graphitron_join_path_claim.target_graph_ref IS 'the graph half of the target type''s key, nullable so the type''s removal sets the reference null rather than cascading';
 COMMENT ON COLUMN graphitron_join_path_claim.target_type_ref IS 'the type half of the target type''s key, equal to target_type while the type stands; null where the type named is none the graph has';
+
+-- The foreign keys a written element offers to ride, in each direction it may be ridden, judged once
+-- for every departure a walk may stand at: a key is ridden away from its declaring table or toward
+-- it, and one from a table to itself away only where the claim's field reads one row and toward
+-- only where it reads many.
+CREATE TABLE graphitron_join_path_key_move (
+  graph_name             VARCHAR   NOT NULL,
+  claim_coordinate       VARCHAR   NOT NULL,
+  claim_target_type      VARCHAR   NOT NULL,
+  position               INT       NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  fk_on_from             BOOLEAN   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, claim_coordinate, claim_target_type, position, constraint_source_name,
+               constraint_schema, constraint_table, constraint_name, fk_on_from),
+  FOREIGN KEY (graph_name, claim_coordinate, claim_target_type)
+    REFERENCES graphitron_join_path_claim (graph_name, element_coordinate, target_type) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_join_path_key_move IS 'One way a written element''s foreign key may be ridden: one row per claim, position and key move a written element offers. For example {key: "film_actor_film_id_fkey"} on Film.actors offers the key toward its declaring table film_actor, from film; a key from a table to itself offers one direction, by whether the field reads one row or many.';
+COMMENT ON COLUMN graphitron_join_path_key_move.graph_name IS 'the owning graph''s partition, carried from the claim';
+COMMENT ON COLUMN graphitron_join_path_key_move.claim_coordinate IS 'the declared element the path is written on, as graphitron_join_path_claim.element_coordinate';
+COMMENT ON COLUMN graphitron_join_path_key_move.claim_target_type IS 'the type the claim reaches; with the coordinate, the claim';
+COMMENT ON COLUMN graphitron_join_path_key_move.position IS 'the step the element takes: its place less the claim''s first place';
+COMMENT ON COLUMN graphitron_join_path_key_move.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_join_path_key_move.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_join_path_key_move.constraint_table IS 'the table holding the key, the referencing side, whichever way it is ridden';
+COMMENT ON COLUMN graphitron_join_path_key_move.constraint_name IS 'the key''s SQL name; with the three columns before it, sql_referential_constraint''s key';
+COMMENT ON COLUMN graphitron_join_path_key_move.fk_on_from IS 'TRUE where the move leaves the key''s declaring table for the table it references, FALSE where it arrives at the declaring table from the referenced one';
+COMMENT ON COLUMN graphitron_join_path_key_move.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- Each claim on a field or an argument, with whether its element reads one row, and the key moves of
+-- every element it writes from its first place on.
+CREATE VIEW graphitron_join_path_key_move_rule
+  (graph_name, claim_coordinate, claim_target_type, position, constraint_source_name,
+   constraint_schema, constraint_table, constraint_name, fk_on_from) AS
+WITH claim (graph_name, claim_coordinate, claim_target_type, source_name, anchor_line,
+            anchor_column, first_place, single_valued) AS (
+  SELECT c.graph_name, c.element_coordinate, c.target_type, c.source_name, c.source_line,
+         c.source_column, c.first_place, c.single_valued
+    FROM graphitron_join_path_claim c
+   WHERE c.single_valued IS NOT NULL
+),
+offered (graph_name, claim_coordinate, claim_target_type, position, single_valued,
+         source_name, table_schema, table_name, constraint_name, self) AS (
+  SELECT cl.graph_name, cl.claim_coordinate, cl.claim_target_type, e.place - cl.first_place,
+         cl.single_valued, rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name,
+         CASE WHEN rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
+                   AND rc.table_name = rc.referenced_table THEN TRUE ELSE FALSE END
+    FROM claim cl
+    JOIN graphitron_ast_path_entry e
+      ON e.graph_name = cl.graph_name AND e.source_name = cl.source_name
+     AND e.anchor_line = cl.anchor_line AND e.anchor_column = cl.anchor_column
+     AND e.place >= cl.first_place
+    JOIN graphitron_path_element_key k
+      ON k.graph_name = e.graph_name AND k.source_name = e.source_name
+     AND k.source_line = e.element_line AND k.source_column = e.element_column
+    JOIN sql_referential_constraint rc
+      ON rc.source_name = k.constraint_source_name AND rc.table_schema = k.constraint_schema
+     AND rc.table_name = k.constraint_table AND rc.constraint_name = k.constraint_name
+)
+SELECT graph_name, claim_coordinate, claim_target_type, position, source_name, table_schema,
+       table_name, constraint_name, TRUE
+  FROM offered
+ WHERE NOT self OR single_valued
+UNION ALL
+SELECT graph_name, claim_coordinate, claim_target_type, position, source_name, table_schema,
+       table_name, constraint_name, FALSE
+  FROM offered
+ WHERE NOT self OR NOT single_valued;
+COMMENT ON VIEW graphitron_join_path_key_move_rule IS 'One row the key move rule computes, in the shape graphitron_join_path_key_move stores: the rule itself, evaluated on demand rather than read off disk. For example the path-claims stage inserts this view''s rows for one graph into graphitron_join_path_key_move, which graphitron_join_path_step_rule reads for a written key''s moves.';
+
+-- The foreign key an output field's path starts with from its declaring type's own table, judged
+-- once per field and target type ahead of the producers: what the depth loop rides at position 0 for
+-- an occurrence starting there, and what a fan-out by the row's tenant reads. An inherited path is
+-- absent: which claim a field follows from an interface is decided per need by
+-- graphitron_join_path_claimed_rule, and stating it here too would be a second decision; until the
+-- followed claim is stored per field and target type, an inherited path's first key is the walk's.
+-- Paths reads the INFERRED rows today; the WRITTEN rows, and both read for a fan-out, wait for the
+-- producer rule that makes a field fanning out by its row's tenant a producer.
+CREATE TABLE graphitron_field_first_key (
+  graph_name             VARCHAR   NOT NULL,
+  element_coordinate     VARCHAR   NOT NULL,
+  target_type            VARCHAR   NOT NULL,
+  origin                 VARCHAR   NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  fk_on_from             BOOLEAN   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, element_coordinate, target_type),
+  FOREIGN KEY (graph_name, element_coordinate)
+    REFERENCES graphitron_element (graph_name, coordinate) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE,
+  CHECK (origin IN ('WRITTEN', 'INFERRED'))
+);
+COMMENT ON TABLE graphitron_field_first_key IS 'The foreign key a field''s path starts with from its declaring type''s own table: one row per field and target type whose path starts with a foreign key. For example Film.language rides film_language_id_fkey, inferred as the one key between film and language, and a {key:} written first on a Customer field rides that key where it is the one leaving customer.';
+COMMENT ON COLUMN graphitron_field_first_key.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_first_key.element_coordinate IS 'the output field, as graphitron_element spells it; its declaring type''s table is where the path starts';
+COMMENT ON COLUMN graphitron_field_first_key.target_type IS 'the type the path reaches: a written claim''s target type, else the field''s target type; with the coordinate the key';
+COMMENT ON COLUMN graphitron_field_first_key.origin IS 'WRITTEN, the field''s own claim offering one key move from the declaring table at its first element; INFERRED, no claim at the field or at an interface''s same-named field, and one foreign key between the two tables, in either direction, or the table''s one self-referencing key';
+COMMENT ON COLUMN graphitron_field_first_key.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_field_first_key.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_field_first_key.constraint_table IS 'the table holding the key, the referencing side, whichever way it is ridden';
+COMMENT ON COLUMN graphitron_field_first_key.constraint_name IS 'the key''s SQL name; with the three columns before it, sql_referential_constraint''s key';
+COMMENT ON COLUMN graphitron_field_first_key.fk_on_from IS 'TRUE where the path leaves the key''s declaring table for the table it references, FALSE where it arrives at the declaring table: a written key''s as its move states it, an inferred key''s by which side the declaring type''s table is, a key from a table to itself away for a field reading one row and toward for many';
+COMMENT ON COLUMN graphitron_field_first_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_field_first_key_rule
+  (graph_name, element_coordinate, target_type, origin, constraint_source_name, constraint_schema,
+   constraint_table, constraint_name, fk_on_from) AS
+-- A field's own claim whose first element offers foreign keys and no primary key, with the key moves
+-- leaving the declaring type's table there.
+WITH written (graph_name, element_coordinate, target_type, source_name, table_schema, table_name,
+              constraint_name, fk_on_from) AS (
+  SELECT c.graph_name, c.element_coordinate, c.target_type, m.constraint_source_name,
+         m.constraint_schema, m.constraint_table, m.constraint_name, m.fk_on_from
+    FROM graphitron_join_path_claim c
+    JOIN graphitron_field f ON f.graph_name = c.graph_name AND f.coordinate = c.element_coordinate
+    JOIN graphitron_tabletype dt ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+    JOIN graphitron_join_path_key_move m
+      ON m.graph_name = c.graph_name AND m.claim_coordinate = c.element_coordinate
+     AND m.claim_target_type = c.target_type AND m.position = 0
+    JOIN sql_referential_constraint rc
+      ON rc.source_name = m.constraint_source_name AND rc.table_schema = m.constraint_schema
+     AND rc.table_name = m.constraint_table AND rc.constraint_name = m.constraint_name
+   WHERE c.claim_kind IN ('FIELD', 'REFERENCE_FOR')
+     AND CASE WHEN m.fk_on_from
+              THEN rc.source_name = dt.table_source_name AND rc.table_schema = dt.table_schema
+                   AND rc.table_name = dt.table_name
+              ELSE rc.referenced_source_name = dt.table_source_name
+                   AND rc.referenced_schema = dt.table_schema AND rc.referenced_table = dt.table_name END
+     AND NOT EXISTS (SELECT 1 FROM graphitron_ast_path_entry e
+                       JOIN graphitron_path_element_primary_key pk
+                         ON pk.graph_name = e.graph_name AND pk.source_name = e.source_name
+                        AND pk.source_line = e.element_line AND pk.source_column = e.element_column
+                      WHERE e.graph_name = c.graph_name AND e.source_name = c.source_name
+                        AND e.anchor_line = c.source_line AND e.anchor_column = c.source_column
+                        AND e.place = c.first_place)
+),
+-- An output field between two table-bound types that neither it nor an interface's same-named field
+-- claims a path for, with the keys joining its declaring table and its target's.
+uncovered (graph_name, element_coordinate, target_type, from_source, from_schema, from_table,
+           to_source, to_schema, to_table, single_valued) AS (
+  SELECT f.graph_name, f.coordinate, ft.target_type_name, dt.table_source_name, dt.table_schema,
+         dt.table_name, tt.table_source_name, tt.table_schema, tt.table_name, ft.single_valued
+    FROM graphitron_field f
+    JOIN graphitron_tabletype dt ON dt.graph_name = f.graph_name AND dt.type_name = f.type_name
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+    JOIN graphitron_tabletype tt ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_join_path_claim own
+                      WHERE own.graph_name = f.graph_name AND own.element_coordinate = f.coordinate)
+     AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                       JOIN graphitron_field inf
+                         ON inf.graph_name = ii.graph_name AND inf.type_name = ii.interface_name
+                        AND inf.field_name = f.field_name
+                       JOIN graphitron_join_path_claim ic
+                         ON ic.graph_name = inf.graph_name AND ic.element_coordinate = inf.coordinate
+                      WHERE ii.graph_name = f.graph_name AND ii.type_name = f.type_name)
+),
+inferred (graph_name, element_coordinate, target_type, source_name, table_schema, table_name,
+          constraint_name, fk_on_from) AS (
+  SELECT u.graph_name, u.element_coordinate, u.target_type, rc.source_name, rc.table_schema,
+         rc.table_name, rc.constraint_name,
+         -- Away from the declaring table where it holds the key; a key from a table to itself by
+         -- whether the field reads one row.
+         CASE WHEN u.from_source = u.to_source AND u.from_schema = u.to_schema AND u.from_table = u.to_table
+              THEN u.single_valued
+              ELSE CASE WHEN rc.source_name = u.from_source AND rc.table_schema = u.from_schema
+                             AND rc.table_name = u.from_table THEN TRUE ELSE FALSE END END
+    FROM uncovered u
+    JOIN sql_referential_constraint rc
+      ON (rc.source_name = u.from_source AND rc.table_schema = u.from_schema
+          AND rc.table_name = u.from_table AND rc.referenced_source_name = u.to_source
+          AND rc.referenced_schema = u.to_schema AND rc.referenced_table = u.to_table)
+      OR (rc.source_name = u.to_source AND rc.table_schema = u.to_schema
+          AND rc.table_name = u.to_table AND rc.referenced_source_name = u.from_source
+          AND rc.referenced_schema = u.from_schema AND rc.referenced_table = u.from_table)
+)
+SELECT graph_name, element_coordinate, target_type, 'WRITTEN', MIN(source_name), MIN(table_schema),
+       MIN(table_name), MIN(constraint_name),
+       CASE WHEN MIN(CASE WHEN fk_on_from THEN 1 ELSE 0 END) = 1 THEN TRUE ELSE FALSE END
+  FROM written
+ GROUP BY graph_name, element_coordinate, target_type
+HAVING COUNT(*) = 1
+UNION ALL
+SELECT graph_name, element_coordinate, target_type, 'INFERRED', MIN(source_name), MIN(table_schema),
+       MIN(table_name), MIN(constraint_name),
+       CASE WHEN MIN(CASE WHEN fk_on_from THEN 1 ELSE 0 END) = 1 THEN TRUE ELSE FALSE END
+  FROM (SELECT DISTINCT * FROM inferred) i
+ GROUP BY graph_name, element_coordinate, target_type
+HAVING COUNT(*) = 1 AND MIN(CASE WHEN fk_on_from IS NULL THEN 0 ELSE 1 END) = 1;
+COMMENT ON VIEW graphitron_field_first_key_rule IS 'One row the first key rule computes, in the shape graphitron_field_first_key stores: the rule itself, evaluated on demand rather than read off disk. For example the path-claims stage inserts this view''s rows for one graph into graphitron_field_first_key.';
 
 CREATE TABLE graphitron_occurrence_source (
   graph_name VARCHAR   NOT NULL,
@@ -10910,29 +11122,13 @@ CREATE VIEW graphitron_join_path_step_rule
 WITH claim (graph_name, claim_coordinate, claim_target_type, source_name, anchor_line,
             anchor_column, first_place, single_valued, on_mutation) AS (
   SELECT c.graph_name, c.element_coordinate, c.target_type, c.source_name, c.source_line,
-         c.source_column,
-         c.first_place,
-         CASE WHEN NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM')
-              THEN TRUE ELSE FALSE END,
+         c.source_column, c.first_place, c.single_valued,
          CASE WHEN ro.operation = 'MUTATION' THEN TRUE ELSE FALSE END
     FROM graphitron_join_path_claim c
-    JOIN graphitron_field f
+    LEFT JOIN graphitron_field f
       ON f.graph_name = c.graph_name AND f.coordinate = c.element_coordinate
-    JOIN graphitron_field_target nv
-      ON nv.graph_name = f.graph_name AND nv.type_name = f.type_name AND nv.field_name = f.field_name
-    JOIN graphitron_type nt ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
     LEFT JOIN graphql_root_operation ro ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-   UNION ALL
-  -- Each claim on an argument, its path starting at its first place, read as a field reading one
-  -- row where the argument holds one value.
-  SELECT c.graph_name, c.element_coordinate, c.target_type, c.source_name, c.source_line,
-         c.source_column, 0,
-         CASE WHEN NOT a.is_list OR at.kind IN ('SCALAR', 'ENUM') THEN TRUE ELSE FALSE END,
-         FALSE
-    FROM graphitron_join_path_claim c
-    JOIN graphitron_argument a
-      ON a.graph_name = c.graph_name AND a.coordinate = c.element_coordinate
-    JOIN graphitron_type at ON at.graph_name = a.graph_name AND at.type_name = a.named_type
+   WHERE c.single_valued IS NOT NULL
 ),
 -- Each written element from the path's first place on, at the position its step takes, with
 -- whether it is the claim's only element and whether it names a key or a table.
@@ -10988,43 +11184,25 @@ SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el
        CAST(NULL AS BOOLEAN), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM element el
 UNION ALL
--- A written key ridden away from its declaring table; one from a table to itself only where the
--- field reads one row.
+-- A written key's moves, as graphitron_join_path_key_move states them: away from its declaring table
+-- or toward it, a key from a table to itself by whether the field reads one row or many.
 SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
        el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
-       rc.source_name, rc.table_schema, rc.table_name,
-       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table, 'KEY',
-       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, TRUE,
+       CASE WHEN m.fk_on_from THEN rc.source_name ELSE rc.referenced_source_name END,
+       CASE WHEN m.fk_on_from THEN rc.table_schema ELSE rc.referenced_schema END,
+       CASE WHEN m.fk_on_from THEN rc.table_name ELSE rc.referenced_table END,
+       CASE WHEN m.fk_on_from THEN rc.referenced_source_name ELSE rc.source_name END,
+       CASE WHEN m.fk_on_from THEN rc.referenced_schema ELSE rc.table_schema END,
+       CASE WHEN m.fk_on_from THEN rc.referenced_table ELSE rc.table_name END, 'KEY',
+       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, m.fk_on_from,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM element el
-  JOIN graphitron_path_element_key k
-    ON k.graph_name = el.graph_name AND k.source_name = el.source_name
-   AND k.source_line = el.element_line AND k.source_column = el.element_column
+  JOIN graphitron_join_path_key_move m
+    ON m.graph_name = el.graph_name AND m.claim_coordinate = el.claim_coordinate
+   AND m.claim_target_type = el.claim_target_type AND m.position = el.position
   JOIN sql_referential_constraint rc
-    ON rc.source_name = k.constraint_source_name AND rc.table_schema = k.constraint_schema
-   AND rc.table_name = k.constraint_table AND rc.constraint_name = k.constraint_name
- WHERE NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
-            AND rc.table_name = rc.referenced_table)
-    OR el.single_valued
-UNION ALL
--- The same key ridden toward its declaring table; one from a table to itself only where the field
--- reads many rows.
-SELECT el.graph_name, el.claim_coordinate, el.claim_target_type, el.position, el.place,
-       el.source_name, el.element_line, el.element_column, el.as_name, CAST(NULL AS BOOLEAN), CAST(NULL AS BOOLEAN),
-       rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
-       rc.source_name, rc.table_schema, rc.table_name, 'KEY',
-       rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, FALSE,
-       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-  FROM element el
-  JOIN graphitron_path_element_key k
-    ON k.graph_name = el.graph_name AND k.source_name = el.source_name
-   AND k.source_line = el.element_line AND k.source_column = el.element_column
-  JOIN sql_referential_constraint rc
-    ON rc.source_name = k.constraint_source_name AND rc.table_schema = k.constraint_schema
-   AND rc.table_name = k.constraint_table AND rc.constraint_name = k.constraint_name
- WHERE NOT (rc.source_name = rc.referenced_source_name AND rc.table_schema = rc.referenced_schema
-            AND rc.table_name = rc.referenced_table)
-    OR NOT el.single_valued
+    ON rc.source_name = m.constraint_source_name AND rc.table_schema = m.constraint_schema
+   AND rc.table_name = m.constraint_table AND rc.constraint_name = m.constraint_name
 UNION ALL
 -- A table's own primary key, joining each row to itself: the claim's only element, on a field
 -- reading one row.
@@ -11801,6 +11979,72 @@ SELECT t.graph_name, sp.source_name, sp.table_schema, sp.table_name, sp.column_n
   JOIN sql_column_spelling sp
     ON sp.source_name = m.source_name AND sp.spelling_upper = UPPER(t.column_name) AND sp.reach = 1;
 COMMENT ON VIEW graphitron_tenant_column_rule IS 'One row the tenant column rule computes, in the shape graphitron_tenant_column stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_column, which is the name every reader spells.';
+
+-- A foreign key that fans out by the parent row's tenant: one of its column pairs lands on the tenant
+-- column of the table a tenant column scopes, from a table none scopes, so the parent row's value in
+-- that column names the tenant the child's rows lie in. A composite key counts by that one column, its
+-- other columns naming the row within the tenant (Alf, 2026-11-15). Its reader waits: the producer
+-- rule that makes a field whose first key is one of these a producer grouping its parents by tenant.
+CREATE TABLE graphitron_tenant_fan_out_key (
+  graph_name             VARCHAR   NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  parent_on_key_table    BOOLEAN   NOT NULL,
+  parent_column          VARCHAR   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_tenant_column (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_tenant_fan_out_key IS 'A foreign key whose rows fan out by their tenant: one row per foreign key joining a table no tenant column scopes to the tenant column of one it scopes. For example under film_id a key from film_endorsement.endorsed_film to film.film_id fans out with the parent holding the key, and under INSTITUSJONSNR a key from a scoped table''s INSTITUSJONSNR to a global table''s key fans out with the parent the referenced side.';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.graph_name IS 'the owning graph''s partition, one configuring a tenant column';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_table IS 'the table holding the key, the referencing side';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.constraint_name IS 'the key''s SQL name; with the three columns before it, sql_referential_constraint''s key and this row''s';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.parent_on_key_table IS 'TRUE where the parent, the side no tenant column scopes, is the table holding the key and the scoped side the one it references; FALSE the other way round';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.parent_column IS 'the parent''s column whose value names the tenant: the one paired with the scoped side''s tenant column';
+COMMENT ON COLUMN graphitron_tenant_fan_out_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- Each column pair of each foreign key, in each graph configuring a tenant column, with the tenant
+-- column each side's table carries, if any.
+CREATE VIEW graphitron_tenant_fan_out_key_rule
+  (graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name,
+   parent_on_key_table, parent_column) AS
+WITH pair (graph_name, source_name, table_schema, table_name, constraint_name, key_column,
+           referenced_column, key_tenant, referenced_tenant) AS (
+  SELECT g.graph_name, rcc.source_name, rcc.table_schema, rcc.table_name, rcc.constraint_name,
+         oc.column_name, rcol.column_name, kt.column_name, rt.column_name
+    FROM store_graph_tenant_column g
+    CROSS JOIN sql_referential_constraint_column rcc
+    JOIN sql_constraint_column oc
+      ON oc.source_name = rcc.source_name AND oc.table_schema = rcc.table_schema
+     AND oc.table_name = rcc.table_name AND oc.constraint_name = rcc.constraint_name
+     AND oc.position = rcc.position
+    JOIN sql_constraint_column rcol
+      ON rcol.source_name = rcc.referenced_source_name AND rcol.table_schema = rcc.referenced_schema
+     AND rcol.table_name = rcc.referenced_table AND rcol.constraint_name = rcc.referenced_constraint_name
+     AND rcol.position = rcc.referenced_position
+    LEFT JOIN graphitron_tenant_column kt
+      ON kt.graph_name = g.graph_name AND kt.source_name = rcc.source_name
+     AND kt.table_schema = rcc.table_schema AND kt.table_name = rcc.table_name
+    LEFT JOIN graphitron_tenant_column rt
+      ON rt.graph_name = g.graph_name AND rt.source_name = rcc.referenced_source_name
+     AND rt.table_schema = rcc.referenced_schema AND rt.table_name = rcc.referenced_table
+)
+-- The parent is the side no tenant column scopes; its column paired with the other side's tenant
+-- column names the tenant.
+SELECT graph_name, source_name, table_schema, table_name, constraint_name,
+       CASE WHEN key_tenant IS NULL THEN TRUE ELSE FALSE END,
+       CASE WHEN key_tenant IS NULL THEN key_column ELSE referenced_column END
+  FROM pair
+ WHERE (key_tenant IS NULL AND referenced_column = referenced_tenant)
+    OR (referenced_tenant IS NULL AND key_column = key_tenant);
+COMMENT ON VIEW graphitron_tenant_fan_out_key_rule IS 'One row the tenant fan-out key rule computes, in the shape graphitron_tenant_fan_out_key stores: the rule itself, evaluated on demand rather than read off disk. For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_fan_out_key.';
 
 CREATE TABLE graphitron_outbox_target (
   graph_name           VARCHAR   NOT NULL,
@@ -24817,6 +25061,8 @@ INSERT INTO meta_stage_write VALUES
   ('argmapping-landings', 'graphitron_entry_defect'),
   ('argmapping-landings', 'graphitron_argmapping_pair_defect'),
   ('path-claims', 'graphitron_join_path_claim'),
+  ('path-claims', 'graphitron_join_path_key_move'),
+  ('path-claims', 'graphitron_field_first_key'),
   ('path-claims', 'graphitron_entry_defect'),
   ('path-claims', 'graphitron_entry_defect_claim'),
   ('path-claims', 'graphitron_entry_defect_path_step'),
@@ -24956,6 +25202,7 @@ INSERT INTO meta_stage_write VALUES
   ('outbox', 'graphitron_outbox_routine_target'),
   ('outbox', 'graphitron_outbox_target'),
   ('tenant-columns', 'graphitron_tenant_column'),
+  ('tenant-columns', 'graphitron_tenant_fan_out_key'),
   ('graph-classes', 'code_graph_class'),
   ('method-parameter-tables', 'code_method_parameter_table');
 
@@ -25222,6 +25469,8 @@ INSERT INTO meta_stage_rule VALUES
   ('outbox', 'graphitron_outbox_routine_target', 'graphitron_outbox_routine_target_rule'),
   ('outbox', 'graphitron_outbox_target', 'graphitron_outbox_target_rule'),
   ('path-claims', 'graphitron_entry_defect', 'graphitron_path_claim_entry_defect_rule'),
+  ('path-claims', 'graphitron_join_path_key_move', 'graphitron_join_path_key_move_rule'),
+  ('path-claims', 'graphitron_field_first_key', 'graphitron_field_first_key_rule'),
   ('path-elements', 'graphitron_path_element_key', 'graphitron_path_element_key_rule'),
   ('path-elements', 'graphitron_path_element_method', 'graphitron_path_element_method_rule'),
   ('path-elements', 'graphitron_path_element_primary_key', 'graphitron_path_element_primary_key_rule'),
@@ -25234,6 +25483,7 @@ INSERT INTO meta_stage_rule VALUES
   ('table-types', 'graphitron_entry_defect', 'graphitron_table_type_entry_defect_rule'),
   ('table-types', 'graphitron_entry_defect_member', 'graphitron_entry_defect_member_rule'),
   ('tenant-columns', 'graphitron_tenant_column', 'graphitron_tenant_column_rule'),
+  ('tenant-columns', 'graphitron_tenant_fan_out_key', 'graphitron_tenant_fan_out_key_rule'),
   ('type-backings', 'graphitron_type_backing', 'graphitron_type_backing_rule'),
   ('type-claims', 'graphitron_claim', 'graphitron_type_claim_rule'),
   ('voucher-members', 'graphitron_voucher_member', 'graphitron_voucher_member_rule'),
@@ -25520,6 +25770,15 @@ INSERT INTO meta_grain VALUES
   ('path-claim',
    'one place a path is written, by the declared element it is written on and the type it reaches, in one graph',
    'graph_name, element_coordinate, target_type', 'sdl'),
+  ('path-key-move',
+   'one way one written element''s foreign key may be ridden, in one graph',
+   'graph_name, claim_coordinate, claim_target_type, position, constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from', 'sdl'),
+  ('field-first-key',
+   'the foreign key one output field''s path starts with from its declaring type''s table, toward one target type, in one graph',
+   'graph_name, element_coordinate, target_type', 'sdl'),
+  ('tenant-fan-out-key',
+   'one foreign key joining a table no tenant column scopes to a scoped table''s tenant column, in one graph',
+   'graph_name, constraint_source_name, constraint_schema, constraint_table, constraint_name', 'catalog'),
   ('occurrence-source-table',
    'one table one occurrence''s values are rows of, in one graph',
    'graph_name, coordinate, table_source_name, table_schema, table_name', 'sdl'),
@@ -26449,6 +26708,30 @@ INSERT INTO graphitron_defect_type VALUES
    'An argMapping entry reads $session or one of its members into a parameter that is not declared as what the handle or the member yields, so the generated call would not compile: declare the parameter as that type, a primitive member being allowed its boxed type.');
 
 INSERT INTO meta_relation VALUES
+  ('graphitron_tenant_fan_out_key', 'tenant-fan-out-key', 'graphitron',
+   'A foreign key whose rows fan out by their tenant: one row per foreign key joining a table no tenant column scopes to the tenant column of one it scopes.',
+   'For example under film_id a key from film_endorsement.endorsed_film to film.film_id fans out with the parent holding the key, and under INSTITUSJONSNR a key from a scoped table''s INSTITUSJONSNR to a global table''s key fans out with the parent the referenced side.',
+   'Whether a key fans out by its parent row''s tenant is a fact of the key and the graph''s tenant column alone, never of a field, so it is stated once per key beside the tenant columns it reads; a field whose first key is one of these is a producer grouping its parents by tenant, which the producer rule reads by joining a field''s first key to this.'),
+  ('graphitron_tenant_fan_out_key_rule', 'tenant-fan-out-key', 'graphitron',
+   'One row the tenant fan-out key rule computes, in the shape graphitron_tenant_fan_out_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the tenant-columns stage inserts this view''s rows for one graph into graphitron_tenant_fan_out_key.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_field_first_key', 'field-first-key', 'graphitron',
+   'The foreign key a field''s path starts with from its declaring type''s own table: one row per field and target type whose path starts with a foreign key.',
+   'For example Film.language rides film_language_id_fkey, inferred as the one key between film and language, and a {key:} written first on a Customer field rides that key where it is the one leaving customer.',
+   'The depth loop and the fan-out both need the key a field''s path starts with from its declaring type''s table, and the fan-out needs it before the producers, which the loop runs after; judged once here, the loop rides it at position 0 for an occurrence starting at that table instead of inferring or walking it again. Only resolved keys are rows: a defect rule computes what is missing in a CTE of its own, and a reader reads absence. An inherited path is absent until the claim a field follows is stored per field and target type, which graphitron_join_path_claimed_rule decides per need today.'),
+  ('graphitron_field_first_key_rule', 'field-first-key', 'graphitron',
+   'One row the first key rule computes, in the shape graphitron_field_first_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the path-claims stage inserts this view''s rows for one graph into graphitron_field_first_key.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_join_path_key_move', 'path-key-move', 'graphitron',
+   'One way a written element''s foreign key may be ridden: one row per claim, position and key move a written element offers.',
+   'For example {key: "film_actor_film_id_fkey"} on Film.actors offers the key toward its declaring table film_actor, from film; a key from a table to itself offers one direction, by whether the field reads one row or many.',
+   'Which way a written key is ridden from a table depends on the key and the claim''s field alone, never on where a walk stands, so it is judged once here rather than per departure in the walk: the step rule reads its key moves from this, and a field''s first key from its declaring type''s table is counted off it, one statement of the moves for both.'),
+  ('graphitron_join_path_key_move_rule', 'path-key-move', 'graphitron',
+   'One row the key move rule computes, in the shape graphitron_join_path_key_move stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the path-claims stage inserts this view''s rows for one graph into graphitron_join_path_key_move, which graphitron_join_path_step_rule reads for a written key''s moves.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_join_path_claim', 'path-claim', 'graphitron',
    'One place a path is written, by the declared element it is written on and the type it reaches: one row per field declaration writing @routine or @reference, @referenceFor application, argument and input field writing a path.',
    'For example Store.people with @referenceFor(type: "Staff") is the claim (Store.people, Staff), of kind REFERENCE_FOR.',

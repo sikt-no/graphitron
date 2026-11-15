@@ -95,7 +95,6 @@ The walk's read path is gone
     ├── The service fields are emitted from the store
     │   └── A producer's fetcher parts are emitted from the store
     └── A child whose followed key lands on the tenant column is routed by its row's tenant
-        └── A field's followed foreign key is joined to the tenant column before the producers
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1062,15 +1061,16 @@ static method needs no holder.
     nested class by the `$` in its binary name; the classfile's inner-classes attribute states it,
     and reading nested classes reached through another class's members closes the one hop the census
     reads today.
-* **A child whose followed key lands on the tenant column is routed by its row's tenant** `blocked`, E's, on "A field's followed foreign key is joined to the tenant column before the producers".
+* **A child whose followed key lands on the tenant column is routed by its row's tenant** `open`, E's.
   Where a followed foreign key lands on the tenant column under a parent not on that tenant, the
   child is a producer grouping its parents by tenant, written `@splitQuery` or not, its connection
   `ROUTED` with a `TENANT` part read off the parent row (`code-generation-triggers.adoc`, Alf,
-  2026-11-14). The commit shipping it rewrites `tenant-scoping.adoc`'s `@splitQuery` sections.
-  * **A field's followed foreign key is joined to the tenant column before the producers** `open`, E's.
-    The producer rule decides the fan-out before `occurrence-depths` writes the steps, so it reads the
-    field's reference or foreign key joined to `graphitron_tenant_column` from facts upstream of the
-    producers, captured there where they are not yet.
+  2026-11-14). The commit shipping it rewrites `tenant-scoping.adoc`'s `@splitQuery` sections. The
+  producer rule reads `graphitron_field_first_key` joined to `graphitron_tenant_fan_out_key`, both
+  stored ahead of the producers; it is the reader their WRITTEN rows and the fan-out keys wait for.
+  Interim debt, agreed to go with the depth loop: `Paths` still counts keys off `sql_table_reference`
+  for a need starting anywhere but its field's declaring table, and `Paths.declaringStart` restates in
+  Java the first key rule's predicate for a field no claim covers.
   * **A field's followed claim is stored per field and target type** `open`, E's. Which claim a field
     follows, its own `@referenceFor` or field claim or one inherited from an interface field, is
     decided per need by `graphitron_join_path_claimed_rule`, whose target types come from the depth

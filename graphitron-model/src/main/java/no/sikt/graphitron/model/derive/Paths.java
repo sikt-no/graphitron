@@ -11,6 +11,8 @@ import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_BINDING_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_FIRST_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
@@ -158,13 +160,17 @@ public final class Paths {
                 .where(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(n.GRAPH_NAME),
                     GRAPHITRON_TABLETYPE.TYPE_NAME.eq(n.TARGET_TYPE))))
             .or(lifted(o)));
+        // A need starting at its field's declaring type's table, toward the field's own target, with no
+        // claim at the field or an interface's: its key is graphitron_field_first_key's, judged once.
+        Condition declared = declaringStart(o, n);
         Condition inferred = o.KIND.eq("FIELD").andNot(sameTable)
-            .and(startsOnFunction(n).and(primaryKeyMatched(n))
-                .or(startsOnFunction(n).not().and(foreignKeys(n).eq(1))));
+            .and(declared.and(firstKey(o, n))
+                .or(declared.not().and(startsOnFunction(n).and(primaryKeyMatched(n))
+                    .or(startsOnFunction(n).not().and(foreignKeys(n).eq(1))))));
         // An output field on its own table, to a table type and not lifted onto it, over the one
         // self-referencing key.
         Condition selfInferred = o.KIND.eq("FIELD").and(sameTable).andNot(empty)
-            .and(selfKeys(n).eq(1));
+            .and(declared.and(firstKey(o, n)).or(declared.not().and(selfKeys(n).eq(1))));
         // The node an argument's or input field's @nodeId names, its typeName or else the type the
         // need reaches, and that node's table. A bare one whose need reaches no node takes the one
         // node over where its path lands, which with nothing written is its start: nothing to infer.
@@ -295,6 +301,47 @@ public final class Paths {
                 b.TABLE_NAME.eq(nt.TABLE_NAME), b.REFERENCED_SOURCE_NAME.eq(n.START_SOURCE_NAME),
                 b.REFERENCED_SCHEMA.eq(n.START_SCHEMA), b.REFERENCED_TABLE.eq(n.START_TABLE)));
         return coalesce(forward, 0).plus(coalesce(backward, 0));
+    }
+
+    /**
+     * Whether the need {@code n} of the field occurrence {@code o} starts at the field's declaring type's
+     * table and reaches the field's own target type on that type's table, with no claim at the field or
+     * at an interface's same-named field: the needs {@code graphitron_field_first_key} judges.
+     */
+    private static Condition declaringStart(GraphitronOccurrence o, GraphitronPathNeedTable n) {
+        var f = GRAPHITRON_FIELD.as("ds_f");
+        var dt = GRAPHITRON_TABLETYPE.as("ds_dt");
+        var ft = GRAPHITRON_FIELD_TARGET.as("ds_ft");
+        var tt = GRAPHITRON_TABLETYPE.as("ds_tt");
+        var own = GRAPHITRON_JOIN_PATH_CLAIM.as("ds_own");
+        var ii = GRAPHQL_IMPLEMENTS_INTERFACE.as("ds_ii");
+        var inf = GRAPHITRON_FIELD.as("ds_if");
+        var ic = GRAPHITRON_JOIN_PATH_CLAIM.as("ds_ic");
+        return o.KIND.eq("FIELD").and(exists(selectOne().from(f)
+            .join(dt).on(dt.GRAPH_NAME.eq(f.GRAPH_NAME), dt.TYPE_NAME.eq(f.TYPE_NAME))
+            .join(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
+                ft.FIELD_NAME.eq(f.FIELD_NAME))
+            .join(tt).on(tt.GRAPH_NAME.eq(ft.GRAPH_NAME), tt.TYPE_NAME.eq(ft.TARGET_TYPE_NAME))
+            .where(f.GRAPH_NAME.eq(o.GRAPH_NAME), f.COORDINATE.eq(o.ELEMENT_COORDINATE),
+                dt.TABLE_SOURCE_NAME.eq(n.START_SOURCE_NAME), dt.TABLE_SCHEMA.eq(n.START_SCHEMA),
+                dt.TABLE_NAME.eq(n.START_TABLE), ft.TARGET_TYPE_NAME.eq(n.TARGET_TYPE),
+                tt.TABLE_SOURCE_NAME.eq(n.LANDING_SOURCE_NAME), tt.TABLE_SCHEMA.eq(n.LANDING_SCHEMA),
+                tt.TABLE_NAME.eq(n.LANDING_TABLE))
+            .andNotExists(selectOne().from(own)
+                .where(own.GRAPH_NAME.eq(f.GRAPH_NAME), own.ELEMENT_COORDINATE.eq(f.COORDINATE)))
+            .andNotExists(selectOne().from(ii)
+                .join(inf).on(inf.GRAPH_NAME.eq(ii.GRAPH_NAME), inf.TYPE_NAME.eq(ii.INTERFACE_NAME),
+                    inf.FIELD_NAME.eq(f.FIELD_NAME))
+                .join(ic).on(ic.GRAPH_NAME.eq(inf.GRAPH_NAME), ic.ELEMENT_COORDINATE.eq(inf.COORDINATE))
+                .where(ii.GRAPH_NAME.eq(f.GRAPH_NAME), ii.TYPE_NAME.eq(f.TYPE_NAME)))));
+    }
+
+    /** Whether {@code graphitron_field_first_key} states an inferred key for the need's field and target. */
+    private static Condition firstKey(GraphitronOccurrence o, GraphitronPathNeedTable n) {
+        var k = GRAPHITRON_FIELD_FIRST_KEY.as("fk_k");
+        return exists(selectOne().from(k)
+            .where(k.GRAPH_NAME.eq(o.GRAPH_NAME), k.ELEMENT_COORDINATE.eq(o.ELEMENT_COORDINATE),
+                k.TARGET_TYPE.eq(n.TARGET_TYPE), k.ORIGIN.eq("INFERRED")));
     }
 
     /** How many self-referencing keys the need's start, which is its landing, declares. */

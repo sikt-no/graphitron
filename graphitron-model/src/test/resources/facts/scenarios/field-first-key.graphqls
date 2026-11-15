@@ -1,0 +1,68 @@
+# The foreign key an output field's path starts with from its declaring type's own table, under the
+# tenant column film_id. film_endorsement and film_bookmark are global tables, carrying no film_id
+# column, whose keys land on film.film_id: each fans out by its parent row's tenant, the parent row's
+# key column naming the film's tenant. FilmEndorsement.film infers the one key between its two tables;
+# FilmEndorsement.endorsed writes it, as Film.writtenLanguage writes one of film's two keys to language.
+# FilmBookmark.film follows the claim of its interface's field,
+# which which-claim-a-field-follows decides per need, so its first key is the walk's and absent here,
+# though its key would fan out.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+interface FilmPointer {
+  film: Film @reference(path: [{key: "film_bookmark_bookmarked_film_fkey"}])
+}
+
+type Film @table(name: "film") {
+  title: String
+  writtenLanguage: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type FilmEndorsement @table(name: "film_endorsement") {
+  note: String
+  film: Film
+  endorsed: Film @reference(path: [{key: "film_endorsement_endorsed_film_fkey"}])
+}
+
+type FilmBookmark implements FilmPointer @table(name: "film_bookmark") {
+  note: String
+  film: Film
+}
+
+type Query {
+  endorsements: [FilmEndorsement!]!
+  bookmarks: [FilmBookmark!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_field_first_key", rows: """
+  element_coordinate,       target_type, origin,   constraint_table, constraint_name,                     fk_on_from
+  Film.writtenLanguage,     Language,    WRITTEN,  film,             film_language_id_fkey,               TRUE
+  FilmEndorsement.film,     Film,        INFERRED, film_endorsement, film_endorsement_endorsed_film_fkey, TRUE
+  FilmEndorsement.endorsed, Film,        WRITTEN,  film_endorsement, film_endorsement_endorsed_film_fkey, TRUE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_tenant_fan_out_key", where: "constraint_table IN ('film_endorsement', 'film_bookmark', 'film')", rows: """
+  constraint_table, constraint_name,                     parent_on_key_table, parent_column
+  film_bookmark,    film_bookmark_bookmarked_film_fkey,  TRUE,                bookmarked_film
+  film_endorsement, film_endorsement_endorsed_film_fkey, TRUE,                endorsed_film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_join_path_key_move", rows: """
+  claim_coordinate,         claim_target_type, position, constraint_name,                     fk_on_from
+  Film.writtenLanguage,     Language,          0,        film_language_id_fkey,               TRUE
+  Film.writtenLanguage,     Language,          0,        film_language_id_fkey,               FALSE
+  FilmEndorsement.endorsed, Film,              0,        film_endorsement_endorsed_film_fkey, TRUE
+  FilmEndorsement.endorsed, Film,              0,        film_endorsement_endorsed_film_fkey, FALSE
+  FilmPointer.film,         Film,              0,        film_bookmark_bookmarked_film_fkey,  TRUE
+  FilmPointer.film,         Film,              0,        film_bookmark_bookmarked_film_fkey,  FALSE
+  """)
+
+# The inferred step rides the stored key: the one key from film_endorsement to film.
+extend schema @expectEquals(relation: "graphitron_join_path_step_inferred_key", where: "coordinate LIKE 'FilmEndorsement.%'", rows: """
+  coordinate,           target_type, position, constraint_name
+  FilmEndorsement.film, Film,        0,        film_endorsement_endorsed_film_fkey
+  """)

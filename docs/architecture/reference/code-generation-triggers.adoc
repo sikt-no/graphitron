@@ -385,7 +385,9 @@ tenant column under a parent that is not on that tenant, the store states a fan-
 becomes a producer that groups its parents by the tenant they name and runs each group on that
 tenant's connection, whether or not the field is written `@splitQuery`. A composite foreign key
 counts when one of its columns lands on the tenant column: that column's value in the parent row
-names the tenant, the key's other columns the row within it (Alf, 2026-11-15). Or its tenant part is
+names the tenant, the key's other columns the row within it (Alf, 2026-11-15). A parent not on that tenant is
+one whose table carries no tenant column (Alf, 2026-11-15): a reference from a global table, never
+one routed away from a scoped parent. Or its tenant part is
 empty, for a table no tenant column scopes; which connection that is, the consumer's connection
 hook decides (Alf, 2026-11-14). The author never writes a split to make routing work;
 the facts already say where a query fans out.

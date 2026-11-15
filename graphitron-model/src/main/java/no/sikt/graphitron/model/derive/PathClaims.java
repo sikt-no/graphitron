@@ -11,8 +11,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_FIRST_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_FIRST_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_KEY_MOVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_JOIN_PATH_KEY_MOVE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
@@ -52,6 +56,11 @@ import static org.jooq.impl.DSL.when;
  * order of the declarations they sit in, as {@code graphql_type_declaration} numbers them, then by
  * file and position. Two {@code @referenceFor} on one declaration naming one type are also a defect,
  * which the entry-defect rule reads off the entries rather than off this.
+ *
+ * <p>Beside the claims, the key moves their written elements offer, {@code graphitron_join_path_key_move}:
+ * which way each written foreign key is ridden, judged once for every departure a walk may stand at;
+ * and off those and the catalog, the key each output field's path starts with from its declaring type's
+ * table, {@code graphitron_field_first_key}.
  *
  * <p>Runs after the targets are written and before the paths that follow the claims. Last, the
  * defects the claims judge, {@link EntryDefects#PATH_CLAIMS}, and the claims and steps under them.
@@ -108,6 +117,12 @@ public final class PathClaims {
                     .where(lead.GRAPH_NAME.eq(graph), lead.SOURCE_NAME.eq(file), lead.ANCHOR_LINE.eq(line),
                         lead.ANCHOR_COLUMN.eq(column), lead.PLACE.eq(0)))), inline(1))
             .otherwise(inline(0));
+        // Whether the element reads one row: a field's as its target states it, an argument holding one
+        // value or a scalar or enum.
+        var argType = GRAPHITRON_TYPE.as("argtype");
+        var singleValued = coalesce(ft.SINGLE_VALUED,
+            when(arg.COORDINATE.isNotNull().and(argType.KIND.isNotNull()),
+                field(arg.IS_LIST.isFalse().or(argType.KIND.in("SCALAR", "ENUM")))));
         var rank = rowNumber().over(partitionBy(el.COORDINATE, target)
             .orderBy(td.MERGE_ORDINAL.asc().nullsLast(), file.asc(), line.asc(), column.asc()));
 
@@ -115,7 +130,7 @@ public final class PathClaims {
             .select(graph.as("graph_name"), el.COORDINATE.as("element_coordinate"),
                 target.as("target_type"), kind.as("claim_kind"), file.as("source_name"),
                 line.as("source_line"), column.as("source_column"), firstPlace.as("first_place"),
-                lastPlace.as("last_place"), rank.as("rn"))
+                lastPlace.as("last_place"), singleValued.as("single_valued"), rank.as("rn"))
             .from(positions)
             .join(at).on(at.GRAPH_NAME.eq(graph), at.SOURCE_NAME.eq(file),
                 at.SOURCE_LINE.eq(line), at.SOURCE_COLUMN.eq(column))
@@ -132,6 +147,7 @@ public final class PathClaims {
             .leftJoin(ft).on(ft.GRAPH_NAME.eq(f.GRAPH_NAME), ft.TYPE_NAME.eq(f.TYPE_NAME),
                 ft.FIELD_NAME.eq(f.FIELD_NAME))
             .leftJoin(arg).on(arg.GRAPH_NAME.eq(el.GRAPH_NAME), arg.COORDINATE.eq(el.COORDINATE))
+            .leftJoin(argType).on(argType.GRAPH_NAME.eq(arg.GRAPH_NAME), argType.TYPE_NAME.eq(arg.NAMED_TYPE))
             .asTable("ranked");
 
         var rGraph = ranked.field("graph_name", String.class);
@@ -141,7 +157,8 @@ public final class PathClaims {
         var t = GRAPHITRON_TYPE;
         dsl.insertInto(a)
             .columns(a.GRAPH_NAME, a.ELEMENT_COORDINATE, a.TARGET_TYPE, a.CLAIM_KIND,
-                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a.FIRST_PLACE, a.LAST_PLACE, a.TOUCHED_AT,
+                a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a.FIRST_PLACE, a.LAST_PLACE, a.SINGLE_VALUED,
+                a.TOUCHED_AT,
                 a.ELEMENT_GRAPH_REF, a.ELEMENT_COORDINATE_REF, a.TARGET_GRAPH_REF,
                 a.TARGET_TYPE_REF)
             .select(dsl
@@ -150,7 +167,7 @@ public final class PathClaims {
                     ranked.field("source_line", Integer.class),
                     ranked.field("source_column", Integer.class),
                     ranked.field("first_place", Integer.class), ranked.field("last_place", Integer.class),
-                    val(touchedAt, a.TOUCHED_AT),
+                    ranked.field("single_valued", Boolean.class), val(touchedAt, a.TOUCHED_AT),
                     e.GRAPH_NAME, e.COORDINATE, t.GRAPH_NAME, t.TYPE_NAME)
                 .from(ranked)
                 .leftJoin(e).on(e.GRAPH_NAME.eq(rGraph), e.COORDINATE.eq(rElement))
@@ -165,6 +182,7 @@ public final class PathClaims {
             .set(a.SOURCE_COLUMN, excluded(a.SOURCE_COLUMN))
             .set(a.FIRST_PLACE, excluded(a.FIRST_PLACE))
             .set(a.LAST_PLACE, excluded(a.LAST_PLACE))
+            .set(a.SINGLE_VALUED, excluded(a.SINGLE_VALUED))
             .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT))
             .set(a.ELEMENT_GRAPH_REF, excluded(a.ELEMENT_GRAPH_REF))
             .set(a.ELEMENT_COORDINATE_REF, excluded(a.ELEMENT_COORDINATE_REF))
@@ -175,7 +193,58 @@ public final class PathClaims {
             .where(a.GRAPH_NAME.eq(graphName))
             .and(a.TOUCHED_AT.ne(touchedAt))
             .execute();
+        keyMoves(dsl, graphName, touchedAt);
+        firstKeys(dsl, graphName, touchedAt);
         EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.PATH_CLAIMS);
         EntryDefectClaims.derive(dsl, graphName, touchedAt, EntryDefects.PATH_CLAIMS.stage());
+    }
+
+    /** The key each output field's path starts with from its declaring type's table, off {@code graphitron_field_first_key_rule}, marked and swept. */
+    private static void firstKeys(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var k = GRAPHITRON_FIELD_FIRST_KEY;
+        var r = GRAPHITRON_FIELD_FIRST_KEY_RULE;
+        dsl.insertInto(k)
+            .columns(k.GRAPH_NAME, k.ELEMENT_COORDINATE, k.TARGET_TYPE, k.ORIGIN, k.CONSTRAINT_SOURCE_NAME,
+                k.CONSTRAINT_SCHEMA, k.CONSTRAINT_TABLE, k.CONSTRAINT_NAME, k.FK_ON_FROM, k.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.ELEMENT_COORDINATE, r.TARGET_TYPE, r.ORIGIN,
+                    r.CONSTRAINT_SOURCE_NAME, r.CONSTRAINT_SCHEMA, r.CONSTRAINT_TABLE, r.CONSTRAINT_NAME,
+                    r.FK_ON_FROM, val(touchedAt, k.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graphName)))
+            .onDuplicateKeyUpdate()
+            .set(k.ORIGIN, excluded(k.ORIGIN))
+            .set(k.CONSTRAINT_SOURCE_NAME, excluded(k.CONSTRAINT_SOURCE_NAME))
+            .set(k.CONSTRAINT_SCHEMA, excluded(k.CONSTRAINT_SCHEMA))
+            .set(k.CONSTRAINT_TABLE, excluded(k.CONSTRAINT_TABLE))
+            .set(k.CONSTRAINT_NAME, excluded(k.CONSTRAINT_NAME))
+            .set(k.FK_ON_FROM, excluded(k.FK_ON_FROM))
+            .set(k.TOUCHED_AT, excluded(k.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(k)
+            .where(k.GRAPH_NAME.eq(graphName))
+            .and(k.TOUCHED_AT.ne(touchedAt))
+            .execute();
+    }
+
+    /** The key moves each claim's written elements offer, off {@code graphitron_join_path_key_move_rule}, marked and swept. */
+    private static void keyMoves(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var m = GRAPHITRON_JOIN_PATH_KEY_MOVE;
+        var r = GRAPHITRON_JOIN_PATH_KEY_MOVE_RULE;
+        dsl.insertInto(m)
+            .columns(m.GRAPH_NAME, m.CLAIM_COORDINATE, m.CLAIM_TARGET_TYPE, m.POSITION,
+                m.CONSTRAINT_SOURCE_NAME, m.CONSTRAINT_SCHEMA, m.CONSTRAINT_TABLE, m.CONSTRAINT_NAME,
+                m.FK_ON_FROM, m.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.CLAIM_COORDINATE, r.CLAIM_TARGET_TYPE, r.POSITION,
+                    r.CONSTRAINT_SOURCE_NAME, r.CONSTRAINT_SCHEMA, r.CONSTRAINT_TABLE, r.CONSTRAINT_NAME,
+                    r.FK_ON_FROM, val(touchedAt, m.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graphName)))
+            .onDuplicateKeyUpdate()
+            .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(m)
+            .where(m.GRAPH_NAME.eq(graphName))
+            .and(m.TOUCHED_AT.ne(touchedAt))
+            .execute();
     }
 }
