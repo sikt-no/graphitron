@@ -8062,7 +8062,7 @@ COMMENT ON COLUMN graphitron_carrier_directive.ordinal IS 'the application''s or
 COMMENT ON COLUMN graphitron_carrier_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable, which takes none';
 COMMENT ON COLUMN graphitron_carrier_directive.touched_at IS 'when the reading that last found this directive on this carrier ran: the mark the sweep reads, so one still carried survives a reading and one no longer carried goes';
 
-CREATE VIEW graphitron_inherited_directive
+CREATE VIEW graphitron_inherited_directive_rule
   (graph_name, type_name, directive_name, ordinal, value_sdl) AS
 WITH carriers (graph_name, type_name, carrier_count, first_carrier) AS (
   SELECT graph_name, type_name, COUNT(DISTINCT coordinate), MIN(coordinate)
@@ -8074,29 +8074,54 @@ kept (graph_name, type_name, value_sdl) AS (
     JOIN carriers c ON c.graph_name = d.graph_name AND c.type_name = d.type_name
    WHERE d.directive_name = 'tag' AND d.value_sdl IS NOT NULL
    GROUP BY d.graph_name, d.type_name, d.value_sdl, c.carrier_count
-  HAVING COUNT(DISTINCT d.coordinate) = c.carrier_count)
--- A tag every carrier carries, in the first carrier's order.
-SELECT k.graph_name, k.type_name, 'tag',
-       CAST(ROW_NUMBER() OVER (PARTITION BY k.graph_name, k.type_name
-                               ORDER BY MIN(f.ordinal)) AS INT) - 1,
-       k.value_sdl
-  FROM kept k
-  JOIN carriers c ON c.graph_name = k.graph_name AND c.type_name = k.type_name
-  JOIN graphitron_carrier_directive f
-    ON f.graph_name = k.graph_name AND f.type_name = k.type_name
-   AND f.coordinate = c.first_carrier AND f.directive_name = 'tag' AND f.value_sdl = k.value_sdl
- GROUP BY k.graph_name, k.type_name, k.value_sdl
+  HAVING COUNT(DISTINCT d.coordinate) = c.carrier_count),
+-- Each kept tag at its place on the first carrier.
+placed (graph_name, type_name, value_sdl, first_ordinal) AS (
+  SELECT k.graph_name, k.type_name, k.value_sdl, MIN(f.ordinal)
+    FROM kept k
+    JOIN carriers c ON c.graph_name = k.graph_name AND c.type_name = k.type_name
+    JOIN graphitron_carrier_directive f
+      ON f.graph_name = k.graph_name AND f.type_name = k.type_name
+     AND f.coordinate = c.first_carrier AND f.directive_name = 'tag' AND f.value_sdl = k.value_sdl
+   GROUP BY k.graph_name, k.type_name, k.value_sdl)
+-- A tag every carrier carries, in the first carrier's order: placed by how many kept tags come before
+-- it there, dense from zero.
+SELECT p.graph_name, p.type_name, 'tag',
+       CAST((SELECT COUNT(*) FROM placed b
+              WHERE b.graph_name = p.graph_name AND b.type_name = p.type_name
+                AND b.first_ordinal < p.first_ordinal) AS INT),
+       p.value_sdl
+  FROM placed p
 UNION ALL
 -- @shareable where any carrier is.
 SELECT DISTINCT d.graph_name, d.type_name, 'shareable', 0, CAST(NULL AS VARCHAR)
   FROM graphitron_carrier_directive d
  WHERE d.directive_name = 'shareable';
-COMMENT ON VIEW graphitron_inherited_directive IS 'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is. For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.';
--- COMMENT ON COLUMN graphitron_inherited_directive.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_inherited_directive.type_name IS 'the minted type that inherits';
--- COMMENT ON COLUMN graphitron_inherited_directive.directive_name IS 'tag or shareable';
--- COMMENT ON COLUMN graphitron_inherited_directive.ordinal IS 'a tag''s position in the first carrier''s order, the first carrier being the least coordinate; zero on @shareable';
--- COMMENT ON COLUMN graphitron_inherited_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable';
+COMMENT ON VIEW graphitron_inherited_directive_rule IS 'One row the inherited directive rule computes, in the shape graphitron_inherited_directive stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_inherited_directive, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_inherited_directive_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_inherited_directive.graph_name';
+-- COMMENT ON COLUMN graphitron_inherited_directive_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_inherited_directive.type_name';
+-- COMMENT ON COLUMN graphitron_inherited_directive_rule.directive_name IS 'the directive_name of a row of this rule, which the stage writes into graphitron_inherited_directive.directive_name';
+-- COMMENT ON COLUMN graphitron_inherited_directive_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_inherited_directive.ordinal';
+-- COMMENT ON COLUMN graphitron_inherited_directive_rule.value_sdl IS 'the value_sdl of a row of this rule, which the stage writes into graphitron_inherited_directive.value_sdl';
+
+CREATE TABLE graphitron_inherited_directive (
+  graph_name     VARCHAR   NOT NULL,
+  type_name      VARCHAR   NOT NULL,
+  directive_name VARCHAR   NOT NULL,
+  ordinal        INT       NOT NULL,
+  value_sdl      VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, directive_name, ordinal),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
+  CHECK (directive_name IN ('tag', 'shareable'))
+);
+COMMENT ON TABLE graphitron_inherited_directive IS 'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is. For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.';
+COMMENT ON COLUMN graphitron_inherited_directive.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_inherited_directive.type_name IS 'the minted type that inherits';
+COMMENT ON COLUMN graphitron_inherited_directive.directive_name IS 'tag or shareable';
+COMMENT ON COLUMN graphitron_inherited_directive.ordinal IS 'a tag''s position in the first carrier''s order, the first carrier being the least coordinate; zero on @shareable';
+COMMENT ON COLUMN graphitron_inherited_directive.value_sdl IS 'the tag''s name: argument as SDL; NULL on @shareable';
+COMMENT ON COLUMN graphitron_inherited_directive.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_minted_key (
   graph_name  VARCHAR NOT NULL,
@@ -24413,6 +24438,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_connection_carrier'),
   ('macro-expansion', 'graphitron_facet_binding'),
   ('macro-expansion', 'graphitron_connection_facet'),
+  ('macro-expansion', 'graphitron_inherited_directive'),
   ('macro-expansion', 'graphitron_type'),
   ('macro-expansion', 'graphitron_type_member'),
   ('macro-expansion', 'graphitron_scalar_class'),
@@ -27528,6 +27554,10 @@ INSERT INTO meta_relation VALUES
    'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_type_backing_rule''s terms. Stored by MacroExpansion before the directive anchor reads it, because H2 evaluates a view again for every row joined to it and the federation chain joins these three to each other: on a consumer schema configuring 7734 tags over 654 coinages the directive upsert did not finish, and with the three stored it reads in a fifth of a second.'),
+  ('graphitron_inherited_directive_rule', 'inherited-directive', 'graphitron',
+   'One row the inherited directive rule computes, in the shape graphitron_inherited_directive stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_inherited_directive, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; stored so the minted applications read rows rather than a view, and so no window numbers the tags (Alf, 2026-11-15).'),
   ('graphitron_inherited_directive', 'inherited-directive', 'graphitron',
    'The federation directives a minted type inherits from its carriers: the tags every carrier carries and @shareable when any carrier is.',
    'For example a PageInfo two carriers share carries only the tag both carry, and is shareable because one of them is.',

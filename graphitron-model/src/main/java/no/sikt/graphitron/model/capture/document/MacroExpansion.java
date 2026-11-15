@@ -27,6 +27,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INHERITED_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_INHERITED_DIRECTIVE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS_RULE;
@@ -309,6 +311,9 @@ public final class MacroExpansion {
         store(dsl, graphName, touchedAt, GRAPHITRON_MINTED_COINAGE, GRAPHITRON_MINTED_COINAGE_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_CARRIER_DIRECTIVE,
             GRAPHITRON_CARRIER_DIRECTIVE_RULE);
+        // What each minted type inherits from the carriers just stored.
+        store(dsl, graphName, touchedAt, GRAPHITRON_INHERITED_DIRECTIVE,
+            GRAPHITRON_INHERITED_DIRECTIVE_RULE);
     }
 
     /**
