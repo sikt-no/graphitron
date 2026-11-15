@@ -1321,7 +1321,16 @@ classified records have no reader left and can go with the walk.
   landed; `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` remain, saying per
   type what the producer's result says per producer, and go with the result rule's fixpoint, their
   type-level readers (the LSP's type hover and inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`)
-  reading the results grouped by type.
+  reading the results grouped by type. Each reader states that grouping in its own query over
+  `graphitron_occurrence_source` and its subtypes, what a type's fields' occurrences are read from; a
+  stored per-type grouping would be `graphitron_result` again. The editor's readers move first, then
+  `RESULT_SHAPES_CONFLICT` and `ERRORS_IN_A_ROW` from the `fetchers` stage's defect rule to
+  `occurrence-depth-defects`, which reads sources, then `SOURCE_PARAMETER_MISSING` and the generator's
+  `@pivot` question, which is the field's own directive. The relations themselves go only after
+  "The producer's readers read the occurrence producer, and the field-keyed family goes": `graphitron_reader_rule` reads `graphitron_result` at the
+  `fetchers` stage, upstream of every occurrence fact, and `graphitron_reader` and
+  `graphitron_fetcher` are dissolving there, so the result rule's fixpoint, and its cost, stays until
+  that node lands.
   * **The other spellings of a connection read the stored shape** `open`. `graphitron_producer_rule`'s
     page arm ("the rest of a connection reads the page", which reaches every field of a connection,
     its edge, its page info and its facets type, positions or not) and
@@ -1363,7 +1372,7 @@ classified records have no reader left and can go with the walk.
     member of a root write's payload bound to a table other than the written one is never produced.
 * **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's.
   `WRITE_TABLES_DISAGREE` raises it at the `@mutation`; what remains is its detail naming both tables.
-* **The producer's readers read the occurrence producer, and the field-keyed family goes** `blocked`, E's, on "The result relations dissolve into the producer's result, claimed by B".
+* **The producer's readers read the occurrence producer, and the field-keyed family goes** `open`, E's.
   `graphitron_occurrence_producer` and its start and call subtypes state per occurrence what
   `graphitron_producer`, `_service`, `_routine`, `_write` and `graphitron_service_holder` state per
   field, read today off them through the occurrence's field; the readers move, the rule reads the
