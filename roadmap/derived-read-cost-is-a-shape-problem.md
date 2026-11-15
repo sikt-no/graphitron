@@ -867,11 +867,13 @@ static method needs no holder.
     emitted. ConditionQuery still resolves a decode through `NodeIdDecodeQuery`, a query other emitters
     read, rather than stating it in its own query. What is left: `AUTHORED_NODE_ID` where a one-column
     key goes whole to a parameter of the column's type (`customersByAddressDistrict` and its siblings,
-    `stockByLanguageOverride`, whose node id also reaches neither participant's table by any path);
-    `NODE_ID`, a generated term on a converter-backed or composite key, waiting on `NodeIdDecodeQuery`
-    resolving a decode for it; and `NODE_ID_PARTICIPANT`, whose ids are dispatched by the type id each
-    carries, each to the participant whose type it names, an id naming no participant a client error
-    (`code-generation-triggers.adoc`, Alf 2026-11-14). The record-or-tuple rule at a `@condition` (Alf,
+    `stockByLanguageOverride`, whose node id also reaches neither participant's table by any path),
+    and `NODE_ID`, a generated term on a converter-backed or composite key, waiting on
+    `NodeIdDecodeQuery` resolving a decode for it. A participant's node ids are dispatched by the type
+    id each carries, each participant decoding only its own (`code-generation-triggers.adoc`, Alf
+    2026-11-14); an id naming no participant, or one whose type id does not read, is false on every
+    branch, so its client error is the fetcher's to raise at the flip, the walk's guard raising it
+    until then. The record-or-tuple rule at a `@condition` (Alf,
     2026-11-14) waits on branch `wip/r876-condition-arity-at-flip` and ships when the walk no longer
     renders conditions: a `@condition` on a `@nodeId` input field projecting its own key column is
     the walk's deferral, which the store emits, so refusing the whole key before then leaves that
