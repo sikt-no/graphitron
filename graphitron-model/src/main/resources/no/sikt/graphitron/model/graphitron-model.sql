@@ -7648,10 +7648,10 @@ added (graph_name, name) AS (
                       WHERE w.graph_name = l.graph_name AND w.name = f.name))
 SELECT graph_name, ordinal, name, alias FROM authored
 UNION ALL
--- After every authored import, in name order.
+-- After every authored import, in name order: placed by how many added names come before it.
 SELECT d.graph_name,
        CAST(COALESCE((SELECT MAX(w.ordinal) + 1 FROM authored w WHERE w.graph_name = d.graph_name), 0)
-            + ROW_NUMBER() OVER (PARTITION BY d.graph_name ORDER BY d.name) - 1 AS INT),
+            + (SELECT COUNT(*) FROM added e WHERE e.graph_name = d.graph_name AND e.name < d.name) AS INT),
        d.name, CAST(NULL AS VARCHAR)
   FROM added d;
 COMMENT ON VIEW graphitron_federation_link_import_rule IS 'The rule graphitron_federation_link_import stores: one row per name a graph''s federation link imports. For example an authored link''s imports come across in the order written, and after them each directive graphitron applies that the link''s version lets it import.';
@@ -7899,8 +7899,9 @@ SELECT p.graph_name, p.coordinate,
        CAST((SELECT COUNT(*) FROM graphql_directive_application d
               WHERE d.graph_name = p.graph_name AND d.coordinate = p.coordinate
                 AND d.directive_name = 'tag') AS INT)
-         + CAST(ROW_NUMBER() OVER (PARTITION BY p.graph_name, p.coordinate
-                                   ORDER BY p.site_order) AS INT) - 1,
+         -- After every tag the author wrote, in the order of the sites the tags come from: one site
+         -- at its own position, a union's sites at their merge ordinals.
+         + p.site_order,
        '"' || p.tag || '"'
   FROM applied p
   JOIN graphitron_element e ON e.graph_name = p.graph_name AND e.coordinate = p.coordinate;
@@ -8083,7 +8084,7 @@ UNION ALL
 -- other subgraph's entity from this one only through the voucher. Its field set is the field the
 -- author marked; the first where two share a type, which the voucher stage refuses. Not on a node,
 -- which the voucher stage refuses too, so the type carries no node key beside it.
-SELECT tt.graph_name, tt.type_name, 'ISSUE', MIN(i.field_name), FALSE, 1
+SELECT tt.graph_name, tt.type_name, 'ISSUE', MIN(i.field_name), FALSE, 0
   FROM graphql_directive_application d
   JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
   JOIN graphitron_tabletype tt ON tt.graph_name = i.graph_name AND tt.type_name = i.type_name
@@ -8097,7 +8098,7 @@ UNION ALL
 -- wrote, so a router hands this subgraph the voucher it fetched from the issuing one. Its field set is
 -- the field the author marked; the first where two share a type, which the voucher stage refuses. A
 -- node may accept, so its node key and this one are both minted, numbered once below.
-SELECT tt.graph_name, tt.type_name, 'ACCEPT', MIN(i.field_name), TRUE, 2
+SELECT tt.graph_name, tt.type_name, 'ACCEPT', MIN(i.field_name), TRUE, 1
   FROM graphql_directive_application d
   JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
   JOIN graphitron_tabletype tt ON tt.graph_name = i.graph_name AND tt.type_name = i.type_name
@@ -8105,13 +8106,14 @@ SELECT tt.graph_name, tt.type_name, 'ACCEPT', MIN(i.field_name), TRUE, 2
    AND EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = tt.graph_name)
  GROUP BY tt.graph_name, tt.type_name
 )
--- Numbered once over every role, after every key the author wrote, so two roles minting on one type
--- cannot collide.
+-- Numbered over every role by its order, after every key the author wrote, so two roles minting on one
+-- type cannot collide: a node key or an issuing key first, which never share a type, then an accepting
+-- key, whose number stays unused below it where neither is minted.
 SELECT m.graph_name, m.type_name, m.role, m.fields, m.resolvable,
        CAST((SELECT COUNT(*) FROM graphql_directive_application k
               WHERE k.graph_name = m.graph_name AND k.coordinate = m.type_name
                 AND k.directive_name = 'key') AS INT)
-       + CAST(ROW_NUMBER() OVER (PARTITION BY m.graph_name, m.type_name ORDER BY m.role_order) AS INT) - 1
+       + m.role_order
   FROM minted m;
 COMMENT ON VIEW graphitron_minted_key_rule IS 'One key the minting rules compute, in the shape graphitron_minted_key stores: the rules themselves, evaluated on demand rather than read off disk. For example the minted-keys stage writes this view''s rows for one graph into graphitron_minted_key, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_minted_key_rule.graph_name IS 'the owning graph''s partition';

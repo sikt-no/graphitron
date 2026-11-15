@@ -78,7 +78,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
 # kept from clients.
 extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   type_name, role,   fields,  resolvable, ordinal
-  Film,      ACCEPT, voucher, TRUE,       1
+  Film,      ACCEPT, voucher, TRUE,       2
   Store,     ACCEPT, voucher, TRUE,       2
   Store,     NODE,   id,      TRUE,       1
   """)
@@ -87,7 +87,7 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   origin = 'MINTED' AND directive_name IN ('key', 'inaccessible')
   """, rows: """
   coordinate,    directive_name, ordinal
-  Film,          key,            1
+  Film,          key,            2
   Film.voucher,  inaccessible,   0
   Store,         key,            1
   Store,         key,            2
