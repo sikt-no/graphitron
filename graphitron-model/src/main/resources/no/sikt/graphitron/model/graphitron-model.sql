@@ -7668,13 +7668,19 @@ COMMENT ON COLUMN graphitron_federation_link_import.touched_at IS 'the reading t
 
 CREATE VIEW graphitron_federation_link_rule
   (graph_name, origin, version, source_name, source_line, source_column) AS
--- The first @link written, by file and then position, none written before it.
+-- The first @link written: in the first file holding one, its first line holding one, its first column.
 SELECT a.graph_name, 'AUTHORED', a.version, a.source_name, a.source_line, a.source_column
-  FROM graphitron_ast_federation_link_entry a
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_link_entry b
-                    WHERE b.graph_name = a.graph_name
-                      AND (b.source_name, b.source_line, b.source_column)
-                          < (a.source_name, a.source_line, a.source_column))
+  FROM (SELECT graph_name, MIN(source_name) AS source_name
+          FROM graphitron_ast_federation_link_entry GROUP BY graph_name) fs
+  JOIN (SELECT graph_name, source_name, MIN(source_line) AS source_line
+          FROM graphitron_ast_federation_link_entry GROUP BY graph_name, source_name) fl
+    ON fl.graph_name = fs.graph_name AND fl.source_name = fs.source_name
+  JOIN (SELECT graph_name, source_name, source_line, MIN(source_column) AS source_column
+          FROM graphitron_ast_federation_link_entry GROUP BY graph_name, source_name, source_line) fc
+    ON fc.graph_name = fl.graph_name AND fc.source_name = fl.source_name AND fc.source_line = fl.source_line
+  JOIN graphitron_ast_federation_link_entry a
+    ON a.graph_name = fc.graph_name AND a.source_name = fc.source_name
+   AND a.source_line = fc.source_line AND a.source_column = fc.source_column
 UNION ALL
 -- The configured link names the version graphitron writes, as the federation gatherer recorded it
 -- under the library the graph claims.
@@ -7684,7 +7690,10 @@ SELECT g.graph_name, 'CONFIGURED',
          WHERE m.graph_name = g.graph_name),
        CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
   FROM (SELECT DISTINCT graph_name FROM store_graph_source_input WHERE tag IS NOT NULL) g
- WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_federation_link_entry a WHERE a.graph_name = g.graph_name);
+  -- A graph writing no @link of its own.
+  LEFT JOIN (SELECT DISTINCT graph_name FROM graphitron_ast_federation_link_entry) w
+    ON w.graph_name = g.graph_name
+ WHERE w.graph_name IS NULL;
 COMMENT ON VIEW graphitron_federation_link_rule IS 'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_federation_link_rule.graph_name IS 'the graph opting in';
 -- COMMENT ON COLUMN graphitron_federation_link_rule.origin IS 'AUTHORED or CONFIGURED, on graphitron_federation_link''s terms';

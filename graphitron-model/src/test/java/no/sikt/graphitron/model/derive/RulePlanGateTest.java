@@ -61,7 +61,6 @@ class RulePlanGateTest {
         "GRAPHQL_ROOT_OPERATION", "at most one row per root operation, three a graph",
         "FEDERATION_WRITTEN_VERSION", "one row per federation library",
         "GRAPHITRON_FEDERATION_LINK_IMPORT", "the names one link imports, a handful",
-        "GRAPHITRON_AST_FEDERATION_LINK_ENTRY", "the @link applications a graph writes, one where it is federated",
         "STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY", "one row per entry of the configured common payload, a handful");
 
     /**
