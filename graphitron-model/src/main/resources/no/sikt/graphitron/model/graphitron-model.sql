@@ -3357,6 +3357,7 @@ CREATE TABLE graphitron_type (
   graph_name  VARCHAR NOT NULL,
   type_name   VARCHAR NOT NULL,
   coordinate  VARCHAR GENERATED ALWAYS AS (type_name) NOT NULL,
+  type_name_folded VARCHAR GENERATED ALWAYS AS (UPPER(type_name)) NOT NULL,
   kind        VARCHAR NOT NULL,
   origin      VARCHAR NOT NULL,
   description VARCHAR,
@@ -3372,9 +3373,12 @@ COMMENT ON TABLE graphitron_type IS 'Every type the generator works with, the au
 COMMENT ON COLUMN graphitron_type.graph_name IS 'the owning graph''s partition, carried from whichever arm supplied the row; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_type.type_name IS 'the type''s name; with the graph, the grain, and one row per name however many declaration sites or minting sites contributed to it';
 COMMENT ON COLUMN graphitron_type.coordinate IS 'this row as graphitron_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader holding a coordinate reaches the parts here rather than splitting the spelling. Generated from the key columns beside it, so nothing writes it; the foreign key into graphitron_element is what holds that relation''s spelling to this one';
+COMMENT ON COLUMN graphitron_type.type_name_folded IS 'the type''s name upper-cased, the name a filesystem that folds case gives its generated file; two rows sharing it in one graph are a case collision. For example Film and FILM both fold to FILM';
 COMMENT ON COLUMN graphitron_type.kind IS 'the type''s kind in graphql_type''s vocabulary, carried across rather than restated so a reader joins one column whichever arm supplied its row';
 COMMENT ON COLUMN graphitron_type.origin IS 'which population answered: AUTHORED, a type a document declares; MINTED, one a macro adds; FEDERATION, a scalar or enum of the federation vocabulary the graph imports. Each population is written and swept by the stage that owns it, macro-expansion the first two and federation-vocabulary the third';
 COMMENT ON COLUMN graphitron_type.description IS 'the docstring the generator emits: authored on an authored type, with its file''s configured note appended, which mints it, and written by the macro on a minted one; display material, never a dimension';
+CREATE INDEX graphitron_type_folded_ix ON graphitron_type (graph_name, type_name_folded);
+COMMENT ON INDEX graphitron_type_folded_ix IS 'A rule holding a type asks for the other types of its graph whose names fold to the same name, and the primary key, the name as written, serves none of them: the case collision rule reads it by equality rather than comparing every type with every other.';
 
 CREATE TABLE graphitron_field (
   graph_name        VARCHAR NOT NULL,
@@ -19115,15 +19119,15 @@ CREATE VIEW graphitron_federation_vocabulary_entry_defect_rule
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
        'TYPE_NAME_CASE_COLLISION',
        (SELECT MIN(o.type_name) FROM graphitron_type o
-         WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name), 'federation-vocabulary'
+         WHERE o.graph_name = g.graph_name AND o.type_name_folded = g.type_name_folded
+           AND o.kind <> 'SCALAR' AND o.type_name <> g.type_name), 'federation-vocabulary'
   FROM graphitron_type g
   JOIN graphql_type_declaration d
     ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
  WHERE g.kind <> 'SCALAR'
    AND EXISTS (SELECT 1 FROM graphitron_type o
-                WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-                  AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name);
+                WHERE o.graph_name = g.graph_name AND o.type_name_folded = g.type_name_folded
+                  AND o.kind <> 'SCALAR' AND o.type_name <> g.type_name);
 COMMENT ON VIEW graphitron_federation_vocabulary_entry_defect_rule IS 'One row the federation-vocabulary stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example types Film and FILM in one graph give one TYPE_NAME_CASE_COLLISION row at each declaration.';
 
 -- The binding-claims stage's own defects: a @nodeId or a node's id the claims just written judge, at

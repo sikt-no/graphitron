@@ -23,3 +23,14 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "co
   TYPE_NAME_CASE_COLLISION, FILM,      ,           Film
   TYPE_NAME_CASE_COLLISION, Film,      ,           FILM
   """)
+
+# The rule finds a collision by the folded name the store keeps on each type, so the names that
+# collide share it and a name with no twin has its own.
+extend schema @expectEquals(relation: "graphitron_type", where: "type_name IN ('Film', 'FILM', 'Rating', 'RATING', 'Query')", rows: """
+  type_name, type_name_folded
+  FILM,      FILM
+  Film,      FILM
+  Query,     QUERY
+  RATING,    RATING
+  Rating,    RATING
+  """)
