@@ -15650,11 +15650,16 @@ WITH written (graph_name, coordinate, ordinal, key_name, origin, position, bound
     LEFT JOIN store_graph_outbox_payload_entry c ON c.graph_name = m.graph_name
    WHERE c.key_name IS NOT NULL
 ),
-ranked (graph_name, coordinate, ordinal, key_name, origin, position, bound_to, rn) AS (
-  SELECT w.graph_name, w.coordinate, w.ordinal, w.key_name, w.origin, w.position, w.bound_to,
-         ROW_NUMBER() OVER (PARTITION BY w.graph_name, w.coordinate, w.ordinal, w.key_name
-                            ORDER BY CASE w.origin WHEN 'MESSAGE' THEN 0 ELSE 1 END, w.position)
+-- Each key once: the message's own entry before a common one, and of two the first written; an entry
+-- none of the same key outranks.
+ranked (graph_name, coordinate, ordinal, key_name, origin, position, bound_to) AS (
+  SELECT w.graph_name, w.coordinate, w.ordinal, w.key_name, w.origin, w.position, w.bound_to
     FROM written w
+   WHERE NOT EXISTS (SELECT 1 FROM written b
+                      WHERE b.graph_name = w.graph_name AND b.coordinate = w.coordinate
+                        AND b.ordinal = w.ordinal AND b.key_name = w.key_name
+                        AND ((b.origin = 'MESSAGE' AND w.origin = 'COMMON')
+                          OR (b.origin = w.origin AND b.position < w.position)))
 ),
 -- The types a payload carries: text, the numbers, a boolean, a character, a BigDecimal, a
 -- BigInteger, a UUID or a java.time value, boxed or not.
@@ -15790,8 +15795,7 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
    AND r.bound_to LIKE '$result.%'
    AND tc.table_source_name = w.table_source_name AND tc.table_schema = w.table_schema
    AND tc.table_name = w.table_name
- WHERE r.rn = 1
-   AND ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL
+ WHERE ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL
          AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
      OR (r.origin = 'MESSAGE' AND r.bound_to LIKE '$result.%' AND w.kind IS NOT NULL
          AND POSITION('.', SUBSTRING(r.bound_to, 9)) = 0
@@ -15844,7 +15848,7 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
     ON rec.graph_name = r.graph_name AND rec.coordinate = r.coordinate AND rec.ordinal = r.ordinal
    AND rec.key_name = r.key_name AND rec.consumed = rec.segments - 1 AND rec.record_read = 1
    AND NOT rec.is_list
- WHERE r.rn = 1 AND r.origin = 'MESSAGE' AND NOT rf.is_list
+ WHERE r.origin = 'MESSAGE' AND NOT rf.is_list
    AND ((r.bound_to = '$result'
          AND EXISTS (SELECT 1 FROM graphitron_type st
                       WHERE st.graph_name = rt.graph_name AND st.type_name = rt.target_type_name
