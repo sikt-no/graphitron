@@ -18,6 +18,10 @@ The verification build, a clean `mvn install` of the whole reactor, finishes in 
 on the workstation it is run on, an 8-core, 16-thread Intel Core i9-9880H with 32 GB of memory, with
 the machine to itself and every test and gate it runs today. On 2026-11-11 it took 33:56.
 
+Two milestones come first (Alf, 2026-11-15): the whole build back to 20 minutes before the walk
+dissolves, and 5 to 10 minutes after. Performance is the project's first priority until the first is
+met; feature work waits for it.
+
 What changes is the working day of everyone on the project, agents included:
 - a contributor or an agent session verifies a change in the time it takes to read the diff;
 - several sessions can verify on one machine without queueing for it;
