@@ -88,7 +88,7 @@ The walk's read path is gone
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
 │   │   └── A single child is looked up by its keys
 │   ├── A narrowed inline list is emitted from the store
-│   ├── Every list states its order or is refused
+│   ├── Every list states its order or is refused, claimed by F
 │   └── A single child's null contract is stated, claimed by F
 └── The walk's service path is gone
     ├── The service fields are emitted from the store
@@ -831,7 +831,7 @@ static method needs no holder.
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
     argument, and the line closes with it.
-  * **Every list states its order or is refused** `open`. `LIST_ORDER_UNDETERMINED` refuses an
+  * **Every list states its order or is refused, claimed by F** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
     connection with none (`validatePaginationRequiresOrdering`), at the root, split and over several
