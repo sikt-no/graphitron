@@ -85,7 +85,7 @@ The walk's read path is gone
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
 │   │   ├── A sort key's path is resolved at its occurrence
-│   │   ├── A client's choice of order is applied to an inline list, claimed by G
+│   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
 │   │   ├── A list's order is completed with its row key
 │   │   └── A single child is looked up by its keys
 │   ├── Every list states its order or is refused
@@ -716,11 +716,12 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
-  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "A client's choice of order is applied to an inline list, claimed by G", "A list's order is completed with its row key" and "A single child is looked up by its keys". A
+  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G", "A list's order is completed with its row key" and "A single child is looked up by its keys". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
-    it has one; the census's `INLINE_CHILD` line closes with it.
+    it has one; the census's `INLINE_CHILD` line closes with it. The list multiset is its child's,
+    "An inline list is emitted from the store in its stated or chosen order, claimed by G"; the single join is what is left here.
   * **A projection's SQL names read like the schema** `open`, off the critical path. The generated
     SQL is to be easy to read; a hashed name is hostile to that (Alf, 2026-11-13). Today an aliased
     term is named `__rk_`, an owner, and the response keys from its row's owner down to it, so a deep
@@ -803,12 +804,19 @@ static method needs no holder.
     `FieldSort.path`, so the join path need and step relations resolve it, the to-one refusal
     included, and the key gains a subtype naming its hops and the column they land on. Closes before
     the flip, which keeps no fallback for it.
-  * **A client's choice of order is applied to an inline list, claimed by G** `open`. The walk resolves an `@orderBy`
-    argument on a list read inside its parent's statement and cannot lower it onto the multiset:
-    `LauncherCommands.requireResolvedOrderingsAreLowered` throws a generator bug for it, so the store
-    states the choices and refuses the shape with the deferral `ORDER_CHOICE_ON_INLINE_LIST`. The
-    multiset switches on the client's choice over `graphitron_occurrence_order`'s `CHOICE` rows and
-    the deferral goes; closes before the flip.
+  * **An inline list is emitted from the store in its stated or chosen order, claimed by G** `open`. The walk
+    resolves an `@orderBy` argument on a list read inside its parent's statement and cannot lower it
+    onto the multiset: `LauncherCommands.requireResolvedOrderingsAreLowered` throws a generator bug
+    for it, so the store states the choices and refuses the shape with the deferral
+    `ORDER_CHOICE_ON_INLINE_LIST`. The walk takes no fix for it, and nothing in `emit/` renders an
+    inline list or reads an order yet, so the two land together. A `CHOICE` row of
+    `graphitron_occurrence_order` names the argument occurrence that picks it, so a reader does not
+    trace the argument to its sort enum again. `ProjectionEmitter` renders a `NESTED` list as a
+    correlated multiset over the rows its path reaches, in its `DEFAULT` order's sort keys or, where
+    an `@orderBy` argument offers a choice, a run-time switch on its value over the `CHOICE` rows'
+    keys in the client's direction. It reads every sort key of an order whatever its basis, so the
+    row key completion lands with no change here. The deferral, its `defect_type` row and the
+    multiset half of `requireResolvedOrderingsAreLowered` go; closes before the flip.
   * **A list's order is completed with its row key** `open`. The walk completes every single-table
     list's fixed order, its default included, not only a connection's (`OrderByResolver.complete`):
     the row key's columns the order does not list follow it, in the direction of its last key,
