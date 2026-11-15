@@ -16354,7 +16354,19 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_accessor_rule IS 'One row th
 CREATE VIEW graphitron_outbox_key_rule
   (graph_name, coordinate, ordinal, key_name, origin, position, fill, reads, source_path,
    landing_coordinate, column_name, node_type_name, key_position) AS
-WITH written (graph_name, coordinate, ordinal, key_name, origin, position, bound_to) AS (
+-- One accessor of the handle class under the property name $session.<member> names, the slots the
+-- class declares itself: graphitron_session_handle_member's rows, read off the tables it joins.
+WITH handle_member (graph_name, member_name, source_name, class_name, method_name, descriptor) AS (
+  SELECT handle.graph_name, slot.slot_name, slot.source_name, slot.class_name, slot.method_name,
+         slot.descriptor
+    FROM store_graph_session_handle handle
+    JOIN code_graph_class source
+      ON source.graph_name = handle.graph_name AND source.class_name = handle.handle_class
+    JOIN code_read_slot slot
+      ON slot.source_name = source.source_name AND slot.class_name = source.class_name
+   WHERE slot.declaring_class = slot.class_name
+),
+written (graph_name, coordinate, ordinal, key_name, origin, position, bound_to) AS (
   SELECT m.graph_name, m.coordinate, m.ordinal, p.target_name, 'MESSAGE', p.position, p.bound_to
     FROM graphitron_outbox_message m
     JOIN graphitron_argmapping_site s
@@ -16527,9 +16539,9 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
      -- One member of the session handle, offered by exactly one accessor whose yield a payload can
      -- carry.
      OR (r.bound_to LIKE '$session.%'
-         AND (SELECT COUNT(*) FROM graphitron_session_handle_member hm
+         AND (SELECT COUNT(*) FROM handle_member hm
                WHERE hm.graph_name = r.graph_name AND hm.member_name = SUBSTRING(r.bound_to, 10)) = 1
-         AND EXISTS (SELECT 1 FROM graphitron_session_handle_member hm
+         AND EXISTS (SELECT 1 FROM handle_member hm
                        JOIN code_read_slot cs
                          ON cs.source_name = hm.source_name AND cs.class_name = hm.class_name
                         AND cs.method_name = hm.method_name AND cs.descriptor = hm.descriptor
