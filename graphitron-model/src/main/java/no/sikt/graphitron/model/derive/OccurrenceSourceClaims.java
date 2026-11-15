@@ -126,13 +126,16 @@ public final class OccurrenceSourceClaims {
         Field<String> vKind = field(name(v.getName(), "KIND"), String.class);
         var scope = vGraph.eq(graph).and(OccurrenceProducers.atDepth(vGraph, vCoordinate, depth));
         var c = GRAPHITRON_OCCURRENCE_SOURCE_CLAIM;
+        var p = GRAPHITRON_OCCURRENCE_SOURCE_PRECEDENCE;
+        // The rule's priority, carried on each claim so the one taking effect is found without it.
         dsl.insertInto(c)
-            .columns(c.GRAPH_NAME, c.COORDINATE, c.RULE, c.KIND, c.TOUCHED_AT)
-            .select(selectDistinct(vGraph, vCoordinate, vRule, vKind, val(touchedAt, c.TOUCHED_AT))
-                .from(v).where(scope))
+            .columns(c.GRAPH_NAME, c.COORDINATE, c.RULE, c.KIND, c.PRIORITY, c.TOUCHED_AT)
+            .select(selectDistinct(vGraph, vCoordinate, vRule, vKind, p.PRIORITY, val(touchedAt, c.TOUCHED_AT))
+                .from(v).join(p).on(p.RULE.eq(vRule)).where(scope))
             .onConflict(c.GRAPH_NAME, c.COORDINATE, c.RULE)
             .doUpdate()
             .set(c.KIND, excluded(c.KIND))
+            .set(c.PRIORITY, excluded(c.PRIORITY))
             .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
             .execute();
         if (rule.kind().equals("TABLE")) {

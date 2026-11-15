@@ -69,10 +69,11 @@ public final class PathNeeds {
         requireOneSourceTablePerField(dsl, graph, touchedAt, depth);
         // The rules a need is claimed by that this stage owns, each stated by its own view.
         var p = GRAPHITRON_PATH_NEED_PRECEDENCE;
-        var rules = dsl.select(p.RULE).from(p).where(p.OWNER_STAGE.eq("occurrence-depths"))
-            .orderBy(p.PRIORITY).fetch(p.RULE);
-        for (String rule : rules) {
-            writeClaims(dsl, graph, depth, touchedAt, rule);
+        var precedence = dsl.select(p.RULE, p.PRIORITY).from(p).where(p.OWNER_STAGE.eq("occurrence-depths"))
+            .orderBy(p.PRIORITY).fetch();
+        var rules = precedence.getValues(p.RULE);
+        for (var rule : precedence) {
+            writeClaims(dsl, graph, depth, touchedAt, rule.value1(), rule.value2());
         }
         var c = GRAPHITRON_PATH_NEED_CLAIM;
         dsl.deleteFrom(c)
@@ -85,9 +86,9 @@ public final class PathNeeds {
         writeObject(dsl, graph, depth, touchedAt);
     }
 
-    /** One rule's claims on the occurrences at {@code depth}. */
+    /** One rule's claims on the occurrences at {@code depth}, each carrying the rule's priority. */
     private static void writeClaims(DSLContext dsl, String graph, int depth, LocalDateTime touchedAt,
-                                    String rule) {
+                                    String rule, int priority) {
         var snake = new StringBuilder();
         for (char ch : rule.toCharArray()) {
             snake.append(Character.isUpperCase(ch) ? "_" + Character.toLowerCase(ch) : String.valueOf(ch));
@@ -98,7 +99,7 @@ public final class PathNeeds {
         var c = GRAPHITRON_PATH_NEED_CLAIM;
         dsl.insertInto(c)
             .columns(c.GRAPH_NAME, c.COORDINATE, c.TARGET_TYPE, c.RULE, c.START_SOURCE_NAME, c.START_SCHEMA,
-                c.START_TABLE, c.LANDING_SOURCE_NAME, c.LANDING_SCHEMA, c.LANDING_TABLE, c.TOUCHED_AT)
+                c.START_TABLE, c.LANDING_SOURCE_NAME, c.LANDING_SCHEMA, c.LANDING_TABLE, c.PRIORITY, c.TOUCHED_AT)
             .select(selectDistinct(vGraph, vCoordinate,
                     field(name(v.getName(), "TARGET_TYPE"), String.class),
                     field(name(v.getName(), "RULE"), String.class),
@@ -108,6 +109,7 @@ public final class PathNeeds {
                     field(name(v.getName(), "LANDING_SOURCE_NAME"), String.class),
                     field(name(v.getName(), "LANDING_SCHEMA"), String.class),
                     field(name(v.getName(), "LANDING_TABLE"), String.class),
+                    val(priority, c.PRIORITY),
                     val(touchedAt, c.TOUCHED_AT))
                 .from(v)
                 .where(vGraph.eq(graph), OccurrenceProducers.atDepth(vGraph, vCoordinate, depth)))
@@ -119,6 +121,7 @@ public final class PathNeeds {
             .set(c.LANDING_SOURCE_NAME, excluded(c.LANDING_SOURCE_NAME))
             .set(c.LANDING_SCHEMA, excluded(c.LANDING_SCHEMA))
             .set(c.LANDING_TABLE, excluded(c.LANDING_TABLE))
+            .set(c.PRIORITY, excluded(c.PRIORITY))
             .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT))
             .execute();
     }
