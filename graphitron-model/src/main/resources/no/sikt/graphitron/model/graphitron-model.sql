@@ -11906,22 +11906,6 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
  WHERE f.non_null AND NOT f.is_list
 UNION ALL
--- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
--- is an exception a producer caught, and a row of a statement holds none.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR), 'fetchers'
-  FROM graphitron_field_target ft
-  JOIN graphitron_result r
-    ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
- WHERE EXISTS (SELECT 1 FROM graphitron_errors_field e
-                WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
-                  AND e.field_name = ft.field_name)
-    OR EXISTS (SELECT 1 FROM graphitron_directive_application de
-                WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
-                  AND de.directive_name = 'error')
-UNION ALL
 -- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
 -- holding one result, with neither a producer nor a reader. A field claiming two kinds or an upsert,
 -- the fields of a type holding two shapes, and a field returning a type nobody declared carry their
@@ -18961,6 +18945,40 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column, 'SO
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter cp
                     WHERE cp.graph_name = op.graph_name AND cp.coordinate = op.coordinate
                       AND cp.fill = 'SOURCE')
+UNION ALL
+-- A field returning errors or an @error type on a type whose fields are read from a row of a
+-- statement graphitron runs, at its declaration: an error is an exception a producer caught, and such
+-- a row holds none. A row is a source of the rules reading one, a table-bound type's own and a plain
+-- type's copied from its parent or reached by its parent's path. A record a producer hands back and a
+-- write payload's re-read are not, and neither is a row under a producer catching into this type,
+-- which is that outcome's value.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR), 'occurrence-depth-defects'
+  FROM graphitron_field_target ft
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
+ WHERE (EXISTS (SELECT 1 FROM graphitron_errors_field e
+                 WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
+                   AND e.field_name = ft.field_name)
+        OR EXISTS (SELECT 1 FROM graphitron_directive_application de
+                    WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
+                      AND de.directive_name = 'error'))
+   AND EXISTS (SELECT 1 FROM graphitron_field f
+                 JOIN graphitron_occurrence o
+                   ON o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate
+                  AND o.kind = 'FIELD'
+                 JOIN graphitron_occurrence_source s
+                   ON s.graph_name = o.graph_name AND s.coordinate = o.coordinate
+                  AND s.kind = 'TABLE' AND s.rule IN ('declaringTable', 'nestedCopy', 'nestedPath')
+                WHERE f.graph_name = ft.graph_name AND f.type_name = ft.type_name
+                  AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po
+                                    JOIN graphitron_field pf
+                                      ON pf.graph_name = po.graph_name AND pf.coordinate = po.element_coordinate
+                                    JOIN graphitron_producer_outcome pc
+                                      ON pc.graph_name = pf.graph_name AND pc.type_name = pf.type_name
+                                     AND pc.field_name = pf.field_name
+                                   WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+                                     AND pc.outcome_type_name = f.type_name))
 UNION ALL
 -- A scalar or enum input field under an input object built into a jOOQ record, whose spelling names
 -- no column, or several, of the record's table: the column the field writes is judged on the table
