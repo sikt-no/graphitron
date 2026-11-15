@@ -734,8 +734,9 @@ public class GraphitronSchemaValidator {
     private void validateConnectionType(GraphitronType.ConnectionType type, List<ValidationError> errors) {
         var fd = type.schemaType().getFieldDefinition("totalCount");
         if (fd == null) return;
+        // By name: the promoter adds totalCount as a reference to Int, which is not the Int instance.
         var unwrapped = graphql.schema.GraphQLTypeUtil.unwrapNonNull(fd.getType());
-        if (unwrapped != graphql.Scalars.GraphQLInt) {
+        if (!(unwrapped instanceof graphql.schema.GraphQLNamedType named && "Int".equals(named.getName()))) {
             var def = fd.getDefinition();
             var location = def != null && def.getSourceLocation() != null
                 ? def.getSourceLocation()
