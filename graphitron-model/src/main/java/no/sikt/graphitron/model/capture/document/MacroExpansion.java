@@ -23,6 +23,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_POSITION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_CARRIER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_FACET_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FACET_BINDING_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS_RULE;
@@ -127,6 +131,9 @@ public final class MacroExpansion {
     public static void derive(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
         // The carriers first, since every minted arm and the authored fields read them.
         store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_CARRIER, GRAPHITRON_CONNECTION_CARRIER_RULE);
+        // The facets each carrier surfaces, which the facet mint reads: the applications, then the carriers'.
+        store(dsl, graphName, touchedAt, GRAPHITRON_FACET_BINDING, GRAPHITRON_FACET_BINDING_RULE);
+        store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION_FACET, GRAPHITRON_CONNECTION_FACET_RULE);
         // Then the conflicts, because every arm below withholds what this finds.
         conflicts(dsl, graphName);
         elements(dsl, graphName, touchedAt);

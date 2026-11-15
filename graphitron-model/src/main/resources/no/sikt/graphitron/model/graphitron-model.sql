@@ -3786,7 +3786,7 @@ COMMENT ON VIEW graphitron_type_authored IS 'One of the two sets graphitron_type
 -- COMMENT ON COLUMN graphitron_type_authored.description IS 'the docstring the author wrote, or nothing';
 -- COMMENT ON COLUMN graphitron_type_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 
-CREATE VIEW graphitron_facet_binding
+CREATE VIEW graphitron_facet_binding_rule
   (graph_name, type_name, field_name, ordinal, column_name, value_type_name, value_nullable,
    source_name, source_line, source_column) AS
 SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
@@ -3845,61 +3845,137 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
                       AND mark.source_line = fc.source_line
                       AND mark.source_column = fc.source_column
                       AND d.name IN ('condition', 'nodeId'));
-COMMENT ON VIEW graphitron_facet_binding IS 'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. For example @asFacet on FilmFilter.rating is one row naming the rating column and the type its values carry.';
--- COMMENT ON COLUMN graphitron_facet_binding.graph_name IS 'the owning graph''s partition, carried from the @asFacet application';
--- COMMENT ON COLUMN graphitron_facet_binding.type_name IS 'the input object type the facet field is declared on';
--- COMMENT ON COLUMN graphitron_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
--- COMMENT ON COLUMN graphitron_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
--- COMMENT ON COLUMN graphitron_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on, the consuming carrier''s table or the table a @reference path on the field ends at, is resolved against the catalog at the use site and is not here';
--- COMMENT ON COLUMN graphitron_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
--- COMMENT ON COLUMN graphitron_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
--- COMMENT ON COLUMN graphitron_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';
--- COMMENT ON COLUMN graphitron_facet_binding.source_line IS 'source line of the application, 1-based';
--- COMMENT ON COLUMN graphitron_facet_binding.source_column IS 'source column of the application, 1-based';
+COMMENT ON VIEW graphitron_facet_binding_rule IS 'One row the facet binding rule computes, in the shape graphitron_facet_binding stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_facet_binding, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_facet_binding.graph_name';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_facet_binding.type_name';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_facet_binding.field_name';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.ordinal IS 'the ordinal of a row of this rule, which the stage writes into graphitron_facet_binding.ordinal';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_facet_binding.column_name';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.value_type_name IS 'the value_type_name of a row of this rule, which the stage writes into graphitron_facet_binding.value_type_name';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.value_nullable IS 'the value_nullable of a row of this rule, which the stage writes into graphitron_facet_binding.value_nullable';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_facet_binding.source_name';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_facet_binding.source_line';
+-- COMMENT ON COLUMN graphitron_facet_binding_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_facet_binding.source_column';
 
-CREATE VIEW graphitron_connection_facet
+CREATE TABLE graphitron_facet_binding (
+  graph_name      VARCHAR   NOT NULL,
+  type_name       VARCHAR   NOT NULL,
+  field_name      VARCHAR   NOT NULL,
+  ordinal         INT       NOT NULL,
+  column_name     VARCHAR,
+  value_type_name VARCHAR   NOT NULL,
+  value_nullable  BOOLEAN   NOT NULL,
+  source_name     VARCHAR   NOT NULL,
+  source_line     INT       NOT NULL,
+  source_column   INT       NOT NULL,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_facet_binding IS 'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. For example @asFacet on FilmFilter.rating is one row naming the rating column and the type its values carry.';
+COMMENT ON COLUMN graphitron_facet_binding.graph_name IS 'the owning graph''s partition, carried from the @asFacet application';
+COMMENT ON COLUMN graphitron_facet_binding.type_name IS 'the input object type the facet field is declared on';
+COMMENT ON COLUMN graphitron_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
+COMMENT ON COLUMN graphitron_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
+COMMENT ON COLUMN graphitron_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on, the consuming carrier''s table or the table a @reference path on the field ends at, is resolved against the catalog at the use site and is not here';
+COMMENT ON COLUMN graphitron_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
+COMMENT ON COLUMN graphitron_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
+COMMENT ON COLUMN graphitron_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';
+COMMENT ON COLUMN graphitron_facet_binding.source_line IS 'source line of the application, 1-based';
+COMMENT ON COLUMN graphitron_facet_binding.source_column IS 'source column of the application, 1-based';
+COMMENT ON COLUMN graphitron_facet_binding.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE VIEW graphitron_connection_facet_rule
   (graph_name, type_name, field_name, position, filter_argument_name,
    facet_type_name, facet_field_name, column_name, value_type_name, value_nullable,
    source_name, source_line, source_column) AS
-SELECT graph_name, type_name, field_name,
-       ROW_NUMBER() OVER (PARTITION BY graph_name, type_name, field_name
-                          ORDER BY argument_ordinal, facet_ordinal),
-       filter_argument_name, facet_type_name, facet_field_name,
-       column_name, value_type_name, value_nullable,
-       source_name, source_line, source_column
-  FROM (SELECT a.graph_name, a.type_name, a.field_name,
-               a.ordinal AS argument_ordinal, fb.ordinal AS facet_ordinal,
-               a.argument_name AS filter_argument_name,
-               fb.type_name AS facet_type_name, fb.field_name AS facet_field_name,
-               fb.column_name, fb.value_type_name, fb.value_nullable,
-               fb.source_name, fb.source_line, fb.source_column,
-               ROW_NUMBER() OVER (
-                 PARTITION BY a.graph_name, a.type_name, a.field_name, fb.field_name
-                 ORDER BY a.ordinal, fb.ordinal) AS rn
-          FROM graphitron_facet_binding fb
-          JOIN graphql_argument a
-            ON a.graph_name = fb.graph_name AND a.named_type = fb.type_name
-          -- The carriers, asked for by name. This used to infer them from the expansion's own
-          -- output, a minted field whose coining coordinate was its own, which made a reading of
-          -- the carriers depend on the mint having already run.
-          JOIN graphitron_connection_carrier c
-            ON c.graph_name = a.graph_name AND c.type_name = a.type_name
-           AND c.field_name = a.field_name) carrier_facet
- WHERE rn = 1;
-COMMENT ON VIEW graphitron_connection_facet IS 'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.';
--- COMMENT ON COLUMN graphitron_connection_facet.graph_name IS 'the owning graph''s partition, carried from the carrier''s arguments';
--- COMMENT ON COLUMN graphitron_connection_facet.type_name IS 'the type owning the carrier field';
--- COMMENT ON COLUMN graphitron_connection_facet.field_name IS 'the carrier field''s name within that type; with the column above, the connection carrier''s coordinate';
--- COMMENT ON COLUMN graphitron_connection_facet.position IS 'the facet''s place in this carrier''s facet list, 1-based and dense: argument declaration order, then facet field declaration order. The emission order, so a consumer reads it rather than re-deriving it from the two ordinals it was computed from';
--- COMMENT ON COLUMN graphitron_connection_facet.filter_argument_name IS 'the carrier argument the facet''s binding rides in. Half of a facet''s suppression identity at emission: a same-named field on a sibling filter argument is a different binding, and the pair with facet_field_name is what tells them apart';
--- COMMENT ON COLUMN graphitron_connection_facet.facet_type_name IS 'witness: the input object type the application was written on, which is the argument''s named type. With the column beside it this is graphitron_facet_binding''s key, so the application''s own position is one join away';
--- COMMENT ON COLUMN graphitron_connection_facet.facet_field_name IS 'the facet field''s name: the label the counts surface under, and the other half of the suppression identity';
--- COMMENT ON COLUMN graphitron_connection_facet.column_name IS 'the column the counts group by, carried from graphitron_facet_binding';
--- COMMENT ON COLUMN graphitron_connection_facet.value_type_name IS 'the named type a facet key carries, carried from graphitron_facet_binding';
--- COMMENT ON COLUMN graphitron_connection_facet.value_nullable IS 'whether a facet key may be null, carried from graphitron_facet_binding';
--- COMMENT ON COLUMN graphitron_connection_facet.source_name IS 'the @asFacet application''s own file, carried from graphitron_facet_binding: a diagnostic about a facet points at the application and not at the carrier that consumes it';
--- COMMENT ON COLUMN graphitron_connection_facet.source_line IS 'source line of the application, 1-based';
--- COMMENT ON COLUMN graphitron_connection_facet.source_column IS 'source column of the application, 1-based';
+-- Each facet a carrier reaches through its filter arguments, a facet field reached through two of them
+-- kept at the first: one no earlier argument, or earlier facet field, reaches under the same name.
+WITH reached (graph_name, type_name, field_name, argument_ordinal, facet_ordinal, filter_argument_name,
+              facet_type_name, facet_field_name, column_name, value_type_name, value_nullable,
+              source_name, source_line, source_column) AS (
+  SELECT a.graph_name, a.type_name, a.field_name, a.ordinal, fb.ordinal, a.argument_name,
+         fb.type_name, fb.field_name, fb.column_name, fb.value_type_name, fb.value_nullable,
+         fb.source_name, fb.source_line, fb.source_column
+    FROM graphitron_facet_binding fb
+    JOIN graphql_argument a
+      ON a.graph_name = fb.graph_name AND a.named_type = fb.type_name
+    -- The carriers, asked for by name. This used to infer them from the expansion's own
+    -- output, a minted field whose coining coordinate was its own, which made a reading of
+    -- the carriers depend on the mint having already run.
+    JOIN graphitron_connection_carrier c
+      ON c.graph_name = a.graph_name AND c.type_name = a.type_name
+     AND c.field_name = a.field_name
+),
+kept AS (
+  SELECT r.* FROM reached r
+   WHERE NOT EXISTS (SELECT 1 FROM reached e
+                      WHERE e.graph_name = r.graph_name AND e.type_name = r.type_name
+                        AND e.field_name = r.field_name AND e.facet_field_name = r.facet_field_name
+                        AND (e.argument_ordinal, e.facet_ordinal) < (r.argument_ordinal, r.facet_ordinal))
+)
+-- Placed by how many of the carrier's kept facets come before it, argument first: dense from one.
+SELECT k.graph_name, k.type_name, k.field_name,
+       CAST(1 + (SELECT COUNT(*) FROM kept b
+                  WHERE b.graph_name = k.graph_name AND b.type_name = k.type_name
+                    AND b.field_name = k.field_name
+                    AND (b.argument_ordinal, b.facet_ordinal) < (k.argument_ordinal, k.facet_ordinal)) AS INT),
+       k.filter_argument_name, k.facet_type_name, k.facet_field_name, k.column_name, k.value_type_name,
+       k.value_nullable, k.source_name, k.source_line, k.source_column
+  FROM kept k;
+COMMENT ON VIEW graphitron_connection_facet_rule IS 'One row the connection facet rule computes, in the shape graphitron_connection_facet stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_facet, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_connection_facet.graph_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_connection_facet.type_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.field_name IS 'the field_name of a row of this rule, which the stage writes into graphitron_connection_facet.field_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_connection_facet.position';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.filter_argument_name IS 'the filter_argument_name of a row of this rule, which the stage writes into graphitron_connection_facet.filter_argument_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.facet_type_name IS 'the facet_type_name of a row of this rule, which the stage writes into graphitron_connection_facet.facet_type_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.facet_field_name IS 'the facet_field_name of a row of this rule, which the stage writes into graphitron_connection_facet.facet_field_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_connection_facet.column_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.value_type_name IS 'the value_type_name of a row of this rule, which the stage writes into graphitron_connection_facet.value_type_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.value_nullable IS 'the value_nullable of a row of this rule, which the stage writes into graphitron_connection_facet.value_nullable';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_connection_facet.source_name';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_connection_facet.source_line';
+-- COMMENT ON COLUMN graphitron_connection_facet_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_connection_facet.source_column';
+
+CREATE TABLE graphitron_connection_facet (
+  graph_name           VARCHAR   NOT NULL,
+  type_name            VARCHAR   NOT NULL,
+  field_name           VARCHAR   NOT NULL,
+  position             INT       NOT NULL,
+  filter_argument_name VARCHAR   NOT NULL,
+  facet_type_name      VARCHAR   NOT NULL,
+  facet_field_name     VARCHAR   NOT NULL,
+  column_name          VARCHAR,
+  value_type_name      VARCHAR   NOT NULL,
+  value_nullable       BOOLEAN   NOT NULL,
+  source_name          VARCHAR   NOT NULL,
+  source_line          INT       NOT NULL,
+  source_column        INT       NOT NULL,
+  touched_at           TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, position),
+  -- One facet per name a carrier surfaces.
+  UNIQUE (graph_name, type_name, field_name, facet_field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_connection_carrier (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, facet_type_name, facet_field_name)
+    REFERENCES graphitron_facet_binding (graph_name, type_name, field_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_connection_facet IS 'Which facets one connection carrier surfaces, and in which order: one row per @asFacet application reachable from the carrier''s own filter arguments. For example films(filter: FilmFilter) @asConnection surfaces every facet FilmFilter declares, in emission order.';
+COMMENT ON COLUMN graphitron_connection_facet.graph_name IS 'the owning graph''s partition, carried from the carrier''s arguments';
+COMMENT ON COLUMN graphitron_connection_facet.type_name IS 'the type owning the carrier field';
+COMMENT ON COLUMN graphitron_connection_facet.field_name IS 'the carrier field''s name within that type; with the column above, the connection carrier''s coordinate';
+COMMENT ON COLUMN graphitron_connection_facet.position IS 'the facet''s place in this carrier''s facet list, 1-based and dense: argument declaration order, then facet field declaration order. The emission order, so a consumer reads it rather than re-deriving it from the two ordinals it was computed from';
+COMMENT ON COLUMN graphitron_connection_facet.filter_argument_name IS 'the carrier argument the facet''s binding rides in. Half of a facet''s suppression identity at emission: a same-named field on a sibling filter argument is a different binding, and the pair with facet_field_name is what tells them apart';
+COMMENT ON COLUMN graphitron_connection_facet.facet_type_name IS 'witness: the input object type the application was written on, which is the argument''s named type. With the column beside it this is graphitron_facet_binding''s key, so the application''s own position is one join away';
+COMMENT ON COLUMN graphitron_connection_facet.facet_field_name IS 'the facet field''s name: the label the counts surface under, and the other half of the suppression identity';
+COMMENT ON COLUMN graphitron_connection_facet.column_name IS 'the column the counts group by, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.value_type_name IS 'the named type a facet key carries, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.value_nullable IS 'whether a facet key may be null, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.source_name IS 'the @asFacet application''s own file, carried from graphitron_facet_binding: a diagnostic about a facet points at the application and not at the carrier that consumes it';
+COMMENT ON COLUMN graphitron_connection_facet.source_line IS 'source line of the application, 1-based';
+COMMENT ON COLUMN graphitron_connection_facet.source_column IS 'source column of the application, 1-based';
+COMMENT ON COLUMN graphitron_connection_facet.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 -- What one carrier's facets mint, names included. A facet is an @asFacet application the carrier
 -- reaches through its filter arguments; the container and the value types follow from the carrier's
@@ -24335,6 +24411,8 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_minted_coinage'),
   ('macro-expansion', 'graphitron_minted_conflict'),
   ('macro-expansion', 'graphitron_connection_carrier'),
+  ('macro-expansion', 'graphitron_facet_binding'),
+  ('macro-expansion', 'graphitron_connection_facet'),
   ('macro-expansion', 'graphitron_type'),
   ('macro-expansion', 'graphitron_type_member'),
   ('macro-expansion', 'graphitron_scalar_class'),
@@ -27249,6 +27327,14 @@ INSERT INTO meta_relation VALUES
    'A field @asConnection expands, with the names and wrapping its expansion needs: one row per carrier.',
    'For example films: [Film!]! @asConnection on Query is one row naming QueryFilmsConnection, QueryFilmsConnectionEdge and the element Film!, where the same directive on a films: Film field is no row at all.',
    'The admission test and the naming rule are one decision each, and this is where each is made. Every arm of the mint reads it, so an arm cannot disagree with its siblings about which fields are carriers or what a carrier''s connection is called, which is what happens when the join is repeated per arm. Admission is a column test rather than a parse: a bare list of a named type is is_list with list_depth 1, and the expansion used to read that off type_sdl by hand because the anchor dropped the column the entry had already captured. The position travels with the row because the anchor resolving two carriers onto one connection name has to say which application it honoured, and a coordinate cannot say that. Stored, by macro expansion before anything it expands, and keyed into the authored field it describes: the authored fields exclude carriers by anti-join, and as a view joining four relations it was re-evaluated once per field, which on a large consumer schema took the field write from half a second to forty.'),
+  ('graphitron_facet_binding_rule', 'facet-binding', 'graphitron',
+   'One row the facet binding rule computes, in the shape graphitron_facet_binding stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_facet_binding, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; stored because the connection facets read it in a NOT EXISTS, which a view cannot serve.'),
+  ('graphitron_connection_facet_rule', 'carrier-facet', 'graphitron',
+   'One row the connection facet rule computes, in the shape graphitron_connection_facet stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_facet, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so an EXCEPT between the table and this view stays runnable for as long as both exist; stored so the facet mint stacked on it reads rows rather than re-deriving them, and so no window ranks them (Alf, 2026-11-15).'),
   ('graphitron_connection_carrier_rule', 'connection-carrier', 'graphitron',
    'One row the connection carrier rule computes, in the shape graphitron_connection_carrier stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_connection_carrier, which is the name every reader spells.',
