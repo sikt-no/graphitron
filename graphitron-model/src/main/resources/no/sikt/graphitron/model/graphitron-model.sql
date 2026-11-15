@@ -11678,14 +11678,16 @@ WITH named (graph_name, namespace_part, name_part) AS (
     FROM store_graph_outbox b
    WHERE b.table_name IS NOT NULL AND b.function_name IS NULL
 ),
-resolved (graph_name, source_name, table_schema, table_name, candidates) AS (
-  SELECT n.graph_name, st.source_name, st.table_schema, st.table_name,
-         COUNT(*) OVER (PARTITION BY n.graph_name)
+-- The one table the name meets in the graph's catalogs; a name two tables answer to resolves to none.
+resolved (graph_name, source_name, table_schema, table_name) AS (
+  SELECT n.graph_name, MIN(st.source_name), MIN(st.table_schema), MIN(st.table_name)
     FROM named n
     JOIN store_graph_source m ON m.graph_name = n.graph_name
     JOIN sql_table st
       ON st.source_name = m.source_name AND st.table_name_upper = UPPER(n.name_part)
      AND (n.namespace_part IS NULL OR st.table_schema_upper = UPPER(n.namespace_part))
+   GROUP BY n.graph_name
+  HAVING COUNT(*) = 1
 ),
 roles (graph_name, source_name, table_schema, table_name, type_column, payload_column,
        payload_type) AS (
@@ -11702,7 +11704,6 @@ roles (graph_name, source_name, table_schema, table_name, type_column, payload_c
      AND pc.table_name = r.table_name
      AND pc.column_name_upper = UPPER(COALESCE((SELECT ro.name FROM store_graph_outbox_role ro
            WHERE ro.graph_name = r.graph_name AND ro.kind = 'COLUMN' AND ro.role = 'payload'), 'payload'))
-   WHERE r.candidates = 1
 )
 SELECT x.graph_name, x.source_name, x.table_schema, x.table_name, x.type_column, x.payload_column,
        CASE WHEN x.payload_type IN ('ORG.JOOQ.JSON', 'ORG.JOOQ.JSONB') THEN 'JSON' ELSE 'TEXT' END
@@ -11815,9 +11816,8 @@ WITH named (graph_name, namespace_part, name_part) AS (
 -- A routine called through its Configuration-first method: one the catalog has no table for, which is
 -- what tells it from a table-valued function. Candidates are counted per graph, so a name that two
 -- schemas both declare, or that is not unique, resolves to nothing.
-resolved (graph_name, source_name, routine_schema, routine_name, candidates) AS (
-  SELECT n.graph_name, sr.source_name, sr.table_schema, sr.routine_name,
-         COUNT(*) OVER (PARTITION BY n.graph_name)
+resolved (graph_name, source_name, routine_schema, routine_name) AS (
+  SELECT n.graph_name, MIN(sr.source_name), MIN(sr.table_schema), MIN(sr.routine_name)
     FROM named n
     JOIN store_graph_source m ON m.graph_name = n.graph_name
     JOIN sql_routine sr
@@ -11827,6 +11827,8 @@ resolved (graph_name, source_name, routine_schema, routine_name, candidates) AS 
      AND NOT EXISTS (SELECT 1 FROM sql_table st
                       WHERE st.source_name = sr.source_name AND st.table_schema = sr.table_schema
                         AND st.table_name = sr.routine_name)
+   GROUP BY n.graph_name
+  HAVING COUNT(*) = 1
 ),
 -- One row per role a parameter answers to. A parameter answers to a role by its name with the
 -- underscores and the case taken out, so p_payload and pPayload both answer to payload = p_payload.
@@ -11842,7 +11844,6 @@ bound (graph_name, source_name, routine_schema, routine_name, role, position, bi
          UPPER(REPLACE(COALESCE((SELECT x.name FROM store_graph_outbox_role x
                                   WHERE x.graph_name = r.graph_name AND x.kind = 'PARAMETER'
                                     AND x.role = ro.role), ro.role), '_', ''))
-   WHERE r.candidates = 1
 )
 SELECT b.graph_name, b.source_name, b.routine_schema, b.routine_name,
        MAX(CASE WHEN b.role = 'type' THEN b.position END),
