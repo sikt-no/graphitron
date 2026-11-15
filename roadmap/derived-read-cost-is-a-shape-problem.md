@@ -1317,7 +1317,7 @@ classified records have no reader left and can go with the walk.
   `VALUE` and `MEMBER` bindings are written; an argument a call consumes binds none, the call's
   parameter fill naming it. What is left is `EXPRESSION`, which has only its kind in the binding's
   check and no writer.
-* **The result relations dissolve into the producer's result** `open`, E's. The key-row half has
+* **The result relations dissolve into the producer's result, claimed by B** `open`. The key-row half has
   landed; `graphitron_result`, `_result_table`, `_result_class` and `_result_pivot` remain, saying per
   type what the producer's result says per producer, and go with the result rule's fixpoint, their
   type-level readers (the LSP's type hover and inlays, the outbox rule, `RESULT_SHAPES_CONFLICT`)
@@ -1363,7 +1363,7 @@ classified records have no reader left and can go with the walk.
     member of a root write's payload bound to a table other than the written one is never produced.
 * **A `@mutation(table:)` that disagrees with its return's table is a defect** `open`, E's.
   `WRITE_TABLES_DISAGREE` raises it at the `@mutation`; what remains is its detail naming both tables.
-* **The producer's readers read the occurrence producer, and the field-keyed family goes** `blocked`, E's, on "The result relations dissolve into the producer's result".
+* **The producer's readers read the occurrence producer, and the field-keyed family goes** `blocked`, E's, on "The result relations dissolve into the producer's result, claimed by B".
   `graphitron_occurrence_producer` and its start and call subtypes state per occurrence what
   `graphitron_producer`, `_service`, `_routine`, `_write` and `graphitron_service_holder` state per
   field, read today off them through the occurrence's field; the readers move, the rule reads the
@@ -2862,7 +2862,7 @@ has, kept until a better one is found.
 The producer knows what it produces (Alf): its *result*, one record, a list of records, a connection
 page or a `@service`'s object, each with its class where it has one, is a fact of the producing
 occurrence, and the occurrences under it bind into it; the type-keyed `graphitron_result` goes
-("The result relations dissolve into the producer's result").
+("The result relations dissolve into the producer's result, claimed by B").
 
 A *lift* is a producer's crossing into the world of tables, and belongs to the producer, never to
 the occurrences under it: where a child producer starts, a parent's key row lifted onto the key's
