@@ -31,7 +31,7 @@ class OccurrenceSourceReadersTest {
     private static final String UNREACHED = "scenarios/field-path-unreached";
     private static final String SOURCES = "scenarios/occurrence-source";
     private static final String CONNECTIONS = "scenarios/connection-producers";
-    private static final String TWO_TABLES = "scenarios/occurrence-source-two-tables";
+    private static final String ROUTINE_RESULT = "scenarios/routine-result";
     private static final String KEY_ROWS = "scenarios/field-key-row";
     private static final String INTERFACES = "scenarios/multitable-interface";
     private static final String PATH_WITHOUT_TABLE = "defects/reference-without-target-table";
@@ -89,26 +89,30 @@ class OccurrenceSourceReadersTest {
     }
 
     @Test
-    @DisplayName("a type two fields reach from two tables is read from both, and each field from its own")
-    void aTypeTwoFieldsReachListsOnlyThisFieldsTable() {
+    @DisplayName("a plain type a root @routine returns is read from the function's rows, and the field targets them alone")
+    void aRoutinesPlainTypeIsReadFromItsFunctionsRows() {
+        // A plain type reached both as a routine's row and as a nested row is refused by the walk's
+        // classifier today, so only the routine half is pinned here.
         var type = file("""
-            type Row { title: String }
+            type Tilgang {
+              organisasjonskode: Int
+              rollekode: String
+            }
             """);
-        assertThat(hoverAt(TWO_TABLES, type, 0, "type Ro".length()))
-            .contains("**Is read from** a row of `public.film`")
-            .contains("**Is read from** a row of `public.films_for_actor`");
+        assertThat(hoverAt(ROUTINE_RESULT, type, 0, "type Til".length()))
+            .contains("**Is read from** a row of `public.tilganger_for_feidebruker_med_fs_fiktivt_fnr`");
 
         var root = file("""
             type Query {
-                rows(actorId: Int!, minLength: Int!): [Row!]!
-                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
-                    @defaultOrder(fields: [{name: "film_id"}])
+                tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+                    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+                    @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
             }
             """);
-        assertThat(hoverAt(TWO_TABLES, root, 1, "    row".length()))
-            .contains("**Target** `Row` → `public.films_for_actor`")
-            .doesNotContain("`public.film`");
-        assertThat(labels(TWO_TABLES, root)).containsExactly("→ films_for_actor");
+        assertThat(hoverAt(ROUTINE_RESULT, root, 1, "    tilg".length()))
+            .contains("**Target** `Tilgang` → `public.tilganger_for_feidebruker_med_fs_fiktivt_fnr`");
+        assertThat(labels(ROUTINE_RESULT, root)).containsExactly("→ tilganger_for_feidebruker_med_fs_fiktivt_fnr");
     }
 
     @Test

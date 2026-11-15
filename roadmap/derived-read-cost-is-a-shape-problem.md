@@ -1449,7 +1449,9 @@ before `generate` does.
   schema's refusals are, and the log names it.
 * **Each rule the walk enforces is a located defect** `open`. Every walk rejection becomes a code
   written by the stage whose facts it judges, and the walk's hand-built validation test for it
-  becomes a fact document or goes with its rule.
+  becomes a fact document or goes with its rule. When the walk's produced-type nesting refusal
+  goes, pin a plain type reached both as a routine's row and as a nested row (the hover's case 4
+  in `OccurrenceSourceReadersTest`).
   * **A DELETE payload's `ID` carrier binds against the written table** `open`. The carrier's
     `ID` element under a write takes the written table's one node as a write's bare `ID` return
     does, so `NODE_ID_TARGET_UNRESOLVED` and `NODE_ID_TARGET_AMBIGUOUS` state its refusals and the
