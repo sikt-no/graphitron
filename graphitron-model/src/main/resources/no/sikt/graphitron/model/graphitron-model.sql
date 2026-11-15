@@ -4298,7 +4298,12 @@ SELECT m.graph_name, m.type_name, m.field_name, m.coordinate, m.ordinal, m.type_
    -- A machinery field whose own type stood down to an author's declaration goes with it.
    AND (m.rewrite
         OR NOT EXISTS (SELECT 1 FROM graphql_type_element a
-                        WHERE a.graph_name = m.graph_name AND a.type_name = m.type_name));
+                        WHERE a.graph_name = m.graph_name AND a.type_name = m.type_name))
+   -- And one whose own type a conflict withheld: a field of a type nobody holds, the conflict being
+   -- the defect.
+   AND (m.rewrite
+        OR NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict tc
+                        WHERE tc.graph_name = m.graph_name AND tc.coordinate = m.type_name));
 COMMENT ON VIEW graphitron_field_minted IS 'One of the two sets graphitron_field is the union of: a field macro expansion states, either adding one where the author wrote none or restating the carrier the directive sits on. For example the edges on a minted QueryFilmsConnection, and the rewritten films whose author wrote it as a plain list.';
 -- COMMENT ON COLUMN graphitron_field_minted.graph_name IS 'the owning graph''s partition, carried from the minting row';
 -- COMMENT ON COLUMN graphitron_field_minted.type_name IS 'the type the minted field sits on';
@@ -4442,7 +4447,11 @@ SELECT m.graph_name, m.type_name, m.field_name, m.argument_name, m.coordinate, m
                     WHERE c.graph_name = m.graph_name AND c.coordinate = m.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphql_argument_element a
                     WHERE a.graph_name = m.graph_name AND a.type_name = m.type_name
-                      AND a.field_name = m.field_name AND a.argument_name = m.argument_name);
+                      AND a.field_name = m.field_name AND a.argument_name = m.argument_name)
+   -- An argument of a field or a type a conflict withheld goes with it.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict fc
+                    WHERE fc.graph_name = m.graph_name
+                      AND fc.coordinate IN (m.type_name, m.type_name || '.' || m.field_name));
 COMMENT ON VIEW graphitron_argument_minted IS 'One of the two sets graphitron_argument is the union of: an argument macro expansion adds where the author wrote none, which today is a connection carrier''s pagination. For example the first and after on Query.films(first:).';
 -- COMMENT ON COLUMN graphitron_argument_minted.graph_name IS 'the owning graph''s partition, carried from the minting row';
 -- COMMENT ON COLUMN graphitron_argument_minted.type_name IS 'the type the owning field is declared on';
