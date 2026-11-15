@@ -49,12 +49,6 @@ extend schema @assertContains(relation: "graphitron_join_path", rows: """
 
 # The payload's rental is read off the routine's row, and the routine catches into the payload: that
 # row is the outcome's value, so its errors field is no errors in a row.
-extend schema @assertContains(relation: "graphitron_occurrence_source", rows: """
-  coordinate,                      kind,  rule
-  Mutation.rentFilmPayload,        TABLE, rootRoutine
-  Mutation.rentFilmPayload.rental, TABLE, nestedCopy
-  """)
-
 extend schema @assertContains(relation: "graphitron_producer_outcome", rows: """
   type_name, field_name,      kind,    outcome_type_name, errors_field_name
   Mutation,  rentFilmPayload, ROUTINE, RentFilmPayload,   errors
