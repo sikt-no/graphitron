@@ -93,6 +93,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   NO_ROUTE_TO_TARGET,              Film,      overloaded,      public.film to public.city
   ROUTE_AMBIGUOUS,                 Language,  filmsByTopRated, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
   ROUTE_AMBIGUOUS,                 Language,  filmsByPathCondition, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
+  SORT_KEY_PATH_CONDITION,         Language,  filmsByPathCondition,
   ROUTE_AMBIGUOUS,                 Language,  filmsByMissingMethod, public.language to public.film by film_language_id_fkey or film_original_language_id_fkey
   """)
 

@@ -27297,6 +27297,9 @@ COMMENT ON COLUMN graphitron_occurrence_order.read_source_name IS 'the catalog s
 COMMENT ON COLUMN graphitron_occurrence_order.read_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_order.read_table IS 'the table the order''s names, keys and index resolve against, stated once for every rule reading the order: the table the field reads, bound''s, but for a routine behind a plural identifying mutation, graphitron_occurrence_input_order''s WRITE_SHAPE, the routine''s function table, whose result the order keeps';
 COMMENT ON COLUMN graphitron_occurrence_order.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+CREATE INDEX graphitron_occurrence_order_application_ix
+  ON graphitron_occurrence_order (graph_name, application_coordinate, application_directive, application_ordinal);
+COMMENT ON INDEX graphitron_occurrence_order_application_ix IS 'An order looked up by the application it is read from: a sort key''s path is refused at the fields element that writes it, reached from the order through its application, and without this a rule reached the order by graph alone for every element.';
 
 -- The index an INDEX order sorts by: the one of the table the list reads whose name the application's
 -- index spelling meets, folded by case. An order whose index the table does not have has no row here,
@@ -27440,10 +27443,235 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key.coordinate IS 'the list or conn
 COMMENT ON COLUMN graphitron_occurrence_sort_key.bound IS 'the table the field reads';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.choice IS 'the order, as graphitron_occurrence_order keys it';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.position IS 'the key''s place in the order, numbered from zero: the column''s in a primary key or an index, the element''s index in a written fields list. Keys sort by it ascending; a written element that states no key leaves a gap, and is refused';
-COMMENT ON COLUMN graphitron_occurrence_sort_key.kind IS 'what the key reads: COLUMN, a column of the table, its subtype graphitron_occurrence_sort_key_column; METHOD, a method computing the key from the table, its subtype graphitron_occurrence_sort_key_method; PATH, a column read through to-one hops, its hops graphitron_occurrence_sort_key_hop and its column the subtype graphitron_occurrence_sort_key_path';
+COMMENT ON COLUMN graphitron_occurrence_sort_key.kind IS 'what the key reads: COLUMN, a column of the table, and PATH, a column read through to-one hops, graphitron_occurrence_sort_key_hop, landing on the table its subtype graphitron_occurrence_sort_key_landing names, each naming its column in graphitron_occurrence_sort_key_column; METHOD, a method computing the key from the table, its subtype graphitron_occurrence_sort_key_method';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.direction IS 'ASC or DESC, resolved: the element''s own direction, else the application''s, else ascending. A runtime choice''s direction field applies on top of it at run time';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.collation IS 'the collation the element names, as written, null where none is; a database-specific name resolving against nothing here';
 COMMENT ON COLUMN graphitron_occurrence_sort_key.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_occurrence_sort_key_hop (
+  graph_name             VARCHAR   NOT NULL,
+  coordinate             VARCHAR   NOT NULL,
+  bound                  VARCHAR   NOT NULL,
+  choice                 VARCHAR   NOT NULL,
+  position               INT       NOT NULL,
+  hop                    INT       NOT NULL,
+  constraint_source_name VARCHAR   NOT NULL,
+  constraint_schema      VARCHAR   NOT NULL,
+  constraint_table       VARCHAR   NOT NULL,
+  constraint_name        VARCHAR   NOT NULL,
+  direction              VARCHAR   NOT NULL,
+  from_source_name       VARCHAR   NOT NULL,
+  from_schema            VARCHAR   NOT NULL,
+  from_table             VARCHAR   NOT NULL,
+  to_source_name         VARCHAR   NOT NULL,
+  to_schema              VARCHAR   NOT NULL,
+  to_table               VARCHAR   NOT NULL,
+  to_one                 BOOLEAN   NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, choice, position, hop),
+  FOREIGN KEY (graph_name, coordinate, bound, choice, position)
+    REFERENCES graphitron_occurrence_sort_key (graph_name, coordinate, bound, choice, position) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name) ON DELETE CASCADE,
+  CHECK (direction IN ('FORWARD', 'BACKWARD')),
+  CHECK (hop >= 0)
+);
+COMMENT ON TABLE graphitron_occurrence_sort_key_hop IS 'One hop of a sort key''s path: one row per sort key and hop, the foreign key its element names, the way it runs, the tables it joins and whether it reaches one row. For example Store.films ordered by the name of each film''s original language hops once, forward along film_original_language_id_fkey from film to language, to-one.';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.coordinate IS 'the list or connection field occurrence';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.bound IS 'the table the field reads';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.choice IS 'the order, as graphitron_occurrence_order keys it';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.position IS 'the sort key''s place in the order';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.hop IS 'the hop''s place in the path, its element''s index, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_source_name IS 'the catalog source of the table holding the key';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_table IS 'the table holding the key';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_name IS 'the key''s SQL name';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.direction IS 'FORWARD from the table holding the key to the table it references, BACKWARD the other way';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.from_source_name IS 'the catalog source of the table the hop leaves';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.from_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.from_table IS 'the table the hop leaves: the list''s own at the first hop, the one the hop before landed on after it';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_source_name IS 'the catalog source of the table the hop lands on';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_table IS 'the table the hop lands on';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_one IS 'whether one row the hop leaves reaches at most one row, as sql_referential_constraint_reach states the key does ridden the hop''s direction';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.touched_at IS 'the reading that wrote this row; the stage clears the graph''s hops and writes them anew each reading, nothing referencing a hop';
+
+-- One hop of a sort key's path: the key its element names, joined from the table the hop before it
+-- landed on, or at the first from the table the order reads. The hop runs the way the key points where
+-- it leaves the table holding the key, against it where it leaves the table the key references, and
+-- reaches one row as sql_referential_constraint_reach states the key does ridden that way. Its rows are
+-- written a hop at a time, the rule reading the hop before from the table it feeds. An element naming a
+-- table and no key is no hop here, until its key is inferred at the element.
+CREATE VIEW graphitron_occurrence_sort_key_hop_rule
+  (graph_name, coordinate, bound, choice, position, hop, constraint_source_name, constraint_schema, constraint_table, constraint_name, direction, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, to_one) AS
+SELECT x.graph_name, x.coordinate, x.bound, x.choice, x.position, x.hop, rc.source_name, rc.table_schema,
+       rc.table_name, rc.constraint_name,
+       CASE WHEN x.forward THEN 'FORWARD' ELSE 'BACKWARD' END,
+       x.from_source_name, x.from_schema, x.from_table,
+       CASE WHEN x.forward THEN rc.referenced_source_name ELSE rc.source_name END,
+       CASE WHEN x.forward THEN rc.referenced_schema ELSE rc.table_schema END,
+       CASE WHEN x.forward THEN rc.referenced_table ELSE rc.table_name END,
+       rr.to_one
+  FROM (
+    SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, e.position AS hop,
+           pek.constraint_source_name, pek.constraint_schema, pek.constraint_table, pek.constraint_name,
+           CASE WHEN e.position = 0 THEN r.read_source_name ELSE p.to_source_name END AS from_source_name,
+           CASE WHEN e.position = 0 THEN r.read_schema ELSE p.to_schema END AS from_schema,
+           CASE WHEN e.position = 0 THEN r.read_table ELSE p.to_table END AS from_table,
+           CASE WHEN e.position = 0 THEN r.read_source_name = pek.constraint_source_name
+                 AND r.read_schema = pek.constraint_schema AND r.read_table = pek.constraint_table
+                ELSE p.to_source_name = pek.constraint_source_name AND p.to_schema = pek.constraint_schema
+                 AND p.to_table = pek.constraint_table END AS forward
+  FROM graphitron_occurrence_sort_key k
+  JOIN graphitron_occurrence_order r
+    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
+   AND r.choice = k.choice
+  JOIN graphitron_directive_application ra
+    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
+   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
+  JOIN graphitron_ast_order_field_entry fe
+    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
+   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
+   AND fe.position = k.position
+      JOIN graphitron_ast_reference_element_entry e
+        ON e.graph_name = fe.graph_name AND e.source_name = fe.source_name
+       AND e.application_line = fe.source_line AND e.application_column = fe.source_column
+      JOIN graphitron_path_element_key pek
+        ON pek.graph_name = e.graph_name AND pek.source_name = e.source_name
+       AND pek.source_line = e.source_line AND pek.source_column = e.source_column
+      LEFT JOIN graphitron_occurrence_sort_key_hop p
+        ON p.graph_name = k.graph_name AND p.coordinate = k.coordinate AND p.bound = k.bound
+       AND p.choice = k.choice AND p.position = k.position AND p.hop = e.position - 1
+     WHERE k.kind = 'PATH' AND (e.position = 0 OR p.hop IS NOT NULL)
+       -- An order reading a function's result, a plural routine write's, which a path leaves; that
+       -- refusal is ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN's, at the field.
+       AND NOT EXISTS (SELECT 1 FROM sql_table ft
+                        WHERE ft.source_name = r.read_source_name AND ft.table_schema = r.read_schema
+                          AND ft.table_name = r.read_table AND ft.table_type = 'FUNCTION')
+       -- An element whose name meets one key, an ambiguous one being the element's own defect.
+       AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_key o
+                        WHERE o.graph_name = pek.graph_name AND o.source_name = pek.source_name
+                          AND o.source_line = pek.source_line AND o.source_column = pek.source_column
+                          AND (o.constraint_source_name, o.constraint_schema, o.constraint_table,
+                               o.constraint_name)
+                              <> (pek.constraint_source_name, pek.constraint_schema, pek.constraint_table,
+                                  pek.constraint_name))
+  ) x
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = x.constraint_source_name AND rc.table_schema = x.constraint_schema
+   AND rc.table_name = x.constraint_table AND rc.constraint_name = x.constraint_name
+  JOIN sql_referential_constraint_reach rr
+    ON rr.source_name = rc.source_name AND rr.table_schema = rc.table_schema
+   AND rr.table_name = rc.table_name AND rr.constraint_name = rc.constraint_name
+   AND rr.direction = CASE WHEN x.forward THEN 'FORWARD' ELSE 'BACKWARD' END
+ -- The key touches the table the hop stands on.
+ WHERE x.forward
+    OR (rc.referenced_source_name = x.from_source_name AND rc.referenced_schema = x.from_schema
+        AND rc.referenced_table = x.from_table);
+COMMENT ON VIEW graphitron_occurrence_sort_key_hop_rule IS 'One row the sort key hop rule computes, in the shape graphitron_occurrence_sort_key_hop stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph and one hop into graphitron_occurrence_sort_key_hop, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.choice IS 'the choice of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.choice';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.position';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.hop IS 'the hop of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.hop';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_source_name IS 'the constraint_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_schema IS 'the constraint_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_table IS 'the constraint_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_table';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_name IS 'the constraint_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.direction IS 'the direction of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.direction';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.from_source_name IS 'the from_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.from_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.from_schema IS 'the from_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.from_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.from_table IS 'the from_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.from_table';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_source_name IS 'the to_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_schema IS 'the to_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_table IS 'the to_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_table';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_one IS 'the to_one of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_one';
+
+-- A PATH key's whole path, the table its last hop lands on: every element of the path a hop, every
+-- hop to-one and no element carrying a condition. A path short of that lands nowhere, and is refused
+-- by what stops it.
+CREATE VIEW graphitron_occurrence_sort_key_landing_rule
+  (graph_name, coordinate, bound, choice, position, kind, to_source_name, to_schema, to_table) AS
+SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, h.to_source_name, h.to_schema,
+       h.to_table
+  FROM graphitron_occurrence_sort_key k
+  JOIN graphitron_occurrence_order r
+    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
+   AND r.choice = k.choice
+  LEFT JOIN graphitron_directive_application ra
+    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
+   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
+  JOIN graphitron_ast_order_field_entry fe
+    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
+   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
+   AND fe.position = k.position
+  JOIN graphitron_occurrence_sort_key_hop h
+    ON h.graph_name = k.graph_name AND h.coordinate = k.coordinate AND h.bound = k.bound
+   AND h.choice = k.choice AND h.position = k.position
+ WHERE k.kind = 'PATH'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop l
+                    WHERE l.graph_name = h.graph_name AND l.coordinate = h.coordinate AND l.bound = h.bound
+                      AND l.choice = h.choice AND l.position = h.position AND l.hop > h.hop)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
+                    WHERE e.graph_name = fe.graph_name AND e.source_name = fe.source_name
+                      AND e.application_line = fe.source_line AND e.application_column = fe.source_column
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop eh
+                                       WHERE eh.graph_name = k.graph_name AND eh.coordinate = k.coordinate
+                                         AND eh.bound = k.bound AND eh.choice = k.choice
+                                         AND eh.position = k.position AND eh.hop = e.position))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop m
+                    WHERE m.graph_name = k.graph_name AND m.coordinate = k.coordinate AND m.bound = k.bound
+                      AND m.choice = k.choice AND m.position = k.position AND NOT m.to_one)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry ce
+                     JOIN graphitron_ast_reference_condition_step_entry c
+                       ON c.graph_name = ce.graph_name AND c.source_name = ce.source_name
+                      AND c.source_line = ce.source_line AND c.source_column = ce.source_column
+                    WHERE ce.graph_name = fe.graph_name AND ce.source_name = fe.source_name
+                      AND ce.application_line = fe.source_line AND ce.application_column = fe.source_column);
+COMMENT ON VIEW graphitron_occurrence_sort_key_landing_rule IS 'One row the sort key landing rule computes, in the shape graphitron_occurrence_sort_key_landing stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_landing, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.choice IS 'the choice of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.choice';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.position';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.kind';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.to_source_name IS 'the to_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.to_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.to_schema IS 'the to_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.to_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_landing_rule.to_table IS 'the to_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_landing.to_table';
+
+CREATE TABLE graphitron_occurrence_sort_key_landing (
+  graph_name     VARCHAR   NOT NULL,
+  coordinate     VARCHAR   NOT NULL,
+  bound          VARCHAR   NOT NULL,
+  choice         VARCHAR   NOT NULL,
+  position       INT       NOT NULL,
+  kind           VARCHAR   NOT NULL,
+  to_source_name VARCHAR   NOT NULL,
+  to_schema      VARCHAR   NOT NULL,
+  to_table       VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, choice, position),
+  -- On the key rather than its last hop, whose rows each reading clears and writes anew.
+  FOREIGN KEY (graph_name, coordinate, bound, choice, position, kind)
+    REFERENCES graphitron_occurrence_sort_key (graph_name, coordinate, bound, choice, position, kind)
+    ON DELETE CASCADE,
+  FOREIGN KEY (to_source_name, to_schema, to_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind = 'PATH')
+);
+COMMENT ON TABLE graphitron_occurrence_sort_key_landing IS 'The table a PATH sort key''s whole path lands on: one row per such key whose every element is a to-one hop and none carries a condition. For example Store.films ordered by the name of each film''s original language lands on public.language.';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.coordinate IS 'the list or connection field occurrence';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.bound IS 'the table the field reads, which the path leaves';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.choice IS 'the order, as graphitron_occurrence_order keys it';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.position IS 'the key''s place in the order, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.kind IS 'always PATH, pinned so the foreign key holds the row to a key of that kind';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.to_source_name IS 'the catalog source of the table the path lands on';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.to_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.to_table IS 'the table the path''s last hop lands on, whose columns the element''s name is spelled against';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_landing.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_sort_key_column_rule
   (graph_name, coordinate, bound, choice, position, kind, table_source_name, table_schema, table_name,
@@ -27496,7 +27724,28 @@ SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, sp.sou
   JOIN sql_column_spelling sp
     ON sp.source_name = r.read_source_name AND sp.table_schema = r.read_schema
    AND sp.table_name = r.read_table AND sp.spelling_upper = UPPER(fe.name_ref) AND sp.reach = 1
- WHERE k.kind = 'COLUMN' AND r.surface = 'FIELDS';
+ WHERE k.kind = 'COLUMN' AND r.surface = 'FIELDS'
+UNION ALL
+-- A path key's column, its name spelled as a column of the table its whole path lands on.
+SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, sp.source_name, sp.table_schema,
+       sp.table_name, sp.column_name
+  FROM graphitron_occurrence_sort_key k
+  JOIN graphitron_occurrence_sort_key_landing l
+    ON l.graph_name = k.graph_name AND l.coordinate = k.coordinate AND l.bound = k.bound
+   AND l.choice = k.choice AND l.position = k.position AND l.kind = k.kind
+  JOIN graphitron_occurrence_order r
+    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
+   AND r.choice = k.choice
+  LEFT JOIN graphitron_directive_application ra
+    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
+   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
+  JOIN graphitron_ast_order_field_entry fe
+    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
+   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
+   AND fe.position = k.position
+  JOIN sql_column_spelling sp
+    ON sp.source_name = l.to_source_name AND sp.table_schema = l.to_schema AND sp.table_name = l.to_table
+   AND sp.spelling_upper = UPPER(fe.name_ref) AND sp.reach = 1;
 COMMENT ON VIEW graphitron_occurrence_sort_key_column_rule IS 'One row the sort key column rule computes, in the shape graphitron_occurrence_sort_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_column, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_sort_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_column.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_sort_key_column_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_column.coordinate';
@@ -27527,15 +27776,15 @@ CREATE TABLE graphitron_occurrence_sort_key_column (
     ON DELETE CASCADE,
   FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
     REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
-  CHECK (kind = 'COLUMN')
+  CHECK (kind IN ('COLUMN', 'PATH'))
 );
-COMMENT ON TABLE graphitron_occurrence_sort_key_column IS 'The column a COLUMN sort key reads: one row per such key. For example Query.films ordered by its default reads film_id of public.film at position 0.';
+COMMENT ON TABLE graphitron_occurrence_sort_key_column IS 'The column a sort key reads: one row per COLUMN key, a column of the list''s own table, and per PATH key whose path resolves, the column where it lands. For example Query.films ordered by its default reads film_id of public.film at position 0.';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.coordinate IS 'the list or connection field occurrence';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.bound IS 'the table the field reads, the column''s table but for a routine behind a plural identifying mutation, whose column is its function table''s';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.choice IS 'the order, as graphitron_occurrence_order keys it';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.position IS 'the key''s place in the order, completing the key';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_column.kind IS 'always COLUMN, pinned so the foreign key holds the row to a key of that kind';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_column.kind IS 'COLUMN or PATH, pinned so the foreign key holds the row to a key of that kind; a reader of the list''s own columns reads COLUMN rows';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.table_source_name IS 'the catalog source of the table';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.table_schema IS 'the table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.table_name IS 'the table';
@@ -27696,7 +27945,7 @@ SELECT r.graph_name, r.coordinate, r.bound, r.choice, rk.position, last.directio
    -- A column the order does not list.
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_column c
                     WHERE c.graph_name = r.graph_name AND c.coordinate = r.coordinate AND c.bound = r.bound
-                      AND c.choice = r.choice AND c.column_name = rk.column_name
+                      AND c.choice = r.choice AND c.kind = 'COLUMN' AND c.column_name = rk.column_name
                       AND c.table_name = rk.table_name AND c.table_schema = rk.table_schema
                       AND c.table_source_name = rk.table_source_name)
    -- No identifying key all of whose columns the order lists.
@@ -27708,7 +27957,7 @@ SELECT r.graph_name, r.coordinate, r.bound, r.choice, rk.position, last.directio
                                          AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_column c
                                                           WHERE c.graph_name = r.graph_name
                                                             AND c.coordinate = r.coordinate AND c.bound = r.bound
-                                                            AND c.choice = r.choice
+                                                            AND c.choice = r.choice AND c.kind = 'COLUMN'
                                                             AND c.column_name = ic.column_name
                                                             AND c.table_name = ic.table_name
                                                             AND c.table_schema = ic.table_schema
@@ -27756,235 +28005,6 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_schema IS 'the
 COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_name IS 'the table';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.column_name IS 'the column, as the catalog spells it';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
-CREATE TABLE graphitron_occurrence_sort_key_hop (
-  graph_name             VARCHAR   NOT NULL,
-  coordinate             VARCHAR   NOT NULL,
-  bound                  VARCHAR   NOT NULL,
-  choice                 VARCHAR   NOT NULL,
-  position               INT       NOT NULL,
-  hop                    INT       NOT NULL,
-  constraint_source_name VARCHAR   NOT NULL,
-  constraint_schema      VARCHAR   NOT NULL,
-  constraint_table       VARCHAR   NOT NULL,
-  constraint_name        VARCHAR   NOT NULL,
-  direction              VARCHAR   NOT NULL,
-  from_source_name       VARCHAR   NOT NULL,
-  from_schema            VARCHAR   NOT NULL,
-  from_table             VARCHAR   NOT NULL,
-  to_source_name         VARCHAR   NOT NULL,
-  to_schema              VARCHAR   NOT NULL,
-  to_table               VARCHAR   NOT NULL,
-  to_one                 BOOLEAN   NOT NULL,
-  touched_at             TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, bound, choice, position, hop),
-  FOREIGN KEY (graph_name, coordinate, bound, choice, position)
-    REFERENCES graphitron_occurrence_sort_key (graph_name, coordinate, bound, choice, position) ON DELETE CASCADE,
-  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
-    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name) ON DELETE CASCADE,
-  CHECK (direction IN ('FORWARD', 'BACKWARD')),
-  CHECK (hop >= 0)
-);
-COMMENT ON TABLE graphitron_occurrence_sort_key_hop IS 'One hop of a sort key''s path: one row per sort key and hop, the foreign key its element names, the way it runs, the tables it joins and whether it reaches one row. For example Store.films ordered by the name of each film''s original language hops once, forward along film_original_language_id_fkey from film to language, to-one.';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.coordinate IS 'the list or connection field occurrence';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.bound IS 'the table the field reads';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.choice IS 'the order, as graphitron_occurrence_order keys it';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.position IS 'the sort key''s place in the order';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.hop IS 'the hop''s place in the path, its element''s index, completing the key';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_source_name IS 'the catalog source of the table holding the key';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_schema IS 'that table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_table IS 'the table holding the key';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.constraint_name IS 'the key''s SQL name';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.direction IS 'FORWARD from the table holding the key to the table it references, BACKWARD the other way';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.from_source_name IS 'the catalog source of the table the hop leaves';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.from_schema IS 'that table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.from_table IS 'the table the hop leaves: the list''s own at the first hop, the one the hop before landed on after it';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_source_name IS 'the catalog source of the table the hop lands on';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_schema IS 'that table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_table IS 'the table the hop lands on';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.to_one IS 'whether one row the hop leaves reaches at most one row, as sql_referential_constraint_reach states the key does ridden the hop''s direction';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_hop.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
--- One hop of a sort key's path: the key its element names, joined from the table the hop before it
--- landed on, or at the first from the table the order reads. The hop runs the way the key points where
--- it leaves the table holding the key, against it where it leaves the table the key references, and
--- reaches one row as sql_referential_constraint_reach states the key does ridden that way. Its rows are
--- written a hop at a time, the rule reading the hop before from the table it feeds. An element naming a
--- table and no key is no hop here, until its key is inferred at the element. An order reading a
--- function's result, a plural routine write's, has no path to leave: that refusal is
--- ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN's, at the field.
-CREATE VIEW graphitron_occurrence_sort_key_hop_rule
-  (graph_name, coordinate, bound, choice, position, hop, constraint_source_name, constraint_schema, constraint_table, constraint_name, direction, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, to_one) AS
-SELECT x.graph_name, x.coordinate, x.bound, x.choice, x.position, x.hop, rc.source_name, rc.table_schema,
-       rc.table_name, rc.constraint_name,
-       CASE WHEN x.forward THEN 'FORWARD' ELSE 'BACKWARD' END,
-       x.from_source_name, x.from_schema, x.from_table,
-       CASE WHEN x.forward THEN rc.referenced_source_name ELSE rc.source_name END,
-       CASE WHEN x.forward THEN rc.referenced_schema ELSE rc.table_schema END,
-       CASE WHEN x.forward THEN rc.referenced_table ELSE rc.table_name END,
-       rr.to_one
-  FROM (
-    SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, e.position AS hop,
-           pek.constraint_source_name, pek.constraint_schema, pek.constraint_table, pek.constraint_name,
-           CASE WHEN e.position = 0 THEN r.read_source_name ELSE p.to_source_name END AS from_source_name,
-           CASE WHEN e.position = 0 THEN r.read_schema ELSE p.to_schema END AS from_schema,
-           CASE WHEN e.position = 0 THEN r.read_table ELSE p.to_table END AS from_table,
-           CASE WHEN e.position = 0 THEN r.read_source_name = pek.constraint_source_name
-                 AND r.read_schema = pek.constraint_schema AND r.read_table = pek.constraint_table
-                ELSE p.to_source_name = pek.constraint_source_name AND p.to_schema = pek.constraint_schema
-                 AND p.to_table = pek.constraint_table END AS forward
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
-  JOIN graphitron_directive_application ra
-    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
-   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_ast_order_field_entry fe
-    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
-   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
-   AND fe.position = k.position
-      JOIN graphitron_ast_reference_element_entry e
-        ON e.graph_name = fe.graph_name AND e.source_name = fe.source_name
-       AND e.application_line = fe.source_line AND e.application_column = fe.source_column
-      JOIN graphitron_path_element_key pek
-        ON pek.graph_name = e.graph_name AND pek.source_name = e.source_name
-       AND pek.source_line = e.source_line AND pek.source_column = e.source_column
-      LEFT JOIN graphitron_occurrence_sort_key_hop p
-        ON p.graph_name = k.graph_name AND p.coordinate = k.coordinate AND p.bound = k.bound
-       AND p.choice = k.choice AND p.position = k.position AND p.hop = e.position - 1
-     WHERE k.kind = 'PATH' AND (e.position = 0 OR p.hop IS NOT NULL)
-       AND NOT EXISTS (SELECT 1 FROM sql_table ft
-                        WHERE ft.source_name = r.read_source_name AND ft.table_schema = r.read_schema
-                          AND ft.table_name = r.read_table AND ft.table_type = 'FUNCTION')
-       -- An element whose name meets one key, an ambiguous one being the element's own defect.
-       AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_key o
-                        WHERE o.graph_name = pek.graph_name AND o.source_name = pek.source_name
-                          AND o.source_line = pek.source_line AND o.source_column = pek.source_column
-                          AND (o.constraint_source_name, o.constraint_schema, o.constraint_table,
-                               o.constraint_name)
-                              <> (pek.constraint_source_name, pek.constraint_schema, pek.constraint_table,
-                                  pek.constraint_name))
-  ) x
-  JOIN sql_referential_constraint rc
-    ON rc.source_name = x.constraint_source_name AND rc.table_schema = x.constraint_schema
-   AND rc.table_name = x.constraint_table AND rc.constraint_name = x.constraint_name
-  JOIN sql_referential_constraint_reach rr
-    ON rr.source_name = rc.source_name AND rr.table_schema = rc.table_schema
-   AND rr.table_name = rc.table_name AND rr.constraint_name = rc.constraint_name
-   AND rr.direction = CASE WHEN x.forward THEN 'FORWARD' ELSE 'BACKWARD' END
- -- The key touches the table the hop stands on.
- WHERE x.forward
-    OR (rc.referenced_source_name = x.from_source_name AND rc.referenced_schema = x.from_schema
-        AND rc.referenced_table = x.from_table);
-COMMENT ON VIEW graphitron_occurrence_sort_key_hop_rule IS 'One row the sort key hop rule computes, in the shape graphitron_occurrence_sort_key_hop stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph and one hop into graphitron_occurrence_sort_key_hop, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.bound';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.choice IS 'the choice of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.choice';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.position';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.hop IS 'the hop of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.hop';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_source_name IS 'the constraint_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_schema IS 'the constraint_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_schema';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_table IS 'the constraint_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_table';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.constraint_name IS 'the constraint_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.constraint_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.direction IS 'the direction of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.direction';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.from_source_name IS 'the from_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.from_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.from_schema IS 'the from_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.from_schema';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.from_table IS 'the from_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.from_table';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_source_name IS 'the to_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_schema IS 'the to_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_schema';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_table IS 'the to_table of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_table';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_hop_rule.to_one IS 'the to_one of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_hop.to_one';
-
--- The column a sort key's path lands on: its element's name, spelled as a column of the table the last
--- hop reaches, where every element is a hop, every hop is to-one and no element carries a condition.
-CREATE VIEW graphitron_occurrence_sort_key_path_rule
-  (graph_name, coordinate, bound, choice, position, kind, table_source_name, table_schema, table_name, column_name) AS
-SELECT k.graph_name, k.coordinate, k.bound, k.choice, k.position, k.kind, sp.source_name, sp.table_schema,
-       sp.table_name, sp.column_name
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
-  JOIN graphitron_directive_application ra
-    ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
-   AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
-  JOIN graphitron_ast_order_field_entry fe
-    ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
-   AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
-   AND fe.position = k.position
-  JOIN graphitron_occurrence_sort_key_hop h
-    ON h.graph_name = k.graph_name AND h.coordinate = k.coordinate AND h.bound = k.bound
-   AND h.choice = k.choice AND h.position = k.position
-  JOIN sql_column_spelling sp
-    ON sp.source_name = h.to_source_name AND sp.table_schema = h.to_schema AND sp.table_name = h.to_table
-   AND sp.spelling_upper = UPPER(fe.name_ref) AND sp.reach = 1
- WHERE k.kind = 'PATH'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop l
-                    WHERE l.graph_name = h.graph_name AND l.coordinate = h.coordinate AND l.bound = h.bound
-                      AND l.choice = h.choice AND l.position = h.position AND l.hop > h.hop)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
-                    WHERE e.graph_name = fe.graph_name AND e.source_name = fe.source_name
-                      AND e.application_line = fe.source_line AND e.application_column = fe.source_column
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop eh
-                                       WHERE eh.graph_name = k.graph_name AND eh.coordinate = k.coordinate
-                                         AND eh.bound = k.bound AND eh.choice = k.choice
-                                         AND eh.position = k.position AND eh.hop = e.position))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop m
-                    WHERE m.graph_name = k.graph_name AND m.coordinate = k.coordinate AND m.bound = k.bound
-                      AND m.choice = k.choice AND m.position = k.position AND NOT m.to_one)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry ce
-                     JOIN graphitron_ast_reference_condition_step_entry c
-                       ON c.graph_name = ce.graph_name AND c.source_name = ce.source_name
-                      AND c.source_line = ce.source_line AND c.source_column = ce.source_column
-                    WHERE ce.graph_name = fe.graph_name AND ce.source_name = fe.source_name
-                      AND ce.application_line = fe.source_line AND ce.application_column = fe.source_column);
-COMMENT ON VIEW graphitron_occurrence_sort_key_path_rule IS 'One row the sort key path rule computes, in the shape graphitron_occurrence_sort_key_path stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_path, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.graph_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.coordinate';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.bound';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.choice IS 'the choice of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.choice';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.position';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.kind';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.table_source_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.table_schema';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.table_name';
--- COMMENT ON COLUMN graphitron_occurrence_sort_key_path_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_path.column_name';
-
-CREATE TABLE graphitron_occurrence_sort_key_path (
-  graph_name        VARCHAR   NOT NULL,
-  coordinate        VARCHAR   NOT NULL,
-  bound             VARCHAR   NOT NULL,
-  choice            VARCHAR   NOT NULL,
-  position          INT       NOT NULL,
-  kind              VARCHAR   NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  column_name       VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, coordinate, bound, choice, position),
-  FOREIGN KEY (graph_name, coordinate, bound, choice, position, kind)
-    REFERENCES graphitron_occurrence_sort_key (graph_name, coordinate, bound, choice, position, kind)
-    ON DELETE CASCADE,
-  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
-    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
-  CHECK (kind = 'PATH')
-);
-COMMENT ON TABLE graphitron_occurrence_sort_key_path IS 'The column a PATH sort key reads where its path lands: one row per such key whose every element is a to-one hop. For example Store.films ordered by the name of each film''s original language reads name of public.language.';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.coordinate IS 'the list or connection field occurrence';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.bound IS 'the table the field reads';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.choice IS 'the order, as graphitron_occurrence_order keys it';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.position IS 'the key''s place in the order, completing the key';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.kind IS 'always PATH, pinned so the foreign key holds the row to a key of that kind';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.table_source_name IS 'the catalog source of the table the last hop lands on';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.table_schema IS 'that table''s schema';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.table_name IS 'the table the last hop lands on';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.column_name IS 'the column the element names, as the catalog spells it';
-COMMENT ON COLUMN graphitron_occurrence_sort_key_path.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_occurrence_sort_key_method_rule
   (graph_name, coordinate, bound, choice, position, kind, application_coordinate, directive_name, ordinal,
@@ -28282,10 +28302,10 @@ CREATE VIEW graphitron_occurrence_sort_key_path_entry_defect_rule
 -- A sort key's path element writing a condition: an ordering path follows key joins only.
 SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'SORT_KEY_PATH_CONDITION',
        CAST(NULL AS VARCHAR), 'occurrence-orderings'
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_occurrence_sort_key k
+    ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
+   AND k.choice = r.choice
   JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28300,14 +28320,19 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
     ON c.graph_name = e.graph_name AND c.source_name = e.source_name
    AND c.source_line = e.source_line AND c.source_column = e.source_column
  WHERE k.kind = 'PATH'
+   -- An order reading a function's result, a plural routine write's, which a path leaves; that
+   -- refusal is ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN's, at the field.
+   AND NOT EXISTS (SELECT 1 FROM sql_table ft
+                   WHERE ft.source_name = r.read_source_name AND ft.table_schema = r.read_schema
+                     AND ft.table_name = r.read_table AND ft.table_type = 'FUNCTION')
 UNION ALL
 -- A hop of a sort key's path reaching many rows of the table it lands on.
 SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'SORT_KEY_PATH_TO_MANY',
        h.constraint_name, 'occurrence-orderings'
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_occurrence_sort_key k
+    ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
+   AND k.choice = r.choice
   JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28324,10 +28349,10 @@ UNION ALL
 -- table it stands on.
 SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'SORT_KEY_PATH_UNRESOLVED',
        pek.constraint_name, 'occurrence-orderings'
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_occurrence_sort_key k
+    ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
+   AND k.choice = r.choice
   JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28349,15 +28374,22 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop h
                     WHERE h.graph_name = k.graph_name AND h.coordinate = k.coordinate AND h.bound = k.bound
                       AND h.choice = k.choice AND h.position = k.position AND h.hop = e.position)
+   -- An order reading a function's result, a plural routine write's, which a path leaves; that
+   -- refusal is ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN's, at the field.
+   AND NOT EXISTS (SELECT 1 FROM sql_table ft
+                   WHERE ft.source_name = r.read_source_name AND ft.table_schema = r.read_schema
+                     AND ft.table_name = r.read_table AND ft.table_type = 'FUNCTION')
 UNION ALL
--- A sort key's path whose every element is a to-one hop, landing on a table with no column its name
--- spells.
+-- A sort key's whole path landing on a table with no column its name spells.
 SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column, 'SORT_KEY_COLUMN_OFF_PATH',
-       h.to_schema || '.' || h.to_table, 'occurrence-orderings'
-  FROM graphitron_occurrence_sort_key k
-  JOIN graphitron_occurrence_order r
-    ON r.graph_name = k.graph_name AND r.coordinate = k.coordinate AND r.bound = k.bound
-   AND r.choice = k.choice
+       l.to_schema || '.' || l.to_table, 'occurrence-orderings'
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_occurrence_sort_key k
+    ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
+   AND k.choice = r.choice
+  JOIN graphitron_occurrence_sort_key_landing l
+    ON l.graph_name = k.graph_name AND l.coordinate = k.coordinate AND l.bound = k.bound
+   AND l.choice = k.choice AND l.position = k.position AND l.kind = k.kind
   JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28365,26 +28397,9 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
     ON fe.graph_name = r.graph_name AND fe.source_name = ra.source_name
    AND fe.application_line = ra.source_line AND fe.application_column = ra.source_column
    AND fe.position = k.position
-  JOIN graphitron_occurrence_sort_key_hop h
-    ON h.graph_name = k.graph_name AND h.coordinate = k.coordinate AND h.bound = k.bound
-   AND h.choice = k.choice AND h.position = k.position
- WHERE k.kind = 'PATH'
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop l
-                    WHERE l.graph_name = h.graph_name AND l.coordinate = h.coordinate AND l.bound = h.bound
-                      AND l.choice = h.choice AND l.position = h.position AND l.hop > h.hop)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
-                    WHERE e.graph_name = fe.graph_name AND e.source_name = fe.source_name
-                      AND e.application_line = fe.source_line AND e.application_column = fe.source_column
-                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop eh
-                                       WHERE eh.graph_name = k.graph_name AND eh.coordinate = k.coordinate
-                                         AND eh.bound = k.bound AND eh.choice = k.choice
-                                         AND eh.position = k.position AND eh.hop = e.position))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_hop m
-                    WHERE m.graph_name = k.graph_name AND m.coordinate = k.coordinate AND m.bound = k.bound
-                      AND m.choice = k.choice AND m.position = k.position AND NOT m.to_one)
-   AND NOT EXISTS (SELECT 1 FROM sql_column_spelling sp
-                    WHERE sp.source_name = h.to_source_name AND sp.table_schema = h.to_schema
-                      AND sp.table_name = h.to_table AND sp.spelling_upper = UPPER(fe.name_ref)
+ WHERE NOT EXISTS (SELECT 1 FROM sql_column_spelling sp
+                    WHERE sp.source_name = l.to_source_name AND sp.table_schema = l.to_schema
+                      AND sp.table_name = l.to_table AND sp.spelling_upper = UPPER(fe.name_ref)
                       AND sp.reach = 1);
 COMMENT ON VIEW graphitron_occurrence_sort_key_path_entry_defect_rule IS 'One row the sort key path defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-orderings inserts this view''s rows for one graph into graphitron_entry_defect, a fields element whose path: rides a to-many hop giving one SORT_KEY_PATH_TO_MANY row at the element.';
 
@@ -33177,7 +33192,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_column'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_method'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_hop'),
-  ('occurrence-orderings', 'graphitron_occurrence_sort_key_path'),
+  ('occurrence-orderings', 'graphitron_occurrence_sort_key_landing'),
   ('occurrence-orderings', 'graphitron_occurrence_identifying_key_column'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_completion'),
   ('occurrence-bindings', 'graphitron_entry_defect'),
@@ -33524,7 +33539,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_column', 'graphitron_occurrence_sort_key_column_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_method', 'graphitron_occurrence_sort_key_method_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_hop', 'graphitron_occurrence_sort_key_hop_rule'),
-  ('occurrence-orderings', 'graphitron_occurrence_sort_key_path', 'graphitron_occurrence_sort_key_path_rule'),
+  ('occurrence-orderings', 'graphitron_occurrence_sort_key_landing', 'graphitron_occurrence_sort_key_landing_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_identifying_key_column', 'graphitron_occurrence_identifying_key_column_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_completion', 'graphitron_occurrence_sort_key_completion_rule'),
   ('occurrence-orderings', 'graphitron_order_input', 'graphitron_order_input_rule'),
@@ -36647,18 +36662,18 @@ INSERT INTO meta_relation VALUES
    'One row the sort key hop rule computes, in the shape graphitron_occurrence_sort_key_hop stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph and one hop into graphitron_occurrence_sort_key_hop, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
-  ('graphitron_occurrence_sort_key_path', 'occurrence-sort-key', 'graphitron',
-   'The column a PATH sort key reads where its path lands: one row per such key whose every element is a to-one hop.',
-   'For example Store.films ordered by the name of each film''s original language reads name of public.language.',
-   'The PATH subtype of a sort key, stated only where its path resolves to-one, so a reader of it reads a key the emitter can render; the rest are the order''s defects.'),
-  ('graphitron_occurrence_sort_key_path_rule', 'occurrence-sort-key', 'graphitron',
-   'One row the sort key path rule computes, in the shape graphitron_occurrence_sort_key_path stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_path, which is the name every reader spells.',
+  ('graphitron_occurrence_sort_key_landing', 'occurrence-sort-key', 'graphitron',
+   'The table a PATH sort key''s whole path lands on: one row per such key whose every element is a to-one hop and none carries a condition.',
+   'For example Store.films ordered by the name of each film''s original language lands on public.language.',
+   'The PATH subtype of a sort key, as the method is the METHOD one''s: whether a path is whole is decided once, here, where the column the name spells and the refusal of a name the landing table lacks both read it. Written by the occurrence-orderings stage after the hops and before the columns.'),
+  ('graphitron_occurrence_sort_key_landing_rule', 'occurrence-sort-key', 'graphitron',
+   'One row the sort key landing rule computes, in the shape graphitron_occurrence_sort_key_landing stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_landing, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_sort_key_column', 'occurrence-sort-key', 'graphitron',
-   'The column a COLUMN sort key reads: one row per such key.',
+   'The column a sort key reads: one row per COLUMN key, a column of the list''s own table, and per PATH key whose path resolves, the column where it lands.',
    'For example Query.films ordered by its default reads film_id of public.film at position 0.',
-   'The COLUMN subtype of a sort key: a primary key''s or an index''s own column, or the one a written name reaches through sql_column_spelling, so a name is resolved by an equijoin on the spelling rather than matched inline. Written by the occurrence-orderings stage after the keys.'),
+   'The column a sort key reads, the one relation for it whatever reaches it: a primary key''s or an index''s own column, the one a written name reaches through sql_column_spelling, or the one a path lands on, so a name is resolved by an equijoin on the spelling rather than matched inline. Written by the occurrence-orderings stage after the keys and their hops.'),
   ('graphitron_occurrence_sort_key_column_rule', 'occurrence-sort-key', 'graphitron',
    'One row the sort key column rule computes, in the shape graphitron_occurrence_sort_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_column, which is the name every reader spells.',

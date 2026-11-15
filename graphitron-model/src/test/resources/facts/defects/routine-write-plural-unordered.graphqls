@@ -5,8 +5,8 @@
 # list argument; ordered by input_index, a column of the routine's result, it draws nothing; ordered by
 # rental_date, a column of rental and not of the routine's result, the name resolves to no column
 # there, so the field has no sort key row; its COLUMN_UNRESOLVED is the code ordering-refusals pins.
-# An element with a path: names no column of the routine's result either, and is refused at the
-# field. customerId beside the list is no list, so each field keeps the plural shape.
+# A path: names no column of the routine's result either, and is refused at the field alone, a key
+# path writing no hop and no path refusal. customerId beside the list keeps each field plural.
 
 type Rental @table(name: "rental") { rentalId: Int! @field(name: "rental_id") }
 
@@ -30,10 +30,15 @@ type Mutation {
     @routine(name: "rent_films_in_order", argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId")
     @reference(path: [{table: "rental"}])
     @defaultOrder(fields: [{name: "last_name", path: [{table: "customer"}]}])
+  rentFilmsByCustomerKey(inventoryIds: [Int!]!, customerId: Int!): [Rental!]!
+    @routine(name: "rent_films_in_order", argMapping: "pInventoryIds: inventoryIds, pCustomerId: customerId")
+    @reference(path: [{table: "rental"}])
+    @defaultOrder(fields: [{name: "last_name", path: [{key: "rental_customer_id_fkey"}]}])
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_input_order", rows: """
   coordinate,                     argument_coordinate,                          declared_by
+  Mutation.rentFilmsByCustomerKey, Mutation.rentFilmsByCustomerKey(inventoryIds:), WRITE_SHAPE
   Mutation.rentFilmsByCustomerName, Mutation.rentFilmsByCustomerName(inventoryIds:), WRITE_SHAPE
   Mutation.rentFilmsByRentalDate, Mutation.rentFilmsByRentalDate(inventoryIds:), WRITE_SHAPE
   Mutation.rentFilmsInOrder,      Mutation.rentFilmsInOrder(inventoryIds:),      WRITE_SHAPE
@@ -51,6 +56,20 @@ extend schema @expectEquals(relation: "graphitron_entry_defect",
   source_line, code,                                    detail
   18,          ROUTINE_WRITE_PLURAL_UNORDERED,          inventoryIds
   29,          ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN, last_name
+  33,          ROUTINE_WRITE_PLURAL_ORDER_NOT_A_COLUMN, last_name
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_occurrence_sort_key_hop", rows: """
+  coordinate
+  Mutation.rentFilmsByCustomerKey
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect", rows: """
+  source_line, code
+  33,          SORT_KEY_PATH_UNRESOLVED
+  33,          SORT_KEY_PATH_TO_MANY
+  33,          SORT_KEY_PATH_CONDITION
+  33,          SORT_KEY_COLUMN_OFF_PATH
   """)
 
 # The table each order reads, stated on the order: the routine's function result for every plural

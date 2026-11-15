@@ -135,6 +135,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", r
   Query.stints, Query.stints, 0, valid_from
   Query.stores, Query.stores, 0, store_id
   RoleHolder.roles, RoleHolder.roles, 0, role_code
+  Store.films, Store.films, 0, name
   """)
 
 # What identifies each list's rows, ranked: the primary key, else the node key standing in over a

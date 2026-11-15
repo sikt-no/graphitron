@@ -20,9 +20,9 @@ type Query {
     filmsByNoColumn: [Film!]! @defaultOrder(fields: [{name: "no_such_column", path: [{key: "film_language_id_fkey"}]}])
 }
 
-extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code LIKE 'SORT_KEY_%'", rows: """
+# The condition is refused too, pinned where undecided/code-reference-resolution writes one.
+extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code IN ('SORT_KEY_PATH_TO_MANY', 'SORT_KEY_PATH_UNRESOLVED', 'SORT_KEY_COLUMN_OFF_PATH')", rows: """
   source_line, code,                       detail
-  17,          SORT_KEY_PATH_CONDITION,
   18,          SORT_KEY_PATH_TO_MANY,       film_language_id_fkey
   19,          SORT_KEY_PATH_UNRESOLVED,    inventory_store_id_fkey
   20,          SORT_KEY_COLUMN_OFF_PATH,    public.language
@@ -30,13 +30,21 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", where: "code LI
 
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_hop", rows: """
   coordinate,                    hop, constraint_name,                direction, from_table, to_table, to_one
-  Query.filmsByOriginalLanguage, 0,   film_original_language_id_fkey, FORWARD,   film,       language, true
-  Query.filmsByCondition,        0,   film_language_id_fkey,          FORWARD,   film,       language, true
-  Query.languagesByFilm,         0,   film_language_id_fkey,          BACKWARD,  language,   film,     false
-  Query.filmsByNoColumn,         0,   film_language_id_fkey,          FORWARD,   film,       language, true
+  Query.filmsByOriginalLanguage, 0,   film_original_language_id_fkey, FORWARD,   film,       language, TRUE
+  Query.filmsByCondition,        0,   film_language_id_fkey,          FORWARD,   film,       language, TRUE
+  Query.languagesByFilm,         0,   film_language_id_fkey,          BACKWARD,  language,   film,     FALSE
+  Query.filmsByNoColumn,         0,   film_language_id_fkey,          FORWARD,   film,       language, TRUE
   """)
 
-extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_path", rows: """
-  coordinate,                    table_name, column_name
-  Query.filmsByOriginalLanguage, language,   name
+# A whole path lands where its last hop does, whether or not its name is a column there; a path a
+# hop refuses, or a condition, lands nowhere.
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_landing", rows: """
+  coordinate,                    kind, to_table
+  Query.filmsByOriginalLanguage, PATH, language
+  Query.filmsByNoColumn,         PATH, language
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", rows: """
+  coordinate,                    kind, table_name, column_name
+  Query.filmsByOriginalLanguage, PATH, language,   name
   """)

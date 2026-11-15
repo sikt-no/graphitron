@@ -20,8 +20,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_MET
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_HOP_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_PATH_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
@@ -47,7 +47,8 @@ import static org.jooq.impl.DSL.val;
  * catalog. Each relation is written after the one its rule reads, the argument shapes before the
  * orders their choices are, the orders before their keys, a key before its column or method, and the
  * keys identifying a list's rows before the completion that reads them and the written columns. A
- * sort key's path is written a hop at a time after the keys, and its landing column after its hops.
+ * sort key's path is written a hop at a time after the keys, the table a whole path lands on after
+ * its hops, and the column it lands on with the columns the other keys read, after that.
  */
 public final class OccurrenceOrderings {
 
@@ -60,12 +61,12 @@ public final class OccurrenceOrderings {
         replace(dsl, GRAPHITRON_OCCURRENCE_ORDER, GRAPHITRON_OCCURRENCE_ORDER_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_ORDER_INDEX, GRAPHITRON_OCCURRENCE_ORDER_INDEX_RULE, graph, touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY, GRAPHITRON_OCCURRENCE_SORT_KEY_RULE, graph, touchedAt);
+        hops(dsl, graph, touchedAt);
+        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING, GRAPHITRON_OCCURRENCE_SORT_KEY_LANDING_RULE, graph,
+            touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE, graph,
             touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD, GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD_RULE, graph,
-            touchedAt);
-        hops(dsl, graph, touchedAt);
-        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_PATH, GRAPHITRON_OCCURRENCE_SORT_KEY_PATH_RULE, graph,
             touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE,
             graph, touchedAt);
