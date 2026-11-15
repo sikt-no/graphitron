@@ -22149,7 +22149,8 @@ SELECT DISTINCT da.graph_name, da.source_name, da.source_line, da.source_column,
     ON ao.graph_name = lk.graph_name AND ao.parent_coordinate = lk.coordinate AND ao.kind = 'FIELD_ARGUMENT'
   JOIN graphql_directive_application da
     ON da.graph_name = ao.graph_name AND da.coordinate = ao.element_coordinate AND da.directive_name = 'lookupKey'
- WHERE o.parent_coordinate IS NOT NULL
+ WHERE NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                    WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_many m
                     WHERE m.graph_name = f.graph_name AND m.type_name = f.type_name AND m.field_name = f.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column ik

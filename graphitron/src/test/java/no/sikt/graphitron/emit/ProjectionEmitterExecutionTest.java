@@ -74,7 +74,7 @@ class ProjectionEmitterExecutionTest {
         projectChoosingCategory = choosingHarness.load(CHOOSING + ".Category").getMethod("$project", Map.class,
             Tables.CATEGORY.getClass(), DataFetchingEnvironment.class);
         lookingHarness = compile(LOOKING, ProjectionEmitter.emitAll(
-            FACTS.read("defects/single-child-lookup", graph -> ProjectionQuery.read(graph.handle())), LOOKING),
+            FACTS.read("defects/lookup-key-refusals", graph -> ProjectionQuery.read(graph.handle())), LOOKING),
             "City", "AddressRow");
         projectLookingAddress = lookingHarness.load(LOOKING + ".AddressRow").getMethod("$project", Map.class,
             Tables.ADDRESS.getClass(), DataFetchingEnvironment.class);
@@ -228,11 +228,14 @@ class ProjectionEmitterExecutionTest {
     }
 
     @Test
-    @DisplayName("a node's nullable nesting field named like a daterange column is rendered")
+    @DisplayName("a node's nullable nesting field named like a daterange column waits only on its bounds' expressions")
     void aNodesNestingFieldNamedLikeARange() {
         var region = FACTS.read("scenarios/node-nesting-field-named-like-a-range",
             graph -> ProjectionQuery.read(graph.handle()).get("Region"));
-        assertThat(ProjectionEmitter.emit(region, PACKAGE)).isInstanceOf(ProjectionEmitter.Result.Emitted.class);
+        assertThat(ProjectionEmitter.emit(region, PACKAGE))
+            .isEqualTo(new ProjectionEmitter.Result.NotYet(List.of(
+                new ProjectionEmitter.Refusal("Region.validPeriod.validFrom", ProjectionEmitter.Reason.EXPRESSION),
+                new ProjectionEmitter.Refusal("Region.validPeriod.validTo", ProjectionEmitter.Reason.EXPRESSION))));
     }
 
     @Test

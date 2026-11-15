@@ -83,8 +83,11 @@ public final class ProjectionQuery {
         }
     }
 
-    /** A column pair a step joins on, each by the generated field it is read through. */
-    public record Pair(String fromJavaName, String toJavaName) {}
+    /**
+     * A column pair a step joins on, each by the generated field it is read through and the Java type
+     * jOOQ binds it to, which a converter on one side can make differ.
+     */
+    public record Pair(String fromJavaName, String toJavaName, String fromType, String toType) {}
 
     /**
      * One step of a join path, in path order: the table it steps from, the table it reaches with
@@ -532,7 +535,7 @@ public final class ProjectionQuery {
         return multiset(
             select(js.POSITION, js.FROM_SOURCE_NAME, js.FROM_SCHEMA, js.FROM_TABLE, js.TO_SOURCE_NAME, js.TO_SCHEMA,
                     js.TO_TABLE, ss.TABLES_CLASS_FQN, st.JOOQ_NAME,
-                    multiset(select(fc.JOOQ_NAME, tc.JOOQ_NAME)
+                    multiset(select(fc.JOOQ_NAME, tc.JOOQ_NAME, fc.BINDING_TYPE, tc.BINDING_TYPE)
                         .from(sc)
                         .join(fc).on(fc.SOURCE_NAME.eq(sc.FROM_SOURCE_NAME), fc.TABLE_SCHEMA.eq(sc.FROM_SCHEMA),
                             fc.TABLE_NAME.eq(sc.FROM_TABLE), fc.COLUMN_NAME.eq(sc.FROM_COLUMN))

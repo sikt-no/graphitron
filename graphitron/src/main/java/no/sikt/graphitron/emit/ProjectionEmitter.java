@@ -7,6 +7,8 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
+import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.ColumnComparison;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -556,12 +558,18 @@ public final class ProjectionEmitter {
         return terms.build();
     }
 
-    /** A step's column pairs as one condition, each pair's from column on {@code from} equal to its to column on {@code to}. */
+    /**
+     * A step's column pairs as one condition, each pair's from column on {@code from} equal to its to
+     * column on {@code to}, the two reconciled where a converter has made their Java types differ.
+     */
     private static CodeBlock pairs(List<ProjectionQuery.Pair> pairs, String from, String to) {
         var condition = CodeBlock.builder();
         for (int i = 0; i < pairs.size(); i++) {
             if (i > 0) condition.add(".and(");
-            condition.add("$L.$L.eq($L.$L)", to, pairs.get(i).toJavaName(), from, pairs.get(i).fromJavaName());
+            var pair = pairs.get(i);
+            condition.add("$L", ColumnComparison.equality(CodeBlock.of("$L.$L", to, pair.toJavaName()),
+                CatalogRefs.decodeBindingType(pair.toType()), CodeBlock.of("$L.$L", from, pair.fromJavaName()),
+                CatalogRefs.decodeBindingType(pair.fromType())));
             if (i > 0) condition.add(")");
         }
         return condition.build();

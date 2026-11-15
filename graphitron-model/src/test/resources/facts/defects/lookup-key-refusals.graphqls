@@ -41,6 +41,18 @@ interface Node {
     id: ID!
 }
 
+# A single child looked up by its table's primary key, the emitter's execution test reading it: among
+# the cities of the address's country, the one the caller names.
+type City @table(name: "city") {
+    name: String @field(name: "city")
+}
+
+type AddressRow @table(name: "address") {
+    address: String
+    neighbour(city_id: Int! @lookupKey @field(name: "city_id")): City!
+        @reference(path: [{key: "address_city_id_fkey"}, {key: "city_country_id_fkey"}, {key: "city_country_id_fkey"}])
+}
+
 extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
   source_line, code,                       detail
   26,          LOOKUP_KEY_NOT_IDENTIFYING, public.film
@@ -50,6 +62,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect", rows: """
 
 extend schema @expectEquals(relation: "graphitron_occurrence_lookup_key", rows: """
   coordinate,       bound,       key_coordinate,             key_bound,   key_kind, argument_ordinal, field_ordinal
+  AddressRow.neighbour, public.city, AddressRow.neighbour(city_id:), public.city, COLUMN, 0,       -1
   Film.sequel,      public.film, Film.sequel(film_id:),      public.film, COLUMN,   0,                -1
   Film.sequelByTitle, public.film, Film.sequelByTitle(title:), public.film, COLUMN, 0,              -1
   Query.filmsPaged, public.film, Query.filmsPaged(film_id:), public.film, COLUMN,   0,                -1
