@@ -35,6 +35,11 @@ Execution beats compilation only when SQL behaviour or row content is the contra
 A test that reaches generated code through a graphql-java operation is an integration test.
 The tier annotations below say what a test needs to run, `@ExecutionTier` that it needs PostgreSQL, not which of the two it is, and they stay that way (Alf, 2026-11-13): a unit test of generated code that uses the database carries `@ExecutionTier`.
 
+*What each module tests (Alf, 2026-11-15).* The model carries the heaviest testing, since most of the business logic is there.
+The generator tests the code it generates, not the model; its tests are generator tests running queries against a store spun up from fact documents.
+The LSP tests its queries and its editor logic, and the MCP its queries and its MCP logic.
+`graphitron-sakila-example` is a limited example, not a place to test everything, but it carries end-to-end execution tests covering most of what Graphitron supports.
+
 _Tier is determined by what's asserted, not by what module the file lives in._
 `graphitron-sakila-example` hosts tests at every tier; its module dependency on post-generator artifacts is the reason those tests live there, not a tier signal.
 
