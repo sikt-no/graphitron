@@ -5,8 +5,9 @@
 # both have a Java type and they disagree, and a call pairing them would not compile.
 # ambiguousFilms offers two lists of Int to that one parameter, so type cannot choose. greetedTwice names userId in argMapping and in contextArguments both, so nothing says which
 # fills it. namelessList calls a class compiled without -parameters, whose parameters carry no name
-# for an argument to match; the one Int argument still fills the one int parameter by type. unlandedFilms
-# names filmIds in a pair whose path lands nowhere: that is the pair's defect, so the parameter has no
+# for an argument to match; the one Int argument still fills the one int parameter by type, while
+# namelessUnfilled, with no argument to fill it by type, is the build's to fix, not an unbound name.
+# unlandedFilms names filmIds in a pair whose path lands nowhere: that is the pair's defect, so the parameter has no
 # fill and is not reported unfilled a second time. contextPair fills userId from a $context pair,
 # which this site refuses while the fill itself is still stated.
 
@@ -23,6 +24,9 @@ type Query {
   namelessList(limit: Int!): [String] @service(service: {
       className: "no.sikt.graphitron.rewrite.test.nameless.NamelessService",
       method: "list"})
+  namelessUnfilled: [String] @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.nameless.NamelessService",
+      method: "list"})
   unlandedFilms(ids: [Int!]): String @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
       method: "filmsByServiceRenamed", argMapping: "filmIds: nowhere"})
@@ -36,6 +40,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_call_parameter_de
   Query.unfilledFilms, 1,        ids,            PARAMETER_UNFILLED
   Query.ambiguousFilms, 1,       filmIds,        PARAMETER_AMBIGUOUS
   Query.greetedTwice,  0,        userId,         PARAMETER_FILLED_TWICE
+  Query.namelessUnfilled, 0,     ,               PARAMETER_NAMES_MISSING
   """)
 
 extend schema @assertAbsent(relation: "graphitron_occurrence_call_parameter_defect", rows: """
@@ -74,6 +79,18 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   PARAMETER_FILLED_TWICE,     Query.greetedTwice
   ARGMAPPING_PATH_UNRESOLVED, Query.unlandedFilms
   CONTEXT_SITE_UNSUPPORTED,   Query.contextPair
+  """)
+
+# A nameless parameter nothing fills is one defect at the reference, naming the class to recompile,
+# and no unbound name beside it.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate,             detail
+  PARAMETER_NAMES_MISSING, Query.namelessUnfilled, no.sikt.graphitron.rewrite.test.nameless.NamelessService
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  PARAMETER_UNFILLED, Query.namelessUnfilled
   """)
 
 # Each defect names the parameters it is about, under it.

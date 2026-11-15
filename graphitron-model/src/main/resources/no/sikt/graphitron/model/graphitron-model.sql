@@ -13878,8 +13878,10 @@ SELECT DISTINCT c.graph_name, c.coordinate, c.call, ps.call_kind, c.position, c.
 UNION ALL
 -- A parameter of a service's call no fill reaches and no argument could fill by type, where no
 -- pair names it: a pair that fills nothing is the pair's defect, already reported where it is
--- written.
-SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
+-- written. One whose class was compiled without -parameters has no name anything could have bound,
+-- so it is the build's to fix, not the binding's.
+SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name,
+       CASE WHEN p.parameter_name IS NULL THEN 'PARAMETER_NAMES_MISSING' ELSE 'PARAMETER_UNFILLED' END
   FROM graphitron_occurrence_call_method s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
    AND s.call_kind = 'SERVICE'
@@ -13917,8 +13919,10 @@ COMMENT ON VIEW graphitron_occurrence_service_parameter_defect_rule IS 'One row 
 CREATE VIEW graphitron_occurrence_condition_parameter_defect_rule
   (graph_name, coordinate, call, call_kind, position, parameter_name, code) AS
 -- A parameter of a @condition's call no fill reaches, where no pair names it, on the same terms:
--- by type pairs only where nothing else could be meant, so a parameter it leaves is unfilled.
-SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name, 'PARAMETER_UNFILLED'
+-- by type pairs only where nothing else could be meant, so a parameter it leaves is unfilled, or,
+-- read without a name, the build's to fix.
+SELECT s.graph_name, s.coordinate, s.call, s.call_kind, p.position, p.parameter_name,
+       CASE WHEN p.parameter_name IS NULL THEN 'PARAMETER_NAMES_MISSING' ELSE 'PARAMETER_UNFILLED' END
   FROM graphitron_occurrence_call_method s
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
    AND s.call_kind = 'CONDITION'
@@ -13955,7 +13959,8 @@ CREATE TABLE graphitron_occurrence_call_parameter_defect (
   FOREIGN KEY (graph_name, coordinate, call, call_kind)
     REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
-  CHECK (code IN ('PARAMETER_UNFILLED', 'PARAMETER_AMBIGUOUS', 'PARAMETER_FILLED_TWICE'))
+  CHECK (code IN ('PARAMETER_UNFILLED', 'PARAMETER_AMBIGUOUS', 'PARAMETER_FILLED_TWICE',
+                  'PARAMETER_NAMES_MISSING'))
 );
 COMMENT ON TABLE graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that nothing binds, or that two fills bind: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
@@ -13964,7 +13969,7 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call IS 'which of 
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call_kind IS 'the call''s kind, the split its writing stages share it by';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position in the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without its names';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or PARAMETER_NAMES_MISSING, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.touched_at IS 'the reading that last wrote this row; the stage writing its kind sweeps the rows an older reading wrote';
 
 -- Where a call's parameter defect is reported, and what it is about: the reference the directive the
@@ -13995,7 +14000,7 @@ COMMENT ON VIEW graphitron_entry_defect_parameter_rule IS 'One call parameter a 
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_name IS 'the defect''s file';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_line IS 'the defect''s line, 1-based';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.source_column IS 'the defect''s column, 1-based';
--- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS or PARAMETER_FILLED_TWICE';
+-- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.code IS 'the defect''s code, PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or PARAMETER_NAMES_MISSING';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.coordinate IS 'the occurrence making the call, at its nested coordinate';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.call IS 'which of its calls, as graphitron_occurrence_call spells it';
 -- COMMENT ON COLUMN graphitron_entry_defect_parameter_rule.position IS 'the parameter''s position in the call''s method';
@@ -15206,10 +15211,15 @@ CREATE VIEW graphitron_occurrence_producer_entry_defect_rule
 -- directive the call came from names its method by, or the directive where it names none: once per
 -- written directive and code, the detail the first such parameter.
 SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-       COALESCE(r.source_column, da.source_column), d.code, MIN(d.parameter_name), 'occurrence-producers'
+       COALESCE(r.source_column, da.source_column), d.code,
+       -- The first such parameter, or where none carries a name, the class compiled without them.
+       CASE WHEN d.code = 'PARAMETER_NAMES_MISSING' THEN MIN(cm.method_class_name) ELSE MIN(d.parameter_name) END,
+       'occurrence-producers'
   FROM graphitron_occurrence_call_parameter_defect d
   JOIN graphitron_occurrence_call oc
     ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
+  LEFT JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = d.graph_name AND cm.coordinate = d.coordinate AND cm.call = d.call
   JOIN graphitron_directive_application da
     ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
    AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
@@ -15244,8 +15254,8 @@ COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading field''s';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or REREAD_OF_DELETED_ROWS';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, null for a re-read';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING or REREAD_OF_DELETED_ROWS';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for a re-read';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 
@@ -20690,10 +20700,15 @@ UNION ALL
 -- A @condition's parameter nothing binds, at the reference the @condition names its method by: once
 -- per written directive, the detail the first such parameter.
 SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-       COALESCE(r.source_column, da.source_column), d.code, MIN(d.parameter_name), 'occurrence-bindings'
+       COALESCE(r.source_column, da.source_column), d.code,
+       -- The first such parameter, or where none carries a name, the class compiled without them.
+       CASE WHEN d.code = 'PARAMETER_NAMES_MISSING' THEN MIN(cm.method_class_name) ELSE MIN(d.parameter_name) END,
+       'occurrence-bindings'
   FROM graphitron_occurrence_call_parameter_defect d
   JOIN graphitron_occurrence_call oc
     ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
+  LEFT JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = d.graph_name AND cm.coordinate = d.coordinate AND cm.call = d.call
   JOIN graphitron_directive_application da
     ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
    AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
@@ -26184,6 +26199,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A member of an interface writing @discriminate has no @table, so it is no row of the shared table nor of one joined to it: give it @table.'),
   ('ARGUMENT_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ARGUMENT_UNBOUND',
    'An argument nothing binds: no call takes it as a parameter, itself or anything inside it, and graphitron reads it for no filter, ordering or page, so the value a client sends goes nowhere. Bind it in the call''s argMapping, or remove it.'),
+  ('PARAMETER_NAMES_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_NAMES_MISSING',
+   'A method a @service or a @condition calls has a parameter nothing fills by its type, and its class was compiled without -parameters, so the parameter has no name an argument, an argMapping entry or a context key could bind: compile the class with -parameters, as <parameters>true</parameters> on maven-compiler-plugin does.'),
   ('PARAMETER_UNFILLED', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_UNFILLED',
    'A parameter of a method a @service or a @condition calls, or of a @routine, binds nothing: no argMapping entry names it, no argument has its name, and neither a context key nor its type gives it a value, so the call has nothing to pass it. Bind it in argMapping, or in contextArguments where the directive has one, or name it after the argument it takes; a @routine''s $source.<column> binds it only where the column is one of the row the routine is applied to.'),
   ('PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_AMBIGUOUS',

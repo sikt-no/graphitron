@@ -206,6 +206,15 @@ The element fields' columns may all sit on the filtered table, or all on one tab
 
 *Next step.* Write what the field runs, or bind at least one implementer of the union or interface to a table. xref:../how-to/polymorphic-types.adoc[How-to: Polymorphic types] covers the layouts graphitron fetches.
 
+[#parameter-names-missing]
+=== A method whose class was compiled without `-parameters` (`PARAMETER_NAMES_MISSING`)
+
+*What it says.* `A method a @service or a @condition calls has a parameter nothing fills by its type, and its class was compiled without -parameters`, at the directive, naming the class in the detail.
+
+*Cause.* An argument, an `argMapping` entry or a context key binds a parameter by its name, which the class file keeps only when the class was compiled with `-parameters`. Without names, a parameter nothing fills by its type has nothing that could bind it. The build reports this once per directive rather than one `PARAMETER_UNFILLED` per parameter, since renaming arguments cannot fix it.
+
+*Next step.* Compile the class's module with `-parameters`, as `<parameters>true</parameters>` on `maven-compiler-plugin` does, and rebuild it before graphitron reads it.
+
 [#lookup-key-refusals]
 === A `@lookupKey` that names no key of the field's rows
 
