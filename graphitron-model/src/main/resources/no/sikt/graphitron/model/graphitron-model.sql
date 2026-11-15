@@ -28303,6 +28303,8 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key k
     ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
    AND k.choice = r.choice
+  -- A LEFT JOIN so the order drives the plan, which an inner join lets H2 reorder into a partition read
+  -- (RulePlanGateTest); inner in effect, the fields entry below matching no missing application.
   LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28330,6 +28332,8 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key k
     ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
    AND k.choice = r.choice
+  -- A LEFT JOIN so the order drives the plan, which an inner join lets H2 reorder into a partition read
+  -- (RulePlanGateTest); inner in effect, the fields entry below matching no missing application.
   LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28350,6 +28354,8 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key k
     ON k.graph_name = r.graph_name AND k.coordinate = r.coordinate AND k.bound = r.bound
    AND k.choice = r.choice
+  -- A LEFT JOIN so the order drives the plan, which an inner join lets H2 reorder into a partition read
+  -- (RulePlanGateTest); inner in effect, the fields entry below matching no missing application.
   LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
@@ -28387,6 +28393,8 @@ SELECT DISTINCT fe.graph_name, fe.source_name, fe.source_line, fe.source_column,
   JOIN graphitron_occurrence_sort_key_landing l
     ON l.graph_name = k.graph_name AND l.coordinate = k.coordinate AND l.bound = k.bound
    AND l.choice = k.choice AND l.position = k.position AND l.kind = k.kind
+  -- A LEFT JOIN so the order drives the plan, which an inner join lets H2 reorder into a partition read
+  -- (RulePlanGateTest); inner in effect, the fields entry below matching no missing application.
   LEFT JOIN graphitron_directive_application ra
     ON ra.graph_name = r.graph_name AND ra.coordinate = r.application_coordinate
    AND ra.directive_name = r.application_directive AND ra.ordinal = r.application_ordinal
