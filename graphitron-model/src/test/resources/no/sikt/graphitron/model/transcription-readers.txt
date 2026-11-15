@@ -18,8 +18,8 @@
 # exclusion. That the union is taken is still pinned where the rows are, in the capture agreement's
 # emitted-element-family arm, rather than in any definition text.
 
-graphitron_facet_binding graphql_field
-graphitron_facet_binding graphql_type
+graphitron_facet_binding_rule graphql_field
+graphitron_facet_binding_rule graphql_type
 
 # Adjudicated and kept: the authored arms of the emitted population.
 #

@@ -195,12 +195,13 @@ class SupertypeSignatureGateTest {
         // emitted population's arguments are the third, on graphitron_element's terms below: the
         // same fact over the generator's coordinates, an authored row carried across beside a
         // minted one, so a supertype would be the two families folded back into one.
-        // The configured tags and the carrier directives joined when they became stored: each is a
-        // rule's answer kept as a table because H2 evaluates a view again for every row joined to
-        // it, so they carry the payload of what they are read from rather than being siblings of
-        // it, and a supertype would fold a cache back into its source.
+        // The configured tags, the carrier directives and the inherited directives joined when they
+        // became stored: each is a rule's answer kept as a table because H2 evaluates a view again
+        // for every row joined to it, so they carry the payload of what they are read from rather
+        // than being siblings of it, and a supertype would fold a cache back into its source.
         Set.of("graphitron_carrier_directive", "graphitron_configured_tag",
-               "graphitron_directive_application_arg", "graphql_directive_application_arg"),
+               "graphitron_directive_application_arg", "graphitron_inherited_directive",
+               "graphql_directive_application_arg"),
         // What a key: spelling names, under the two kinds of key it can name: a foreign key, keyed by
         // the constraint, and a table's own primary key, keyed by the table. The shared payload is
         // only which namespace the spelling matched in. No supertype is owed: each relation's

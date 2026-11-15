@@ -95,7 +95,7 @@ extend schema @expectEquals(relation: "graphitron_directive_application", where:
   """)
 
 extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """
-  coordinate = 'Film' AND directive_name = 'key' AND ordinal = 1 AND directive_argument_name = 'resolvable'
+  coordinate = 'Film' AND directive_name = 'key' AND ordinal = 2 AND directive_argument_name = 'resolvable'
   """, rows: """
   value_sdl
   true
@@ -105,7 +105,7 @@ extend schema @expectEquals(relation: "graphitron_directive_application_arg", wh
 # to its type's one authored resolvable key, the one it names being left out.
 extend schema @expectEquals(relation: "graphitron_key_field_binding", where: "kind = 'VOUCHER'", rows: """
   type_name, ordinal, position, field_name, kind,    bound
-  Film,      1,       0,        voucher,    VOUCHER, public.film
+  Film,      2,       0,        voucher,    VOUCHER, public.film
   Store,     2,       0,        voucher,    VOUCHER, public.store
   """)
 
