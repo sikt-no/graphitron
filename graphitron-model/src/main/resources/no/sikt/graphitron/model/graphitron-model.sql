@@ -21772,6 +21772,208 @@ COMMENT ON COLUMN graphitron_occurrence_sort_key_column.table_name IS 'the table
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.column_name IS 'the column, as the catalog spells it: a primary key''s or an index''s own, or the one a written name reaches through sql_column_spelling';
 COMMENT ON COLUMN graphitron_occurrence_sort_key_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The keys identifying a row of the one table a list reads, ranked: its primary key, the node key of
+-- the type it returns where that type's table is the list's, and each unique key none of whose columns
+-- admits NULL, in the order the generated model enumerates them. The best ranked is the row key an
+-- order is completed with. A list over several tables is completed by none. Stated at the occurrence
+-- rather than the table because the ranking includes the node key of the type the occurrence returns,
+-- a type-grain fact, so the pick is only decided where table and type meet; the table-grain half, a
+-- primary key and the unique keys whose columns refuse NULL, is a join over the captured catalog the
+-- rule states itself rather than a stored catalog fact (Alf, 2026-11-15).
+CREATE VIEW graphitron_occurrence_identifying_key_column_rule
+  (graph_name, coordinate, bound, rank, position, key_kind, key_name, table_source_name, table_schema,
+   table_name, column_name) AS
+SELECT t.graph_name, t.coordinate, t.bound, -2, cc.position, 'PRIMARY_KEY', pk.constraint_name,
+       cc.source_name, cc.table_schema, cc.table_name, cc.column_name
+  FROM graphitron_occurrence_binding_table t
+  JOIN sql_primary_key pk
+    ON pk.source_name = t.table_source_name AND pk.table_schema = t.table_schema
+   AND pk.table_name = t.table_name
+  JOIN sql_constraint_column cc
+    ON cc.source_name = pk.source_name AND cc.table_schema = pk.table_schema
+   AND cc.table_name = pk.table_name AND cc.constraint_name = pk.constraint_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_order r
+                WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table x
+                    WHERE x.graph_name = t.graph_name AND x.coordinate = t.coordinate AND x.bound <> t.bound)
+UNION ALL
+SELECT t.graph_name, t.coordinate, t.bound, -1, nk.position, 'NODE_KEY', nk.type_name,
+       nk.table_source_name, nk.table_schema, nk.table_name, nk.column_name
+  FROM graphitron_occurrence_binding_table t
+  JOIN graphitron_occurrence o ON o.graph_name = t.graph_name AND o.coordinate = t.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_node_keycolumn nk
+    ON nk.graph_name = ft.graph_name AND nk.type_name = ft.target_type_name
+   AND nk.table_source_name = t.table_source_name AND nk.table_schema = t.table_schema
+   AND nk.table_name = t.table_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_occurrence_order r
+                WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table x
+                    WHERE x.graph_name = t.graph_name AND x.coordinate = t.coordinate AND x.bound <> t.bound)
+UNION ALL
+SELECT t.graph_name, t.coordinate, t.bound, c.key_position, cc.position, 'UNIQUE_KEY', c.constraint_name,
+       cc.source_name, cc.table_schema, cc.table_name, cc.column_name
+  FROM graphitron_occurrence_binding_table t
+  JOIN sql_constraint c
+    ON c.source_name = t.table_source_name AND c.table_schema = t.table_schema
+   AND c.table_name = t.table_name AND c.constraint_type = 'UNIQUE'
+  JOIN sql_constraint_column cc
+    ON cc.source_name = c.source_name AND cc.table_schema = c.table_schema
+   AND cc.table_name = c.table_name AND cc.constraint_name = c.constraint_name
+ WHERE c.key_position IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sql_constraint_column nc
+                     JOIN sql_column col
+                       ON col.source_name = nc.source_name AND col.table_schema = nc.table_schema
+                      AND col.table_name = nc.table_name AND col.column_name = nc.column_name
+                    WHERE nc.source_name = c.source_name AND nc.table_schema = c.table_schema
+                      AND nc.table_name = c.table_name AND nc.constraint_name = c.constraint_name
+                      AND col.nullable)
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_order r
+                WHERE r.graph_name = t.graph_name AND r.coordinate = t.coordinate AND r.bound = t.bound)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_table x
+                    WHERE x.graph_name = t.graph_name AND x.coordinate = t.coordinate AND x.bound <> t.bound);
+COMMENT ON VIEW graphitron_occurrence_identifying_key_column_rule IS 'One row the identifying key column rule computes, in the shape graphitron_occurrence_identifying_key_column stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_identifying_key_column, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.rank IS 'the rank of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.rank';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.position';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.key_kind IS 'the key_kind of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.key_kind';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.key_name IS 'the key_name of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.key_name';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_identifying_key_column_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_occurrence_identifying_key_column.column_name';
+
+CREATE TABLE graphitron_occurrence_identifying_key_column (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  rank              INT       NOT NULL,
+  position          INT       NOT NULL,
+  key_kind          VARCHAR   NOT NULL,
+  key_name          VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, rank, position),
+  FOREIGN KEY (graph_name, coordinate, bound)
+    REFERENCES graphitron_occurrence_binding_table (graph_name, coordinate, bound) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (key_kind IN ('PRIMARY_KEY', 'NODE_KEY', 'UNIQUE_KEY')),
+  CHECK ((key_kind = 'PRIMARY_KEY') = (rank = -2) AND (key_kind = 'NODE_KEY') = (rank = -1))
+);
+COMMENT ON TABLE graphitron_occurrence_identifying_key_column IS 'One column of one key identifying a row of the one table a list or connection occurrence reads: one row per occurrence, table, key and position in the key. For example Query.films reads public.film, identified by film_pkey''s film_id.';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.coordinate IS 'the list or connection field occurrence, reading one table only';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.bound IS 'the table it reads, as its TABLE binding spells it';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.rank IS 'the key''s rank, smallest first, completing the key with the position: -2 the primary key, -1 the node key of the type the list returns, else a unique key''s place in the generated model''s enumeration of the table''s keys. The smallest rank is the row key';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.position IS 'the column''s place in its key, from zero, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.key_kind IS 'PRIMARY_KEY, NODE_KEY or UNIQUE_KEY, a unique key only where none of its columns admits NULL';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.key_name IS 'the constraint''s name, or for a node key the node type''s';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.table_source_name IS 'the catalog source of the column''s table';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.table_schema IS 'the table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.table_name IS 'the table';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.column_name IS 'the column, as the catalog spells it';
+COMMENT ON COLUMN graphitron_occurrence_identifying_key_column.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The row key's columns an order does not list, completing it so it identifies a row: the default, and a
+-- choice the client picks one at a time; a sequence the client composes is completed at run time. An
+-- order whose own-table columns list an identifying key in full is complete as written, a key read down
+-- a path or computed by a method counting for nothing. The columns follow the written keys in the row
+-- key's order and the direction of the last written key, so a uniform order stays uniform.
+CREATE VIEW graphitron_occurrence_sort_key_completion_rule
+  (graph_name, coordinate, bound, choice, position, direction, table_source_name, table_schema, table_name,
+   column_name) AS
+SELECT r.graph_name, r.coordinate, r.bound, r.choice, rk.position, last.direction, rk.table_source_name,
+       rk.table_schema, rk.table_name, rk.column_name
+  FROM graphitron_occurrence_order r
+  JOIN graphitron_occurrence_identifying_key_column rk
+    ON rk.graph_name = r.graph_name AND rk.coordinate = r.coordinate AND rk.bound = r.bound
+  JOIN graphitron_occurrence_sort_key last
+    ON last.graph_name = r.graph_name AND last.coordinate = r.coordinate AND last.bound = r.bound
+   AND last.choice = r.choice
+  LEFT JOIN graphitron_occurrence ao
+    ON ao.graph_name = r.graph_name AND ao.coordinate = r.argument_coordinate
+  LEFT JOIN graphitron_argument ga ON ga.graph_name = ao.graph_name AND ga.coordinate = ao.element_coordinate
+ WHERE (r.kind = 'DEFAULT' OR ga.list_depth = 0)
+   -- The row key: no better ranked key identifies the table's rows.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column b
+                    WHERE b.graph_name = rk.graph_name AND b.coordinate = rk.coordinate AND b.bound = rk.bound
+                      AND b.rank < rk.rank)
+   -- The last key written.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key k
+                    WHERE k.graph_name = last.graph_name AND k.coordinate = last.coordinate
+                      AND k.bound = last.bound AND k.choice = last.choice AND k.position > last.position)
+   -- A column the order does not list.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_column c
+                    WHERE c.graph_name = r.graph_name AND c.coordinate = r.coordinate AND c.bound = r.bound
+                      AND c.choice = r.choice AND c.column_name = rk.column_name
+                      AND c.table_name = rk.table_name AND c.table_schema = rk.table_schema
+                      AND c.table_source_name = rk.table_source_name)
+   -- No identifying key all of whose columns the order lists.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column ik
+                    WHERE ik.graph_name = r.graph_name AND ik.coordinate = r.coordinate AND ik.bound = r.bound
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_identifying_key_column ic
+                                       WHERE ic.graph_name = ik.graph_name AND ic.coordinate = ik.coordinate
+                                         AND ic.bound = ik.bound AND ic.rank = ik.rank
+                                         AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_sort_key_column c
+                                                          WHERE c.graph_name = r.graph_name
+                                                            AND c.coordinate = r.coordinate AND c.bound = r.bound
+                                                            AND c.choice = r.choice
+                                                            AND c.column_name = ic.column_name
+                                                            AND c.table_name = ic.table_name
+                                                            AND c.table_schema = ic.table_schema
+                                                            AND c.table_source_name = ic.table_source_name)));
+COMMENT ON VIEW graphitron_occurrence_sort_key_completion_rule IS 'One row the sort key completion rule computes, in the shape graphitron_occurrence_sort_key_completion stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_completion, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.coordinate';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.bound IS 'the bound of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.bound';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.choice IS 'the choice of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.choice';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.position';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.direction IS 'the direction of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.direction';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.table_name';
+-- COMMENT ON COLUMN graphitron_occurrence_sort_key_completion_rule.column_name IS 'the column_name of a row of this rule, which the stage writes into graphitron_occurrence_sort_key_completion.column_name';
+
+CREATE TABLE graphitron_occurrence_sort_key_completion (
+  graph_name        VARCHAR   NOT NULL,
+  coordinate        VARCHAR   NOT NULL,
+  bound             VARCHAR   NOT NULL,
+  choice            VARCHAR   NOT NULL,
+  position          INT       NOT NULL,
+  direction         VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  column_name       VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate, bound, choice, position),
+  FOREIGN KEY (graph_name, coordinate, bound, choice)
+    REFERENCES graphitron_occurrence_order (graph_name, coordinate, bound, choice) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (direction IN ('ASC', 'DESC'))
+);
+COMMENT ON TABLE graphitron_occurrence_sort_key_completion IS 'One row-key column an order is completed with after its written keys, so the order identifies a row: one row per order and position in the row key. For example Film.actors ordered by last_name is completed with actor_id, ascending as last_name is.';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.coordinate IS 'the list or connection field occurrence';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.bound IS 'the table it reads';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.choice IS 'the order completed, as graphitron_occurrence_order keys it';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.position IS 'the column''s place in the row key, completing the key; the columns follow every written key in this order, a listed one leaving a gap';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.direction IS 'the direction of the order''s last written key, so a uniform order stays uniform and a client''s direction reverses these with the rest';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_source_name IS 'the catalog source of the column''s table';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_schema IS 'the table''s schema';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.table_name IS 'the table';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.column_name IS 'the column, as the catalog spells it';
+COMMENT ON COLUMN graphitron_occurrence_sort_key_completion.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
 CREATE VIEW graphitron_occurrence_sort_key_method_rule
   (graph_name, coordinate, bound, choice, position, kind, application_coordinate, directive_name, ordinal,
    owner) AS
@@ -25202,6 +25404,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-orderings', 'graphitron_occurrence_sort_key'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_column'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_method'),
+  ('occurrence-orderings', 'graphitron_occurrence_identifying_key_column'),
+  ('occurrence-orderings', 'graphitron_occurrence_sort_key_completion'),
   ('occurrence-bindings', 'graphitron_entry_defect'),
   ('occurrence-bindings', 'graphitron_occurrence_binding'),
   ('occurrence-bindings', 'graphitron_occurrence_column'),
@@ -25476,6 +25680,8 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-orderings', 'graphitron_occurrence_sort_key', 'graphitron_occurrence_sort_key_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_column', 'graphitron_occurrence_sort_key_column_rule'),
   ('occurrence-orderings', 'graphitron_occurrence_sort_key_method', 'graphitron_occurrence_sort_key_method_rule'),
+  ('occurrence-orderings', 'graphitron_occurrence_identifying_key_column', 'graphitron_occurrence_identifying_key_column_rule'),
+  ('occurrence-orderings', 'graphitron_occurrence_sort_key_completion', 'graphitron_occurrence_sort_key_completion_rule'),
   ('occurrence-orderings', 'graphitron_order_input', 'graphitron_order_input_rule'),
   ('occurrence-orderings', 'graphitron_sort_enum', 'graphitron_sort_enum_rule'),
   ('occurrence-overrides', 'graphitron_occurrence_overridden', 'graphitron_occurrence_overridden_rule'),
@@ -26076,6 +26282,9 @@ INSERT INTO meta_grain VALUES
   ('occurrence-sort-key',
    'one key at one position of one order of one list or connection occurrence, in one graph',
    'graph_name, coordinate, bound, choice, position', 'sdl'),
+  ('occurrence-identifying-key',
+   'one column of one key identifying a row of the one table a list or connection occurrence reads, in one graph',
+   'graph_name, coordinate, bound, rank, position', 'sdl'),
   ('graph-occurrence-participant',
    'one type the rows of one polymorphic occurrence may be, in one graph',
    'graph_name, coordinate, participant_type', 'sdl'),
@@ -28038,6 +28247,22 @@ INSERT INTO meta_relation VALUES
   ('graphitron_occurrence_sort_key_rule', 'occurrence-sort-key', 'graphitron',
    'One row the sort key rule computes, in the shape graphitron_occurrence_sort_key stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_identifying_key_column', 'occurrence-identifying-key', 'graphitron',
+   'One column of one key identifying a row of the one table a list or connection occurrence reads: one row per occurrence, table, key and position in the key.',
+   'For example Query.films reads public.film, identified by film_pkey''s film_id.',
+   'What an order is completed with, decided once at the occurrence: the primary key, the node key of the type the list returns, and each unique key whose columns refuse NULL, ranked, the best the row key. Both the completion rule and the run-time completion of a sequence read it, so the precedence is stated in one place; a unique key''s columns refusing NULL is a join over the captured catalog, stated here rather than anchored.'),
+  ('graphitron_occurrence_identifying_key_column_rule', 'occurrence-identifying-key', 'graphitron',
+   'One row the identifying key column rule computes, in the shape graphitron_occurrence_identifying_key_column stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_identifying_key_column, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
+  ('graphitron_occurrence_sort_key_completion', 'occurrence-sort-key', 'graphitron',
+   'One row-key column an order is completed with after its written keys, so the order identifies a row: one row per order and position in the row key.',
+   'For example Film.actors ordered by last_name is completed with actor_id, ascending as last_name is.',
+   'The keys an order owes for identifying a row, stated beside the written ones rather than among them, so the written keys stay the decode''s alone and each relation is written by one rule. Written after the written keys'' columns it reads.'),
+  ('graphitron_occurrence_sort_key_completion_rule', 'occurrence-sort-key', 'graphitron',
+   'One row the sort key completion rule computes, in the shape graphitron_occurrence_sort_key_completion stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the occurrence-orderings stage inserts this view''s rows for one graph into graphitron_occurrence_sort_key_completion, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_occurrence_sort_key_column', 'occurrence-sort-key', 'graphitron',
    'The column a COLUMN sort key reads: one row per such key.',

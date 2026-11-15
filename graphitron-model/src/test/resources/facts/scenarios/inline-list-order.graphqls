@@ -137,6 +137,30 @@ extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_column", r
   RoleHolder.roles, RoleHolder.roles, 0, role_code
   """)
 
+# What identifies each list's rows, ranked: the primary key, else the node key standing in over a
+# table with none, else a unique key whose columns refuse null.
+extend schema @assertContains(relation: "graphitron_occurrence_identifying_key_column", rows: """
+  coordinate,       rank, position, key_kind,    key_name,              column_name
+  Film.actors,      -2,   0,        PRIMARY_KEY, actor_pkey,            actor_id
+  Query.films,      -2,   0,        PRIMARY_KEY, film_pkey,             film_id
+  RoleHolder.roles, -1,   0,        NODE_KEY,    RoleAssignment,        holder_id
+  RoleHolder.roles, -1,   1,        NODE_KEY,    RoleAssignment,        role_code
+  Query.stints,     0,    0,        UNIQUE_KEY,  stint_person_from_key, person_id
+  Query.stints,     0,    1,        UNIQUE_KEY,  stint_person_from_key, valid_from
+  """)
+
+# The row-key columns completing an order that lists no identifying key, after its written keys in
+# the last one's direction: a path key or a method key counts for nothing, and a choice a client
+# composes in sequence is completed when it is picked.
+extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_completion", rows: """
+  coordinate,         choice,             position, direction, column_name
+  Film.actors,        Film.actors,        0,        ASC,       actor_id
+  Film.actorsByIndex, Film.actorsByIndex, 0,        DESC,      actor_id
+  Query.stints,       Query.stints,       0,        ASC,       person_id
+  RoleHolder.roles,   RoleHolder.roles,   0,        ASC,       holder_id
+  Store.films,        Store.films,        0,        ASC,       film_id
+  """)
+
 extend schema @expectEquals(relation: "graphitron_occurrence_sort_key_method", rows: """
   coordinate, choice, position, application_coordinate, directive_name, ordinal, owner
   Language.films, Language.films, 0, Language.films, defaultOrder, 0, fields.0

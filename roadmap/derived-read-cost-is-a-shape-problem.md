@@ -86,7 +86,6 @@ The walk's read path is gone
 │   ├── A child read inline is emitted from the store
 │   │   ├── A sort key's path is resolved at its occurrence
 │   │   ├── An inline list is emitted from the store in its stated or chosen order, claimed by G
-│   │   ├── A list's order is completed with its row key, claimed by G
 │   │   └── A single child is looked up by its keys
 │   ├── A narrowed inline list is emitted from the store
 │   ├── Every list states its order or is refused
@@ -716,7 +715,7 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
-  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G", "A list's order is completed with its row key, claimed by G" and "A single child is looked up by its keys". A
+  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "An inline list is emitted from the store in its stated or chosen order, claimed by G" and "A single child is looked up by its keys". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -822,17 +821,6 @@ static method needs no holder.
     the deferral, its `defect_type` row and the multiset half of
     `requireResolvedOrderingsAreLowered` go when the store's units replace them, and
     `defects/inline-list-choice` pins the choice until then; closes before the flip.
-  * **A list's order is completed with its row key, claimed by G** `open`. The walk completes every single-table
-    list's fixed order, its default included, not only a connection's (`OrderByResolver.complete`):
-    the row key's columns the order does not list follow it, in the direction of its last key,
-    unless it already lists an identifying key in full, own-table columns alone counting. What
-    identifies a row is stated first, by this node: the primary key and the all-not-null unique keys
-    are a `sql_` fact at table grain, stated once in the catalog family, and a type's node key stands
-    in over a keyless table through `graphitron_node_keycolumn`. A ranked per-type relation of all
-    three, `graphitron_type_identifying_key`, was written ahead of this node and taken out unread;
-    its rule is in the cloud branch's 74a6f6260f. The `occurrence-orderings` stage then states the
-    appended keys as sort keys of their own basis, so the multiset orders as the walk does; a
-    client-composed sequence is completed at run time with the row key; closes before the flip.
   * **A single child is looked up by its keys** `open`. A `@lookupKey` on a field of a table-bound
     type returning one table-bound object is refused by the walk as not supported, and by the store
     as the deferral `LOOKUP_KEY_ON_SINGLE_CHILD`; the child is read as the one row its keys match, or
@@ -3190,6 +3178,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A list's order is completed with its row key in the store** (2026-11-15). The keys identifying the
+rows of a list over one table are `graphitron_occurrence_identifying_key_column`, ranked: the primary
+key, the node key of the type the list returns, and each unique key none of whose columns admits
+NULL. An order listing none of them in full is completed with the best ranked one's other columns,
+`graphitron_occurrence_sort_key_completion`, after its written keys in the last one's direction; a
+sequence a client composes is completed when it is picked. The walk's `OrderByResolver.complete`,
+`RowIdentity` and `SequenceCompletion.AppendRowKey` go with the flip.
 
 **A method read without parameter names is one defect** (2026-11-15). A `@service` or `@condition`
 method parameter nothing fills, in a class compiled without `-parameters`, is

@@ -107,6 +107,7 @@ public final class ProjectionEmitter {
     private static final ClassName LINKED_HASH_SET = ClassName.get("java.util", "LinkedHashSet");
     private static final ClassName ARRAY_LIST = ClassName.get(ArrayList.class);
     private static final ClassName SORT_FIELD = ClassName.get("org.jooq", "SortField");
+    private static final ClassName HASH_SET = ClassName.get("java.util", "HashSet");
 
     /** The alias a unit projecting nothing selects, so its statement stays one column wide. */
     private static final String ROW_PRESENT = "__row_present__";
@@ -405,6 +406,13 @@ public final class ProjectionEmitter {
             body.addStatement("$T chosen = sf.getArguments().get($S)", Object.class, choice.argument());
             body.addStatement("$T<?> picks = chosen instanceof $T<?> many ? many : chosen == null ? $T.of() : $T.of(chosen)",
                 LIST, LIST, LIST, LIST);
+            // A sequence is completed once it is known: the columns its picks listed and the direction
+            // its last key took decide what the row key adds.
+            boolean completes = choice.sequence() && !list.rowKey().isEmpty();
+            if (completes) {
+                body.addStatement("$T<$T> columns = new $T<>()", SET, String.class, HASH_SET);
+                body.addStatement("boolean lastDesc = false");
+            }
             body.beginControlFlow("for ($T one : picks)", Object.class);
             body.beginControlFlow("if (!(one instanceof $T<?, ?> pick))", MAP);
             body.addStatement("continue");
@@ -412,11 +420,37 @@ public final class ProjectionEmitter {
             body.addStatement("boolean desc = $S.equals(String.valueOf(pick.get($S)))", "DESC", choice.directionField());
             body.beginControlFlow("switch (String.valueOf(pick.get($S)))", choice.sortField());
             for (var order : choice.orders()) {
-                body.add("case $S -> order.addAll($T.of($L));\n", order.value(), LIST, sortTerms(order, listed, true));
+                if (!completes) {
+                    body.add("case $S -> order.addAll($T.of($L));\n", order.value(), LIST, sortTerms(order, listed, true));
+                    continue;
+                }
+                var last = order.keys().get(order.keys().size() - 1);
+                body.add("case $S -> {\n", order.value()).indent();
+                body.addStatement("order.addAll($T.of($L))", LIST, sortTerms(order, listed, true));
+                body.addStatement("columns.addAll($T.of($L))", LIST, columnNames(order.keys()));
+                body.addStatement("lastDesc = $L", order.uniformAscending() ? "desc" : "DESC".equals(last.direction()));
+                body.unindent().add("}\n");
             }
             body.add("default -> { }\n");
             body.endControlFlow();
             body.endControlFlow();
+            if (completes) {
+                // Unless the picks listed an identifying key in full, the row key's other columns
+                // follow them in the last key's direction; they identify the row, so no nulls apart.
+                var identified = CodeBlock.builder();
+                for (int i = 0; i < list.identifyingKeys().size(); i++) {
+                    if (i > 0) identified.add(" || ");
+                    identified.add("columns.containsAll($T.of($L))", LIST, columnNames(list.identifyingKeys().get(i)));
+                }
+                body.beginControlFlow("if (!order.isEmpty() && !($L))", identified.build());
+                for (var column : list.rowKey()) {
+                    body.beginControlFlow("if (!columns.contains($S))", column.sqlName());
+                    body.addStatement("order.add(lastDesc ? $L.$L.desc() : $L.$L.asc())", listed, column.javaName(),
+                        listed, column.javaName());
+                    body.endControlFlow();
+                }
+                body.endControlFlow();
+            }
         }
         if (list.defaultOrder() != null) {
             body.beginControlFlow("if (order.isEmpty())");
@@ -432,6 +466,17 @@ public final class ProjectionEmitter {
         body.addStatement("fields.add($T.multiset($L).as($S + rkPath + entry.getKey()))", DSL, select.build(),
             aliasPrefix(arm.aliasOwner()));
         return body.unindent().add("}\n").build();
+    }
+
+    /** The SQL names of {@code keys}' columns, as string literals. */
+    private static CodeBlock columnNames(List<?> keys) {
+        var names = CodeBlock.builder();
+        for (int i = 0; i < keys.size(); i++) {
+            if (i > 0) names.add(", ");
+            var column = keys.get(i) instanceof ProjectionQuery.SortKey key ? key.column() : (ProjectionQuery.Column) keys.get(i);
+            names.add("$S", column.sqlName());
+        }
+        return names.build();
     }
 
     /**

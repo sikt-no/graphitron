@@ -18,6 +18,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_SORT_KEY_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_INPUT_RULE;
@@ -37,7 +41,8 @@ import static org.jooq.impl.DSL.val;
  * <p>After {@link OccurrenceLookupKeys}, reading only what {@link OccurrenceBindings} and the stages
  * before it wrote: the table a list's binding reads, the code references the anchor resolved, and the
  * catalog. Each relation is written after the one its rule reads, the argument shapes before the
- * orders their choices are, the orders before their keys, a key before its column or method.
+ * orders their choices are, the orders before their keys, a key before its column or method, and the
+ * keys identifying a list's rows before the completion that reads them and the written columns.
  */
 public final class OccurrenceOrderings {
 
@@ -53,6 +58,10 @@ public final class OccurrenceOrderings {
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN, GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN_RULE, graph,
             touchedAt);
         replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD, GRAPHITRON_OCCURRENCE_SORT_KEY_METHOD_RULE, graph,
+            touchedAt);
+        replace(dsl, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN, GRAPHITRON_OCCURRENCE_IDENTIFYING_KEY_COLUMN_RULE,
+            graph, touchedAt);
+        replace(dsl, GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION, GRAPHITRON_OCCURRENCE_SORT_KEY_COMPLETION_RULE, graph,
             touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.ORDERINGS);
     }

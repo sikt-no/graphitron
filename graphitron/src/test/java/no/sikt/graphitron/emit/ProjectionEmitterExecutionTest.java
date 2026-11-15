@@ -186,10 +186,10 @@ class ProjectionEmitterExecutionTest {
     }
 
     @Test
-    @DisplayName("a list read inline is its films in the order written, each projected by Film's own unit")
+    @DisplayName("a list read inline is its films in the order written, completed with the row key, each projected by Film's own unit")
     void anInlineListInItsWrittenOrder() throws Exception {
         assertThat(categoryFilms(projectCategory, field("films", field("title")), "__rk_films"))
-            .isEqualTo(inCategory().orderBy(FILM.TITLE).fetch(FILM.TITLE));
+            .isEqualTo(inCategory().orderBy(FILM.TITLE, FILM.FILM_ID).fetch(FILM.TITLE));
     }
 
     @Test
@@ -200,13 +200,14 @@ class ProjectionEmitterExecutionTest {
             .as("LENGTH, DESC").isEqualTo(inCategory().orderBy(FILM.LENGTH.desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
         assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
                 Map.of("field", "TITLE", "direction", "ASC"))), field("title")), "__rk_filmsChosen"))
-            .as("TITLE, written DESC, asked ASC").isEqualTo(inCategory().orderBy(FILM.TITLE.desc()).fetch(FILM.TITLE));
+            .as("TITLE, written DESC, asked ASC, then the row key the same way")
+            .isEqualTo(inCategory().orderBy(FILM.TITLE.desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
         assertThat(categoryFilms(projectChoosingCategory, field("filmsChosen", field("title")), "__rk_filmsChosen"))
             .as("nothing picked").isEqualTo(inCategory().orderBy(FILM.FILM_ID).fetch(FILM.TITLE));
         assertThat(categoryFilms(projectChoosingCategory, argued("filmsChosen", Map.of("order", List.of(
                 Map.of("field", "NAME_C", "direction", "DESC"))), field("title")), "__rk_filmsChosen"))
             .as("NAME_C, collated C, DESC")
-            .isEqualTo(inCategory().orderBy(FILM.TITLE.collate("C").desc()).fetch(FILM.TITLE));
+            .isEqualTo(inCategory().orderBy(FILM.TITLE.collate("C").desc(), FILM.FILM_ID.desc()).fetch(FILM.TITLE));
     }
 
     /** Category 1's films, joined as the inline lists read them. */
