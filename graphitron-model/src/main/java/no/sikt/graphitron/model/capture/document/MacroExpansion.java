@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.catalog.GeneratedColumns;
 import no.sikt.graphitron.model.derive.EntryDefects;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
@@ -319,14 +320,17 @@ public final class MacroExpansion {
     /**
      * One stored relation written from its rule: every row the rule answers for the graph upserted
      * with the reading's instant, the columns outside the key brought up to date, and the graph's
-     * rows carrying another instant swept. The rule's columns are the target's but its mark, by name.
+     * rows carrying another instant swept. The rule's columns are the target's but its mark and the
+     * columns the database generates, by name.
      */
     private static void store(DSLContext dsl, String graphName, LocalDateTime touchedAt,
                               Table<?> target, Table<?> rule) {
         Field<String> graph = target.field("GRAPH_NAME", String.class);
         Field<LocalDateTime> touched = target.field("TOUCHED_AT", LocalDateTime.class);
         var key = target.getPrimaryKey().getFields();
-        var columns = Arrays.stream(target.fields()).filter(f -> !f.equals(touched)).toList();
+        var generated = GeneratedColumns.of(dsl, target);
+        var columns = Arrays.stream(target.fields())
+            .filter(f -> !f.equals(touched) && !generated.contains(f)).toList();
         var selected = new ArrayList<Field<?>>();
         columns.forEach(c -> selected.add(rule.field(c.getName())));
         selected.add(val(touchedAt, touched));

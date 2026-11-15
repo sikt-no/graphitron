@@ -654,7 +654,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_connection_facet_rule", Arm.DERIVED);
         registrations.put("graphitron_connection_carrier", Arm.DERIVED);
         registrations.put("graphitron_connection_carrier_rule", Arm.DERIVED);
-        registrations.put("graphitron_carrier_facet_mint", Arm.DERIVED);
         registrations.put("graphitron_minted_coinage", Arm.DERIVED);
         registrations.put("graphitron_minted_coinage_rule", Arm.DERIVED);
         registrations.put("graphitron_type_minted_candidate", Arm.DERIVED);

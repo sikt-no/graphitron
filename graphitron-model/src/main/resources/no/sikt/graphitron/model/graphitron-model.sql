@@ -3545,9 +3545,10 @@ COMMENT ON COLUMN graphitron_directive_application_arg.touched_at IS 'when the r
 -- per name. Coinage is written for every carrier whether or not its mint wins, so a mint that stood
 -- down to an author is still a row saying which application would have minted what.
 --
--- Every macro mints here. @asFacet adds its types through graphitron_carrier_facet_mint, and the
--- directive applications a macro adds, the synthesised federation key and the federation directives
--- a minted type inherits from its carriers, are graphitron_directive_application's MINTED set.
+-- Every macro mints here. @asFacet adds its types through graphitron_connection_facet, named by
+-- its bucket_type_name and its carrier's facets_name, and the directive applications a macro adds,
+-- the synthesised federation key and the federation directives a minted type inherits from its
+-- carriers, are graphitron_directive_application's MINTED set.
 
 CREATE TABLE graphitron_minted_conflict (
   graph_name   VARCHAR NOT NULL,
@@ -3609,6 +3610,7 @@ CREATE TABLE graphitron_connection_carrier (
   coordinate          VARCHAR   NOT NULL,
   connection_name     VARCHAR   NOT NULL,
   edge_name           VARCHAR   NOT NULL,
+  facets_name         VARCHAR   GENERATED ALWAYS AS (connection_name || 'Facets') NOT NULL,
   element_type        VARCHAR   NOT NULL,
   item_sdl            VARCHAR   NOT NULL,
   item_non_null       BOOLEAN   NOT NULL,
@@ -3633,6 +3635,7 @@ COMMENT ON COLUMN graphitron_connection_carrier.field_name IS 'the carrier field
 COMMENT ON COLUMN graphitron_connection_carrier.coordinate IS 'the carrier''s coordinate, spelled as graphitron_element spells one';
 COMMENT ON COLUMN graphitron_connection_carrier.connection_name IS 'the connection type this carrier mints: what @asConnection(connectionName:) asked for, or the default built from the carrier''s own coordinate. Two carriers may land on one name, which is a disagreement the anchor resolves rather than a key this relation holds';
 COMMENT ON COLUMN graphitron_connection_carrier.edge_name IS 'the edge type, which is the connection''s name and a suffix; derived here so no arm spells the rule a second time';
+COMMENT ON COLUMN graphitron_connection_carrier.facets_name IS 'the per-connection container its facets surface through, which is the connection''s name and a suffix; minted only where the carrier surfaces a facet. Generated from connection_name, so nothing writes it';
 COMMENT ON COLUMN graphitron_connection_carrier.element_type IS 'the carrier''s element type, wrappers stripped: what the connection pages over';
 COMMENT ON COLUMN graphitron_connection_carrier.item_sdl IS 'that element as the machinery fields write it, carrying the item nullability the author gave the list';
 COMMENT ON COLUMN graphitron_connection_carrier.item_non_null IS 'whether the list''s items are non-null, which the machinery fields carry into the shapes they mint';
@@ -3953,6 +3956,8 @@ CREATE TABLE graphitron_connection_facet (
   column_name          VARCHAR,
   value_type_name      VARCHAR   NOT NULL,
   value_nullable       BOOLEAN   NOT NULL,
+  bucket_type_name     VARCHAR   GENERATED ALWAYS AS
+    (value_type_name || CASE WHEN value_nullable THEN 'FacetValueOrNull' ELSE 'FacetValue' END) NOT NULL,
   source_name          VARCHAR   NOT NULL,
   source_line          INT       NOT NULL,
   source_column        INT       NOT NULL,
@@ -3976,35 +3981,11 @@ COMMENT ON COLUMN graphitron_connection_facet.facet_field_name IS 'the facet fie
 COMMENT ON COLUMN graphitron_connection_facet.column_name IS 'the column the counts group by, carried from graphitron_facet_binding';
 COMMENT ON COLUMN graphitron_connection_facet.value_type_name IS 'the named type a facet key carries, carried from graphitron_facet_binding';
 COMMENT ON COLUMN graphitron_connection_facet.value_nullable IS 'whether a facet key may be null, carried from graphitron_facet_binding';
+COMMENT ON COLUMN graphitron_connection_facet.bucket_type_name IS 'the bucket type the facet''s counts surface through, whose name carries the scalar and whether a null value is a bucket. For example StringFacetValue for a non-null String key and StringFacetValueOrNull for a nullable one. Generated from value_type_name and value_nullable, so nothing writes it';
 COMMENT ON COLUMN graphitron_connection_facet.source_name IS 'the @asFacet application''s own file, carried from graphitron_facet_binding: a diagnostic about a facet points at the application and not at the carrier that consumes it';
 COMMENT ON COLUMN graphitron_connection_facet.source_line IS 'source line of the application, 1-based';
 COMMENT ON COLUMN graphitron_connection_facet.source_column IS 'source column of the application, 1-based';
 COMMENT ON COLUMN graphitron_connection_facet.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
-
--- What one carrier's facets mint, names included. A facet is an @asFacet application the carrier
--- reaches through its filter arguments; the container and the value types follow from the carrier's
--- connection name and the facet's own scalar.
-CREATE VIEW graphitron_carrier_facet_mint
-  (graph_name, type_name, field_name, connection_name, facets_type_name, position,
-   facet_field_name, value_type_name, value_scalar, value_nullable) AS
-SELECT f.graph_name, f.type_name, f.field_name, c.connection_name,
-       c.connection_name || 'Facets', CAST(f.position AS INT), f.facet_field_name,
-       f.value_type_name || CASE WHEN f.value_nullable THEN 'FacetValueOrNull' ELSE 'FacetValue' END,
-       f.value_type_name, f.value_nullable
-  FROM graphitron_connection_facet f
-  JOIN graphitron_connection_carrier c
-    ON c.graph_name = f.graph_name AND c.type_name = f.type_name AND c.field_name = f.field_name;
-COMMENT ON VIEW graphitron_carrier_facet_mint IS 'What one connection carrier''s facets add to the schema: one row per facet the carrier surfaces, carrying the container and value-type names the mint derives. For example films(filter: FilmFilter) @asConnection with a title facet is one row naming QueryFilmsConnectionFacets and StringFacetValue.';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.graph_name IS 'the owning graph''s partition, carried from the facet';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.type_name IS 'the type declaring the carrier';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.field_name IS 'the carrier field';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.connection_name IS 'the connection this carrier mints, which the container is named from';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.facets_type_name IS 'the per-connection container type, which is the connection''s name and a suffix';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.position IS 'the facet''s position on the container, dense per carrier and in emission order';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.facet_field_name IS 'the facet''s field on the container, which is the @asFacet site''s own name';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.value_type_name IS 'the bucket type for this facet''s values, whose name carries the scalar and whether a null value is a bucket';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.value_scalar IS 'the scalar the facet''s values are, which the bucket''s own value field returns';
--- COMMENT ON COLUMN graphitron_carrier_facet_mint.value_nullable IS 'whether a null is one of the buckets, which decides both the bucket type''s name and its value field''s nullability';
 
 -- The mint's own provenance. Every arm of the type mint knows the application it derived a name
 -- from and then drops it, the minted sets being keyed on the coordinate of the thing minted rather
@@ -4022,14 +4003,14 @@ SELECT DISTINCT graph_name, type_name, coordinate
         SELECT graph_name, 'PageInfo', coordinate
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT f.graph_name, f.facets_type_name, c.coordinate
-          FROM graphitron_carrier_facet_mint f
+        SELECT f.graph_name, c.facets_name, c.coordinate
+          FROM graphitron_connection_facet f
           JOIN graphitron_connection_carrier c
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name
          UNION ALL
-        SELECT f.graph_name, f.value_type_name, c.coordinate
-          FROM graphitron_carrier_facet_mint f
+        SELECT f.graph_name, f.bucket_type_name, c.coordinate
+          FROM graphitron_connection_facet f
           JOIN graphitron_connection_carrier c
             ON c.graph_name = f.graph_name AND c.type_name = f.type_name
            AND c.field_name = f.field_name) m
@@ -4064,11 +4045,14 @@ SELECT DISTINCT graph_name, type_name, type_name, 'OBJECT', description
         SELECT graph_name, 'PageInfo', 'Information about pagination in a connection.'
           FROM graphitron_connection_carrier
          UNION ALL
-        SELECT graph_name, facets_type_name, 'Facet value counts for a connection.'
-          FROM graphitron_carrier_facet_mint
+        SELECT f.graph_name, c.facets_name, 'Facet value counts for a connection.'
+          FROM graphitron_connection_facet f
+          JOIN graphitron_connection_carrier c
+            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
+           AND c.field_name = f.field_name
          UNION ALL
-        SELECT graph_name, value_type_name, 'One facet bucket: a filterable value and its count.'
-          FROM graphitron_carrier_facet_mint) m
+        SELECT graph_name, bucket_type_name, 'One facet bucket: a filterable value and its count.'
+          FROM graphitron_connection_facet) m
 ;
 CREATE VIEW graphitron_type_minted (graph_name, type_name, coordinate, kind, description) AS
 SELECT * FROM graphitron_type_minted_candidate m
@@ -4184,26 +4168,32 @@ SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.type_name || '.' || m
          UNION ALL
         -- The facets the carrier surfaces: the connection's own field reaching the container,
         -- the container's field per facet, and each bucket's value and count.
-        SELECT graph_name, connection_name, 'facets', 4,
-               facets_type_name, facets_type_name, FALSE, 0, NULL,
+        SELECT f.graph_name, c.connection_name, 'facets', 4,
+               c.facets_name, c.facets_name, FALSE, 0, NULL,
                'Per-facet value counts for the items in the connection.', FALSE
-          FROM graphitron_carrier_facet_mint
+          FROM graphitron_connection_facet f
+          JOIN graphitron_connection_carrier c
+            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
+           AND c.field_name = f.field_name
          UNION ALL
-        SELECT graph_name, facets_type_name, facet_field_name, position,
-               '[' || value_type_name || '!]', value_type_name, FALSE, 1, TRUE,
+        SELECT f.graph_name, c.facets_name, f.facet_field_name, f.position,
+               '[' || f.bucket_type_name || '!]', f.bucket_type_name, FALSE, 1, TRUE,
                'Value counts for this facet, under the connection''s filter minus this facet''s own predicate.', FALSE
-          FROM graphitron_carrier_facet_mint
+          FROM graphitron_connection_facet f
+          JOIN graphitron_connection_carrier c
+            ON c.graph_name = f.graph_name AND c.type_name = f.type_name
+           AND c.field_name = f.field_name
          UNION ALL
-        SELECT graph_name, value_type_name, 'value', 0,
-               value_scalar || CASE WHEN value_nullable THEN '' ELSE '!' END, value_scalar,
+        SELECT graph_name, bucket_type_name, 'value', 0,
+               value_type_name || CASE WHEN value_nullable THEN '' ELSE '!' END, value_type_name,
                NOT value_nullable, 0, NULL,
                'The facet value; feed it back into the filter to select this bucket.', FALSE
-          FROM graphitron_carrier_facet_mint
+          FROM graphitron_connection_facet
          UNION ALL
-        SELECT graph_name, value_type_name, 'count', 1,
+        SELECT graph_name, bucket_type_name, 'count', 1,
                'Int!', 'Int', TRUE, 0, NULL,
                'The number of items in this bucket.', FALSE
-          FROM graphitron_carrier_facet_mint
+          FROM graphitron_connection_facet
          UNION ALL
         -- The rewrite: the carrier keeps its own coordinate, ordinal and docstring, and returns
         -- the connection under the nullability its author wrote.
@@ -8030,7 +8020,10 @@ WITH carried (graph_name, coordinate, directive_name, ordinal, value_sdl) AS (
     FROM graphitron_configured_tag c)
 SELECT m.graph_name, m.type_name, m.coordinate, c.directive_name, c.ordinal, c.value_sdl
   FROM graphitron_minted_coinage m
-  JOIN graphitron_type_minted t ON t.graph_name = m.graph_name AND t.type_name = m.type_name
+  -- The minted types as this stage stored them before running the rule, so a type an author
+  -- declared, or one the applications disagree about, inherits nothing.
+  JOIN graphitron_type t ON t.graph_name = m.graph_name AND t.type_name = m.type_name
+   AND t.origin = 'MINTED'
   JOIN carried c ON c.graph_name = m.graph_name AND c.coordinate = m.coordinate;
 COMMENT ON VIEW graphitron_carrier_directive_rule IS 'One row the carrier-directive rule computes, in the shape graphitron_carrier_directive stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_carrier_directive, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_carrier_directive_rule.graph_name IS 'the owning graph''s partition';
@@ -28311,10 +28304,6 @@ INSERT INTO meta_relation VALUES
    'What the arms of the argument mint state before any disagreement between them is resolved.',
    'For example a carrier whose author already wrote first is one row here and none in graphitron_argument_minted.',
    'On graphitron_type_minted_candidate''s terms.'),
-  ('graphitron_carrier_facet_mint', 'carrier-facet', 'graphitron',
-   'What one connection carrier''s facets add to the schema: one row per facet the carrier surfaces, carrying the container and value-type names the mint derives.',
-   'For example films(filter: FilmFilter) @asConnection with a title facet is one row naming QueryFilmsConnectionFacets and StringFacetValue.',
-   'The naming rule for the facet triad, stated once where the carrier and its facets meet. Three arms of the mint read it, so none of them spells the container''s name or a bucket''s from the scalar a second time, which is how the two came to disagree before. At the carrier-facet grain rather than the carrier''s, because what it adds is per facet: one container per carrier but a bucket type and a container field per facet on it.'),
   ('graphitron_type_minted', 'expanded-type', 'graphitron',
    'One of the two sets graphitron_type is the union of: a type macro expansion adds, filling a name no author took.',
    'For example QueryFilmsConnection where the author wrote only films: [Film!]! @asConnection.',

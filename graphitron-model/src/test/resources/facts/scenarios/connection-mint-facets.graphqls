@@ -5,9 +5,14 @@ input FilmFilter { title: [String!] @field(name: "title") @asFacet }
 
 type Query { films(filter: FilmFilter): [Film!]! @asConnection }
 
-extend schema @expectEquals(relation: "graphitron_carrier_facet_mint", rows: """
-  type_name, field_name, connection_name,      facets_type_name,           position, facet_field_name, value_type_name,  value_scalar, value_nullable
-  Query,     films,      QueryFilmsConnection, QueryFilmsConnectionFacets, 1,        title,            StringFacetValue, String,       FALSE
+extend schema @expectEquals(relation: "graphitron_connection_carrier", rows: """
+  type_name, field_name, connection_name,      facets_name
+  Query,     films,      QueryFilmsConnection, QueryFilmsConnectionFacets
+  """)
+
+extend schema @expectEquals(relation: "graphitron_connection_facet", rows: """
+  type_name, field_name, position, facet_field_name, value_type_name, value_nullable, bucket_type_name
+  Query,     films,      1,        title,            String,          FALSE,          StringFacetValue
   """)
 
 extend schema @expectEquals(relation: "graphitron_type_minted", rows: """
