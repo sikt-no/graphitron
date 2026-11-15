@@ -72,9 +72,11 @@ restated here; the history and `## Retired vocabulary` keep it.
 field.** A root fetcher's query, its condition, order and page, and every `<Type>.$project`
 projection unit below it are assembled by emitters that each own a jOOQ query over the store,
 `multiset` for what nests, so neither the walk nor `ServiceCatalog` resolves anything for them. The
-`$project` flip goes first (Alf, 2026-11-13), in one pass with the filter conditions and the root
-fetchers that call them, `@externalField` included; it is also what makes utdanningsregisteret
-generate again. Additive, flip, subtract; the critical path, by node title:
+`$project` flip goes as soon as it can (Alf, 2026-11-13), and not in one pass (Alf, 2026-11-15):
+whatever the store states whole flips first, piece by piece and censused as the service fields
+were, unless keeping the walk working beside it costs too much. The filter conditions and the root
+fetchers that call the units, `@externalField` included, flip the same way; it is also what makes
+utdanningsregisteret generate again. Additive, flip, subtract; the critical path, by node title:
 
 ```text
 The walk's read path is gone
@@ -142,8 +144,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `SeededStore` and capture, both building test stores. Ends at "`SeededStore` is deleted".
 * `ProjectionCommands` and `ProjectionUnitRenderer` beside the store-fed projection emitter, and the
   walk's condition glue beside `ConditionEmitter`, which nothing calls yet. Ends at "The projection
-  units are rendered from the store", which moves the units, the conditions and the root fetchers
-  in one pass.
+  units are rendered from the store", which moves the units, the conditions and the root fetchers,
+  each as soon as the store states it whole.
 
 ### Every rule has an owner, and the register has no subject `open`
 
@@ -674,7 +676,8 @@ static method needs no holder.
   whose error channel and tenancy their caller still hands `RoutineWriteEmitter` as values.
 * **The walk's read path is gone** `blocked`, on "The projection units are rendered from the store" and "The walk's service path is gone". The subtract of the table-bound read: `ProjectionCommands`, `ProjectionCommand`, `Contribution`, `CallWrap`, `ProjectionUnitRenderer`, `ParentRowDemand`, the `<Anchor><Nesting>` classes and the walk's root fetchers and condition glue go.
 * **The projection units are rendered from the store** `blocked`, on the facts below. The flip goes
-  first, in one pass with the filter conditions and the root fetchers (Alf, 2026-11-13).
+  as soon as it can, each piece when the store states it whole and the walk keeps the rest
+  without much work, censused as the service fields were (Alf, 2026-11-15).
   The store-fed lift selects through `<Type>.$project`, the projection unit `ProjectionUnitRenderer`
   renders from `ProjectionCommand` rows, which `ProjectionCommands` derives from the classified
   model; so a producer whose body the store emits still projects through units the walk decides,
