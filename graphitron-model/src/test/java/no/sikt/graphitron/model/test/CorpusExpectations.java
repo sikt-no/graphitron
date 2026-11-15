@@ -467,7 +467,10 @@ public final class CorpusExpectations {
         return java.util.Optional.of(DSL.selectDistinct(
                 keys.stream().map(key -> DSL.field(id("produced", key))).toList())
             .from(produced)
-            .whereExists(DSL.selectOne().from(expected).where(match(producedFields, expectedFields))));
+            // The graph as stored, so the relation's key finds the block's rows; the match below
+            // reads every column as text and narrows nothing by itself.
+            .where(DSL.field(id("produced", GRAPH_COLUMN), String.class).eq(block.graph()))
+            .andExists(DSL.selectOne().from(expected).where(match(producedFields, expectedFields))));
     }
 
     /**
