@@ -299,10 +299,7 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 
 Each is its own rule with its own codes, fact document and near miss. Each raises warning defects
 from an anchor stage of the `database` gatherer, which is the first stage holding every fact the rule
-reads, so the `graphitron` gatherer gains no edge to an optional upstream. A follow-up whose fixture
-shows what the database enforces acts as an application role (`SET ROLE`), not as the owner: the owner
-bypasses row security unless the table is forced, so a read as the owner says nothing about
-enforcement. The candidates:
+reads, so the `graphitron` gatherer gains no edge to an optional upstream. The candidates:
 
 * a non-null field reached through `@reference` into a row-secured table, which resolves to null when
   a policy hides the target row, even where the foreign key is `NOT NULL`;
