@@ -85,7 +85,7 @@ The walk's read path is gone
 │   ├── The root query fetchers are emitted from the store
 │   ├── A child read inline is emitted from the store
 │   │   ├── A sort key's path is resolved at its occurrence
-│   │   ├── A client's choice of order is applied to an inline list
+│   │   ├── A client's choice of order is applied to an inline list, claimed by G
 │   │   ├── A list's order is completed with its row key
 │   │   └── A single child is looked up by its keys
 │   ├── Every list states its order or is refused
@@ -716,7 +716,7 @@ static method needs no holder.
     condition method or a routine, and a node id down a path. A child read inline is its own
     node below. A child producer's parent columns are projected off its lift, stated under a row
     graphitron selected as under a record.
-  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "A client's choice of order is applied to an inline list", "A list's order is completed with its row key" and "A single child is looked up by its keys". A
+  * **A child read inline is emitted from the store** `blocked`, on "A sort key's path is resolved at its occurrence", "A client's choice of order is applied to an inline list, claimed by G", "A list's order is completed with its row key" and "A single child is looked up by its keys". A
     `NESTED` occurrence read down a path rather than off its parent's row, a table-bound type joined
     or listed, or a plain type over a routine's rows, is rendered by `ProjectionEmitter` as a single
     join or a list multiset over the rows its path reaches, calling the child type's own unit where
@@ -803,7 +803,7 @@ static method needs no holder.
     `FieldSort.path`, so the join path need and step relations resolve it, the to-one refusal
     included, and the key gains a subtype naming its hops and the column they land on. Closes before
     the flip, which keeps no fallback for it.
-  * **A client's choice of order is applied to an inline list** `open`. The walk resolves an `@orderBy`
+  * **A client's choice of order is applied to an inline list, claimed by G** `open`. The walk resolves an `@orderBy`
     argument on a list read inside its parent's statement and cannot lower it onto the multiset:
     `LauncherCommands.requireResolvedOrderingsAreLowered` throws a generator bug for it, so the store
     states the choices and refuses the shape with the deferral `ORDER_CHOICE_ON_INLINE_LIST`. The
