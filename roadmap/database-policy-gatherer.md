@@ -1,13 +1,13 @@
 ---
 id: R1184
 title: "An optional gatherer reads the database's row-level security policies over a live connection"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: diagnostics
 depends-on: []
 created: 2026-11-13
-last-updated: 2026-11-14
+last-updated: 2026-11-15
 ---
 
 # An optional gatherer reads the database's row-level security policies over a live connection
@@ -457,3 +457,20 @@ Non-blocking:
 * `dev` re-captures on each round, so an unreachable database costs the driver's connect timeout on
   every round, not once. Worth a bounded connect timeout on the gatherer's connection, or a sentence
   saying the default is acceptable.
+
+### Round 2: Spec → Ready, signed off (session_01WkW2JGNxszh8SZspUvi8xh, 2026-11-15)
+
+Both round-1 findings are met: § Who drops a claim gives the gatherer the `DATABASE` claims on
+`dropMembership`'s shape, connector or not, and the reading record names the stamp (a hash over the
+captured rows, written last) and the first-failure arm, with tests for each step of the sequence.
+The `CHECK` constraint and the connect timeout are taken up too.
+
+Non-blocking, for the implementer:
+
+* § Who drops a claim says the unclaimed source goes through "the existing release". No shared
+  release exists: per `SourceClaims`' javadoc each gatherer owns the reclaim of its own kinds
+  (`GraphQLSourceCapture` and `ClasspathSourceCapture` each issue their own delete with
+  `SourceClaims.unclaimed()` in its `WHERE`, and `jooq` issues none). The database gatherer writes
+  that delete for `DATABASE` sources itself; the test list already demands the outcome.
+* § Configuration still says that with no url "the gatherer does not run", while § Who drops a claim
+  has every capture call it. Read the former as "reads nothing".
