@@ -180,182 +180,22 @@ The forks the Backlog body left open, settled here so the implementation has one
 
 ## Implementation
 
-Two independent commits. Each passes the verification build on its own.
+Two commits, each collapsed here to where it shipped; "Implementation notes" below carries what a
+reader would otherwise have to work out.
 
-### Log each failure once, without its SQL
-
-All in `ErrorRouterClassGenerator`, plus one call site in `ConnectionRuntimeClassGenerator`.
-
-* **Key on the failure, not the wrapper.** A new private helper `failureOf(thrown)` returns
-  `thrown` with every leading `CompletionException` and `ExecutionException` that has a non-null
-  cause stripped. That is the instance java-dataloader shared across the batch.
-* **Extend the claim record rather than adding a holder.** `Claims` (built by `buildClaimsHolder`)
-  gains a second identity map, failure to unmatched reference, with synchronized
-  `unmatchedReferenceOf(failure)` and `assignUnmatchedReference(failure, reference)` (a
-  `putIfAbsent` answering whether this call set it), mirroring `referenceOf` / `assignReference`.
-  It is a map of its own rather than a share of `references`, because `recordClaim` reads "has a
-  reference" as "`matched` was already called": an unmatched mint in that map would silently
-  suppress a later `matched`. The keys seldom coincide anyway (a claim keys on the claimed chain
-  link, often the `SQLException`; the unmatched path keys on what `failureOf` returns). The class
-  javadoc's "one per-request holder keyed on throwable identity in the error channel" stays true.
-* **One reporting helper for both unmatched dispositions.** A new private
-  `reportUnmatched(thrown, env, what)` does, in order: compute `failure = failureOf(thrown)`; get or
-  create the request's `Claims` (none when `env` or its context is null, and then everything below
-  behaves exactly as today); if `unmatchedReferenceOf(failure)` is set, return it and log nothing;
-  else mint with `newReference(thrown, env)` and `assignUnmatchedReference(failure, minted)`. The
-  call that sets the reference is the one that logs, handing `thrown` to
-  `toConfiguredLog(... log.unmatched(thrown, reference, env))` or writing the default line; a call
-  that loses a race takes the winner's reference and logs nothing. So the field that logs is the
-  field whose reference stands, and "the first field's `env`" is literally the logged one. A lost
-  race costs one discarded `FetcherErrorResponse.reference` call, never a second record. Minting
-  stays outside the lock, so no consumer code runs under it. `redact` and `settleFailure` call the
-  helper in place of their `newReference` + log pair, with their existing line prefixes as `what`.
-  The client message (`unmatchedMessage`) is still computed per field, with the shared reference.
-* **Which throwable the consumer sees.** `FetcherErrorResponse.reference` and
-  `FetcherErrorLog.unmatched` keep receiving `thrown` as the winning field caught it, wrapper
-  included, exactly as today; `failureOf` is the memo's key, not a new argument. Their javadoc says
-  so, and says the call is once per failure per request.
-* **The default line.** A new public static `ErrorRouter.describe(Throwable, DataFetchingEnvironment)`
-  returns `Optional<String>`, the one-line summary when the chain holds a `java.sql.SQLException`
-  and empty otherwise, matching the shape of `OwnedConnections.mountCause`. It is public because
-  it is useful to a `FetcherErrorLog` author too, and the error-channel how-to says so. The summary
-  is `path = <path>; <failure class>: <driver class> [<SQL state>/<vendor code>] <first line>`: the
-  field's path from the router's private `pathOf(env)` (`unknown` without an environment), the
-  class of `failureOf(thrown)`, the class of the first `SQLException` on the chain, its SQL state
-  and vendor code, and the first non-blank line of its message, cut at a fixed bound (240
-  characters, ending in `...` when cut). The walk stops at a cycle or after a fixed depth. With a
-  summary, the default branch logs `<what>; correlation id = {}; {}` at ERROR with no throwable
-  argument, then `<what>; correlation id = {}` at DEBUG with the throwable. Without one it logs
-  today's ERROR line, throwable included. A configured `FetcherErrorLog` still receives the raw
-  throwable and never sees the summary. The path is part of `describe` rather than of each caller
-  so the line has one spelling and `pathOf` stays private: `OwnedConnections` reaches the router
-  through its public statics, as it does today. A settle failure whose environment was not
-  captured reads `path = unknown`; the client's error still carries the path.
-* **The tenant fan-out.** `logFanOutFailure`'s default line for a failed tenant uses
-  `ErrorRouter.describe(failed.cause(), env)` the same way (summary at ERROR, throwable at DEBUG,
-  or today's line). It keeps a reference per tenant and takes no memo: each tenant's failure is
-  its own exception.
-* **Javadoc that changes meaning.** In `ConnectionRuntimeClassGenerator.fetcherErrorLog`:
-  `FetcherErrorLog.unmatched` changes from "once per fetcher exception" to once per failure per
-  request however many fields it failed, with the logging field's `env`, mirroring `matched`; and
-  the interface's class javadoc, which says the default line includes "message and cause chain",
-  says that a database failure's default line is the summary at ERROR with the full exception at
-  DEBUG. `redact`'s and `settleFailure`'s javadoc say the reference is shared. `tenantFailed` is
-  the one exception to "once per failure per request" and `unmatched`'s javadoc names it: its
-  default hands each failed tenant to `unmatched`, once per tenant, as today.
-
-### Let a consumer cap batch size
-
-* **A new consumer hook.** `ConnectionRuntimeClassGenerator` emits `BatchSizeLimit` beside
-  `FetcherErrorLog` in the `CONNECTION_RUNTIME` unit set: a pure `@FunctionalInterface` with
-  `int maxBatchSize(DataFetchingEnvironment env)` and nothing else, where a value below 1 means
-  unbounded. It is asked once per loader per request, with the environment of the first field that
-  needed the loader, so a consumer can vary the limit by field (`env.getExecutionStepInfo()`,
-  `env.getFieldDefinition()`). Its `ClassName` comes from a `GeneratedUnits`-backed resolver beside
-  `ErrorRouterClassGenerator.fetcherErrorLogClass`, never from `outputPackage + ".schema"` at a site.
-* **Runtime configuration, the way the other hooks are configured.** `GraphitronRuntime` gains a
-  `batchSizeLimit` field, `withBatchSizeLimit(BatchSizeLimit)` and `batchSizeLimit()` returning an
-  `Optional`, and its copy constructor gains the parameter (so `withFetcherErrorLog` and
-  `withFetcherErrorResponse` carry it over); its class javadoc, which lists the callbacks it holds,
-  names the third. `GraphitronConnectionInstrumentationGenerator` publishes it into the request's
-  `GraphQLContext` under its class, next to the two it publishes today. The escape-hatch engine
-  reads the same context entry, put there by the caller.
-* **One lookup, on the router.** A new public static `ErrorRouter.loaderOptions(env)` returns
-  `DataLoaderOptions`: no entry gives `DataLoaderOptions.newOptions().build()`, a positive answer
-  adds `setMaxBatchSize(n)`, and a throw goes through the router's existing private `configured`,
-  `contained` and `pathOf` (one ERROR line naming the hook's class, the class of what it threw and
-  the field's path; unbounded options stand; only a `VirtualMachineError` propagates). This keeps the
-  existing split, where hook interfaces carry only the consumer's contract and Graphitron's calls
-  into hooks are statics on `ErrorRouter` (`toConfiguredLog`, `newReference`), and it keeps every
-  helper private. The cost is the name: this is the first hook that is not about errors. A second
-  non-error hook is the point at which `configured`, `contained` and `answer` move into a unit of
-  their own; not now.
-* **One way to build a loader.** A new render fragment, `no.sikt.graphitron.render.LoaderConstruction`,
-  renders the whole construction,
-  `DataLoaderFactory.<newDataLoader|newMappedDataLoader>(<lambda>, ErrorRouter.loaderOptions(<env>))`.
-  It has two entry points, `positional` and `mapped`, each taking the lambda's `CodeBlock`, the name
-  of the environment variable and the router's `ClassName`, the way `ErrorDispatchFragments` takes
-  the router. `LoaderRegistration` is in neither signature: `FrameEmitter` lives in
-  `no.sikt.graphitron.emit`, which `PackageImportDirectionTest` keeps from naming the leaf model.
-  So `DataLoaderFetcherEmitter.build` chooses the entry point from `registration.container()`, the
-  three sites that have always built a positional loader call `positional`, and `FrameEmitter.child`
-  calls `mapped` with `runtime.errorRouter()`. `EMIT_ALLOWANCES` in that test gains the class, its
-  reason being that a loader is built one way, with the request's batch-size options, whichever
-  emitter builds it (the map holds ten entries, `Map.of`'s limit, so it becomes `Map.ofEntries`).
-  The five sites named under "Why it happens" call the fragment inside their `computeIfAbsent`
-  lambda (so the lookup runs once per loader), and their own `DATA_LOADER_FACTORY` /
-  `LOADER_FACTORY` constants are deleted, with the unused one on `TypeFetcherGenerator`. A loader
-  built without the cap then has to name `DataLoaderFactory` anew, and `GeneratedSourcesLintTest`
-  gains a rule rejecting a one-argument `newDataLoader(` / `newMappedDataLoader(` call in generated
-  sources. That rule reads the sakila example's output, so it catches a sixth site only once the
-  example exercises it; the deleted constants are what a new site meets first.
-* **Compile-graph wiring.** `EmitPlan.connectionRuntime` lists the `CONNECTION_RUNTIME` refs by
-  hand and gains `BatchSizeLimit`'s. `PlanCompileGraph.addFixedKindEdges` gains the runtime to
-  `BatchSizeLimit` and instrumentation to `BatchSizeLimit` edges in the `CONNECTION_RUNTIME` and
-  `CONNECTION_INSTRUMENTATION` arms, beside the log and response edges. Four of the five loader
-  sites emit into fetchers units, which reach the cap only through `ErrorRouter` and already have
-  a frozen-scaffold edge into it. The fifth does not: `QueryNodeFetcher` is the
-  `QUERY_NODE_FETCHER` global unit, outside the blanket, and names no router today, so its arm
-  gains a precise edge to `ERROR_ROUTER` beside the three it has. The edge is precise because the
-  reference is real in every build that has the unit: `dispatchNodes`, which builds the loader, is
-  emitted unconditionally. The router itself is exempt as an oracle source, so its new reference
-  to `BatchSizeLimit` needs no edge, but
-  `IncrementalCompileHarnessTest.frozenScaffoldSources_referenceOnlyThePinnedUnits` pins what the
-  router references and gains `schema.BatchSizeLimit`. The exemption stays sound, which is what
-  that pin asks to be checked before its list grows: `BatchSizeLimit` is one abstract method on an
-  interface emitted the same in every build, so the member the router calls varies with neither
-  schema nor configuration. `FrameEmitter.Runtime` needs no new component, since it already carries
-  the router. `IncrementalCompileHarnessTest`'s oracle leg pins the edges.
-* **Chunking.** java-dataloader 6.0.0 (the version graphql-java 25.0 brings in) then calls the batch
-  lambda once per chunk of at most `n` keys. The rows methods, `BatchedRowsFragments` and the
-  key-context handling do not change: each chunk's lambda call sees its own keys and key contexts,
-  and `FrameEmitter`'s `getKeyContextsList().get(0)` reads that chunk's first.
+* **Log each failure once, without its SQL** (`failureOf`, the unmatched map on `Claims`,
+  `reportUnmatched`, `ErrorRouter.describe`, the tenant fan-out's summary line, the javadoc that
+  changed meaning): shipped at `7a456e46`.
+* **Let a consumer cap batch size** (`BatchSizeLimit`, `GraphitronRuntime.withBatchSizeLimit`, its
+  publication by the instrumentation, `ErrorRouter.loaderOptions`, `LoaderConstruction` at the five
+  loader sites, the compile-graph edges and pins): shipped at `4d86d2ca`.
+* The reference page's "Consumer hooks on `GraphitronRuntime`" shipped at `e9929dcb`, and the
+  architect's test tightening at `2c455634`.
 
 ## User documentation (first-client check)
 
-For `docs/manual/how-to/error-channel.adoc`, replacing the redact code block's surrounding prose and
-the first paragraphs of "Choosing how unmatched exceptions are logged":
-
-> Every other unmatched exception runs the redact path. It is logged once per request, however
-> many fields it failed: a batched child query that fails under 400 parents produces 400 field
-> errors, one log record, and one reference that all 400 errors quote. Two batches that fail
-> separately are two records with two references. (A `@service` of yours that rethrows one cached
-> exception wrapped in a `CompletionException` for two batches reads as one failure.)
->
-> When the exception comes from the database driver, the ERROR record is one line: the path of the
-> field that failed, the exception class, the driver exception's class, its SQL state and vendor
-> code, and the first line of the driver's message, shortened. The SQL statement is not in it; for
-> a batched query that statement grows with the batch. Nor are the driver's detail lines, where
-> PostgreSQL and Oracle name the values involved. A driver can still put a value in its first
-> line, so configure a `FetcherErrorLog` if nothing from the database may reach your log. The full
-> exception, statement included, is logged at DEBUG under the same reference. Any other exception
-> is logged at ERROR with its stack trace, as before.
->
-> A `FetcherErrorLog` you configure receives the full exception instead, once per request in the
-> same way, with the environment of the field that logged it. To write the same one-line summary
-> yourself, call `ErrorRouter.describe(thrown, env)`, which is empty for an exception that did not
-> come from the driver.
-
-For `docs/manual/explanation/batching-model.adoc`, a new section "Bounding a batch":
-
-> A batch is as large as the request makes it: a split child under 2,000 parents is one statement
-> with 2,000 keys. To bound it, give the runtime a `BatchSizeLimit`:
->
-> ```java
-> var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
->     .withBatchSizeLimit(env -> 500);
-> ```
->
-> A batch over the limit runs as several statements of at most that many keys, one after another,
-> and each parent still gets its own rows. For a `@service` child it is your method that is called
-> once per chunk of keys. A statement that fails takes down only the fields whose keys were in it,
-> and the chunks after it still run, so a request whose every chunk times out waits for each in
-> turn. The limit is asked once per batch with the first field's environment, so it can
-> depend on the field; return 0 for no limit, which is also what you get without a
-> `BatchSizeLimit`. On the escape-hatch engine, put it into each request's context under
-> `BatchSizeLimit.class`.
-
-Both read simply, so the design stands.
+The drafts shipped with the commits above; "Where the drafts landed" under "Implementation notes"
+names the pages.
 
 ## Tests
 
@@ -415,8 +255,8 @@ response quotes.
   with the new unit and edges, the node fetcher's edge to the router among them; its
   frozen-scaffold pin is edited to list `schema.BatchSizeLimit` under the router;
   `PackageImportDirectionTest` passes with the `LoaderConstruction` allowance present and in use;
-  and the new `GeneratedSourcesLintTest` rule finds no one-argument loader construction in the
-  sakila example's generated sources.
+  and the new `GeneratedSourcesLintTest` rule finds every loader construction in the sakila
+  example's generated sources ending in `ErrorRouter.loaderOptions(<env>)`.
 
 ## Other solutions we've considered
 
@@ -458,7 +298,7 @@ and the batch cap were added to the goal then.
 
 ## Implementation notes
 
-Implemented as planned, in four commits: the log commit (`fix(R920)`), the cap commit
+Implemented as planned, in four commits, and a fifth from the Done-gate rework (below): the log commit (`fix(R920)`), the cap commit
 (`feat(R920)`), the reference page (`docs(R920)`), and a test-tightening commit (`test(R920)`)
 taken from the architect consult below. What a reviewer would otherwise have to work out:
 
@@ -493,6 +333,10 @@ taken from the architect consult below. What a reviewer would otherwise have to 
   established for the log commit alone: by itself it ran the reactor through `graphitron` (4,805
   tests, the census count its one failure, since fixed in that commit) and its own example tests
   by name, and the cap commit was only ever built on top of it.
+
+- **The Done-gate rework** (`test(R920)`, Round 3's finding) deleted `LoaderConstructionTest`,
+  which asserted the fragment's rendered Java. Until then the "Unchanged" bullet's "no assertions
+  on generated method bodies" did not hold.
 
 _Architect consult before this handover._ The `principles-architect` read the built tree and found
 it the change the spec approved, with no structural finding. Taken, in the `test(R920)` commit:
@@ -686,3 +530,24 @@ batch size" to one-line "shipped at `<sha>`" notes (`7a456e46`, `4d86d2ca`, with
 Non-blocking: `RootLauncherRendererTest` asserts `m.code().toString()).contains(".fetchOne();")`, an
 older instance of the same ban this item did not introduce; worth its own Backlog item rather than
 this one.
+
+_Response (session_01FY5Uvu9heH1ZGKxef6QCVs, 2026-11-16; the session that wrote this round
+implemented the rework at the user's request, so the next Done pass belongs to a different
+session)._ `LoaderConstructionTest` is deleted, not rewritten: a `CodeBlock` has no structure to
+assert beyond its text, and what it pinned is held by `BatchSizeLimitExecutionTest` (the options
+reach positional and mapped loaders: the positional shape runs under a cap at
+`Film.actorsByCondition`, the mapped one at `Film.databaseError`) and `UnifiedEmissionPinsTest`
+(the call sites, and `LoaderConstruction`, a branch-free expression, as the one class naming
+`DataLoaderFactory`). "Implementation" and "User documentation" are collapsed to where each part
+shipped. The older `RootLauncherRendererTest` instance is left alone, as the round says.
+
+_Architect consult before this handover._ The `principles-architect` agreed deletion is what
+`testing.adoc` § "Authoritative tests" asks for and named no gap. It raised that
+`GeneratedSourcesLintTest.emittedLoadersAreBuiltWithTheRequestsOptions`, which an earlier draft of
+this response listed as cover, reads generated method-body text for a call-site seam, the same kind
+of assertion as the deleted test, so it cannot be cited as the reason the deletion is safe. Taken:
+it is no longer cited above; the structural pin and the execution tier are the cover. The rule
+itself was approved at Spec → Ready, so it stays, and R522, the Backlog item that decides where seam
+pins sit, now names it. Also taken: the Tests bullet describes the rule as shipped, the
+implementation notes name the rework commit, and "User documentation" points at "Where the drafts
+landed" instead of keeping a second list.
