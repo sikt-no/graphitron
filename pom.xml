@@ -187,6 +187,24 @@
                 <artifactId>jooq-postgres-extensions</artifactId>
                 <version>${version.org.jooq}</version>
             </dependency>
+            <!-- The JDBC driver. version.postgresql alone reaches only the declarations that name
+                 it; jooq-postgres-extensions declares the driver itself, at jooq-parent's
+                 postgres.version, which trails ours and carries open advisories. Only management
+                 governs a transitive edge, so modules declare the driver without a version. The
+                 checker-qual exclusion is quarkus-bom's own: this inherited entry outranks that
+                 import in graphitron-sakila-example, so it is restated to keep the example on the
+                 classpath Quarkus tests against. -->
+            <dependency>
+                <groupId>org.postgresql</groupId>
+                <artifactId>postgresql</artifactId>
+                <version>${version.postgresql}</version>
+                <exclusions>
+                    <exclusion>
+                        <groupId>org.checkerframework</groupId>
+                        <artifactId>checker-qual</artifactId>
+                    </exclusion>
+                </exclusions>
+            </dependency>
             <dependency>
                 <groupId>com.h2database</groupId>
                 <artifactId>h2</artifactId>

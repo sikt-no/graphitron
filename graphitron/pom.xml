@@ -150,7 +150,6 @@
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
-            <version>${version.postgresql}</version>
             <scope>test</scope>
         </dependency>
         <!-- Testcontainers' shaded Guava keeps the annotations' original names, so javac reading
