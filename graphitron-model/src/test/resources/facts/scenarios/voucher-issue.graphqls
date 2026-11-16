@@ -1,10 +1,10 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each claim names the member it is. A schema whose voucher stage refuses nothing generates."
+"A field marked @issue makes every other field of its type a voucher member: sealed into the voucher and withheld from what the subgraph emits, its arguments with it, while the transcription keeps the declaration as written. Membership is decided from structure alone, so it holds whatever else the voucher stage later refuses. Each member that reads a column of the issuing table is a component, its column and scalar resolved, and each vouched-for field names the member it is. A schema whose voucher stage refuses nothing generates."
 type FilmRef @table(name: "film") {
   filmId: ID! @field(name: "film_id")
   title(lang: String): String
-  voucher: String! @issue(scope: "films", ttl: "PT5M", claims: "title")
+  voucher: String! @issue(scope: "films", ttl: "PT5M", vouchesFor: "title")
 }
 
 type Language @table(name: "language") {
@@ -19,7 +19,7 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_ast_issue_entry", rows: """
-  scope, ttl,  claims
+  scope, ttl,  vouches_for
   films, PT5M, title
   """)
 
@@ -50,7 +50,7 @@ extend schema @expectEquals(relation: "graphitron_voucher_component", rows: """
   FilmRef,   title,      film,       title,       String
   """)
 
-extend schema @expectEquals(relation: "graphitron_voucher_claim", rows: """
+extend schema @expectEquals(relation: "graphitron_voucher_vouched_for", rows: """
   position, type_name, field_name
   0,        FilmRef,   title
   """)

@@ -259,13 +259,13 @@ public final class EntryFamilyFixture {
 
         type FilmVoucher @table(name: "film") {
           filmId: ID @field(name: "film_id")
-          voucher: String @issue(scope: "films", ttl: "PT5M", claims: "filmId")
+          voucher: String @issue(scope: "films", ttl: "PT5M", vouchesFor: "filmId")
         }
 
         type LanguageVoucher @table(name: "language") @key(fields: "languageId") {
           languageId: Int @field(name: "language_id")
           name: String
-          voucher: String @accept(scope: "languages", key: "languageId", claims: "name")
+          voucher: String @accept(scope: "languages", key: "languageId", vouchesFor: "name")
         }
         """;
 

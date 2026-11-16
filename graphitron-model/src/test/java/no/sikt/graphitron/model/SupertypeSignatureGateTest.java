@@ -255,16 +255,16 @@ class SupertypeSignatureGateTest {
         // @node's two list arguments, the current key and the legacy one, decoded as twins.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry"),
         // The voucher markers' field-set arguments, each parsed on the same terms: both markers'
-        // claims and an @accept's key. Siblings by decision: each references its own marker's entry,
+        // vouched-for fields and an @accept's key. Siblings by decision: each references its own marker's entry,
         // so a selection cannot hang off an application that is not that marker, which one relation
-        // keyed on the bare directive application could not say, and a claim and a key are read by
+        // keyed on the bare directive application could not say, and a vouched-for field and a key are read by
         // different rules.
-        Set.of("graphitron_ast_issue_claim_entry", "graphitron_ast_accept_claim_entry",
+        Set.of("graphitron_ast_issue_vouched_for_entry", "graphitron_ast_accept_vouched_for_entry",
             "graphitron_ast_accept_key_entry"),
-        // And each resolved: an @issue's claim to the member it names, an @accept's to the field of
+        // And each resolved: an @issue's vouched-for field to the member it names, an @accept's to the field of
         // its type. Siblings by decision: a member is no field and a field no member, so one relation
         // would carry a foreign key null on every row of the other marker.
-        Set.of("graphitron_voucher_claim", "graphitron_accept_claim"),
+        Set.of("graphitron_voucher_vouched_for", "graphitron_accept_vouched_for"),
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and
@@ -300,11 +300,11 @@ class SupertypeSignatureGateTest {
         // and an index are catalog facts of different kinds, and the order reads either by the
         // surface written, stored as the key's column subtype so its readers stop reconstructing it.
         "graphitron_occurrence_sort_key_column_rule|sql_constraint_column,sql_index_column",
-        // The voucher stage's refusals, which judge both markers' claims by the rules they share,
+        // The voucher stage's refusals, which judge both markers' vouched-for fields by the rules they share,
         // an empty or repeated claim, and resolve each against its own marker's claim relation. The
         // supertype it reconstructs is the sibling pair recorded above, kept apart by decision.
-        "graphitron_voucher_entry_defect_rule|graphitron_ast_accept_claim_entry,graphitron_ast_issue_claim_entry",
-        "graphitron_voucher_entry_defect_rule|graphitron_accept_claim,graphitron_voucher_claim");
+        "graphitron_voucher_entry_defect_rule|graphitron_ast_accept_vouched_for_entry,graphitron_ast_issue_vouched_for_entry",
+        "graphitron_voucher_entry_defect_rule|graphitron_accept_vouched_for,graphitron_voucher_vouched_for");
 
 
 

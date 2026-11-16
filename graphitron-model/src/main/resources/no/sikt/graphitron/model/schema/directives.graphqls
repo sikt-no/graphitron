@@ -647,11 +647,11 @@ directive @issue(
   """
   ttl: String!
   """
-  The absorbed fields that are the voucher's claims, a field set as `@key(fields:)` spells one: whose
-  rows are vouched for. The accepting subgraph's `@accept(claims:)` must name the same fields; the
+  The absorbed fields the voucher vouches for, a field set as `@key(fields:)` spells one: whose
+  rows are vouched for. The accepting subgraph's `@accept(vouchesFor:)` must name the same fields; the
   remaining absorbed fields are the key of the vouched row.
   """
-  claims: String!
+  vouchesFor: String!
 ) on FIELD_DEFINITION
 
 """
@@ -659,8 +659,8 @@ Marks the voucher field of a table-bound entity in a federated subgraph that gra
 on another subgraph's voucher. The field is the voucher a router hands over from the issuing subgraph's
 `@issue` field: it is not a column and is never selected. The type gains a resolvable key on the
 voucher, beside the key the author wrote, and the voucher is `@inaccessible`. Graphitron verifies each
-voucher and reads the vouched row on a connection of its own, told the voucher's claims, so the
-database's row-level security decides what the claims unlock. Requires a federation `@link`.
+voucher and reads the vouched row on a connection of its own, told the voucher's vouched-for values, so the
+database's row-level security decides what the vouched-for values unlock. Requires a federation `@link`.
 Generation does not verify vouchers yet, so a schema using `@accept` is refused for now.
 """
 directive @accept(
@@ -674,11 +674,11 @@ directive @accept(
   """
   key: String
   """
-  The fields of this type the voucher's claims parse into, a field set as `@key(fields:)` spells one:
-  whose rows are vouched for. Must name the same fields as the issuing subgraph's `@issue(claims:)`,
+  The fields of this type the voucher's vouched-for values parse into, a field set as `@key(fields:)` spells one:
+  whose rows are vouched for. Must name the same fields as the issuing subgraph's `@issue(vouchesFor:)`,
   and may be `@inaccessible`.
   """
-  claims: String!
+  vouchesFor: String!
 ) on FIELD_DEFINITION
 
 """

@@ -1,41 +1,41 @@
 extend schema @withConfiguration(sessionState: true)
 
-"The issuing side's refusals, each at the @issue or at the absorbed field it is about. A type issues one voucher, is reached only through it, and carries each absorbed field as one scalar, never an enum, read off its own table; the claims name absorbed fields, once each; the lifetime is a duration; and a voucher vouches for rows reached below a parent, never at the root."
+"The issuing side's refusals, each at the @issue or at the absorbed field it is about. A type issues one voucher, is reached only through it, and carries each absorbed field as one scalar, never an enum, read off its own table; the vouchesFor names absorbed fields, once each; the lifetime is a duration; and a voucher vouches for rows reached below a parent, never at the root."
 type Twice @table(name: "film") {
   filmId: ID @field(name: "film_id")
-  a: String @issue(scope: "s", ttl: "PT5M", claims: "filmId")
-  b: String @issue(scope: "s", ttl: "PT5M", claims: "filmId")
+  a: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "filmId")
+  b: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "filmId")
 }
 
 # An authored @key would let a router around the voucher.
 type Keyed @table(name: "language") @key(fields: "languageId") {
   languageId: Int @field(name: "language_id")
-  v: String @issue(scope: "s", ttl: "PT5M", claims: "languageId")
+  v: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "languageId")
 }
 
 type Empty @table(name: "store") {
-  v: String @issue(scope: "s", ttl: "PT5M", claims: "x")
+  v: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "x")
 }
 
 type BadTtl @table(name: "city") {
   cityId: Int @field(name: "city_id")
-  v: String @issue(scope: "s", ttl: "5 minutes", claims: "cityId")
+  v: String @issue(scope: "s", ttl: "5 minutes", vouchesFor: "cityId")
 }
 
 type NoClaims @table(name: "country") {
   countryId: Int @field(name: "country_id")
-  v: String @issue(scope: "s", ttl: "PT5M", claims: "")
+  v: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "")
 }
 
-# The voucher field is no member, and a claim cannot nest: one row at the @issue, naming the first.
+# The voucher field is no member, and a vouched-for field cannot nest: one row at the @issue, naming the first.
 type Unabsorbed @table(name: "film") {
   filmId: ID @field(name: "film_id")
-  v: String @issue(scope: "s", ttl: "PT5M", claims: "v filmId { x }")
+  v: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "v filmId { x }")
 }
 
 type Repeated @table(name: "category") {
   categoryId: Int @field(name: "category_id")
-  v: String @issue(scope: "s", ttl: "PT5M", claims: "categoryId categoryId")
+  v: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "categoryId categoryId")
 }
 
 type Members @table(name: "address") {
@@ -45,7 +45,7 @@ type Members @table(name: "address") {
   phone: Phone @field(name: "phone")
   extra: Boolean @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
   nosuch: String
-  v: String @issue(scope: "s", ttl: "PT5M", claims: "addressId")
+  v: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "addressId")
 }
 
 type Language @table(name: "language") {
@@ -64,10 +64,10 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   code LIKE 'VOUCHER_%'
   """, rows: """
   code,                             type_name,  detail
-  VOUCHER_CLAIMS_EMPTY,             NoClaims,   NoClaims.v
-  VOUCHER_CLAIM_NOT_ABSORBED,       Empty,      x
-  VOUCHER_CLAIM_NOT_ABSORBED,       Unabsorbed, filmId
-  VOUCHER_CLAIM_REPEATED,           Repeated,   categoryId
+  VOUCHER_VOUCHES_FOR_EMPTY,             NoClaims,   NoClaims.v
+  VOUCHER_VOUCHED_FOR_NOT_ABSORBED,       Empty,      x
+  VOUCHER_VOUCHED_FOR_NOT_ABSORBED,       Unabsorbed, filmId
+  VOUCHER_VOUCHED_FOR_REPEATED,           Repeated,   categoryId
   VOUCHER_FIELD_REPEATED,           Twice,      Twice
   VOUCHER_ISSUE_ABSORBS_NOTHING,    Empty,      Empty
   VOUCHER_ISSUE_ON_KEYED_TYPE,      Keyed,      Keyed

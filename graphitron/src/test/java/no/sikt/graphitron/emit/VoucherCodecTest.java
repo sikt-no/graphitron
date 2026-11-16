@@ -92,8 +92,8 @@ class VoucherCodecTest {
     }
 
     private static String issue(Object keys, UUID vouch, String scope, Instant expires, String typeName,
-                                Map<String, ?> claims, Map<String, ?> lookup) throws Throwable {
-        return (String) call(sign, call(issuer, null, keys, vouch, scope, "alice", expires), typeName, claims, lookup);
+                                Map<String, ?> vouchedFor, Map<String, ?> lookup) throws Throwable {
+        return (String) call(sign, call(issuer, null, keys, vouch, scope, "alice", expires), typeName, vouchedFor, lookup);
     }
 
     private static String voucher() throws Throwable {
@@ -105,8 +105,8 @@ class VoucherCodecTest {
     }
 
     private static Object check(Object verifier, String typeName, String voucher, String scope,
-                                Set<String> claims, Set<String> key) throws Throwable {
-        return call(verify, verifier, typeName, voucher, scope, claims, key);
+                                Set<String> vouchedFor, Set<String> key) throws Throwable {
+        return call(verify, verifier, typeName, voucher, scope, vouchedFor, key);
     }
 
     private static Object check(String voucher) throws Throwable {
@@ -147,20 +147,20 @@ class VoucherCodecTest {
 
     @Test
     void aVoucherRoundTripsWithItsValuesInTheKindTheirScalarSerialized() throws Throwable {
-        var claims = Map.of("ownerId", 42, "region", "north", "active", true);
+        var vouchedFor = Map.of("ownerId", 42, "region", "north", "active", true);
         var lookup = Map.<String, Object>of("id", 7L << 40, "big", new BigInteger("123456789012345678901234567890"),
             "uuid", "6f1c2b0e-0000-4000-8000-000000000001", "weight", 1.5);
-        var voucher = issue(keys(), VOUCH, "results", EXPIRES, "Result", claims, lookup);
-        var token = check(verifierAt(keys(), ISSUED), "Result", voucher, "results", claims.keySet(), lookup.keySet());
+        var voucher = issue(keys(), VOUCH, "results", EXPIRES, "Result", vouchedFor, lookup);
+        var token = check(verifierAt(keys(), ISSUED), "Result", voucher, "results", vouchedFor.keySet(), lookup.keySet());
         assertThat(accessor(token, "vouchId")).isEqualTo(VOUCH);
         assertThat(accessor(token, "scope")).isEqualTo("results");
         assertThat(accessor(token, "caller")).isEqualTo("alice");
         assertThat(accessor(token, "expires")).isEqualTo(EXPIRES);
         assertThat(accessor(token, "keyId")).isEqualTo("k1");
-        assertThat(accessor(token, "claims")).isEqualTo(Map.of("active", true, "ownerId", 42, "region", "north"));
-        assertThat(List.copyOf(((Map<?, ?>) accessor(token, "claims")).keySet())).isEqualTo(List.of("active", "ownerId", "region"));
+        assertThat(accessor(token, "vouchedFor")).isEqualTo(Map.of("active", true, "ownerId", 42, "region", "north"));
+        assertThat(List.copyOf(((Map<?, ?>) accessor(token, "vouchedFor")).keySet())).isEqualTo(List.of("active", "ownerId", "region"));
         assertThat(accessor(token, "lookup")).isEqualTo(lookup);
-        assertThat(((Map<?, ?>) accessor(token, "claims")).get("ownerId")).isInstanceOf(Integer.class);
+        assertThat(((Map<?, ?>) accessor(token, "vouchedFor")).get("ownerId")).isInstanceOf(Integer.class);
     }
 
     @Test
@@ -171,10 +171,10 @@ class VoucherCodecTest {
         var backward = new LinkedHashMap<String, Object>();
         backward.put("b", "two");
         backward.put("a", 1);
-        var claims = Map.of("ownerId", 42);
-        assertThat(issue(keys(), VOUCH, "results", EXPIRES, "Result", claims, forward))
-            .isEqualTo(issue(keys(), VOUCH, "results", EXPIRES, "Result", claims, backward));
-        check(verifierAt(keys(), ISSUED), "Result", issue(keys(), VOUCH, "results", EXPIRES, "Result", claims, backward),
+        var vouchedFor = Map.of("ownerId", 42);
+        assertThat(issue(keys(), VOUCH, "results", EXPIRES, "Result", vouchedFor, forward))
+            .isEqualTo(issue(keys(), VOUCH, "results", EXPIRES, "Result", vouchedFor, backward));
+        check(verifierAt(keys(), ISSUED), "Result", issue(keys(), VOUCH, "results", EXPIRES, "Result", vouchedFor, backward),
             "results", Set.of("ownerId"), Set.of("b", "a"));
     }
 
@@ -206,11 +206,11 @@ class VoucherCodecTest {
         assertRejected(() -> check(call(verifier, null, keys, ISSUED, "bob"), "Result", voucher, "results",
             Set.of("ownerId"), Set.of("id")), "CALLER");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "results", Set.of("tenantId"),
-            Set.of("id")), "CLAIMS");
+            Set.of("id")), "VOUCHED_FOR");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "results", Set.of("ownerId", "tenantId"),
-            Set.of("id")), "CLAIMS");
+            Set.of("id")), "VOUCHED_FOR");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "results", Set.of(),
-            Set.of("id")), "CLAIMS");
+            Set.of("id")), "VOUCHED_FOR");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "results", Set.of("ownerId"),
             Set.of("resultId")), "KEY");
     }
@@ -218,7 +218,7 @@ class VoucherCodecTest {
     @Test
     void vouchersSharingAVouchIdMustAgreeOnScopeAndExpiry() throws Throwable {
         var keys = keys();
-        var claims = Set.of("ownerId");
+        var vouchedFor = Set.of("ownerId");
         var key = Set.of("id");
         var first = issue(keys, VOUCH, "results", EXPIRES, "Result", Map.of("ownerId", 42), Map.of("id", "r-1"));
         var second = issue(keys, VOUCH, "results", EXPIRES, "Result", Map.of("ownerId", 42), Map.of("id", "r-2"));
@@ -229,11 +229,11 @@ class VoucherCodecTest {
             Map.of("id", "r-5"));
 
         var verifier = verifierAt(keys, ISSUED);
-        check(verifier, "Result", first, "results", claims, key);
-        check(verifier, "Result", second, "results", claims, key);
-        check(verifier, "Result", otherVouch, "documents", claims, key);
-        assertRejected(() -> check(verifier, "Result", otherScope, "documents", claims, key), "INCONSISTENT");
-        assertRejected(() -> check(verifier, "Result", otherExpiry, "results", claims, key), "INCONSISTENT");
+        check(verifier, "Result", first, "results", vouchedFor, key);
+        check(verifier, "Result", second, "results", vouchedFor, key);
+        check(verifier, "Result", otherVouch, "documents", vouchedFor, key);
+        assertRejected(() -> check(verifier, "Result", otherScope, "documents", vouchedFor, key), "INCONSISTENT");
+        assertRejected(() -> check(verifier, "Result", otherExpiry, "results", vouchedFor, key), "INCONSISTENT");
     }
 
     @Test

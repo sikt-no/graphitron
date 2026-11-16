@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The issuing side end to end, over the {@code issuing} package: every film a language returns gets a
  * voucher that the codec verifies for {@code FilmVoucher} under the field's scope and the request's
- * caller, carrying the film's title as its claim and its id as its lookup part, each in the form the
+ * caller, carrying the film's title as vouched for and its id as its lookup part, each in the form the
  * field's scalar serializes it; all of one operation's vouchers share one vouch id and expire the
  * field's lifetime after the operation started, and another operation mints another vouch id.
  */
@@ -99,10 +99,10 @@ class VoucherIssueExecutionTest {
 
     /**
      * Judged on the seeded films: a film another test writes can change or go between the query and
-     * the titles read beside it, so its voucher is verified and its claim left unjudged.
+     * the titles read beside it, so its voucher is verified and its vouched-for value left unjudged.
      */
     @Test
-    void everyFilmGetsAVoucherCarryingItsTitleAsTheClaimAndItsIdAsTheLookup() {
+    void everyFilmGetsAVoucherVouchingForItsTitleWithItsIdAsTheLookup() {
         var before = Instant.now().minusSeconds(1);
         var vouchers = vouchers(run("alice"));
         var titles = dsl.select(FILM.FILM_ID, FILM.TITLE).from(FILM).fetchMap(FILM.FILM_ID, FILM.TITLE);
@@ -115,7 +115,7 @@ class VoucherIssueExecutionTest {
             var filmId = token.lookup().get("filmId");
             assertThat(filmId).as("an ID serializes as a string").isInstanceOf(String.class);
             if (Integer.valueOf((String) filmId) <= LAST_SEEDED_FILM) {
-                assertThat(token.claims())
+                assertThat(token.vouchedFor())
                     .containsExactly(Map.entry("title", titles.get(Integer.valueOf((String) filmId))));
             }
             assertThat(token.expires()).isBetween(before.plus(Duration.ofMinutes(5)).minusSeconds(1),

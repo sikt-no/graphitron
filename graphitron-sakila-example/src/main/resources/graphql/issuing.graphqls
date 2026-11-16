@@ -1,7 +1,7 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
 # Issuing fixture (VoucherIssueExecutionTest). A film below its language vouches for itself to
-# another subgraph: the voucher absorbs the film's id and title, the title being the claims, and the
+# another subgraph: the voucher absorbs the film's id and title, the title being vouched for, and the
 # subgraph publishes FilmVoucher with the voucher alone. Kept out of the shared schemas, since a build
 # that vouches takes voucher keys on every runtime.
 
@@ -17,5 +17,5 @@ type Language @table(name: "language") {
 type FilmVoucher @table(name: "film") {
   filmId: ID! @field(name: "film_id")
   title: String!
-  voucher: String! @issue(scope: "films", ttl: "PT5M", claims: "title")
+  voucher: String! @issue(scope: "films", ttl: "PT5M", vouchesFor: "title")
 }

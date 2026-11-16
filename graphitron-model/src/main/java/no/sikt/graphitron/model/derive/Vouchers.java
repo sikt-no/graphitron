@@ -4,29 +4,29 @@ import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_CLAIM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_CLAIM_RULE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_CLAIM;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_CLAIM_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_VOUCHED_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_VOUCHED_FOR_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_VOUCHED_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_VOUCHED_FOR_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_COMPONENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_COMPONENT_RULE;
 
 /**
- * The voucher stage: each voucher member's column and scalar, each {@code @issue} claim resolved to
- * the member it names and each {@code @accept} claim to the field of its type it names, and the
+ * The voucher stage: each voucher member's column and scalar, each {@code @issue} vouched-for field resolved to
+ * the member it names and each {@code @accept} vouched-for field to the field of its type it names, and the
  * refusals of both markers it can decide this early.
  *
  * <p>Runs as a stage of the graphitron gatherer after {@link Nodes}, since the components read the
  * issuing type's table and a refusal reads the node relation, and long after {@link VoucherMembers},
- * whose membership both read. Clears and re-derives the graph's components and claims on
- * {@link MintedKeys}' terms, the accept claims with them, then writes its codes' rows through {@link EntryDefects#derive} from
+ * whose membership both read. Clears and re-derives the graph's components and vouched-for fields on
+ * {@link MintedKeys}' terms, the accept's vouched-for fields with them, then writes its codes' rows through {@link EntryDefects#derive} from
  * {@code graphitron_voucher_entry_defect_rule}, which reads what it just wrote, as its last statement.
  */
 public final class Vouchers {
 
     private Vouchers() {}
 
-    /** Writes the graph's voucher components and both markers' claims, then its defects marked with {@code readAt}. */
+    /** Writes the graph's voucher components and both markers' vouched-for fields, then its defects marked with {@code readAt}. */
     public static void derive(DSLContext dsl, String graphName, LocalDateTime readAt) {
         var c = GRAPHITRON_VOUCHER_COMPONENT;
         var cr = GRAPHITRON_VOUCHER_COMPONENT_RULE;
@@ -39,8 +39,8 @@ public final class Vouchers {
                 .from(cr)
                 .where(cr.GRAPH_NAME.eq(graphName)))
             .execute();
-        var v = GRAPHITRON_VOUCHER_CLAIM;
-        var vr = GRAPHITRON_VOUCHER_CLAIM_RULE;
+        var v = GRAPHITRON_VOUCHER_VOUCHED_FOR;
+        var vr = GRAPHITRON_VOUCHER_VOUCHED_FOR_RULE;
         dsl.deleteFrom(v).where(v.GRAPH_NAME.eq(graphName)).execute();
         dsl.insertInto(v)
             .columns(v.GRAPH_NAME, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN, v.POSITION,
@@ -50,8 +50,8 @@ public final class Vouchers {
                 .from(vr)
                 .where(vr.GRAPH_NAME.eq(graphName)))
             .execute();
-        var a = GRAPHITRON_ACCEPT_CLAIM;
-        var ar = GRAPHITRON_ACCEPT_CLAIM_RULE;
+        var a = GRAPHITRON_ACCEPT_VOUCHED_FOR;
+        var ar = GRAPHITRON_ACCEPT_VOUCHED_FOR_RULE;
         dsl.deleteFrom(a).where(a.GRAPH_NAME.eq(graphName)).execute();
         dsl.insertInto(a)
             .columns(a.GRAPH_NAME, a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN, a.POSITION,

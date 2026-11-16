@@ -71,15 +71,15 @@ public final class VoucherIssueEmitter {
         var body = CodeBlock.builder()
             .addStatement("$T row = ($T) env.getSource()", RECORD, RECORD)
             .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
-            .addStatement("$T claims = new $T<>()", map, LinkedHashMap.class)
+            .addStatement("$T vouchedFor = new $T<>()", map, LinkedHashMap.class)
             .addStatement("$T lookup = new $T<>()", map, LinkedHashMap.class);
         for (var component : issue.components()) {
             body.addStatement("$L.put($S, $T.$L.getCoercing().serialize(row.get($T.$L.$L), context, env.getLocale()))",
-                component.claim() ? "claims" : "lookup", component.fieldName(),
+                component.vouchedFor() ? "vouchedFor" : "lookup", component.fieldName(),
                 CatalogRefs.className(component.scalar().ownerClassName()), component.scalar().fieldName(),
                 table, issue.table().javaFieldName(), component.column().javaName());
         }
-        body.addStatement("return context.<$T>get($T.class).issuer($S, $T.parse($S)).sign($S, claims, lookup)",
+        body.addStatement("return context.<$T>get($T.class).issuer($S, $T.parse($S)).sign($S, vouchedFor, lookup)",
             issuers, issuers, issue.scope(), Duration.class, issue.ttl().toString(), issue.typeName());
         return MethodSpec.methodBuilder(Character.toLowerCase(issue.typeName().charAt(0))
                 + issue.typeName().substring(1) + Character.toUpperCase(issue.fieldName().charAt(0))

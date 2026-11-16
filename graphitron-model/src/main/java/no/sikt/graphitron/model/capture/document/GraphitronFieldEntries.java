@@ -15,8 +15,8 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_CLAIM_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_CLAIM_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_VOUCHED_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_VOUCHED_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
@@ -78,10 +78,10 @@ final class GraphitronFieldEntries {
         outboxes(dsl, graph, touchedAt, applied(applications, "outbox"));
         var issueApplications = applied(applications, "issue");
         issues(dsl, graph, touchedAt, issueApplications);
-        issueClaims(dsl, graph, touchedAt, issueApplications);
+        issueVouchesFor(dsl, graph, touchedAt, issueApplications);
         var acceptApplications = applied(applications, "accept");
         accepts(dsl, graph, touchedAt, acceptApplications);
-        acceptClaims(dsl, graph, touchedAt, acceptApplications);
+        acceptVouchesFor(dsl, graph, touchedAt, acceptApplications);
         acceptKeys(dsl, graph, touchedAt, acceptApplications);
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
@@ -96,9 +96,9 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_MUTATION_ENTRY,
         GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY,
         GRAPHITRON_AST_ISSUE_ENTRY,
-        GRAPHITRON_AST_ISSUE_CLAIM_ENTRY,
+        GRAPHITRON_AST_ISSUE_VOUCHED_FOR_ENTRY,
         GRAPHITRON_AST_ACCEPT_ENTRY,
-        GRAPHITRON_AST_ACCEPT_CLAIM_ENTRY,
+        GRAPHITRON_AST_ACCEPT_VOUCHED_FOR_ENTRY,
         GRAPHITRON_AST_ACCEPT_KEY_ENTRY);
 
     private static void conditions(DSLContext dsl, String graph, LocalDateTime touchedAt,
@@ -239,27 +239,27 @@ final class GraphitronFieldEntries {
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "scope"), t.SCOPE),
             application -> val(string(application, "ttl"), t.TTL),
-            application -> val(string(application, "claims"), t.CLAIMS)));
+            application -> val(string(application, "vouchesFor"), t.VOUCHES_FOR)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.SCOPE, t.TTL, t.CLAIMS)
+                    t.TOUCHED_AT, t.SCOPE, t.TTL, t.VOUCHES_FOR)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.SCOPE, excluded(t.SCOPE))
                 .set(t.TTL, excluded(t.TTL))
-                .set(t.CLAIMS, excluded(t.CLAIMS)));
+                .set(t.VOUCHES_FOR, excluded(t.VOUCHES_FOR)));
     }
 
     /**
-     * One selection of a voucher marker's field-set argument, its claims or an {@code @accept}'s key,
+     * One selection of a voucher marker's field-set argument, its vouchesFor or an {@code @accept}'s key,
      * at its index in the parse, with its segments.
      */
     private record Claim(Directive application, int position, List<String> segments) {}
 
-    /** Each selection of each application's claims field set, at its index in the parse. */
+    /** Each selection of each application's vouchesFor field set, at its index in the parse. */
     private static List<Claim> claims(List<Directive> applications) {
-        return selections(applications, "claims");
+        return selections(applications, "vouchesFor");
     }
 
     /** Each selection of each application's {@code argument} field set, at its index in the parse. */
@@ -278,9 +278,9 @@ final class GraphitronFieldEntries {
         return claims;
     }
 
-    private static void issueClaims(DSLContext dsl, String graph, LocalDateTime touchedAt,
+    private static void issueVouchesFor(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                     List<Directive> applications) {
-        var t = GRAPHITRON_AST_ISSUE_CLAIM_ENTRY;
+        var t = GRAPHITRON_AST_ISSUE_VOUCHED_FOR_ENTRY;
         var rows = claims(applications).stream().collect(Rows.toRowList(
             claim -> val(graph, t.GRAPH_NAME),
             claim -> GraphQLAstEntries.sourceName(claim.application()),
@@ -311,21 +311,21 @@ final class GraphitronFieldEntries {
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "scope"), t.SCOPE),
             application -> val(string(application, "key"), t.KEY_FIELDS),
-            application -> val(string(application, "claims"), t.CLAIMS)));
+            application -> val(string(application, "vouchesFor"), t.VOUCHES_FOR)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.SCOPE, t.KEY_FIELDS, t.CLAIMS)
+                    t.TOUCHED_AT, t.SCOPE, t.KEY_FIELDS, t.VOUCHES_FOR)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.SCOPE, excluded(t.SCOPE))
                 .set(t.KEY_FIELDS, excluded(t.KEY_FIELDS))
-                .set(t.CLAIMS, excluded(t.CLAIMS)));
+                .set(t.VOUCHES_FOR, excluded(t.VOUCHES_FOR)));
     }
 
-    private static void acceptClaims(DSLContext dsl, String graph, LocalDateTime touchedAt,
+    private static void acceptVouchesFor(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                      List<Directive> applications) {
-        var t = GRAPHITRON_AST_ACCEPT_CLAIM_ENTRY;
+        var t = GRAPHITRON_AST_ACCEPT_VOUCHED_FOR_ENTRY;
         var rows = claims(applications).stream().collect(Rows.toRowList(
             claim -> val(graph, t.GRAPH_NAME),
             claim -> GraphQLAstEntries.sourceName(claim.application()),

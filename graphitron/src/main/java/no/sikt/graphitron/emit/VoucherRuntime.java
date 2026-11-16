@@ -48,7 +48,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
  * {@link #vouches}.
  *
  * <p>The format, version 1: base64url without padding over the version byte, the 16-byte vouch id, the
- * scope, the caller, the expiry in epoch seconds, the key id, the claims section, the lookup section,
+ * scope, the caller, the expiry in epoch seconds, the key id, the vouched-for section, the lookup section,
  * and then the signature. A string is its UTF-8 length as an {@code int} and its bytes. A section is
  * its entry count and its entries in strictly ascending name order, each the field name, a tag naming
  * the JSON kind of the value the field's scalar serialized ({@code S} string, {@code I} integer,
@@ -115,7 +115,7 @@ public final class VoucherRuntime {
             .addEnumConstant("EXPIRED", constant("the voucher has expired"))
             .addEnumConstant("SCOPE", constant("the voucher was issued for another scope"))
             .addEnumConstant("CALLER", constant("the voucher was issued to another caller"))
-            .addEnumConstant("CLAIMS", constant("the voucher's claims name other fields than the accepting field's claims"))
+            .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting field's vouchesFor"))
             .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key"))
             .addEnumConstant("VALUE", constant("a value in the voucher does not parse as its field's scalar"))
             .addEnumConstant("INCONSISTENT", constant("vouchers sharing a vouch id disagree on scope, caller or expiry"))
@@ -313,7 +313,7 @@ public final class VoucherRuntime {
                 .addParameter(String.class, "caller")
                 .addParameter(Instant.class, "expires")
                 .addParameter(String.class, "keyId")
-                .addParameter(OBJECT_MAP, "claims")
+                .addParameter(OBJECT_MAP, "vouchedFor")
                 .addParameter(OBJECT_MAP, "lookup")
                 .build())
             .addMethod(MethodSpec.compactConstructorBuilder()
@@ -323,7 +323,7 @@ public final class VoucherRuntime {
                 .addStatement("$T.requireNonNull(caller, $S)", Objects.class, "caller")
                 .addStatement("$T.requireNonNull(expires, $S)", Objects.class, "expires")
                 .addStatement("$T.requireNonNull(keyId, $S)", Objects.class, "keyId")
-                .addStatement("claims = $T.unmodifiableMap(new $T<>(claims))", Collections.class, TreeMap.class)
+                .addStatement("vouchedFor = $T.unmodifiableMap(new $T<>(vouchedFor))", Collections.class, TreeMap.class)
                 .addStatement("lookup = $T.unmodifiableMap(new $T<>(lookup))", Collections.class, TreeMap.class)
                 .build())
             .build();
@@ -352,13 +352,13 @@ public final class VoucherRuntime {
                     + "\n"
                     + "@throws IllegalArgumentException where a value is null or of another kind\n")
                 .addParameter(String.class, "typeName")
-                .addParameter(WIRE_MAP, "claims")
+                .addParameter(WIRE_MAP, "vouchedFor")
                 .addParameter(WIRE_MAP, "lookup")
                 .addStatement("$T bytes = new $T()", ByteArrayOutputStream.class, ByteArrayOutputStream.class)
                 .addStatement("$T out = new $T(bytes)", DataOutputStream.class, DataOutputStream.class)
                 .beginControlFlow("try")
                 .addStatement("out.write(head)")
-                .addStatement("writeSection(out, claims)")
+                .addStatement("writeSection(out, vouchedFor)")
                 .addStatement("writeSection(out, lookup)")
                 .addStatement("byte[] signature = keys.sign(signed(bytes.toByteArray(), typeName))")
                 .addStatement("out.writeInt(signature.length)")
@@ -438,7 +438,7 @@ public final class VoucherRuntime {
             .returns(token)
             .addJavadoc("Decodes and checks a voucher presented for an entity of {@code typeName}: its signature\n"
                 + "with the type name, its expiry within {@link VoucherCodec#CLOCK_SKEW}, its scope, its caller,\n"
-                + "that its claims name exactly {@code claimFields} and its lookup part exactly\n"
+                + "that its vouched-for section names exactly {@code vouchedForFields} and its lookup part exactly\n"
                 + "{@code keyFields}, and that it agrees on scope, caller and expiry with every voucher this\n"
                 + "verifier passed under the same vouch id. Needs no connection.\n"
                 + "\n"
@@ -446,7 +446,7 @@ public final class VoucherRuntime {
             .addParameter(String.class, "typeName")
             .addParameter(String.class, "voucher")
             .addParameter(String.class, "scope")
-            .addParameter(STRING_SET, "claimFields")
+            .addParameter(STRING_SET, "vouchedForFields")
             .addParameter(STRING_SET, "keyFields")
             .addStatement("$T buffer", ByteBuffer.class)
             .beginControlFlow("try")
@@ -466,7 +466,7 @@ public final class VoucherRuntime {
             .addStatement("$T tokenCaller = readString(buffer)", String.class)
             .addStatement("$T expires = $T.ofEpochSecond(buffer.getLong())", Instant.class, Instant.class)
             .addStatement("$T keyId = readString(buffer)", String.class)
-            .addStatement("$T claims = readSection(buffer)", OBJECT_MAP)
+            .addStatement("$T vouchedFor = readSection(buffer)", OBJECT_MAP)
             .addStatement("$T lookup = readSection(buffer)", OBJECT_MAP)
             .addStatement("body = new byte[buffer.position()]")
             .addStatement("buffer.get(0, body)")
@@ -475,7 +475,7 @@ public final class VoucherRuntime {
             .beginControlFlow("if (buffer.hasRemaining())")
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
-            .addStatement("decoded = new $T(vouchId, tokenScope, tokenCaller, expires, keyId, claims, lookup)", token)
+            .addStatement("decoded = new $T(vouchId, tokenScope, tokenCaller, expires, keyId, vouchedFor, lookup)", token)
             .nextControlFlow("catch ($T | $T e)", BufferUnderflowException.class, IllegalArgumentException.class)
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
@@ -494,8 +494,8 @@ public final class VoucherRuntime {
             .beginControlFlow("if (!decoded.caller().equals(caller))")
             .addStatement("throw new $T($T.CALLER)", rejected, reason)
             .endControlFlow()
-            .beginControlFlow("if (!decoded.claims().keySet().equals(claimFields))")
-            .addStatement("throw new $T($T.CLAIMS)", rejected, reason)
+            .beginControlFlow("if (!decoded.vouchedFor().keySet().equals(vouchedForFields))")
+            .addStatement("throw new $T($T.VOUCHED_FOR)", rejected, reason)
             .endControlFlow()
             .beginControlFlow("if (!decoded.lookup().keySet().equals(keyFields))")
             .addStatement("throw new $T($T.KEY)", rejected, reason)

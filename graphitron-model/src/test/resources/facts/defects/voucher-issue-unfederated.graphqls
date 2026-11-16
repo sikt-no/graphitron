@@ -2,13 +2,13 @@
 type Person @table(name: "actor") @node {
   id: ID
   firstName: String @field(name: "first_name")
-  voucher: String @issue(scope: "s", ttl: "PT5M", claims: "firstName")
+  voucher: String @issue(scope: "s", ttl: "PT5M", vouchesFor: "firstName")
 }
 
 type Accepting @table(name: "language") {
   languageId: Int @field(name: "language_id")
   name: String
-  voucher: String @accept(scope: "s", claims: "name")
+  voucher: String @accept(scope: "s", vouchesFor: "name")
 }
 
 type Query {

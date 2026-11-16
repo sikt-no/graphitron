@@ -8,7 +8,7 @@ Marks the *voucher* field of a table-bound type in a federated subgraph that vou
 
 [source,graphql]
 ----
-directive @issue(scope: String!, ttl: String!, claims: String!) on FIELD_DEFINITION
+directive @issue(scope: String!, ttl: String!, vouchesFor: String!) on FIELD_DEFINITION
 ----
 
 [cols="1,1,3"]
@@ -23,9 +23,9 @@ directive @issue(scope: String!, ttl: String!, claims: String!) on FIELD_DEFINIT
 | `String!`
 | How long a voucher stays valid, as an ISO-8601 duration such as `PT5M`. Every voucher an operation issues expires at the operation's start plus this.
 
-| `claims`
+| `vouchesFor`
 | `String!`
-| The absorbed fields that are the voucher's claims, a field set as `@key(fields:)` spells one: whose rows are vouched for. The accepting subgraph's `@accept(claims:)` names the same fields; the remaining absorbed fields are the key of the vouched row.
+| The absorbed fields the voucher vouches for, a field set as `@key(fields:)` spells one: whose rows are vouched for. The accepting subgraph's `@accept(vouchesFor:)` names the same fields; the remaining absorbed fields are the key of the vouched row.
 |===
 
 == Canonical example
@@ -35,11 +35,11 @@ directive @issue(scope: String!, ttl: String!, claims: String!) on FIELD_DEFINIT
 type VgsResultat @table(name: "soknad_vgs_resultat") {
   id: ID! @field(name: "vgs_resultat_id")
   eierId: String! @field(name: "eier_id")
-  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", claims: "eierId")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
 }
 ----
 
-`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `voucher` alone. Name and type the absorbed fields exactly as the other subgraph's key fields and claims fields; a mismatch shows up as every voucher being rejected there.
+`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `voucher` alone. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
 
 == What the subgraph publishes
 
@@ -86,14 +86,14 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 | `VOUCHER_TTL_INVALID`
 | `ttl` is an ISO-8601 duration of hours, minutes and seconds, such as `PT5M`.
 
-| `VOUCHER_CLAIMS_EMPTY`
-| `claims` selects at least one field.
+| `VOUCHER_VOUCHES_FOR_EMPTY`
+| `vouchesFor` selects at least one field.
 
-| `VOUCHER_CLAIM_NOT_ABSORBED`
-| Each claim names an absorbed field: not a name the type does not declare, not the voucher field, not a nested selection.
+| `VOUCHER_VOUCHED_FOR_NOT_ABSORBED`
+| Each vouched-for field names an absorbed field: not a name the type does not declare, not the voucher field, not a nested selection.
 
-| `VOUCHER_CLAIM_REPEATED`
-| No claim is named twice.
+| `VOUCHER_VOUCHED_FOR_REPEATED`
+| No vouched-for field is named twice.
 
 | `VOUCHER_MEMBER_NOT_SCALAR`
 | Each absorbed field is a single scalar value, not an enum, a list or an object.

@@ -13,7 +13,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ISSUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_VOUCHED_FOR;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_COMPONENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_VOUCHER_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
@@ -27,11 +27,11 @@ import static org.jooq.impl.DSL.selectOne;
  * {@link VoucherIssueEmitter}'s query, and the projection's: every {@code @issue} field the store
  * admits, with its scope and lifetime, the table its row is read from, and each value its voucher
  * carries, the absorbed field it is named after, the column it is read from, the scalar constant
- * that serializes it and whether it is a claim or part of the lookup.
+ * that serializes it and whether it is vouched for or part of the lookup.
  *
  * <p>Two statements at two grains: the issuing fields, and the components. Nothing here decides
- * anything: the members, their columns and their scalars are the voucher stage's rows, a claim is
- * its claim row, and a graph with any refused part never reaches an emitter. The scalar constant is
+ * anything: the members, their columns and their scalars are the voucher stage's rows, a vouched-for field is
+ * its vouched-for row, and a graph with any refused part never reaches an emitter. The scalar constant is
  * a built-in's on {@code graphql.Scalars} or the one a scalar's {@code @scalarType} names, the two
  * ways a scalar is bound.
  *
@@ -67,7 +67,7 @@ public final class VoucherIssueQuery {
     }
 
     /** One value a voucher carries: the absorbed field's name, its column, its scalar, and its part. */
-    public record Component(String fieldName, ColumnRef column, ScalarConstant scalar, boolean claim) {
+    public record Component(String fieldName, ColumnRef column, ScalarConstant scalar, boolean vouchedFor) {
         public Component {
             Objects.requireNonNull(fieldName, "fieldName");
             Objects.requireNonNull(column, "column");
@@ -130,14 +130,14 @@ public final class VoucherIssueQuery {
         var col = SQL_COLUMN;
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
-        var cl = GRAPHITRON_VOUCHER_CLAIM;
+        var cl = GRAPHITRON_VOUCHER_VOUCHED_FOR;
         var sd = GRAPHQL_DIRECTIVE_APPLICATION.as("sd");
         var se = GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
-        var claim = exists(selectOne().from(cl)
+        var vouchedFor = exists(selectOne().from(cl)
             .where(cl.GRAPH_NAME.eq(c.GRAPH_NAME), cl.TYPE_NAME.eq(c.TYPE_NAME), cl.FIELD_NAME.eq(c.FIELD_NAME)));
         var components = dsl.select(m.TYPE_NAME, m.ISSUING_FIELD, c.FIELD_NAME, col.COLUMN_NAME, col.JOOQ_NAME,
                 col.BINDING_TYPE, col.DATABASE_TYPE, t.JOOQ_NAME, s.TABLES_CLASS_FQN, c.SCALAR_NAME,
-                se.SCALAR_REF_CLASS_PART, se.SCALAR_REF_FIELD_PART, org.jooq.impl.DSL.field(claim))
+                se.SCALAR_REF_CLASS_PART, se.SCALAR_REF_FIELD_PART, org.jooq.impl.DSL.field(vouchedFor))
             .from(c)
             .join(m).on(m.GRAPH_NAME.eq(c.GRAPH_NAME), m.TYPE_NAME.eq(c.TYPE_NAME), m.FIELD_NAME.eq(c.FIELD_NAME))
             .join(col).on(col.SOURCE_NAME.eq(c.TABLE_SOURCE_NAME), col.TABLE_SCHEMA.eq(c.TABLE_SCHEMA),

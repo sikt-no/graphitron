@@ -1,11 +1,11 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A field marked @accept is the voucher field of an entity another subgraph vouches for: its application is captured as written, its claims parsed one selection per row, and it binds by the voucher kind, so the column rule never looks for a voucher column. Until the dispatch that verifies vouchers is generated, @accept is refused at the application."
+"A field marked @accept is the voucher field of an entity another subgraph vouches for: its application is captured as written, its vouchesFor parsed one selection per row, and it binds by the voucher kind, so the column rule never looks for a voucher column. Until the dispatch that verifies vouchers is generated, @accept is refused at the application."
 type Film @table(name: "film") @key(fields: "filmId") {
   filmId: ID! @field(name: "film_id")
   languageId: Int @field(name: "language_id")
   title: String
-  voucher: String! @accept(scope: "films", claims: "languageId")
+  voucher: String! @accept(scope: "films", vouchesFor: "languageId")
 }
 
 # A node may accept: its node key and its voucher key are both minted, numbered once after the key its
@@ -14,7 +14,7 @@ type Store implements Node @table(name: "store") @node @key(fields: "managerStaf
   id: ID!
   managerStaffId: Int @field(name: "manager_staff_id")
   addressId: Int @field(name: "address_id")
-  voucher: String @accept(scope: "stores", claims: "addressId")
+  voucher: String @accept(scope: "stores", vouchesFor: "addressId")
 }
 
 interface Node {
@@ -29,7 +29,7 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_ast_accept_entry", rows: """
-  scope,  claims
+  scope,  vouches_for
   films,  languageId
   stores, addressId
   """)
@@ -37,14 +37,14 @@ extend schema @expectEquals(relation: "graphitron_ast_accept_entry", rows: """
 # key: was left out, which is a null, not the one authored key filled in.
 extend schema @assertEmpty(relation: "graphitron_ast_accept_entry", where: "key_fields IS NOT NULL")
 
-extend schema @expectEquals(relation: "graphitron_ast_accept_claim_entry", rows: """
+extend schema @expectEquals(relation: "graphitron_ast_accept_vouched_for_entry", rows: """
   position, field_name, nested
   0,        addressId,  FALSE
   0,        languageId, FALSE
   """)
 
-# Each claim resolved to the field of the accepting type it names.
-extend schema @expectEquals(relation: "graphitron_accept_claim", rows: """
+# Each vouched-for field resolved to the field of the accepting type it names.
+extend schema @expectEquals(relation: "graphitron_accept_vouched_for", rows: """
   position, type_name, field_name
   0,        Film,      languageId
   0,        Store,     addressId

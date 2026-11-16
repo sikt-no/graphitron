@@ -2,7 +2,7 @@
 :description: Mark the voucher field of a table-bound entity, so this subgraph grants access to its rows on another subgraph's voucher.
 :!toc:
 
-Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on a connection of its own, told the voucher's *claims*, so your database's row-level security decides what the claims unlock. The voucher is not a column and is never selected.
+Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on a connection of its own, told the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
 
 NOTE: Generation does not verify vouchers yet, so a schema using `@accept` is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`.
 
@@ -10,7 +10,7 @@ NOTE: Generation does not verify vouchers yet, so a schema using `@accept` is re
 
 [source,graphql]
 ----
-directive @accept(scope: String!, key: String, claims: String!) on FIELD_DEFINITION
+directive @accept(scope: String!, key: String, vouchesFor: String!) on FIELD_DEFINITION
 ----
 
 [cols="1,1,3"]
@@ -25,9 +25,9 @@ directive @accept(scope: String!, key: String, claims: String!) on FIELD_DEFINIT
 | `String`
 | The field set of the authored `@key` the voucher's lookup part decodes to, as `@key(fields:)` spells it. Leave it out when the type has exactly one authored resolvable key.
 
-| `claims`
+| `vouchesFor`
 | `String!`
-| The fields of this type the voucher's claims parse into, a field set as `@key(fields:)` spells one: whose rows are vouched for. Names the same fields as the issuing subgraph's `@issue(claims:)`. A claims field may be `@inaccessible`, so the owner is not published to clients.
+| The fields of this type the voucher's vouched-for values parse into, a field set as `@key(fields:)` spells one: whose rows are vouched for. Names the same fields as the issuing subgraph's `@issue(vouchesFor:)`. A vouched-for field may be `@inaccessible`, so the owner is not published to clients.
 |===
 
 == Canonical example
@@ -37,13 +37,13 @@ directive @accept(scope: String!, key: String, claims: String!) on FIELD_DEFINIT
 type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
   id: ID!
   eierId: String! @inaccessible
-  voucher: String! @accept(scope: "vgs-resultater", claims: "eierId")
+  voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
   fag: String!
   karakter: Int!
 }
 ----
 
-The voucher's lookup part decodes to `id`, the type's one authored key, and its claims parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields.
+The voucher's lookup part decodes to `id`, the type's one authored key, and its vouched-for values parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields.
 
 == What the subgraph publishes
 
@@ -67,20 +67,20 @@ Each refusal below is reported at the `@accept`.
 | `VOUCHER_WITHOUT_SESSION_STATE`
 | The build configures `<sessionState>`, whose `SessionState` carries the caller each voucher is checked against.
 
-| `VOUCHER_CLAIMS_EMPTY`
-| `claims` selects at least one field.
+| `VOUCHER_VOUCHES_FOR_EMPTY`
+| `vouchesFor` selects at least one field.
 
-| `VOUCHER_CLAIM_NOT_A_FIELD`
-| Each claim names a field of the type: not a name the type does not declare, not the voucher field, not a nested selection.
+| `VOUCHER_VOUCHED_FOR_NOT_A_FIELD`
+| Each vouched-for field names a field of the type: not a name the type does not declare, not the voucher field, not a nested selection.
 
-| `VOUCHER_CLAIM_REPEATED`
-| No claim is named twice.
+| `VOUCHER_VOUCHED_FOR_REPEATED`
+| No vouched-for field is named twice.
 
-| `VOUCHER_CLAIM_NOT_A_COLUMN`
-| Each claims field reads one column of the type's own table, as a key field does: not a list, not a field read some other way.
+| `VOUCHER_VOUCHED_FOR_NOT_A_COLUMN`
+| Each vouched-for field reads one column of the type's own table, as a key field does: not a list, not a field read some other way.
 
-| `VOUCHER_CLAIM_IN_KEY`
-| No claims field is a field of the key the voucher decodes to: the claims and the lookup part never share a value.
+| `VOUCHER_VOUCHED_FOR_IN_KEY`
+| No vouched-for field is a field of the key the voucher decodes to: the vouched-for fields and the lookup part never share a value.
 
 | `VOUCHER_ACCEPT_WITHOUT_KEY`
 | The type has an authored `@key` this subgraph resolves it by, which the voucher's lookup part decodes to.
