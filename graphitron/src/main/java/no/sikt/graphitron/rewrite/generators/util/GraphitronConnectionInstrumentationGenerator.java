@@ -310,7 +310,12 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 .addComment("The operation's voucher issuers: one vouch id per scope, every voucher bound to the")
                 .addComment("request's caller and expiring a fixed time after the operation started.")
                 .addStatement("graphQLContext.put($T.class, new $T(runtime.voucherKeys(), $L.caller(), $T.now()))",
-                    issuers, issuers, ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT, java.time.Instant.class);
+                    issuers, issuers, ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT, java.time.Instant.class)
+                .addComment("And its verifier: every voucher the request presents is checked against the request's")
+                .addComment("caller and the instant the operation started.")
+                .addStatement("graphQLContext.put($T.class, $T.verifier(runtime.voucherKeys(), $T.now(), $L.caller()))",
+                    issuers.enclosingClassName().nestedClass("Verifier"), issuers.enclosingClassName(),
+                    java.time.Instant.class, ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT);
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
         if (tenantKey != null) {
@@ -387,11 +392,11 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("$T state = ($T) rawState", state, state);
         if (sessionHooks.emitsHookImplementation()) {
             instrumentExecutionResultBuilder
-                .beginControlFlow("if (state != null && state.carrier != null && state.carrier.mountFailure().isPresent())")
-                .addComment("No field can run without identity: the rejected mount replaces the result, escaping")
-                .addComment("GraphQL.execute for the consumer to answer the request as a whole. It takes")
-                .addComment("precedence over any field's settle failure.")
-                .addStatement("throw state.carrier.mountFailure().get()")
+                .beginControlFlow("if (state != null && state.carrier != null && state.carrier.rejection().isPresent())")
+                .addComment("A rejected request (a rejected mount, or a voucher that failed verification) answers")
+                .addComment("nothing: the rejection replaces the result, escaping GraphQL.execute for the consumer to")
+                .addComment("answer the request as a whole. It takes precedence over any field's settle failure.")
+                .addStatement("throw state.carrier.rejection().get()")
                 .endControlFlow();
         }
         var instrumentExecutionResult = instrumentExecutionResultBuilder

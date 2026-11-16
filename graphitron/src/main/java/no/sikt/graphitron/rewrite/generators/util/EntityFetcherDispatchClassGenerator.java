@@ -129,11 +129,14 @@ public final class EntityFetcherDispatchClassGenerator {
                 + "{@link EntityFetcherDispatchClassGenerator} for emission semantics.\n")
             .addField(buildResolvableTypenamesField(entities))
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(buildFetchEntitiesMethod(outputPackage))
+            .addMethod(buildFetchEntitiesMethod(entities, outputPackage))
             .addMethod(buildResolveByRepsMethod(entities, multiTenant))
             .addMethod(buildResolveTypeMethod())
             .addMethod(buildTypenameForTypeIdMethod(entities))
             .addMethod(buildContextHelper(graphitronContext));
+        if (VoucherDispatch.accepts(entities)) {
+            spec.addField(VoucherDispatch.logger(ClassName.get(outputPackage + ".util", CLASS_NAME)));
+        }
 
         for (var entity : entities) {
             HandleMethodBody.TenantRouting routing = multiTenant
@@ -172,7 +175,7 @@ public final class EntityFetcherDispatchClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildFetchEntitiesMethod(String outputPackage) {
+    private static MethodSpec buildFetchEntitiesMethod(List<EntityKeyQuery.Entity> entities, String outputPackage) {
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         var clientExceptionUnit = units.clientException();
         var clientException = ClassName.get(clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
@@ -201,6 +204,9 @@ public final class EntityFetcherDispatchClassGenerator {
             UNRESOLVABLE_TYPENAME_MESSAGE, MISSING_TYPENAME_MESSAGE);
         b.addStatement("errors.add($T.clientErrorAt(new $T(message), env, i))", errorRouter, clientException);
         b.endControlFlow();
+        if (VoucherDispatch.accepts(entities)) {
+            b.add(VoucherDispatch.verifyAll(entities, outputPackage, clientException));
+        }
         b.addStatement("Object[] result = $L(reps, env)", RESOLVE_BY_REPS_METHOD);
         b.addStatement("return $T.completedFuture($T.<$T>newResult().data($T.asList(result)).errors(errors).build())",
             CF, DATA_FETCHER_RESULT, listOfObject, ARRAYS);

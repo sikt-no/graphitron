@@ -1,0 +1,21 @@
+extend schema @withConfiguration(sessionState: true)
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@inaccessible"])
+
+"A subgraph that accepts vouchers for its results: the entity resolves by its authored key and by the voucher key minted beside it, and the details its SELECT nests are projected, so nothing below it is refused."
+type Query {
+  results: [VgsResultat!]!
+}
+
+type VgsResultat @table(name: "vouched_result") @key(fields: "id") {
+  id: ID! @field(name: "result_id")
+  eierId: String! @field(name: "owner_id") @inaccessible
+  grade: Int!
+  details: [Detail!]! @reference(path: [{key: "vouched_result_detail_result_id_fkey"}])
+  voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
+}
+
+type Detail @table(name: "vouched_result_detail") {
+  subject: String!
+}
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")

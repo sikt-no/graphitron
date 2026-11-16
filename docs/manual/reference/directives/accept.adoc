@@ -4,7 +4,7 @@
 
 Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on a connection of its own, told the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
 
-NOTE: Generation does not verify vouchers yet, so a schema using `@accept` is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`.
+NOTE: The entity and every field its SELECT reads, reference children nested in it included, read on the vouched connection. A field below the entity with a fetcher of its own (a `@splitQuery` reference, a `@service` field, a connection) does not yet, so an accepting type with one anywhere in its subtree is refused with `VOUCHER_ACCEPT_NOT_GENERATED`.
 
 == SDL signature
 
@@ -85,6 +85,9 @@ Each refusal below is reported at the `@accept`.
 | `VOUCHER_VOUCHED_FOR_IN_KEY`
 | No vouched-for field is a field of the key the voucher decodes to: the vouched-for fields and the lookup part never share a value.
 
+| `VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS`
+| Every `@accept` in the subgraph names the same vouched-for fields, each reading a column of the same Java type: the subgraph's vouched connections are keyed by one shape. The first accepting type by name sets it.
+
 | `VOUCHER_ACCEPT_WITHOUT_KEY`
 | The type has an authored `@key` this subgraph resolves it by, which the voucher's lookup part decodes to.
 
@@ -98,5 +101,5 @@ Each refusal below is reported at the `@accept`.
 | `key` names the fields of an authored resolvable key of the type, in any order.
 
 | `VOUCHER_ACCEPT_NOT_GENERATED`
-| Generation does not verify vouchers yet. Removed when it does.
+| No field below the type, at any depth through the types its SELECT reads, has a fetcher of its own: such fields are not yet read on the vouched connection. Removed when they are.
 |===

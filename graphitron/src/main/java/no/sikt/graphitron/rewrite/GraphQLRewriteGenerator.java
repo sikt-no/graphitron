@@ -351,9 +351,9 @@ public class GraphQLRewriteGenerator {
                                   no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
         // The store owns validation, the walk's verdict being retired: where the store states a
-        // field's binding as one it owns whole, a voucher field, the walk's verdict on it is not
-        // asked, the store's defects being the only refusals that field has.
-        var storeOwned = no.sikt.graphitron.emit.VoucherBindingQuery.read(store).coordinates();
+        // field's binding as one it owns whole, a voucher field on either side, the walk's verdict on
+        // it is not asked, the store's defects being the only refusals that field has.
+        var storeOwned = no.sikt.graphitron.emit.VoucherBindingQuery.voucherFields(store);
         var walkErrors = new GraphitronSchemaValidator().validate(schema).stream()
             .filter(error -> !storeOwned.contains(error.coordinate()))
             .toList();
@@ -597,8 +597,10 @@ public class GraphQLRewriteGenerator {
                 representative.tenantTable().javaFieldName(), representative.tenantColumn().javaName())
             : null;
         // The connection key's shape, decided once here and handed to the generators that write, read
-        // or key by it: today its tenant part, from the tenant key type above.
-        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.ofTenantKey(tenantKeyType);
+        // or key by it: its tenant part from the tenant key type above, its vouched-for part from what the
+        // store says the graph's @accept fields vouch for.
+        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.of(tenantKeyType,
+            no.sikt.graphitron.emit.AcceptVouchedForQuery.read(store));
         // Whether the graph vouches, read once off the stored voucher keys and handed to every generator
         // the answer changes: the voucher runtime, the runtime's keys and the session state's caller.
         boolean vouches = no.sikt.graphitron.emit.VoucherRuntime.vouches(store);
@@ -756,7 +758,8 @@ public class GraphQLRewriteGenerator {
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, tenantKeyType != null);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches);
-            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity, vouches);
+            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity, vouches,
+                connectionKeyShape.emitsKey());
         };
     }
 

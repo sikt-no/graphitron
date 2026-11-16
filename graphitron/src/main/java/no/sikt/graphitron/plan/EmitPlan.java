@@ -197,7 +197,10 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.TABLE_ALIASES, units.tableAliases()));
         globals.add(one(GlobalUnitKind.NESTING_COORDINATES, units.nestingCoordinates()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
-        globals.add(connectionRuntime(units, sessionIdentity, schema.requestTenantKeyType().isPresent()));
+        // The carrier is keyed by a ConnectionKey in a <tenantColumn> build and in one whose @accept fields
+        // vouch for values, the store saying which.
+        boolean accepts = store != null && !no.sikt.graphitron.emit.AcceptVouchedForQuery.read(store).isEmpty();
+        globals.add(connectionRuntime(units, sessionIdentity, schema.requestTenantKeyType().isPresent(), accepts));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
@@ -340,20 +343,22 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * mount becomes, plus the {@code MountedSession} and {@code SessionState} the consumer builds the
      * input with, all exactly when the graph supplies session identity
      * ({@link SessionIdentityRows#emitsHookImplementation()}, the same fact the generator gates on),
-     * plus the {@code RequestTenants} value and the {@code ConnectionKey} the carrier is keyed by
-     * exactly in a {@code <tenantColumn>} build
+     * plus the {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
      * ({@link GraphitronSchema#requestTenantKeyType()}, the fact the generator's tenant key type
-     * is read from). A graph that supplies no session identity plans no hook unit at all:
+     * is read from), and the {@code ConnectionKey} the carrier is keyed by in that build and in one
+     * whose {@code @accept} fields vouch for values ({@code accepts}). A graph that supplies no session identity plans no hook unit at all:
      * nothing is emitted and nothing is held.
      */
     private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks,
-                                                   boolean multiTenant) {
+                                                   boolean multiTenant, boolean accepts) {
         var refs = new ArrayList<UnitRef>();
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         refs.add(units.ownedConnections());
         if (multiTenant) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "RequestTenants"));
+        }
+        if (multiTenant || accepts) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA,
                 no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME));
         }

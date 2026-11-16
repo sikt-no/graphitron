@@ -17915,9 +17915,33 @@ COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher sta
 -- resolvable: false is another subgraph's to resolve and needs no table. A @key on a type whose
 -- @table did not resolve is that defect's, and is not judged again here. Reported at the @key. And
 -- an @accept's refusals that read which key its vouchers decode to and how its vouched-for fields bind,
--- both decided here, reported at the @accept.
+-- both decided here, reported at the @accept, and the refusal of an accepting type whose subtree has a
+-- field fetched apart from its SELECT.
 CREATE VIEW graphitron_entity_key_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- The object types an accepting type's SELECT reads, the accepting type first: an object a field of the
+-- subtree targets with no producer at any of its occurrences is read in the statement, a table-bound one
+-- as a MULTISET nested in it. Walked type by type, a field's occurrences found by the element they use,
+-- so a field reached elsewhere with a fetcher of its own counts here too, erring toward refusal. UNION
+-- ALL with a path guard, as graphitron_argument_reachable_input walks, since a type may reach itself.
+WITH RECURSIVE accept_reach (graph_name, accept_type, type_name, path) AS (
+  SELECT mk.graph_name, mk.type_name, mk.type_name, '/' || mk.type_name || '/'
+    FROM graphitron_minted_key mk
+   WHERE mk.role = 'ACCEPT'
+  UNION ALL
+  SELECT r.graph_name, r.accept_type, ft.target_type_name, r.path || ft.target_type_name || '/'
+    FROM accept_reach r
+    JOIN graphitron_field f ON f.graph_name = r.graph_name AND f.type_name = r.type_name
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+    JOIN graphitron_type t ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
+   WHERE t.kind = 'OBJECT'
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence o
+                       JOIN graphitron_occurrence_producer p
+                         ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+                      WHERE o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate)
+     AND POSITION('/' || ft.target_type_name || '/' IN r.path) = 0
+)
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'KEY_TYPE_NOT_TABLE_BOUND',
        d.coordinate, 'entity-key-alternatives'
   FROM graphql_directive_application d
@@ -18092,7 +18116,83 @@ SELECT c.graph_name, c.source_name, c.source_line, c.source_column, 'VOUCHER_VOU
     OR NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
                     WHERE b.graph_name = f.graph_name AND b.coordinate = f.coordinate
                       AND b.bound = tt.table_schema || '.' || tt.table_name AND b.kind = 'COLUMN')
- GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column;
+ GROUP BY c.graph_name, c.source_name, c.source_line, c.source_column
+UNION ALL
+-- The graph's vouched connections are keyed by one generated ConnectionKey, so every @accept's
+-- vouched-for fields have one shape: the same names, each reading a column of the same Java type. Each
+-- @accept whose shape differs from the first accepting type's, by name, is refused at the @accept.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS', d.type_name, 'entity-key-alternatives'
+  FROM graphitron_accept_vouched_for d
+  JOIN (SELECT graph_name, MIN(type_name) AS type_name FROM graphitron_accept_vouched_for
+         GROUP BY graph_name) fa
+    ON fa.graph_name = d.graph_name AND fa.type_name <> d.type_name
+ WHERE EXISTS (SELECT 1 FROM (SELECT c.graph_name, c.type_name, c.field_name, col.binding_type
+             FROM graphitron_accept_vouched_for c
+             JOIN graphitron_field f
+               ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+             JOIN graphitron_tabletype tt ON tt.graph_name = c.graph_name AND tt.type_name = c.type_name
+             JOIN graphitron_occurrence_column oc
+               ON oc.graph_name = f.graph_name AND oc.coordinate = f.coordinate
+              AND oc.bound = tt.table_schema || '.' || tt.table_name
+             JOIN sql_column col
+               ON col.source_name = oc.table_source_name AND col.table_schema = oc.table_schema
+              AND col.table_name = oc.table_name AND col.column_name = oc.column_name) x
+                WHERE x.graph_name = d.graph_name AND x.type_name = d.type_name
+                  AND NOT EXISTS (SELECT 1 FROM (SELECT c.graph_name, c.type_name, c.field_name, col.binding_type
+             FROM graphitron_accept_vouched_for c
+             JOIN graphitron_field f
+               ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+             JOIN graphitron_tabletype tt ON tt.graph_name = c.graph_name AND tt.type_name = c.type_name
+             JOIN graphitron_occurrence_column oc
+               ON oc.graph_name = f.graph_name AND oc.coordinate = f.coordinate
+              AND oc.bound = tt.table_schema || '.' || tt.table_name
+             JOIN sql_column col
+               ON col.source_name = oc.table_source_name AND col.table_schema = oc.table_schema
+              AND col.table_name = oc.table_name AND col.column_name = oc.column_name) y
+                                   WHERE y.graph_name = fa.graph_name AND y.type_name = fa.type_name
+                                     AND y.field_name = x.field_name AND y.binding_type = x.binding_type))
+    OR EXISTS (SELECT 1 FROM (SELECT c.graph_name, c.type_name, c.field_name, col.binding_type
+             FROM graphitron_accept_vouched_for c
+             JOIN graphitron_field f
+               ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+             JOIN graphitron_tabletype tt ON tt.graph_name = c.graph_name AND tt.type_name = c.type_name
+             JOIN graphitron_occurrence_column oc
+               ON oc.graph_name = f.graph_name AND oc.coordinate = f.coordinate
+              AND oc.bound = tt.table_schema || '.' || tt.table_name
+             JOIN sql_column col
+               ON col.source_name = oc.table_source_name AND col.table_schema = oc.table_schema
+              AND col.table_name = oc.table_name AND col.column_name = oc.column_name) x
+                WHERE x.graph_name = fa.graph_name AND x.type_name = fa.type_name
+                  AND NOT EXISTS (SELECT 1 FROM (SELECT c.graph_name, c.type_name, c.field_name, col.binding_type
+             FROM graphitron_accept_vouched_for c
+             JOIN graphitron_field f
+               ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+             JOIN graphitron_tabletype tt ON tt.graph_name = c.graph_name AND tt.type_name = c.type_name
+             JOIN graphitron_occurrence_column oc
+               ON oc.graph_name = f.graph_name AND oc.coordinate = f.coordinate
+              AND oc.bound = tt.table_schema || '.' || tt.table_name
+             JOIN sql_column col
+               ON col.source_name = oc.table_source_name AND col.table_schema = oc.table_schema
+              AND col.table_name = oc.table_name AND col.column_name = oc.column_name) y
+                                   WHERE y.graph_name = d.graph_name AND y.type_name = d.type_name
+                                     AND y.field_name = x.field_name AND y.binding_type = x.binding_type))
+UNION ALL
+-- A field below an accepting type that has a fetcher of its own, a producer, at any depth through the
+-- types its SELECT projects, does not yet read on the vouched connection: refused at the @accept until
+-- those fetchers inherit the connection key. A field the SELECT projects reads on it already.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
+       d.coordinate, 'entity-key-alternatives'
+  FROM graphql_directive_application d
+  JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
+ WHERE d.directive_name = 'accept'
+   AND EXISTS (SELECT 1 FROM accept_reach r
+                 JOIN graphitron_field f ON f.graph_name = r.graph_name AND f.type_name = r.type_name
+                 JOIN graphitron_occurrence o
+                   ON o.graph_name = f.graph_name AND o.element_coordinate = f.coordinate
+                 JOIN graphitron_occurrence_producer p
+                   ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
+                WHERE r.graph_name = d.graph_name AND r.accept_type = i.type_name);
 COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
@@ -19291,15 +19391,7 @@ SELECT DISTINCT v.graph_name, v.source_name, v.source_line, v.source_column, 'DI
   JOIN graphitron_ast_discriminator_entry v2
     ON v2.graph_name = va2.graph_name AND v2.source_name = va2.source_name
    AND v2.source_line = va2.source_line AND v2.source_column = va2.source_column
- WHERE v2.discriminator_value = v.discriminator_value
-UNION ALL
--- @accept until its dispatch is generated: B's facts and published shape are derived, but nothing
--- verifies a voucher yet, so a valid schema is refused here rather than reaching an emitter that does
--- not exist.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
-       d.coordinate, 'anchor'
-  FROM graphql_directive_application d
- WHERE d.directive_name = 'accept';
+ WHERE v2.discriminator_value = v.discriminator_value;
 COMMENT ON VIEW graphitron_anchor_entry_defect_rule IS 'One row the anchor stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a second @referenceFor naming Staff on one declaration gives one REFERENCE_FOR_DUPLICATE_TYPE row at that application, detail Staff.';
 
 -- The defects the macro-expansion stage raises, off the expanded schema it has just written: its
@@ -27968,6 +28060,8 @@ INSERT INTO graphitron_defect_type VALUES
    '@issue is on a type with no other field, so the voucher would carry nothing: add the fields the other subgraph''s key and vouched-for fields are.'),
   ('VOUCHER_WITHOUT_SESSION_STATE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_SESSION_STATE',
    'A voucher marker binds each voucher to the caller on the request''s SessionState, and the build configures no <sessionState>: configure one.'),
+  ('VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS',
+   'Two @accept fields in one graph vouch for differently shaped values, and the graph''s vouched connections are keyed by one shape: name the same fields, each reading a column of the same Java type, on every @accept.'),
   ('VOUCHER_ACCEPT_WITH_TENANT_COLUMN', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_WITH_TENANT_COLUMN',
    '@accept is in a build with a <tenantColumn>, and a voucher is not yet paired with the tenant of the key it decodes to: accept vouchers in a single-tenant build.'),
   ('VOUCHER_TTL_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_TTL_INVALID',
@@ -27989,7 +28083,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('VOUCHER_ISSUE_ON_ROOT_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_ROOT_TYPE',
    'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.'),
   ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
-   '@accept is captured and B''s published shape derived, but graphitron does not generate the dispatch that verifies vouchers yet.'),
+   '@accept is on a type with a field below it, at any depth through the types its SELECT projects, that has a fetcher of its own, and such fields are not yet read on the vouched connection: read the subtree in the entity''s SELECT, or accept on a type whose subtree is projected.'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',

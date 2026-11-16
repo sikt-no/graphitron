@@ -94,7 +94,7 @@ final class HandleMethodBody {
                 routing.tenantKey(), routing.ownedConnections());
         }
         emitPerRepLoop(b, entity, nodeIdEncoder, routing);
-        emitGroupDispatch(b, entity, routing);
+        emitGroupDispatch(b, entity, routing, outputPackage(nodeIdEncoder));
         return b.build();
     }
 
@@ -153,6 +153,21 @@ final class HandleMethodBody {
         CodeBlock.Builder b, EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
         ClassName nodeIdEncoder, TenantRouting routing
     ) {
+        if (alt instanceof EntityKeyQuery.Alternative.Voucher voucher) {
+            // A build that accepts vouchers has no tenant column, the store refusing the pair.
+            if (routing != null) {
+                throw new IllegalStateException("Entity '" + entity.typeName() + "' accepts vouchers in a"
+                    + " multi-tenant build, which the store refuses; classification and emission disagree.");
+            }
+            var columnValues = ClassName.get(nodeIdEncoder.packageName(), ColumnValuesClassGenerator.CLASS_NAME);
+            VoucherDispatch.decode(b, entity, voucher, columnValues, outputPackage(nodeIdEncoder));
+            b.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()",
+                ENV, ENV_IMPL);
+            b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
+                + ".add(new Object[]{idx, cols, repEnv, vouchedFor})",
+                altIndex, ARRAY_LIST);
+            return;
+        }
         TenantBinding.EntityRepBound.TenantSource source = routing != null && routing.bound() != null
             ? tenantSource(entity, routing.bound(), alt, altIndex)
             : null;
@@ -181,6 +196,8 @@ final class HandleMethodBody {
                     nodeIdEncoder, nodeId.typeId(), columnRefs(entity, EntityKeys.columns(nodeId)));
                 b.addStatement("if (cols == null) continue");
             }
+            case EntityKeyQuery.Alternative.Voucher ignored ->
+                throw new IllegalStateException("a voucher alternative is decoded above");
             case EntityKeyQuery.Alternative.Direct direct -> {
                 var bindings = direct.fields();
                 var bindingColumns = EntityKeys.columns(direct);
@@ -273,7 +290,14 @@ final class HandleMethodBody {
         };
     }
 
-    private static void emitGroupDispatch(CodeBlock.Builder b, EntityKeyQuery.Entity entity, TenantRouting routing) {
+    /** The consumer's output package, whose {@code util} package the node id encoder lives in. */
+    private static String outputPackage(ClassName nodeIdEncoder) {
+        var util = nodeIdEncoder.packageName();
+        return util.substring(0, util.lastIndexOf('.'));
+    }
+
+    private static void emitGroupDispatch(CodeBlock.Builder b, EntityKeyQuery.Entity entity, TenantRouting routing,
+                                          String outputPackage) {
         var listOfBindings = ParameterizedTypeName.get(LIST,
             com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
         boolean perTenant = routing != null && routing.bound() != null;
@@ -328,7 +352,16 @@ final class HandleMethodBody {
             b.addStatement("$T dsl = $T.dslGlobal(groupEnv)",
                 DSL_CONTEXT, routing.ownedConnections());
         } else {
-            b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
+            var voucher = VoucherDispatch.voucher(entity);
+            if (voucher != null) {
+                // The voucher group reads on the vouched connection for its vouched-for value; every
+                // other group on the request's own.
+                int voucherIndex = entity.alternatives().indexOf(voucher);
+                b.addStatement("$T dsl = altIdx == $L ? $L : graphitronContext(groupEnv).getDslContext(groupEnv)",
+                    DSL_CONTEXT, voucherIndex, VoucherDispatch.acquire(outputPackage));
+            } else {
+                b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
+            }
         }
         emitAltSwitch(b, entity);
         if (routing != null) {

@@ -63,7 +63,8 @@ class GraphitronDevExecutorGeneratorTest {
     }
 
     private static TypeSpec generate(GraphitronSchema schema, SessionIdentityRows identity) {
-        return GraphitronDevExecutorGenerator.generate(schema, "com.example", identity, false).get(0);
+        return GraphitronDevExecutorGenerator.generate(schema, "com.example", identity, false,
+            schema.requestTenantKeyType().isPresent()).get(0);
     }
 
     private static MethodSpec executeMethod(TypeSpec spec) {
@@ -76,7 +77,7 @@ class GraphitronDevExecutorGeneratorTest {
     @Test
     void generate_returnsExactlyOneClassNamedGraphitronDevExecutor() {
         var result = GraphitronDevExecutorGenerator.generate(
-            emptySchema(), "com.example", SessionIdentityRows.empty(), false);
+            emptySchema(), "com.example", SessionIdentityRows.empty(), false, false);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("GraphitronDevExecutor");
         assertThat(result.get(0).modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);

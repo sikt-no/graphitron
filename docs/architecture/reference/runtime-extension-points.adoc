@@ -275,12 +275,23 @@ a jOOQ `TransactionListener` if code must run as each transaction begins.
 For database-per-tenant deployments, build the runtime over a default
 `DataSource` plus a `Map<TenantId, DataSource>`; Graphitron pins one connection
 per distinct divined tenant within an operation and mounts identity on each,
-handing the mount the key it is mounting for through `MountedSession.tenant()`. Only tenants in the request tenant set (the factories' leading parameter in a
+handing the mount the key it is mounting for through `MountedSession.key()`, whose tenant
+part `MountedSession.tenant()` also answers. Only tenants in the request tenant set (the factories' leading parameter in a
 `<tenantColumn>` build) are ever acquired: the generated per-operation connection
 carrier refuses any other key with a client error before a connection is taken. The schema-side
 inference that divines the tenant key is the tenant-column work; the runtime seam
 it rides is part of this path. The consumer-facing recipe is
 xref:../../manual/how-to/tenant-scoping.adoc[How-to: Tenant scoping].
+
+=== Vouched connections
+
+In a build with an `@accept` field the generated `ConnectionKey` gains a vouched-for part, and the
+carrier is keyed by it even without a `<tenantColumn>`. The entity dispatch verifies every voucher a
+request presents before any type resolves; a voucher that fails rejects the request through the same
+carrier slot a rejected mount uses, so no connection is taken after it and `GraphQL.execute` throws the
+generated voucher rejection in place of the result. A verified voucher's entity is read on the connection keyed by its
+vouched-for values, through `Runtime.acquireFor(key)`, and the consumer's mount reads them off
+`MountedSession.key()`. A request's vouchers carry one vouched-for value at most.
 
 The direction (Alf, 2026-11-14): a default source is supported for backwards compatibility and is
 not the model. Which connection a query gets is the consumer's choice, made in code it owns and can

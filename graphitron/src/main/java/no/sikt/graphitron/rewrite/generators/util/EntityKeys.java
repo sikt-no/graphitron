@@ -13,22 +13,31 @@ final class EntityKeys {
 
     private EntityKeys() {}
 
-    /** The fields a representation must carry to match {@code alternative}: a node id carries {@code id}. */
+    /**
+     * The fields a representation must carry to match {@code alternative}: a node id carries {@code id},
+     * a voucher alternative the voucher field alone.
+     */
     static List<String> requiredFields(EntityKeyQuery.Alternative alternative) {
         return switch (alternative) {
             case EntityKeyQuery.Alternative.Direct direct ->
                 direct.fields().stream().map(EntityKeyQuery.KeyField::fieldName).toList();
             case EntityKeyQuery.Alternative.NodeId ignored -> List.of("id");
+            case EntityKeyQuery.Alternative.Voucher voucher -> List.of(voucher.voucherField());
         };
     }
 
-    /** The columns {@code alternative} selects the entity's row by, in key order. */
+    /**
+     * The columns {@code alternative} selects the entity's row by, in key order: a voucher's, those of the
+     * authored key its lookup part decodes onto.
+     */
     static List<ColumnRef> columns(EntityKeyQuery.Alternative alternative) {
         return switch (alternative) {
             case EntityKeyQuery.Alternative.Direct direct ->
                 direct.fields().stream().map(f -> columnRef(f.column())).toList();
             case EntityKeyQuery.Alternative.NodeId nodeId ->
                 nodeId.keyColumns().stream().map(EntityKeys::columnRef).toList();
+            case EntityKeyQuery.Alternative.Voucher voucher ->
+                voucher.lookup().stream().map(f -> columnRef(f.column())).toList();
         };
     }
 
@@ -46,7 +55,7 @@ final class EntityKeys {
         return entity.tablesClass();
     }
 
-    private static ColumnRef columnRef(EntityKeyQuery.Column column) {
+    static ColumnRef columnRef(EntityKeyQuery.Column column) {
         return new ColumnRef(column.columnName(), column.javaName(), column.bindingType(), column.databaseType());
     }
 }

@@ -95,13 +95,11 @@ both as an `ID`. A client that wants the result's `id` gets it from B, through t
 
 ### Where it stands
 
-Slices 1 to 7 are on trunk: A issues vouchers end to end, and B captures `@accept`, states its keys and
-publishes the right SDL. A schema using `@accept` is still refused with `VOUCHER_ACCEPT_NOT_GENERATED`,
-because B does not yet verify vouchers. Slice 8 is what remains, in two parts. 8a, the dispatch, can be
-built now, and lets consumers test an accepting type whose fields below it are all read in the entity's
-own SELECT. 8b, the fields with fetchers of their own, waits on R876's flip of the child fetchers; see
-*Slices*. The example spells the vouched-for argument `vouchesFor:`, the name slice 8a gives it; the
-shipped spelling is `claims:`.
+Slices 1 to 8a are on trunk: A issues vouchers end to end, and B verifies them and reads an accepting
+type, and everything its SELECT projects, on a connection mounted for the vouched-for value. An
+accepting type with a field below it that has a fetcher of its own is still refused with
+`VOUCHER_ACCEPT_NOT_GENERATED`. 8b, those fields, waits on R876's flip of the child fetchers; see
+*Slices*.
 
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)
 
@@ -453,9 +451,7 @@ Decisions the user made on this item; each is stated where it applies below.
     the vouched-for fields, on either marker: a `vouchesFor:` naming no field, a field named
     twice, a list, object or nested selection, or a field carrying `@nodeId`, `@service`, `@routine`,
     `@reference` or another value-giving directive; on `@issue`, a vouched-for field that is not an absorbed
-    field; on `@accept`, a vouched-for field that is not a field of the type; and two
-    `@accept` fields in one graph whose vouched-for fields differ in names or scalars, since the generated
-    `ConnectionKey` has one shape.
+    field; on `@accept`, a vouched-for field that is not a field of the type.
   * Owned by `entry-defects`, since what a root field returns is an element-keyed fact the voucher stage
     runs too early to read: `@issue` on a type a root operation field returns (a
     `Query`, `Mutation` or `Subscription` field, directly or as a list), because the vouched decision is
@@ -470,7 +466,12 @@ Decisions the user made on this item; each is stated where it applies below.
     occurrence binding, so B's vouched-for fields need no copy of A's value-giving directive list, which A
     needed only because its members have no bindings); and a vouched-for field that is also a field of the
     key the voucher decodes to (refused rather than allowed, so the two parts never share a value), which
-    reads `graphitron_accept_key` and so cannot be the voucher stage's. A rule broken the same way by
+    reads `graphitron_accept_key` and so cannot be the voucher stage's. And two `@accept` fields in one
+    graph whose vouched-for fields differ in names or in the Java types of the columns they read
+    (`VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS`, at each `@accept` differing from the first accepting type's),
+    since the generated `ConnectionKey` has one shape typed by those columns; it reads the occurrence
+    columns, so it is this stage's. And an accepting type with a field below it that has a fetcher of its
+    own (`VOUCHER_ACCEPT_NOT_GENERATED`, until slice 8b). A rule broken the same way by
     either marker is one code for both: the session-state, federation-link, empty-vouched-for and
     repeated-vouched-for refusals say "a voucher marker".
 * *Voucher codec.* One generated class owns the format: version byte, vouch id, scope, caller, expiry,
@@ -532,7 +533,8 @@ Decisions the user made on this item; each is stated where it applies below.
   `SessionMountException` and `VoucherRejectedException` held in the one slot the mount failure uses
   today, `instrumentExecutionResult` throws it in place of the result, and once one is remembered the
   carrier's entry resolution refuses to pin, so "nothing taken" is the carrier's invariant and not an
-  accident of `fetchEntities` running first. Throwing from the fetcher alone would make a field error.
+  accident of `fetchEntities` running first. As built, the slot is typed `RuntimeException` rather than a
+  generated supertype: one slot and one rethrow either way, with no new public type. Throwing from the fetcher alone would make a field error.
   The voucher alternative is a sealed arm of `EntityKeyQuery.Alternative` with its own identity, the
   minted `ACCEPT` key, carrying the scope, the vouched-for fields, and the authored key it decodes onto
   by identity with that key's fields; the vouched-for values filter nothing. In version 1 an accepting graph has no tenant column
@@ -599,7 +601,7 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
 | 5. Codec | The generated codec, key provider and `VoucherRejectedException` | `7b656753` |
 | 6. Issuing | `VoucherKeys` on the runtime, the caller on `SessionState.of`, the store-rendered `Vouchers` unit signing per row; the temporary `@issue` refusal removed | `a46e60a8`, `c2f16ab1`, `d24dc49c` |
 | 7. B's facts | `@accept`, its `VOUCHER` binding, vouched-for rows and refusals, the `ACCEPT` key and `@inaccessible`, `graphitron_accept_key`, the voucher alternative stated in the store; refused until generated | `f8ef399f`, `24b24899`, `6dadbfcd` |
-| 8a. Dispatch | Pending; below | |
+| 8a. Dispatch | The rename, the vouch-id check gone, the tenant-column refusal (`18c1a92`, `6521093`); the vouched-for `ConnectionKey`, verification, vouched acquisition and the narrowed refusal (see the commit after these) | see cell |
 | 8b. Fields with a fetcher of their own | Pending; below | |
 
 Facts from the shipped slices that slice 8 builds on:
@@ -645,24 +647,29 @@ that way.
   `fetchEntities` before any type resolves; the group on the whole key; vouched acquisition (*Verify and
   group*, *Acquisition*).
 * Whether the dispatch is emitted, read from the store or left to R876 (*Whether the dispatch is
-  emitted*).
+  emitted*). As built, left to R876: an accepting type carries an authored `@key`, so the walk's entity
+  map already holds it and the dispatch is emitted.
 * The walk's stand-down reads the `VOUCHER` binding alone. `VoucherBindingQuery` reaches a voucher field
   through A's members, so B's accepting field, which has none, would drop out of it and be asked of the
   walk; the stand-down takes the binding and the projection takes the components.
 * The refusal narrows. `VOUCHER_ACCEPT_NOT_GENERATED` now refuses only an accepting type with a field
   below it, at any depth through projected children, that is not read in the entity's SELECT; its
-  message says such fields are not yet read on the vouched connection. It reads the occurrences under
-  the accepting type and allows what the store states is projected (column and node-id bindings, and
-  join paths read as a nested `multiset`), refusing everything else, so a family the store does not
-  yet state is refused rather than let through. Reading occurrence facts, it moves out of the anchor
-  stage's defect rule to the stage that writes the last relation it reads, with its `meta_stage_rule`
-  row. The fact document gains an accepted shape with a projected nested child, so the narrowing is
+  message says such fields are not yet read on the vouched connection. As built, it walks the object
+  types the accepting type reaches through fields with no producer, type by type, and refuses where a
+  field of any of them has a producer at any of its occurrences: the producer relation is the store's
+  positive statement that a field runs something of its own, and a field reached elsewhere with one
+  counts here too, erring toward refusal. The principles architect proposed an allow-list of bindings
+  instead; the author chose the producer relation as the narrower statement. It moves out of the anchor
+  stage's defect rule into `entity-key-alternatives`'s. The fact document gains an accepted shape with a projected nested child, so the narrowing is
   pinned both ways. `accept.adoc` and the diagnostics glossary state the narrower rule.
 * The redaction check (*Redaction*).
 * Execution tests: the entity and a nested read projected into its SELECT on the vouched connection,
   under a policy that otherwise hides the rows; every verification failure, with no connection taken; a
   bad voucher on a second type failing before the first type's group acquires; the limit error; and the
-  refusal of a type with a separately fetched field below it.
+  refusal of a type with a separately fetched field below it. As built (`VoucherAcceptExecutionTest`,
+  over an `accepting` graph of its own beside the `issuing` one): the fixture has one accepting type, so
+  the second-type case is pinned as a bad voucher among plain-key and valid representations taking no
+  connection; the refusal is pinned in the fact documents.
 
 **Slice 8b, fields with a fetcher of their own.** Taken up with or after R876's node "`TypeFetcherGenerator`
 reads the store, one family of field at a time", for the fields it covers. It waits on no tenant-routing

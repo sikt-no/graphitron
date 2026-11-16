@@ -7,6 +7,7 @@ extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["
 
 type Query {
   languages: [Language!]!
+  applications: [Application!]!
 }
 
 type Language @table(name: "language") {
@@ -18,4 +19,17 @@ type FilmVoucher @table(name: "film") {
   filmId: ID! @field(name: "film_id")
   title: String!
   voucher: String! @issue(scope: "films", ttl: "PT5M", vouchesFor: "title")
+}
+
+# The voucher handover (VoucherAcceptExecutionTest): an application's results, written the way the
+# accepting graph's key looks. Each result vouches for its owner, and its id is the lookup part.
+type Application @table(name: "vouched_application") {
+  applicationId: Int! @field(name: "application_id")
+  results: [VgsResultat!]! @reference(path: [{key: "vouched_application_result_application_id_fkey"}])
+}
+
+type VgsResultat @table(name: "vouched_application_result") {
+  id: ID! @field(name: "result_id")
+  eierId: String! @field(name: "owner_id")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
 }

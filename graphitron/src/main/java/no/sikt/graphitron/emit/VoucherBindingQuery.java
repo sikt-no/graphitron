@@ -62,6 +62,21 @@ public final class VoucherBindingQuery {
         }
     }
 
+    /**
+     * Every voucher field's coordinate, {@code Type.field}, on either side: each field whose binding is
+     * {@code VOUCHER}, an issuing field and an accepting one alike. The store owns such a field whole, so
+     * the walk's verdict on it stands down by this set alone, not by the issuing side's members.
+     */
+    public static Set<String> voucherFields(StoreHandle store) {
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
+        var o = GRAPHITRON_OCCURRENCE;
+        return new TreeSet<>(store.dsl().selectDistinct(o.ELEMENT_COORDINATE)
+            .from(b)
+            .join(o).on(o.GRAPH_NAME.eq(b.GRAPH_NAME), o.COORDINATE.eq(b.COORDINATE))
+            .where(b.GRAPH_NAME.eq(store.graphName()), b.KIND.eq("VOUCHER"))
+            .fetch(o.ELEMENT_COORDINATE));
+    }
+
     public static Rows read(StoreHandle store) {
         var b = GRAPHITRON_OCCURRENCE_BINDING;
         var o = GRAPHITRON_OCCURRENCE;

@@ -53,8 +53,13 @@ public final class GraphitronDevExecutorGenerator {
 
     private GraphitronDevExecutorGenerator() {}
 
+    /**
+     * The dev executor of {@code schema}. Where {@code keyed}, the build's connections are keyed by a
+     * {@code ConnectionKey}, so the session hook takes the key it mounts for, and the dev executor's one
+     * connection mounts for the default source's.
+     */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
-            SessionIdentityRows identity, boolean vouches) {
+            SessionIdentityRows identity, boolean vouches, boolean keyed) {
         if (vouches && !identity.supplied()) {
             throw new IllegalArgumentException("a graph that vouches supplies session identity per request");
         }
@@ -133,9 +138,12 @@ public final class GraphitronDevExecutorGenerator {
                 .addComment("Preflight: surface a rejected payload as the mount callback's own exception.")
                 .addStatement("$T devDialect = $T.valueOf(dialect)", sqlDialect, sqlDialect)
                 .addStatement("$T devSettings = new $T()", settings, settings);
-            // A multi-tenant mount also takes the tenant it mounts for; the dev executor's one
-            // connection is the default source, so it mounts for none.
-            String tenantArg = multiTenant ? ", " + "java.util.Optional.empty()" : "";
+            // A keyed build's mount also takes the key it mounts for; the dev executor's one
+            // connection is the default source, so it mounts for the default source's key.
+            String tenantArg = keyed
+                ? ", " + no.sikt.graphitron.emit.ConnectionKeyShape.className(outputPackage).canonicalName()
+                    + ".defaultSource()"
+                : "";
             if (identity.handleType().isPresent()) {
                 execute.addStatement(
                     "$T preflightHandle = $T.mount(session, connection, devDialect, devSettings$L)",

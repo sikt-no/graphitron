@@ -85,14 +85,16 @@ public final class VoucherRuntime {
 
     /**
      * Whether the store's graph vouches, and so writes the voucher runtime: whether it mints a voucher
-     * key on any type. The minted key is the stored decision that a marker applies, made once by the
-     * {@code minted-keys} stage, and a marker it would not mint a key for (one in a graph with no
-     * federation link) is a defect that fails the build before anything is emitted.
+     * key on any type, issuing or accepting. The minted key is the stored decision that a marker
+     * applies, made once by the {@code minted-keys} stage, and a marker it would not mint a key for (one
+     * in a graph with no federation link) is a defect that fails the build before anything is emitted.
+     * Both sides need what the answer gates: the keys, which sign on one side and verify on the other,
+     * and the caller on {@code SessionState}, which a voucher is bound to on both.
      */
     public static boolean vouches(StoreHandle store) {
         return store.dsl().fetchExists(GRAPHITRON_MINTED_KEY,
             GRAPHITRON_MINTED_KEY.GRAPH_NAME.eq(store.graphName()),
-            GRAPHITRON_MINTED_KEY.ROLE.eq("ISSUE"));
+            GRAPHITRON_MINTED_KEY.ROLE.in("ISSUE", "ACCEPT"));
     }
 
     /** The three classes, each landing in {@code <outputPackage>.schema}. */

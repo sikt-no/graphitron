@@ -68,20 +68,21 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
-    void multiTenantAcquisitionTakesTheTenantItMountsFor() {
+    void multiTenantAcquisitionTakesTheKeyItMountsFor() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
-        // The tenant rides between the seam's settings and the abort executor; the runtime's
-        // Optional.of(key) / Optional.empty() arguments are pinned where they run, in
+        // The connection key rides between the seam's settings and the abort executor, the mount
+        // reading its tenant part off it; the runtime's ConnectionKey.forTenant(key) /
+        // ConnectionKey.defaultSource() arguments are pinned where they run, in
         // TenantAuthorizationSubstrateTest.
         assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME), "acquire")))
             .containsExactly(
                 "javax.sql.DataSource dataSource",
                 "org.jooq.SQLDialect dialect",
                 "org.jooq.conf.Settings settings",
-                "java.util.Optional<java.lang.Integer> mountedTenant",
+                "fake.code.generated.schema.ConnectionKey mountedKey",
                 "java.util.concurrent.Executor abortExecutor");
     }
 
