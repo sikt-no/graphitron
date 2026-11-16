@@ -298,12 +298,17 @@ Decisions the user made on this item; each is stated where it applies below.
   another. `ConnectionKey` is a record with one `Optional` per part the schema has, generated in every
   build, with no part in a build that has neither; what an empty part means is the source's decision.
 * Which tenants are valid, and whether a request may reach one, is the source's to decide (2026-11-16):
-  it refuses a tenant by throwing from `acquire`, which rejects the request. Graphitron's request tenant
-  set, the factories' leading parameter in a `<tenantColumn>` build, goes, so the factories are the same
-  in every build. A fan-out's domain is the source's too: `ConnectionSource` has a default method
-  `tenants()`, in a build with a tenant column, naming the tenants this request may span, empty by
-  default; Graphitron fans out over it, one key and one lease per tenant, and a tenant the request may
-  not see is simply not named.
+  it refuses a key by throwing the generated `KeyNotPermitted` from `acquire`, which answers as a refused
+  tenant does today: an error located at the field, and `null` with no error in the entity and node
+  dispatch, so a refusal reads like a row that does not exist and cannot be used to probe. Any other
+  throw from `acquire` rejects the request. Graphitron's request tenant set, the factories' leading
+  parameter in a `<tenantColumn>` build, goes, so the factories are the same in every build. A fan-out's
+  domain is the source's too: in a build with a tenant column `ConnectionSource` declares `tenants()`,
+  the tenants this request may span, and it is built with `ConnectionSource.of(acquire, tenants)`, so a
+  source without a domain does not compile; in a build without one it stays a functional interface whose
+  `tenants()` is a default that throws, never called since nothing fans out there. Graphitron fans out
+  over the domain, one key and one lease per tenant, and a tenant the request may not see is simply not
+  named (2026-11-16).
 * Vouchers require Graphitron's owned connections (2026-11-16): a build that accepts vouchers has no
   escape hatch, as a tenant-routed build has none, since `_entities` must acquire the vouched
   connection from the request's source.
@@ -587,8 +592,12 @@ Decisions the user made on this item; each is stated where it applies below.
   * `ConnectionSource`, a functional interface `Lease acquire(ConnectionKey key) throws Exception`,
     given with each request to `Graphitron.newOwnedExecutionInput(source, ...)`; built when the request
     is, it captures what the consumer needs of it and acquires nothing until called. In a build with a
-    tenant column it also has `default Set<T> tenants()`, typed by the tenant column, the fan-out domain,
-    empty unless the source names it, so a lambda still implements it;
+    tenant column it also declares `Set<T> tenants()`, typed by the tenant column, the fan-out domain,
+    and is built with `ConnectionSource.of(acquire, tenants)`; in a build without one it is a functional
+    interface, its `tenants()` a default that throws;
+  * `KeyNotPermitted`, the one refusal `acquire` may throw: an error located at the field that asked, and
+    `null` with no error in `_entities`, `node` and `nodes`, as a refused tenant answers today; any other
+    throw rejects the request;
   * `Lease`, with `connection()`, `handle()` typed by `<handle>` where one is configured (absent
     otherwise), and `release()`; a static factory builds one from a connection, a handle and a release
     action, so a consumer writes no class;
@@ -599,13 +608,17 @@ Decisions the user made on this item; each is stated where it applies below.
     every lease exactly once on every path. A fan-out worker past its deadline is Graphitron's to stop
     (cancel the statement, abort the connection through JDBC) before its lease is released; nothing of
     it reaches the consumer;
-  * a throwing `acquire` rejects the request through the carrier's one rejection slot, the slot a failed
-    voucher check uses; a throwing `release` is logged, the rest are released, and the first failure
+  * a throwing `acquire`, other than `KeyNotPermitted`, rejects the request through the carrier's one
+    rejection slot, the slot a failed voucher check uses; a throwing `release` is logged, the rest are released, and the first failure
     surfaces after all are attempted;
   * what goes: the runtime's default `DataSource` and `Map<TenantId, DataSource>`, `SessionState` with
     its mount and unmount, `MountedSession`, the generated `GraphitronSessionHook`, `PinnedConnection`,
-    and the PostgreSQL `RESET ALL` backstop as Graphitron's duty (a ready-made PostgreSQL lease helper
-    may carry it), and the request tenant set (*Rulings*). The escape-hatch path
+    and the PostgreSQL `RESET ALL` backstop as Graphitron's duty, and the request tenant set
+    (*Rulings*);
+  * a ready-made source, shipped with the contract: built from a key-to-`DataSource` function, a mount
+    and an unmount (the vouched-for values and identity as session settings), with the PostgreSQL reset on
+    release, so a consumer keeps today's behaviour without writing a lease, and the migration is one
+    call. The manual's worked example uses it. The escape-hatch path
     (`newExecutionInput(dsl, ...)`) is unchanged where the key has no part; a build whose key has parts,
     a tenant or vouched-for values, is owned-connections only.
 * *Whether the dispatch is emitted.* Today the plan and the schema class decide it from the walk's
@@ -696,10 +709,12 @@ what a consumer changes: the runtime factory loses its `DataSource` and tenant m
   slice 8d) a failed voucher check, the dev executor and the facade's factories on the new signatures.
 * The tenant machinery stays where it is a schema feature (divination, fan-out) and stops being a
   runtime mode: a tenant reaches the source as the key's tenant part, a fan-out's domain comes from the
-  source's `tenants()`, and the request tenant set and its check go, a refusal being the source's
-  throwing `acquire`.
+  source's `tenants()` (`ConnectionSource.of(acquire, tenants)` in a tenanted build), and the request
+  tenant set and its check go, a refusal being the source's `KeyNotPermitted`.
+* The ready-made source and `KeyNotPermitted` ship with the contract, not after it.
 * Unit tests through `EmittedCodeHarness` for the carrier: lazy acquisition once per distinct key, the
   lease's handle to `$session`, release exactly once on success, failure and a timed-out fan-out worker,
+  `KeyNotPermitted` answering as a field error and as `null` in the entity dispatch,
   a throwing `acquire` rejecting the request and acquiring nothing more, a throwing `release` not
   orphaning the rest.
 * The dev loop: `<devDatabase><session>` (and `GRAPHITRON_DEV_SESSION`) names a method that returns a
@@ -845,9 +860,6 @@ want to see the plan.
 
 * Names: `@issue` and `@accept` name the two acts; both are generic words for directives in an SDL that
   may carry other meanings, so check them against the directive vocabulary before they ship.
-* Ready-made leases: a helper building a `ConnectionSource` from a key-to-`DataSource` function and a
-  session setter (the vouched-for values as session settings, a PostgreSQL reset on release), for the
-  consumer who wants today's behaviour without writing it. Additive to the contract, so it can follow.
 * `<sessionState>`: once it only names the handle class, whether it keeps its name.
 * Key provider shape and default: Ed25519 over JDK keys, with the public key distributed to B; whether the
   default also reads PEM or only takes key objects.
@@ -995,6 +1007,14 @@ want to see the plan.
   build. The source decides.
 * The fan-out domain given on the request, or read off a fanned field's argument alone: the first puts
   a tenancy-shaped parameter back on the request, the second covers only domains the client names.
+
+* Every throw from `acquire` rejecting the request, a refused tenant included: one disallowed tenant
+  would fail a whole request that today answers it with a field error, and would tell a prober the key
+  exists.
+* A fan-out over an empty default domain, or a default `tenants()` that throws only when a fan-out
+  runs: the first answers a misconfiguration with a quiet empty list, the second finds it at run time.
+  A tenanted build requires the domain at compile time instead.
+* The ready-made source after the breaking change: a consumer's migration would have nothing to move to.
 
 ## Reviewer findings
 
