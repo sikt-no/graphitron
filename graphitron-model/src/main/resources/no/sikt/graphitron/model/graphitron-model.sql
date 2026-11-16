@@ -18798,7 +18798,27 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND p.origin IN ('WRITTEN', 'INHERITED', 'INFERRED')
                       AND NOT (jp.target_source_name = k.table_source_name
                                AND jp.target_schema = k.table_schema AND jp.target_table = k.table_name))
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- A node id inside an input object built into a jOOQ record that is a list, or the id of several node
+-- types, at the input field: a list of ids writes no one column, and a record takes one node's key, so
+-- the record build does not place either yet.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       CASE WHEN f.list_depth > 0 THEN 'BUILD_NODE_ID_LIST_UNSUPPORTED' ELSE 'BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED' END,
+       CAST(NULL AS VARCHAR), 'occurrence-builds'
+  FROM graphitron_occurrence o
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.record_table IS NOT NULL
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD'
+   AND EXISTS (SELECT 1 FROM graphitron_binding_claim cl
+                WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID')
+   AND (f.list_depth > 0
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
+                     JOIN graphitron_occurrence_node_id k2
+                       ON k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate AND k2.bound <> k.bound
+                    WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate));
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
 
 -- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:
@@ -27264,6 +27284,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A field of a type nested under a global table reaches a tenant''s rows by a key landing on the tenant column, which is not routed by the parent row''s tenant yet: declare the field on a type with its own @table, or read the rows through an argument naming the tenant.'),
   ('TENANT_FAN_OUT_INLINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_INLINE_UNSUPPORTED',
    'A field whose foreign key reaches a tenant''s rows from a global table is routed by its parent row''s tenant, and needs @splitQuery until its producer is emitted from the store: write @splitQuery on the field.'),
+  ('BUILD_NODE_ID_LIST_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_BUILD_NODE_ID_LIST_UNSUPPORTED',
+   'An input field holding a list of node ids sits in an input object built into a jOOQ record, where a list of ids writes no one column, which is not built yet: take the ids as an argument of their own, or give the record one id.'),
+  ('BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED',
+   'An input field holding the id of several node types sits in an input object built into a jOOQ record, which takes one node''s key, so the build does not place it yet: name one node type with @nodeId(typeName:), or take the id outside the record.'),
   ('SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED',
    'A @service returns an interface or union whose participants a discriminator tells apart on one shared table, and one of them is told apart by a table of its own, which the service''s lift does not read yet: keep every participant on the shared table, or read the rows with a field graphitron fetches.'),
   ('SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED',

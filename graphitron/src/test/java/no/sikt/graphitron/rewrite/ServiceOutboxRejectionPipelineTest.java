@@ -23,10 +23,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * That an {@code @outbox} on a {@code @service} mutation is refused where the store does not emit the
- * field's fetcher yet, rather than accepted without its messages: the messages are written by the
- * store-emitted fetcher alone, so a field the classified emitters still build has nowhere to write
- * them. The refusal names why the fetcher is not emitted, and goes once the last service is.
+ * That an {@code @outbox} on a {@code @service} mutation is never accepted without its messages: the
+ * messages are written by the store-emitted fetcher alone, and a field whose fetcher the store does
+ * not emit is refused by the store's own deferral, which names why.
  */
 @PipelineTier
 class ServiceOutboxRejectionPipelineTest {
@@ -43,7 +42,7 @@ class ServiceOutboxRejectionPipelineTest {
         """;
 
     @Test
-    void aServiceTheStoreDoesNotEmitYet_isRefusedAtItsOutbox(@TempDir Path tmp) throws IOException {
+    void aServiceTheStoreDoesNotEmitYet_isRefusedByItsStoredDeferral(@TempDir Path tmp) throws IOException {
         assertThat(errors(tmp, FILM + """
             type Mutation {
                 modifyFilm(in: ModifyFilmInput!): String
@@ -52,9 +51,8 @@ class ServiceOutboxRejectionPipelineTest {
             }
             """))
             .singleElement().asString()
-            .startsWith("Field 'Mutation.modifyFilm': ")
-            .contains("An @outbox on a @service is written by the fetcher the store emits")
-            .contains("not emitted from the store yet (");
+            .startsWith("Field 'ModifyFilmInput.relatedIds': ")
+            .contains("[BUILD_NODE_ID_LIST_UNSUPPORTED]");
     }
 
     /** The negative beside the positive, so the refusal cannot pass because every service outbox fails. */

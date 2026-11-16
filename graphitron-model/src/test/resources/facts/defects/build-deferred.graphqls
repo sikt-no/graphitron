@@ -1,0 +1,31 @@
+# What a call's input build does not place yet, each at the input field: a list of node ids, and the
+# id of several node types, inside an input object built into a jOOQ record, which writes one node's
+# key into its columns.
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! title: String }
+type Actor implements Node @table(name: "actor") @node { id: ID! }
+union FilmOrActor = Film | Actor
+type FilmDraftsCountedPayload { count: Int }
+
+input FilmRecordIdsInput {
+  title: String @field(name: "title")
+  filmIds: [ID!] @nodeId(typeName: "Film")
+}
+input FilmRecordEitherInput {
+  title: String @field(name: "title")
+  filmId: ID @nodeId(typeName: "FilmOrActor")
+}
+
+type Query {
+  countRecordIds(in: [FilmRecordIdsInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+  countRecordEither(in: [FilmRecordEitherInput!]!): FilmDraftsCountedPayload @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmRecordDraftService", method: "count", argMapping: "drafts: in"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'BUILD_%'", rows: """
+  code,                                   coordinate
+  BUILD_NODE_ID_LIST_UNSUPPORTED,         FilmRecordIdsInput.filmIds
+  BUILD_NODE_ID_SEVERAL_TYPES_UNSUPPORTED, FilmRecordEitherInput.filmId
+  """)
