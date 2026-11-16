@@ -328,7 +328,7 @@ Starts once R1101 phase 2 (nested scopes join the field transaction) is on trunk
 
 A service or routine-writing coordinate becomes admissible by the same route: the store row that says the coordinate is a write. The routine write is already rendered from store rows (`RoutineWriteQuery`), so its seam is the same one; a `@service` mutation is still rendered from the classified model, so its seam is a second call site on the walk until that variant moves, and `$result` resolves against the service method's return type in memory rather than by subselect (open decision 4). Owned path only; request-time refusal on the escape hatch.
 
-### Phase 4: the failure outcome (Spec; revised after round 6, needs a sign-off before work starts)
+### Phase 4: the failure outcome (Ready; signed off in review round 8)
 
 Added 2026-11-16, after phases 1, 1b and 2 shipped, so it has not been through the reviewer gate; a different session reviews this section before it is built. Goal: `@outbox(on: ERROR)` writes a message when the mutation field fails, after its transaction has rolled back, carrying the arguments, the session, the scope and the typed error, so a producer can publish refusals and failures as well as changes.
 
@@ -605,3 +605,12 @@ Non-blocking:
 * **Where the author's response sits.** Round 6's response is one paragraph after the round; `roadmap/workflow.adoc` puts a note directly beneath each finding, so the next reviewer audits a delta in place. No need to move it now; the next response should follow the convention.
 
   > Author: noted; this round's responses sit beneath their findings.
+
+### Round 8 (2026-11-16, phase 4 sign-off, reviewer session 01WkW2JF7SxDsTvbtEVA1QpC)
+
+Verdict: signed off; phase 4 is Ready. Reviewed at `de17c7d3d`. Finding 9 is resolved: `outboxAcquisitionTimeout` bounds the fresh acquisition in every build, on the scatter executor where one exists and a daemon executor otherwise, and the single-tenant case is in the execution tests. The three non-blocking points of round 7 are taken: the failed `COMMIT`'s own failure and `rollBackQuietly`'s both feed the classification, a fresh connection under `ROLLBACK_ONLY` is discarded at release, and the responses sit beneath their findings.
+
+Non-blocking, for the implementer:
+
+* **The runtime has no shutdown.** The bound says the single-tenant daemon executor is shut down "with" the runtime, but the generated runtime has no close or shutdown method; the default scatter executor is a fixed pool of daemon threads that is never shut down, so an application exit is not held open by it. Build the outbox executor the same way (daemon threads, bounded, never shut down) rather than adding a lifecycle the runtime does not have.
+* **A consumer-supplied scatter executor.** In a multi-tenant build the fresh acquisition queues on whatever executor the consumer supplied, behind fan-out work. The bound still holds, so the worst case is a logged drop, but the log line should say the wait was spent queued, not acquiring, so an operator can tell a saturated executor from a slow pool.
