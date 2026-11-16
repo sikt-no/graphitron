@@ -27,13 +27,17 @@ rows and the client gets `null`, with no error.
 **The outcome.** A marks a field `@issue`. Graphitron then attaches a signed *voucher* to each row that A's
 own rules let the caller read. The router carries the voucher to B. B marks the matching field `@accept`.
 Graphitron checks the voucher there and runs the read, and every read below it at any depth, on a
-separate database connection that B's policies can recognize as vouched for. The grant never reaches
-beyond what the voucher names. A voucher that fails any check fails the whole request before any SQL on
-the covered tables runs: a bad voucher means tampering or a deployment fault, so nothing in that request
-is answered.
+separate database connection, set up for the value A vouched for (the owner, say). What that connection
+may read is what B's policies unlock for that value, and only the vouched entity and the fields below it
+read on it. A voucher that fails any check fails the whole request before any SQL on the covered tables
+runs: a bad voucher means tampering or a deployment fault, so nothing in that request is answered.
+
+A voucher carries two things that do different jobs. The *vouched-for fields* are the access decision:
+they decide which connection the entity reads on, and B's policies test them. The *lookup part* is
+navigation: it lets B pick up the row where A left off, and grants nothing.
 
 The consumer supplies the signing and verifying keys, the RLS policies, the caller on the per-request
-`SessionState`, and, in B, a session mount that reads the vouch it is told.
+`SessionState`, and, in B, a session mount that sets the vouched-for values on the connection.
 
 ### Terms
 
@@ -42,12 +46,12 @@ The consumer supplies the signing and verifying keys, the RLS policies, the call
 | *Voucher* | A signed token Graphitron computes for one row in A and verifies in B. It is Graphitron's own format, decoded the way a node id is. |
 | *Issuing type* | The type in A that carries the `@issue` field. |
 | *Absorbed fields* | Every field of the issuing type other than the voucher. Their values are sealed inside the voucher, and A does not publish them. |
-| *Claims* | The absorbed fields named by `claims:` on both markers. They say whose rows are vouched for. In the first client's case this is the owner's id number, a different person from the caller. |
-| *Lookup part* | The other absorbed fields: the key of the vouched row in B. |
+| *Vouched-for fields* | The absorbed fields named by `vouchesFor:` on both markers. They say whose rows are vouched for, and they are the access decision. In the first client's case this is the owner's id number, a different person from the caller. |
+| *Lookup part* | The other absorbed fields: the key of the vouched row in B. Navigation only. |
 | *Scope* | A name both markers agree on, so a voucher issued for one purpose is not accepted for another. |
 | *Caller* | The user the request is for, a string the consumer puts on `SessionState`. A voucher is only valid for the caller it was issued to. |
-| *Vouch* | All vouchers one operation issues under one scope. They share a random *vouch id*, the scope, the caller and the expiry. The vouch id is the audit handle. |
-| *Vouched connection* | A database connection in B, one per claims value, on which the consumer's ordinary mount runs and is told the claims. B's policies decide what the claims unlock. |
+| *Vouch id* | A random id shared by the vouchers one operation issues under one scope. An audit field only: Graphitron logs it at issue and on every redemption or rejection. |
+| *Vouched connection* | A database connection in B, one per vouched-for value, keyed by a `ConnectionKey` carrying that value. The consumer's ordinary mount runs on it, reads the value off `MountedSession.key()`, and sets it for the policies. |
 
 ### Example
 
@@ -56,7 +60,7 @@ secondary school result, and `eierId` the id of the person who owns the result (
 
 ```graphql
 # Subgraph A: the issuer. VgsResultat is A's own table of references to results, written the way B's key
-# looks: `id` is B's key field, read here from A's `vgs_resultat_id`, and `eierId` is the claims. `@issue`
+# looks: `id` is B's key field, read here from A's `vgs_resultat_id`, and `eierId` is the vouched-for field. `@issue`
 # absorbs every other field of the type into the voucher, and A publishes `voucher` alone. No service, no
 # token code, no `@key` written.
 type Soknad @table(name: "soknad") @key(fields: "id") {
@@ -66,22 +70,22 @@ type Soknad @table(name: "soknad") @key(fields: "id") {
 type VgsResultat @table(name: "soknad_vgs_resultat") {
   id: ID! @field(name: "vgs_resultat_id")
   eierId: String! @field(name: "eier_id")
-  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", claims: "eierId")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
 }
 
 # Subgraph B: the owner. The real, table-bound entity. `voucher` is the proof field: not a column, not
-# selected. `eierId` is the claims field the voucher's claims parse into, kept from clients.
+# selected. `eierId` is the vouched-for field the voucher's value parses into, kept from clients.
 type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
   id: ID!
   eierId: String! @inaccessible
-  voucher: String! @accept(scope: "vgs-resultater", claims: "eierId")
+  voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
   fag: String!
   karakter: Int!
   detaljer: [Fagdetalj!]!          # nested table-bound children, read under the same vouched connection
 }
 ```
 
-The absorbed fields are named and typed like B's key fields and claims fields, because that is what they
+The absorbed fields are named and typed like B's key fields and vouched-for fields, because that is what they
 are. Each is read as a component of the voucher, not as a field: its `@field` names the column and its
 type the scalar, and it never appears in A's served SDL or runtime schema. The voucher carries each value
 under the field's name, serialized by the field's scalar, exactly as a plain representation of B's key
@@ -93,27 +97,30 @@ both as an `ID`. A client that wants the result's `id` gets it from B, through t
 
 Slices 1 to 7 are on trunk: A issues vouchers end to end, and B captures `@accept`, states its keys and
 publishes the right SDL. A schema using `@accept` is still refused with `VOUCHER_ACCEPT_NOT_GENERATED`,
-because B does not yet verify vouchers. Slice 8, the dispatch, is what remains; see *Slices*.
+because B does not yet verify vouchers. Slice 8 is what remains, in two parts: 8a, the dispatch, can be
+built now; 8b, the fields below the entity, waits on R876's flip of the child fetchers; see *Slices*. The
+example spells the vouched-for argument `vouchesFor:`, the name slice 8a gives it; the shipped spelling is
+`claims:`.
 
 ## First-client docs draft (for `federation-keys.adoc` and the security guide)
 
 "To let another subgraph read data your user's token does not cover, write the row type the way the
 other subgraph's key looks, each key field reading its value from your own column, add the field whose
-rows these are (the owner, say), and add a field `voucher: String! @issue(..., claims: "owner")`. The
-voucher absorbs those fields: they are sealed inside it and your subgraph publishes the voucher alone, so
-a router can reach the other subgraph's data only through it. The claims say whose rows are vouched for;
-the other fields are the row's key. Name and type them exactly as the other subgraph's key fields and
-claims fields: your subgraph cannot check that, and a mismatch shows up as every voucher being rejected.
-Graphitron signs a voucher for each row your own rules let the caller see, bound to the caller you pass
-to `SessionState.of`; both subgraphs must pass the same caller for the same user (for example the token's
-subject), or every voucher is rejected. In the subgraph that owns the data, add the claims field (it may
-be `@inaccessible`) and `voucher: String! @accept(..., claims: "owner")`. Graphitron checks the voucher,
-takes a separate database connection for its claims, and runs your mount there with `session.vouch()`
-telling it the claims and the rows vouched for, so it can set the session state your policies read. Your
-policies decide what the claims unlock: the owner's rows, or only the vouched ones. That entity and
-everything below it read through that connection, nothing outside those entities uses it, and it is
-released when the request ends." If this does not read simply once the spellings are chosen, the design
-is wrong.
+rows these are (the owner, say), and add a field `voucher: String! @issue(..., vouchesFor: "owner")`.
+The voucher absorbs those fields: they are sealed inside it and your subgraph publishes the voucher
+alone, so a router can reach the other subgraph's data only through it. `vouchesFor` names what you vouch
+for, whose rows these are; the other fields are the row's key, which only tells the other subgraph which
+row to read. Name and type them exactly as the other subgraph's key fields and vouched-for fields: your
+subgraph cannot check that, and a mismatch shows up as every voucher being rejected. Graphitron signs a
+voucher for each row your own rules let the caller see, bound to the caller you pass to
+`SessionState.of`; both subgraphs must pass the same caller for the same user (for example the token's
+subject), or every voucher is rejected. In the subgraph that owns the data, add the vouched-for field (it
+may be `@inaccessible`) and `voucher: String! @accept(..., vouchesFor: "owner")`. Graphitron checks the
+voucher, takes a separate database connection for the vouched-for value, and runs your mount there; the
+mount reads the value from `session.key()` and sets the session state your policies read. Your policies
+decide what that value unlocks. That entity and everything below it read through that connection,
+nothing outside those entities uses it, and it is released when the request ends." If this does not
+read simply once the spellings are chosen, the design is wrong.
 
 ## How it works
 
@@ -123,9 +130,9 @@ is wrong.
  read rows under A's rules
  sign one voucher per row  --> fetch `voucher` from A
                                send _entities {voucher} -->   verify every voucher (fail request on any)
-                                                              group by claims value
+                                                              group by vouched-for value
                                                               one vouched connection per group,
-                                                                consumer's mount told vouch()
+                                                                consumer's mount reads key()
                                                               SELECT the entity, and every field
                                                                 below it, on that connection
                                                               release at operation end
@@ -135,8 +142,8 @@ is wrong.
    computed, not a column, and only when selected, which a router does only when it plans the jump to B.
    For each row Graphitron builds the token (version, vouch id, scope, caller, expiry, key id, and each
    absorbed field's name and wire value) and signs it, together with the entity type name, using the
-   runtime's signing key. The vouch id is a random 128-bit value minted once per operation and scope;
-   the expiry is the operation's start plus `ttl`. The decision is the read itself: a row A's rules hide
+   runtime's signing key. The vouch id is a random 128-bit value minted once per operation and scope,
+   logged by Graphitron as the audit handle; the expiry is the operation's start plus `ttl`. The decision is the read itself: a row A's rules hide
    is never returned and never signed. Under a mutation payload the rows are read and signed inside the
    mutation field's transaction, and a field that rolls back is `null`, so a voucher for rows that are
    gone never reaches the router.
@@ -150,23 +157,26 @@ is wrong.
    * the expiry, with a fixed tolerance for clock skew between A and B;
    * the scope, against `@accept(scope:)`;
    * the caller, against the caller on this request's `SessionState`;
-   * that the signed claims section names exactly B's `@accept(claims:)` fields;
-   * that the lookup section carries exactly the fields of B's authored key;
-   * that vouchers sharing a vouch id agree on scope, caller and expiry.
+   * that the signed vouched-for section names exactly B's `@accept(vouchesFor:)` fields;
+   * that the lookup section carries exactly the fields of B's authored key.
 
-   The key values are signed, so a voucher cannot be moved to another row or type. One failure fails the
-   request with a request-scoped `VoucherRejectedException`, thrown out of `GraphQL.execute` the way a
-   rejected mount's `SessionMountException` is. Representations of the plain key, from elsewhere in the
-   graph, are not part of this check and resolve under the caller's own RLS.
-4. *Route.* The verified vouchers group by their connection key: the tenant and the claims values.
-   Vouchers carrying the same claims share one connection, whichever vouch or scope issued them. For each
-   group the per-operation carrier takes one connection keyed by that `ConnectionKey` and runs the
-   consumer's ordinary mount on it, with `MountedSession.vouch()` present: the claims, typed as B's claims
-   fields parse them, and one entry per vouch the group holds (vouch id, scope, expiry and covered lookup
-   keys). The mount sets the session state the policies read, as it sets identity, and refuses by
-   throwing; a throwing mount is a `SessionMountException` like any other, the connection is evicted and
-   the request fails. The unmount receives the same `MountedSession`, so it can clear what the vouch set,
-   and on PostgreSQL the reset at release backstops it.
+   Each voucher is verified on its own. The whole token is signed, the lookup part included, but the
+   lookup part is inside the token for federation's sake (A withholds the key fields so the router can
+   only jump on `voucher`), not as a grant: any row B's policies admit for the vouched-for value is
+   readable on that connection anyway. One failure fails the request with a request-scoped
+   `VoucherRejectedException`, thrown out of `GraphQL.execute` the way a rejected mount's
+   `SessionMountException` is. Representations of the plain key, from elsewhere in the
+   graph, are not part of this check and resolve under the caller's own RLS. Graphitron logs the vouch
+   id, scope and outcome of every redemption and rejection, never the token or its values.
+4. *Route.* The verified vouchers group by their connection key: the tenant part and the vouched-for
+   values. Vouchers carrying the same value share one connection, whichever operation or scope issued
+   them. For each group the per-operation carrier takes one connection keyed by that `ConnectionKey` and
+   runs the consumer's ordinary mount on it. The mount reads the key it is mounting for from
+   `MountedSession.key()`, the vouched-for values typed as B's fields parse them, and sets the session
+   state the policies read, as it sets identity. It refuses by throwing; a throwing mount is a
+   `SessionMountException` like any other, the connection is evicted and the request fails. The unmount
+   receives the same `MountedSession`, so it can clear what it set, and on PostgreSQL the reset at
+   release backstops it.
 5. *Read below.* The group's SELECT runs on the vouched connection. Each resolved row is returned as a
    `DataFetcherResult` whose `localContext` carries the connection key, and graphql-java hands that value
    to every field below. So child acquisitions and their DataLoader batches are keyed by it: each field
@@ -177,35 +187,34 @@ is wrong.
 6. *Release.* At operation end every vouched connection is unmounted and released with the rest of the
    carrier's entries.
 
-### One connection per claims value
+### One connection per vouched-for value
 
-An operation takes one vouched connection, for one claims value. Vouchers carrying it, from a list of
-results or several parents' lists, share that connection. An operation whose vouchers carry more than one
-claims value fails with an error that names the limit, not `null`, so the limit is not mistaken for a
-denial. The limit lives in one place so it can be raised later.
+An operation takes one vouched connection, for one vouched-for value. Vouchers carrying it, from a list
+of results or several parents' lists, share that connection. An operation whose vouchers carry more than
+one vouched-for value fails with an error that names the limit, not `null`, so the limit is not mistaken
+for a denial. The limit lives in one place so it can be raised later.
 
-Every entity of the group reads through a connection mounted for those claims, so a subtree is scoped to
-its entities by the graph it was reached through, and its reads to the claims by RLS. Sharing the
-connection across vouches and scopes grants nothing new: what it may read is decided by the claims and
-B's policies on them, and every voucher on it was signed for those claims and checked against this
-request's caller. A connection per row would cost one connection per result and is not what this item
-builds.
+Every entity of the group reads through a connection mounted for that value, so a subtree is scoped to
+its entities by the graph it was reached through, and its reads to the value by RLS. Sharing the
+connection across operations and scopes on A grants nothing new: what it may read is decided by the
+value and B's policies on it, and every voucher on it was signed for that value and checked against this
+request's caller.
 
 ### What B's policies test
 
-Because the voucher signs both parts, B needs no notion of application or subject. The policies test the
-claims, for example `eier_id = current_setting('app.vouched_owner')` on the result table and a join from
-each child to its result row, where the mount wrote the setting from `vouch().claims()`. A policy may also
-test the covered lookup keys, `vouch().keys()`: a list with one entry per vouched key, each a map from the
-key's field name to its value as B's key field parsed it, so a key of several fields arrives whole.
+The grant is everything B's policies unlock for the vouched-for value; the lookup part is not part of
+it. B needs no notion of application or subject: the policies test the value, for example
+`eier_id = current_setting('app.vouched_owner')` on the result table and a join from each child to its
+result row, where the mount wrote the setting from `key()`.
 
 The first client vouches for documents and their owner: A's issuing type absorbs `id` and `eierId` and
-names the owner as the claims (`@issue(scope: "dokumenter", ttl: "PT5M", claims: "eierId")`); B names
-the same (`@accept(scope: "dokumenter", claims: "eierId")`), so `id` is the lookup part and decodes onto
-B's authored `@key(fields: "id")`. Every voucher for one owner shares the owner's vouched connection. A
-policy testing the owner admits every document of that owner on the connection; one testing the covered
-keys as well admits only the vouched documents. Either is the consumer's choice, and the same voucher
-covers both.
+names the owner as vouched for (`@issue(scope: "dokumenter", ttl: "PT5M", vouchesFor: "eierId")`); B
+names the same (`@accept(scope: "dokumenter", vouchesFor: "eierId")`), so `id` is the lookup part and
+decodes onto B's authored `@key(fields: "id")`. Every voucher for one owner shares the owner's vouched
+connection, and a policy on the owner admits that owner's documents on it. If a subtree below a document
+leads to the owner's other documents, those are admitted too: that is the grant A made. A consumer that
+wants a narrower grant puts more into `vouchesFor:` (a document id, say), at the cost of one connection
+per value.
 
 ### What each side publishes, and why A withholds the absorbed fields
 
@@ -235,10 +244,19 @@ adds access. This is federation only: `Query.node`, `@node` and the relay id kno
 
 Decisions the user made on this item; each is stated where it applies below.
 
-* `claims:` is required on both markers, and both name it, B refusing a voucher whose signed claims differ
-  (2026-11-12). A voucher without claims would have no connection of its own to read on.
-* One claims value per operation, and vouchers sharing claims share a connection across vouches and
-  scopes (2026-11-12).
+* The vouched-for fields are required on both markers, and both name them, B refusing a voucher whose
+  signed vouched-for section differs (2026-11-12). A voucher without them would have no connection of its
+  own to read on.
+* One vouched-for value per operation, and vouchers sharing the value share a connection across
+  operations and scopes on A (2026-11-12).
+* The vouched-for fields are the access decision and the lookup part is navigation only (2026-11-16).
+  The mount needs only the vouched-for values, to set them on the connection; it reads them from the
+  connection key it is mounting for, `MountedSession.key()`, as R1185's connection hook takes the whole
+  key. No per-voucher detail reaches the mount: the covered lookup keys and a `Vouch` type are dropped.
+* The vouch id is an audit field that Graphitron logs; handing it to the consumer can be added later
+  (2026-11-16). The verifier's check that vouchers sharing a vouch id agree is dropped.
+* `claims:` is renamed `vouchesFor:`, since "claims" already means the request's identity claims
+  (2026-11-16).
 * Either marker in a graph with no federation link is refused (2026-11-12).
 * Federation knows keys, not `Node.id`: whether a key is the id contract is decided by how its field
   binds, and an authored key spelling `id` stands the minted node key down (2026-11-10, 2026-11-11).
@@ -251,25 +269,27 @@ Decisions the user made on this item; each is stated where it applies below.
 
 ## Implementation
 
-* *Directives.* `@issue(scope:, ttl:, claims:)` on a field of a table-bound type (A); it absorbs every
-  other field of the type, and `claims:` names the absorbed fields that are the voucher's claims, the
-  rest being its lookup part. `@accept(scope:, key:, claims:)` on a field of a table-bound, resolvable
-  type (B): `key:` is the field set of the authored `@key` whose columns the voucher's lookup part decodes
-  to, and may be omitted when the type has exactly one authored resolvable key; `claims:` is the field set
-  the voucher's claims parse into, fields of B's type parsed by their scalars as key fields are (each
-  must be a field of the type, and may be `@inaccessible` so the owner is not published to clients).
-  `claims:` is required on both: a voucher without claims would have no connection of
-  its own to read on, and the request's connection is the caller's. The claims are the rows' owner, not
-  the requesting caller, which is checked separately against `SessionState`. Both ends name the claims, so
-  the issuer states what it vouches for and B refuses a voucher whose signed claims are other than its
-  own `claims:`; B's policies decide what the claims unlock. Graphitron defines both in `directives.graphqls`, as it does `@node`;
-  consumers do not write the definitions.
+* *Directives.* `@issue(scope:, ttl:, vouchesFor:)` on a field of a table-bound type (A); it absorbs
+  every other field of the type, and `vouchesFor:` names the absorbed fields that are vouched for, the
+  rest being its lookup part. `@accept(scope:, key:, vouchesFor:)` on a field of a table-bound,
+  resolvable type (B): `key:` is the field set of the authored `@key` whose columns the voucher's lookup
+  part decodes to, and may be omitted when the type has exactly one authored resolvable key;
+  `vouchesFor:` is the field set the voucher's vouched-for values parse into, fields of B's type parsed by
+  their scalars as key fields are (each must be a field of the type, and may be `@inaccessible` so the
+  owner is not published to clients). `vouchesFor:` is required on both: a voucher without it would have
+  no connection of its own to read on, and the request's connection is the caller's. The vouched-for
+  values are the rows' owner, not the requesting caller, which is checked separately against
+  `SessionState`. Both ends name them, so the issuer states what it vouches for and B refuses a voucher
+  whose signed vouched-for section differs from its own `vouchesFor:`; B's policies decide what the
+  values unlock. Graphitron defines both in `directives.graphqls`, as it does `@node`; consumers do not
+  write the definitions.
 * *Facts.* Capture writes one entry per application, keyed by the directive application as
-  `graphitron_ast_node_id_entry` is: `graphitron_ast_issue_entry` (scope, ttl, the `claims:` field set as written) and
-  `graphitron_ast_accept_entry` (scope, the `key:` field set as written or none, the `claims:` field set
-  as written). The claims are decided into rows, not read back off the strings: one relation with a row
-  per claims field of an application, keyed by the application and the field's position, referencing the
-  field's element, which the codec, the `ConnectionKey`'s typing, `vouch().claims()` and the refusals
+  `graphitron_ast_node_id_entry` is: `graphitron_ast_issue_entry` (scope, ttl, the `vouchesFor:` field set
+  as written) and `graphitron_ast_accept_entry` (scope, the `key:` field set as written or none, the
+  `vouchesFor:` field set as written). The vouched-for fields are decided into rows, not read back off
+  the strings: one relation with a row per vouched-for field of an application, keyed by the application
+  and the field's position, referencing the field's element, which the codec, the `ConnectionKey`'s
+  typing and the refusals
   read. Everything else is
   derived from these and from facts the store already holds: the voucher membership and components
   (below), the voucher binding, the minted keys and `@inaccessible`, the entity key alternatives, the
@@ -292,7 +312,7 @@ Decisions the user made on this item; each is stated where it applies below.
   since the emitted population is written by `macro-expansion` right after the anchor, ahead of the table
   types the components need: `voucher-members` (class `derive.VoucherMembers`), between `anchor` and
   `macro-expansion`, writes the membership from the transcription and the issue entry alone; `vouchers`
-  (class `derive.Vouchers`), after `nodes` and before `federation-link`, writes the components, the claims
+  (class `derive.Vouchers`), after `nodes` and before `federation-link`, writes the components, the vouched-for
   rows and the voucher stage's refusals, after `nodes` because its node-type refusal reads
   `graphitron_node`:
   * the *membership*, one row per field declaration an `@issue` absorbs, keyed on its
@@ -394,11 +414,11 @@ Decisions the user made on this item; each is stated where it applies below.
     it a value of its own (read off `graphql_directive_application`, not off a producer fact); an absorbed
     field whose column does not resolve (a member with no component row); either
     marker in a graph with no `<sessionState>` (no `store_graph_session_supplied` row), since the caller
-    rides on `SessionState`. And the claims, on either marker: a `claims:` naming no field, a field named
+    rides on `SessionState`. And the vouched-for fields, on either marker: a `vouchesFor:` naming no field, a field named
     twice, a list, object or nested selection, or a field carrying `@nodeId`, `@service`, `@routine`,
-    `@reference` or another value-giving directive; on `@issue`, a claims field that is not an absorbed
-    field; on `@accept`, a claims field that is not a field of the type; and two
-    `@accept` fields in one graph whose claims differ in names or scalars, since the generated
+    `@reference` or another value-giving directive; on `@issue`, a vouched-for field that is not an absorbed
+    field; on `@accept`, a vouched-for field that is not a field of the type; and two
+    `@accept` fields in one graph whose vouched-for fields differ in names or scalars, since the generated
     `ConnectionKey` has one shape.
   * Owned by `entry-defects`, since what a root field returns is an element-keyed fact the voucher stage
     runs too early to read: `@issue` on a type a root operation field returns (a
@@ -409,28 +429,28 @@ Decisions the user made on this item; each is stated where it applies below.
     type with no authored
     resolvable `@key`, or with several and no `key:`, or a `key:` naming no authored key; `@accept` whose
     `key:` is an authored key with a nested selection (`@key(fields: "org { id }")`), since absorbed fields
-    are top-level scalars. And two refusals of an `@accept`'s claims: a claims
+    are top-level scalars. And two refusals of an `@accept`'s vouched-for fields: a vouched-for
     field that does not bind a column at the type's table (the test key fields pass, read off the
-    occurrence binding, so B's claims fields need no copy of A's value-giving directive list, which A
-    needed only because its members have no bindings); and a claims field that is also a field of the
+    occurrence binding, so B's vouched-for fields need no copy of A's value-giving directive list, which A
+    needed only because its members have no bindings); and a vouched-for field that is also a field of the
     key the voucher decodes to (refused rather than allowed, so the two parts never share a value), which
     reads `graphitron_accept_key` and so cannot be the voucher stage's. A rule broken the same way by
-    either marker is one code for both: the session-state, federation-link, empty-claims and
-    repeated-claim refusals say "a voucher marker".
+    either marker is one code for both: the session-state, federation-link, empty-vouched-for and
+    repeated-vouched-for refusals say "a voucher marker".
 * *Voucher codec.* One generated class owns the format: version byte, vouch id, scope, caller, expiry,
-  key id, the claims section, the lookup section, signature. Each section is the values of its fields,
-  so the token itself says which values are the claims and which the row's key. The key values travel in GraphQL's own wire form, so A and B never
+  key id, the vouched-for section, the lookup section, signature. Each section is the values of its fields,
+  so the token itself says which values are vouched for and which the row's key. The key values travel in GraphQL's own wire form, so A and B never
   have to agree on how a column prints: entries sorted by field name, each value the result of the absorbed
   field's scalar serializing it, exactly what a plain representation would have carried. On B each value
   is parsed by the scalar of B's key field, as a representation's value is, and reaches the authored key's
   columns the way a node id's decoded values do. The signature covers every byte before it plus the entity
   type name, which the token does not carry: B takes it from the representation's `__typename`, so a
   voucher for one type cannot be presented as another's. A decode failure, unknown version, unknown key id,
-  a claims section naming fields other than B's `claims:`, a lookup section naming fields other than B's
+  a vouched-for section naming fields other than B's `vouchesFor:`, a lookup section naming fields other than B's
   authored key, or a value B's scalar does not parse is a verification failure, not an exception to the
   caller.
-* *Generated, not shipped.* The codec, `Vouch`, `VoucherRejectedException`, the key provider interface and
-  its default Ed25519 implementation are emitted per consumer, as `NodeIdEncoder` is
+* *Generated, not shipped.* The codec, `VoucherRejectedException`, the key provider interface and its
+  default Ed25519 implementation are emitted per consumer, as `NodeIdEncoder` is
   (`NodeIdEncoderClassGenerator`), and only in a build whose store holds a marker entry. Generated code has
   no runtime dependency on Graphitron, and `graphitron-jakarta-rest` is an optional serving library a
   consumer verifying a voucher need not take. JDK Ed25519 (`KeyFactory` and `Signature` with "Ed25519")
@@ -441,9 +461,14 @@ Decisions the user made on this item; each is stated where it applies below.
     consumer sign remotely, for example through Vault Transit. It is a required parameter of every
     `Graphitron.runtime(...)` overload, so omitting it is a compile error;
   * `SessionState.of(caller, mount, unmount)`, the caller a `String` both subgraphs read, so a voucher is
-    useless to another user. Still one `of` form per build, so a lambda never meets an overload;
-  * `MountedSession.vouch()`, returning `Optional<Vouch>`, declared only in a build with an `@accept`
-    field, the way `tenant()` is declared only in multi-tenant builds.
+    useless to another user. Still one `of` form per build, so a lambda never meets an overload. The gate
+    is "the graph issues or accepts", read as one stored build-shape fact; today it reads
+    `VoucherRuntime.vouches`, which sees issuing only, so an accept-only build gets no caller;
+  * `MountedSession.key()`, the `ConnectionKey` the connection is mounted for, declared wherever
+    `ConnectionKey` is generated (multi-tenant or accepting builds). The mount reads the vouched-for values
+    from it. In an untenanted accepting build the request's own mount sees a key with both parts empty, a
+    key like any other; the docs say so. Whether `MountedSession.tenant()` retires in slice 8a or with
+    R1185 is open.
 * *Key synthesis.* The minted key and `@inaccessible` show in the served `_service.sdl` on both sides,
   and A's issuing type shows `voucher` alone. B's authored keys, `@node` and the relay id are not touched.
 * *Clock skew.* B accepts a voucher up to a fixed 30 seconds past its expiry, so a small difference
@@ -458,29 +483,52 @@ Decisions the user made on this item; each is stated where it applies below.
   payload, where the field's transaction rule (a rolled-back field is `null`) keeps a voucher for
   rolled-back rows from the client. It is emitted as an `emit` query and emitter reading the component
   relation, not as a branch of `TypeFetcherGenerator`.
-* *Verify and group.* The dispatcher's voucher handler decodes and checks as in step 3, groups by
-  connection key, and acquires one vouched connection per group with the claims and one entry per vouch
-  of the group on the `Vouch`. The vouch id stays the audit handle and the consistency check (vouchers
-  sharing a vouch id agree on scope, caller and expiry); it does not group.
+* *Verify and group.* The dispatcher's voucher handler decodes and checks each voucher as in step 3,
+  builds a `ConnectionKey` per representation from its optional parts (the tenant part from the
+  alternative's routing source, the vouched-for part from the verified voucher), and groups on that key
+  once. There is no voucher branch beside the tenant branch: every alternative groups by its key, which is
+  what R1185 puts behind the consumer's hook. The voucher alternative's tenant source is the source of
+  the authored key it decodes onto (`graphitron_accept_key`), paired in `EntityKeyQuery` and carried
+  through `EntityTenantRouting.Source`, the seam whose construction moves to the store under R876. No new
+  reference to the classified model's `TenantBinding`, and no exemption in `EntityTenantRouting.fromWalk`:
+  an exempted alternative would have no tenant part, so a voucher could reach a tenant outside the
+  request tenant set. If the pairing is more than 8a should carry, `@accept` in a `<tenantColumn>` graph
+  is refused by a stored defect until R876's "The entity dispatch's tenant routing is read from the
+  store" lands.
 * *Connection key.* Every build that writes the `localContext` slot, multi-tenant or accepting, carries a
   generated `ConnectionKey` there, with a tenant part in multi-tenant builds (shipped in slice 3) and the
-  claims with `@accept` (slice 8), its components the accepting fields' claims fields. The graph's
-  `@accept` fields share one claims shape (names and scalars); differing shapes are refused, so the
-  generated type is one. A single-tenant build with no `@accept` writes nothing there, so its output is
-  unchanged. The shape is computed once, as one value
-  beside `SessionIdentityRows`, from the store's accept facts and the tenancy configuration the generator
-  still takes, and handed to every generator that needs it; it is not added to `GraphitronSchema`, and no
-  site evaluates "has accept" itself. The routing hand-down remains the one writer of the slot and the
-  ownership guard's owner list follows it. `MountedSession.tenant()` keeps its type; the `Optional<K>`
-  that `acquire` takes is generated-internal, which the step confirms before it changes it.
-* *Acquisition.* The carrier's entry resolution takes the `ConnectionKey`; a key with claims mints a
-  separate entry whose mount sees `vouch()`, and the entry is reused for every voucher carrying the same
-  claims, across vouches and scopes. A rejected mount evicts the connection and fails the request, as today.
+  vouched-for part with `@accept` (slice 8a), its components the accepting fields' vouched-for fields.
+  The graph's `@accept` fields share one vouched-for shape (names and scalars); differing shapes are
+  refused, so the generated type is one. A single-tenant build with no `@accept` writes nothing there, so
+  its output is unchanged. The shape is computed once, as one value beside `SessionIdentityRows`, at the
+  point in `GraphQLRewriteGenerator` that computes `ConnectionKeyShape` today, reading the store's
+  "does it accept" fact and the tenancy configuration the generator still takes, and is handed to every
+  generator that needs it. Today it reaches only `ConnectionRuntimeClassGenerator`; the dispatch, the
+  instrumentation, the node fetcher and the connection helper take the tenant key type alone, and slice
+  8a hands them the shape. It is not added to `GraphitronSchema`, and no site evaluates "has accept"
+  itself. `ConnectionKeyShape.writesSlot()` stops meaning "multi-tenant": the tenant machinery gates on
+  the tenant part, the slot on either part. The routing hand-down remains the one writer of the slot and
+  the ownership guard's owner list follows it.
+* *Acquisition.* The carrier's entry resolution takes the `ConnectionKey`; a key with a vouched-for part
+  mints a separate entry, whose mount sees it through `key()`, and the entry is reused for every voucher
+  carrying the same value, across operations and scopes on A. A rejected mount evicts the connection and
+  fails the request, as today.
+* *Whether the dispatch is emitted.* Today the plan and the schema class decide it from the walk's
+  entity map, which never sees the minted voucher key. That decision is one fact R876's node "The facade,
+  dev executor, registrations and schema class read the store" states once; slice 8a either states it
+  (the dispatch is emitted when the store holds an entity with a resolvable alternative) and marks that
+  part of R876's node taken, or leaves it to R876. It adds no voucher-specific predicate beside the
+  walk's.
+* *The walk's stand-down for B's voucher field.* It reads the `VOUCHER` binding alone, applied at the one
+  point the walk is handed its registry, as the membership removal is (`AttributedRegistry.of`), not as a
+  check in each walk consumer. It goes with the walk.
 * *Configuration.* No new POM element: the markers switch the feature on, `<sessionState>` is already
   required for the caller, and keys are runtime configuration.
+* *Audit logging.* Graphitron logs the vouch id, scope and outcome at issue and on every redemption and
+  rejection, at a named level and logger the docs state. Nothing reads the vouch id otherwise.
 * *Redaction.* The voucher is a credential: confirm generated code and the dispatcher never log
-  representations or echo the voucher in errors, and that `VoucherRejectedException`'s message names the
-  check that failed and nothing from the token.
+  representations, the token or its values, or echo the voucher in errors, and that
+  `VoucherRejectedException`'s message names the check that failed and nothing from the token.
 * *Out of scope.* Key management and rotation procedure, a reference mount and policies (a worked example
   goes in the how-to), router header propagation, a per-row decision beyond A's own read.
 
@@ -494,11 +542,12 @@ unit, parameter and `of` overload is gated on a marker entry in the store.
 | 1. Column names | `sql_column_spelling`; the occurrence rule and its defect arms join onto it | `b4b9c96b` |
 | 2. Minted keys and entity key alternatives | `graphitron_minted_key` (`8c719f9b`); the `@key` refusals as entry defects of `entity-key-alternatives` (`5c649178`); `graphitron_key_field_binding` (`8d6c63a2`); an authored key spelling `id` stands the node key down (`3b2ac078`) | see cell |
 | 3. Connection key | A generated `ConnectionKey`, tenant part only, in the `localContext` slot | `f1c4b26a` |
-| 4. A's facts and published shape | `@issue`, its membership, components, claims and refusals, the `VOUCHER` binding, the `ISSUE` key and `@inaccessible`, `EmittedRegistry`'s removal arm | `08ebe10d`, `2ca51f42`, `62b43cd8`, `b0bbbd25` |
+| 4. A's facts and published shape | `@issue`, its membership, components, vouched-for rows and refusals, the `VOUCHER` binding, the `ISSUE` key and `@inaccessible`, `EmittedRegistry`'s removal arm | `08ebe10d`, `2ca51f42`, `62b43cd8`, `b0bbbd25` |
 | 5. Codec | The generated codec, key provider and `VoucherRejectedException` | `7b656753` |
 | 6. Issuing | `VoucherKeys` on the runtime, the caller on `SessionState.of`, the store-rendered `Vouchers` unit signing per row; the temporary `@issue` refusal removed | `a46e60a8`, `c2f16ab1`, `d24dc49c` |
-| 7. B's facts | `@accept`, its `VOUCHER` binding, claims and refusals, the `ACCEPT` key and `@inaccessible`, `graphitron_accept_key`, the voucher alternative stated in the store; refused until generated | `f8ef399f`, `24b24899`, `6dadbfcd` |
-| 8. Dispatch | Pending; below | |
+| 7. B's facts | `@accept`, its `VOUCHER` binding, vouched-for rows and refusals, the `ACCEPT` key and `@inaccessible`, `graphitron_accept_key`, the voucher alternative stated in the store; refused until generated | `f8ef399f`, `24b24899`, `6dadbfcd` |
+| 8a. Dispatch | Pending; below | |
+| 8b. The subtree | Pending; below | |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -514,23 +563,55 @@ Facts from the shipped slices that slice 8 builds on:
   serialize by. Carrying an enum's wire value can follow if a consumer needs it.
 * Since slice 3, R876 renamed the connection carrier to `OwnedConnections` and the slot's writer to
   `ConnectionKeyHandDown`, and store-emitted fetchers acquire by `dslFor(env, ConnectionKey)`. Slice 8
-  extends that key with the claims part rather than introducing its own.
+  extends that key with the vouched-for part rather than introducing its own.
 
-**Slice 8, dispatch.** What remains before consumers can test the handover end to end:
+Slice 8 splits in two because of R876's flip. The `_entities` dispatch already renders from the store
+(`EntityKeyQuery`, `EntityFetcherDispatchClassGenerator`), so the dispatch can be built now. The fields
+below the entity cannot: walk-side child fetchers (`TenantDslEmitter`) rebuild the connection key from its
+tenant part and, in an untenanted build, read the default connection; store-side children inherit only
+where `graphitron_occurrence_connection` states a row, and its rule joins `store_graph_tenant_column`.
+Patching the walk's emitters would extend code R876 is deleting.
 
-* The claims as a part of `ConnectionKey` (*Connection key*), and `Vouch`, typed by B's claims, with
-  `MountedSession.vouch()`.
-* The dispatcher's verify and group, and vouched acquisition (*Verify and group*, *Acquisition*).
-* `EntityKeyQuery` composes the voucher alternative.
+**Slice 8a, the dispatch.** Buildable now, with the refusal kept, since fields below the entity do not
+yet read on the vouched connection.
+
+* The rename: `claims:` to `vouchesFor:` on both markers, through the store and the docs together, since
+  the store already uses "claim" for binding claims. `graphitron_ast_issue_claim_entry`,
+  `graphitron_ast_accept_claim_entry`, `graphitron_voucher_claim`, `graphitron_accept_claim` and their
+  rules, the `VOUCHER_CLAIM*` codes, `directives.graphqls`, `issue.adoc`, `accept.adoc` and the
+  diagnostics glossary. A `feat!` with a `BREAKING-CHANGE:` footer, though no consumer uses it yet.
+* The verifier's vouch-id agreement check and its codec tests go; Graphitron logs the vouch id
+  (*Audit logging*).
+* The vouched-for part of `ConnectionKey`, the shape handed to every generator that needs it, and
+  `MountedSession.key()` (*Connection key*, *Runtime surface*). The caller gate on `SessionState.of`
+  reads "issues or accepts".
+* `EntityKeyQuery` composes the voucher alternative, paired with the tenant source of the authored key
+  it decodes onto; the dispatcher's verify and group on the whole key; vouched acquisition (*Verify and
+  group*, *Acquisition*).
+* Whether the dispatch is emitted, read from the store or left to R876 (*Whether the dispatch is
+  emitted*).
 * The walk's stand-down reads the `VOUCHER` binding alone. `VoucherBindingQuery` reaches a voucher field
   through A's members, so B's accepting field, which has none, would drop out of it and be asked of the
   walk; the stand-down takes the binding and the projection takes the components.
-* A `@service` child and a connection-typed child under the entity acquire from the inherited key;
-  verify both.
 * The redaction check (*Redaction*).
+* Execution tests for the entity's own row on the vouched connection, every verification failure, the
+  limit error, and the tenant set in a multi-tenant fixture.
+
+**Slice 8b, the subtree.** Taken up with or after R876's nodes "A child whose followed key lands on the
+tenant column is routed by its row's tenant" and "`TypeFetcherGenerator` reads the store, one family of
+field at a time", for the children it covers.
+
+* `graphitron_occurrence_connection`'s grain widens from "one producer of a database-per-tenant graph"
+  to "a producer of a graph whose generated code carries a `ConnectionKey`", so the children below an
+  accepting entity get `INHERIT` rows in an untenanted graph too. A child inherits the whole key its
+  producer hands down, which is already what `INHERIT` means; no vouched-for part is restated on child
+  rows, and the part `CHECK` stays `'TENANT'`. R876 should carry a note that the relation's grain covers
+  accepting graphs, so a rewrite of its rule does not narrow it back to tenancy.
+* Store-side emitters below the entity read it; a `@service` child and a connection-typed child under the
+  entity acquire from the inherited key.
 * `VOUCHER_ACCEPT_NOT_GENERATED` goes, with the "refused for now" sentence in `accept.adoc` and the
   directive definition.
-* The A and B RLS execution fixture and the execution tests under *Tests*.
+* The remaining execution tests under *Tests*: the nested read, a field outside the subtree, release.
 * Before Done: the composition check against the fixture's two served SDLs, recorded in the item (see
   *Tests*, Served SDL), and the first-client docs draft moved into `federation-keys.adoc` and the security
   guide, with a how-to carrying a worked mount and policies.
@@ -543,10 +624,9 @@ Facts from the shipped slices that slice 8 builds on:
   UUID key, an `Int` key, and a two-field key whose fields are declared in either order.
 * Each of these fails verification, and nothing else does: a tampered signature or key value; a wrong
   key id; an unknown version; expired beyond the skew tolerance (and accepted within it); a wrong scope;
-  a wrong caller; a voucher presented under another `__typename`; a claims section naming other fields
-  than B's `claims:`; a lookup section naming other fields than B's key; a missing or extra claims field;
-  a value that does not coerce; two vouchers sharing a vouch id but disagreeing on scope, caller or
-  expiry.
+  a wrong caller; a voucher presented under another `__typename`; a vouched-for section naming other
+  fields than B's `vouchesFor:`; a lookup section naming other fields than B's key; a missing or extra
+  vouched-for field; a value that does not coerce.
 
 **Refactor gates (slices 1 to 3).** Every existing fact document row-identical after the column-name
 relation, the minted-key relation and the entity key alternatives land, and generated output unchanged
@@ -573,7 +653,7 @@ for every existing fixture; single-tenant output unchanged after `ConnectionKey`
 * The voucher alternative beside the authored one in the entity key alternatives.
 * The connection key in emitted fetchers.
 * Output for a build with no marker unchanged; `SessionState.of` gains the caller, `MountedSession`
-  gains `vouch()` and `Graphitron.runtime` gains the key parameter only when the matching marker is
+  gains `key()` and `Graphitron.runtime` gains the key parameter only when the matching marker is
   present.
 
 **Compilation tier.** Generated issue, dispatcher and acquisition code compiles at Java 17.
@@ -581,24 +661,24 @@ for every existing fixture; single-tenant output unchanged after `ConnectionKey`
 **Execution tier.** Real Postgres, an RLS fixture beside the existing session-mount fixture, A and B in
 one fixture.
 
-* Each returned row gets its own token, and all share one vouch id.
+* Each returned row gets its own token, all share one vouch id, and Graphitron logs it at issue and at
+  redemption, never the token or its values.
 * A valid voucher exposes the entity and a three-level nested read under a policy that otherwise hides
   the rows.
 * A list of results, or several parents' lists, for one owner takes one connection, and the mount sees
-  the owner and every key once.
-* Vouchers of two vouches (two scopes, or two issuing operations on A) for the same owner, presented in
+  the owner once, in `key()`.
+* Vouchers from two scopes, or two issuing operations on A, for the same owner, presented in
   one operation on B, share the connection.
 * An operation mixing two owners' vouchers fails with the limit error.
-* A field outside the entities' subtrees cannot read the covered rows.
+* A field outside the entities' subtrees cannot read the rows the vouched-for value unlocks.
 * Every verification failure above, and a mount that throws on a vouched connection, fails the request,
   and the policy hides the rows.
 * In a multi-tenant fixture, a voucher does not reach a tenant outside the request tenant set.
 * A mutation payload issues vouchers on commit, and none from a field that rolled back.
 * Vouched connections are unmounted and released at the end.
-* With the owner as the claims (`claims: "eierId"` on both markers): the mount sees the owner in
-  `vouch().claims()`; a policy on the owner admits the owner's other documents on the vouched connection;
-  a policy on the covered keys admits only the vouched ones; and an owner who is not the caller is
-  admitted, the caller check being separate.
+* With the owner as vouched for (`vouchesFor: "eierId"` on both markers): the mount sees the owner in
+  `key()`; a policy on the owner admits the owner's other documents on the vouched connection; and an
+  owner who is not the caller is admitted, the caller check being separate.
 
 **Served SDL.** `_service { sdl }` shows `@key(fields: "voucher")` and `@inaccessible` on the voucher
 field on both sides, with the `@link` importing `@inaccessible`, and A's issuing type publishes `voucher`
@@ -617,23 +697,35 @@ want to see the plan.
 
 * Names: `@issue` and `@accept` name the two acts; both are generic words for directives in an SDL that
   may carry other meanings, so check them against the directive vocabulary before they ship.
-* A no-code default for B: Graphitron could set a documented pair of session settings itself (the claims,
-  scope and covered keys) on a vouched connection before the mount runs, so policies read them and an unchanged
-  mount suffices. Additive to the contract above, so it can follow.
+* A no-code default for B: Graphitron could set a documented session setting itself (the vouched-for
+  values) on a vouched connection before the mount runs, so policies read it and an unchanged mount
+  suffices. Additive to the contract above, so it can follow.
 * Key provider shape and default: Ed25519 over JDK keys, with the public key distributed to B; whether the
   default also reads PEM or only takes key objects.
 * Replay: no per-voucher nonce. A voucher is bound to scope, caller, type, key and a short expiry, and the
   same voucher is legitimately presented more than once (router retries, several fetches in one plan), so
   single use would need shared state across B's instances and would break those. The vouch id is the
-  audit handle, not a replay guard: A logs it when issuing and B logs it on every
-  vouched mount and every rejection, so a redemption traces back to an issuance. A consumer that wants
-  single use can record the id its mount receives in B's own database, accepting that router retries then
+  audit handle, not a replay guard: Graphitron logs it at issue on A and on every redemption and
+  rejection on B, so a redemption traces back to an issuance. Handing the id to the consumer, for one
+  that wants single use recorded in B's own database, can be added later; router retries would then
   fail.
 * A component read through a `@reference`: an absorbed field is a scalar read off the issuing row. A key
   value that lives one join away is left out until a consumer needs it, and refused meanwhile.
-* Isolation: one connection per claims value scopes a subtree's reads to the claims by RLS and to its
-  entities by graph shape, not by connection. If a consumer needs a connection per row, the connection
-  key can include the lookup fields, at the cost of the one-claims-per-operation limit.
+* Narrower grants: one connection per vouched-for value scopes a subtree's reads to the value by RLS and
+  to its entities by graph shape, not by connection. A consumer that needs a narrower grant puts more into
+  `vouchesFor:` (a document id, say), at the cost of the one-value-per-operation limit.
+* The tenant part of a vouched key in a `<tenantColumn>` graph: paired in `EntityKeyQuery` with the
+  authored key's tenant source in slice 8a, or `@accept` refused in such a graph until R876's entity
+  tenant routing is read from the store (*Verify and group*). Never exempted silently.
+* Does `UNSCOPED` empty only the tenant part? A child below a vouched entity that reads a table no tenant
+  column scopes is `UNSCOPED`. If that means "empty tenant part, vouched-for part inherited", it stays on
+  the vouched connection; if it means "the empty key", it reads on the request's connection and B's
+  policies hide it. No page states which; it is for Alf and Filip, and the answer belongs in
+  `docs/architecture/reference/code-generation-triggers.adoc` with slice 8b.
+* Whether `_entities` becomes a stated `ROUTED` producer in `graphitron_occurrence_connection`. It has no
+  authored occurrence, so nothing says yet.
+* Whether `MountedSession.tenant()` retires in slice 8a or with R1185, which rewrites the manual's
+  tenant pages. Either keeps the key the one source; retiring it is a breaking consumer change.
 
 ## Retired vocabulary
 
@@ -647,9 +739,17 @@ want to see the plan.
 * `Optional<tenantKey>` as the routing value in the `localContext` slot and in `OwnedConnections`.
 * `TenantHandDown`, renamed `ConnectionKeyHandDown` when the slot came to carry a `ConnectionKey`.
 * The vouch id as the vouched connection's group key, and the first client's two-field accepting key
-  (`id eierId`): replaced by the claims.
-* The vouch cap: replaced by the one-claims-per-operation limit.
-* The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8 remove,
+  (`id eierId`): replaced by the vouched-for fields.
+* The vouch cap: replaced by the one-value-per-operation limit.
+* `claims:` on `@issue` and `@accept`, renamed `vouchesFor:`, with `graphitron_ast_issue_claim_entry`,
+  `graphitron_ast_accept_claim_entry`, `graphitron_voucher_claim`, `graphitron_accept_claim`, their rules
+  and the `VOUCHER_CLAIM*` codes; "claims" as the name of the voucher's access part.
+* `MountedSession.vouch()`, `Vouch`, its per-vouch entries and `vouch().keys()` (the covered lookup keys):
+  dropped before they were built.
+* The verifier's check that vouchers sharing a vouch id agree on scope, caller and expiry, and its codec
+  tests.
+* The walk's stand-down for B's voucher field, which goes with the walk.
+* The temporary refusals of `@issue` and `@accept` that slices 4 and 7 add and slices 6 and 8b remove,
   `VOUCHER_ISSUE_NOT_GENERATED` and `VOUCHER_ACCEPT_NOT_GENERATED`, and the "refused for now" sentences
   of their reference pages and directive definitions.
 * `VOUCHER_ISSUE_TWICE`, folded into `VOUCHER_FIELD_REPEATED` in slice 7.
@@ -672,7 +772,7 @@ want to see the plan.
 * One marker at both ends: the two acts differ (computing a token against accepting one), take different
   arguments, and fail at different build-time checks.
 * A separate accept callback on `SessionState` beside the mount: a second callback with its own failure
-  path and ordering against the mount, for what the mount already does once told the vouch.
+  path and ordering against the mount, for what the mount already does once it reads the key.
 * The caller read from a member of the mount's handle (`$session.<member>`, checked against
   `graphitron_session_handle_member`): no new `SessionState` parameter, but B would have to mount the
   request's own connection before it could verify, and a build without `<handle>` would have no caller.
@@ -684,6 +784,9 @@ want to see the plan.
   names, and fields that exist on A's type yet no client can read.
 * Absorbed fields classified as fields and hidden from the emitted schema: needs a population of modelled
   but not emitted elements, since every field binding hangs off `graphitron_element`.
+* Covered lookup keys on the mount (`vouch().keys()`), so a policy could admit only the vouched rows:
+  mixes navigation into the access decision, and a mount runs once while its entry is reused for later
+  vouchers. A narrower grant is more in `vouchesFor:`.
 * Allowing only fields B also defines on the issuing type: the build cannot check that from A.
 * A second key `@key(fields: "id voucher")` beside the plain one, with A publishing `id`: a router can
   satisfy B's plain key from A as well, and a plan that takes it denies quietly under RLS.
