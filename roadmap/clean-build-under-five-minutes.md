@@ -138,16 +138,41 @@ from the next recording.
    forks): a re-prepare after a wipe costs 1.0 ms and builds almost no view index, but
    `ThreadConfinedStore`'s clear toggled `SET REFERENTIAL_INTEGRITY`, which empties every session's
    statement cache, so its 354 clears threw away about 1,250 statements each: 442 thousand
-   re-prepares and 443 s, 54% of the total. The clear without a setting is written; its measurement,
-   with the delete's own cost against the truncate's, decides it.
-3. **Fewer fresh stores** (A2, A2a, R1160's migration onto the population). Prepares on a session
-   that never saw the statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest
-   in `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
-   `StoreNodeTablesTest` 12 s and `SourceGraphScopingTest` 10 s, besides the population's own 39 s.
-   A store that has to stay its own (a lifetime or oracle test) is made as small as what it tests:
-   a capture of only the gatherers its subject needs. `GraphCountGrowthGateTest` spends 33 s
-   re-preparing what its 64-entry cache evicts across sixteen captures; a larger cache changes what
-   the gate can see, so that one is Alf's call.
+   re-prepares and 443 s, 54% of the total. The clear without a setting deletes in foreign-key order
+   instead: the suite's prepare time fell from 827 s to 389 s, and the delete costs back about 45 s
+   of it, 137 ms a clear against the truncate's 4 ms, all of it the rows a case wrote, since clearing
+   only the tables holding rows changed nothing.
+3. **The thread store's clear goes, the classes reading unscoped first** (A2a, R1160's migration).
+   The clear exists only for the cases that read rows of graphs other than their own or assert
+   relations the whole store shares; a case capturing under a graph name of its own into a store
+   that accumulates needs none. Recounted 2026-11-16 at `3da507f6d0`, by a reading of every class
+   that borrows the thread store: 94 classes (97 on 11-12), 45 reading only their own graph, 15 only
+   relations no capture changes, 17 reading a graph-keyed relation without a graph filter, and 17
+   writing or asserting what the whole store shares. `graphitron` borrows it no longer, which is most
+   of the fall from 31 unscoped classes. In this order:
+   1. **The 17 unscoped classes**, all in `graphitron-model`, each scoping its reads to its own graph
+      or moving to a fact document. By prepare seconds before the clear stopped wiping the cache:
+      `GraphQLSchemaProblemsTest` 36, `GraphitronTypeEntriesTest` 28, `FederationKeyDerivationTest`
+      22, `NodeTypeIdDerivationTest` 18, `GraphitronAnchorTest` 14, `QualifiedReferenceDecodeTest`
+      13, `GraphitronSchemaEntriesTest` 12, `GraphitronInputValueEntriesTest` 12,
+      `GraphitronFieldEntriesTest` 11, `PrimaryKeySelfJoinPathTest` 11,
+      `GraphitronEnumValueEntriesTest` 8, `FieldSetDecodeTest` 7, then `GraphQLAnchorTest`,
+      `DirectiveLiteralRoundTripTest`, `NameMatchedStepHopTest`, `EntryFamilyCoverageTest` and
+      `GraphQLAstEntriesTest` at 2 or less. Every borrowing fixture captures under one graph name,
+      `CapturedStore.GRAPH`, so a graph name per case comes with the first move.
+   2. **The 17 store-wide classes** take a store of their own made as small as what they test, or a
+      fact document: eight in `graphitron-model` (among them `ThreadConfinedStoreTest`, whose subject
+      goes with the store), eight in `graphitron-lsp`, one in `graphitron-mcp`.
+   3. **Once none reads unscoped, the thread store and its clear go**, and the scoped and static
+      classes capture under their own graph names into a store that accumulates, as A2a priced.
+   4. **The classes with fresh stores of their own.** Prepares on a session that never saw the
+      statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest in
+      `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
+      `StoreNodeTablesTest` 12 s and `SourceGraphScopingTest` 10 s, besides the population's own
+      39 s. A store that has to stay its own (a lifetime or oracle test) is made as small as what it
+      tests: a capture of only the gatherers its subject needs.
+   `GraphCountGrowthGateTest` spends 33 s re-preparing what its 64-entry cache evicts across sixteen
+   captures; a larger cache changes what the gate can see, so that one is Alf's call.
 4. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
    step 1 removes that cost; no other rule view costs more than a few milliseconds to compile again.
    Nothing to change unless the re-measure after step 1 shows another view paying it.
