@@ -1,6 +1,8 @@
 # A table's node metadata as the catalog reading records it: the type id and the key columns a
 # generated class declares as a usable pair. film_actor declares both, its key two columns long,
-# and reordered_pk_parent a key of three, each in the order the class declares it. A table
+# and reordered_pk_parent a key of three, each in the order the class declares it, which is the
+# order encoded ids are built in. shared_node's type id is one the generator chose, a number no
+# type name over the table would give. A table
 # declaring neither has no row at all, which film shows; a table declaring half the pair is an
 # attempt that failed, stated in node-metadata-unreadable.
 extend schema @withFacts(docs: [{path: "layouts/anchor"}])
@@ -9,6 +11,8 @@ extend schema @assertContains(relation: "sql_node_metadata", rows: """
   table_schema,  table_name,          type_id
   public,        film_actor,          FilmActor
   nodeidfixture, reordered_pk_parent, ReorderedPkParent
+  nodeidfixture, bar,                 Bar
+  nodeidfixture, shared_node,         10154
   """)
 
 extend schema @assertContains(relation: "sql_node_key_column", rows: """
@@ -18,9 +22,13 @@ extend schema @assertContains(relation: "sql_node_key_column", rows: """
   nodeidfixture, reordered_pk_parent, 0,        pk_a
   nodeidfixture, reordered_pk_parent, 1,        pk_b
   nodeidfixture, reordered_pk_parent, 2,        pk_c
+  nodeidfixture, bar,                 0,        id_1
+  nodeidfixture, bar,                 1,        id_2
+  nodeidfixture, shared_node,         0,        id
   """)
 
 extend schema @assertAbsent(relation: "sql_node_metadata", rows: """
-  table_schema, table_name
-  public,       film
+  table_schema,  table_name
+  public,        film
+  nodeidfixture, qux
   """)

@@ -41,3 +41,27 @@ extend schema @assertContains(relation: "sql_enum_binding_literal", rows: """
   no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, R,             R,       3
   no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating, NC_17,         NC-17,   4
   """)
+
+# The enum classes the catalog binds columns to, each read off its generated class, which states the
+# database type it maps. subject_kind is the column type of three tables, and its class is still one
+# row: the relation answers whether a class is an enum, keyed by the class, not by what binds it.
+extend schema @assertContains(relation: "sql_column", rows: """
+  table_schema, table_name,      column_name,  binding_type
+  public,       jti_subject,     subject_kind, no.sikt.graphitron.rewrite.test.jooq.public_.enums.SubjectKind
+  public,       jti_app_account, subject_kind, no.sikt.graphitron.rewrite.test.jooq.public_.enums.SubjectKind
+  public,       jti_person,      subject_kind, no.sikt.graphitron.rewrite.test.jooq.public_.enums.SubjectKind
+  """)
+
+extend schema @assertContains(relation: "sql_enum_binding", rows: """
+  class_fqn,                                                      table_schema, type_name
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating,  public,       mpaa_rating
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.ContentKind, public,       content_kind
+  no.sikt.graphitron.rewrite.test.jooq.public_.enums.SubjectKind, public,       subject_kind
+  """)
+
+# A column bound to a plain scalar class contributes no row: a present row is never a class that
+# merely backs a column.
+extend schema @assertAbsent(relation: "sql_enum_binding", rows: """
+  class_fqn
+  java.lang.String
+  """)
