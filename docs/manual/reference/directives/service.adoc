@@ -98,7 +98,7 @@ Each parameter of the method is filled once, by the first of these that reaches 
   list of `String` against a `List<Integer>`, stays unfilled, since the call could not compile.
 
 A parameter an `argMapping` entry names is that entry's, even where the entry's path lands nowhere;
-the entry's own error reports it, and nothing else stands in. Three refusals name the parameter at
+the entry's own error reports it, and nothing else stands in. Four refusals name the parameter at
 the `@service`:
 
 * *Unfilled*: nothing above reaches it. Name it after its argument, or bind it in `argMapping` or
@@ -106,6 +106,12 @@ the `@service`:
 * *Ambiguous*: it could take more than one argument by type, or an argument it could take could go to
   another parameter too. Name it after its argument, or bind it in `argMapping`.
 * *Filled twice*: an `argMapping` entry and a `contextArguments` element both name it. Write it once.
+* *Mismatched* (`PARAMETER_MISMATCH`): the argument it takes, by name or by an `argMapping` path, is a
+  list where the parameter takes one value or one value where it takes a list, or arrives as a class
+  the parameter is not: an `ID` as a `String`, never a `Long`; an `Int` as an `Integer` or `int`. An
+  `Object` parameter takes any value whole. A member of an input bean is judged the same way, at its
+  input field, so a jOOQ record member filled from an `ID` needs `@nodeId(typeName:)` to decode it.
+  A node id decoded onto a parameter is the `@nodeId` rules' to judge.
 
 An input object a parameter takes as a table's jOOQ record (`FilmRecord`) is built column by
 column, each input field writing the column it binds on that table:

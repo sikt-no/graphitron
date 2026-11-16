@@ -14412,6 +14412,47 @@ COMMENT ON COLUMN graphitron_occurrence_call_parameter_pair.touched_at IS 'the r
 -- own. Written by occurrence-producers once the service calls' fills are.
 CREATE VIEW graphitron_occurrence_service_parameter_defect_rule
   (graph_name, coordinate, call, call_kind, position, parameter_name, code) AS
+-- A parameter of a service's call an argument fills, by name or by a pair's path, that cannot take
+-- what the argument delivers: a list where the parameter takes one value or one where it takes a
+-- list, a path stepping through a list delivering one, or a value graphitron_type_arrival says does
+-- not arrive as the parameter's class. Object takes any value whole. A node id decoded onto the parameter is the node id rules' to judge, a
+-- scalar of no known class and an array parameter no one's.
+SELECT DISTINCT cp.graph_name, cp.coordinate, cp.call, cp.call_kind, cp.position, cp.parameter_name,
+       'PARAMETER_MISMATCH'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN graphitron_occurrence lo ON lo.graph_name = cp.graph_name AND lo.coordinate = cp.landing_coordinate
+  JOIN graphitron_occurrence_input_type it ON it.graph_name = lo.graph_name AND it.coordinate = lo.coordinate
+ WHERE cp.call_kind = 'SERVICE' AND cp.fill = 'ARGUMENT' AND mp.parameter_type NOT LIKE '%[]'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = lo.graph_name AND x.coordinate = lo.element_coordinate
+                      AND x.kind = 'NODE_ID')
+   AND EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
+                  AND ar.arrival_kind <> 'UNTYPED')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                    WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
+                      AND (ar.arrival_kind = 'UNTYPED' AND ar.arrival_class = 'java.lang.Object'
+                           AND COALESCE(mp.element_class, mp.erased_class, mp.parameter_type) = 'java.lang.Object'
+                           AND COALESCE(mp.delivery, '') <> 'MANY'
+                        OR (COALESCE(mp.delivery, '') = 'MANY'
+                            AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                                         WHERE st.graph_name = lo.graph_name AND st.coordinate = lo.coordinate
+                                           AND st.is_list)
+                            OR COALESCE(mp.delivery, '') <> 'MANY'
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                                             WHERE st.graph_name = lo.graph_name AND st.coordinate = lo.coordinate
+                                               AND st.is_list))
+                           AND (ar.arrival_kind IN ('EXACT', 'UNTYPED')
+                                AND ar.arrival_class = COALESCE(mp.element_class, mp.erased_class, mp.parameter_type)
+                             OR ar.arrival_kind = 'ANY_NON_JDK'
+                                AND POSITION('.', COALESCE(mp.element_class, mp.erased_class, mp.parameter_type)) > 0
+                                AND COALESCE(mp.element_class, mp.erased_class, mp.parameter_type) NOT LIKE 'java.%')))
+UNION ALL
 -- Two written fills for one parameter of a service's call: nothing says which, so the rule takes
 -- neither.
 SELECT DISTINCT w.graph_name, w.coordinate, w.call, ps.call_kind, w.position, w.parameter_name,
@@ -14525,16 +14566,16 @@ CREATE TABLE graphitron_occurrence_call_parameter_defect (
     REFERENCES graphitron_occurrence_call (graph_name, coordinate, call, call_kind) ON DELETE CASCADE,
   FOREIGN KEY (code) REFERENCES graphitron_defect_type (code),
   CHECK (code IN ('PARAMETER_UNFILLED', 'PARAMETER_AMBIGUOUS', 'PARAMETER_FILLED_TWICE',
-                  'PARAMETER_NAMES_MISSING'))
+                  'PARAMETER_NAMES_MISSING', 'PARAMETER_MISMATCH'))
 );
-COMMENT ON TABLE graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that nothing binds, or that two fills bind: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.';
+COMMENT ON TABLE graphitron_occurrence_call_parameter_defect IS 'A parameter of a call that nothing binds, that two fills bind, or that cannot take what fills it: one row per occurrence, call, parameter and code. For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.coordinate IS 'the occurrence making the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call IS 'which of its calls, as graphitron_occurrence_call spells it';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.call_kind IS 'the call''s kind, the split its writing stages share it by';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.position IS 'the parameter''s position in the call';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.parameter_name IS 'the parameter''s name, what a message names; NULL where the class was compiled without its names';
-COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE or PARAMETER_NAMES_MISSING, completing the key';
+COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING or PARAMETER_MISMATCH, completing the key';
 COMMENT ON COLUMN graphitron_occurrence_call_parameter_defect.touched_at IS 'the reading that last wrote this row; the stage writing its kind sweeps the rows an older reading wrote';
 
 -- Where a call's parameter defect is reported, and what it is about: the reference the directive the
@@ -19062,7 +19103,39 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
                      JOIN graphitron_occurrence_node_id k2
                        ON k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate AND k2.bound <> k.bound
-                    WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate));
+                    WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate))
+UNION ALL
+-- An input field filling a member of the class a service's call builds that cannot take what the
+-- field delivers, at the field: the member's parameter of the constructor or setter, on the terms
+-- the service parameter defect rule judges a parameter by. The detail is the member.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'PARAMETER_MISMATCH', m.bound, 'occurrence-builds'
+  FROM graphitron_occurrence_binding_member m
+  JOIN code_write_slot ws
+    ON ws.source_name = m.slot_source_name AND ws.class_name = m.class_name
+   AND ws.method_name = m.slot_method_name AND ws.descriptor = m.slot_descriptor
+   AND ws.position = m.slot_position
+  JOIN graphitron_occurrence o ON o.graph_name = m.graph_name AND o.coordinate = m.coordinate
+  JOIN graphitron_occurrence_input_type it ON it.graph_name = o.graph_name AND it.coordinate = o.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE m.stated_by = 'SERVICE' AND ws.slot_type NOT LIKE '%[]'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim x
+                    WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
+                      AND x.kind = 'NODE_ID')
+   AND EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
+                  AND ar.arrival_kind <> 'UNTYPED')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                    WHERE ar.graph_name = it.graph_name AND ar.type_name = it.type_name
+                      AND (ar.arrival_kind = 'UNTYPED' AND ar.arrival_class = 'java.lang.Object'
+                           AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) = 'java.lang.Object'
+                           AND COALESCE(ws.delivery, '') <> 'MANY'
+                        OR it.is_list = (COALESCE(ws.delivery, '') = 'MANY')
+                           AND (ar.arrival_kind IN ('EXACT', 'UNTYPED')
+                                AND ar.arrival_class = COALESCE(ws.element_class, ws.erased_class, ws.slot_type)
+                             OR ar.arrival_kind = 'ANY_NON_JDK'
+                                AND POSITION('.', COALESCE(ws.element_class, ws.erased_class, ws.slot_type)) > 0
+                                AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) NOT LIKE 'java.%')));
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
 
 -- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:
@@ -27963,7 +28036,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('EXTERNAL_FIELD_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_EXTERNAL_FIELD_PATH_UNSUPPORTED',
    'An @externalField on a field that also writes a @reference path is not supported yet: the method takes the table the field''s values are rows of, and an expression at the path''s end is not bound. Remove the @reference and reach the joined table inside the method.'),
   ('PARAMETER_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_PARAMETER_MISMATCH',
-   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile: an @externalField''s table parameter typed on a table its field''s values are not rows of. Type it as that table''s class, or widen it to org.jooq.Table<?>.'),
+   'A parameter of a method a call makes does not accept what the call passes there, so the call does not compile or the value does not cast: an @externalField''s table parameter typed on a table its field''s values are not rows of, or a @service parameter or input member taking one value where its argument is a list or a list where it is one, or a class the value does not arrive as, a Long for an ID or an Int, or a jOOQ record for a scalar. Type it as what arrives, or decode a node id onto a record with @nodeId(typeName:).'),
   ('NODE_ID_CONTAINING_TYPE_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_CONTAINING_TYPE_NOT_NODE',
    'A bare @nodeId on a field with no @reference inherits its node from the type the field is declared on, and that type is not a node, so the id has no node to identify: write typeName: or make the type a node.'),
   ('NODE_ID_TYPE_NAME_NOT_NODE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_ID_TYPE_NAME_NOT_NODE',
@@ -28249,7 +28322,7 @@ INSERT INTO meta_relation VALUES
    'For example Query.filmsByPath''s parameter ids takes Query.filmsByPath(input.ids:), and a DSLContext parameter takes the jOOQ context.',
    'Stored because the call emitter reads it position by position, and an argument''s fill names the occurrence it takes. Keyed at the producer occurrence rather than the declared field, since a call under a nested type is made once per parent and its arguments are reached under each.'),
   ('graphitron_occurrence_call_parameter_defect', 'graph-occurrence-call-parameter-defect', 'graphitron',
-   'A parameter of a call that nothing binds, or that two fills bind: one row per occurrence, call, parameter and code.',
+   'A parameter of a call that nothing binds, that two fills bind, or that cannot take what fills it: one row per occurrence, call, parameter and code.',
    'For example a method taking String query on a field with no argument by that name and no pair naming it is PARAMETER_UNFILLED at that parameter, under each occurrence of the call.',
    'Stored by the stage writing each kind''s fills, as it writes them (Alf, 2026-11-13: a defect is raised by the first stage holding its facts), so each stage''s defect rule joins it to the call''s provenance rather than every rule re-deriving the fills; the per-call, per-parameter rows a defect names, joinable rather than folded into its detail.'),
   ('graphitron_occurrence_service_parameter_defect_rule', 'graph-occurrence-call-parameter-defect', 'graphitron',

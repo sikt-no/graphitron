@@ -1,0 +1,53 @@
+# A @service parameter or input member that cannot take what its argument or input field delivers:
+# one value against a list and a list against one value, a Long for an ID or an Int, and a jOOQ
+# record member for a scalar with no @nodeId. Near misses draw nothing: an Int handed to an int, an
+# enum to a String, any value to an Object, an Int to an Integer member, and a node id decoded onto
+# an Integer.
+
+type Film @table(name: "film") @node { title: String }
+
+enum Rating { G PG }
+
+input FilmIdInput {
+  filmId: ID
+  film: ID
+}
+
+input FilmNumberInput {
+  filmId: Int
+}
+
+type Query {
+  films: [Film!]!
+  oneForMany(title: [String!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  manyForOne(titles: String): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitles"})
+  longForId(id: ID): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byLongId"})
+  longForInt(id: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byLongId"})
+  bean(in: FilmIdInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "withBean"})
+  intForInt(id: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byIntId"})
+  enumForString(title: Rating): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byTitle"})
+  anything(value: [String!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byAnything"})
+  numberBean(in: FilmNumberInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "withNumberBean"})
+  decoded(id: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "byFilmId"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'PARAMETER_MISMATCH'", rows: """
+  code,               coordinate
+  PARAMETER_MISMATCH, Query.oneForMany
+  PARAMETER_MISMATCH, Query.manyForOne
+  PARAMETER_MISMATCH, Query.longForId
+  PARAMETER_MISMATCH, Query.longForInt
+  PARAMETER_MISMATCH, FilmIdInput.filmId
+  PARAMETER_MISMATCH, FilmIdInput.film
+  """)
