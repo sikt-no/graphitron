@@ -105,6 +105,10 @@ import java.util.function.Supplier;
  *       {@link GraphitronApplication#builtInEndpointEnabled()} says. A consumer mounting there
  *       serves the assets, and the SDL, from its own resource, which returning a
  *       {@link GraphqlEndpoint.Request} does without writing the arms.</li>
+ *   <li><b>Numbers in {@code variables} and {@code extensions} are bounded.</b> On either verb, a
+ *       number whose plain decimal form has more than a thousand digits is answered {@code 422}
+ *       ({@code 200} under legacy {@code application/json}) before the policy, the input supplier
+ *       or the engine runs.</li>
  *   <li><b>The two verbs carry their rules differently.</b> POST takes the policy the consumer
  *       selects per request; GET carries the specification's {@code 405} rule unconditionally. That
  *       is why there is one {@code get} and two {@code post}s per way of building the input, and no
@@ -346,6 +350,13 @@ public class GraphqlHttpHandler {
      */
     private Response execute(GraphqlRequest request, OperationPolicy guard, boolean legacy,
                              Supplier<ExecutionInput.Builder> input) {
+        // Both verbs decode variables and extensions into arbitrary-precision numbers; bound them
+        // here, before anything downstream can expand one (see RequestNumbers).
+        if (!RequestNumbers.withinBounds(request.variables())
+                || !RequestNumbers.withinBounds(request.extensions())) {
+            return requestError(422, "A number in 'variables' or 'extensions' has more than "
+                + RequestNumbers.MAX_DIGITS + " digits written out in full.", legacy);
+        }
         if (guard != null) {
             OperationDefinition.Operation operation;
             try {
