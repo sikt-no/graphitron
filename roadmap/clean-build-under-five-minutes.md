@@ -168,20 +168,25 @@ from the next recording.
         (`FederationCaptureTest`, `SourceStampTest`, `StaleModuleTest`,
         `DiagnosticsStatementCountTest`, `SurfaceScanCountTest`, `StoreBootCountTest`,
         `GraphitronMcpServerTest`'s cross-graph status);
-      - `ThreadConfinedStoreTest` goes with its subject, the boot budget it pins moving to
-        `FactStores` as a bound on boots per JVM.
+      - `ThreadConfinedStoreTest` goes with its subject; the boot budget it pinned is
+        `FactStores`', stated per module as `graphitron.test.bootBudget` and checked at every boot.
       Five LSP classes (`FieldCompletionsTest`, `SourceCadenceHoverAndDefinitionTest`,
       `TableCompletionsTest`, `TextDocumentServiceTest`, `DeclTargetTest`) meet other cases'
-      `java_` declarations because the readers of that family key on the class name alone; whether
-      that is the readers' to fix or the tests' to hold apart is an open question.
-   3. **The borrowers move, and the thread store and every borrowing arm go.** About 107 sites in
+      `java_` declarations because the readers of that family key on the class name alone, which is
+      R876's "A source declaration is read through the graph's own source roots"; until it is done
+      they hold a store of their own.
+   3. **The borrowers move, and the thread store and every borrowing arm go.** R1160's migration,
+      worked under its node; this item ranks the order by cost. About 107 sites in
       30 files call `ThreadConfinedStore.run`, 81 in 13 call `withSeededStore`, and `CapturedStore`'s
       borrowing arms and the LSP and MCP `StoreFixture` case arms have about 230 more. A case that
       captures inline SDL once and reads it takes `readInline`; one that reads twice, or drives a
       gatherer by hand to pin what a second reading sweeps, becomes a scenario document; one that
       writes the store keeps a store of its own. The arms that capture under the one default name
       are removed rather than given a name, and `CapturedStore.GRAPH` stays only on the arms that
-      own their store. `SeededStore` dissolves with its callers, under `SeedingDissolutionGateTest`.
+      own their store. `SeededStore` dissolves with its callers, under `SeedingDissolutionGateTest`,
+      ending at R876's "`SeededStore` is deleted". `SeededStore.derive` empties four `graphitron_`
+      relations whole and recomputes every graph, so a seeded case shares a store only once it no
+      longer needs the derive, or the derive is scoped to its graph.
    4. **The classes with fresh stores of their own.** Prepares on a session that never saw the
       statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest in
       `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
