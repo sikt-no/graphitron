@@ -1,0 +1,16 @@
+# Two readings meet on one spelling exactly once, at the carrier's own name against a field of the
+# carrier's type with that name. The carrier wins, which is what the enforced spelling meant before
+# both readings were held, and the row says the other existed; the field stays reachable by the
+# repeating spelling, which nothing contests.
+
+input Filter { filter: String @field(name: "title"), other: Int @field(name: "length") }
+type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+type Query { films(filter: Filter): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_argmapping_candidate", where: "coordinate = 'Query.films(filter:)'", rows: """
+  path,          named_type, ambiguous
+  filter,        Filter,     TRUE
+  other,         Int,        FALSE
+  filter.filter, String,     FALSE
+  filter.other,  Int,        FALSE
+  """)

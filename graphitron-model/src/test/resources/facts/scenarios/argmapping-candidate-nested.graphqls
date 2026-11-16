@@ -1,0 +1,27 @@
+# The candidates are keyed by the coordinate the directive carrying the argMapping sits on. A field
+# offers its arguments and their descent, repeating nothing, since a head there names an argument.
+# An argument and an input field carry a value of their own, so they offer their own name, the clean
+# descent below it, and the older spelling that repeats the carrier's name, marked deprecated. One
+# coordinate per input field, not one per occurrence: what follows a field is fixed by its type. A
+# scalar input field offers only itself, a row rather than an absence.
+
+input Inner { code: String @field(name: "title") }
+input Outer { inner: Inner }
+type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+type Query { films(input: Outer): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_argmapping_candidate", where: "coordinate IN ('Query.films', 'Query.films(input:)', 'Outer.inner', 'Inner.code')", rows: """
+  coordinate,            path,             parent_path, name,   named_type, depth, closes_cycle, deprecated
+  Query.films,           input,            ,            input,  Outer,      0,     FALSE,        FALSE
+  Query.films,           input.inner,      input,       inner,  Inner,      1,     FALSE,        FALSE
+  Query.films,           input.inner.code, input.inner, code,   String,     2,     FALSE,        FALSE
+  Query.films(input:),   input,            ,            input,  Outer,      0,     FALSE,        FALSE
+  Query.films(input:),   inner,            ,            inner,  Inner,      0,     FALSE,        FALSE
+  Query.films(input:),   inner.code,       inner,       code,   String,     1,     FALSE,        FALSE
+  Query.films(input:),   input.inner,      input,       inner,  Inner,      1,     FALSE,        TRUE
+  Query.films(input:),   input.inner.code, input.inner, code,   String,     2,     FALSE,        TRUE
+  Outer.inner,           inner,            ,            inner,  Inner,      0,     FALSE,        FALSE
+  Outer.inner,           code,             ,            code,   String,     0,     FALSE,        FALSE
+  Outer.inner,           inner.code,       inner,       code,   String,     1,     FALSE,        TRUE
+  Inner.code,            code,             ,            code,   String,     0,     FALSE,        FALSE
+  """)

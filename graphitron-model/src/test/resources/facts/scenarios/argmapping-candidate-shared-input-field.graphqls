@@ -1,0 +1,18 @@
+# An input field is one coordinate however many arguments reach it: its own name, the clean descent
+# and the repeating spelling of it, and no row per argument that reaches it.
+
+input Termin { arstall: Int @field(name: "length") }
+input FilterA { termin: Termin }
+input FilterB { termin: Termin }
+type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+type Query { a(f: FilterA): [Film!]!, b(f: FilterB): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_argmapping_candidate", where: "coordinate IN ('FilterA.termin', 'FilterB.termin')", rows: """
+  coordinate,     path
+  FilterA.termin, termin
+  FilterA.termin, arstall
+  FilterA.termin, termin.arstall
+  FilterB.termin, termin
+  FilterB.termin, arstall
+  FilterB.termin, termin.arstall
+  """)

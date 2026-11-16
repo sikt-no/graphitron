@@ -1,0 +1,13 @@
+# Every argument is a root at its field, whatever its type: the scalar limit as much as the input
+# filter. A bare name with no dots is a legal right-hand side whatever the argument's type, which is
+# the population this relation holds and the occurrence-path relation beside it does not.
+
+input FilterInput { title: String }
+type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+type Query { films(filter: FilterInput, limit: Int @field(name: "length")): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_argmapping_candidate", where: "coordinate = 'Query.films' AND depth = 0", rows: """
+  name
+  filter
+  limit
+  """)

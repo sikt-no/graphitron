@@ -1,0 +1,13 @@
+# A field coordinate carries no value of its own, read off the element kind capture stamped rather
+# than off the declaring type. The input field named like the field is the spelling a carrier at the
+# field coordinate would have opened onto, and no row names the field itself.
+
+input Filter { films: String @field(name: "title") }
+type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
+type Query { films(filter: Filter): [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_argmapping_candidate", where: "coordinate = 'Query.films'", rows: """
+  coordinate,            path,             parent_path, name,   named_type, depth, closes_cycle, deprecated
+  Query.films,           filter,           ,            filter, Filter,     0,     FALSE,        FALSE
+  Query.films,           filter.films,     filter,      films,  String,     1,     FALSE,        FALSE
+  """)
