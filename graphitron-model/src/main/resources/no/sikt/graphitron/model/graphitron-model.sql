@@ -23917,26 +23917,28 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                                    WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
                                      AND pc.outcome_type_name = f.type_name))
 UNION ALL
--- A scalar or enum input field under an input object built into a jOOQ record, whose spelling names
--- no column, or several, of the record's table: the column the field writes is judged on the table
--- the record is a row of, as an output field's is on the table it reads, by the spelling's reach. A
--- node id decodes into the record instead, and an input object groups onto it. Reported at the
--- @field where one is written and at the field otherwise, the detail the spelling.
+-- A scalar or enum input field under an input object built into a jOOQ record that binds no column of
+-- the record's table, or whose spelling names several: the column the field writes is the one its
+-- occurrence binds on the table the record is a row of, so a field binding none would write nothing,
+-- its value lost, which a defect says rather than a build dropping it (Alf, 2026-11-16: "a defect is
+-- better than a data loss"). A node id decodes into the record instead, and an input object groups
+-- onto it. Reported at the @field where one is written and at the field otherwise, the detail the
+-- spelling.
 SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code, MIN(v.spelling), 'occurrence-depth-defects'
   FROM (SELECT o.graph_name, COALESCE(da.source_name, el.source_name) AS source_name,
                COALESCE(da.source_line, el.source_line) AS source_line,
                COALESCE(da.source_column, el.source_column) AS source_column,
                COALESCE(cl.named, o.name) AS spelling,
-               CASE WHEN NOT EXISTS (SELECT 1 FROM sql_column_spelling sp
-                                      WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema
-                                        AND sp.table_name = st.table_name
-                                        AND sp.spelling_upper = UPPER(COALESCE(cl.named, o.name)))
-                    THEN 'COLUMN_UNRESOLVED'
-                    WHEN EXISTS (SELECT 1 FROM sql_column_spelling sp
+               CASE WHEN EXISTS (SELECT 1 FROM sql_column_spelling sp
                                   WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema
                                     AND sp.table_name = st.table_name
                                     AND sp.spelling_upper = UPPER(COALESCE(cl.named, o.name)) AND sp.reach > 1)
-                    THEN 'COLUMN_AMBIGUOUS' END AS code
+                    THEN 'COLUMN_AMBIGUOUS'
+                    WHEN NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column oc
+                                      WHERE oc.graph_name = o.graph_name AND oc.coordinate = o.coordinate
+                                        AND oc.table_source_name = st.source_name
+                                        AND oc.table_schema = st.table_schema AND oc.table_name = st.table_name)
+                    THEN 'COLUMN_UNRESOLVED' END AS code
           FROM graphitron_occurrence o
           JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
           JOIN graphitron_type t

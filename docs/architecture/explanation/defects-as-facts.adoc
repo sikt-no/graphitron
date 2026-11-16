@@ -25,6 +25,13 @@ emitted, so an author meets the stored defect and never a second account of the 
 reports the same verdict and keeps running. A warning-severity defect shows in the editor and the
 MCP server and does not stop a build.
 
+A shape the store cannot state completely is a defect, even where a build used to generate something
+for it: a defect is better than a data loss (Alf, 2026-11-16). An input field of an input object built
+into a jOOQ record that binds no column of the record's table would write nothing, its value silently
+dropped, so it is `COLUMN_UNRESOLVED` at the field, judged on the column binding the store states for
+the occurrence rather than on whether the spelling names some column. A consumer whose build refused
+nothing before meets the defect, and fixes the binding, rather than losing the value at run time.
+
 == The supertype
 
 `graphitron_entry_defect` holds one row per defect at its written position: the position, the
