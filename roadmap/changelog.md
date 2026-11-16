@@ -4,6 +4,8 @@ next-id: R1193
 
 # Rewrite Changelog
 
+- Discarded: The database's own DDL, asked for one object at a time (`database-ddl-at-request-time`, R1050): absorbed by R1184 (`database-policy-gatherer`), Alf ruling on 2026-11-16. R1184's live connection is the one this item needed, and its on-request definitions (an MCP tool and an editor hover over the live database, never stored) are now a section of R1184's spec; R1050's "later" catalog gatherer was already R1184's gatherer. It was Backlog and no work had started.
+
 - Numbers in a GraphQL-over-HTTP request's `variables` and `extensions` are bounded at the HTTP boundary (`http-variable-number-bounds`, R1190, the commit carrying this line). `GraphqlHttpHandler` answers a number whose plain decimal form has more than a thousand digits, at any depth and on POST and GET alike, with a `422` request error (`200` under legacy `application/json`) before the operation policy, the input supplier or the engine runs; ordinary integer, decimal and exponent values coerce as before. `RequestNumberBoundsTest` in `graphitron-sakila-example` pins both sides of the bound for `Int`, `Float`, `ID` and the extended-scalars `BigDecimal`.
 
   Landed without Spec or Done-gate review, at the user's direction.
