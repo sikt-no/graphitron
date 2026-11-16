@@ -1,0 +1,33 @@
+# A @service under a parent holding an object takes its keys as jOOQ rows or records of the key
+# columns: FilmKeySummary's class hands its film over through film(), but no row is projected under
+# it to read key columns off, and reading them off the member is not generated yet. The same services
+# under Film, a table's row, draw nothing.
+
+type Film @table(name: "film") {
+  title: String
+  byRow: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRow"})
+  byRecord: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRecord"})
+}
+
+type FilmKeySummary {
+  label: String
+  byRow: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRow"})
+  byRecord: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.CallShapeService", method: "byRecord"})
+}
+
+type Query {
+  films: [Film!]!
+  summaries: [FilmKeySummary!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_KEY_OFF_OBJECT_UNSUPPORTED'", rows: """
+  code,                               coordinate,              detail
+  SERVICE_KEY_OFF_OBJECT_UNSUPPORTED, FilmKeySummary.byRow,    org.jooq.Row1
+  SERVICE_KEY_OFF_OBJECT_UNSUPPORTED, FilmKeySummary.byRecord, org.jooq.Record1
+  """)

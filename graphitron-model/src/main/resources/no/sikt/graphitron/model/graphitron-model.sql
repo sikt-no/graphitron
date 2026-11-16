@@ -24568,7 +24568,31 @@ SELECT COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_na
                     WHERE x.graph_name = o.graph_name AND x.coordinate = o.element_coordinate
                       AND x.kind IN ('NODE_ID', 'COLUMN'))
  GROUP BY COALESCE(f.graph_name, a.graph_name), COALESCE(f.source_name, a.source_name),
-          COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column);
+          COALESCE(f.source_line, a.source_line), COALESCE(f.source_column, a.source_column)
+UNION ALL
+-- A service under a parent holding an object rather than a table's row takes its keys as jOOQ rows or
+-- records of the key columns alone, at the field: no row is projected under such a parent to read the
+-- columns off, and reading them off a member of the object is not generated yet, so no lift is stated
+-- and the call would be dropped. The detail is the declared key type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_KEY_OFF_OBJECT_UNSUPPORTED', mp.element_class, 'occurrence-depth-defects'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer_lift l
+                    WHERE l.graph_name = p.graph_name AND l.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = f.graph_name AND tt.type_name = f.type_name);
 COMMENT ON VIEW graphitron_occurrence_depth_entry_defect_rule IS 'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-depth-defects inserts this view''s rows for one graph into graphitron_entry_defect, a field under an object with no key to take off it giving one NO_KEY_FROM_PARENT row at the field.';
 
 CREATE VIEW graphitron_occurrence_source_claim_declaring_table_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
@@ -27789,6 +27813,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
   ('SERVICE_BATCH_SHAPE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_BATCH_SHAPE_UNSUPPORTED',
    'A @service under an object takes its keys or answers in a shape the batch does not read: keys in a container delivering many, a jOOQ Result only of the parent''s table records; an answer a Map by key, or a List or Result in the keys'' order under keys a List, Collection or Result gives an order: take a Set and answer a Map, or take a List and answer a List.'),
+  ('SERVICE_KEY_OFF_OBJECT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_KEY_OFF_OBJECT_UNSUPPORTED',
+   'A @service under a parent holding an object rather than a table''s row takes its keys as jOOQ rows or records of the key columns, which are not read off a member of the object yet: take the keys as the table''s own records, which the member returning them hands over, or give the parent type a @table.'),
   ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
    'An input object is reached again inside itself where a call builds its value into a class, and the class cannot be built without end, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
