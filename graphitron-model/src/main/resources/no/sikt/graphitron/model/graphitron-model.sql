@@ -22786,7 +22786,7 @@ CREATE VIEW graphitron_type_backing_rule (graph_name, type_name, class_name, dec
 -- object passes through to as well, and the class a parameter takes
 -- backs the type of the argument feeding it, the parameter's own name unless the reference's
 -- argMapping redirects it. Objects and input objects only.
-WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
+WITH seed (graph_name, type_name, class_name) AS (
   SELECT s.graph_name, f.named_type,
          CASE WHEN s.directive_name = 'service' THEN m.result_element_class
               ELSE m.result_first_argument_class END
@@ -22815,15 +22815,19 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN graphitron_field_target pf
       ON pf.graph_name = s.graph_name AND pf.type_name = s.type_name AND pf.field_name = s.field_name
      AND pf.wrapper_type_name IS NULL
-    JOIN graphitron_type pt
-      ON pt.graph_name = pf.graph_name AND pt.type_name = pf.target_type_name AND pt.kind = 'OBJECT'
     JOIN graphitron_field_target d
       ON d.graph_name = pf.graph_name AND d.type_name = pf.target_type_name
-    JOIN graphitron_type dt
-      ON dt.graph_name = d.graph_name AND dt.type_name = d.target_type_name AND dt.kind = 'OBJECT'
     JOIN graphitron_field df
       ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
    WHERE s.directive_name = 'service' AND m.result_element_class IS NOT NULL
+     -- Kind filters on keys rather than joins, so the block stays short of H2's exhaustive join-order
+     -- search.
+     AND EXISTS (SELECT 1 FROM graphitron_type pt
+                  WHERE pt.graph_name = pf.graph_name AND pt.type_name = pf.target_type_name
+                    AND pt.kind = 'OBJECT')
+     AND EXISTS (SELECT 1 FROM graphitron_type dt
+                  WHERE dt.graph_name = d.graph_name AND dt.type_name = d.target_type_name
+                    AND dt.kind = 'OBJECT')
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application te
                       WHERE te.graph_name = pf.graph_name AND te.coordinate = pf.target_type_name
                         AND te.directive_name = 'table')
@@ -22875,20 +22879,36 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
    WHERE s.directive_name IN ('service', 'externalField')
      AND mp.parameter_name IS NOT NULL
      AND mp.element_class IS NOT NULL
-),
--- Where reading a field off a class lands: the member the field names, its own name unless @field
+)
+SELECT b.graph_name, b.type_name, t.record_class_fqn, 'BOUND_TABLE'
+  FROM graphitron_tabletype b
+  JOIN sql_table t
+    ON t.source_name = b.table_source_name AND t.table_schema = b.table_schema
+   AND t.table_name = b.table_name
+ WHERE t.record_class_fqn <> 'org.jooq.Record'
+UNION
+SELECT graph_name, type_name, class_name, 'PRODUCER' FROM seed;
+COMMENT ON VIEW graphitron_type_backing_rule IS 'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+-- COMMENT ON COLUMN graphitron_type_backing_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_type_backing_rule.type_name IS 'the type the class stands for';
+-- COMMENT ON COLUMN graphitron_type_backing_rule.class_name IS 'the backing class';
+-- COMMENT ON COLUMN graphitron_type_backing_rule.declared_via IS 'BOUND_TABLE, PRODUCER or ACCESSOR, on graphitron_type_backing.declared_via''s terms';
+
+-- One step of the accessor closure: the types the backings this reading has reached land on, read off
+-- or written into a member of the backing class. The stage applies it again until a step reaches
+-- nothing new, so the closure from the producers' classes is the stored relation itself; reached is a
+-- PRODUCER or ACCESSOR row, never a table binding, and a pair a producer grounds stays its producer's.
+-- reached_touched_at is the reading that marked the backing stepped from, which the stage filters to
+-- its own, so a backing the last reading left is never stepped from.
+CREATE VIEW graphitron_type_backing_accessor_rule
+  (graph_name, type_name, class_name, declared_via, reached_touched_at) AS
+WITH -- Where reading a field off a class lands: the member the field names, its own name unless @field
 -- overrides it, read off the class for an output type and written into it for an input object, and
 -- the class that member delivers. A field a producer directive supplies is not read off its parent,
 -- so it is no edge, and only object and input object types are landed on.
 hop (graph_name, type_name, from_class, to_type, to_class) AS (
   SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
     FROM graphql_field f
-    JOIN graphql_type owner
-      ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
-     AND owner.kind IN ('OBJECT', 'INTERFACE')
-    JOIN graphql_type child
-      ON child.graph_name = f.graph_name AND child.type_name = f.named_type
-     AND child.kind IN ('OBJECT', 'INPUT_OBJECT')
     JOIN graphitron_field bf
       ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
     JOIN store_graph_source g ON g.graph_name = f.graph_name
@@ -22899,6 +22919,14 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN code_graph_class v
       ON v.graph_name = g.graph_name AND v.class_name = sl.class_name AND v.source_name = sl.source_name
    WHERE sl.element_class IS NOT NULL
+     -- The kinds are filters on keys, not joins: H2 searches every join order of a block up to seven
+     -- tables, and as joins they made this block seven, which cost a tenth of a second to plan.
+     AND EXISTS (SELECT 1 FROM graphql_type owner
+                  WHERE owner.graph_name = f.graph_name AND owner.type_name = f.type_name
+                    AND owner.kind IN ('OBJECT', 'INTERFACE'))
+     AND EXISTS (SELECT 1 FROM graphql_type child
+                  WHERE child.graph_name = f.graph_name AND child.type_name = f.named_type
+                    AND child.kind IN ('OBJECT', 'INPUT_OBJECT'))
      -- Read off the stored applications rather than the reference sites: H2 evaluates a view
      -- again for every hop row, and on a consumer schema that was most of the rule's time.
      AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application x
@@ -22908,12 +22936,6 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
   UNION ALL
   SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
     FROM graphql_field f
-    JOIN graphql_type owner
-      ON owner.graph_name = f.graph_name AND owner.type_name = f.type_name
-     AND owner.kind = 'INPUT_OBJECT'
-    JOIN graphql_type child
-      ON child.graph_name = f.graph_name AND child.type_name = f.named_type
-     AND child.kind IN ('OBJECT', 'INPUT_OBJECT')
     JOIN graphitron_field bf
       ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
     JOIN store_graph_source g ON g.graph_name = f.graph_name
@@ -22922,40 +22944,28 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
     JOIN code_graph_class v
       ON v.graph_name = g.graph_name AND v.class_name = sl.class_name AND v.source_name = sl.source_name
    WHERE sl.element_class IS NOT NULL
-),
--- The closure from the seeds over the hops. H2 has no CYCLE clause and its UNION does not discard
--- a row an earlier step produced, so a cyclic type graph would recurse forever: the path of pairs
--- visited is carried along and a step does not land on a pair already on it. Nested classes
--- rarely cross-link, so the paths stay close to one per backing.
-closure (graph_name, type_name, class_name, path) AS (
-  SELECT graph_name, type_name, class_name, ARRAY[type_name || '|' || class_name]
-    FROM seed
-  UNION ALL
-  SELECT c.graph_name, h.to_type, h.to_class, c.path || (h.to_type || '|' || h.to_class)
-    FROM closure c
-    JOIN hop h
-      ON h.graph_name = c.graph_name AND h.type_name = c.type_name AND h.from_class = c.class_name
-   WHERE NOT (h.to_type || '|' || h.to_class) = ANY (c.path)
+     AND EXISTS (SELECT 1 FROM graphql_type owner
+                  WHERE owner.graph_name = f.graph_name AND owner.type_name = f.type_name
+                    AND owner.kind = 'INPUT_OBJECT')
+     AND EXISTS (SELECT 1 FROM graphql_type child
+                  WHERE child.graph_name = f.graph_name AND child.type_name = f.named_type
+                    AND child.kind IN ('OBJECT', 'INPUT_OBJECT'))
 )
-SELECT b.graph_name, b.type_name, t.record_class_fqn, 'BOUND_TABLE'
-  FROM graphitron_tabletype b
-  JOIN sql_table t
-    ON t.source_name = b.table_source_name AND t.table_schema = b.table_schema
-   AND t.table_name = b.table_name
- WHERE t.record_class_fqn <> 'org.jooq.Record'
-UNION
-SELECT graph_name, type_name, class_name, 'PRODUCER' FROM seed
-UNION
-SELECT c.graph_name, c.type_name, c.class_name, 'ACCESSOR'
-  FROM closure c
- WHERE NOT EXISTS (SELECT 1 FROM seed s
-                    WHERE s.graph_name = c.graph_name AND s.type_name = c.type_name
-                      AND s.class_name = c.class_name);
-COMMENT ON VIEW graphitron_type_backing_rule IS 'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
--- COMMENT ON COLUMN graphitron_type_backing_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_type_backing_rule.type_name IS 'the type the class stands for';
--- COMMENT ON COLUMN graphitron_type_backing_rule.class_name IS 'the backing class';
--- COMMENT ON COLUMN graphitron_type_backing_rule.declared_via IS 'BOUND_TABLE, PRODUCER or ACCESSOR, on graphitron_type_backing.declared_via''s terms';
+SELECT DISTINCT b.graph_name, h.to_type, h.to_class, 'ACCESSOR', b.touched_at
+  FROM graphitron_type_backing b
+  JOIN hop h
+    ON h.graph_name = b.graph_name AND h.type_name = b.type_name AND h.from_class = b.class_name
+ WHERE b.declared_via IN ('PRODUCER', 'ACCESSOR')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type_backing p
+                    WHERE p.graph_name = b.graph_name AND p.type_name = h.to_type
+                      AND p.class_name = h.to_class AND p.declared_via = 'PRODUCER'
+                      AND p.touched_at = b.touched_at);
+COMMENT ON VIEW graphitron_type_backing_accessor_rule IS 'One step the accessor closure takes from the backings a reading has reached, in the shape graphitron_type_backing stores beside the reading that marked the backing stepped from. For example the type-backings stage inserts this view''s rows for one graph and its own reading into graphitron_type_backing until a step adds none.';
+-- COMMENT ON COLUMN graphitron_type_backing_accessor_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_type_backing_accessor_rule.type_name IS 'the type a member of the reached class lands on';
+-- COMMENT ON COLUMN graphitron_type_backing_accessor_rule.class_name IS 'the class that member delivers';
+-- COMMENT ON COLUMN graphitron_type_backing_accessor_rule.declared_via IS 'always ACCESSOR';
+-- COMMENT ON COLUMN graphitron_type_backing_accessor_rule.reached_touched_at IS 'the reading that marked the backing stepped from';
 
 CREATE VIEW intent_type_backing_conflict (graph_name, type_name, candidates) AS
 SELECT graph_name, type_name,
@@ -26485,6 +26495,7 @@ INSERT INTO meta_stage_rule VALUES
   ('tenant-columns', 'graphitron_tenant_column', 'graphitron_tenant_column_rule'),
   ('tenant-columns', 'graphitron_tenant_fan_out_key', 'graphitron_tenant_fan_out_key_rule'),
   ('type-backings', 'graphitron_type_backing', 'graphitron_type_backing_rule'),
+  ('type-backings', 'graphitron_type_backing', 'graphitron_type_backing_accessor_rule'),
   ('type-claims', 'graphitron_claim', 'graphitron_type_claim_rule'),
   ('voucher-members', 'graphitron_voucher_member', 'graphitron_voucher_member_rule'),
   ('vouchers', 'graphitron_accept_claim', 'graphitron_accept_claim_rule'),
@@ -29848,7 +29859,11 @@ INSERT INTO meta_relation VALUES
   ('graphitron_type_backing_rule', 'type-backing', 'graphitron',
    'One row the type-backing rule computes, in the shape graphitron_type_backing stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
-   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_target_rule''s terms. Recursive over a cyclic graph, which H2 cannot detect a cycle in: the path of type and class pairs a step has visited rides along as an array, and a step never lands on a pair already on it. On a consumer schema of 2345 types the closure walks 136 paths, at most four deep, to 130 backings. Stored by its step because H2 evaluates a recursive view again for every row joined to it.'),
+   'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_target_rule''s terms. It states the table bindings and what producers ground; the accessor closure from those is graphitron_type_backing_accessor_rule''s, taken a step at a time by the stage, since a recursive view costs H2 about a second to compile in every session and a capture evicts it from the session''s cache of 64 compiled views.'),
+  ('graphitron_type_backing_accessor_rule', 'type-backing', 'graphitron',
+   'One step the accessor closure takes from the backings a reading has reached, in the shape graphitron_type_backing stores beside the reading that marked the backing stepped from.',
+   'For example the type-backings stage inserts this view''s rows for one graph and its own reading into graphitron_type_backing until a step adds none.',
+   'The closure from what producers ground over the members a class reads or writes, one step: the stage repeats it until nothing new is reached, so no view recurses. It reads graphitron_type_backing, the relation its own stage writes, as a later round of a stage reads an earlier one (defects-as-facts.adoc), and only the rows its reading marked, so a backing the last reading left seeds nothing before the sweep takes it.'),
   ('graphitron_argmapping_candidate', 'argmapping-candidate', 'graphitron',
    'What an argMapping right-hand side may name: one row per writable path, under the schema coordinate the directive carrying it sits on.',
    'For example at Mutation.rentFilm(input:) the argument''s own name is one row, every field of the input type below it is another, and the input-prefixed spelling of each of those is a third row marked deprecated, so an author who writes either spelling meets a candidate.',

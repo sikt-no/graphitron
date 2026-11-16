@@ -435,6 +435,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_position_rule", Arm.DERIVED);
         registrations.put("graphitron_type_backing", Arm.DERIVED);
         registrations.put("graphitron_type_backing_rule", Arm.DERIVED);
+        registrations.put("graphitron_type_backing_accessor_rule", Arm.DERIVED);
         registrations.put("code_graph_class", Arm.DERIVED);
         registrations.put("code_graph_class_rule", Arm.DERIVED);
         registrations.put("intent_resolved_node_key_shape", Arm.DERIVED);

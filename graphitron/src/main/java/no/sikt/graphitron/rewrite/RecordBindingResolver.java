@@ -926,8 +926,8 @@ final class RecordBindingResolver {
      * getter there (jOOQ generates one per column) grounds nothing. Walking it would bind a
      * directiveless nesting type named like a column to that column's Java type, and its fields
      * would then be looked up as accessors on that type. The store's
-     * {@code graphitron_type_backing_rule} likewise seeds its accessor closure from producers and
-     * never from a table binding.
+     * {@code graphitron_type_backing_accessor_rule} likewise steps its accessor closure from producers
+     * and never from a table binding.
      */
     private boolean propagateResultChildren(String parentSdlType, Class<?> parentClass) {
         var named = ctx.schema.getType(parentSdlType);
