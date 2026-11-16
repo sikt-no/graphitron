@@ -204,6 +204,20 @@ metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
   coerced on the converted type with `DSL.val(token, field.getDataType()).getValue()`, the one
   place the decoder deliberately reads through the converted type, reproducing what those
   releases read.
+- *Where the encoded value comes from*: the order column's value on the edge's own record, which
+  need not be the expression the seek compared. On a multi-table connection the seek compares the
+  `pages` union's column, while the edge is the participant's stage-2 record, re-projecting its own
+  key and slot columns under the union's aliases. The classifier's agreement rules, which type each
+  union column by its first participant's column, are what make the two one value of one type, and
+  no stronger invariant is held (Filip, 2026-11-16). A cursor is still computed from the element and
+  the ordering, never from the element's place in the page.
+- *A refused element*: a cursor the decoder can check itself (its Base64, its JSON shape, its
+  arity, an element Java parses) is refused as the client's error. Where only the database can tell
+  whether an element is a value of its column, as for a column whose value Java does not hold
+  exactly, the database checks it when it runs the page query, and its refusal stays a
+  server-classified error: the decoder spends no round trip asking first, and a data exception
+  from the query is not reclassified as the client's, which would also blame the client for a data
+  fault in a condition or a filter (Filip, 2026-11-16).
 - *The no-seek case*: `DSL.noField(field)` where a column position must be present but no seek
   value applies, rather than a null placeholder or an omitted column that would misalign the tuple.
 
