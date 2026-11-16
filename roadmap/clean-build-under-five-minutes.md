@@ -188,6 +188,14 @@ from the next recording.
       ending at R876's "`SeededStore` is deleted". `SeededStore.derive` empties four `graphitron_`
       relations whole and recomputes every graph, so a seeded case shares a store only once it no
       longer needs the derive, or the derive is scoped to its graph.
+      Only a class whose subject is stored rows becomes documents; one whose subject is something
+      else waits for what it tests. Three are left unconverted on that rule:
+      `ReferenceForParticipantDefectsTest` tests a store-side check that refuses in Java, and goes
+      with R876's "Each node-id rule is an entry defect", whose codes its cases become;
+      `NameMatchedKeyPairTest` retires with R876's "`sql_name_matched_key_column` is gone"; and
+      `ClassificationDomainTest` with the `intent_` family it tests. `ClaimConflictsTest` keeps its
+      subject, the build report's messages over stored claim defects, and reads the claim documents'
+      graphs rather than capturing inline.
    4. **The classes with fresh stores of their own.** Prepares on a session that never saw the
       statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest in
       `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
