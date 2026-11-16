@@ -22922,9 +22922,11 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
      AND EXISTS (SELECT 1 FROM graphitron_type owner
                   WHERE owner.graph_name = f.graph_name AND owner.type_name = f.type_name
                     AND owner.kind IN ('OBJECT', 'INTERFACE'))
+     -- An authored type only: graphitron_type_backing holds a backing of a type an author declared,
+     -- and a type macro expansion mints stands on no class.
      AND EXISTS (SELECT 1 FROM graphitron_type child
                   WHERE child.graph_name = f.graph_name AND child.type_name = f.named_type
-                    AND child.kind IN ('OBJECT', 'INPUT_OBJECT'))
+                    AND child.kind IN ('OBJECT', 'INPUT_OBJECT') AND child.origin = 'AUTHORED')
      -- Read off the stored applications rather than the reference sites: H2 evaluates a view
      -- again for every hop row, and on a consumer schema that was most of the rule's time.
      AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application x
@@ -22943,9 +22945,33 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
      AND EXISTS (SELECT 1 FROM graphitron_type owner
                   WHERE owner.graph_name = f.graph_name AND owner.type_name = f.type_name
                     AND owner.kind = 'INPUT_OBJECT')
+     -- An authored type only: graphitron_type_backing holds a backing of a type an author declared,
+     -- and a type macro expansion mints stands on no class.
      AND EXISTS (SELECT 1 FROM graphitron_type child
                   WHERE child.graph_name = f.graph_name AND child.type_name = f.named_type
-                    AND child.kind IN ('OBJECT', 'INPUT_OBJECT'))
+                    AND child.kind IN ('OBJECT', 'INPUT_OBJECT') AND child.origin = 'AUTHORED')
+  UNION ALL
+  -- A list @asConnection pages over: graphitron_field restates it as the connection it mints, and
+  -- the member still delivers the element the author wrote, which is the type it lands on.
+  SELECT c.graph_name, c.type_name, sl.class_name, c.element_type, sl.element_class
+    FROM graphitron_connection_carrier c
+    JOIN graphitron_field f
+      ON f.graph_name = c.graph_name AND f.type_name = c.type_name AND f.field_name = c.field_name
+    JOIN store_graph_source g ON g.graph_name = c.graph_name
+    JOIN code_read_slot sl
+      ON sl.source_name = g.source_name AND sl.slot_name = f.bound_name
+    JOIN code_graph_class v
+      ON v.graph_name = g.graph_name AND v.class_name = sl.class_name AND v.source_name = sl.source_name
+   WHERE sl.element_class IS NOT NULL
+     AND EXISTS (SELECT 1 FROM graphitron_type owner
+                  WHERE owner.graph_name = c.graph_name AND owner.type_name = c.type_name
+                    AND owner.kind IN ('OBJECT', 'INTERFACE'))
+     AND EXISTS (SELECT 1 FROM graphitron_type child
+                  WHERE child.graph_name = c.graph_name AND child.type_name = c.element_type
+                    AND child.kind = 'OBJECT' AND child.origin = 'AUTHORED')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application x
+                      WHERE x.graph_name = c.graph_name AND x.coordinate = c.coordinate
+                        AND x.directive_name IN ('service', 'externalField'))
 )
 SELECT DISTINCT b.graph_name, h.to_type, h.to_class, 'ACCESSOR', b.touched_at
   FROM graphitron_type_backing b

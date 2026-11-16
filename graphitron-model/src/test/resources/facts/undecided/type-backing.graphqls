@@ -13,7 +13,15 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
   shelf: Shelf
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmShelfService", method: "shelf"})
+  occupants(addressId: Int): Occupants
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsWithErrorsService", method: "listByAddressId"})
 }
+
+# A list @asConnection pages over is read off the class like any other field, and lands on the
+# element the author wrote: addresses() delivers AddressRecord, which backs Address. The connection
+# the macro mints over it is no type an author declared and is backed by nothing.
+type Address @table(name: "address") { address: String }
+type Occupants { addresses: [Address!]! @asConnection }
 
 type Holder { blurb: Blurb, renamed: Retitled @field(name: "blurb"), note: String }
 type Blurb { description: String }
@@ -75,6 +83,9 @@ extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   Blurb,           no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
   Retitled,        no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
   Shelf,           no.sikt.graphitron.rewrite.test.services.FilmShelf,            PRODUCER
+  Occupants,       no.sikt.graphitron.rewrite.test.services.OccupantsListWithErrorsPayload, PRODUCER
+  Address,         no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.AddressRecord, BOUND_TABLE
+  Address,         no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.AddressRecord, ACCESSOR
   KeyedBlurb,      no.sikt.graphitron.rewrite.test.services.FilmBlurb,            ACCESSOR
   TitledBlurb,     java.lang.String,                                              ACCESSOR
   AssignInput,     no.sikt.graphitron.rewrite.test.services.FilmRecordAssignment, PRODUCER
