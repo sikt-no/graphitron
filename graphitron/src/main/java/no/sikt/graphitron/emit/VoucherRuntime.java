@@ -504,6 +504,126 @@ public final class VoucherRuntime {
             .addStatement("return decoded")
             .build();
 
+        // The accepting side's verification over a request's representations, its schema handed in as
+        // descriptors: generic over the vouched-for value, so this body names no build's ConnectionKey.
+        var v = com.palantir.javapoet.TypeVariableName.get("V");
+        var objectFunction = ParameterizedTypeName.get(ClassName.get(java.util.function.Function.class),
+            ClassName.get(Object.class), ClassName.get(Object.class));
+        var partClass = self.nestedClass("Part");
+        var part = TypeSpec.recordBuilder("Part")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addJavadoc("One value a voucher carries, as the accepting entity reads it: the field's name, and the\n"
+                + "coercion of its wire value to the column the field reads, {@code null} where it is no value of\n"
+                + "that column.\n")
+            .recordConstructor(MethodSpec.constructorBuilder()
+                .addParameter(String.class, "fieldName")
+                .addParameter(objectFunction, "coerce")
+                .build())
+            .build();
+        var acceptingClass = self.nestedClass("Accepting");
+        var listOfParts = ParameterizedTypeName.get(ClassName.get(List.class), partClass);
+        var vouchedForOf = ParameterizedTypeName.get(ClassName.get(java.util.function.Function.class),
+            com.palantir.javapoet.ArrayTypeName.of(Object.class), v);
+        var accepting = TypeSpec.recordBuilder("Accepting")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(v)
+            .addJavadoc("An entity type that accepts vouchers: its name, the voucher field a representation carries,\n"
+                + "the scope it accepts, its vouched-for parts in name order, the parts of the key its lookup\n"
+                + "part decodes onto in key order, and how the coerced vouched-for values make a {@code V}.\n")
+            .recordConstructor(MethodSpec.constructorBuilder()
+                .addParameter(String.class, "typeName")
+                .addParameter(String.class, "voucherField")
+                .addParameter(String.class, "scope")
+                .addParameter(listOfParts, "vouchedFor")
+                .addParameter(listOfParts, "lookup")
+                .addParameter(vouchedForOf, "vouchedForOf")
+                .build())
+            .build();
+        var verifiedClass = self.nestedClass("Verified");
+        var verified = TypeSpec.recordBuilder("Verified")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(v)
+            .addJavadoc("A representation's voucher, verified: the token, its lookup values coerced to the key's\n"
+                + "columns in key order, and the vouched-for value.\n")
+            .recordConstructor(MethodSpec.constructorBuilder()
+                .addParameter(token, "token")
+                .addParameter(Object[].class, "lookup")
+                .addParameter(v, "vouchedFor")
+                .build())
+            .build();
+        var verifiedOfV = ParameterizedTypeName.get(verifiedClass, v);
+        var mapOfVerified = ParameterizedTypeName.get(ClassName.get(Map.class), ClassName.get(Integer.class), verifiedOfV);
+        var repList = ParameterizedTypeName.get(ClassName.get(List.class),
+            ParameterizedTypeName.get(ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class)));
+        var acceptingList = ParameterizedTypeName.get(ClassName.get(List.class),
+            ParameterizedTypeName.get(acceptingClass, v));
+        var coerceParts = MethodSpec.methodBuilder("coerce")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object[].class)
+            .addParameter(listOfParts, "parts")
+            .addParameter(OBJECT_MAP, "values")
+            .addStatement("Object[] coerced = new Object[parts.size()]")
+            .beginControlFlow("for (int i = 0; i < parts.size(); i++)")
+            .addStatement("coerced[i] = parts.get(i).coerce().apply(values.get(parts.get(i).fieldName()))")
+            .beginControlFlow("if (coerced[i] == null)")
+            .addStatement("throw new $T($T.VALUE)", rejected, reason)
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return coerced")
+            .build();
+        var fieldNames = MethodSpec.methodBuilder("fieldNames")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(STRING_SET)
+            .addParameter(listOfParts, "parts")
+            .addStatement("$T names = new $T<>()", STRING_SET, java.util.HashSet.class)
+            .addStatement("parts.forEach(p -> names.add(p.fieldName()))")
+            .addStatement("return names")
+            .build();
+        var verifyAll = MethodSpec.methodBuilder("verifyAll")
+            .addModifiers(Modifier.PUBLIC)
+            .addTypeVariable(v)
+            .returns(mapOfVerified)
+            .addJavadoc("Verifies every voucher {@code reps} presents, before any of them is resolved: each\n"
+                + "representation of an accepting type carrying its voucher field is checked as {@link #verify}\n"
+                + "checks it, against that type's scope, vouched-for fields and key, and its values coerced to the\n"
+                + "columns they reach. A representation of no accepting type, or without its voucher field, is\n"
+                + "left to the plain keys and has no entry.\n"
+                + "\n"
+                + "@return the verified vouchers by the representation's index\n"
+                + "@throws $T naming the first check that failed; nothing is answered for the request\n", rejected)
+            .addParameter(repList, "reps")
+            .addParameter(acceptingList, "accepting")
+            .addStatement("$T<String, $T> byType = new $T<>()", Map.class, ParameterizedTypeName.get(acceptingClass, v),
+                HashMap.class)
+            .addStatement("accepting.forEach(a -> byType.put(a.typeName(), a))")
+            .addStatement("$T verified = new $T<>()", mapOfVerified, java.util.LinkedHashMap.class)
+            .beginControlFlow("for (int i = 0; i < reps.size(); i++)")
+            .addStatement("$T<String, Object> rep = reps.get(i)", Map.class)
+            .addStatement("if (rep == null) continue")
+            .addStatement("$T a = byType.get(rep.get($S))", ParameterizedTypeName.get(acceptingClass, v), "__typename")
+            .addStatement("if (a == null || !rep.containsKey(a.voucherField())) continue")
+            .beginControlFlow("if (!(rep.get(a.voucherField()) instanceof String voucher))")
+            .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
+            .endControlFlow()
+            .addStatement("$T token = verify(a.typeName(), voucher, a.scope(), fieldNames(a.vouchedFor()),"
+                + " fieldNames(a.lookup()))", token)
+            .addStatement("verified.put(i, new $T<>(token, coerce(a.lookup(), token.lookup()),"
+                + " a.vouchedForOf().apply(coerce(a.vouchedFor(), token.vouchedFor()))))", verifiedClass)
+            .endControlFlow()
+            .addStatement("return verified")
+            .build();
+        var vouchedForValues = MethodSpec.methodBuilder("vouchedForValues")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(v)
+            .returns(ParameterizedTypeName.get(ClassName.get(Set.class), v))
+            .addParameter(mapOfVerified, "verified")
+            .addStatement("$T<$T> values = new $T<>()", Set.class, v, java.util.LinkedHashSet.class)
+            .addStatement("verified.values().forEach(each -> values.add(each.vouchedFor()))")
+            .addStatement("return values")
+            .addJavadoc("The distinct vouched-for values of a request's verified vouchers, which "
+                + "{@link #MAX_VOUCHED_FOR_VALUES} bounds.\n")
+            .build();
+
         var verifier = TypeSpec.classBuilder("Verifier")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("Checks the vouchers one request presents, against the request's caller and the instant it\n"
@@ -521,6 +641,9 @@ public final class VoucherRuntime {
                 .addStatement("this.caller = caller")
                 .build())
             .addMethod(verify)
+            .addMethod(verifyAll)
+            .addMethod(fieldNames)
+            .addMethod(coerceParts)
             .build();
 
         var verifierFactory = MethodSpec.methodBuilder("verifier")
@@ -673,6 +796,15 @@ public final class VoucherRuntime {
             .addType(issuer)
             .addType(issuers)
             .addType(verifier)
+            .addType(part)
+            .addType(accepting)
+            .addType(verified)
+            .addField(FieldSpec.builder(int.class, "MAX_VOUCHED_FOR_VALUES", Modifier.PUBLIC, Modifier.STATIC,
+                    Modifier.FINAL)
+                .addJavadoc("How many vouched-for values one request's vouchers may carry: each takes a connection\n"
+                    + "of its own. The one place the limit lives.\n")
+                .initializer("1").build())
+            .addMethod(vouchedForValues)
             .addMethod(issuerFactory)
             .addMethod(verifierFactory)
             .addMethod(signed)
