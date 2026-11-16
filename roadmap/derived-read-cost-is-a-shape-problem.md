@@ -1727,11 +1727,12 @@ someone to profile.
 * **A stage's statement reads tables, not a chain of views** `open`. A gate holds the cost of
   preparing each stage's statement, since on a fresh store most of a capture's time goes to H2
   expanding views rather than executing them.
-* **The type-backing closure is stored, not recursed** `open`. `graphitron_type_backing_rule` is
-  `WITH RECURSIVE` (a seed, a hop, then the closure over the hops), and H2 takes about 1 s to plan it
-  the first time in any database, empty or full, against a few milliseconds for the other rule views:
-  543 s of `graphitron-model`'s test class time on 2026-11-16, and a second of every consumer's cold
-  capture. The hops are written to a stored relation hop by hop, as the depth loop writes depths, and
+* **The type-backing closure is stored, not recursed, claimed by B** `open`. `graphitron_type_backing_rule` is
+  `WITH RECURSIVE` (a seed, a hop, then the closure over the hops), and H2 takes about 1 s to compile
+  it in a session, empty store or full, against a few milliseconds for the other rule views. H2 keeps a
+  session's compiled views in a cache of 64, a constant, and a capture reads hundreds of rule views,
+  so every capture compiles it again: 543 s of `graphitron-model`'s test prepare time on 2026-11-16,
+  and a second of every consumer capture (R1131 A5). The hops are written to a stored relation hop by hop, as the depth loop writes depths, and
   the rule reads the stored closure.
 * **A per-depth rule is planned once per depth** `open`. `PathNeeds.writeDepth` inlines its rule's union
   into two upserts and `OccurrenceSources.write` into four, so H2 plans the whole union that many

@@ -131,13 +131,18 @@ The steps below, from either track or from R876, in the order their measured eff
 Whoever works this item takes the top open step, prices it before it lands, and re-ranks the queue
 from the next recording.
 
-1. **Fewer fresh stores** (A2, A2a, R1160's migration onto the population). The 57 classes with
-   stores of their own, heaviest first by the counted run's per-class prepare time. A store that has
-   to stay its own (a lifetime or oracle test) is made as small as what it tests.
-2. **`graphitron_type_backing_rule` stops recursing** (R876, "The type-backing closure is stored,
-   not recursed"). About 1 s off every fresh store, and off a consumer's cold capture.
-3. **A capture's statements stay cached for the capture** (A5). Measure first whether
-   `StoreUse.ONE_CAPTURE`'s 64 evicts statements a capture prepares again.
+1. **`graphitron_type_backing_rule` stops recursing** (R876,
+   "The type-backing closure is stored, not recursed, claimed by B").
+   About 1 s off every capture, not only every fresh store, since H2's view-index cache evicts the
+   recursive view within each capture (A5); and off a consumer's cold capture.
+2. **Fewer fresh stores** (A2, A2a, R1160's migration onto the population). The 57 classes with
+   stores of their own, heaviest first by per-class prepare time, re-measured after step 1 and
+   attributed per class: the counted run charged a thread-confined store to the class that first
+   opened it, so its four heaviest openers are the 37 thread-confined classes together. A store that
+   has to stay its own (a lifetime or oracle test) is made as small as what it tests.
+3. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
+   step 1 removes that cost; no other rule view costs more than a few milliseconds to compile again.
+   Nothing to change unless the re-measure after step 1 shows another view paying it.
 4. **A fresh store opens cheaply** (A6). The DDL's 3,661 `COMMENT ON` statements, which capture
    never reads, and the DDL hash taken twice on every open.
 5. **A test's catalog is read once** (A7). The catalog skip needs the catalog's classpath entry, and
@@ -256,12 +261,29 @@ reach every capture. The ruling is in `docs/architecture/how-to/testing.adoc`. I
 2026-11-13): a test driving a whole run takes its captured graph from `CapturedGraphs.open`, a lease
 whose store the `FactGraphs` population owns.
 
-**A5. A capture's statements stay cached for the capture.** `StoreUse.ONE_CAPTURE` holds 64
-statements. In the 2026-11-16 counted run, classes with one to three stores prepared the type-backing
-statement 51 to 97 times, which fits a capture preparing more distinct statements than the cache
-holds and evicting the most expensive one between captures. Measured by counting distinct statement
-texts per capture and repeating the counted run at a larger `-Dgraphitron.queryCacheSize`, with the
-live heap beside it, since a cached plan weighs about 0.1 MB.
+**A5. H2's view-index cache of 64.** In the 2026-11-16 counted run, stores reused across captures
+prepared the type-backing statement 51 to 97 times at about 1 s each, and a thread-confined store
+paid it again on every case. The statement caches are not the cause: a capture prepares 700 to 3,900
+distinct statement texts, so its statements leave a 1,024-statement cache between captures anyway,
+and planning one again costs milliseconds. What H2 keeps per session is the compiled index of each
+view, in a `SmallLRUCache` of `Constants.VIEW_INDEX_CACHE_SIZE`, a constant 64 in h2-2.5.250 that no
+property raises. A capture reads hundreds of rule views, so the type-backing view is evicted within
+the capture and compiled again by the next. Measured on an empty store built from the DDL, one
+session, preparing `graphitron_type_backing_rule` again after N other rule views:
+
+| Prepared after | statement cache 1,024 | statement cache 0 |
+|---|---:|---:|
+| nothing (first) | 931 ms | 1,062 ms |
+| itself | 0.1 ms | 0.3 ms |
+| 40 other rule views | 0.0 ms | 0.1 ms |
+| 80 other rule views | 0.0 ms | 1,204 ms |
+| 160 other rule views | 0.0 ms | 875 ms |
+
+The thread-confined store's clear is not the cause either: its truncate of every base table under
+the referential-integrity toggle, the selectivity reset, `ANALYZE`, commits and row writes each leave
+the next prepare under a millisecond. Only the type-backing view, the one recursive rule, costs a
+second to compile; the others cost 1 to 3 ms, so the eviction matters for it alone. Queue step 1
+removes the cost.
 
 **A6. A fresh store opens cheaply.** Opening took 161 s over 335 stores in the model's tests. A store
 runs its whole DDL one statement at a time, including 3,661 `COMMENT ON` statements that no capture
@@ -329,7 +351,7 @@ derivation that would need a complex rule is stored upstream.
 This item does not do that work. R876 does, under:
 - "No view reads a view, and every rule view is simple, claimed by B";
 - "A per-depth rule is planned once per depth";
-- "The type-backing closure is stored, not recursed";
+- "The type-backing closure is stored, not recursed, claimed by B";
 - the per-depth writer nodes F leads.
 
 This item ranks them by measured weight, `PathNeeds` (20% of `graphitron`'s samples) and
