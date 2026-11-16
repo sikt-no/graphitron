@@ -1,13 +1,13 @@
 ---
 id: R1184
 title: "An optional gatherer reads the database's row-level security policies over a live connection"
-status: Ready
+status: Spec
 bucket: architecture
 priority: 4
 theme: diagnostics
 depends-on: []
 created: 2026-11-13
-last-updated: 2026-11-15
+last-updated: 2026-11-16
 ---
 
 # An optional gatherer reads the database's row-level security policies over a live connection
