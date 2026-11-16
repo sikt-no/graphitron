@@ -8593,6 +8593,9 @@ COMMENT ON COLUMN graphitron_call_parameter_table.table_name IS 'the table';
 COMMENT ON COLUMN graphitron_call_parameter_table.fit IS 'how it fits: CLASS, declared as the table''s own generated class; JOOQ_TYPE, declared as one of jOOQ''s table types in code_jooq_class, its record argument absent, the table''s record, or one of jOOQ''s record types the record is; RECORD, taking the table''s generated record, itself or as the element its containers deliver. A reader preferring the closer declaration where both fit prefers CLASS, and a reader asking whether a position takes a table reads CLASS and JOOQ_TYPE';
 COMMENT ON COLUMN graphitron_call_parameter_table.delivery IS 'how the parameter delivers its element, as code_method_parameter.delivery: DIRECT, WRAPPED or MANY, NULL where its type peels to no class; a reader taking the element alone asks for it not to be NULL';
 COMMENT ON COLUMN graphitron_call_parameter_table.touched_at IS 'the reading that last wrote this row; the stage sweeps the graph''s rows an older reading wrote';
+CREATE INDEX graphitron_call_parameter_table_method_ix
+  ON graphitron_call_parameter_table (source_name, class_name, method_name, descriptor, graph_name);
+COMMENT ON INDEX graphitron_call_parameter_table_method_ix IS 'A reader holding a method asks for its parameters'' fits, and the engine otherwise takes the foreign key index on the graph alone over the primary key, reading every fit of the graph: the service arm of graphitron_occurrence_depth_entry_defect_rule asks it of every service under a parent.';
 
 -- The argMapping pairs stage's own defects, off the entries, the sites it names its pairs by, the
 -- code references and the classpath: a sigil naming something the graph does not offer.
@@ -23385,15 +23388,11 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
            -- unknown otherwise, as NO_KEY_FROM_PARENT's selection arm judges.
            AND EXISTS (SELECT 1 FROM code_read_slot known WHERE known.class_name = rc.class_name)
            -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a fill's.
-           AND EXISTS (SELECT 1 FROM code_method_parameter mp
-                          JOIN graphitron_call_parameter_table kt
-                             ON kt.graph_name = p.graph_name AND kt.source_name = ps.method_source_name
-                            AND kt.class_name = ps.method_class_name AND kt.method_name = ps.method_name
-                            AND kt.descriptor = ps.method_descriptor AND kt.position = mp.position
-                            AND kt.fit = 'RECORD'
-                        WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
-                          AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
-                          AND kt.delivery = 'MANY')
+           AND EXISTS (SELECT 1 FROM graphitron_call_parameter_table kt
+                        WHERE kt.graph_name = p.graph_name AND kt.source_name = ps.method_source_name
+                          AND kt.class_name = ps.method_class_name AND kt.method_name = ps.method_name
+                          AND kt.descriptor = ps.method_descriptor
+                          AND kt.fit = 'RECORD' AND kt.delivery = 'MANY')
            -- The record's own table is the key: read straight off it, so no member is wanted.
            AND NOT EXISTS (SELECT 1 FROM code_method_parameter mp
                              JOIN graphitron_call_parameter_table kt
