@@ -1140,14 +1140,9 @@ static method needs no holder.
 * **A routine write's routing is named by the connection key** `open`, F's, off the critical path.
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
-  other, which the connection hook decides (Alf, 2026-11-14).
-* **The mount reads the connection key it is mounting for** `open`, off the critical path, once R1119's
-  slice 8a adds `MountedSession.key()`. `MountedSession.tenant()`, a copy of the key's tenant part, then
-  goes, so the mount reads one key whose parts are each optional, as the connection hook does (Alf,
-  2026-11-16); a breaking consumer change that rewrites `runtime-extension-points.adoc` § Per-tenant
-  routing and the manual's tenant pages.
+  other, which the request's connection source decides (Alf, 2026-11-14, 2026-11-16).
 * **The connection relation's grain covers accepting graphs** `open`, off the critical path, as R1119's
-  slice 8b. `graphitron_occurrence_connection` widens from a database-per-tenant graph's producers to
+  slice 8e. `graphitron_occurrence_connection` widens from a database-per-tenant graph's producers to
   those of any graph whose generated code carries a `ConnectionKey`, so a field with a fetcher of its
   own below a vouched entity inherits the whole key; a rewrite of the connection rule keeps that grain
   rather than narrowing it back to tenancy.
@@ -1574,13 +1569,12 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
     stated, matching the configured name as the store matches every column spelling
     (`sql_column_spelling`, a name reaching two columns of one table resolving neither), and
     `TenantColumnAgreementTest` holds it to `TenantScopeClassifier`; what is left is the pattern, the
-    two defects, whose locus is Alf's to decide, and the session hook half. An argument or
+    two defects, whose locus is Alf's to decide. An argument or
     input field is a tenant field when its column joins a matched column, which needs the argument
     model; the walk's classifier goes with the walk rather than learning the pattern, its tenant fold
-    routing a tenant-keyed node's decode with it, resolvable or not. The session
-    hook half reads `code_method` and its parameters' `role`, where sis's `FsSesjon.mount` and
-    `unmount` take the context as `CONFIGURATION`, waiting on the two `CodeCapture` lines in the
-    register.
+    routing a tenant-keyed node's decode with it, resolvable or not. The session hook half, capturing
+    the mount and unmount signatures, dissolves: R1119's connection contract leaves Graphitron no
+    mount or unmount to call, the consumer's connection source doing both (Alf, 2026-11-16).
 * **`graphitron` does no orchestration** `open`. A harness in `graphitron`'s tests that captures and
   reads nothing of the generator moves to the model's test fixtures, with the tests that exercise
   capture alone.
@@ -1643,11 +1637,13 @@ output package they are written to are settled.
   follows them, its record of what it wrote no longer spelled in the planner's `GlobalUnitKind`.
 * **The `util` package's fixed classes are not planned** `open`. `GraphitronValues`, `LightFetcher`,
   `ColumnValues`, `SelectionOccurrences` and `OrderByResult` are written from the package alone;
-  `ConnectionResult` and `ConnectionHelper` take the tenancy flag, `NestingCoordinates` the nesting
+  `ConnectionResult` and `ConnectionHelper` take the tenancy flag (which goes where it only says how
+  connections are keyed, tenancy no longer being a runtime mode), `NestingCoordinates` the nesting
   reach, and `OneOfDirectiveSdl` the federation link and `@oneOf`.
 * **The configuration-read runtime classes read the store** `blocked`, on "The generator reads its configuration from the store". `ConnectionRuntime`'s units,
-  `GraphitronConnectionInstrumentation`, `ConnectionResult` and `ConnectionHelper` take the tenancy
-  and the session hooks from the store rather than from `GraphitronSchema`.
+  `GraphitronConnectionInstrumentation`, `ConnectionResult` and `ConnectionHelper` take the
+  connection key's shape from the store rather than from `GraphitronSchema`; the session hooks they took
+  go with R1119's connection contract.
 * **The node id encoder is not planned** `open`. It renders from the store already and is written
   straight from it, as `FixedRuntimeEmitter`'s classes are, and `GlobalUnitKind.NODE_ID_ENCODER`
   goes, with `PlanCompileGraph`'s edge to it.
