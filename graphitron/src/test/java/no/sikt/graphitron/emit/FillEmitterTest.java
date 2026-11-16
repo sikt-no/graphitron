@@ -86,6 +86,7 @@ class FillEmitterTest {
             .addMethod(probe("configured", row("Query.callCountOn"), Optional.empty()))
             .addMethod(probe("enums", row("Query.callMoods"), Optional.empty()))
             .addMethod(probe("listed", row("Query.callListed"), Optional.empty()))
+            .addMethod(probe("moodsThroughList", row("Query.callMoodsThroughList"), Optional.empty()))
             .addMethod(probe("child", row("Film.titleUppercase"), Optional.of(KEYS)))
             .build();
         var dir = Files.createTempDirectory("fill");
@@ -187,10 +188,11 @@ class FillEmitterTest {
     }
 
     @Test
-    void anEnumReadThroughAListIsLeftToBuilding() {
-        var row = row("Query.callMoodsThroughList");
-        assertThat(FillEmitter.emit(row, Optional.empty(), RUNTIME))
-            .isInstanceOf(FillEmitter.Result.NeedsBuilding.class);
+    void anEnumReadThroughAListByNameIsAListOfNames() throws Exception {
+        var values = (Object[]) probes.get("moodsThroughList").invoke(null,
+            env(Map.of("input", Map.of("items", List.of(Map.of("mood", "HAPPY"), Map.of("mood", "SAD"))))),
+            DSL.using(SQLDialect.POSTGRES));
+        assertThat(values[0]).isEqualTo(List.of("HAPPY", "SAD"));
     }
 
     @Test

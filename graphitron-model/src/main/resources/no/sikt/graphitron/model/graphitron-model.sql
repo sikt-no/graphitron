@@ -20939,7 +20939,35 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
                         WHERE sc.graph_name = f.graph_name AND sc.coordinate = f.coordinate AND sc.position = 0
                           AND sc.from_source_name = dp.base_source_name AND sc.from_schema = dp.base_schema
-                          AND sc.from_table = dp.base_name));
+                          AND sc.from_table = dp.base_name))
+UNION ALL
+-- A @service parameter filled from an argument read through a list above its last step, landing on a
+-- node id, an input object, or an enum the parameter takes as its Java constant, at the value it lands
+-- on: each element's value is read for a scalar, or an enum taken by its name, a String once every
+-- list is peeled, only, so the rest is refused until such a read is generated.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_ARGUMENT_PATH_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-bindings'
+  FROM graphitron_occurrence_call_parameter c
+  JOIN graphitron_occurrence_call_method m
+    ON m.graph_name = c.graph_name AND m.coordinate = c.coordinate AND m.call = c.call AND m.call_kind = 'SERVICE'
+  JOIN graphitron_occurrence lo ON lo.graph_name = c.graph_name AND lo.coordinate = c.landing_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = lo.graph_name AND el.coordinate = lo.element_coordinate
+  LEFT JOIN graphitron_argument la ON la.graph_name = lo.graph_name AND la.coordinate = lo.element_coordinate
+  LEFT JOIN graphitron_field lf ON lf.graph_name = lo.graph_name AND lf.coordinate = lo.element_coordinate
+  JOIN graphitron_type lt ON lt.graph_name = lo.graph_name AND lt.type_name = COALESCE(la.named_type, lf.named_type)
+ WHERE c.fill = 'ARGUMENT'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step st
+                WHERE st.graph_name = c.graph_name AND st.coordinate = c.landing_coordinate AND st.is_list
+                  AND st.depth < (SELECT MAX(st2.depth) FROM graphitron_occurrence_argument_step st2
+                                   WHERE st2.graph_name = st.graph_name AND st2.coordinate = st.coordinate))
+   AND (EXISTS (SELECT 1 FROM graphitron_occurrence_node_id n
+                 WHERE n.graph_name = c.graph_name AND n.coordinate = c.landing_coordinate)
+        OR NOT (lt.kind = 'SCALAR'
+                OR lt.kind = 'ENUM'
+                   AND EXISTS (SELECT 1 FROM code_method_parameter mp
+                                WHERE mp.source_name = m.method_source_name AND mp.class_name = m.method_class_name
+                                  AND mp.method_name = m.method_name AND mp.descriptor = m.method_descriptor
+                                  AND mp.position = c.position AND mp.element_class = 'java.lang.String')));
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
@@ -27345,6 +27373,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service under an object answers an interface or union whose rows may be any of several participants, which is lifted for a root @service only: move the call to a root field, or answer one participant''s type.'),
   ('SERVICE_CHILD_VALIDATION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CHILD_VALIDATION_UNSUPPORTED',
    'A @service whose outcome claims validation runs under an object, or answers participants on tables of their own, where its arguments are not validated yet: validation runs once per fetch of a root @service lifting onto at most one table. Move the call to a root field, or drop the VALIDATION handler.'),
+  ('SERVICE_ARGUMENT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_ARGUMENT_PATH_UNSUPPORTED',
+   'A @service parameter is filled from an argument path that steps through a list above its last name and lands on a node id, an input object, or an enum the parameter takes as its Java constant, where each element is read for a scalar or an enum''s name only: hand the parameter the list itself, take the enum by name, or land the path on a scalar.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',

@@ -166,9 +166,10 @@ public final class FillEmitter {
                 }
                 case "ARGUMENT" -> {
                     var landing = fill.landing().orElseThrow();
-                    if (unreadThroughList(landing)) {
+                    if (unreadThroughList(landing, type)) {
                         return new Result.NeedsBuilding(fill.position(), fill.parameterName(),
-                            String.join(".", landing.path()) + " is read through a list, which only a scalar is here");
+                            String.join(".", landing.path()) + " is read through a list, which only a scalar or an enum"
+                                + " taken by name is here");
                     }
                     if (landing.nodeId() && builds.get(fill.position()) instanceof BuildQuery.Result.Decoded decoded) {
                         var helper = "decode" + row.coordinate().replaceAll("[^A-Za-z0-9]", "_") + "_" + fill.position();
@@ -210,7 +211,7 @@ public final class FillEmitter {
                                     + " " + String.join(".", landing.path())
                                     + ", which is built into " + type);
                     }
-                    if ("ENUM".equals(landing.typeKind()) && !STRING.equals(elementOf(type))) {
+                    if ("ENUM".equals(landing.typeKind()) && !STRING.equals(innermost(type))) {
                         statements.addAll(enumValue(type, local, landing.path()));
                     } else {
                         statements.add(liftsThroughList(landing)
@@ -236,11 +237,24 @@ public final class FillEmitter {
     }
 
     /**
-     * Whether {@code landing} is read through a list to something other than a scalar, which is not
-     * read here: a node id, an enum or an input object under a list above the last step.
+     * Whether {@code landing} is read through a list to something not read here: a node id, an input
+     * object, or an enum a parameter of {@code type} takes as its Java constant, under a list above the
+     * last step. An enum taken by its name, a {@code String} once every list is peeled, arrives as that
+     * name and is read as a scalar is.
      */
-    public static boolean unreadThroughList(FillQuery.Landing landing) {
-        return liftsThroughList(landing) && (landing.nodeId() || !"SCALAR".equals(landing.typeKind()));
+    public static boolean unreadThroughList(FillQuery.Landing landing, TypeName type) {
+        return liftsThroughList(landing) && (landing.nodeId()
+            || !("SCALAR".equals(landing.typeKind())
+                 || "ENUM".equals(landing.typeKind()) && STRING.equals(innermost(type))));
+    }
+
+    /** A type with every {@code List} peeled off. */
+    private static TypeName innermost(TypeName type) {
+        var leaf = type;
+        while (!elementOf(leaf).equals(leaf)) {
+            leaf = elementOf(leaf);
+        }
+        return leaf;
     }
 
     /**

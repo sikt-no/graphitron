@@ -265,7 +265,8 @@ public final class ServiceEmission {
         if (filled == null || !filled.complete()) return "FILLS_INCOMPLETE";
         var built = builds.getOrDefault(coordinate, Map.of()).values();
         if (built.stream().anyMatch(r -> r instanceof BuildQuery.Result.Refused)) return "BUILD_REFUSED";
-        if (filled.fills().stream().anyMatch(f -> f.landing().map(FillEmitter::unreadThroughList).orElse(false))) {
+        if (filled.fills().stream().anyMatch(f -> f.landing().map(l -> FillEmitter.unreadThroughList(l,
+                SessionIdentityRows.typeOf(f.parameterType()))).orElse(false))) {
             return "ARGUMENT_PATH";
         }
         var lift = Optional.ofNullable(lifts.get(coordinate))

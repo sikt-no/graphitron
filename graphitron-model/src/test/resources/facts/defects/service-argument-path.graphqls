@@ -1,0 +1,20 @@
+# A @service parameter filled through a list to a node id: argMapping reads in.film for each element
+# of the list in, and an element's value is read for a scalar only, so a node id there is not read
+# yet.
+
+interface Node { id: ID! }
+type Film implements Node @table(name: "film") @node { id: ID! title: String }
+
+input FilmPickInput { film: ID @nodeId(typeName: "Film") }
+
+type Query {
+  filmsPicked(in: [FilmPickInput!]!): [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds",
+    argMapping: "ids: in.film"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_ARGUMENT_PATH_UNSUPPORTED'", rows: """
+  code,                              coordinate
+  SERVICE_ARGUMENT_PATH_UNSUPPORTED, FilmPickInput.film
+  """)
