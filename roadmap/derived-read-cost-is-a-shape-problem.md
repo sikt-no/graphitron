@@ -747,8 +747,8 @@ static method needs no holder.
     critical path; a capability change. `EXTERNAL_FIELD_PATH_UNSUPPORTED` refuses it today, as the
     walk does, and the expression binds at the table the path lands on instead.
   * **A method's parameter fits a table by one rule** `open`, off the critical path. Which catalog
-    tables a parameter fits is `code_method_parameter_table`, keyed by the method's classpath entry
-    and the table's catalog: its generated class, or a public jOOQ table type in `code_jooq_class`
+    tables a parameter fits is `graphitron_call_parameter_table`, keyed by the graph and held only
+    for methods a code reference in the graph names: its generated class, or a public jOOQ table type in `code_jooq_class`
     whose record argument is the table's (Alf, 2026-11-13: jOOQ's internal `TableImpl`, a consumer's
     own table base and `Object` fit nothing), and the `@condition` and `@externalField` candidates and fills read it, pinned by
     `scenarios/call-parameter-table-fit`. Left: the other table-fit sites and `role`'s
@@ -3191,6 +3191,15 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   built into a record.
 
 ## Retired vocabulary
+
+**A parameter's table fit is held only for a method a call names** (2026-11-16). Which catalog tables a
+parameter can be handed is `graphitron_call_parameter_table`, keyed by the graph and written by the
+graphitron gatherer's `call-parameter-tables` stage for the methods the graph's code references name:
+every overload of a written class and method name, every table of the graph's catalogs each. Every
+reader starts from a method a call names. `code_method_parameter_table`, its rule, the code
+gatherer's `method-parameter-tables` stage and `MethodParameterTables` go: they paired every method
+on the classpath with every table, about 208,000 rows rewritten per capture in sakila, almost all
+jOOQ's own `as` and `rename` on a second jOOQ model in the reactor (Alf, 2026-11-16).
 
 **A single child's null contract** (2026-11-15). A nullable single child is null exactly when its read
 finds no row, and a nesting field is present wherever its parent is (Alf, `code-generation-triggers.adoc`).

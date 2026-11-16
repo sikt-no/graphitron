@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.sink.AnchorStage;
+import no.sikt.graphitron.model.derive.CallParameterTables;
 import no.sikt.graphitron.model.derive.TenantColumns;
 import no.sikt.graphitron.model.derive.OccurrenceTenants;
 import no.sikt.graphitron.model.derive.OccurrenceRoutes;
@@ -81,6 +82,9 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     static final List<AnchorStage> STAGES = List.of(
+        // Which catalog tables each parameter of a method a code reference names can be handed, off
+        // the references resolved above and the classpath and catalog upstream.
+        new AnchorStage("call-parameter-tables", CallParameterTables.class, CallParameterTables::derive),
         // The tables the configured tenant column scopes, off the configuration and the catalog alone.
         new AnchorStage("tenant-columns", TenantColumns.class, TenantColumns::derive),
         // What each argMapping may write at its site, off the sites the anchor just wrote and the

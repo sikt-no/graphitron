@@ -27,7 +27,7 @@ type Query {
       className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits", method: "titleIs"})
 }
 
-extend schema @assertContains(relation: "code_method_parameter_table",
+extend schema @assertContains(relation: "graphitron_call_parameter_table",
     where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits' AND table_name IN ('film', 'actor')", rows: """
   method_name, position, table_name, fit
   keyedTitle,  0,        actor,      JOOQ_TYPE
@@ -45,7 +45,7 @@ extend schema @assertContains(relation: "code_method_parameter",
   """)
 
 # Neither record argument fits a table whose record it is not, and jOOQ's internal TableImpl fits none.
-extend schema @assertAbsent(relation: "code_method_parameter_table",
+extend schema @assertAbsent(relation: "graphitron_call_parameter_table",
     where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits'", rows: """
   method_name,  position, table_name
   nameOfActor,  0,        film

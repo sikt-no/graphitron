@@ -6929,87 +6929,6 @@ INSERT INTO code_jooq_class VALUES
   ('org.jooq.TableRecord', 'RECORD', FALSE),
   ('org.jooq.UpdatableRecord', 'RECORD', TRUE);
 
--- Which catalog tables a method's parameter can be handed: its own generated class, or one of jOOQ's
--- table types whose record argument, where it names one, the table's record is. One rule for every
--- call that takes a table, keyed by the method's classpath entry and the table's catalog, since both
--- sides are facts of their own source and of nothing a graph says. A graph only scopes the pairs: the
--- rule is evaluated over one graph's classpath entries and catalogs, and every graph reaching a pair
--- computes the same rows for it. Each leg starts from what is small, a catalog's tables or jOOQ's
--- table types, and looks the parameters up by their declared class.
-CREATE VIEW code_method_parameter_table_rule
-  (graph_name, source_name, class_name, method_name, descriptor, position, table_source_name,
-   table_schema, table_name, fit) AS
-SELECT ts.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor, p.position,
-       t.source_name, t.table_schema, t.table_name, 'CLASS'
-  FROM store_graph_source ts
-  JOIN sql_table t ON t.source_name = ts.source_name
-  JOIN code_method_parameter p ON p.erased_class = t.class_fqn
-  JOIN store_graph_source ms ON ms.graph_name = ts.graph_name AND ms.source_name = p.source_name
-UNION ALL
-SELECT ts.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor, p.position,
-       t.source_name, t.table_schema, t.table_name, 'JOOQ_TYPE'
-  FROM store_graph_source ts
-  JOIN sql_table t ON t.source_name = ts.source_name
-  JOIN code_jooq_class j ON j.accepts = 'TABLE'
-  JOIN code_method_parameter p ON p.erased_class = j.class_name
- WHERE EXISTS (SELECT 1 FROM store_graph_source ms
-                WHERE ms.graph_name = ts.graph_name AND ms.source_name = p.source_name)
-   AND (p.first_argument_class IS NULL OR p.first_argument_class = t.record_class_fqn
-        OR EXISTS (SELECT 1 FROM code_jooq_class r
-                    WHERE r.class_name = p.first_argument_class AND r.accepts = 'RECORD'
-                      AND (NOT r.needs_primary_key
-                           OR EXISTS (SELECT 1 FROM sql_primary_key k
-                                       WHERE k.source_name = t.source_name
-                                         AND k.table_schema = t.table_schema
-                                         AND k.table_name = t.table_name))));
-COMMENT ON VIEW code_method_parameter_table_rule IS 'One row the parameter table rule computes, in the shape code_method_parameter_table stores: the rule itself, evaluated on demand rather than read off disk. For example the method-parameter-tables stage writes this view''s rows for one graph into code_method_parameter_table, which is the name every reader spells.';
--- COMMENT ON COLUMN code_method_parameter_table_rule.graph_name IS 'the graph whose classpath entries and catalogs scope the pair';
--- COMMENT ON COLUMN code_method_parameter_table_rule.source_name IS 'the method''s classpath entry';
--- COMMENT ON COLUMN code_method_parameter_table_rule.class_name IS 'the class declaring the method';
--- COMMENT ON COLUMN code_method_parameter_table_rule.method_name IS 'the method';
--- COMMENT ON COLUMN code_method_parameter_table_rule.descriptor IS 'the method''s descriptor';
--- COMMENT ON COLUMN code_method_parameter_table_rule.position IS 'the parameter''s position';
--- COMMENT ON COLUMN code_method_parameter_table_rule.table_source_name IS 'the table''s catalog';
--- COMMENT ON COLUMN code_method_parameter_table_rule.table_schema IS 'the table''s schema';
--- COMMENT ON COLUMN code_method_parameter_table_rule.table_name IS 'the table';
--- COMMENT ON COLUMN code_method_parameter_table_rule.fit IS 'CLASS or JOOQ_TYPE';
-
-CREATE TABLE code_method_parameter_table (
-  source_name       VARCHAR   NOT NULL,
-  class_name        VARCHAR   NOT NULL,
-  method_name       VARCHAR   NOT NULL,
-  descriptor        VARCHAR   NOT NULL,
-  position          INT       NOT NULL,
-  table_source_name VARCHAR   NOT NULL,
-  table_schema      VARCHAR   NOT NULL,
-  table_name        VARCHAR   NOT NULL,
-  fit               VARCHAR   NOT NULL,
-  touched_at        TIMESTAMP NOT NULL,
-  PRIMARY KEY (source_name, class_name, method_name, descriptor, position, table_source_name,
-               table_schema, table_name),
-  -- A derivation goes with what it was derived from: a reread method or a recrawled table takes the
-  -- row with it, and the next reading writes it again.
-  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
-    REFERENCES code_method_parameter (source_name, class_name, method_name, descriptor, position)
-    ON DELETE CASCADE,
-  FOREIGN KEY (table_source_name, table_schema, table_name)
-    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (fit IN ('CLASS', 'JOOQ_TYPE'))
-);
-COMMENT ON TABLE code_method_parameter_table IS 'A catalog table a parameter of a method can be handed: one row per parameter position and table it fits. For example position 0 of FilmExtensions#isEnglish(Film) fits public.film by its class, and position 0 of FilmExtensions#titleByName(Table<?>) fits every table as a jOOQ type.';
-COMMENT ON COLUMN code_method_parameter_table.source_name IS 'the method''s classpath entry; with the class, the name, the descriptor and the position, the parameter';
-COMMENT ON COLUMN code_method_parameter_table.class_name IS 'the class declaring the method';
-COMMENT ON COLUMN code_method_parameter_table.method_name IS 'the method';
-COMMENT ON COLUMN code_method_parameter_table.descriptor IS 'the method''s descriptor';
-COMMENT ON COLUMN code_method_parameter_table.position IS 'the parameter''s position';
-COMMENT ON COLUMN code_method_parameter_table.table_source_name IS 'the table''s catalog; with the schema and the name, the table, completing the key';
-COMMENT ON COLUMN code_method_parameter_table.table_schema IS 'the table''s schema';
-COMMENT ON COLUMN code_method_parameter_table.table_name IS 'the table';
-COMMENT ON COLUMN code_method_parameter_table.fit IS 'how it fits: CLASS, declared as the table''s own generated class; JOOQ_TYPE, declared as one of jOOQ''s table types in code_jooq_class, its record argument absent, the table''s record, or one of jOOQ''s record types the record is. A reader preferring the closer declaration where both fit prefers CLASS';
-COMMENT ON COLUMN code_method_parameter_table.touched_at IS 'the reading that last wrote this row; the stage sweeps the rows of its graph''s entries and catalogs an older reading wrote';
-
-CREATE INDEX ix_code_method_parameter_erased_class ON code_method_parameter (erased_class, source_name);
-COMMENT ON INDEX ix_code_method_parameter_erased_class IS 'Serves code_method_parameter_table_rule, which looks the parameters declared as a table type up by that class, from a catalog''s generated table classes and from code_jooq_class: without it each table or jOOQ type reads every parameter of the classpath.';
 
 CREATE TABLE code_scalar_constant (
   source_name VARCHAR NOT NULL,
@@ -8561,6 +8480,102 @@ COMMENT ON COLUMN graphitron_code_reference.touched_at IS 'when the reading that
 CREATE INDEX graphitron_code_reference_field_ix
   ON graphitron_code_reference (graph_name, type_name, field_name, directive_name);
 COMMENT ON INDEX graphitron_code_reference_field_ix IS 'A reader holding a field asks for the reference a directive on it wrote, and the primary key, which leads with the coordinate of the element the application is on, serves none of that. graphitron_producer_service_rule asks it of every service producer and graphitron_outbox_key_rule of a field whose message reads $result, each for the @service reference.';
+
+-- Which catalog tables a parameter of a method a call in the graph names can be handed: its own
+-- generated class, or one of jOOQ's table types whose record argument, where it names one, the
+-- table's record is. The methods are the ones the graph's code references name: every overload of a
+-- class and method name a reference writes, which is how a @condition picks among overloads, and the
+-- method a reference resolved to, which is how an @externalField whose method is the field's name is
+-- known. Every table of the graph's catalogs is offered each, since a reader asks whether a position
+-- takes a table at all, whichever.
+CREATE VIEW graphitron_call_parameter_table_rule
+  (graph_name, source_name, class_name, method_name, descriptor, position, table_source_name,
+   table_schema, table_name, fit) AS
+WITH named (graph_name, source_name, class_name, method_name, descriptor) AS (
+  SELECT DISTINCT r.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor
+    FROM graphitron_ast_code_reference_entry r
+    JOIN code_graph_class g ON g.graph_name = r.graph_name AND g.class_name = r.class_name
+    JOIN code_method_parameter p
+      ON p.source_name = g.source_name AND p.class_name = g.class_name AND p.method_name = r.method
+  UNION
+  SELECT r.graph_name, r.method_source_name, r.method_class_name, r.method_name, r.method_descriptor
+    FROM graphitron_code_reference r
+   WHERE r.method_descriptor IS NOT NULL
+)
+SELECT n.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor, p.position,
+       t.source_name, t.table_schema, t.table_name, 'CLASS'
+  FROM named n
+  JOIN code_method_parameter p
+    ON p.source_name = n.source_name AND p.class_name = n.class_name
+   AND p.method_name = n.method_name AND p.descriptor = n.descriptor
+  JOIN store_graph_source ts ON ts.graph_name = n.graph_name
+  JOIN sql_table t ON t.source_name = ts.source_name AND t.class_fqn = p.erased_class
+UNION ALL
+SELECT n.graph_name, p.source_name, p.class_name, p.method_name, p.descriptor, p.position,
+       t.source_name, t.table_schema, t.table_name, 'JOOQ_TYPE'
+  FROM named n
+  JOIN code_method_parameter p
+    ON p.source_name = n.source_name AND p.class_name = n.class_name
+   AND p.method_name = n.method_name AND p.descriptor = n.descriptor
+  JOIN code_jooq_class j ON j.class_name = p.erased_class AND j.accepts = 'TABLE'
+  JOIN store_graph_source ts ON ts.graph_name = n.graph_name
+  JOIN sql_table t ON t.source_name = ts.source_name
+ WHERE p.first_argument_class IS NULL OR p.first_argument_class = t.record_class_fqn
+    OR EXISTS (SELECT 1 FROM code_jooq_class r
+                WHERE r.class_name = p.first_argument_class AND r.accepts = 'RECORD'
+                  AND (NOT r.needs_primary_key
+                       OR EXISTS (SELECT 1 FROM sql_primary_key k
+                                   WHERE k.source_name = t.source_name
+                                     AND k.table_schema = t.table_schema
+                                     AND k.table_name = t.table_name)));
+COMMENT ON VIEW graphitron_call_parameter_table_rule IS 'One row the call parameter table rule computes, in the shape graphitron_call_parameter_table stores: the rule itself, evaluated on demand rather than read off disk. For example the call-parameter-tables stage writes this view''s rows for one graph into graphitron_call_parameter_table, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.graph_name IS 'the graph whose code references name the method';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.source_name IS 'the method''s classpath entry';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.class_name IS 'the class declaring the method';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.method_name IS 'the method';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.descriptor IS 'the method''s descriptor';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.position IS 'the parameter''s position';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.table_source_name IS 'the table''s catalog';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.table_schema IS 'the table''s schema';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.table_name IS 'the table';
+-- COMMENT ON COLUMN graphitron_call_parameter_table_rule.fit IS 'CLASS or JOOQ_TYPE';
+
+CREATE TABLE graphitron_call_parameter_table (
+  graph_name        VARCHAR   NOT NULL,
+  source_name       VARCHAR   NOT NULL,
+  class_name        VARCHAR   NOT NULL,
+  method_name       VARCHAR   NOT NULL,
+  descriptor        VARCHAR   NOT NULL,
+  position          INT       NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  fit               VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, class_name, method_name, descriptor, position,
+               table_source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
+  -- A derivation goes with what it was derived from: a reread method or a recrawled table takes the
+  -- row with it, and the next reading writes it again.
+  FOREIGN KEY (source_name, class_name, method_name, descriptor, position)
+    REFERENCES code_method_parameter (source_name, class_name, method_name, descriptor, position)
+    ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (fit IN ('CLASS', 'JOOQ_TYPE'))
+);
+COMMENT ON TABLE graphitron_call_parameter_table IS 'A catalog table a parameter of a method a call in the graph names can be handed: one row per graph, parameter position and table it fits. For example position 0 of FilmExtensions#isEnglish(Film), named by a @condition, fits public.film by its class, and position 0 of FilmExtensions#titleByName(Table<?>) fits every table of the graph''s catalogs as a jOOQ type.';
+COMMENT ON COLUMN graphitron_call_parameter_table.graph_name IS 'the graph whose code references name the method';
+COMMENT ON COLUMN graphitron_call_parameter_table.source_name IS 'the method''s classpath entry; with the class, the name, the descriptor and the position, the parameter';
+COMMENT ON COLUMN graphitron_call_parameter_table.class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_call_parameter_table.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_call_parameter_table.descriptor IS 'the method''s descriptor';
+COMMENT ON COLUMN graphitron_call_parameter_table.position IS 'the parameter''s position';
+COMMENT ON COLUMN graphitron_call_parameter_table.table_source_name IS 'the table''s catalog; with the schema and the name, the table, completing the key';
+COMMENT ON COLUMN graphitron_call_parameter_table.table_schema IS 'the table''s schema';
+COMMENT ON COLUMN graphitron_call_parameter_table.table_name IS 'the table';
+COMMENT ON COLUMN graphitron_call_parameter_table.fit IS 'how it fits: CLASS, declared as the table''s own generated class; JOOQ_TYPE, declared as one of jOOQ''s table types in code_jooq_class, its record argument absent, the table''s record, or one of jOOQ''s record types the record is. A reader preferring the closer declaration where both fit prefers CLASS';
+COMMENT ON COLUMN graphitron_call_parameter_table.touched_at IS 'the reading that last wrote this row; the stage sweeps the graph''s rows an older reading wrote';
 
 -- The argMapping pairs stage's own defects, off the entries, the sites it names its pairs by, the
 -- code references and the classpath: a sigil naming something the graph does not offer.
@@ -20093,8 +20108,9 @@ offered (graph_name, coordinate, bound, method_source_name, method_class_name, m
     JOIN code_graph_class m ON m.graph_name = o.graph_name AND m.class_name = w.class_name
     JOIN code_condition_method cm
       ON cm.source_name = m.source_name AND cm.class_name = m.class_name AND cm.method_name = w.method_name
-    JOIN code_method_parameter_table pt
-      ON pt.source_name = cm.source_name AND pt.class_name = cm.class_name
+    JOIN graphitron_call_parameter_table pt
+      ON pt.graph_name = b.graph_name
+     AND pt.source_name = cm.source_name AND pt.class_name = cm.class_name
      AND pt.method_name = cm.method_name AND pt.descriptor = cm.descriptor
      AND pt.table_source_name = b.source_name AND pt.table_schema = b.schema_name
      AND pt.table_name = b.table_name
@@ -20199,7 +20215,7 @@ COMMENT ON VIEW graphitron_occurrence_expression_binding_rule IS 'One row the oc
 -- COMMENT ON COLUMN graphitron_occurrence_expression_binding_rule.kind IS 'always EXPRESSION, the binding''s kind';
 
 -- The method an expression's call could be: the one its reference resolves to, where that method is
--- one @externalField may name and its parameter fits the bound table, by code_method_parameter_table,
+-- one @externalField may name and its parameter fits the bound table, by graphitron_call_parameter_table,
 -- the rule every call taking a table reads.
 CREATE VIEW graphitron_occurrence_expression_candidate_rule
   (graph_name, coordinate, call, call_kind, method_source_name, method_class_name, method_name,
@@ -20218,8 +20234,9 @@ SELECT DISTINCT o.graph_name, o.coordinate, 'expression:' || st.table_schema || 
   JOIN code_external_field_method m
     ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
    AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
-  JOIN code_method_parameter_table pt
-    ON pt.source_name = m.source_name AND pt.class_name = m.class_name
+  JOIN graphitron_call_parameter_table pt
+    ON pt.graph_name = o.graph_name
+   AND pt.source_name = m.source_name AND pt.class_name = m.class_name
    AND pt.method_name = m.method_name AND pt.descriptor = m.descriptor
    AND pt.table_source_name = st.table_source_name AND pt.table_schema = st.table_schema
    AND pt.table_name = st.table_name
@@ -21823,8 +21840,8 @@ parameter (graph_name, coordinate, call, call_kind, method_descriptor, position,
     JOIN code_method_parameter p
       ON p.source_name = c.method_source_name AND p.class_name = c.method_class_name
      AND p.method_name = c.method_name AND p.descriptor = c.method_descriptor
-   WHERE NOT EXISTS (SELECT 1 FROM code_method_parameter_table pt
-                      WHERE pt.source_name = p.source_name AND pt.class_name = p.class_name
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_call_parameter_table pt
+                      WHERE pt.graph_name = c.graph_name AND pt.source_name = p.source_name AND pt.class_name = p.class_name
                         AND pt.method_name = p.method_name AND pt.descriptor = p.descriptor
                         AND pt.position = p.position)
 ),
@@ -21951,8 +21968,8 @@ SELECT c.graph_name, c.coordinate, c.call, c.call_kind, c.method_descriptor, p.p
   JOIN code_method_parameter p
     ON p.source_name = c.method_source_name AND p.class_name = c.method_class_name
    AND p.method_name = c.method_name AND p.descriptor = c.method_descriptor
- WHERE EXISTS (SELECT 1 FROM code_method_parameter_table pt
-                WHERE pt.source_name = p.source_name AND pt.class_name = p.class_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_call_parameter_table pt
+                WHERE pt.graph_name = c.graph_name AND pt.source_name = p.source_name AND pt.class_name = p.class_name
                   AND pt.method_name = p.method_name AND pt.descriptor = p.descriptor
                   AND pt.position = p.position)
 UNION ALL
@@ -25379,45 +25396,45 @@ INSERT INTO meta_stage VALUES
   ('directive-applications', 'graphitron', 12, 'no.sikt.graphitron.model.capture.document.MacroExpansion'),
   ('federation-imports', 'graphitron', 13, 'no.sikt.graphitron.model.capture.document.FederationLinks'),
   ('federation-vocabulary', 'graphitron', 14, 'no.sikt.graphitron.model.capture.document.FederationVocabulary'),
-  ('tenant-columns', 'graphitron', 15, 'no.sikt.graphitron.model.derive.TenantColumns'),
-  ('argmapping-candidates', 'graphitron', 16, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
-  ('node-key-columns', 'graphitron', 17, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
-  ('node-legacy-key-shapes', 'graphitron', 18, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
-  ('field-targets', 'graphitron', 19, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
-  ('producer-claims', 'graphitron', 20, 'no.sikt.graphitron.model.derive.ProducerClaims'),
-  ('binding-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.BindingClaims'),
-  ('type-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.TypeClaims'),
-  ('spelled-tables', 'graphitron', 23, 'no.sikt.graphitron.model.derive.SpelledTables'),
-  ('path-elements', 'graphitron', 24, 'no.sikt.graphitron.model.derive.PathElements'),
-  ('routine-results', 'graphitron', 25, 'no.sikt.graphitron.model.derive.RoutineResults'),
-  ('occurrences', 'graphitron', 26, 'no.sikt.graphitron.model.derive.Occurrences'),
-  ('argmapping-landings', 'graphitron', 27, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
-  ('path-claims', 'graphitron', 28, 'no.sikt.graphitron.model.derive.PathClaims'),
-  ('type-backings', 'graphitron', 29, 'no.sikt.graphitron.model.derive.TypeBackings'),
-  ('fetchers', 'graphitron', 30, 'no.sikt.graphitron.model.derive.Fetchers'),
-  ('occurrence-participants', 'graphitron', 31, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
-  ('occurrence-lists', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
-  ('occurrence-overrides', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
-  ('occurrence-producers', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
-  ('occurrence-source-claims', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
-  ('occurrence-depths', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
-  ('occurrence-bindings', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
-  ('occurrence-lookup-keys', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
-  ('occurrence-orderings', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceOrderings'),
-  ('occurrence-builds', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
-  ('occurrence-tenants', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
-  ('occurrence-routes', 'graphitron', 42, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
-  ('occurrence-depth-defects', 'graphitron', 43, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
-  ('occurrence-values', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
-  ('entity-key-alternatives', 'graphitron', 45, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
-  ('outbox', 'graphitron', 46, 'no.sikt.graphitron.model.derive.Outboxes');
+  ('call-parameter-tables', 'graphitron', 15, 'no.sikt.graphitron.model.derive.CallParameterTables'),
+  ('tenant-columns', 'graphitron', 16, 'no.sikt.graphitron.model.derive.TenantColumns'),
+  ('argmapping-candidates', 'graphitron', 17, 'no.sikt.graphitron.model.derive.ArgMappingCandidates'),
+  ('node-key-columns', 'graphitron', 18, 'no.sikt.graphitron.model.derive.NodeKeyColumns'),
+  ('node-legacy-key-shapes', 'graphitron', 19, 'no.sikt.graphitron.model.derive.NodeLegacyKeyShapes'),
+  ('field-targets', 'graphitron', 20, 'no.sikt.graphitron.model.capture.document.GraphitronAssemblyCapture'),
+  ('producer-claims', 'graphitron', 21, 'no.sikt.graphitron.model.derive.ProducerClaims'),
+  ('binding-claims', 'graphitron', 22, 'no.sikt.graphitron.model.derive.BindingClaims'),
+  ('type-claims', 'graphitron', 23, 'no.sikt.graphitron.model.derive.TypeClaims'),
+  ('spelled-tables', 'graphitron', 24, 'no.sikt.graphitron.model.derive.SpelledTables'),
+  ('path-elements', 'graphitron', 25, 'no.sikt.graphitron.model.derive.PathElements'),
+  ('routine-results', 'graphitron', 26, 'no.sikt.graphitron.model.derive.RoutineResults'),
+  ('occurrences', 'graphitron', 27, 'no.sikt.graphitron.model.derive.Occurrences'),
+  ('argmapping-landings', 'graphitron', 28, 'no.sikt.graphitron.model.derive.ArgMappingLandings'),
+  ('path-claims', 'graphitron', 29, 'no.sikt.graphitron.model.derive.PathClaims'),
+  ('type-backings', 'graphitron', 30, 'no.sikt.graphitron.model.derive.TypeBackings'),
+  ('fetchers', 'graphitron', 31, 'no.sikt.graphitron.model.derive.Fetchers'),
+  ('occurrence-participants', 'graphitron', 32, 'no.sikt.graphitron.model.derive.OccurrenceParticipants'),
+  ('occurrence-lists', 'graphitron', 33, 'no.sikt.graphitron.model.derive.OccurrenceLists'),
+  ('occurrence-overrides', 'graphitron', 34, 'no.sikt.graphitron.model.derive.OccurrenceOverrides'),
+  ('occurrence-producers', 'graphitron', 35, 'no.sikt.graphitron.model.derive.OccurrenceProducers'),
+  ('occurrence-source-claims', 'graphitron', 36, 'no.sikt.graphitron.model.derive.OccurrenceSourceClaims'),
+  ('occurrence-depths', 'graphitron', 37, 'no.sikt.graphitron.model.derive.OccurrenceDepths'),
+  ('occurrence-bindings', 'graphitron', 38, 'no.sikt.graphitron.model.derive.OccurrenceBindings'),
+  ('occurrence-lookup-keys', 'graphitron', 39, 'no.sikt.graphitron.model.derive.OccurrenceLookupKeys'),
+  ('occurrence-orderings', 'graphitron', 40, 'no.sikt.graphitron.model.derive.OccurrenceOrderings'),
+  ('occurrence-builds', 'graphitron', 41, 'no.sikt.graphitron.model.derive.OccurrenceBuilds'),
+  ('occurrence-tenants', 'graphitron', 42, 'no.sikt.graphitron.model.derive.OccurrenceTenants'),
+  ('occurrence-routes', 'graphitron', 43, 'no.sikt.graphitron.model.derive.OccurrenceRoutes'),
+  ('occurrence-depth-defects', 'graphitron', 44, 'no.sikt.graphitron.model.derive.OccurrenceDepthDefects'),
+  ('occurrence-values', 'graphitron', 45, 'no.sikt.graphitron.model.derive.OccurrenceValues'),
+  ('entity-key-alternatives', 'graphitron', 46, 'no.sikt.graphitron.model.derive.EntityKeyAlternatives'),
+  ('outbox', 'graphitron', 47, 'no.sikt.graphitron.model.derive.Outboxes');
 
 -- The code gatherer's anchor phase, in the order CodeCapture.STAGES runs it: what it reads of the
 -- graph is store_graph_source and store_graph_dependency, which run upstream of it by declared
 -- dependency, beside the code rows its own reading has just written.
 INSERT INTO meta_stage VALUES
-  ('graph-classes', 'code', 0, 'no.sikt.graphitron.model.capture.code.GraphClasses'),
-  ('method-parameter-tables', 'code', 1, 'no.sikt.graphitron.model.capture.code.MethodParameterTables');
+  ('graph-classes', 'code', 0, 'no.sikt.graphitron.model.capture.code.GraphClasses');
 
 CREATE TABLE meta_stage_write (
   stage_name    VARCHAR NOT NULL,
@@ -25701,7 +25718,7 @@ INSERT INTO meta_stage_write VALUES
   ('tenant-columns', 'graphitron_tenant_column'),
   ('tenant-columns', 'graphitron_tenant_fan_out_key'),
   ('graph-classes', 'code_graph_class'),
-  ('method-parameter-tables', 'code_method_parameter_table');
+  ('call-parameter-tables', 'graphitron_call_parameter_table');
 
 -- The call relations split between the stage writing the producers' calls and the one writing the
 -- conditions' and the expressions', by call kind (Alf, 2026-11-12). The bindings split by their kind
@@ -25814,7 +25831,7 @@ INSERT INTO meta_stage_rule VALUES
   ('macro-expansion', 'graphitron_argument_minted_candidate', 'graphitron_argument_minted_candidate_rule'),
   ('macro-expansion', 'graphitron_scalar_class', 'graphitron_scalar_class_rule'),
   ('macro-expansion', 'graphitron_type_member', 'graphitron_type_member_rule'),
-  ('method-parameter-tables', 'code_method_parameter_table', 'code_method_parameter_table_rule'),
+  ('call-parameter-tables', 'graphitron_call_parameter_table', 'graphitron_call_parameter_table_rule'),
   ('minted-keys', 'graphitron_entry_defect', 'graphitron_minted_key_entry_defect_rule'),
   ('minted-keys', 'graphitron_minted_key', 'graphitron_minted_key_rule'),
   ('node-legacy-key-shapes', 'graphitron_entry_defect', 'graphitron_node_legacy_key_shape_entry_defect_rule'),
@@ -26838,9 +26855,9 @@ INSERT INTO meta_grain VALUES
   ('method-parameter',
    'one position in one method''s parameter list',
    'source_name, class_name, method_name, descriptor, position', 'classpath'),
-  ('method-parameter-table',
-   'one catalog table one position in one method''s parameter list can be handed',
-   'source_name, class_name, method_name, descriptor, position, table_source_name, table_schema, table_name', 'classpath'),
+  ('call-parameter-table',
+   'one catalog table one position of a method a call in one graph names can be handed',
+   'graph_name, source_name, class_name, method_name, descriptor, position, table_source_name, table_schema, table_name', 'classpath'),
   ('scalar-type-field',
    'one static field of one class holding a GraphQL scalar type',
    'source_name, class_name, field_name', 'classpath'),
@@ -29415,13 +29432,13 @@ INSERT INTO meta_relation VALUES
    'One public method of a class the reactor built, which is the population every directive naming Java draws its candidates from.',
    'For example filmsByRating(DSLContext, String) on a consumer''s FilmService.',
    'The shared half of the family, and the correction that makes the arms mean one thing each. Whether a method may be named at @service and whether it may be named at @condition are two questions and two relations; what it returns, what it takes and what it throws are properties of the declaration and do not vary by the coordinate somebody reached it through, so holding them per arm held one fact twice and let two copies disagree. The population is the reactor''s public methods, which is what keeps this from being the census it would otherwise resemble: a census answers for the whole classpath and has to, because it does not know who is asking; this answers for the code a build compiles, because nothing else may be named.'),
-  ('code_method_parameter_table', 'method-parameter-table', 'code',
-   'A catalog table a parameter of a method can be handed: one row per parameter position and table it fits.',
-   'For example position 0 of FilmExtensions#isEnglish(Film) fits public.film by its class, and position 0 of FilmExtensions#titleByName(Table<?>) fits every table as a jOOQ type.',
-   'The one rule every call taking a table reads, the @condition and @externalField candidates and fills among them, so two kinds of call cannot disagree on what a parameter accepts. Keyed by the method''s classpath entry and the table''s catalog rather than a graph, the fit being a fact of those two sources alone; written by the code gatherer''s anchor, which declares jooq upstream, from the generated classes the catalog states and code_jooq_class.'),
-  ('code_method_parameter_table_rule', 'method-parameter-table', 'code',
-   'One row the parameter table rule computes, in the shape code_method_parameter_table stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the method-parameter-tables stage writes this view''s rows for one graph into code_method_parameter_table, which is the name every reader spells.',
+  ('graphitron_call_parameter_table', 'call-parameter-table', 'graphitron',
+   'A catalog table a parameter of a method a call in the graph names can be handed: one row per graph, parameter position and table it fits.',
+   'For example position 0 of FilmExtensions#isEnglish(Film), named by a @condition, fits public.film by its class, and position 0 of FilmExtensions#titleByName(Table<?>) fits every table of the graph''s catalogs as a jOOQ type.',
+   'The one rule every call taking a table reads, the @condition and @externalField candidates and fills among them, so two kinds of call cannot disagree on what a parameter accepts. Only methods a code reference in the graph names are paired with the graph''s tables, every overload of a written name and every table each, since every reader starts from a method a call names; pairing every method on the classpath with every table answered questions nobody asks, two hundred thousand rows a capture where a reactor carries a second jOOQ model. Written by the graphitron gatherer''s anchor after the code references resolve, from code_method_parameter, the catalog and code_jooq_class upstream.'),
+  ('graphitron_call_parameter_table_rule', 'call-parameter-table', 'graphitron',
+   'One row the call parameter table rule computes, in the shape graphitron_call_parameter_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the call-parameter-tables stage writes this view''s rows for one graph into graphitron_call_parameter_table, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('code_method_parameter', 'method-parameter', 'code',
    'One position in a method''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',

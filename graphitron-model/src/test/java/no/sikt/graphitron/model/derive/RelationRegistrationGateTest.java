@@ -668,8 +668,8 @@ class RelationRegistrationGateTest {
         registrations.put("code_delivery_container", Arm.UNSHADOWED);
         registrations.put("code_tuple_class", Arm.UNSHADOWED);
         registrations.put("code_jooq_class", Arm.UNSHADOWED);
-        registrations.put("code_method_parameter_table", Arm.DERIVED);
-        registrations.put("code_method_parameter_table_rule", Arm.DERIVED);
+        registrations.put("graphitron_call_parameter_table", Arm.DERIVED);
+        registrations.put("graphitron_call_parameter_table_rule", Arm.DERIVED);
         registrations.put("graphitron_connection_position", Arm.UNSHADOWED);
         registrations.put("intent_type_backing_conflict", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);

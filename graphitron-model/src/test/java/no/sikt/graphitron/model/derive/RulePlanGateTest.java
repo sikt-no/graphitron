@@ -71,9 +71,9 @@ class RulePlanGateTest {
         "CODE_GRAPH_CLASS_RULE CODE_CLASS",
         "every class of each of the graph's entries is a candidate for the name it declares, and all"
             + " but the shadowed copies are rows of the answer",
-        "CODE_METHOD_PARAMETER_TABLE_RULE SQL_TABLE",
-        "every table of each of the graph's catalogs is a candidate for the parameters declared as its"
-            + " class, and a parameter declared as one of jOOQ's table types fits each of them");
+        "GRAPHITRON_CALL_PARAMETER_TABLE_RULE SQL_TABLE",
+        "every table of each of the graph's catalogs is a candidate for a named method's parameters"
+            + " declared as its class, and a parameter declared as one of jOOQ's table types fits each of them");
 
     /** Partition reads on trunk when this gate landed, each to be indexed or exempted. */
     private static final Set<String> KNOWN = Set.of(
