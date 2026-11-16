@@ -1120,6 +1120,16 @@ static method needs no holder.
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
   other, which the connection hook decides (Alf, 2026-11-14).
+* **The mount reads the connection key it is mounting for** `open`, off the critical path, once R1119's
+  slice 8a adds `MountedSession.key()`. `MountedSession.tenant()`, a copy of the key's tenant part, then
+  goes, so the mount reads one key whose parts are each optional, as the connection hook does (Alf,
+  2026-11-16); a breaking consumer change that rewrites `runtime-extension-points.adoc` § Per-tenant
+  routing and the manual's tenant pages.
+* **The connection relation's grain covers accepting graphs** `open`, off the critical path, as R1119's
+  slice 8b. `graphitron_occurrence_connection` widens from a database-per-tenant graph's producers to
+  those of any graph whose generated code carries a `ConnectionKey`, so a field with a fetcher of its
+  own below a vouched entity inherits the whole key; a rewrite of the connection rule keeps that grain
+  rather than narrowing it back to tenancy.
 * **A tenant-routed build refuses a caller-supplied connection at the request** `open`, off the critical
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather

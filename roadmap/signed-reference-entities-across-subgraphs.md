@@ -284,6 +284,7 @@ Decisions the user made on this item; each is stated where it applies below.
   (2026-11-16). The verifier's check that vouchers sharing a vouch id agree is dropped.
 * `_entities` does not change: it executes on the connection acquired for the vouched-for value. It is
   not a new producer in the store's connection facts (2026-11-16).
+* `MountedSession.tenant()` is not retired here; R876 carries it (2026-11-16).
 * Version 1 has no tenant pairing: `@accept` in a graph with a `<tenantColumn>` is refused (2026-11-16).
   A vouched key's tenant part is always empty, so the dispatch needs no tenant source for the voucher
   alternative. Pairing it with the authored key's tenant source can follow.
@@ -501,8 +502,8 @@ Decisions the user made on this item; each is stated where it applies below.
   * `MountedSession.key()`, the `ConnectionKey` the connection is mounted for, declared wherever
     `ConnectionKey` is generated (multi-tenant or accepting builds). The mount reads the vouched-for values
     from it. In an untenanted accepting build the request's own mount sees a key with both parts empty, a
-    key like any other; the docs say so. Whether `MountedSession.tenant()` retires in slice 8a or with
-    R1185 is open.
+    key like any other; the docs say so. `MountedSession.tenant()` stays through this item; R876's node
+    "The mount reads the connection key it is mounting for" retires it.
 * *Key synthesis.* The minted key and `@inaccessible` show in the served `_service.sdl` on both sides,
   and A's issuing type shows `voucher` alone. B's authored keys, `@node` and the relay id are not touched.
 * *Clock skew.* B accepts a voucher up to a fixed 30 seconds past its expiry, so a small difference
@@ -653,8 +654,9 @@ the store, one family of field at a time", for the fields it covers.
   producer hands down, which is already what `INHERIT` means; no vouched-for part is restated on its
   rows, and the part `CHECK` stays `'TENANT'`. `_entities` itself does not change and gets no row: it
   runs as today, on the connection the dispatcher acquired for the vouched-for value, and hands that key
-  down as it hands down a tenant's (2026-11-16). R876 should carry a note that the relation's grain
-  covers accepting graphs, so a rewrite of its rule does not narrow it back to tenancy.
+  down as it hands down a tenant's (2026-11-16). R876 carries this as its node "The connection
+  relation's grain covers accepting graphs", so a rewrite of its rule does not narrow it back to
+  tenancy.
 * Store-side fetchers below the entity read it; a batched field, a `@service` field and a
   connection-typed field under the entity acquire from the inherited key.
 * `VOUCHER_ACCEPT_NOT_GENERATED` goes, with the "refused for now" sentence in `accept.adoc` and the
@@ -773,8 +775,6 @@ want to see the plan.
   connection and B's policies hide it. No page states which; it is for Alf and Filip, and the answer
   belongs in `docs/architecture/reference/code-generation-triggers.adoc`. In version 1 there is no tenant
   column in an accepting graph, so no child is `UNSCOPED` there.
-* Whether `MountedSession.tenant()` retires in slice 8a or with R1185, which rewrites the manual's
-  tenant pages. Either keeps the key the one source; retiring it is a breaking consumer change.
 
 ## Retired vocabulary
 
