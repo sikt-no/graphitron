@@ -6980,6 +6980,21 @@ COMMENT ON COLUMN code_scalar_constant.field_name IS 'the constant''s own name, 
 COMMENT ON COLUMN code_scalar_constant.input_type IS 'the fully-qualified Java type a value of this constant''s scalar arrives as, the input parameter of the Coercing it holds, boxed where that is primitive. NULL where the constant does not resolve to one, which folds four cases this arm does not tell apart: the class does not load, the field is not a public static GraphQLScalarType, its initialiser throws, or the coercing declares no usable input. The one column here that a classfile cannot answer, read by loading the class instead, so absence is unresolved and never not-a-scalar';
 COMMENT ON COLUMN code_scalar_constant.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the constants a recompiled entry no longer declares';
 
+CREATE TABLE code_enum_constant (
+  source_name   VARCHAR NOT NULL,
+  class_name    VARCHAR NOT NULL,
+  constant_name VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, constant_name),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_enum_constant IS 'One constant an enum class declares: one row per class and constant. For example no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating declares G, PG and PG_13.';
+COMMENT ON COLUMN code_enum_constant.source_name IS 'the classpath entry the enum class was read from; the key''s leading dimension';
+COMMENT ON COLUMN code_enum_constant.class_name IS 'the enum class''s binary name';
+COMMENT ON COLUMN code_enum_constant.constant_name IS 'the constant''s own name, what Enum.valueOf takes; completing the key';
+COMMENT ON COLUMN code_enum_constant.touched_at IS 'when the reading that produced this row ran; the reading ends by deleting the rows of the entries it read that still carry an older instant, which are the constants a recompiled enum no longer declares';
+
 CREATE TABLE code_throwable (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -27838,6 +27853,9 @@ INSERT INTO meta_grain VALUES
   ('scalar-type-field',
    'one static field of one class holding a GraphQL scalar type',
    'source_name, class_name, field_name', 'classpath'),
+  ('enum-constant',
+   'one constant one enum class on the classpath declares',
+   'source_name, class_name, constant_name', 'classpath'),
   ('source-file',
    'one .java source file this store holds declarations from',
    'file', 'java-source'),
@@ -30471,6 +30489,10 @@ INSERT INTO meta_relation VALUES
    'One table whose generated class declares a legacy node key-columns array graphitron cannot use.',
    'For example a table class stating __NODE_LEGACY_KEY_COLUMNS with a null entry, or stating it with no usable __NODE_TYPE_ID and __NODE_KEY_COLUMNS beside it.',
    'Separate from sql_node_metadata_unreadable because the legacy array is an independent axis: a malformed one must not send the table''s identity to the fallback tiers. Recorded because ignoring it is not harmless, every stored id in the old shape then failing to decode at runtime, which is why the defect it raises is an error where the identity pair''s is a warning.'),
+  ('code_enum_constant', 'enum-constant', 'code',
+   'One constant an enum class declares: one row per class and constant.',
+   'For example no.sikt.graphitron.rewrite.test.jooq.public_.enums.MpaaRating declares G, PG and PG_13.',
+   'What a GraphQL enum value taken as a Java constant is handed Enum.valueOf of must be a constant the enum declares, or the call throws at run time. sql_enum_binding_literal holds a jOOQ column enum''s database literals, a different fact; this holds the Java constants of every enum class read, a generated jOOQ enum among them, so a value no constant answers is a stored defect rather than a run-time failure.'),
   ('code_scalar_constant', 'scalar-type-field', 'code',
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',

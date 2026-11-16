@@ -36,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.CODE_WRITE_SLOT;
+import static no.sikt.graphitron.model.Tables.CODE_ENUM_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
 import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
@@ -176,6 +177,7 @@ public final class CodeCapture {
         // answers to the same question.
         classes(dsl, census.classes(), touchedAt);
         scalarConstants(dsl, census.classes(), loader, touchedAt);
+        enumConstants(dsl, census.classes(), touchedAt);
         var reactor = reactorClasses(census);
         try (var headers = new ClassHeaders(reading.sources().stream()
                 .map(source -> java.nio.file.Path.of(source.sourceName()))
@@ -329,6 +331,38 @@ public final class CodeCapture {
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.INPUT_TYPE, excluded(t.INPUT_TYPE))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The constants each enum class declares: what a GraphQL enum value taken as a Java constant is
+     * handed {@code Enum.valueOf} of, by its name or its {@code @field(name:)}. Read off the
+     * classfile's enum flag, so a class the census did not read has no rows rather than an empty set.
+     */
+    private static void enumConstants(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                      LocalDateTime touchedAt) {
+        record Constant(String source, String className, String constantName) {}
+        var found = new ArrayList<Constant>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            for (ClassfileCensus.FieldAt field : at.fields()) {
+                if (field.isEnumConstant()) {
+                    found.add(new Constant(at.source(), at.className(), field.name()));
+                }
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var t = CODE_ENUM_CONSTANT;
+        var rows = found.stream().collect(Rows.toRowList(
+            c -> val(c.source(), t.SOURCE_NAME),
+            c -> val(c.className(), t.CLASS_NAME),
+            c -> val(c.constantName(), t.CONSTANT_NAME),
+            c -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.CLASS_NAME, t.CONSTANT_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
@@ -1484,7 +1518,8 @@ public final class CodeCapture {
                 CODE_CONSTRUCTOR_PARAMETER, CODE_CONSTRUCTOR, CODE_READ_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT_ARGUMENT, CODE_TYPE_ELEMENT, CODE_TYPE,
-                CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_CLASS)) {
+                CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_ENUM_CONSTANT,
+                CODE_CLASS)) {
             dsl.deleteFrom(table)
                 .where(table.field(CODE_METHOD.SOURCE_NAME).in(sources))
                 .and(table.field(CODE_METHOD.TOUCHED_AT).ne(touchedAt))

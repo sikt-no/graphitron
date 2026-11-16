@@ -90,7 +90,8 @@ public final class ClassfileCensus {
     public record ComponentAt(String name, int position, String type, String declaredType,
                               List<TypeRefAt> typeRefs) {}
 
-    public record FieldAt(String name, String type, boolean isStatic) {}
+    /** A public field, and whether it is one of its enum's constants rather than a field it declares. */
+    public record FieldAt(String name, String type, boolean isStatic, boolean isEnumConstant) {}
 
     /**
      * One class a declared type names, at one position within it.
@@ -560,7 +561,8 @@ public final class ClassfileCensus {
                 continue;
             }
             fields.add(new FieldAt(field.fieldName().stringValue(),
-                binaryName(field.fieldTypeSymbol()), flags.has(AccessFlag.STATIC)));
+                binaryName(field.fieldTypeSymbol()), flags.has(AccessFlag.STATIC),
+                flags.has(AccessFlag.ENUM)));
         }
         return fields;
     }

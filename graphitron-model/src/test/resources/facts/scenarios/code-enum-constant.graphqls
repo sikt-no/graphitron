@@ -1,0 +1,21 @@
+# The constants each enum class on the classpath declares, read off the classfile's enum flag: the
+# names Enum.valueOf takes, so a GraphQL enum value taken as a Java constant can be checked against
+# them. FilmMood, a service fixture's enum, declares HAPPY and SAD. A class the census did not read
+# has no rows, so a reader judges only where the class was read.
+
+type Film @table(name: "film") { title: String }
+type Query { films: [Film!]! }
+
+extend schema @assertContains(relation: "code_enum_constant",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.services.FilmMood'", rows: """
+  constant_name
+  HAPPY
+  SAD
+  """)
+
+# A name no constant of FilmMood carries has no row.
+extend schema @assertAbsent(relation: "code_enum_constant",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.services.FilmMood'", rows: """
+  constant_name
+  ANGRY
+  """)
