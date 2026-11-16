@@ -312,6 +312,12 @@ Decisions the user made on this item; each is stated where it applies below.
 * The dialect and jOOQ `Settings` a lease's connection is used with are the runtime's, application-wide,
   with an optional overload per lease (2026-11-16): today's per-source dialect and settings stay
   expressible without every lease naming them.
+* Entities and nodes are read one way in every build without a tenant column (2026-11-16): DataLoaders
+  per (type, alternative, connection key), every representation's key built from its alternative and
+  empty unless a voucher fills it; the codec only decodes, the dispatcher coerces, builds the key and
+  logs, and the one-vouched-value limit lives where the carrier takes connections. First round kept
+  tight: a build that accepts vouchers has owned connections and no tenant column, and tenanted builds
+  keep their dispatch until R876.
 * Vouchers require Graphitron's owned connections (2026-11-16): a build that accepts vouchers has no
   escape hatch, as a tenant-routed build has none, since `_entities` must acquire the vouched
   connection from the request's source.
@@ -549,33 +555,38 @@ Decisions the user made on this item; each is stated where it applies below.
   payload, where the field's transaction rule (a rolled-back field is `null`) keeps a voucher for
   rolled-back rows from the client. It is emitted as an `emit` query and emitter reading the component
   relation, not as a branch of `TypeFetcherGenerator`.
-* *Verify and group.* Every voucher is checked as in step 3 in `fetchEntities`, over all representations,
-  before `resolveByReps` runs: `resolveByReps` resolves one type after another and each type acquires as
-  soon as its groups are decoded, so checking inside a type's handler would let an earlier type acquire
-  before a later type's bad voucher is seen. The algorithm is not emitted inline into the dispatcher.
-  It lives in the generated codec, whose body is the same in every build, as `Verifier.verifyAll(reps,
-  accepting)`, generic over the vouched-for value: it verifies, coerces each lookup and vouched-for value
-  to its column through a function the descriptor carries, and returns a `Verified<V>` (token, lookup
-  values in key order, vouched-for value) by representation index. The one-value limit is a constant on
-  the codec, the one place it lives. The dispatcher emits only the schema as data: one `Accepting<V>`
-  descriptor per accepting type (type, voucher field, scope, vouched-for and lookup parts, and how the
-  coerced values make the key's parts), its lookup parts read from the same `EntityKeyQuery` key-field
-  list the SELECT's columns come from, so their order cannot drift. `fetchEntities` passes the results
-  to `resolveByReps(reps, verified, env)`; `resolveByReps(reps, env)`, which `QueryNodeFetcher.rowsNodes`
-  calls with representations built from node ids, delegates with none, so the node path's "no
-  vouchers" is a visible argument and nothing travels inside the representation map. The handler
-  builds a `ConnectionKey` per representation from its parts (the tenant part from the alternative's
-  routing source, the vouched-for part from its `Verified`) and groups on (alternative, key), so a group
-  is homogeneous by construction and not by the limit. A failed check rejects the request the way a
-  failed `acquire` does: the carrier remembers the first rejection in its one slot,
-  `instrumentExecutionResult` throws it in place of the result, and once one is remembered the carrier
-  acquires nothing more, so "nothing acquired" is the carrier's invariant and not an accident of
-  `fetchEntities` running first. Throwing from the fetcher alone would make a field error. The voucher
+* *Verify and group.* Entities and nodes resolve through DataLoaders keyed by connection key, in every
+  build without a tenant column (slice 8d.1), and vouchers are one more source of a key's parts (slice
+  8d.2). `fetchEntities` takes each representation in turn: it picks the alternative, decodes the
+  representation into the columns of that alternative's key and a `ConnectionKey`, and registers the
+  columns with the loader for (type, alternative, key). A plain key and a node id give the key with no
+  parts. A voucher is decoded and checked by the codec, which only decodes (format, signature over the
+  token and the `__typename`, expiry, scope, and that the sections name exactly the expected fields);
+  the dispatcher then coerces each lookup and vouched-for value to its column as a representation's
+  values are coerced, a value no column takes failing the check, and builds the key from the vouched-for
+  values. The per-type data (scope, voucher field, vouched-for and lookup fields, their columns) is
+  emitted beside that step from the voucher alternative's one key-field list, so the lookup columns and
+  the SELECT's columns cannot drift. When graphql-java dispatches the loaders, each batch is one SELECT on
+  `dslFor(env, key)`, its key's lease, and `_entities` answers in the representations' order from their
+  futures. `Query.node` and `nodes` load through the same loaders, so an entity is read one way. The
+  connection for a key is reached through the one point every fetcher reaches it by, which on the
+  escape-hatch path answers the key with no parts with the consumer's `DSLContext`; a build that accepts
+  vouchers has no escape hatch and no tenant column (*Rulings*).
+
+  No connection is taken before every voucher of the request is checked, by the loaders' own timing:
+  checking happens while representations are registered, acquisition only when the loaders dispatch. A
+  failed check rejects the request the way a failed `acquire` does: the carrier remembers the first
+  rejection in its one slot, `instrumentExecutionResult` throws it in place of the result, and once one is
+  remembered the carrier acquires nothing more, so a representation registered before the failing one
+  never gets a connection either. Throwing from the fetcher alone would make a field error. The
+  one-value limit lives where connections are taken: the carrier acquires at most one key with
+  vouched-for values per request, and a second fails with an error naming the limit. The dispatcher logs
+  the vouch id, scope and outcome of every redemption and rejection; the codec logs nothing. The voucher
   alternative is a sealed arm of `EntityKeyQuery.Alternative` with its own identity, the minted `ACCEPT`
   key, carrying the scope, the vouched-for fields, and the authored key it decodes onto by identity with
-  that key's fields; the vouched-for values filter nothing. In version 1 an accepting graph has no tenant
-  column (*Rejections*), so the voucher alternative's tenant part is empty. Tenant pairing, later, gives
-  it the tenant source of the authored key it decodes onto (`graphitron_accept_key`).
+  that key's fields; the vouched-for values filter nothing. Builds with a tenant column keep today's
+  dispatch until R876 states their tenant routing in the store; tenant pairing, after version 1, gives the
+  voucher alternative the tenant source of the authored key it decodes onto (`graphitron_accept_key`).
 * *Connection key.* Every build emits a generated `ConnectionKey`, a record with one `Optional` per part
   its schema has: the tenant, typed by the tenant column, where it has a `<tenantColumn>`, and one per
   vouched-for field, typed by the column the field reads, where it accepts vouchers. A build with neither
@@ -664,8 +675,8 @@ every owned-connection build, as the connection contract is every build's.
 | 7. B's facts | `@accept`, its `VOUCHER` binding, vouched-for rows and refusals, the `ACCEPT` key and `@inaccessible`, `graphitron_accept_key`, the voucher alternative stated in the store; refused until generated | `f8ef399f`, `24b24899`, `6dadbfcd` |
 | 8a. Rename and refusals | `claims:` renamed `vouchesFor:` through the store, codes and codec; the vouch-id agreement check gone; `@accept` in a `<tenantColumn>` build refused | `18c1a92`, `6521093` |
 | 8b. No caller | Pending; below | |
-| 8c. The connection contract | Pending; below | |
-| 8d. Dispatch | Pending; below | |
+| 8c. The connection contract | Pending, in three steps; below | |
+| 8d. Dispatch | Pending, in two steps; below | |
 | 8e. Fields with a fetcher of their own | Pending; below | |
 
 Facts from the shipped slices that slice 8 builds on:
@@ -705,9 +716,18 @@ into the new contract.
 
 **Slice 8c, the connection contract.** Every owned-connection build gets the `ConnectionKey` of
 *Connection key* and the `ConnectionSource` and `Lease` of *Connection source and leases*; the carrier
-acquires through the request's source by the whole key. A `feat!` with a `BREAKING-CHANGE:` footer naming
-what a consumer changes: the runtime factory loses its `DataSource` and tenant map, and
-`newOwnedExecutionInput` takes a source in place of a `SessionState`.
+acquires through the request's source by the whole key. In three steps, each green on trunk:
+
+* 8c.1, internal: every build keys its connections by the generated `ConnectionKey`, its tenant part
+  typed `Object` where there is no tenant column, the same value the `Optional` key was. No consumer
+  change.
+* 8c.2, the contract: `ConnectionSource`, `Lease`, `KeyNotPermitted` and the ready-made source; the
+  carrier acquires through the source; `PinnedConnection`, `MountedSession`, `SessionState` and
+  `GraphitronSessionHook` go; the record narrows to the parts the schema has. A `feat!` whose
+  `BREAKING-CHANGE:` footer names what a consumer changes: the runtime factory loses its `DataSource`
+  and tenant map, and `newOwnedExecutionInput` takes a source in place of a `SessionState`.
+* 8c.3, tenants to the source: the request tenant set goes, a tenanted build's source names its fan-out
+  domain through `ConnectionSource.of(acquire, tenants)`. Breaking for tenanted consumers.
 
 * The generated runtime: `ConnectionKey` in every build, `ConnectionSource`, `Lease` and its factory, the
   carrier keyed by `ConnectionKey` in every build, `PinnedConnection`, `MountedSession`, `SessionState`
@@ -731,15 +751,21 @@ what a consumer changes: the runtime factory loses its `DataSource` and tenant m
   and `runtime-extension-points.adoc`, its `<sessionState>` section (with the warning when none is
   configured) and § Per-tenant routing alike.
 
-**Slice 8d, the dispatch.** It ends with consumers able to test an accepting type whose fields below it
-are all projected, which is enough to try the first client's shape if its documents read that way.
+**Slice 8d, the dispatch.** In two steps, after slice 8c.2, whose source and leases the batches acquire
+through. It ends with consumers able to test an accepting type whose fields below it are all projected,
+which is enough to try the first client's shape if its documents read that way.
 
-* `EntityKeyQuery` composes the voucher alternative, its tenant part empty; the codec's
-  `Verifier.verifyAll` and its descriptors, the dispatcher's `Accepting` table, `resolveByReps(reps,
-  verified, env)`, the group on (alternative, key) (*Verify and group*).
-* Unit tests of `verifyAll` through `EmittedCodeHarness`, with plain representations and real keys: each
-  verification failure, a value that does not coerce, the limit, a representation of no accepting type
-  left alone.
+* 8d.1, one way to read an entity: in every build without a tenant column, `_entities`, `Query.node` and
+  `nodes` resolve through DataLoaders per (type, alternative, connection key), the key empty in every
+  representation of such a build, in place of the synchronous `resolveByReps`; the one point a fetcher
+  reaches a connection by takes the key. No behaviour changes; the federation and node tests pin it.
+  Tenanted builds keep today's dispatch.
+* 8d.2, vouchers on it: `EntityKeyQuery` composes the voucher alternative; per representation the codec
+  decodes and checks the voucher and the dispatcher coerces and builds the key, with the per-type data
+  emitted beside it; the carrier's one-vouched-value limit; the dispatcher's audit log (*Verify and
+  group*). Unit tests through `EmittedCodeHarness`: the carrier refusing every acquisition once a
+  rejection is remembered, the limit, and a voucher's decode, check and coercion on plain
+  representations with real keys.
 * Whether the dispatch is emitted, left to R876 (*Whether the dispatch is emitted*): an accepting type
   carries an authored `@key`, so the walk's entity map holds it.
 * The walk's stand-down reads the `VOUCHER` binding alone. `VoucherBindingQuery` reaches a voucher field
@@ -1021,6 +1047,13 @@ want to see the plan.
   runs: the first answers a misconfiguration with a quiet empty list, the second finds it at run time.
   A tenanted build requires the domain at compile time instead.
 * The ready-made source after the breaking change: a consumer's migration would have nothing to move to.
+
+* A per-request verification loop over every representation before any is resolved, in the codec or a
+  fixed unit beside it: the DataLoaders' own timing already keeps acquisition after every check, and the
+  limit belongs where connections are taken. The loop would have been a second batching beside the
+  loaders 8e needs anyway.
+* Keeping the synchronous `resolveByReps` for builds without vouchers and loaders only where vouchers
+  are: two ways to read an entity, one of them used by a minority of builds.
 
 ## Reviewer findings
 
