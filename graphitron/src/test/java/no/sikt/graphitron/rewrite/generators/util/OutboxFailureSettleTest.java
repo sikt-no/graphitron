@@ -576,15 +576,15 @@ class OutboxFailureSettleTest {
     }
 
     /**
-     * Releases a carrier whose field's connection died: its rollback fails at release too, which
-     * evicts the connection and rethrows, as release does for any connection it cannot settle.
+     * Releases a carrier whose field's connection died: its rollback fails at release too, on a
+     * connection no longer valid, so release evicts it and carries on without throwing.
      */
     private void releaseDeadConnection(Object tc) throws Throwable {
-        try {
-            releaseAll(tc);
-        } catch (RuntimeException expected) {
-            assertThat(events).as("the dead connection is evicted at release").contains("abort:A");
-        }
+        events.clear();
+        releaseAll(tc);
+        assertThat(events).as("the dead connection is evicted at release, never returned")
+            .contains("rollback:A", "abort:A")
+            .doesNotContain("close:A");
     }
 
     private void releaseAll(Object tc) throws Throwable {
@@ -675,6 +675,8 @@ class OutboxFailureSettleTest {
                     events.add("abort:" + label);
                     yield null;
                 }
+                // A connection whose rollback a case made fail is one the server ended: no longer valid.
+                case "isValid" -> !(nth == 1 && failRollbackFor.containsKey(label));
                 case "toString" -> label + "-conn-" + nth;
                 default -> objectMethodOrDefault(proxy, method, args, label);
             });

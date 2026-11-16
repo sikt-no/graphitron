@@ -109,6 +109,7 @@ class ConnectionRuntimeClassGeneratorTest {
         events.clear();
         arrivesInAutocommit = false;
         rollbackThrows = null;
+        valid = true;
         LifecycleHookFixture.reset(events);
     }
 
@@ -145,7 +146,8 @@ class ConnectionRuntimeClassGeneratorTest {
             .isInstanceOf(Throwable.class);
 
         // Unmount attempted and failed, so the physical connection is aborted, never close()d
-        // back into the pool, and the reset never runs on it.
+        // back into the pool, and the reset never runs on it. Whether the connection is still valid
+        // is never asked: an unmount failure is rethrown whatever the connection's state.
         assertThat(events).containsExactly(
             "getConnection", "rollback", "setAutoCommit:true", "capture", "connect->H1", "disconnect:H1", "abort");
     }
@@ -250,6 +252,38 @@ class ConnectionRuntimeClassGeneratorTest {
             "setAutoCommit:false",                       // the simulated abandoned mutation transaction
             "rollback", "setAutoCommit:true",            // release settles before unmounting
             "disconnect:H1", "reset", "close");
+    }
+
+    @Test
+    void release_rollbackFailingOnAConnectionNoLongerValid_evictsWithoutThrowing() throws Throwable {
+        Object pinned = acquire(fakeDataSource());
+        // The server ended the session over the operation's open transaction: the rollback before
+        // the unmount fails, and the driver no longer reports the connection valid.
+        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        connection.setAutoCommit(false);
+        events.clear();
+        rollbackThrows = new java.sql.SQLException("This connection has been closed.", "08003");
+        valid = false;
+
+        release(pinned);
+
+        assertThat(events)
+            .as("asked whether the connection is still valid, then evicted; no unmount, no reset, never returned")
+            .containsExactly("isValid", "abort");
+    }
+
+    @Test
+    void release_rollbackFailingOnAConnectionStillValid_evictsAndRethrows() throws Throwable {
+        Object pinned = acquire(fakeDataSource());
+        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        connection.setAutoCommit(false);
+        events.clear();
+        rollbackThrows = new java.sql.SQLException("could not roll back", "08006");
+
+        assertThatThrownBy(() -> release(pinned))
+            .as("a live connection that cannot be settled leaves identity unprovable: the failure surfaces")
+            .hasCause(rollbackThrows);
+        assertThat(events).containsExactly("isValid", "abort");
     }
 
     @Test
@@ -879,6 +913,7 @@ class ConnectionRuntimeClassGeneratorTest {
                 case "abort" -> { log.add("abort"); yield null; }
                 case "setAutoCommit" -> { autoCommit[0] = (Boolean) args[0]; log.add("setAutoCommit:" + args[0]); yield null; }
                 case "getAutoCommit" -> autoCommit[0];
+                case "isValid" -> { log.add("isValid"); yield valid; }
                 case "commit" -> { log.add("commit"); yield null; }
                 case "rollback" -> {
                     if (rollbackThrows != null) {
@@ -912,6 +947,8 @@ class ConnectionRuntimeClassGeneratorTest {
     private boolean arrivesInAutocommit;
     /** When set, the fake connection's {@code rollback} throws it instead of logging. */
     private java.sql.SQLException rollbackThrows;
+    /** What the fake connection's {@code isValid} answers; a live connection by default. */
+    private boolean valid;
     /** Settings the fake capture answers with, as {@code {name, value}} rows; none by default. */
     private List<String[]> captureRows = List.of();
     /** When set, the fake capture throws it. */

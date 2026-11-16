@@ -107,15 +107,17 @@ class OutboxFailureExecutionTest {
 
     /**
      * {@link #execute}, for an operation whose field's connection the server ended: releasing that
-     * dead connection at the end of the operation evicts it and rethrows, which reaches the caller,
-     * so what is read afterwards is the database and the log, not the result.
+     * dead connection at the end of the operation evicts it without failing the operation, so the
+     * response the operation computed reaches the caller, the field failed at its path.
      */
-    private static void executeOnADyingSession(GraphQL engine, String query) {
-        try {
-            execute(engine, query);
-        } catch (RuntimeException released) {
-            assertThat(released).hasRootCauseMessage("This connection has been closed.");
-        }
+    private static ExecutionResult executeOnADyingSession(GraphQL engine, String query, String alias) {
+        var result = execute(engine, query);
+        assertThat(result.getErrors()).as("the field whose connection died fails at its path, and only it")
+            .isNotEmpty()
+            .allSatisfy(e -> assertThat(e.getPath()).first().isEqualTo(alias));
+        assertThat((Map<String, Object>) result.getData()).as("the response is computed and returned")
+            .containsKey(alias);
+        return result;
     }
 
     private static String insert(String alias, String in) {
@@ -373,7 +375,7 @@ class OutboxFailureExecutionTest {
         dataSource.setOptions("-c idle_in_transaction_session_timeout=300");
         var engine = engine(Graphitron.runtime(dataSource, SQLDialect.POSTGRES), whilePayloadResolves(a, () -> sleep(1_000)));
 
-        executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }");
+        executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }", a);
 
         assertThat(films(title)).isZero();
         assertThat(reported(title)).isZero();
@@ -394,7 +396,7 @@ class OutboxFailureExecutionTest {
         var engine = engine(Graphitron.runtime(dataSource, SQLDialect.POSTGRES), whilePayloadResolves(a, () -> sleep(1_000)));
 
         executeOnADyingSession(engine, "mutation { " + a + ": insertFilmReportingFailure(in: {title: \"" + title
-            + "\", languageId: 1}) { errors { __typename } } }");
+            + "\", languageId: 1}) { errors { __typename } } }", a);
 
         assertThat(films(title)).isZero();
         assertThat(failures(title)).singleElement().satisfies(row -> assertThat(row).containsEntry("by", "alice"));
@@ -412,7 +414,7 @@ class OutboxFailureExecutionTest {
         var engine = engine(runtime, whilePayloadResolves(a, () -> sleep(1_000)));
         try (var log = OwnedConnectionsLog.capture()) {
             long started = System.nanoTime();
-            executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }");
+            executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }", a);
             long took = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
 
             assertThat(took).as("the payload's second and the bound's half, and some slack, but no more")
@@ -437,7 +439,7 @@ class OutboxFailureExecutionTest {
             sleep(200);
         }));
         try (var log = OwnedConnectionsLog.capture()) {
-            executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }");
+            executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }", a);
 
             assertThat(films(title)).isZero();
             assertThat(failures(title)).isEmpty();

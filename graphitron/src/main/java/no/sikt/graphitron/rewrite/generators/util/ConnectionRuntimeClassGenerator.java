@@ -60,7 +60,11 @@ import java.util.Optional;
  *       before the connection goes back to the pool; release is idempotent. <b>Evict on unmount
  *       failure:</b> if unmount or the reset throws or cannot run, the physical connection is
  *       aborted and never returned to the pool, so a connection whose identity cannot be proven
- *       unmounted gets no next borrower.</li>
+ *       unmounted gets no next borrower, and the failure is rethrown. A rollback before the
+ *       unmount that fails on a connection the driver no longer reports valid (the server ended
+ *       the session, or the network dropped it) is the one failure not rethrown: the session that
+ *       held the identity is gone, so the connection is evicted without its unmount, a warning is
+ *       logged, and the operation's response stands.</li>
  * </ul>
  * The reset is a backstop to the consumer's unmount, not a replacement: an unmount that clears
  * nothing (a transaction-scoped {@code set_config(..., true)} in autocommit) leaves the next
@@ -226,6 +230,8 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
     private static final ClassName GRAPHQL_ERROR_BUILDER = ClassName.get("graphql", "GraphqlErrorBuilder");
     private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    /** How long {@code PinnedConnection.release} waits on {@code Connection.isValid} after a failed settle. */
+    private static final int RELEASE_VALIDITY_SECONDS = 1;
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName UUID_CLASS = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
@@ -603,9 +609,23 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("back first, because JDBC commits an open transaction when autocommit is turned on;")
             .addComment("only then assert the mode, so the unmount's clears take effect immediately rather")
             .addComment("than sitting in an uncommitted transaction.")
+            .beginControlFlow("try")
             .beginControlFlow("if (!connection.getAutoCommit())")
             .addStatement("connection.rollback()")
             .addStatement("connection.setAutoCommit(true)")
+            .endControlFlow()
+            .nextControlFlow("catch ($T settleFailure)", SQL_EXCEPTION)
+            .beginControlFlow("if (isValid(connection))")
+            .addComment("A live connection that cannot be settled: identity cannot be proven unmounted.")
+            .addStatement("throw settleFailure")
+            .endControlFlow()
+            .addComment("The connection is gone (the server ended its session, or the network dropped it), and")
+            .addComment("with it every transaction and identity it held: evicted, nothing to unmount, and the")
+            .addComment("operation's response stands.")
+            .addStatement("LOGGER.warn($S, settleFailure)",
+                "A pinned connection was no longer valid when released; it was evicted without its unmount.")
+            .addStatement("evict(connection, abortExecutor)")
+            .addStatement("return")
             .endControlFlow();
         if (unmounts) {
             String tenantArg = multiTenant ? ", " + MOUNTED_TENANT : "";
@@ -646,11 +666,16 @@ public final class ConnectionRuntimeClassGenerator {
                     + "cancel-then-complete release unmounts exactly once. On PostgreSQL the unmount is\n"
                     + "followed by a reset, {@code RESET ALL} and a restore of the built-in settings captured\n"
                     + "at acquire, so the connection goes back to the pool as it arrived whatever the unmount\n"
-                    + "cleared. Evicts on unmount or reset failure (and on a failed pre-unmount settle, or an\n"
-                    + "unmount that left autocommit off, which equally leave identity unprovable).\n"
+                    + "cleared. Evicts and rethrows on unmount or reset failure (and on an unmount that left\n"
+                    + "autocommit off, or a failed pre-unmount settle on a connection that is still valid,\n"
+                    + "which equally leave identity unprovable). A pre-unmount settle that fails on a\n"
+                    + "connection no longer valid ({@code isValid}) is not rethrown: the session that held\n"
+                    + "the identity is gone, so the connection is evicted, the failure logged as a warning,\n"
+                    + "and the operation's response stands.\n"
                 : "Releases the connection, settling any transaction the operation left open and asserting\n"
                     + "autocommit (the resting state graphitron returns an owned connection in).\n"
-                    + "Idempotent; evicts on a failed settle.\n"))
+                    + "Idempotent; evicts on a failed settle, and rethrows unless the connection is no longer\n"
+                    + "valid ({@code isValid}), which is evicted and logged as a warning only.\n"))
             .build();
 
         var close = MethodSpec.methodBuilder("close")
@@ -659,6 +684,25 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(void.class)
             .addStatement("release()")
             .addJavadoc("{@link AutoCloseable} alias for {@link #release()}.\n")
+            .build();
+
+        var isValid = MethodSpec.methodBuilder("isValid")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(CONNECTION, "connection")
+            .beginControlFlow("try")
+            .addStatement("return connection.isValid($L)", RELEASE_VALIDITY_SECONDS)
+            .nextControlFlow("catch ($T validityFailure)", Throwable.class)
+            .addComment("A connection that cannot say whether it is valid is not.")
+            .addStatement("return false")
+            .endControlFlow()
+            .addJavadoc("Whether {@code connection} is still valid after settling it at release failed, asked of\n"
+                + "the driver ({@code Connection.isValid}), bounded to $L second(s): a closed connection answers\n"
+                + "at once, a live one with one round trip. The driver's own answer, not a list of states,\n"
+                + "because what a dead session surfaces differs by driver and by timing (pgjdbc reports a\n"
+                + "closed connection, {@code 08003}, or an I/O failure, {@code 08006}, for one server-ended\n"
+                + "session), and a failure on a live connection must keep failing release whatever its state.\n",
+                RELEASE_VALIDITY_SECONDS)
             .build();
 
         var evict = MethodSpec.methodBuilder("evict")
@@ -718,6 +762,9 @@ public final class ConnectionRuntimeClassGenerator {
                 + "instrumentation compose over this seam) and no payload: the per-key carrier holds the\n"
                 + "payload for the request and hands it to {@code acquire}. See\n"
                 + "{@code ConnectionRuntimeClassGenerator} for the full lifecycle contract.\n")
+            .addField(FieldSpec.builder(SLF4J_LOGGER, "LOGGER", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, pinnedConnection)
+                .build())
             .addField(connectionField)
             .addField(dialectField)
             .addField(settingsField);
@@ -747,6 +794,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .build());
         }
         builder.addMethod(release)
+            .addMethod(isValid)
             .addMethod(abortMethod())
             .addMethod(close)
             .addMethod(evict)

@@ -22,7 +22,9 @@ import static org.assertj.core.api.Assumptions.assumeThat;
  *
  * <p>Each case ends one session it opened itself: an idle transaction left past
  * {@code idle_in_transaction_session_timeout}, a transaction left past {@code transaction_timeout}
- * (PostgreSQL 17 and later), and a backend terminated from another session.
+ * (PostgreSQL 17 and later), and a backend terminated from another session. Where a case goes on
+ * to ask, it also pins that the driver then reports the connection no longer valid, which is what
+ * {@code PinnedConnection.release} reads to evict such a connection without failing the operation.
  */
 @UnitTier
 class ServerEndedSessionPinTest {
@@ -123,6 +125,9 @@ class ServerEndedSessionPinTest {
             assertThat(OwnedConnections.endedOverTransaction(raised, SQLDialect.POSTGRES))
                 .as("a session ended from outside its transaction is outside it")
                 .isFalse();
+            assertThat(connection.isValid(1))
+                .as("and the driver reports the connection no longer valid, which is what release reads")
+                .isFalse();
         }
     }
 
@@ -140,6 +145,9 @@ class ServerEndedSessionPinTest {
             assertThat(OwnedConnections.endedOverTransaction(probed, SQLDialect.POSTGRES)).isTrue();
             assertThat(OwnedConnections.endedOverTransaction(rolledBack, SQLDialect.POSTGRES))
                 .as("so the rollback alone would not name the transaction; settle reads what the probe raised")
+                .isFalse();
+            assertThat(connection.isValid(1))
+                .as("the connection is no longer valid, so release evicts it without rethrowing")
                 .isFalse();
         }
     }
