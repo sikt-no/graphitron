@@ -258,6 +258,11 @@ census it replaced is gone.
     `FactGraphs` shards by name alone, the library fixtures are distinct classes compiled
     with and without `-parameters`, graphitron-model's heap pin goes, and a document's `code_` claims
     read through its graph's entries rather than additively.
+  * **A source declaration is read through the graph's own source roots** `open`. The editor's
+    `java_` readers (`DeclarationFacts`' class, field and method declarations) match a class by name
+    alone, so a store holding two source roots that declare one class answers a hover or a goto from
+    either; they read through the graph's source roots as the `code_` readers read through
+    `code_graph_class`.
 
 ### A resolution keeps what a diagnostic needs `open`
 
