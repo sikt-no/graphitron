@@ -9193,6 +9193,146 @@ COMMENT ON VIEW graphitron_error_handler_source_rule IS 'One row the handler sou
 -- COMMENT ON COLUMN graphitron_error_handler_source_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_error_handler_source.class_name';
 -- COMMENT ON COLUMN graphitron_error_handler_source_rule.class_source_name IS 'the class_source_name of a row of this rule, which the stage writes into graphitron_error_handler_source.class_source_name';
 
+
+CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
+COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_path_element_routine_rule) both join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
+
+CREATE TABLE graphitron_type_member (
+  graph_name       VARCHAR   NOT NULL,
+  container_name   VARCHAR   NOT NULL,
+  container_kind   VARCHAR   NOT NULL,
+  member_type_name VARCHAR   NOT NULL,
+  member_kind      VARCHAR   NOT NULL,
+  position         INT       NOT NULL,
+  touched_at       TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, container_name, member_type_name),
+  -- Both ends are types of the kinds that can stand there, held by the supertype's own key.
+  FOREIGN KEY (graph_name, container_name, container_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, member_type_name, member_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (container_kind IN ('UNION', 'INTERFACE')),
+  CHECK (member_kind IN ('OBJECT', 'INTERFACE'))
+);
+COMMENT ON TABLE graphitron_type_member IS 'A member of a polymorphic type: one row per union or interface and each type it admits. For example Searchable = Film | Language draws Film and Language under Searchable, and type Language implements Node draws Language under Node.';
+COMMENT ON COLUMN graphitron_type_member.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_type_member.container_name IS 'the union or interface; with the graph and the member, the grain';
+COMMENT ON COLUMN graphitron_type_member.container_kind IS 'UNION or INTERFACE, the container''s kind, pinned so the foreign key holds it to a type of that kind';
+COMMENT ON COLUMN graphitron_type_member.member_type_name IS 'the type the container admits: a union''s listed member, or a type implementing the interface';
+COMMENT ON COLUMN graphitron_type_member.member_kind IS 'OBJECT, or INTERFACE for an interface implementing another, pinned as the container''s kind is';
+COMMENT ON COLUMN graphitron_type_member.position IS 'the member''s place as its declaration states it: in the union''s list, or the interface''s place in the implementing type''s list, as graphql_union_member and graphql_implements_interface number them';
+COMMENT ON COLUMN graphitron_type_member.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+CREATE INDEX graphitron_type_member_member_ix ON graphitron_type_member (graph_name, member_type_name);
+COMMENT ON INDEX graphitron_type_member_member_ix IS 'A reader holding a type asks which unions and interfaces admit it, and the primary key, which leads with the container, serves none of that: graphitron_producer_rule lands a bound member on each polymorphic type it belongs to.';
+
+CREATE VIEW graphitron_type_member_rule
+  (graph_name, container_name, container_kind, member_type_name, member_kind, position) AS
+SELECT u.graph_name, u.union_name, c.kind, u.member_type_name, m.kind, u.position
+  FROM graphql_union_member u
+  JOIN graphitron_type c
+    ON c.graph_name = u.graph_name AND c.type_name = u.union_name AND c.kind = 'UNION'
+  JOIN graphitron_type m
+    ON m.graph_name = u.graph_name AND m.type_name = u.member_type_name
+   AND m.kind IN ('OBJECT', 'INTERFACE')
+UNION ALL
+SELECT i.graph_name, i.interface_name, c.kind, i.type_name, m.kind, i.position
+  FROM graphql_implements_interface i
+  JOIN graphitron_type c
+    ON c.graph_name = i.graph_name AND c.type_name = i.interface_name AND c.kind = 'INTERFACE'
+  JOIN graphitron_type m
+    ON m.graph_name = i.graph_name AND m.type_name = i.type_name
+   AND m.kind IN ('OBJECT', 'INTERFACE');
+COMMENT ON VIEW graphitron_type_member_rule IS 'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_type_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_member.graph_name';
+-- COMMENT ON COLUMN graphitron_type_member_rule.container_name IS 'the container_name of a row of this rule, which the stage writes into graphitron_type_member.container_name';
+-- COMMENT ON COLUMN graphitron_type_member_rule.container_kind IS 'the container_kind of a row of this rule, which the stage writes into graphitron_type_member.container_kind';
+-- COMMENT ON COLUMN graphitron_type_member_rule.member_type_name IS 'the member_type_name of a row of this rule, which the stage writes into graphitron_type_member.member_type_name';
+-- COMMENT ON COLUMN graphitron_type_member_rule.member_kind IS 'the member_kind of a row of this rule, which the stage writes into graphitron_type_member.member_kind';
+-- COMMENT ON COLUMN graphitron_type_member_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_member.position';
+
+CREATE TABLE graphitron_scalar_class (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  java_class VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name),
+  -- A scalar, held there by the supertype's own key; a type that stops being one takes its class.
+  FOREIGN KEY (graph_name, type_name, kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (kind = 'SCALAR')
+);
+COMMENT ON TABLE graphitron_scalar_class IS 'The Java class a scalar''s values arrive as: one row per scalar whose class is known. For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.';
+COMMENT ON COLUMN graphitron_scalar_class.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_scalar_class.type_name IS 'the scalar; with the graph, the grain';
+COMMENT ON COLUMN graphitron_scalar_class.kind IS 'SCALAR, pinned so the foreign key holds the row to a type of that kind';
+COMMENT ON COLUMN graphitron_scalar_class.java_class IS 'the fully-qualified class graphql-java delivers a value as, boxed: a built-in''s by graphql-java''s own coercing, any other''s by the constant its @scalarType names among the graph''s classpath entries. Whether a parameter of a primitive or another type accepts it is the reader''s question, not this column''s';
+COMMENT ON COLUMN graphitron_scalar_class.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+-- A reader holding a parameter's type asks whether any scalar arrives as it.
+CREATE INDEX graphitron_scalar_class_java_ix ON graphitron_scalar_class (graph_name, java_class);
+
+CREATE TABLE graphitron_type_arrival (
+  graph_name    VARCHAR   NOT NULL,
+  type_name     VARCHAR   NOT NULL,
+  type_kind     VARCHAR   NOT NULL,
+  arrival_kind  VARCHAR   NOT NULL,
+  arrival_class VARCHAR,
+  arrival_key   VARCHAR GENERATED ALWAYS AS (COALESCE(arrival_class, '')) NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, arrival_kind, arrival_key),
+  -- The type it is for, of the kind it is, by the supertype's own key.
+  FOREIGN KEY (graph_name, type_name, type_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (type_kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT')),
+  CHECK (arrival_kind IN ('EXACT', 'ANY_NON_JDK', 'UNTYPED')),
+  -- Any class outside the JDK names none; an exact or untyped arrival names its class.
+  CHECK ((arrival_kind = 'ANY_NON_JDK') = (arrival_class IS NULL))
+);
+COMMENT ON TABLE graphitron_type_arrival IS 'One class an input type''s value may be handed to a parameter or a member as: one row per type and class, or per type that may arrive as any class outside the JDK. For example Int arrives as java.lang.Integer, as int and untyped as Object, an enum as java.lang.String and as any non-JDK class, an input object as any non-JDK class or the Map.';
+COMMENT ON COLUMN graphitron_type_arrival.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_type_arrival.type_name IS 'the scalar, enum or input object whose values arrive';
+COMMENT ON COLUMN graphitron_type_arrival.type_kind IS 'SCALAR, ENUM or INPUT_OBJECT, pinned so the foreign key holds the row to a type of that kind';
+COMMENT ON COLUMN graphitron_type_arrival.arrival_kind IS 'EXACT, a value arriving as the class arrival_class names; ANY_NON_JDK, a value arriving as any class with a package outside java., which an input object is built into and an enum is taken as by its constant, a class the schema names nowhere; UNTYPED, a declared type taking whatever is delivered, java.lang.Object for any value and java.util.Map for an input object, which takes it but tells no type apart, so a fill pairing by type does not read it';
+COMMENT ON COLUMN graphitron_type_arrival.arrival_class IS 'on EXACT, the class: a scalar''s graphitron_scalar_class, the primitive int, double or boolean an Int, Float or Boolean fills too, or java.lang.String for an enum taken by name; on UNTYPED, java.lang.Object or java.util.Map; NULL on ANY_NON_JDK';
+COMMENT ON COLUMN graphitron_type_arrival.arrival_key IS 'arrival_class, or the empty string where it is NULL, so the key can hold the ANY_NON_JDK row; generated, never written, and never read: a reader asks arrival_kind and arrival_class';
+COMMENT ON COLUMN graphitron_type_arrival.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_type_arrival_rule (graph_name, type_name, type_kind, arrival_kind, arrival_class) AS
+-- A scalar arrives as its class, and an Int, Float or Boolean as the primitive too; a scalar with no
+-- known class has no exact row. An enum arrives as its name, a String, or as a constant of whatever
+-- enum class takes it; an input object as whatever class it is built into. Any value arrives as an
+-- Object, and an input object as the delivered Map, which take it untyped. The federation
+-- vocabulary's scalars and enums, which another stage writes, are handed to no parameter.
+SELECT sc.graph_name, sc.type_name, 'SCALAR', 'EXACT', sc.java_class
+  FROM graphitron_scalar_class sc
+UNION ALL
+SELECT sc.graph_name, sc.type_name, 'SCALAR', 'EXACT', b.primitive
+  FROM graphitron_scalar_class sc
+  JOIN (VALUES ('Int', 'int'), ('Float', 'double'), ('Boolean', 'boolean')) b (scalar, primitive)
+    ON b.scalar = sc.type_name
+UNION ALL
+SELECT t.graph_name, t.type_name, 'ENUM', 'EXACT', 'java.lang.String'
+  FROM graphitron_type t
+ WHERE t.kind = 'ENUM' AND t.origin <> 'FEDERATION'
+UNION ALL
+SELECT t.graph_name, t.type_name, t.kind, 'ANY_NON_JDK', CAST(NULL AS VARCHAR)
+  FROM graphitron_type t
+ WHERE t.kind IN ('ENUM', 'INPUT_OBJECT') AND t.origin <> 'FEDERATION'
+UNION ALL
+SELECT t.graph_name, t.type_name, t.kind, 'UNTYPED', 'java.lang.Object'
+  FROM graphitron_type t
+ WHERE t.kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT') AND t.origin <> 'FEDERATION'
+UNION ALL
+SELECT t.graph_name, t.type_name, 'INPUT_OBJECT', 'UNTYPED', 'java.util.Map'
+  FROM graphitron_type t
+ WHERE t.kind = 'INPUT_OBJECT' AND t.origin <> 'FEDERATION';
+COMMENT ON VIEW graphitron_type_arrival_rule IS 'One row the type arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_arrival.graph_name';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_type_arrival.type_name';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.type_kind IS 'the type_kind of a row of this rule, which the stage writes into graphitron_type_arrival.type_kind';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.arrival_kind IS 'the arrival_kind of a row of this rule, which the stage writes into graphitron_type_arrival.arrival_kind';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.arrival_class IS 'the arrival_class of a row of this rule, which the stage writes into graphitron_type_arrival.arrival_class';
+
 CREATE VIEW graphitron_code_reference_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT r.graph_name, r.source_name, r.source_line, r.source_column, 'CODE_REFERENCE_METHOD_UNFIT',
@@ -9363,147 +9503,64 @@ SELECT cr.graph_name, cr.source_name, cr.source_line, cr.source_column,
  WHERE cr.directive_name = 'service' AND NOT m.is_static
    AND NOT EXISTS (SELECT 1 FROM code_constructor b
                     WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name
-                      AND b.is_buildable);
+                      AND b.is_buildable)
+UNION ALL
+-- An @error type's field, other than path and message, which no accessor of a handler's source class
+-- answers, at the field: the accessor named get, is or nothing before the field's @field(name:), or
+-- else its own name, capitalised, among the class's slots or graphql-java's contract, returning what
+-- the field's scalar is where the field is one scalar of a known class and no @nodeId, which encodes
+-- what the accessor yields into the id rather than handing it over as it is. Each handler's class is read
+-- off graphitron_error_handler_source; a handler resolving to no class is judged nowhere. The detail
+-- is the class.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ERROR_FIELD_UNREADABLE', hs.class_name, 'code-references'
+  FROM graphitron_error_handler_source hs
+  JOIN graphitron_ast_error_handler_entry h
+    ON h.graph_name = hs.graph_name AND h.source_name = hs.source_name
+   AND h.source_line = hs.source_line AND h.source_column = hs.source_column
+  JOIN graphql_directive_application ea
+    ON ea.graph_name = h.graph_name AND ea.source_name = h.source_name
+   AND ea.source_line = h.application_line AND ea.source_column = h.application_column
+  JOIN graphitron_field f
+    ON f.graph_name = ea.graph_name AND f.type_name = ea.coordinate AND f.field_name NOT IN ('path', 'message')
+  LEFT JOIN graphql_directive_application fa
+    ON fa.graph_name = f.graph_name AND fa.coordinate = f.coordinate AND fa.directive_name = 'field' AND fa.ordinal = 0
+  LEFT JOIN graphitron_ast_binding_entry b
+    ON b.graph_name = fa.graph_name AND b.source_name = fa.source_name
+   AND b.source_line = fa.source_line AND b.source_column = fa.source_column
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM code_read_slot s
+                    WHERE hs.kind = 'CLASS' AND s.source_name = hs.class_source_name
+                      AND s.class_name = hs.class_name
+                      AND s.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
+                                    'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
+                                    COALESCE(b.name_ref, f.field_name))
+                      AND (f.is_list
+                         OR EXISTS (SELECT 1 FROM graphql_directive_application nid
+                                     WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
+                                       AND nid.directive_name = 'nodeId')
+                         OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival x
+                                         WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
+                                           AND x.arrival_kind = 'EXACT')
+                         OR EXISTS (SELECT 1 FROM graphitron_type_arrival x
+                                     WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
+                                       AND x.arrival_kind = 'EXACT' AND x.arrival_class = COALESCE(s.erased_class, s.slot_type))))
+   AND NOT EXISTS (SELECT 1 FROM code_contract_slot c
+                    WHERE hs.kind = 'CONTRACT' AND c.class_name = hs.class_name
+                      AND c.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
+                                    'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
+                                    COALESCE(b.name_ref, f.field_name))
+                      AND (f.is_list
+                         OR EXISTS (SELECT 1 FROM graphql_directive_application nid
+                                     WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
+                                       AND nid.directive_name = 'nodeId')
+                         OR NOT EXISTS (SELECT 1 FROM graphitron_type_arrival x
+                                         WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
+                                           AND x.arrival_kind = 'EXACT')
+                         OR EXISTS (SELECT 1 FROM graphitron_type_arrival x
+                                     WHERE x.graph_name = f.graph_name AND x.type_name = f.named_type
+                                       AND x.arrival_kind = 'EXACT' AND x.arrival_class = c.erased_class)));
 COMMENT ON VIEW graphitron_code_reference_entry_defect_rule IS 'One row the code reference defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_entry_defect, an @externalField naming FilmFields#helper, which returns a String, giving one CODE_REFERENCE_METHOD_UNFIT row at that reference.';
-
-CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
-COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: the namings in the view bodies (graphitron_entry_defect_table_rule, graphitron_path_element_routine_rule) both join on the graph and the spelling and nothing else. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, the type binding view since replaced by graphitron_tabletype 357 against 198, and a node id decode defect view since dissolved 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
-
-CREATE TABLE graphitron_type_member (
-  graph_name       VARCHAR   NOT NULL,
-  container_name   VARCHAR   NOT NULL,
-  container_kind   VARCHAR   NOT NULL,
-  member_type_name VARCHAR   NOT NULL,
-  member_kind      VARCHAR   NOT NULL,
-  position         INT       NOT NULL,
-  touched_at       TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, container_name, member_type_name),
-  -- Both ends are types of the kinds that can stand there, held by the supertype's own key.
-  FOREIGN KEY (graph_name, container_name, container_kind)
-    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, member_type_name, member_kind)
-    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
-  CHECK (container_kind IN ('UNION', 'INTERFACE')),
-  CHECK (member_kind IN ('OBJECT', 'INTERFACE'))
-);
-COMMENT ON TABLE graphitron_type_member IS 'A member of a polymorphic type: one row per union or interface and each type it admits. For example Searchable = Film | Language draws Film and Language under Searchable, and type Language implements Node draws Language under Node.';
-COMMENT ON COLUMN graphitron_type_member.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_type_member.container_name IS 'the union or interface; with the graph and the member, the grain';
-COMMENT ON COLUMN graphitron_type_member.container_kind IS 'UNION or INTERFACE, the container''s kind, pinned so the foreign key holds it to a type of that kind';
-COMMENT ON COLUMN graphitron_type_member.member_type_name IS 'the type the container admits: a union''s listed member, or a type implementing the interface';
-COMMENT ON COLUMN graphitron_type_member.member_kind IS 'OBJECT, or INTERFACE for an interface implementing another, pinned as the container''s kind is';
-COMMENT ON COLUMN graphitron_type_member.position IS 'the member''s place as its declaration states it: in the union''s list, or the interface''s place in the implementing type''s list, as graphql_union_member and graphql_implements_interface number them';
-COMMENT ON COLUMN graphitron_type_member.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
-CREATE INDEX graphitron_type_member_member_ix ON graphitron_type_member (graph_name, member_type_name);
-COMMENT ON INDEX graphitron_type_member_member_ix IS 'A reader holding a type asks which unions and interfaces admit it, and the primary key, which leads with the container, serves none of that: graphitron_producer_rule lands a bound member on each polymorphic type it belongs to.';
-
-CREATE VIEW graphitron_type_member_rule
-  (graph_name, container_name, container_kind, member_type_name, member_kind, position) AS
-SELECT u.graph_name, u.union_name, c.kind, u.member_type_name, m.kind, u.position
-  FROM graphql_union_member u
-  JOIN graphitron_type c
-    ON c.graph_name = u.graph_name AND c.type_name = u.union_name AND c.kind = 'UNION'
-  JOIN graphitron_type m
-    ON m.graph_name = u.graph_name AND m.type_name = u.member_type_name
-   AND m.kind IN ('OBJECT', 'INTERFACE')
-UNION ALL
-SELECT i.graph_name, i.interface_name, c.kind, i.type_name, m.kind, i.position
-  FROM graphql_implements_interface i
-  JOIN graphitron_type c
-    ON c.graph_name = i.graph_name AND c.type_name = i.interface_name AND c.kind = 'INTERFACE'
-  JOIN graphitron_type m
-    ON m.graph_name = i.graph_name AND m.type_name = i.type_name
-   AND m.kind IN ('OBJECT', 'INTERFACE');
-COMMENT ON VIEW graphitron_type_member_rule IS 'One row the type member rule computes, in the shape graphitron_type_member stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_member, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_type_member_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_member.graph_name';
--- COMMENT ON COLUMN graphitron_type_member_rule.container_name IS 'the container_name of a row of this rule, which the stage writes into graphitron_type_member.container_name';
--- COMMENT ON COLUMN graphitron_type_member_rule.container_kind IS 'the container_kind of a row of this rule, which the stage writes into graphitron_type_member.container_kind';
--- COMMENT ON COLUMN graphitron_type_member_rule.member_type_name IS 'the member_type_name of a row of this rule, which the stage writes into graphitron_type_member.member_type_name';
--- COMMENT ON COLUMN graphitron_type_member_rule.member_kind IS 'the member_kind of a row of this rule, which the stage writes into graphitron_type_member.member_kind';
--- COMMENT ON COLUMN graphitron_type_member_rule.position IS 'the position of a row of this rule, which the stage writes into graphitron_type_member.position';
-
-CREATE TABLE graphitron_scalar_class (
-  graph_name VARCHAR   NOT NULL,
-  type_name  VARCHAR   NOT NULL,
-  kind       VARCHAR   NOT NULL,
-  java_class VARCHAR   NOT NULL,
-  touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name),
-  -- A scalar, held there by the supertype's own key; a type that stops being one takes its class.
-  FOREIGN KEY (graph_name, type_name, kind)
-    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
-  CHECK (kind = 'SCALAR')
-);
-COMMENT ON TABLE graphitron_scalar_class IS 'The Java class a scalar''s values arrive as: one row per scalar whose class is known. For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.';
-COMMENT ON COLUMN graphitron_scalar_class.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_scalar_class.type_name IS 'the scalar; with the graph, the grain';
-COMMENT ON COLUMN graphitron_scalar_class.kind IS 'SCALAR, pinned so the foreign key holds the row to a type of that kind';
-COMMENT ON COLUMN graphitron_scalar_class.java_class IS 'the fully-qualified class graphql-java delivers a value as, boxed: a built-in''s by graphql-java''s own coercing, any other''s by the constant its @scalarType names among the graph''s classpath entries. Whether a parameter of a primitive or another type accepts it is the reader''s question, not this column''s';
-COMMENT ON COLUMN graphitron_scalar_class.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
--- A reader holding a parameter's type asks whether any scalar arrives as it.
-CREATE INDEX graphitron_scalar_class_java_ix ON graphitron_scalar_class (graph_name, java_class);
-
-CREATE TABLE graphitron_type_arrival (
-  graph_name    VARCHAR   NOT NULL,
-  type_name     VARCHAR   NOT NULL,
-  type_kind     VARCHAR   NOT NULL,
-  arrival_kind  VARCHAR   NOT NULL,
-  arrival_class VARCHAR,
-  arrival_key   VARCHAR GENERATED ALWAYS AS (COALESCE(arrival_class, '')) NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, arrival_kind, arrival_key),
-  -- The type it is for, of the kind it is, by the supertype's own key.
-  FOREIGN KEY (graph_name, type_name, type_kind)
-    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
-  CHECK (type_kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT')),
-  CHECK (arrival_kind IN ('EXACT', 'ANY_NON_JDK', 'UNTYPED')),
-  -- Any class outside the JDK names none; an exact or untyped arrival names its class.
-  CHECK ((arrival_kind = 'ANY_NON_JDK') = (arrival_class IS NULL))
-);
-COMMENT ON TABLE graphitron_type_arrival IS 'One class an input type''s value may be handed to a parameter or a member as: one row per type and class, or per type that may arrive as any class outside the JDK. For example Int arrives as java.lang.Integer, as int and untyped as Object, an enum as java.lang.String and as any non-JDK class, an input object as any non-JDK class or the Map.';
-COMMENT ON COLUMN graphitron_type_arrival.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphitron_type_arrival.type_name IS 'the scalar, enum or input object whose values arrive';
-COMMENT ON COLUMN graphitron_type_arrival.type_kind IS 'SCALAR, ENUM or INPUT_OBJECT, pinned so the foreign key holds the row to a type of that kind';
-COMMENT ON COLUMN graphitron_type_arrival.arrival_kind IS 'EXACT, a value arriving as the class arrival_class names; ANY_NON_JDK, a value arriving as any class with a package outside java., which an input object is built into and an enum is taken as by its constant, a class the schema names nowhere; UNTYPED, a declared type taking whatever is delivered, java.lang.Object for any value and java.util.Map for an input object, which takes it but tells no type apart, so a fill pairing by type does not read it';
-COMMENT ON COLUMN graphitron_type_arrival.arrival_class IS 'on EXACT, the class: a scalar''s graphitron_scalar_class, the primitive int, double or boolean an Int, Float or Boolean fills too, or java.lang.String for an enum taken by name; on UNTYPED, java.lang.Object or java.util.Map; NULL on ANY_NON_JDK';
-COMMENT ON COLUMN graphitron_type_arrival.arrival_key IS 'arrival_class, or the empty string where it is NULL, so the key can hold the ANY_NON_JDK row; generated, never written, and never read: a reader asks arrival_kind and arrival_class';
-COMMENT ON COLUMN graphitron_type_arrival.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
-
-CREATE VIEW graphitron_type_arrival_rule (graph_name, type_name, type_kind, arrival_kind, arrival_class) AS
--- A scalar arrives as its class, and an Int, Float or Boolean as the primitive too; a scalar with no
--- known class has no exact row. An enum arrives as its name, a String, or as a constant of whatever
--- enum class takes it; an input object as whatever class it is built into. Any value arrives as an
--- Object, and an input object as the delivered Map, which take it untyped. The federation
--- vocabulary's scalars and enums, which another stage writes, are handed to no parameter.
-SELECT sc.graph_name, sc.type_name, 'SCALAR', 'EXACT', sc.java_class
-  FROM graphitron_scalar_class sc
-UNION ALL
-SELECT sc.graph_name, sc.type_name, 'SCALAR', 'EXACT', b.primitive
-  FROM graphitron_scalar_class sc
-  JOIN (VALUES ('Int', 'int'), ('Float', 'double'), ('Boolean', 'boolean')) b (scalar, primitive)
-    ON b.scalar = sc.type_name
-UNION ALL
-SELECT t.graph_name, t.type_name, 'ENUM', 'EXACT', 'java.lang.String'
-  FROM graphitron_type t
- WHERE t.kind = 'ENUM' AND t.origin <> 'FEDERATION'
-UNION ALL
-SELECT t.graph_name, t.type_name, t.kind, 'ANY_NON_JDK', CAST(NULL AS VARCHAR)
-  FROM graphitron_type t
- WHERE t.kind IN ('ENUM', 'INPUT_OBJECT') AND t.origin <> 'FEDERATION'
-UNION ALL
-SELECT t.graph_name, t.type_name, t.kind, 'UNTYPED', 'java.lang.Object'
-  FROM graphitron_type t
- WHERE t.kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT') AND t.origin <> 'FEDERATION'
-UNION ALL
-SELECT t.graph_name, t.type_name, 'INPUT_OBJECT', 'UNTYPED', 'java.util.Map'
-  FROM graphitron_type t
- WHERE t.kind = 'INPUT_OBJECT' AND t.origin <> 'FEDERATION';
-COMMENT ON VIEW graphitron_type_arrival_rule IS 'One row the type arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_type_arrival_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_arrival.graph_name';
--- COMMENT ON COLUMN graphitron_type_arrival_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_type_arrival.type_name';
--- COMMENT ON COLUMN graphitron_type_arrival_rule.type_kind IS 'the type_kind of a row of this rule, which the stage writes into graphitron_type_arrival.type_kind';
--- COMMENT ON COLUMN graphitron_type_arrival_rule.arrival_kind IS 'the arrival_kind of a row of this rule, which the stage writes into graphitron_type_arrival.arrival_kind';
--- COMMENT ON COLUMN graphitron_type_arrival_rule.arrival_class IS 'the arrival_class of a row of this rule, which the stage writes into graphitron_type_arrival.arrival_class';
 
 CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class) AS
 -- A scalar whose candidates disagree has no class: the constant is named in two entries that
@@ -28165,6 +28222,8 @@ INSERT INTO graphitron_defect_type VALUES
    'An input object is reached again inside itself where a call builds its value into a class, and the class cannot be built without end, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
    'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
+  ('ERROR_FIELD_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ERROR_FIELD_UNREADABLE',
+   'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no accessor of the field''s name or @field(name:), get, is or bare, returning what the field''s scalar is: name an accessor the class has with @field(name:), or give the field the type its accessor returns.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',

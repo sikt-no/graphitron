@@ -119,7 +119,7 @@ type FilmLookupInvalid @error(handlers: [{
 }
 ----
 
-The build fails when a declared extra field cannot be populated from every handler's source class, listing the accessors the class does expose and naming the type the accessor had to return. `@field` on `path` or `message` is rejected: those two fields are populated by Graphitron itself.
+The build fails (`ERROR_FIELD_UNREADABLE`) when a declared extra field cannot be populated from every handler's source class, listing the accessors the class does expose and naming the type the accessor had to return. `@field` on `path` or `message` is rejected: those two fields are populated by Graphitron itself.
 
 [#nodeid-extra-field]
 === Publishing a node id from an extra field

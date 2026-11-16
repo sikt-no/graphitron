@@ -1,0 +1,42 @@
+# An @error type's field no accessor of its handler's class answers: the class is the exception a
+# GENERIC handler names, the SQLException a DATABASE handler matches, or graphql-java's GraphQLError
+# for a VALIDATION handler. FilmLookupNotFoundException offers what it inherits from Throwable, so
+# localizedMessage is read and bogus is not, and stackTrace, an array, cannot fill an Int. SQLException's
+# getSQLState is reached by @field(name: "SQLState") and not by sqlState, whose getter would be
+# getSqlState; its getErrorCode, an int, fills an Int. GraphQLError offers path and extensions and no
+# bogus.
+
+type Film @table(name: "film") { title: String }
+
+type FilmNotFound @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException"}]) {
+  path: [String!]!
+  message: String!
+  localizedMessage: String
+  bogus: String
+  stackTrace: Int
+}
+
+type RateOverflow @error(handlers: [{handler: DATABASE, sqlState: "22003"}]) {
+  path: [String!]!
+  message: String!
+  sqlState: String
+  state: String @field(name: "SQLState")
+  errorCode: Int
+}
+
+type Invalid @error(handlers: [{handler: VALIDATION}]) {
+  path: [String!]!
+  message: String!
+  bogus: String
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'ERROR_FIELD_UNREADABLE'", rows: """
+  code,                   coordinate,                    detail
+  ERROR_FIELD_UNREADABLE, FilmNotFound.bogus,            no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
+  ERROR_FIELD_UNREADABLE, FilmNotFound.stackTrace,       no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
+  ERROR_FIELD_UNREADABLE, RateOverflow.sqlState,         java.sql.SQLException
+  ERROR_FIELD_UNREADABLE, Invalid.bogus,                 graphql.GraphQLError
+  """)
