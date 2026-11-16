@@ -309,6 +309,9 @@ Decisions the user made on this item; each is stated where it applies below.
   `tenants()` is a default that throws, never called since nothing fans out there. Graphitron fans out
   over the domain, one key and one lease per tenant, and a tenant the request may not see is simply not
   named (2026-11-16).
+* The dialect and jOOQ `Settings` a lease's connection is used with are the runtime's, application-wide,
+  with an optional overload per lease (2026-11-16): today's per-source dialect and settings stay
+  expressible without every lease naming them.
 * Vouchers require Graphitron's owned connections (2026-11-16): a build that accepts vouchers has no
   escape hatch, as a tenant-routed build has none, since `_entities` must acquire the vouched
   connection from the request's source.
@@ -600,7 +603,10 @@ Decisions the user made on this item; each is stated where it applies below.
     throw rejects the request;
   * `Lease`, with `connection()`, `handle()` typed by `<handle>` where one is configured (absent
     otherwise), and `release()`; a static factory builds one from a connection, a handle and a release
-    action, so a consumer writes no class;
+    action, so a consumer writes no class. The jOOQ dialect and `Settings` Graphitron builds a lease's
+    `DSLContext` with are the runtime's, application-wide, given to the runtime factory; an overload of
+    the lease factory takes a dialect and settings of the lease's own, for a pool of another database
+    or another configuration (2026-11-16);
   * the carrier (`OwnedConnections`) calls `acquire` the first time a field needs a key's connection,
     never twice for one key, though it may call it for distinct keys from several threads at once (a
     fan-out's workers), so a source must be safe to call concurrently; it keeps one lease per distinct key, gives `$session` bindings the lease's handle, demarcates each
@@ -1274,3 +1280,13 @@ configuration, so the hedge is settled; and the entity rows' `localContext` stam
 carrier's invariant through one supertype, the shape answers three questions apart, the voucher
 alternative pairs with its decode-onto key by identity, and the narrowed refusal reads occurrences and
 allows what is stated projected.
+
+### Round 6: the connection contract (2026-11-16)
+
+The redesign of 2026-11-16 (the connection contract, no caller, tenants to the source) was read by an
+author of R876, the item whose carrier, fan-out and connection relation it reshapes, and by the
+principles architect, whose take-up read is folded into the plan. The R876 author's recommendations
+were ruled on and taken: the typed refusal `KeyNotPermitted`, a tenanted source's required fan-out
+domain through `ConnectionSource.of(acquire, tenants)`, and the ready-made source shipping with the
+contract; and they filed R1192, a fan-out worker releasing its lease when it finishes, on this
+contract. Alf judged the two reads sufficient to proceed with slices 8b to 8d (2026-11-16).
