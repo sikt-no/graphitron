@@ -1,24 +1,25 @@
 package no.sikt.graphitron.model;
 
-import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.test.EntryFamilyFixture;
+import no.sikt.graphitron.model.test.FactGraphs;
+import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Table;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Holds {@link EntryFamilyFixture} to the claim its callers rest on: that it populates the whole
- * as-written half of the {@code graphitron_} family, from two sources, so that a gate over that half
- * cannot pass by agreeing about empty relations.
+ * Holds the {@code defects/entry-family} document to the claim its readers rest on: that it
+ * populates the whole as-written half of the {@code graphitron_} family, from two sources, so that a
+ * gate over that half cannot pass by agreeing about empty relations.
  *
  * <p>The generator module's corpus-isolation differential is the case that wanted it. Its scope was
  * {@code graphql_} alone, and widening it to the as-written {@code graphitron_} relations passed
@@ -34,80 +35,67 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code EntryNamingGuardTest}'s, which holds the decode to naming only suffixed relations.
  *
  * <p>What is left here is the claim that could always only be measured: every relation named an
- * entry holds a row under this fixture, and some of them hold rows from both of its documents.
+ * entry holds a row under this document's graph, and some of them hold rows from both of its files.
  */
 class EntryFamilyCoverageTest {
 
-    @TempDir
-    static Path directory;
+    /** The graph whose rows are counted, read through the population rather than captured here. */
+    static final String DOCUMENT = "defects/entry-family";
 
-    private static CapturedStore captured;
-
-    /**
-     * One capture for both of the cases that need rows, and the one boot this class is counted for
-     * in {@code ThreadConfinedStore}'s budget. Off the funnel because the subject is a store
-     * something else captures into, so a body handed a {@link org.jooq.DSLContext} cannot ask for
-     * what it needs. What the funnel would have
-     * saved is paid once here rather than per case.
-     */
-    private static CapturedStore store() {
-        if (captured == null) {
-            captured = EntryFamilyFixture.capture(directory);
-        }
-        return captured;
-    }
-
-    @AfterAll
-    static void closeStore() {
-        if (captured != null) {
-            captured.close();
-            captured = null;
-        }
-    }
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
 
     @Test
-    @DisplayName("the fixture writes a row into every entry relation")
-    void theFixturePopulatesTheWholeEntryHalf() {
-        var empty = new ArrayList<String>();
-        for (String relation : EntryFamilyFixture.entryRelations()) {
-            Table<?> table = table(relation);
-            if (store().dsl().fetchCount(table,
-                    table.field("GRAPH_NAME", String.class).eq(store().graphName())) == 0) {
-                empty.add(relation);
+    @DisplayName("the document writes a row into every entry relation")
+    void theDocumentPopulatesTheWholeEntryHalf() {
+        List<String> empty = FACTS.read(DOCUMENT, graph -> {
+            var found = new ArrayList<String>();
+            for (String relation : EntryFamilyFixture.entryRelations()) {
+                Table<?> table = table(relation);
+                if (graph.handle().dsl().fetchCount(table, graphOf(table, graph.handle())) == 0) {
+                    found.add(relation);
+                }
             }
-        }
+            return found;
+        });
         assertThat(empty)
-            .as("an entry relation the fixture never populates is one that every gate over this half "
+            .as("an entry relation the document never populates is one that every gate over this half "
                 + "passes vacuously on; apply the directive that writes it")
             .isEmpty();
     }
 
     @Test
-    @DisplayName("entry relations hold rows from both documents, so a per-source delete has a subject")
-    void theOverlapBetweenTheTwoDocumentsIsReal() {
-        var shared = new ArrayList<String>();
-        for (String relation : EntryFamilyFixture.entryRelations()) {
-            if (sourcesOf(relation).size() > 1) {
-                shared.add(relation);
+    @DisplayName("entry relations hold rows from both files, so a per-source delete has a subject")
+    void theOverlapBetweenTheTwoFilesIsReal() {
+        List<String> shared = FACTS.read(DOCUMENT, graph -> {
+            var found = new ArrayList<String>();
+            for (String relation : EntryFamilyFixture.entryRelations()) {
+                if (sourcesOf(graph.handle(), relation).size() > 1) {
+                    found.add(relation);
+                }
             }
-        }
+            return found;
+        });
         assertThat(shared)
             .as("deleting one source's rows can only be observed on a relation holding rows from "
-                + "two, so the fixture writes some of them from both documents on purpose")
+                + "two, so the document writes some of them from both files on purpose")
             .isNotEmpty();
     }
 
-    /** The distinct documents a relation's rows were written from, empty where it records none. */
-    private static Set<String> sourcesOf(String relation) {
+    /** The distinct files a relation's rows in this graph were written from, empty where it records none. */
+    private static Set<String> sourcesOf(StoreHandle handle, String relation) {
         Table<?> table = table(relation);
         Field<?> sourceName = table.field("SOURCE_NAME");
         if (sourceName == null) {
             return Set.of();
         }
-        return Set.copyOf(store().dsl().selectDistinct(sourceName).from(table)
-            .where(table.field("GRAPH_NAME", String.class).eq(store().graphName()),
-                sourceName.isNotNull())
+        return Set.copyOf(handle.dsl().selectDistinct(sourceName).from(table)
+            .where(graphOf(table, handle), sourceName.isNotNull())
             .fetch(sourceName, String.class));
+    }
+
+    private static Condition graphOf(Table<?> table, StoreHandle handle) {
+        return table.field("GRAPH_NAME", String.class).eq(handle.graphName());
     }
 
     private static Table<?> table(String relation) {

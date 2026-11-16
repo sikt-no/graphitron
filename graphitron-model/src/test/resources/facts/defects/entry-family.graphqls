@@ -1,0 +1,7 @@
+# The entry family read with the fixture catalog: two documents that between them write a row into
+# every as-written graphitron_*_entry relation, some of them from both documents.
+
+extend schema @withFacts(docs: [
+  {path: "shapes/entry-family/core", as: "core"},
+  {path: "shapes/entry-family/extension", as: "extension"}])
+

@@ -33,7 +33,7 @@ public final class InlineCaptures {
 
     /** The fixtures whose static arms capture, each the class its harness file is named after. */
     private static final String FIXTURES = "CapturedStore|GraphitronStore|TestSchemaHelper|BuiltStore"
-        + "|StoreFixture|StoreBackedBuild|BuiltStoreFixture|ModelCapture|EntryFamilyFixture|CapturedGraphs";
+        + "|StoreFixture|StoreBackedBuild|BuiltStoreFixture|ModelCapture|CapturedGraphs";
 
     /** The arms that capture, through the class or the {@code held()} owner. */
     private static final String ARMS = "of|ofWith|ofFiles|ofCatalog|ofCatalogWith"

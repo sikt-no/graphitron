@@ -1,0 +1,4 @@
+# The catalog-isolation shape read with the fixture catalog, whose film_actor publishes the node
+# metadata that makes Pairing a node.
+
+extend schema @withFacts(docs: [{path: "shapes/catalog-isolation"}])

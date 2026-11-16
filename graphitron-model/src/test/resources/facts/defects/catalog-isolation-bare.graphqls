@@ -1,0 +1,5 @@
+# The catalog-isolation shape read with no catalog: its SDL families hold what catalog-isolation's do.
+
+extend schema @withConfiguration(jooqPackage: null)
+
+extend schema @withFacts(docs: [{path: "shapes/catalog-isolation"}])

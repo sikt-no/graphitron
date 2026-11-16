@@ -1,0 +1,9 @@
+# The entry family read with no catalog behind the capture. Its as-written rows are the ones
+# entry-family holds, since what a document writes as written does not depend on another corpus.
+
+extend schema @withConfiguration(jooqPackage: null)
+
+extend schema @withFacts(docs: [
+  {path: "shapes/entry-family/core", as: "core"},
+  {path: "shapes/entry-family/extension", as: "extension"}])
+

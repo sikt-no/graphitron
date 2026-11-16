@@ -1,0 +1,70 @@
+# The second document: the input side, the argument side and the mutation vocabulary, repeating
+# several of the first document's directives on coordinates of its own.
+
+extend type Query {
+  actorsByAgency(
+    agencyId: ID @reference(path: [
+        {table: "agency"},
+        {table: "actor", key: "actor_agency_fk",
+         condition: {className: "no.example.Conditions", method: "liveAgency"}}
+      ])
+    filter: ActorFilter
+    scope: ID
+      @condition(
+        condition: {className: "no.example.Conditions", method: "inScope", argMapping: "scope: scopeId"}
+        contextArguments: ["tenantId"]
+      )
+    target: ID @referenceFor(type: "Book", path: [
+        {table: "book", key: "book_actor_fk",
+         condition: {className: "no.example.Conditions", method: "liveBook"}}
+      ])
+    nameFilter: String @field(name: "full_name")
+  ): [Actor!] @field(name: "actor")
+
+  searchFilms(filter: FilmFilter): [Film!] @asConnection
+}
+
+input FilmFilter {
+  title: String @field(name: "title") @asFacet
+  category: String @field(name: "category") @asFacet
+  actorId: ID @nodeId(typeName: "Actor")
+  joined: String @reference(path: [{table: "film_actor"}])
+  guarded: String @condition(condition: {className: "no.example.Conditions", method: "guard"})
+}
+
+input ActorFilter @table(name: "actor") {
+  name: String @field(name: "full_name")
+}
+
+type Mutation {
+  deleteFilm(input: DeleteFilmInput!): Boolean
+    @mutation(typeName: DELETE, multiRow: true, table: "film", failOnMissing: true)
+    @outbox(event: "FilmDeleted", argMapping: "filmId: $result")
+    @outbox(argMapping: "where: $scope.coordinate")
+  importFilms(payload: ImportInput!): [Film!]
+    @service(
+      service: {className: "no.example.FilmService", method: "importFilms", argMapping: "payload: payload"}
+      contextArguments: ["tenantId"]
+    )
+  brokenMapping(payload: ImportInput!): Boolean
+    @service(service: {className: "no.example.FilmService", method: "broken", argMapping: "this is ] not [ a mapping"})
+}
+
+input DeleteFilmInput {
+  id: ID @nodeId(typeName: "Film")
+}
+
+input ImportInput {
+  title: String
+}
+
+type FilmVoucher @table(name: "film") {
+  filmId: ID @field(name: "film_id")
+  voucher: String @issue(scope: "films", ttl: "PT5M", vouchesFor: "filmId")
+}
+
+type LanguageVoucher @table(name: "language") @key(fields: "languageId") {
+  languageId: Int @field(name: "language_id")
+  name: String
+  voucher: String @accept(scope: "languages", key: "languageId", vouchesFor: "name")
+}

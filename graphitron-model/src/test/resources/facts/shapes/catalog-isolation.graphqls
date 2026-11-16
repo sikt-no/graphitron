@@ -1,0 +1,23 @@
+# A federation-linked schema carrying an inferred-node shape: a @table type implementing Node over a
+# table whose generated class publishes node metadata, which is the pair a capture-time expansion
+# once read across. Read with a catalog and without, its SDL families must agree.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query { pairing: Pairing, film: Film, actor: Actor }
+
+interface Node { id: ID! }
+
+type Pairing implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+type Film implements Node @node {
+  id: ID!
+  title: String
+}
+
+type Actor implements Node @node @key(fields: "id") {
+  id: ID!
+  name: String
+}
