@@ -15,6 +15,7 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -53,7 +54,15 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 class GraphitronInputValueEntriesTest {
 
-    private static final String GRAPH = "input-value";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphitronInputValueEntriesTest(TestInfo info) {
+        graph = "inputValueEntries." + info.getTestMethod().orElseThrow().getName();
+    }
 
     /**
      * The two parents a consumer schema writes, decoded into one relation. Read back through each
@@ -100,6 +109,7 @@ class GraphitronInputValueEntriesTest {
                         .and(element.SOURCE_NAME.eq(argument.SOURCE_NAME))
                         .and(element.SOURCE_LINE.eq(argument.SOURCE_LINE))
                         .and(element.SOURCE_COLUMN.eq(argument.SOURCE_COLUMN))
+                    .where(decode.GRAPH_NAME.eq(graph))
                     .fetch())
                 .as("the decode of an application written on a field's argument")
                 .extracting(row -> row.value1(), row -> row.value2())
@@ -120,12 +130,13 @@ class GraphitronInputValueEntriesTest {
                         .and(element.SOURCE_NAME.eq(inputField.SOURCE_NAME))
                         .and(element.SOURCE_LINE.eq(inputField.SOURCE_LINE))
                         .and(element.SOURCE_COLUMN.eq(inputField.SOURCE_COLUMN))
+                    .where(decode.GRAPH_NAME.eq(graph))
                     .fetch())
                 .as("and of one written on an input object's field, out of the same relation")
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple("FilmFilter.category", "category"));
 
-            assertThat(dsl.fetchCount(decode))
+            assertThat(dsl.fetchCount(decode, decode.GRAPH_NAME.eq(graph)))
                 .as("two rows and one relation, which is what the incumbent's two paths are not")
                 .isEqualTo(2);
         });
@@ -152,11 +163,16 @@ class GraphitronInputValueEntriesTest {
                     GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("the applications are what says they were applied")
                 .containsExactly("asFacet", "lookupKey", "orderBy");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_FOR_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_NODE_ID_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY,
+                    GRAPHITRON_AST_BINDING_ENTRY.GRAPH_NAME.eq(graph))
+                    + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
+                            GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY.GRAPH_NAME.eq(graph))
+                    + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_FOR_ENTRY,
+                            GRAPHITRON_AST_REFERENCE_FOR_ENTRY.GRAPH_NAME.eq(graph))
+                    + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY,
+                            GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.GRAPH_NAME.eq(graph))
+                    + dsl.fetchCount(GRAPHITRON_AST_NODE_ID_ENTRY,
+                            GRAPHITRON_AST_NODE_ID_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and no decode relation holds a row for any of them")
                 .isZero();
         });
@@ -186,12 +202,13 @@ class GraphitronInputValueEntriesTest {
             var t = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 
             assertThat(dsl.select(t.PARTICIPANT_TYPE_REF, t.SOURCE_LINE)
-                    .from(t).orderBy(t.PARTICIPANT_TYPE_REF).fetch())
+                    .from(t).where(t.GRAPH_NAME.eq(graph)).orderBy(t.PARTICIPANT_TYPE_REF).fetch())
                 .as("two decodes at two positions, told apart by the key and nothing else")
                 .extracting(row -> row.value1())
                 .containsExactly("Book", "Film");
             assertThat(dsl.select(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF)
                     .from(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY)
+                    .where(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.GRAPH_NAME.eq(graph))
                     .orderBy(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF)
                     .fetch(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF))
                 .as("each application's path hangs off its own decode")
@@ -229,20 +246,21 @@ class GraphitronInputValueEntriesTest {
 
             assertThat(dsl.select(writtenAt(tables), tables.TABLE_REF_NAMESPACE_PART,
                         tables.TABLE_REF_NAME_PART)
-                    .from(tables).orderBy(writtenAt(tables)).fetch())
+                    .from(tables)
+                    .where(tables.GRAPH_NAME.eq(graph)).orderBy(writtenAt(tables)).fetch())
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .as("both elements name a table, each cut where the grammar cuts it")
                 .containsExactly(tuple(0, "sakila", "agency"), tuple(1, null, "actor"));
 
             assertThat(dsl.select(writtenAt(keys), keys.KEY_REF_NAMESPACE_PART, keys.KEY_REF_NAME_PART)
-                    .from(keys).fetch())
+                    .from(keys).where(keys.GRAPH_NAME.eq(graph)).fetch())
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .as("only the second names a key, and it lands at that element's own position")
                 .containsExactly(tuple(1, "sakila", "actor_agency_fk"));
 
             assertThat(dsl.select(writtenAt(conditions), conditions.CLASS_NAME, conditions.METHOD,
                         conditions.ARGMAPPING)
-                    .from(conditions).fetch())
+                    .from(conditions).where(conditions.GRAPH_NAME.eq(graph)).fetch())
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3(),
                     row -> row.value4())
                 .as("and only the second carries a condition, the one arm that reaches the classpath")
@@ -270,11 +288,13 @@ class GraphitronInputValueEntriesTest {
                     GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("both were applied, which is what the applied-directive row is for")
                 .containsExactly("field", "nodeId");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY,
+                    GRAPHITRON_AST_BINDING_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("@field without its required name decodes to nothing rather than to a null")
                 .isZero();
             assertThat(dsl.select(GRAPHITRON_AST_NODE_ID_ENTRY.NODE_TYPE_REF)
                     .from(GRAPHITRON_AST_NODE_ID_ENTRY)
+                    .where(GRAPHITRON_AST_NODE_ID_ENTRY.GRAPH_NAME.eq(graph))
                     .fetch(GRAPHITRON_AST_NODE_ID_ENTRY.NODE_TYPE_REF))
                 .as("while @nodeId has no required argument, so a bare one is a row naming no type")
                 .containsExactly((String) null);
@@ -305,7 +325,8 @@ class GraphitronInputValueEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
 
-            assertThat(dsl.select(t.METHOD, t.OVERRIDE).from(t).orderBy(t.SOURCE_LINE).fetch())
+            assertThat(dsl.select(t.METHOD, t.OVERRIDE).from(t)
+                    .where(t.GRAPH_NAME.eq(graph)).orderBy(t.SOURCE_LINE).fetch())
                 .extracting(row -> row.value1(), row -> row.value2())
                 .as("null where the author wrote nothing, and what they wrote where they did")
                 .containsExactly(tuple("inScope", null), tuple(null, true));
@@ -332,7 +353,8 @@ class GraphitronInputValueEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
+                    GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("before the edit").isEqualTo(1);
 
             write(tmp, "film.graphqls", """
@@ -344,9 +366,11 @@ class GraphitronInputValueEntriesTest {
             assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE,
                     GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("one application in this file, at the position the other one had").hasSize(1);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY,
+                    GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and the condition it replaced is not a fact any more").isZero();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY,
+                    GRAPHITRON_AST_BINDING_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("what the author wrote instead is there").isEqualTo(1);
         });
     }
@@ -355,12 +379,12 @@ class GraphitronInputValueEntriesTest {
      * The names applied at one site: the application entries whose index row gives them that
      * entry kind.
      */
-    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
+    private List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
         var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         return dsl.select(applied.NAME)
             .from(applied)
             .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
-            .where(where)
+            .where(applied.GRAPH_NAME.eq(graph), where)
             .orderBy(applied.NAME)
             .fetch(applied.NAME);
     }
@@ -379,8 +403,8 @@ class GraphitronInputValueEntriesTest {
     }
 
     /** One reading of everything the directory holds, which is what a run does. */
-    private static void read(DSLContext dsl, Path baseDir) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
+    private void read(DSLContext dsl, Path baseDir) {
+        var graph = new GraphIdentity(this.graph, baseDir);
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
