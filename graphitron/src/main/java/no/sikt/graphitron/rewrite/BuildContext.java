@@ -2941,6 +2941,12 @@ class BuildContext {
      * chains cover the single-name mapping case, multi-segment chains carry dot-path expressions
      * into nested input fields. The call site supplies the slot-type oracle when calling
      * {@link ArgBindingMap#of}.
+     *
+     * <p>{@code error} is non-null when the directive is applied but names nothing that can be
+     * called: its reference lacks a class or a method, or its {@code argMapping} does not parse.
+     * {@code override} and {@code contextArguments} are still the authored values then, so a
+     * caller reading only those sees what the author wrote; a caller resolving the method checks
+     * {@code error} first and refuses the coordinate with it.
      */
     record ConditionDirective(
         String className,
@@ -2949,27 +2955,36 @@ class BuildContext {
         List<String> contextArguments,
         Map<String, List<String>> argMapping,
         Map<String, ArgMappingSigil.Binding> sessionBindings,
-        String argMappingError
+        String error
     ) {}
 
     /**
      * Reads a {@code @condition} directive from a field, argument, or input-object-field
-     * container. Returns {@code null} when the directive is absent or could not be parsed
-     * (e.g. missing {@code className}/{@code method}).
+     * container. Returns {@code null} only when the directive is absent; an applied directive that
+     * cannot be resolved comes back with {@link ConditionDirective#error} set, never as
+     * {@code null}, so no caller can read it as absent.
      *
      * <p>Shared by {@link FieldBuilder} and {@link TypeBuilder} via {@code ctx}.
      */
     ConditionDirective readConditionDirective(GraphQLDirectiveContainer container) {
         var dir = container.getAppliedDirective(DIR_CONDITION);
         if (dir == null) return null;
-        var condArg = dir.getArgument(ARG_CONDITION);
-        if (condArg == null || condArg.getValue() == null) return null;
-        Map<String, Object> ref = asMap(condArg.getValue());
-        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
-        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
-        if (className == null || methodName == null) return null;
         boolean override = argBoolean(container, DIR_CONDITION, ARG_OVERRIDE, false);
         List<String> ctxArgs = argStringList(container, DIR_CONDITION, ARG_CONTEXT_ARGUMENTS);
+        var condArg = dir.getArgument(ARG_CONDITION);
+        Map<String, Object> ref = condArg == null || condArg.getValue() == null
+            ? Map.of() : asMap(condArg.getValue());
+        String className = Optional.ofNullable(ref.get(ARG_CLASS_NAME)).map(Object::toString).orElse(null);
+        String methodName = Optional.ofNullable(ref.get(ARG_METHOD)).map(Object::toString).orElse(null);
+        String missing = condArg == null || condArg.getValue() == null ? "has no condition: argument"
+            : className == null ? "names no className"
+            : methodName == null ? "names no method"
+            : null;
+        if (missing != null) {
+            return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), Map.of(),
+                "the directive " + missing + "; a @condition calls the method its condition: names by"
+                + " className and method, and defaults neither");
+        }
         String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARGMAPPING)).map(Object::toString).orElse(null);
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
@@ -2993,10 +3008,10 @@ class BuildContext {
             List<InputFieldConditionFailure> failures) {
         var cond = readConditionDirective(field);
         if (cond == null) return Optional.empty();
-        if (cond.argMappingError() != null) {
-            // ConditionDirective.argMappingError is prose; wrap it at this boundary.
+        if (cond.error() != null) {
+            // ConditionDirective.error is prose; wrap it at this boundary.
             failures.add(conditionFailure(field, parentTypeName, inputFieldName,
-                untypedUpstream(cond.argMappingError())));
+                untypedUpstream(cond.error())));
             return Optional.empty();
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(field.getName(), field.getType()),
@@ -3072,7 +3087,7 @@ class BuildContext {
     /**
      * The single boundary wrap for input-field causes whose upstream still reports prose rather
      * than a {@link Rejection}: {@link #parsePath}'s {@code errorMessage}, {@link ConditionDirective}'s
-     * {@code argMappingError}, and {@link ArgBindingMap}'s two prose-only result arms. Naming the wrap
+     * {@code error}, and {@link ArgBindingMap}'s two prose-only result arms. Naming the wrap
      * keeps "this cause is not yet typed" in one identifiable place instead of leaving
      * {@link InputFieldResolution.Unresolved} polymorphic between prose and type; each call site
      * deletes when its upstream carrier is widened.

@@ -69,8 +69,8 @@ final class ConditionResolver {
         var cond = ctx.readConditionDirective(arg);
         if (cond == null) return new ArgConditionResult.None();
         var argName = arg.getName();
-        if (cond.argMappingError() != null) {
-            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + cond.argMappingError()));
+        if (cond.error() != null) {
+            return new ArgConditionResult.Rejected(Rejection.structural("argument '" + argName + "' @condition: " + cond.error()));
         }
         var bindingResult = ArgBindingMap.of(java.util.Map.of(argName, arg.getType()),
             cond.argMapping());
@@ -99,8 +99,8 @@ final class ConditionResolver {
     FieldConditionResult resolveField(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         var cond = ctx.readConditionDirective(fieldDef);
         if (cond == null) return new FieldConditionResult.None();
-        if (cond.argMappingError() != null) {
-            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + cond.argMappingError()));
+        if (cond.error() != null) {
+            return new FieldConditionResult.Rejected(Rejection.structural("field '" + fieldDef.getName() + "' @condition: " + cond.error()));
         }
         var bindingResult = ArgBindingMap.of(FieldBuilder.argSlotTypes(fieldDef), cond.argMapping());
         if (bindingResult instanceof ArgBindingMap.Result.Failure f) {

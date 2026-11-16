@@ -2,7 +2,7 @@
 :description: Plug a custom Java method into a directive that takes `ExternalCodeReference!`.
 :!toc:
 
-Four of the rewrite's directives (`@service`, `@externalField`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all four: a fully-qualified class name from the module's declared compile classpath, an optional method name that defaults to the GraphQL field name, and an optional `argMapping:` for renaming Java parameters. This recipe walks through each piece once.
+Four of the rewrite's directives (`@service`, `@externalField`, `@condition`, `@enum`) hand the resolution of a slot off to a developer-supplied Java target via the shared `ExternalCodeReference` input. The mechanics are uniform across all four: a fully-qualified class name from the module's declared compile classpath, a method name, and an optional `argMapping:` for renaming Java parameters. Only `@externalField` lets you leave the method name out, defaulting it to the GraphQL field name; `@service` and `@condition` refuse a reference without one. This recipe walks through each piece once.
 
 (The deprecated `@record` directive still parses the same `ExternalCodeReference` shape, but it is ignored: a class-backed type's binding is reflected from its producer's return or parameter type, not from a directive. See xref:result-types.adoc[How-to: Result-type variants].)
 
@@ -35,20 +35,22 @@ Compile scope is right, not incidental: the generated resolvers call these class
 
 == Reference the class from the schema
 
-`className:` must be a fully-qualified class name. `method:` defaults to the GraphQL field name when omitted, so the common case is identity:
+`className:` must be a fully-qualified class name, and `method:` names the Java method:
 
 [source,graphql]
 ----
 type Query {
     filmCount: Int!
         @service(service: {
-            className: "com.example.services.SampleQueryService"
-            # method defaults to "filmCount" (the field name).
+            className: "com.example.services.SampleQueryService",
+            method:    "filmCount"
         })
 }
 ----
 
-Set `method:` only when the Java method's name diverges from the field name:
+`@externalField` is the one directive that defaults `method:`, to the GraphQL field name, so there the common case can leave it out. A `@service` or a `@condition` whose reference names no method, or no class, fails the build at the directive.
+
+The method's name need not match the field's:
 
 [source,graphql]
 ----

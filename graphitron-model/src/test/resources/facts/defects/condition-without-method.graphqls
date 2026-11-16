@@ -1,0 +1,58 @@
+# A @condition that names no method to call is CONDITION_WITHOUT_METHOD at the @condition as written.
+# The predicate a @condition adds is its method's, and the directive defaults neither the class nor the
+# method, so each of the three ways of leaving one out draws the defect: no condition: argument at all,
+# a condition: with no className, and one with no method. Each is written on the three places a
+# @condition goes, a field, an argument and an input field, since the three are read apart. The
+# *Complete coordinates are the near miss: the same placement naming both draws nothing.
+
+type Film @table(name: "film") { title: String }
+
+input FilmConditionFilter {
+  bare: String @condition(override: true)
+  noClass: String @condition(condition: {method: "filmTitlePrefixCondition"})
+  noMethod: String @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures"})
+  complete: String @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+}
+
+type Query {
+  filmsBare: [Film!]! @condition(override: true)
+  filmsNoClass: [Film!]! @condition(condition: {method: "filmTitlePrefixCondition"})
+  filmsNoMethod: [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures"})
+  filmsComplete(description: String): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
+  filmsByArgument(
+    bare: String @condition(override: true),
+    noClass: String @condition(condition: {method: "filmTitlePrefixCondition"}),
+    noMethod: String @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures"}),
+    complete: String @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmTitlePrefixCondition"}, override: true)
+  ): [Film!]!
+  filmsByInput(filter: FilmConditionFilter): [Film!]!
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                     coordinate
+  CONDITION_WITHOUT_METHOD, Query.filmsBare
+  CONDITION_WITHOUT_METHOD, Query.filmsNoClass
+  CONDITION_WITHOUT_METHOD, Query.filmsNoMethod
+  CONDITION_WITHOUT_METHOD, Query.filmsByArgument(bare:)
+  CONDITION_WITHOUT_METHOD, Query.filmsByArgument(noClass:)
+  CONDITION_WITHOUT_METHOD, Query.filmsByArgument(noMethod:)
+  CONDITION_WITHOUT_METHOD, FilmConditionFilter.bare
+  CONDITION_WITHOUT_METHOD, FilmConditionFilter.noClass
+  CONDITION_WITHOUT_METHOD, FilmConditionFilter.noMethod
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                     coordinate
+  CONDITION_WITHOUT_METHOD, Query.filmsComplete
+  CONDITION_WITHOUT_METHOD, Query.filmsByArgument(complete:)
+  CONDITION_WITHOUT_METHOD, FilmConditionFilter.complete
+  """)

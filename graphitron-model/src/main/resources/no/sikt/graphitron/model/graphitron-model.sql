@@ -19258,7 +19258,20 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
  WHERE da.directive_name = 'mutation' AND da.origin = 'AUTHORED'
    AND NOT EXISTS (SELECT 1 FROM graphitron_ast_mutation_entry m
                     WHERE m.graph_name = da.graph_name AND m.source_name = da.source_name
-                      AND m.source_line = da.source_line AND m.source_column = da.source_column);
+                      AND m.source_line = da.source_line AND m.source_column = da.source_column)
+UNION ALL
+-- A @condition with no method to call, at the @condition as written: no condition: argument, or one
+-- naming no className or no method. The predicate is the method's, and @condition defaults neither
+-- name, so there is none. Read off the references code-references wrote, which hold a row only where a
+-- class is named and a method name only where one is written.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'CONDITION_WITHOUT_METHOD', CAST(NULL AS VARCHAR), 'directive-applications'
+  FROM graphitron_directive_application da
+ WHERE da.directive_name = 'condition' AND da.origin = 'AUTHORED'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference cr
+                    WHERE cr.graph_name = da.graph_name AND cr.coordinate = da.coordinate
+                      AND cr.directive_name = da.directive_name AND cr.ordinal = da.ordinal
+                      AND cr.named_method IS NOT NULL);
 COMMENT ON VIEW graphitron_directive_application_entry_defect_rule IS 'One row the directive-applications stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @mutation written with no typeName gives one MUTATION_WITHOUT_VERB row at the @mutation.';
 
 -- The defects the federation-vocabulary stage raises, off graphitron_type once its federation types
@@ -27650,6 +27663,8 @@ INSERT INTO graphitron_defect_type VALUES
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
    '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.'),
+  ('CONDITION_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_WITHOUT_METHOD',
+   '@condition adds the predicate of the method its condition: names by className and method, and defaults neither, so without both there is no predicate to add.'),
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
    '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
