@@ -269,7 +269,7 @@ class DiagnosticsStatementCountTest {
         // it is what this tier can pin. Asserted against the plan of the same statement the drain
         // issues, captured rather than restated, so the pin cannot drift from the production read.
         String sdl = boundTypes(DRAIN_FIXTURE_TYPES);
-        try (var driving = StoreFixture.ofCatalog(
+        try (var driving = StoreFixture.held().ofCatalog(
                 tmp.resolve("drain-scan"), sdl, StoreFixture.testClasses())) {
             var capturedSql = new AtomicReference<String>();
             var configuration = driving.handle().dsl().configuration()
