@@ -1,6 +1,6 @@
 ---
 id: R1184
-title: "An optional gatherer reads the database's row-level security policies over a live connection"
+title: "Graphitron reads the database over a live connection: row-level security as facts, definitions on request"
 status: Spec
 bucket: architecture
 priority: 4
@@ -10,7 +10,7 @@ created: 2026-11-13
 last-updated: 2026-11-16
 ---
 
-# An optional gatherer reads the database's row-level security policies over a live connection
+# Graphitron reads the database over a live connection: row-level security as facts, definitions on request
 
 ## Goal
 
@@ -19,10 +19,13 @@ binds. Hovering a `@table` type in the editor, or asking `catalog.describe` over
 the table secures its rows, whether that is forced, and each policy's command, mode, roles and
 `USING` / `WITH CHECK` text. The facts come from a new optional gatherer that reads the database's own
 catalog over a live connection, configured by a new `<database>` block that replaces `<devDatabase>`.
-Without connection settings nothing changes, and generated code is the same whether the gatherer ran
-or not. The warnings these facts make possible are follow-up items (§ Follow-ups); this item lands the
-facts, their reading record, the readers named above and the gates that keep the facts out of
-generation.
+In a `dev` session the same connection also answers, when asked, the database's own definition of
+one object the schema names: a table with its keys, indexes, triggers and policies, a view, a routine,
+a trigger and the function it runs. Those definitions are read live and never stored (§ Definitions on
+request). Without connection settings nothing changes, and generated code is the same whether the
+gatherer ran or not. The warnings the policy facts make possible are follow-up items (§ Follow-ups);
+this item lands the facts, their reading record, the readers named above, the definitions on request,
+and the gates that keep the facts out of generation.
 
 ## Why a live connection
 
@@ -31,6 +34,10 @@ The facts therefore come from the database itself, through a gatherer that runs 
 connection settings. Alf gave this direction when the item was filed, over the alternatives of a
 sidecar written at jOOQ codegen time and a parse of migration scripts. The ruling enters
 `docs/architecture/` in this item (§ Docs).
+
+On 2026-11-16 Alf ruled that the database's own definitions, fetched one object at a time on request,
+belong to this item too, since they need the same connection. They were R1050, now discarded as
+absorbed; § Definitions on request carries its scope.
 
 ## Configuration
 
@@ -282,12 +289,69 @@ stage lands without moving the call.
 `catalog.describe` gains a `rowSecurity` member with the same arms, read through `CatalogQueries`. The
 `docs/manual/how-to/mcp-agent-context.adoc` description of `catalog.describe` says so.
 
+## Definitions on request
+
+What graphitron reasons over is a stored fact; what only a person or an agent reads is fetched when
+asked. Policies are small and the follow-ups reason over them, so they are captured (§ The store).
+Definitions are large text nothing reasons over: capturing every routine and trigger body on every
+round costs in proportion to the schema for an answer wanted one object at a time. So they are read
+live, through the same `<database>` connector, and never enter the store. The database stays the
+authority for what it holds.
+
+### Where it is available
+
+In `dev`, where the MCP server and the language server run. `DevMojo` already hands `execute` its
+connection and constructs the language server in `DevServer`; it hands both the `<database>` connector.
+With no `<database>` (or `<devDatabase>` during the window), the MCP tool is not registered and the
+editor shows no definition, as `execute` is absent today. The standalone language server (`Launcher`)
+has no connector and shows none. `generate`, `validate`, `capture` and CI never fetch a definition.
+
+### MCP
+
+A read-only tool `database.definition` taking an object kind and a qualified name, and answering that
+object's definition as the database renders it. The split the prefixes state is stored versus fetched
+live: `catalog.` tools answer from the store, which includes the `database_` facts that
+`catalog.describe` reports, and `database.` answers from the live database. It refuses with its
+cause where the session has no database, where the object does not exist there, and where the dialect
+is not read yet. Each call opens a connection, reads in a read-only transaction under the bounded
+connect timeout, and closes it, as `execute` does.
+
+### Editor
+
+On hover of the argument that names a database object: a `@table`'s table, a `@reference` key, a
+`@routine`'s routine. The hover starts from the object the store already resolved that argument to
+(`graphitron_tabletype`'s table triple, the resolved key, the resolved routine), never by resolving the
+authored string again; an argument the store did not resolve shows no definition. The answer is fetched when that hover is asked for, shown as a SQL block, and
+bounded by the connect timeout; a failure shows its cause in the hover instead. The type and field
+hovers that read the store stay as they are, one statement and no view (`DeclarationHoverStatementCountTest`,
+`EditorReadsNoViewTest`), so a live read never slows an ordinary hover.
+
+### What the database offers
+
+PostgreSQL first, because sakila tests it:
+
+* routine: `pg_get_functiondef`;
+* view: `pg_get_viewdef`, wrapped as `CREATE VIEW`;
+* trigger: `pg_get_triggerdef`, followed by its function's `pg_get_functiondef`;
+* key (what a `@reference` names): `pg_get_constraintdef`, wrapped as `ALTER TABLE ... ADD CONSTRAINT`;
+* table: PostgreSQL has no single statement for a table, so its definition is composed: the
+  `CREATE TABLE` with columns from the catalog, `pg_get_constraintdef` for each constraint,
+  `pg_get_indexdef` for each index not backing a constraint, `pg_get_triggerdef` for each trigger, and
+  the table's row-security statements and policies, read live in the same transaction. Not from the
+  stored `database_policy` rows, which would put a possibly stale reading beside live DDL in one
+  answer, and not through the gatherer's code, whose job is to decode facts into the store's words.
+
+Oracle answers every kind through `DBMS_METADATA.GET_DDL`; until Oracle is read, the tool refuses with
+that cause, as the gatherer logs it.
+
 ## Keeping the facts out of generation
 
 Generated output must be identical whether the gatherer ran or not. Three gates make that structural:
 
 * A guard in the style of `PackageImportDirectionTest`: no class in the generator's emit path refers
-  to a `database_` table's generated jOOQ class.
+  to a `database_` table's generated jOOQ class, and the definition reader is referenced only from the
+  `dev` goal and the MCP and language-server packages, so `generate`, `validate`, `capture` and CI
+  cannot fetch a definition.
 * A differential capture test modelled on `CaptureCorpusIsolationTest`: capture sakila with and
   without a connector, and require identical rows in every relation outside the `database_` family,
   the reading-record rows, and `store_graph_progress`. It needs PostgreSQL, so it is `@ExecutionTier`.
@@ -301,12 +365,19 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
   matters first" admits a live database as a corpus, only through an optional gatherer that runs when
   connection settings are given; `docs/architecture/explanation/fact-model.adoc` § "One base, many
   views" states that its facts never change generated output.
+* `docs/architecture/explanation/fact-model.adoc` § "One base, many views" also gains the limit of the
+  live read beside it: display text from a live corpus may be fetched on request, is never stored,
+  joined or reasoned over, and is fetched only in `dev`. Without it, the next consumer wanting a live
+  answer has a precedent and no limit.
 * `docs/manual/reference/mojo-configuration.adoc`: `<database>` under shared parameters, `<execute>`
   under `dev`-goal parameters, the migration from `<devDatabase>`, the driver-scope rule. The sentence
   that the store holds nothing "that cannot be rebuilt from your sources" gains the database as a
   source.
 * `docs/manual/how-to/mcp-agent-context.adoc`: `execute` connects with `<database>`;
-  `catalog.describe` reports row security.
+  `catalog.describe` reports row security; `database.definition` and when it is registered; the
+  `catalog.` / `database.` split stated as stored versus fetched live.
+* The editor's hover documentation: the definition shown on a `@table`, `@reference` key or
+  `@routine` argument in `dev`.
 * `docs/security.adoc`: one paragraph saying the editor and MCP show the policies when a database is
   configured.
 
@@ -341,6 +412,14 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * Hover: the five arms, with the statement-count and no-view tests still green.
 * MCP: `catalog.describe` on `secure_note` with and without a reading.
 * The two generation gates above.
+* `database.definition` (`@ExecutionTier`): each kind against sakila, including the composed table
+  definition of `secure_note` with its policy; the three refusals (no database, no such object, an
+  unread dialect).
+* Editor: the definition hover on a `@table`, a `@reference` key and a `@routine` argument with a
+  connector; no definition without one; an unreachable database shows its cause; an argument the store
+  did not resolve shows none. The new hover target gets its row in `TriggerDispatchMatrixTest`.
+* `graphitron-sakila-db/src/main/resources/init.sql` also gains a view and a trigger, so every kind
+  has something to show.
 
 ## Follow-ups, filed when this reaches Ready
 
@@ -384,8 +463,8 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream. The c
 
 ## Principles-architect consultation
 
-Consulted at filing, at take-up, and before handing over for the Spec -> Ready review. What it
-raised, and what this spec did:
+Consulted at filing, at take-up, before the first Spec -> Ready review, and when R1050 was absorbed.
+What it raised, and what this spec did:
 
 * A live database is a new corpus, needing its own `meta_corpus` row, family prefix and refresh unit:
   adopted (`database`, `database_`, a `store_source` row per connection).
@@ -415,6 +494,14 @@ raised, and what this spec did:
   read with both flags, and `database_policy` foreign-keys it with `ON DELETE CASCADE`. The "tables
   differ" finding is now an anti-join over stored rows.
 * Adding `DATABASE` means updating the `source_kind` column comment: adopted.
+* On absorbing R1050: the live read sits beside "no consumer owns a private model" and needs its own
+  written limit: adopted, as a sentence for `fact-model.adoc` in § Docs. The hover starts from the
+  store's resolution of the argument, never re-resolving the authored string: adopted. The prefix split
+  is stored versus live, not jOOQ versus database: adopted. The composed table definition reads policies
+  live in its own transaction, neither from stored rows nor through the gatherer's code: adopted.
+  "Never in `generate` or CI" gets an enforcer, by widening the package guard: adopted. The new hover
+  target needs a `TriggerDispatchMatrixTest` row: adopted. It found no written "one goal per item"
+  rule, and read the goal as one outcome with two delivery tiers.
 
 ## Reviewer findings
 
