@@ -2,7 +2,7 @@
 :description: Mark the voucher field of a table-bound type, so this subgraph vouches for its rows to another subgraph.
 :!toc:
 
-Marks the *voucher* field of a table-bound type in a federated subgraph that vouches for the rows its own rules let a caller see, so another subgraph can grant access to them through its database's row-level security. Every other field of the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching field `@accept`.
+Marks the *voucher* field of a table-bound type in a federated subgraph that vouches for the rows its own rules let the user see, so another subgraph can grant access to them through its database's row-level security. Every other field of the type is *absorbed* into the voucher: sealed inside it, signed, and withheld from this subgraph's published schema, which publishes the voucher alone. The accepting subgraph marks its matching field `@accept`.
 
 == SDL signature
 
@@ -50,8 +50,7 @@ type VgsResultat @table(name: "soknad_vgs_resultat") {
 == What is generated
 
 * The voucher field's fetcher signs one voucher per row it is selected on, after the row is read. Whenever the voucher is selected, the row's query also selects the absorbed fields' columns, so the voucher costs no extra statement. Each value is serialized by its field's scalar before it is signed, so the voucher carries what a plain representation of the field would.
-* Every voucher of one operation under one scope shares a random vouch id, the caller and an expiry of the operation's start plus `ttl`.
-* `SessionState.of(caller, mount, unmount)` takes the caller first: who the request is for, which every voucher is bound to. Both subgraphs must pass the same caller for the same user, for example the token's subject.
+* Every voucher of one operation under one scope shares a random vouch id and an expiry of the operation's start plus `ttl`. A voucher is bound to no caller: within one supergraph operation the router calls both subgraphs for the same user, and the voucher never leaves the router.
 * Every `Graphitron.runtime(...)` overload, and every `GraphitronRuntime` constructor, takes the `VoucherKeys` last, so a runtime without them does not compile. `VoucherKeys.issuing(keyId, privateKey)` signs with a JDK Ed25519 key; implement `VoucherKeys` to sign elsewhere.
 
 == Constraints
@@ -79,9 +78,6 @@ Each refusal below is reported at the `@issue`, or at the absorbed field it is a
 
 | `VOUCHER_ISSUE_ABSORBS_NOTHING`
 | The issuing type has fields besides the voucher.
-
-| `VOUCHER_WITHOUT_SESSION_STATE`
-| The build configures `<sessionState>`, whose `SessionState` carries the caller each voucher is bound to.
 
 | `VOUCHER_TTL_INVALID`
 | `ttl` is an ISO-8601 duration of hours, minutes and seconds, such as `PT5M`.

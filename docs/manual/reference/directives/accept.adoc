@@ -64,9 +64,6 @@ Each refusal below is reported at the `@accept`.
 | `VOUCHER_FIELD_REPEATED`
 | A type carries one voucher field, `@issue` or `@accept`: refused at each after the first.
 
-| `VOUCHER_WITHOUT_SESSION_STATE`
-| The build configures `<sessionState>`, whose `SessionState` carries the caller each voucher is checked against.
-
 | `VOUCHER_ACCEPT_WITH_TENANT_COLUMN`
 | The build configures no `<tenantColumn>`. A vouched connection is keyed by the vouched-for values alone, and a voucher is not yet paired with the tenant of the key it decodes to.
 

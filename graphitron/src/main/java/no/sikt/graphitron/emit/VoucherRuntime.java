@@ -47,8 +47,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
  * they are rendered whole; whether a build writes them is the store's question, answered by
  * {@link #vouches}.
  *
- * <p>The format, version 1: base64url without padding over the version byte, the 16-byte vouch id, the
- * scope, the caller, the expiry in epoch seconds, the key id, the vouched-for section, the lookup section,
+ * <p>The format, version 2: base64url without padding over the version byte, the 16-byte vouch id, the
+ * scope, the expiry in epoch seconds, the key id, the vouched-for section, the lookup section,
  * and then the signature. A string is its UTF-8 length as an {@code int} and its bytes. A section is
  * its entry count and its entries in strictly ascending name order, each the field name, a tag naming
  * the JSON kind of the value the field's scalar serialized ({@code S} string, {@code I} integer,
@@ -69,7 +69,7 @@ public final class VoucherRuntime {
     public static final String REJECTED = "VoucherRejectedException";
 
     /** The token format version this runtime writes and the only one it reads. */
-    public static final int VERSION = 1;
+    public static final int VERSION = 2;
 
     /** How far past its expiry a voucher is still accepted, absorbing clock skew between the subgraphs. */
     public static final Duration CLOCK_SKEW = Duration.ofSeconds(30);
@@ -114,7 +114,6 @@ public final class VoucherRuntime {
             .addEnumConstant("SIGNATURE", constant("the voucher's signature does not verify for this entity type"))
             .addEnumConstant("EXPIRED", constant("the voucher has expired"))
             .addEnumConstant("SCOPE", constant("the voucher was issued for another scope"))
-            .addEnumConstant("CALLER", constant("the voucher was issued to another caller"))
             .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting field's vouchesFor"))
             .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key"))
             .addEnumConstant("VALUE", constant("a value in the voucher does not parse as its field's scalar"))
@@ -309,7 +308,6 @@ public final class VoucherRuntime {
             .recordConstructor(MethodSpec.constructorBuilder()
                 .addParameter(UUID.class, "vouchId")
                 .addParameter(String.class, "scope")
-                .addParameter(String.class, "caller")
                 .addParameter(Instant.class, "expires")
                 .addParameter(String.class, "keyId")
                 .addParameter(OBJECT_MAP, "vouchedFor")
@@ -319,7 +317,6 @@ public final class VoucherRuntime {
                 .addModifiers(Modifier.PUBLIC)
                 .addStatement("$T.requireNonNull(vouchId, $S)", Objects.class, "vouchId")
                 .addStatement("$T.requireNonNull(scope, $S)", Objects.class, "scope")
-                .addStatement("$T.requireNonNull(caller, $S)", Objects.class, "caller")
                 .addStatement("$T.requireNonNull(expires, $S)", Objects.class, "expires")
                 .addStatement("$T.requireNonNull(keyId, $S)", Objects.class, "keyId")
                 .addStatement("vouchedFor = $T.unmodifiableMap(new $T<>(vouchedFor))", Collections.class, TreeMap.class)
@@ -332,7 +329,7 @@ public final class VoucherRuntime {
 
         var issuer = TypeSpec.classBuilder("Issuer")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("Signs the vouchers of one operation and scope: the vouch id, scope, caller, expiry and key\n"
+            .addJavadoc("Signs the vouchers of one operation and scope: the vouch id, scope, expiry and key\n"
                 + "id are fixed when it is made, and each row's voucher varies only in its type and values.\n")
             .addField(keys, "keys", Modifier.PRIVATE, Modifier.FINAL)
             .addField(byte[].class, "head", Modifier.PRIVATE, Modifier.FINAL)
@@ -377,7 +374,6 @@ public final class VoucherRuntime {
             .addParameter(keys, "keys")
             .addParameter(UUID.class, "vouchId")
             .addParameter(String.class, "scope")
-            .addParameter(String.class, "caller")
             .addParameter(Instant.class, "expires")
             .addStatement("$T bytes = new $T()", ByteArrayOutputStream.class, ByteArrayOutputStream.class)
             .addStatement("$T out = new $T(bytes)", DataOutputStream.class, DataOutputStream.class)
@@ -386,7 +382,6 @@ public final class VoucherRuntime {
             .addStatement("out.writeLong(vouchId.getMostSignificantBits())")
             .addStatement("out.writeLong(vouchId.getLeastSignificantBits())")
             .addStatement("writeString(out, scope)")
-            .addStatement("writeString(out, caller)")
             .addStatement("out.writeLong(expires.getEpochSecond())")
             .addStatement("writeString(out, keys.signingKeyId())")
             .nextControlFlow("catch ($T e)", IOException.class)
@@ -398,12 +393,11 @@ public final class VoucherRuntime {
         var issuersClass = self.nestedClass(ISSUERS);
         var issuers = TypeSpec.classBuilder(ISSUERS)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("The issuers of one operation: bound to the keys, the request's caller and the instant the\n"
-                + "operation started, it hands out one issuer per scope and lifetime, under a vouch id minted\n"
-                + "once for them, so every voucher of the operation under one scope shares id, caller and\n"
-                + "expiry. Safe to share between the operation's threads.\n")
+            .addJavadoc("The issuers of one operation: bound to the keys and the instant the operation started, it\n"
+                + "hands out one issuer per scope and lifetime, under a vouch id minted once for them, so every\n"
+                + "voucher of the operation under one scope shares id and expiry. Safe to share between the\n"
+                + "operation's threads.\n")
             .addField(keys, "keys", Modifier.PRIVATE, Modifier.FINAL)
-            .addField(String.class, "caller", Modifier.PRIVATE, Modifier.FINAL)
             .addField(Instant.class, "started", Modifier.PRIVATE, Modifier.FINAL)
             .addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(java.util.concurrent.ConcurrentMap.class),
                     ParameterizedTypeName.get(ClassName.get(List.class), ClassName.get(Object.class)), issuerClass), "byScope", Modifier.PRIVATE, Modifier.FINAL)
@@ -411,13 +405,10 @@ public final class VoucherRuntime {
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addJavadoc("@param keys the keys vouchers are signed with\n"
-                    + "@param caller who the request is for\n"
                     + "@param started when the operation started; each expiry counts from it\n")
                 .addParameter(keys, "keys")
-                .addParameter(String.class, "caller")
                 .addParameter(Instant.class, "started")
                 .addStatement("this.keys = $T.requireNonNull(keys, $S)", Objects.class, "keys")
-                .addStatement("this.caller = $T.requireNonNull(caller, $S)", Objects.class, "caller")
                 .addStatement("this.started = $T.requireNonNull(started, $S)", Objects.class, "started")
                 .build())
             .addMethod(MethodSpec.methodBuilder("issuer")
@@ -428,7 +419,7 @@ public final class VoucherRuntime {
                 .addParameter(String.class, "scope")
                 .addParameter(Duration.class, "ttl")
                 .addStatement("return byScope.computeIfAbsent($T.of(scope, ttl),"
-                    + " key -> $T.issuer(keys, $T.randomUUID(), scope, caller, started.plus(ttl)))", List.class, self, UUID.class)
+                    + " key -> $T.issuer(keys, $T.randomUUID(), scope, started.plus(ttl)))", List.class, self, UUID.class)
                 .build())
             .build();
 
@@ -436,7 +427,7 @@ public final class VoucherRuntime {
             .addModifiers(Modifier.PUBLIC)
             .returns(token)
             .addJavadoc("Decodes and checks a voucher presented for an entity of {@code typeName}: its signature\n"
-                + "with the type name, its expiry within {@link VoucherCodec#CLOCK_SKEW}, its scope, its caller,\n"
+                + "with the type name, its expiry within {@link VoucherCodec#CLOCK_SKEW}, its scope,\n"
                 + "that its vouched-for section names exactly {@code vouchedForFields} and its lookup part exactly\n"
                 + "{@code keyFields}. Each voucher is checked on its own; the vouch id is an audit handle and\n"
                 + "agrees with nothing. Needs no connection.\n"
@@ -462,7 +453,6 @@ public final class VoucherRuntime {
             .endControlFlow()
             .addStatement("$T vouchId = new $T(buffer.getLong(), buffer.getLong())", UUID.class, UUID.class)
             .addStatement("$T tokenScope = readString(buffer)", String.class)
-            .addStatement("$T tokenCaller = readString(buffer)", String.class)
             .addStatement("$T expires = $T.ofEpochSecond(buffer.getLong())", Instant.class, Instant.class)
             .addStatement("$T keyId = readString(buffer)", String.class)
             .addStatement("$T vouchedFor = readSection(buffer)", OBJECT_MAP)
@@ -474,7 +464,7 @@ public final class VoucherRuntime {
             .beginControlFlow("if (buffer.hasRemaining())")
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
-            .addStatement("decoded = new $T(vouchId, tokenScope, tokenCaller, expires, keyId, vouchedFor, lookup)", token)
+            .addStatement("decoded = new $T(vouchId, tokenScope, expires, keyId, vouchedFor, lookup)", token)
             .nextControlFlow("catch ($T | $T e)", BufferUnderflowException.class, IllegalArgumentException.class)
             .addStatement("throw new $T($T.MALFORMED)", rejected, reason)
             .endControlFlow()
@@ -490,9 +480,6 @@ public final class VoucherRuntime {
             .beginControlFlow("if (!decoded.scope().equals(scope))")
             .addStatement("throw new $T($T.SCOPE)", rejected, reason)
             .endControlFlow()
-            .beginControlFlow("if (!decoded.caller().equals(caller))")
-            .addStatement("throw new $T($T.CALLER)", rejected, reason)
-            .endControlFlow()
             .beginControlFlow("if (!decoded.vouchedFor().keySet().equals(vouchedForFields))")
             .addStatement("throw new $T($T.VOUCHED_FOR)", rejected, reason)
             .endControlFlow()
@@ -504,19 +491,16 @@ public final class VoucherRuntime {
 
         var verifier = TypeSpec.classBuilder("Verifier")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("Checks the vouchers one request presents, against the request's caller and the instant it\n"
-                + "checks at. One per request.\n")
+            .addJavadoc("Checks the vouchers one request presents, against the instant it checks at. One per\n"
+                + "request.\n")
             .addField(keys, "keys", Modifier.PRIVATE, Modifier.FINAL)
             .addField(Instant.class, "now", Modifier.PRIVATE, Modifier.FINAL)
-            .addField(String.class, "caller", Modifier.PRIVATE, Modifier.FINAL)
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(keys, "keys")
                 .addParameter(Instant.class, "now")
-                .addParameter(String.class, "caller")
                 .addStatement("this.keys = keys")
                 .addStatement("this.now = now")
-                .addStatement("this.caller = caller")
                 .build())
             .addMethod(verify)
             .build();
@@ -525,12 +509,11 @@ public final class VoucherRuntime {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(verifierClass)
             .addJavadoc("A verifier for one request's vouchers, checking with the verification keys of\n"
-                + "{@code keys}, expiry against {@code now} and the caller against {@code caller}.\n")
+                + "{@code keys} and expiry against {@code now}.\n")
             .addParameter(keys, "keys")
             .addParameter(Instant.class, "now")
-            .addParameter(String.class, "caller")
-            .addStatement("return new $T($T.requireNonNull(keys, $S), $T.requireNonNull(now, $S), $T.requireNonNull(caller, $S))",
-                verifierClass, Objects.class, "keys", Objects.class, "now", Objects.class, "caller")
+            .addStatement("return new $T($T.requireNonNull(keys, $S), $T.requireNonNull(now, $S))",
+                verifierClass, Objects.class, "keys", Objects.class, "now")
             .build();
         var signed = MethodSpec.methodBuilder("signed")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)

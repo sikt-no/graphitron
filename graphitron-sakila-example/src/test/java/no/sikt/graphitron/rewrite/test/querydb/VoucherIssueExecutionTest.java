@@ -32,8 +32,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The issuing side end to end, over the {@code issuing} package: every film a language returns gets a
- * voucher that the codec verifies for {@code FilmVoucher} under the field's scope and the request's
- * caller, carrying the film's title as vouched for and its id as its lookup part, each in the form the
+ * voucher that the codec verifies for {@code FilmVoucher} under the field's scope, carrying the film's
+ * title as vouched for and its id as its lookup part, each in the form the
  * field's scalar serializes it; all of one operation's vouchers share one vouch id and expire the
  * field's lifetime after the operation started, and another operation mints another vouch id.
  */
@@ -70,8 +70,8 @@ class VoucherIssueExecutionTest {
             .build();
     }
 
-    private static SessionState session(String caller) {
-        return SessionState.of(caller,
+    private static SessionState session() {
+        return SessionState.of(
             session -> SakilaSessionIdentity.mount(session.configuration(), CLAIMS),
             (session, handle) -> SakilaSessionIdentity.unmount(session.configuration(), handle));
     }
@@ -86,8 +86,8 @@ class VoucherIssueExecutionTest {
             .toList();
     }
 
-    private static ExecutionResult run(String caller) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(session(caller)).query(QUERY).build());
+    private static ExecutionResult run() {
+        return graphql.execute(Graphitron.newOwnedExecutionInput(session()).query(QUERY).build());
     }
 
     private static VoucherCodec.Token verify(VoucherCodec.Verifier verifier, String voucher) {
@@ -104,13 +104,12 @@ class VoucherIssueExecutionTest {
     @Test
     void everyFilmGetsAVoucherVouchingForItsTitleWithItsIdAsTheLookup() {
         var before = Instant.now().minusSeconds(1);
-        var vouchers = vouchers(run("alice"));
+        var vouchers = vouchers(run());
         var titles = dsl.select(FILM.FILM_ID, FILM.TITLE).from(FILM).fetchMap(FILM.FILM_ID, FILM.TITLE);
         assertThat(vouchers).isNotEmpty();
-        var verifier = VoucherCodec.verifier(keys, Instant.now(), "alice");
+        var verifier = VoucherCodec.verifier(keys, Instant.now());
         for (var voucher : vouchers) {
             var token = verify(verifier, voucher);
-            assertThat(token.caller()).isEqualTo("alice");
             assertThat(token.keyId()).isEqualTo("k1");
             var filmId = token.lookup().get("filmId");
             assertThat(filmId).as("an ID serializes as a string").isInstanceOf(String.class);
@@ -125,21 +124,21 @@ class VoucherIssueExecutionTest {
 
     @Test
     void anOperationsVouchersShareOneVouchIdAndAnotherOperationMintsAnother() {
-        var verifier = VoucherCodec.verifier(keys, Instant.now(), "alice");
-        var first = vouchers(run("alice")).stream().map(v -> verify(verifier, v).vouchId()).distinct().toList();
-        var second = vouchers(run("alice")).stream().map(v -> verify(verifier, v).vouchId()).distinct().toList();
+        var verifier = VoucherCodec.verifier(keys, Instant.now());
+        var first = vouchers(run()).stream().map(v -> verify(verifier, v).vouchId()).distinct().toList();
+        var second = vouchers(run()).stream().map(v -> verify(verifier, v).vouchId()).distinct().toList();
         assertThat(first).hasSize(1);
         assertThat(second).hasSize(1);
         assertThat(first.get(0)).isNotEqualTo(second.get(0));
     }
 
     @Test
-    void aVoucherIsBoundToTheCallerItWasIssuedTo() {
-        var voucher = vouchers(run("alice")).get(0);
-        assertThatThrownBy(() -> verify(VoucherCodec.verifier(keys, Instant.now(), "bob"), voucher))
-            .isInstanceOfSatisfying(VoucherRejectedException.class,
-                e -> assertThat(e.reason()).isEqualTo(VoucherRejectedException.Reason.CALLER));
-        assertThatThrownBy(() -> VoucherCodec.verifier(keys, Instant.now(), "alice")
+    void aVoucherIsBoundToItsTypeAndToNoCaller() {
+        var voucher = vouchers(run()).get(0);
+        assertThat(java.util.Arrays.stream(VoucherCodec.Token.class.getRecordComponents())
+                .map(java.lang.reflect.RecordComponent::getName))
+            .doesNotContain("caller");
+        assertThatThrownBy(() -> VoucherCodec.verifier(keys, Instant.now())
                 .verify("Film", voucher, "films", Set.of("title"), Set.of("filmId")))
             .isInstanceOfSatisfying(VoucherRejectedException.class,
                 e -> assertThat(e.reason()).isEqualTo(VoucherRejectedException.Reason.SIGNATURE));

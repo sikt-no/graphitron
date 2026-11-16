@@ -55,9 +55,6 @@ public final class GraphitronDevExecutorGenerator {
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
             SessionIdentityRows identity, boolean vouches) {
-        if (vouches && !identity.supplied()) {
-            throw new IllegalArgumentException("a graph that vouches supplies session identity per request");
-        }
         String schemaPackage = outputPackage + ".schema";
         var facade = ClassName.get(outputPackage, GraphitronFacadeGenerator.CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);

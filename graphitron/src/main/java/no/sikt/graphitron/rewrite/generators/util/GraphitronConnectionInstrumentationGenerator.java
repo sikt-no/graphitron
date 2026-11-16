@@ -159,7 +159,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
     /**
      * As {@link #generate(String, TypeName, SessionIdentityRows)}, for a build that may vouch: where
      * {@code vouches}, each operation also gets the issuers its voucher fields sign with, bound to the
-     * runtime's keys, the session state's caller and the operation's start.
+     * runtime's keys and the operation's start.
      */
     public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionIdentityRows sessionHooks,
                                           boolean vouches) {
@@ -307,10 +307,10 @@ public final class GraphitronConnectionInstrumentationGenerator {
         }
         if (issuers != null) {
             beginExecuteOperationBuilder
-                .addComment("The operation's voucher issuers: one vouch id per scope, every voucher bound to the")
-                .addComment("request's caller and expiring a fixed time after the operation started.")
-                .addStatement("graphQLContext.put($T.class, new $T(runtime.voucherKeys(), $L.caller(), $T.now()))",
-                    issuers, issuers, ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT, java.time.Instant.class);
+                .addComment("The operation's voucher issuers: one vouch id per scope, every voucher expiring a fixed")
+                .addComment("time after the operation started.")
+                .addStatement("graphQLContext.put($T.class, new $T(runtime.voucherKeys(), $T.now()))",
+                    issuers, issuers, java.time.Instant.class);
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
         if (tenantKey != null) {

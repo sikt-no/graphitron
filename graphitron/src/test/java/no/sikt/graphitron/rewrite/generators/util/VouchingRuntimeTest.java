@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The runtime of a build that vouches, compiled at Java 17: every public constructor of the runtime
  * takes the voucher keys last, so a runtime without them does not compile, and the withers keep them;
- * the session state takes the caller first and hands it back.
+ * the session state takes no caller, a voucher being bound to none.
  */
 @UnitTier
 class VouchingRuntimeTest {
@@ -104,14 +104,12 @@ class VouchingRuntimeTest {
     }
 
     @Test
-    void theSessionStateTakesTheCallerFirstAndHandsItBack() throws Exception {
+    void theSessionStateTakesNoCaller() throws Exception {
         var mount = harness.load(SCHEMA_PACKAGE + ".SessionState$Mount");
         var unmount = harness.load(SCHEMA_PACKAGE + ".SessionState$Unmount");
-        var of = sessionState.getMethod("of", String.class, mount, unmount);
-        var state = of.invoke(null, "alice",
-            Proxy.newProxyInstance(harness.classLoader(), new Class<?>[] {mount}, (p, m, a) -> null),
-            Proxy.newProxyInstance(harness.classLoader(), new Class<?>[] {unmount}, (p, m, a) -> null));
-        assertThat(sessionState.getMethod("caller").invoke(state)).isEqualTo("alice");
+        sessionState.getMethod("of", mount, unmount);
+        assertThat(Arrays.stream(sessionState.getMethods()).map(java.lang.reflect.Method::getName))
+            .doesNotContain("caller");
         assertThat(Arrays.stream(sessionState.getMethods()).filter(m -> m.getName().equals("of")))
             .as("one of form per build").hasSize(1);
     }

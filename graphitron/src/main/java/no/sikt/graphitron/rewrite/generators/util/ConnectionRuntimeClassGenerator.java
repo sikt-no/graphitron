@@ -309,8 +309,7 @@ public final class ConnectionRuntimeClassGenerator {
     /**
      * As {@link #generate(String, SessionIdentityRows, ConnectionKeyShape, CodeBlock)}, for a build
      * that may vouch: where {@code vouches}, every public runtime constructor takes the
-     * {@code VoucherKeys} last and {@code SessionState.of} takes the caller first. A graph that vouches
-     * supplies session identity, which the store requires of a voucher marker.
+     * {@code VoucherKeys} last.
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches) {
@@ -327,9 +326,6 @@ public final class ConnectionRuntimeClassGenerator {
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches,
                                           boolean failureMessages) {
-        if (vouches && !identity.supplied()) {
-            throw new IllegalArgumentException("a graph that vouches supplies session identity per request");
-        }
         TypeName tenantKeyType = shape.tenantKey().orElse(null);
         if ((tenantKeyType == null) != (tenantColumn == null)) {
             throw new IllegalArgumentException("A multi-tenant runtime needs both the tenant key type and"
@@ -382,7 +378,7 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(batchSizeLimit(batchSizeLimit));
         if (identity.emitsHookImplementation()) {
             units.add(mountedSession(schemaPackage, tenantKey, multiTenant));
-            units.add(sessionState(schemaPackage, identity, vouches));
+            units.add(sessionState(schemaPackage, identity));
             units.add(sessionHookImpl(schemaPackage, identity, tenantKey, multiTenant));
             units.add(sessionMountException(sessionMountException));
         }
@@ -4056,7 +4052,7 @@ public final class ConnectionRuntimeClassGenerator {
      * lambda never faces overload ambiguity. The callbacks may throw anything; what the mount throws
      * is reported as the cause of a {@code SessionMountException}.
      */
-    private static TypeSpec sessionState(String schemaPackage, SessionIdentityRows identity, boolean vouches) {
+    private static TypeSpec sessionState(String schemaPackage, SessionIdentityRows identity) {
         var self = ClassName.get(schemaPackage, SESSION_STATE_CLASS_NAME);
         var mountedSession = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
         TypeName handleType = identity.handleType().orElse(null);
@@ -4096,10 +4092,6 @@ public final class ConnectionRuntimeClassGenerator {
         var ofBuilder = MethodSpec.methodBuilder("of")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(self);
-        if (vouches) {
-            constructorBuilder.addParameter(String.class, "caller").addStatement("this.caller = caller");
-            ofBuilder.addParameter(String.class, "caller");
-        }
         var constructor = constructorBuilder
             .addParameter(mountType, "mount")
             .addParameter(unmountType, "unmount")
@@ -4109,18 +4101,11 @@ public final class ConnectionRuntimeClassGenerator {
         var ofBoth = ofBuilder
             .addParameter(mountType, "mount")
             .addParameter(unmountType, "unmount")
-            .addStatement(vouches
-                    ? "return new $T($T.requireNonNull(caller, $S), $T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))"
-                    : "return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
-                vouches
-                    ? new Object[] {self, Objects.class, "caller", Objects.class, "mount", Objects.class, "unmount"}
-                    : new Object[] {self, Objects.class, "mount", Objects.class, "unmount"})
+            .addStatement("return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
+                self, Objects.class, "mount", Objects.class, "unmount")
             .addJavadoc("A session state that mounts at acquisition and unmounts at release. The unmount\n"
                 + "clears what the mount set; when the mount sets no database state, pass one that\n"
-                + "does nothing."
-                + (vouches ? " The caller is who the request is for, as the vouchers this subgraph\n"
-                    + "issues or accepts are bound to it; both subgraphs must pass the same caller for the same\n"
-                    + "user, for example the token's subject." : "") + "\n")
+                + "does nothing.\n")
             .build();
 
         var mountCall = MethodSpec.methodBuilder("mount")
@@ -4146,21 +4131,10 @@ public final class ConnectionRuntimeClassGenerator {
                 + "when the input is built rather than looked up from any ambient state.\n")
             .addType(mountInterface)
             .addType(unmountInterface)
-            .addFields(vouches
-                ? List.of(FieldSpec.builder(String.class, "caller", Modifier.PRIVATE, Modifier.FINAL).build())
-                : List.of())
             .addField(mountField)
             .addField(unmountField)
             .addMethod(constructor)
             .addMethod(ofBoth)
-            .addMethods(vouches
-                ? List.of(MethodSpec.methodBuilder("caller")
-                    .addModifiers(Modifier.PUBLIC)
-                    .returns(String.class)
-                    .addJavadoc("Who the request is for, which every voucher it issues or accepts is bound to.\n")
-                    .addStatement("return caller")
-                    .build())
-                : List.of())
             .addMethod(mountCall.build())
             .addMethod(unmountCall.build())
             .build();

@@ -64,8 +64,8 @@ class VoucherCodecTest {
         ed25519 = keysType.getMethod("ed25519", String.class, PrivateKey.class, Map.class);
         issuing = keysType.getMethod("issuing", String.class, PrivateKey.class);
         accepting = keysType.getMethod("accepting", Map.class);
-        issuer = codec.getMethod("issuer", keysType, UUID.class, String.class, String.class, Instant.class);
-        verifier = codec.getMethod("verifier", keysType, Instant.class, String.class);
+        issuer = codec.getMethod("issuer", keysType, UUID.class, String.class, Instant.class);
+        verifier = codec.getMethod("verifier", keysType, Instant.class);
         sign = harness.load(PACKAGE + ".schema.VoucherCodec$Issuer").getMethod("sign", String.class, Map.class, Map.class);
         verify = harness.load(PACKAGE + ".schema.VoucherCodec$Verifier")
             .getMethod("verify", String.class, String.class, String.class, Set.class, Set.class);
@@ -93,7 +93,7 @@ class VoucherCodecTest {
 
     private static String issue(Object keys, UUID vouch, String scope, Instant expires, String typeName,
                                 Map<String, ?> vouchedFor, Map<String, ?> lookup) throws Throwable {
-        return (String) call(sign, call(issuer, null, keys, vouch, scope, "alice", expires), typeName, vouchedFor, lookup);
+        return (String) call(sign, call(issuer, null, keys, vouch, scope, expires), typeName, vouchedFor, lookup);
     }
 
     private static String voucher() throws Throwable {
@@ -101,7 +101,7 @@ class VoucherCodecTest {
     }
 
     private static Object verifierAt(Object keys, Instant now) throws Throwable {
-        return call(verifier, null, keys, now, "alice");
+        return call(verifier, null, keys, now);
     }
 
     private static Object check(Object verifier, String typeName, String voucher, String scope,
@@ -154,7 +154,6 @@ class VoucherCodecTest {
         var token = check(verifierAt(keys(), ISSUED), "Result", voucher, "results", vouchedFor.keySet(), lookup.keySet());
         assertThat(accessor(token, "vouchId")).isEqualTo(VOUCH);
         assertThat(accessor(token, "scope")).isEqualTo("results");
-        assertThat(accessor(token, "caller")).isEqualTo("alice");
         assertThat(accessor(token, "expires")).isEqualTo(EXPIRES);
         assertThat(accessor(token, "keyId")).isEqualTo("k1");
         assertThat(accessor(token, "vouchedFor")).isEqualTo(Map.of("active", true, "ownerId", 42, "region", "north"));
@@ -192,7 +191,7 @@ class VoucherCodecTest {
         var keys = keys();
         assertRejected(() -> check("not a voucher!"), "MALFORMED");
         assertRejected(() -> check(voucher.substring(0, voucher.length() - 20)), "MALFORMED");
-        assertRejected(() -> check(tamper(voucher, b -> { b[0] = 2; return b; })), "UNKNOWN_VERSION");
+        assertRejected(() -> check(tamper(voucher, b -> { b[0] = 3; return b; })), "UNKNOWN_VERSION");
         assertRejected(() -> check(tamper(voucher, b -> { b[b.length - 1] ^= 1; return b; })), "SIGNATURE");
         assertRejected(() -> check(tamper(voucher, b -> replaceLast(b, "r-7", "r-8"))), "SIGNATURE");
         assertRejected(() -> check(verifierAt(call(accepting, null, Map.of("k2", pair.getPublic())), ISSUED), "Result",
@@ -203,8 +202,6 @@ class VoucherCodecTest {
             Set.of("id")), "SIGNATURE");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "documents", Set.of("ownerId"),
             Set.of("id")), "SCOPE");
-        assertRejected(() -> check(call(verifier, null, keys, ISSUED, "bob"), "Result", voucher, "results",
-            Set.of("ownerId"), Set.of("id")), "CALLER");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "results", Set.of("tenantId"),
             Set.of("id")), "VOUCHED_FOR");
         assertRejected(() -> check(verifierAt(keys, ISSUED), "Result", voucher, "results", Set.of("ownerId", "tenantId"),
