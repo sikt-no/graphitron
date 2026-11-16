@@ -13,6 +13,7 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.eclipse.lsp4j.Diagnostic;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.util.ArrayList;
@@ -21,6 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.test.FactWriters.rejectionFacts;
 import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.Arity;
@@ -48,8 +50,15 @@ import no.sikt.graphitron.model.diagnostics.WireCoercionError;
  */
 class RejectionSeverityCoverageTest {
 
-    /** The graph every fixture here writes under, and the one the replay reads back through. */
-    private static final String GRAPH = "coverage";
+    /**
+     * The case's own graph, named for its method, which every fixture here writes under and the
+     * replay reads back through, so a store several cases write into holds each case's rows apart.
+     */
+    private final String graph;
+
+    RejectionSeverityCoverageTest(TestInfo info) {
+        graph = "coverage." + info.getTestMethod().orElseThrow().getName();
+    }
 
     @Test
     void everyRejectionPermitReplaysWithASeverity(@TempDir java.nio.file.Path tmp) {
@@ -65,7 +74,7 @@ class RejectionSeverityCoverageTest {
 
         var unmapped = new ArrayList<String>();
         SeededStore.withSeededStore(dsl -> {
-            var facts = rejectionFacts(dsl, GRAPH, tmp);
+            var facts = rejectionFacts(dsl, graph, tmp);
             for (var permit : permits) {
                 var sample = sampleFor(permit);
                 if (sample == null) {
@@ -91,11 +100,11 @@ class RejectionSeverityCoverageTest {
     }
 
     /** The editor's read of what the build recorded, over the store this test writes into. */
-    private static List<Diagnostic> replay(
+    private List<Diagnostic> replay(
         DSLContext dsl, String uri, FileSnapshot file
     ) {
         return Diagnostics.compute(BundledVocabulary.get(), uri, file,
-            Optional.of(new StoreHandle(dsl, GRAPH)));
+            Optional.of(new StoreHandle(dsl, graph)));
     }
 
     /**
@@ -126,13 +135,14 @@ class RejectionSeverityCoverageTest {
             .isTrue();
 
         SeededStore.withSeededStore(dsl -> {
-            var facts = rejectionFacts(dsl, GRAPH, tmp);
+            var facts = rejectionFacts(dsl, graph, tmp);
             for (var sample : samples) {
                 String declared = declaredLspCode(sample);
                 facts.write(List.of(new ValidationError("Coord", sample, loc)));
 
                 var storeCode = dsl
-                    .selectFrom(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR)
+                    .selectFrom(REJECTION_VALIDATION_ERROR)
+                    .where(REJECTION_VALIDATION_ERROR.GRAPH_NAME.eq(graph))
                     .fetchOne(r -> Optional.ofNullable(r.getLspCode()));
                 assertThat(storeCode).isNotNull();
                 assertThat(storeCode.orElse(null))
