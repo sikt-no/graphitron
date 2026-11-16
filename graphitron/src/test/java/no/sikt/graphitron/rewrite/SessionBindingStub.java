@@ -5,24 +5,25 @@ import org.jooq.Condition;
 /**
  * The {@code @service} and {@code @condition} methods the session-binding rejection tests name.
  * Public, unlike the package-private stubs beside it, because the store reads a code reference's
- * class from the census, which holds public classes only.
+ * class from the census, which holds public classes only. The services answer the Integer an
+ * {@code Int} field is handed, so only the binding under test is judged.
  */
 public final class SessionBindingStub {
 
     private SessionBindingStub() {}
 
     /** A service parameter bound to the {@code brukerId} member of the record handle. */
-    public static Long brukerOf(org.jooq.DSLContext dsl, Long brukerId) {
+    public static Integer brukerOf(org.jooq.DSLContext dsl, Long brukerId) {
         throw new UnsupportedOperationException();
     }
 
     /** The primitive form of {@link #brukerOf}. */
-    public static Long brukerOfPrimitive(org.jooq.DSLContext dsl, long brukerId) {
+    public static Integer brukerOfPrimitive(org.jooq.DSLContext dsl, long brukerId) {
         throw new UnsupportedOperationException();
     }
 
     /** A boxed member bound to a primitive parameter. */
-    public static Long sokerOfPrimitive(org.jooq.DSLContext dsl, long sokerId) {
+    public static Integer sokerOfPrimitive(org.jooq.DSLContext dsl, long sokerId) {
         throw new UnsupportedOperationException();
     }
 

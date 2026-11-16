@@ -10,8 +10,9 @@ import java.util.Set;
 
 /**
  * Services whose answer a field is or is not handed, the mismatched ones refused as
- * {@code SERVICE_RETURN_MISMATCH}: records of another table, many where the field is one, one where
- * it is a list, at a root and per key under Film. Never called.
+ * {@code SERVICE_RETURN_MISMATCH}: records of another table, values of another class than the
+ * field's scalar, many where the field is one, one where it is a list, at a root and per key under
+ * Film. Never called.
  */
 public final class FilmReturnShapeService {
 
@@ -43,6 +44,14 @@ public final class FilmReturnShapeService {
 
     public static Map<FilmRecord, Integer> lengthByFilm(Set<FilmRecord> films) {
         return Map.of();
+    }
+
+    public static Map<FilmRecord, String> titleByFilm(Set<FilmRecord> films) {
+        return Map.of();
+    }
+
+    public static Integer filmCount() {
+        return 0;
     }
 
     public static Map<FilmRecord, FilmRecord> filmAsLanguage(Set<FilmRecord> films) {

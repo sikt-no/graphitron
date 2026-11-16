@@ -20180,14 +20180,17 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR m.result_erased_class IN ('java.util.List', 'org.jooq.Result') AND mp.erased_class = 'java.util.Set')
 UNION ALL
 -- A @service whose answer does not match its field, at the field: the records it answers are not the
--- record of the table the field's type is bound to, or it answers many where the field is one table
+-- record of the table the field's type is bound to, the values it answers are not of the class the
+-- field's scalar arrives as, or it answers many where the field is one table
 -- record, scalar or enum, or a List or Result in the keys' order hands each key one where the field
 -- is a list. What one field is handed is the element the result peels to; under an object a Map
 -- answers it per key, and a List or Result in the keys' order hands each key the answer's own
 -- element, many only where that element is a container delivering many. One delivered where the
 -- field is a list is otherwise LIST_OVER_ONE_VALUE's, and many under one object with no table is a
--- payload the records are lifted into. An outcome, a connection, refused for a service of its own,
--- and a result naming no class, a primitive or an array graphql-java reads as it is, are not
+-- payload the records are lifted into. A scalar is compared where its class is known, exactly, as
+-- graphql-java would otherwise coerce a value the author meant as another. An outcome, a connection,
+-- refused for a service of its own, and a result naming no class, a primitive or an array
+-- graphql-java reads as it is, are not
 -- checked here, and neither is a child answer the batch cannot read. The detail is the declared
 -- result type.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -20212,6 +20215,9 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
          AND NOT EXISTS (SELECT 1 FROM graphitron_type_backing b
                           WHERE b.graph_name = f.graph_name AND b.type_name = f.named_type
                             AND b.declared_via = 'BOUND_TABLE' AND b.class_name = m.result_element_class))
+        OR EXISTS (SELECT 1 FROM graphitron_scalar_class sc
+                    WHERE sc.graph_name = f.graph_name AND sc.type_name = f.named_type
+                      AND sc.java_class <> m.result_element_class)
         OR NOT f.is_list
            AND CASE WHEN p.start = 'CHILD' AND m.result_erased_class IN ('java.util.List', 'org.jooq.Result')
                     THEN EXISTS (SELECT 1 FROM code_delivery_container c
@@ -27757,7 +27763,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_BATCH_SHAPE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_BATCH_SHAPE_UNSUPPORTED',
    'A @service under an object takes its keys or answers in a shape the batch does not read: keys in a container delivering many, a jOOQ Result only of the parent''s table records; an answer a Map by key, or a List or Result in the keys'' order under keys a List, Collection or Result gives an order: take a Set and answer a Map, or take a List and answer a List.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',
-   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record, in a list exactly where the field is one.'),
+   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',
