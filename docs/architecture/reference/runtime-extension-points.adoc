@@ -310,9 +310,15 @@ it lands:
 * Tenancy is not a mode. `ConnectionKey` is a record with one `Optional` per part the schema has, the
   tenant where it has a tenant column and each vouched-for field where it accepts vouchers, generated in
   every build and empty in one with neither. What an empty part means is the source's decision.
-* Which tenants are valid and whether a request may reach one is the source's to decide: it refuses by
-  throwing from `acquire`. Graphitron keeps no request tenant set. A fan-out spans the tenants the
-  source's `tenants()` names, one key and one lease each.
+* Which tenants are valid and whether a request may reach one is the source's to decide: it refuses a key
+  by throwing the generated key-not-permitted refusal from `acquire`, which answers as a field error and as
+  `null` in the entity and node dispatch, like a row that does not exist; any other throw rejects the
+  request. Graphitron keeps no request tenant set.
+* A fan-out spans the tenants the source names, one key and one lease each. In a build with a tenant
+  column the source declares them and is built through its factory from `acquire` and the tenants, so a missing
+  domain does not compile; in a build without one the source is a plain functional interface.
+* A ready-made source, from a key-to-`DataSource` function and a mount and unmount, ships with the
+  contract, so today's behaviour stays one call away.
 * A build whose key has parts, a tenant or vouched-for values, is owned connections only; the escape
   hatch below does not apply to it.
 
