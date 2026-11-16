@@ -12,6 +12,7 @@ import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -38,7 +39,15 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 class GraphitronAnchorTest {
 
-    private static final String GRAPH = "deprecations";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphitronAnchorTest(TestInfo info) {
+        graph = "deprecations." + info.getTestMethod().orElseThrow().getName();
+    }
 
     /**
      * The docstring convention. The token marks the description as carrying the notice and the
@@ -61,7 +70,8 @@ class GraphitronAnchorTest {
             read(dsl, tmp);
             var t = GRAPHITRON_DEPRECATED;
 
-            assertThat(dsl.select(t.COORDINATE, t.REASON).from(t).fetch())
+            assertThat(dsl.select(t.COORDINATE, t.REASON).from(t).where(t.GRAPH_NAME.eq(graph))
+                    .fetch())
                 .as("the marked directive and nothing else; the one beside it has a description "
                     + "too, which is what makes this a decode rather than a presence test")
                 .extracting(r -> r.value1(), r -> r.value2())
@@ -118,7 +128,7 @@ class GraphitronAnchorTest {
             var t = GRAPHITRON_DEPRECATED;
 
             assertThat(dsl.select(t.COORDINATE, t.REASON).from(t)
-                    .where(t.COORDINATE.like("%(%")).fetch())
+                    .where(t.GRAPH_NAME.eq(graph), t.COORDINATE.like("%(%")).fetch())
                 .as("each marked argument under the coordinate naming it, the two parent hops "
                     + "having been resolved; a marker with no reason still deprecates, and stores "
                     + "the empty string rather than a null a reader would have to test for")
@@ -180,7 +190,8 @@ class GraphitronAnchorTest {
             read(dsl, tmp);
             var t = GRAPHITRON_DEPRECATED;
 
-            assertThat(dsl.select(t.COORDINATE).from(t).fetch(t.COORDINATE))
+            assertThat(dsl.select(t.COORDINATE).from(t).where(t.GRAPH_NAME.eq(graph))
+                    .fetch(t.COORDINATE))
                 .as("@index is the deprecated alias of @order(index:) and @record no longer binds "
                     + "anything, and both say so in prose because GraphQL gives them nowhere else "
                     + "to say it")
@@ -249,28 +260,31 @@ class GraphitronAnchorTest {
     }
 
     /** Whether the corpus binds this type to a table. */
-    private static boolean bound(DSLContext dsl, String typeName) {
+    private boolean bound(DSLContext dsl, String typeName) {
         var a = GRAPHQL_DIRECTIVE_APPLICATION;
         return dsl.fetchExists(dsl.selectOne().from(a)
-            .where(a.COORDINATE.eq(typeName), a.DIRECTIVE_NAME.eq("table")));
+            .where(a.GRAPH_NAME.eq(graph), a.COORDINATE.eq(typeName),
+                a.DIRECTIVE_NAME.eq("table")));
     }
 
     /** Whether the corpus marks this directive deprecated as a whole. */
-    private static boolean marked(DSLContext dsl, String directive) {
+    private boolean marked(DSLContext dsl, String directive) {
         var t = GRAPHITRON_DEPRECATED;
-        return dsl.fetchExists(dsl.selectOne().from(t).where(t.COORDINATE.eq("@" + directive)));
+        return dsl.fetchExists(dsl.selectOne().from(t)
+            .where(t.GRAPH_NAME.eq(graph), t.COORDINATE.eq("@" + directive)));
     }
 
     /** Whether the corpus marks this argument of this directive deprecated. */
-    private static boolean markedArgument(DSLContext dsl, String directive, String argument) {
+    private boolean markedArgument(DSLContext dsl, String directive, String argument) {
         var t = GRAPHITRON_DEPRECATED;
         return dsl.fetchExists(dsl.selectOne().from(t)
-            .where(t.COORDINATE.eq("@" + directive + "(" + argument + ":)")));
+            .where(t.GRAPH_NAME.eq(graph),
+                t.COORDINATE.eq("@" + directive + "(" + argument + ":)")));
     }
 
     /** One reading of everything the directory holds, which is what a run does. */
-    private static void read(DSLContext dsl, Path baseDir) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
+    private void read(DSLContext dsl, Path baseDir) {
+        var graph = new GraphIdentity(this.graph, baseDir);
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
