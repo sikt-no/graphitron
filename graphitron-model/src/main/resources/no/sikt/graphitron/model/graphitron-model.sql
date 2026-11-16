@@ -19901,14 +19901,44 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                 WHERE pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
                     WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
-                      AND po.field_name = f.field_name);
+                      AND po.field_name = f.field_name)
+UNION ALL
+-- A @service whose outcome claims validation, under an object or answering participants on tables of
+-- their own, at the field: the arguments its call builds are validated once per fetch of a root call
+-- lifting onto at most one table, so it is refused elsewhere until validation is generated there.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_CHILD_VALIDATION_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'SERVICE'
+   AND (p.start = 'CHILD'
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
+                    WHERE pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate
+                      AND pt.recognized_by = 'TABLE'))
+   -- The outcome's errors field has a member that is an @error with a VALIDATION handler.
+   AND EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                 JOIN graphitron_errors_field ef
+                   ON ef.graph_name = po.graph_name AND ef.type_name = po.outcome_type_name
+                  AND ef.field_name = po.errors_field_name
+                 JOIN graphitron_type_member m ON m.graph_name = ef.graph_name AND m.container_name = ef.container_name
+                 JOIN graphql_directive_application da
+                   ON da.graph_name = m.graph_name AND da.coordinate = m.member_type_name
+                  AND da.directive_name = 'error'
+                 JOIN graphitron_ast_error_handler_entry h
+                   ON h.graph_name = da.graph_name AND h.source_name = da.source_name
+                  AND h.application_line = da.source_line AND h.application_column = da.source_column
+                  AND h.handler = 'VALIDATION'
+                WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                  AND po.field_name = f.field_name);
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning or polymorphic child field''s';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED or SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for a re-read, a connection or a polymorphic child';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED, SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED or SERVICE_CHILD_VALIDATION_UNSUPPORTED';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for the service deferrals';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 -- What a service answers to a call that names nothing, where it is an empty value the generated code
@@ -27313,6 +27343,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A value is read off another table by a path the reading site does not follow yet: under a discriminated @service, a participant''s field reads its value more than one step off the shared table, or by a path not departing it. Read it one step off the shared table, or read the rows with a field graphitron fetches. Other sites that cannot read a scalar down a path join this code rather than mint their own.'),
   ('SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED',
    'A @service under an object answers an interface or union whose rows may be any of several participants, which is lifted for a root @service only: move the call to a root field, or answer one participant''s type.'),
+  ('SERVICE_CHILD_VALIDATION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CHILD_VALIDATION_UNSUPPORTED',
+   'A @service whose outcome claims validation runs under an object, or answers participants on tables of their own, where its arguments are not validated yet: validation runs once per fetch of a root @service lifting onto at most one table. Move the call to a root field, or drop the VALIDATION handler.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',

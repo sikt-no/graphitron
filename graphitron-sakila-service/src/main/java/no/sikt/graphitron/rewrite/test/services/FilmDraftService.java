@@ -1,6 +1,12 @@
 package no.sikt.graphitron.rewrite.test.services;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Fixture behind {@code Mutation.countFilmDrafts}: a {@code @service} mutation taking a list of
@@ -17,6 +23,15 @@ public final class FilmDraftService {
 
     public static FilmDraftsCountedPayload count(List<FilmDraft> drafts) {
         return new FilmDraftsCountedPayload(drafts.size(), List.of());
+    }
+
+    /**
+     * A child service counting each film's drafts, its outcome validating what it builds: validation
+     * under an object, which the store-fed fetcher does not generate yet; never called.
+     */
+    public static Map<FilmRecord, FilmDraftsCountedPayload> countFor(Set<FilmRecord> films, List<FilmDraft> drafts) {
+        return films.stream().collect(Collectors.toMap(Function.identity(),
+            film -> new FilmDraftsCountedPayload(drafts.size(), List.of())));
     }
 
     /** Takes a class nothing can construct, for the build defect that says so; never called. */

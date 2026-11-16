@@ -1,0 +1,29 @@
+# A @service under an object whose outcome claims validation: each film counts the drafts it is
+# given, and FilmWriteInvalid's VALIDATION handler asks the arguments to be validated before the
+# call, which the store-fed fetcher does for a root call only.
+
+type Film @table(name: "film") {
+  title: String
+  draftCount(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "countFor",
+    argMapping: "drafts: in"})
+}
+
+type FilmWriteInvalid @error(handlers: [{handler: VALIDATION}]) {
+  path: [String!]!
+  message: String!
+}
+union FilmDraftError = FilmWriteInvalid
+type FilmDraftsCountedPayload {
+  count: Int
+  errors: [FilmDraftError]
+}
+input FilmDraftInput { title: String! }
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_CHILD_VALIDATION_UNSUPPORTED'", rows: """
+  code,                                 coordinate
+  SERVICE_CHILD_VALIDATION_UNSUPPORTED, Film.draftCount
+  """)
