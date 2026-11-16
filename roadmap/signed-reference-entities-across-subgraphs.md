@@ -255,6 +255,9 @@ Decisions the user made on this item; each is stated where it applies below.
   key. No per-voucher detail reaches the mount: the covered lookup keys and a `Vouch` type are dropped.
 * The vouch id is an audit field that Graphitron logs; handing it to the consumer can be added later
   (2026-11-16). The verifier's check that vouchers sharing a vouch id agree is dropped.
+* Version 1 has no tenant pairing: `@accept` in a graph with a `<tenantColumn>` is refused (2026-11-16).
+  A vouched key's tenant part is always empty, so the dispatch needs no tenant source for the voucher
+  alternative. Pairing it with the authored key's tenant source can follow.
 * `claims:` is renamed `vouchesFor:`, since "claims" already means the request's identity claims
   (2026-11-16).
 * Either marker in a graph with no federation link is refused (2026-11-12).
@@ -414,7 +417,9 @@ Decisions the user made on this item; each is stated where it applies below.
     it a value of its own (read off `graphql_directive_application`, not off a producer fact); an absorbed
     field whose column does not resolve (a member with no component row); either
     marker in a graph with no `<sessionState>` (no `store_graph_session_supplied` row), since the caller
-    rides on `SessionState`. And the vouched-for fields, on either marker: a `vouchesFor:` naming no field, a field named
+    rides on `SessionState`; `@accept` in a graph with a `<tenantColumn>`, since version 1 has no tenant
+    pairing (read off the graph's tenant-column configuration; the implementer confirms that relation is
+    upstream of the stage, or moves the refusal to the first stage it is). And the vouched-for fields, on either marker: a `vouchesFor:` naming no field, a field named
     twice, a list, object or nested selection, or a field carrying `@nodeId`, `@service`, `@routine`,
     `@reference` or another value-giving directive; on `@issue`, a vouched-for field that is not an absorbed
     field; on `@accept`, a vouched-for field that is not a field of the type; and two
@@ -487,14 +492,12 @@ Decisions the user made on this item; each is stated where it applies below.
   builds a `ConnectionKey` per representation from its optional parts (the tenant part from the
   alternative's routing source, the vouched-for part from the verified voucher), and groups on that key
   once. There is no voucher branch beside the tenant branch: every alternative groups by its key, which is
-  what R1185 puts behind the consumer's hook. The voucher alternative's tenant source is the source of
-  the authored key it decodes onto (`graphitron_accept_key`), paired in `EntityKeyQuery` and carried
-  through `EntityTenantRouting.Source`, the seam whose construction moves to the store under R876. No new
-  reference to the classified model's `TenantBinding`, and no exemption in `EntityTenantRouting.fromWalk`:
-  an exempted alternative would have no tenant part, so a voucher could reach a tenant outside the
-  request tenant set. If the pairing is more than 8a should carry, `@accept` in a `<tenantColumn>` graph
-  is refused by a stored defect until R876's "The entity dispatch's tenant routing is read from the
-  store" lands.
+  what R1185 puts behind the consumer's hook. In version 1 an accepting graph has no tenant column
+  (*Rejections*), so the voucher alternative's tenant part is empty and `EntityTenantRouting.fromWalk`,
+  which runs only in multi-tenant builds, never meets it. No exemption is added there and no new
+  reference to the classified model's `TenantBinding`. Tenant pairing, later, gives the voucher
+  alternative the tenant source of the authored key it decodes onto (`graphitron_accept_key`), paired in
+  `EntityKeyQuery` and carried through `EntityTenantRouting.Source`.
 * *Connection key.* Every build that writes the `localContext` slot, multi-tenant or accepting, carries a
   generated `ConnectionKey` there, with a tenant part in multi-tenant builds (shipped in slice 3) and the
   vouched-for part with `@accept` (slice 8a), its components the accepting fields' vouched-for fields.
@@ -585,8 +588,8 @@ yet read on the vouched connection.
 * The vouched-for part of `ConnectionKey`, the shape handed to every generator that needs it, and
   `MountedSession.key()` (*Connection key*, *Runtime surface*). The caller gate on `SessionState.of`
   reads "issues or accepts".
-* `EntityKeyQuery` composes the voucher alternative, paired with the tenant source of the authored key
-  it decodes onto; the dispatcher's verify and group on the whole key; vouched acquisition (*Verify and
+* `@accept` in a `<tenantColumn>` graph refused (*Rejections*).
+* `EntityKeyQuery` composes the voucher alternative, its tenant part empty; the dispatcher's verify and group on the whole key; vouched acquisition (*Verify and
   group*, *Acquisition*).
 * Whether the dispatch is emitted, read from the store or left to R876 (*Whether the dispatch is
   emitted*).
@@ -595,7 +598,7 @@ yet read on the vouched connection.
   walk; the stand-down takes the binding and the projection takes the components.
 * The redaction check (*Redaction*).
 * Execution tests for the entity's own row on the vouched connection, every verification failure, the
-  limit error, and the tenant set in a multi-tenant fixture.
+  limit error.
 
 **Slice 8b, the subtree.** Taken up with or after R876's nodes "A child whose followed key lands on the
 tenant column is routed by its row's tenant" and "`TypeFetcherGenerator` reads the store, one family of
@@ -673,7 +676,6 @@ one fixture.
 * A field outside the entities' subtrees cannot read the rows the vouched-for value unlocks.
 * Every verification failure above, and a mount that throws on a vouched connection, fails the request,
   and the policy hides the rows.
-* In a multi-tenant fixture, a voucher does not reach a tenant outside the request tenant set.
 * A mutation payload issues vouchers on commit, and none from a field that rolled back.
 * Vouched connections are unmounted and released at the end.
 * With the owner as vouched for (`vouchesFor: "eierId"` on both markers): the mount sees the owner in
@@ -714,14 +716,15 @@ want to see the plan.
 * Narrower grants: one connection per vouched-for value scopes a subtree's reads to the value by RLS and
   to its entities by graph shape, not by connection. A consumer that needs a narrower grant puts more into
   `vouchesFor:` (a document id, say), at the cost of the one-value-per-operation limit.
-* The tenant part of a vouched key in a `<tenantColumn>` graph: paired in `EntityKeyQuery` with the
-  authored key's tenant source in slice 8a, or `@accept` refused in such a graph until R876's entity
-  tenant routing is read from the store (*Verify and group*). Never exempted silently.
-* Does `UNSCOPED` empty only the tenant part? A child below a vouched entity that reads a table no tenant
-  column scopes is `UNSCOPED`. If that means "empty tenant part, vouched-for part inherited", it stays on
-  the vouched connection; if it means "the empty key", it reads on the request's connection and B's
-  policies hide it. No page states which; it is for Alf and Filip, and the answer belongs in
-  `docs/architecture/reference/code-generation-triggers.adoc` with slice 8b.
+* Tenant pairing, after version 1: lifting the `<tenantColumn>` refusal by giving the voucher alternative
+  the tenant source of the authored key it decodes onto (*Verify and group*), with an execution test
+  that a voucher does not reach a tenant outside the request tenant set. It brings one more question
+  back with it: does `UNSCOPED` empty only the tenant part? A child below a vouched entity that reads a
+  table no tenant column scopes is `UNSCOPED`. If that means "empty tenant part, vouched-for part
+  inherited", it stays on the vouched connection; if it means "the empty key", it reads on the request's
+  connection and B's policies hide it. No page states which; it is for Alf and Filip, and the answer
+  belongs in `docs/architecture/reference/code-generation-triggers.adoc`. In version 1 there is no tenant
+  column in an accepting graph, so no child is `UNSCOPED` there.
 * Whether `_entities` becomes a stated `ROUTED` producer in `graphitron_occurrence_connection`. It has no
   authored occurrence, so nothing says yet.
 * Whether `MountedSession.tenant()` retires in slice 8a or with R1185, which rewrites the manual's
