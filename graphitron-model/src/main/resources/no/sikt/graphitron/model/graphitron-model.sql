@@ -20023,7 +20023,37 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer p2
                  JOIN graphitron_occurrence o2 ON o2.graph_name = p2.graph_name AND o2.coordinate = p2.coordinate
                 WHERE p2.graph_name = p.graph_name AND p2.kind = 'SERVICE'
-                  AND o2.element_coordinate = o.element_coordinate AND o2.coordinate <> o.coordinate);
+                  AND o2.element_coordinate = o.element_coordinate AND o2.coordinate <> o.coordinate)
+UNION ALL
+-- A child @service whose batch the frame cannot hand keys to or read an answer from, at the field:
+-- its keys taken in no container delivering many, or as a jOOQ Result of the key's own records or
+-- rows rather than the parent's table records; its answer neither a Map by key nor a List or Result
+-- in the keys' order, or such a List under keys taken as a Set, which gives the service no order to
+-- answer in. The detail says which side.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_BATCH_SHAPE_UNSUPPORTED',
+       CASE WHEN mp.erased_class NOT IN ('java.util.Set', 'java.util.List', 'java.util.Collection', 'org.jooq.Result')
+                 OR mp.erased_class = 'org.jooq.Result' AND REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
+            THEN 'keys' ELSE 'answer' END,
+       'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN code_method m
+    ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
+   AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND (mp.erased_class NOT IN ('java.util.Set', 'java.util.List', 'java.util.Collection', 'org.jooq.Result')
+        OR mp.erased_class = 'org.jooq.Result' AND REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
+        OR COALESCE(m.result_erased_class, '') NOT IN ('java.util.Map', 'java.util.List', 'org.jooq.Result')
+        OR m.result_erased_class IN ('java.util.List', 'org.jooq.Result') AND mp.erased_class = 'java.util.Set');
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
@@ -27552,6 +27582,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service parameter is filled from an argument path that steps through a list above its last name and lands on a node id, an input object, or an enum the parameter takes as its Java constant, where each element is read for a scalar or an enum''s name only: hand the parameter the list itself, take the enum by name, or land the path on a scalar.'),
   ('SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED',
    'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
+  ('SERVICE_BATCH_SHAPE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_BATCH_SHAPE_UNSUPPORTED',
+   'A @service under an object takes its keys or answers in a shape the batch does not read: keys in a container delivering many, a jOOQ Result only of the parent''s table records; an answer a Map by key, or a List or Result in the keys'' order under keys a List, Collection or Result gives an order: take a Set and answer a Map, or take a List and answer a List.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',

@@ -1,0 +1,23 @@
+# Child services under Film whose batch the frame does not read: keys taken as a jOOQ Result of the
+# key's own records, an answer in a Set, and a List answer in order under keys taken as a Set, which
+# gives the service no order to answer in.
+
+type Film @table(name: "film") {
+  title: String
+  byKeyResult: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmBatchShapeService", method: "titlesByKeyResult"})
+  asSet: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmBatchShapeService", method: "titlesAsSet"})
+  inOrder: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmBatchShapeService", method: "titlesInOrder"})
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_BATCH_SHAPE_UNSUPPORTED'", rows: """
+  code,                            coordinate,       detail
+  SERVICE_BATCH_SHAPE_UNSUPPORTED, Film.byKeyResult, keys
+  SERVICE_BATCH_SHAPE_UNSUPPORTED, Film.asSet,       answer
+  SERVICE_BATCH_SHAPE_UNSUPPORTED, Film.inOrder,     answer
+  """)

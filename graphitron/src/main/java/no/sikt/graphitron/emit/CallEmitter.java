@@ -385,6 +385,10 @@ public final class CallEmitter {
         if (MAP.equals(answered.rawType())) {
             return new Batch(taken.rawType(), element, conversion, true, answered.typeArguments().get(1));
         }
+        if ((LIST.equals(answered.rawType()) || RESULT.equals(answered.rawType())) && SET.equals(taken.rawType())) {
+            return coordinate + " answers " + answer + " in order, but takes its keys as " + source
+                + ", which has none";
+        }
         if (LIST.equals(answered.rawType()) || RESULT.equals(answered.rawType())) {
             return new Batch(taken.rawType(), element, conversion, false, answered.typeArguments().getFirst());
         }
