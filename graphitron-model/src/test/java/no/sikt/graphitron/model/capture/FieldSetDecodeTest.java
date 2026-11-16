@@ -1,9 +1,9 @@
 package no.sikt.graphitron.model.capture;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -28,6 +28,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FieldSetDecodeTest {
 
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    FieldSetDecodeTest(TestInfo info) {
+        graph = "fieldSetDecode." + info.getTestMethod().orElseThrow().getName();
+    }
+
     private static String federated(String fieldSet) {
         return """
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
@@ -48,9 +58,9 @@ class FieldSetDecodeTest {
     @Test
     @DisplayName("an unnested selection is a single segment")
     void anUnnestedSelectionIsASingleSegment(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, federated("id"))) {
-            assertThat(selections(store.dsl())).isEqualTo(1);
-            assertThat(segments(store.dsl(), 0)).containsExactly("id");
+        try (var store = CapturedStore.of(tmp, graph, federated("id"))) {
+            assertThat(selections(store)).isEqualTo(1);
+            assertThat(segments(store, 0)).containsExactly("id");
         }
     }
 
@@ -62,10 +72,10 @@ class FieldSetDecodeTest {
     @Test
     @DisplayName("a nested selection records its parent as a segment of each leaf")
     void aNestedSelectionRecordsItsParentPerLeaf(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, federated("language { id name }"))) {
-            assertThat(selections(store.dsl())).isEqualTo(2);
-            assertThat(segments(store.dsl(), 0)).containsExactly("language", "id");
-            assertThat(segments(store.dsl(), 1)).containsExactly("language", "name");
+        try (var store = CapturedStore.of(tmp, graph, federated("language { id name }"))) {
+            assertThat(selections(store)).isEqualTo(2);
+            assertThat(segments(store, 0)).containsExactly("language", "id");
+            assertThat(segments(store, 1)).containsExactly("language", "name");
         }
     }
 
@@ -73,11 +83,11 @@ class FieldSetDecodeTest {
     @Test
     @DisplayName("selections keep their written order beside a nested one")
     void selectionsKeepTheirWrittenOrder(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, federated("id language { name } title"))) {
-            assertThat(selections(store.dsl())).isEqualTo(3);
-            assertThat(segments(store.dsl(), 0)).containsExactly("id");
-            assertThat(segments(store.dsl(), 1)).containsExactly("language", "name");
-            assertThat(segments(store.dsl(), 2)).containsExactly("title");
+        try (var store = CapturedStore.of(tmp, graph, federated("id language { name } title"))) {
+            assertThat(selections(store)).isEqualTo(3);
+            assertThat(segments(store, 0)).containsExactly("id");
+            assertThat(segments(store, 1)).containsExactly("language", "name");
+            assertThat(segments(store, 2)).containsExactly("title");
         }
     }
 
@@ -89,26 +99,27 @@ class FieldSetDecodeTest {
     @Test
     @DisplayName("an unclosed field set yields the prefix that parsed")
     void anUnclosedFieldSetYieldsTheParsedPrefix(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, federated("id language { name"))) {
-            assertThat(selections(store.dsl())).isEqualTo(2);
-            assertThat(segments(store.dsl(), 0)).containsExactly("id");
-            assertThat(segments(store.dsl(), 1)).containsExactly("language", "name");
+        try (var store = CapturedStore.of(tmp, graph, federated("id language { name"))) {
+            assertThat(selections(store)).isEqualTo(2);
+            assertThat(segments(store, 0)).containsExactly("id");
+            assertThat(segments(store, 1)).containsExactly("language", "name");
         }
     }
 
     // ===== Helpers =====
 
     /** How many selections the field set decoded to. */
-    private static int selections(DSLContext dsl) {
-        return dsl.fetchCount(GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY);
+    private static int selections(CapturedStore store) {
+        return store.dsl().fetchCount(GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY,
+            GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY.GRAPH_NAME.eq(store.graphName()));
     }
 
     /** One selection's segments, outermost first, which is also the density check. */
-    private static List<String> segments(DSLContext dsl, int position) {
+    private static List<String> segments(CapturedStore store, int position) {
         var s = GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
-        return dsl.select(s.SEGMENT_NAME)
+        return store.dsl().select(s.SEGMENT_NAME)
             .from(s)
-            .where(s.POSITION.eq(position))
+            .where(s.GRAPH_NAME.eq(store.graphName()), s.POSITION.eq(position))
             .orderBy(s.SEGMENT_POSITION)
             .fetch(s.SEGMENT_NAME);
     }
