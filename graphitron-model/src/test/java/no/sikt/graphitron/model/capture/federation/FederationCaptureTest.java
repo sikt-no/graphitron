@@ -2,7 +2,7 @@ package no.sikt.graphitron.model.capture.federation;
 
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.ModelCapture;
-import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
 import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.DisplayName;
@@ -26,6 +26,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * reading of is not read again, a changed one is read whole, and one with no stamp is read every
  * time. What the library answers is pinned by the federation-versions fact document; this pins what
  * the store does with the answer across readings.
+ *
+ * <p>Each case on a store of its own: the library is one source every graph shares, and its
+ * reading date and rows are what a case asserts, so a store another case read it into first would
+ * answer for that case instead.
  */
 class FederationCaptureTest {
 
@@ -35,7 +39,8 @@ class FederationCaptureTest {
     @Test
     @DisplayName("an unchanged jar keeps its rows and is not read again")
     void anUnchangedJarIsReadOnce() {
-        ThreadConfinedStore.run(dsl -> {
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
             ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
             FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
             int imports = dsl.fetchCount(FEDERATION_VERSION_IMPORT);
@@ -46,13 +51,14 @@ class FederationCaptureTest {
             assertThat(readAt(dsl))
                 .as("dated by the reading that read it, not by the one that found it current")
                 .isEqualTo(FIRST);
-        });
+        }
     }
 
     @Test
     @DisplayName("a changed jar, or one with no stamp, is read whole again")
     void aChangedJarIsReadAgain() {
-        ThreadConfinedStore.run(dsl -> {
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
             ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
             FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
             int imports = dsl.fetchCount(FEDERATION_VERSION_IMPORT);
@@ -66,13 +72,14 @@ class FederationCaptureTest {
             FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(1));
             FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(2));
             assertThat(readAt(dsl)).isEqualTo(SECOND.plusMinutes(2));
-        });
+        }
     }
 
     @Test
     @DisplayName("a changed jar's reading sweeps what the library no longer declares and keeps the rest")
     void aChangedJarSweepsWhatTheLibraryDropped() {
-        ThreadConfinedStore.run(dsl -> {
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
             ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
             FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
             String source = FederationCapture.SOURCE_NAME;
@@ -108,13 +115,14 @@ class FederationCaptureTest {
             assertThat(dsl.selectDistinct(d.TOUCHED_AT).from(d).fetch(d.TOUCHED_AT))
                 .as("every definition still declared is marked by the reading that read it")
                 .containsExactly(SECOND);
-        });
+        }
     }
 
     @Test
     @DisplayName("the version graphitron writes is one the library supports, or capture refuses it")
     void theWrittenVersionIsOneTheLibrarySupports() {
-        ThreadConfinedStore.run(dsl -> {
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
             ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
             FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
             assertThat(dsl.select(FEDERATION_WRITTEN_VERSION.VERSION).from(FEDERATION_WRITTEN_VERSION)
@@ -123,7 +131,7 @@ class FederationCaptureTest {
 
             assertThatThrownBy(() -> FederationCapture.gather(dsl, "g", "sha256:a", "v9.0", SECOND))
                 .isInstanceOf(DataAccessException.class);
-        });
+        }
     }
 
     private static LocalDateTime readAt(DSLContext dsl) {
