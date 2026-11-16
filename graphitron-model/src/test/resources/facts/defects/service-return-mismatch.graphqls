@@ -1,0 +1,53 @@
+# Services whose answer the field cannot be handed: records of another table than the one the field's
+# type is bound to, many where the field is one record, one per key where the field is a list. Under
+# Film the answer is read per key, from a Map's values or a List's elements in the keys' order. A
+# scalar is handed as the service answers it, graphql-java coercing it, so an Integer under a String
+# field is no mismatch; records under one payload with no table are lifted into it; one value under a
+# list field at a root, Query.oneAsFilms, is LIST_OVER_ONE_VALUE's, pinned in list-over-one-value.
+
+type Film @table(name: "film") {
+  title: String
+  languages: [Language!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesByFilm"})
+  languagesInOrder: [Language!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesInOrder"})
+  lengthText: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "lengthByFilm"})
+  filmAsLanguage: Language @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "filmAsLanguage"})
+  oneLanguageInOrder: [Language!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "oneLanguageInOrder"})
+  languagesAsOne: Language @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesAsOne"})
+}
+
+type FilmsPayload {
+  films: [Film!]!
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type Query {
+  films: [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  languagesAsFilms: [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesAsFilms"})
+  filmsAsOne: Film @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "filmsAsOne"})
+  oneAsFilms: [Film!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "oneAsFilms"})
+  filmsInPayload: FilmsPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_RETURN_MISMATCH'", rows: """
+  code,                    coordinate,                 detail
+  SERVICE_RETURN_MISMATCH, Query.languagesAsFilms,     org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
+  SERVICE_RETURN_MISMATCH, Query.filmsAsOne,           java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>
+  SERVICE_RETURN_MISMATCH, Film.filmAsLanguage,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>"
+  SERVICE_RETURN_MISMATCH, Film.oneLanguageInOrder,    java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
+  SERVICE_RETURN_MISMATCH, Film.languagesAsOne,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>>"
+  """)
