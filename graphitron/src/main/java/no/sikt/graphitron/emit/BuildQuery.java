@@ -54,10 +54,12 @@ import static org.jooq.impl.DSL.selectOne;
  * where it is a row of the node type's table, else its foreign key referencing that key. Several node
  * id fields may fill one member, decoding into the one record.
  *
+ * <p>A parameter or a member that is a table's jOOQ record is made on the column axis, each field
+ * writing the column it binds rather than filling a member.
+ *
  * <p>What cannot be made this way is refused with the reason, an input object being made into a
  * class nothing says how to construct, an input field matching no member, a list of groups, two
- * plain fields on one member, a node id that cannot be decoded into its member, and a parameter that
- * is a jOOQ record itself, which binds on columns rather than members and is not built here yet.
+ * plain fields on one member, and a node id that cannot be decoded into its member.
  */
 public final class BuildQuery {
 
@@ -68,11 +70,20 @@ public final class BuildQuery {
                        String slotType, String erasedClass, String elementClass) {}
 
     /**
+     * How a member's input object is made: by constructing a class, or as a table's jOOQ record on the
+     * column axis.
+     */
+    public sealed interface Nested permits Build, RecordBuild {
+        /** The class made. */
+        String className();
+    }
+
+    /**
      * What fills a member: the input field read along {@code path} from the build's own input map,
      * a grouping's names first; the kind of type it is; whether it is a list; for an input object,
-     * the construction of the member's class; and for a node id, how it is decoded.
+     * how the member's class is made; and for a node id, how it is decoded.
      */
-    public record Member(Slot slot, List<String> path, String typeKind, boolean list, Optional<Build> nested,
+    public record Member(Slot slot, List<String> path, String typeKind, boolean list, Optional<Nested> nested,
                          Optional<Result.Decoded> decoded) {
         public Member {
             path = List.copyOf(path);
@@ -88,7 +99,7 @@ public final class BuildQuery {
 
     /** How one class is made: its construction shape and constructor, and the members filled. */
     public record Build(String className, String shape, String descriptor, List<Slot> slots,
-                       List<Member> members) {
+                       List<Member> members) implements Nested {
         public Build {
             slots = List.copyOf(slots);
             members = List.copyOf(members);
@@ -113,10 +124,15 @@ public final class BuildQuery {
      * code names them, each column and the fields writing it, and the node id fields decoded into it.
      */
     public record RecordBuild(String recordClass, String tablesClass, String tableField,
-                              List<ColumnWrite> columns, List<Member> decodes) {
+                              List<ColumnWrite> columns, List<Member> decodes) implements Nested {
         public RecordBuild {
             columns = List.copyOf(columns);
             decodes = List.copyOf(decodes);
+        }
+
+        @Override
+        public String className() {
+            return recordClass;
         }
     }
 
@@ -562,7 +578,7 @@ public final class BuildQuery {
                 return "input field " + String.join(".", path) + " fills no member of " + className;
             }
             var memberClass = slot.get().elementClass() != null ? slot.get().elementClass() : slot.get().erasedClass();
-            Optional<Build> nested = Optional.empty();
+            Optional<Nested> nested = Optional.empty();
             Optional<Result.Decoded> decode = Optional.empty();
             if (field.nodeId()) {
                 // Decoded as the member's slot states, a list of node ids each into a record of its own.
@@ -579,11 +595,13 @@ public final class BuildQuery {
                 if (result instanceof Result.Refused refused) {
                     return refused.reason();
                 }
-                if (!(result instanceof Result.Built built)) {
-                    return "input field " + String.join(".", path) + " fills a jOOQ record member, "
-                        + "which is not built here yet";
-                }
-                nested = Optional.of(built.build());
+                // A member that is a jOOQ record is made on the column axis, as a parameter that is one.
+                nested = Optional.of(switch (result) {
+                    case Result.Built built -> (Nested) built.build();
+                    case Result.Columns columns -> columns.build();
+                    default -> throw new IllegalStateException(
+                        "input field " + String.join(".", path) + " is an input object made as " + result);
+                });
             }
             members.add(new Member(slot.get(), path, field.typeKind(), field.list(), nested, decode));
         }

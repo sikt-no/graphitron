@@ -188,7 +188,8 @@ public final class ValidationEmitter {
     /**
      * How {@code build}'s members name the input fields they were bound from: each member by the
      * whole path read from the input object, a grouping's names first, and a member built into a
-     * class itself, or a list of them, by that class's names below it.
+     * class itself, or a list of them, by that class's names below it; a jOOQ record member names
+     * none below it, its columns being validated as the record is.
      */
     static CodeBlock paths(BuildQuery.Build build, Runtime runtime) {
         var b = CodeBlock.builder().add("new $T()", runtime.paths());
@@ -197,7 +198,8 @@ public final class ValidationEmitter {
             for (int i = 0; i < member.path().size(); i++) {
                 sdl.add(i == 0 ? "$S" : ", $S", member.path().get(i));
             }
-            var child = member.nested().map(nested -> paths(nested, runtime)).orElse(CodeBlock.of("null"));
+            var child = member.nested().filter(nested -> nested instanceof BuildQuery.Build)
+                .map(nested -> paths((BuildQuery.Build) nested, runtime)).orElse(CodeBlock.of("null"));
             b.add(".bind($S, $L, $L)", member.slot().slotName(), sdl.add(")").build(), child);
         }
         return b.build();

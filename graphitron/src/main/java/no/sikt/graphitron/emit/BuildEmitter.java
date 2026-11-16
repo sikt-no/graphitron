@@ -285,7 +285,10 @@ public final class BuildEmitter {
             made = CodeBlock.of("$L($L)", helperName, read);
         } else if (member.nested().isPresent()) {
             var helperName = name + "_" + member.slot().slotName();
-            helper(member.nested().get(), helperName, runtime, out);
+            switch (member.nested().get()) {
+                case BuildQuery.Build build -> helper(build, helperName, runtime, out);
+                case BuildQuery.RecordBuild record -> out.add(recordHelper(record, helperName, runtime));
+            }
             made = member.list()
                 ? listOf(read, CodeBlock.of("e instanceof $T m ? $L(m) : null", ANY_MAP, helperName), counter)
                 : CodeBlock.of("$L instanceof $T map$L ? $L(map$L) : null", read, ANY_MAP, ++counter[0], helperName, counter[0]);
