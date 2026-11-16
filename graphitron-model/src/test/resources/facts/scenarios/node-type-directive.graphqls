@@ -1,0 +1,29 @@
+# A graph composing @nodeType gets one row per node type, carrying its wire id as the store
+# resolved it, in three tiers: Film pins its id, Pairing is named by the class film_actor publishes
+# (it is a node because it implements Node over that table, with no @node of its own), and
+# Customer, which has neither, by its type name. Composing the directive is the only opt-in.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"]) @composeDirective(name: "@nodeType")
+
+type Query { film: Film }
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") {
+  id: ID!
+}
+
+type Pairing implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+type Customer implements Node @table(name: "customer") @node {
+  id: ID!
+}
+
+extend schema @expectEquals(relation: "graphitron_synthesized_node_type_id", rows: """
+  type_name, type_id
+  Film,      F
+  Pairing,   FilmActor
+  Customer,  Customer
+  """)

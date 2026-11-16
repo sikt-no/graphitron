@@ -1,0 +1,21 @@
+# The node types of node-type-directive in a graph that does not compose @nodeType: no rows.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"])
+
+type Query { film: Film }
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") {
+  id: ID!
+}
+
+type Pairing implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+type Customer implements Node @table(name: "customer") @node {
+  id: ID!
+}
+
+extend schema @assertEmpty(relation: "graphitron_synthesized_node_type_id")

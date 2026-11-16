@@ -1,0 +1,26 @@
+# The namespaced spelling of @composeDirective composes @nodeType too: the rows node-type-directive holds.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"]) @federation__composeDirective(name: "@nodeType")
+
+type Query { film: Film }
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node(typeId: "F") {
+  id: ID!
+}
+
+type Pairing implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+type Customer implements Node @table(name: "customer") @node {
+  id: ID!
+}
+
+extend schema @expectEquals(relation: "graphitron_synthesized_node_type_id", rows: """
+  type_name, type_id
+  Film,      F
+  Pairing,   FilmActor
+  Customer,  Customer
+  """)
