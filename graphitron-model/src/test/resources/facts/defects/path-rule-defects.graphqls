@@ -11,7 +11,16 @@
 # way, at its element.
 
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
-type Film @table(name: "film") { title: String }
+type Film @table(name: "film") {
+  title: String
+  "A key: element naming the table's own primary key moves only as a path's one element on a field reading one row; as a second element it has no move."
+  lang: Language @reference(path: [{key: "film_language_id_fkey"}, {key: "language_pkey"}])
+  "As a first element followed by another, the same: the self-join is not a step a walk continues from."
+  langByOwnKeyFirst: Language @reference(path: [{key: "film_pkey"}, {key: "film_language_id_fkey"}])
+  "On a list field, the same: the self-join reads the one row it starts from."
+  selfRows: [FilmSelf] @reference(path: [{key: "film_pkey"}])
+}
+type FilmSelf @table(name: "film") { title: String }
 interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
 type FilmItem implements MediaItem @table(name: "film") @discriminator(value: "film") { title: String }
 type ShortItem implements MediaItem @table(name: "film") @discriminator(value: "short") { title: String }
@@ -83,6 +92,9 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   CONDITION_OVERLOAD_TIE,         "customer to address: tiedAddress(Customer, Table<?>), tiedAddress(Table<?>, Address)",     Customer.tied
   NO_ROUTE_FROM_DEPARTURE,        "the condition's second parameter takes any table, so the path does not say where it arrives; type the parameter with the table it joins to", Customer.anyTable
   NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Customer.brokenCity
+  NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Film.lang
+  NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Film.langByOwnKeyFirst
+  NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Film.selfRows
   NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Person.customerAddress
   NO_ROUTE_FROM_DEPARTURE,        ,                                                                                           Query.people(storeId:)
   NO_ROUTE_TO_TARGET,             ,                                                                                           Customer.wrongAddress
@@ -96,6 +108,9 @@ extend schema @expectEquals(relation: "graphitron_join_path_stop", rows: """
   coordinate,              target_type, position, element_place, moves
   Customer.anyTable,       Address,     0,        0,             0
   Customer.brokenCity,     String,      1,        1,             0
+  Film.lang,               Language,    1,        1,             0
+  Film.langByOwnKeyFirst,  Language,    0,        0,             0
+  Film.selfRows,           FilmSelf,    0,        0,             0
   Language.filmsByTable,   Film,        0,        0,             2
   Query.people(storeId:),  Staff,       0,        0,             0
   Staff.customerAddress,   Address,     0,        0,             0
@@ -140,4 +155,9 @@ extend schema @expectEquals(relation: "graphitron_join_path_step_key",
 extend schema @expectEquals(relation: "graphitron_join_path", where: "coordinate = 'Query.people(storeId:)'", rows: """
   coordinate,              target_type, target_table
   Query.people(storeId:),  Customer,    store
+  """)
+
+# A primary-key element with no move rides no foreign key either: nothing is written for it.
+extend schema @assertEmpty(relation: "graphitron_join_path_step_key", where: """
+  (coordinate = 'Film.lang' AND position = 1) OR coordinate IN ('Film.langByOwnKeyFirst', 'Film.selfRows')
   """)
