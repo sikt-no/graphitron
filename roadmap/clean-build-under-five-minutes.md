@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-15
+last-updated: 2026-11-16
 ---
 
 # A clean build runs in under five minutes
@@ -89,6 +89,64 @@ wall, 6,745 CPU-s, 3.06 of 4 cores busy. Against the earlier build on the same b
 and `graphitron` is flat (3,554 CPU-s, 53% of the build, 73% of its Java CPU in H2 preparation, 26%
 of it through `TestSchemaHelper`). Whole-build numbers from the two machines are not comparable;
 the CPU split is.
+
+### Re-measured on the workstation, 2026-11-16
+
+Quiet machine, one build at a time, recorded with the `build-profile` settings and compared module
+by module with the 2026-11-11 recording. The 40 to 70 minute builds of 2026-11-15 were builds running
+beside each other, not a regression.
+
+| module, seconds | 11-11 | 11-15 trunk | 11-16, after the call-scoped fit |
+|---|---|---|---|
+| `graphitron-model` | 303 | 663 | 630 |
+| `graphitron` | 1,097 | 491 | 456 |
+| LSP | 172 | 209 | 219 |
+| sakila-example | 194 | 293 | 187 |
+| whole build | 2,039 | 1,962 | 1,797 (29:58) |
+
+Most of the model's growth is tests moved in from `graphitron` on 11-14; the two together got faster.
+One regression was found and fixed: a capture wrote about 208,000 parameter-fit rows for every
+method on the classpath, about 6 s per capture, until the fit was held per graph for the methods a
+call names.
+
+Inside `graphitron-model`'s tests (counted run, 47 classes opening 335 stores):
+- **Preparing statements is 1,383 s of about 2,100 class-seconds.** Store opening is 161 s.
+- **`graphitron_type_backing_rule` is 543 s of it,** prepared 842 times. Its first prepare in any
+  database, empty or full, takes about 1 s, against a few milliseconds for other rule views: it is the
+  only rule sampled that is `WITH RECURSIVE`.
+- **57 classes open stores of their own,** 65% of the fork's samples; about 20% are classes the
+  store-fixture guard exempts, and their cost is the fixed price of a fresh store's first capture,
+  not the size of what they capture.
+- **The live heap is 2.0 to 2.6 GB, half of it compiled plans;** the 5 GB ceiling is reached by
+  churn, about 476 GB allocated per run, mostly planning and store creation. No store is held after
+  its class ends.
+- **H2 caches the upserts the stages write** (`MergeUsing` is cacheable); the cost is the first
+  prepare in each fresh store, and re-preparing where a cache evicts.
+- **Eight test threads instead of four saved 45 s of 649,** paid for with three times the garbage
+  collection; not taken (B5).
+
+## Work queue
+
+The steps below, from either track or from R876, in the order their measured effect puts them.
+Whoever works this item takes the top open step, prices it before it lands, and re-ranks the queue
+from the next recording.
+
+1. **Fewer fresh stores** (A2, A2a, R1160's migration onto the population). The 57 classes with
+   stores of their own, heaviest first by the counted run's per-class prepare time. A store that has
+   to stay its own (a lifetime or oracle test) is made as small as what it tests.
+2. **`graphitron_type_backing_rule` stops recursing** (R876, "The type-backing closure is stored,
+   not recursed"). About 1 s off every fresh store, and off a consumer's cold capture.
+3. **A capture's statements stay cached for the capture** (A5). Measure first whether
+   `StoreUse.ONE_CAPTURE`'s 64 evicts statements a capture prepares again.
+4. **A fresh store opens cheaply** (A6). The DDL's 3,661 `COMMENT ON` statements, which capture
+   never reads, and the DDL hash taken twice on every open.
+5. **A test's catalog is read once** (A7). The catalog skip needs the catalog's classpath entry, and
+   tests pass none, so every capture re-reads it.
+6. **Planning per statement** (Track C: R876's view nodes and per-depth nodes), by `prepare_ms` on a
+   cold capture.
+7. **Track B**, priced after the above, since it divides what is left.
+8. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
+   ranked: a stage that runs with no input for the schema, the two store-wide `ANALYZE`s per capture.
 
 ## The plan
 
@@ -198,6 +256,23 @@ reach every capture. The ruling is in `docs/architecture/how-to/testing.adoc`. I
 2026-11-13): a test driving a whole run takes its captured graph from `CapturedGraphs.open`, a lease
 whose store the `FactGraphs` population owns.
 
+**A5. A capture's statements stay cached for the capture.** `StoreUse.ONE_CAPTURE` holds 64
+statements. In the 2026-11-16 counted run, classes with one to three stores prepared the type-backing
+statement 51 to 97 times, which fits a capture preparing more distinct statements than the cache
+holds and evicting the most expensive one between captures. Measured by counting distinct statement
+texts per capture and repeating the counted run at a larger `-Dgraphitron.queryCacheSize`, with the
+live heap beside it, since a cached plan weighs about 0.1 MB.
+
+**A6. A fresh store opens cheaply.** Opening took 161 s over 335 stores in the model's tests. A store
+runs its whole DDL one statement at a time, including 3,661 `COMMENT ON` statements that no capture
+reads, and hashes the DDL twice on every open. Priced by timing `create()` with and without the
+comments; the comments' readers are checked first.
+
+**A7. A test's catalog is read once.** The catalog skip vouches a catalog by the stamp of the
+classpath entry it is generated into. Tests that capture with no classpath pass no entry, so every
+capture reflects and upserts the whole catalog again. Measured from a second capture's
+`store_graph_write` rows for the `jooq` gatherer.
+
 ### Track B: use the machine
 
 **B1. Build independent modules in parallel.** Add `.mvn/maven.config` with `-T 1C`, pinning the
@@ -254,6 +329,7 @@ derivation that would need a complex rule is stored upstream.
 This item does not do that work. R876 does, under:
 - "No view reads a view, and every rule view is simple, claimed by B";
 - "A per-depth rule is planned once per depth";
+- "The type-backing closure is stored, not recursed";
 - the per-depth writer nodes F leads.
 
 This item ranks them by measured weight, `PathNeeds` (20% of `graphitron`'s samples) and
