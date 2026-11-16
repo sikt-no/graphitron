@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.CapturedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -34,6 +35,16 @@ class NameMatchedStepHopTest {
     Path tmp;
 
     /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    NameMatchedStepHopTest(TestInfo info) {
+        graph = "nameMatchedStepHop." + info.getTestMethod().orElseThrow().getName();
+    }
+
+    /**
      * The step leaves the function the root's {@code @routine} returns and reaches {@code film} as a
      * name-matched step, riding no foreign key: no key subtype holds a row for it.
      */
@@ -46,13 +57,15 @@ class NameMatchedStepHopTest {
                 .from(s)
                 .join(mk).on(mk.GRAPH_NAME.eq(s.GRAPH_NAME), mk.COORDINATE.eq(s.COORDINATE),
                     mk.TARGET_TYPE.eq(s.TARGET_TYPE), mk.POSITION.eq(s.POSITION))
-                .where(s.GRAPH_NAME.eq(CapturedStore.GRAPH), s.COORDINATE.eq("Query.recentFilms"))
+                .where(s.GRAPH_NAME.eq(graph), s.COORDINATE.eq("Query.recentFilms"))
                 .fetch(r -> lower(r.value1()) + "->" + lower(r.value2()));
             assertThat(steps).containsExactly("films_for_actor->film");
             assertThat(dsl.fetchCount(GRAPHITRON_JOIN_PATH_STEP_KEY,
+                    GRAPHITRON_JOIN_PATH_STEP_KEY.GRAPH_NAME.eq(graph),
                     GRAPHITRON_JOIN_PATH_STEP_KEY.COORDINATE.eq("Query.recentFilms")))
                 .isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY,
+                    GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY.GRAPH_NAME.eq(graph),
                     GRAPHITRON_JOIN_PATH_STEP_INFERRED_KEY.COORDINATE.eq("Query.recentFilms")))
                 .isZero();
         });
@@ -82,7 +95,7 @@ class NameMatchedStepHopTest {
 
     private void withCaptured(String sdl, Consumer<DSLContext> body) {
         var ctx = TestRunContext.of();
-        try (var store = CapturedStore.ofCatalog(tmp, sdl,
+        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl,
                 CatalogInput.of(ctx))) {
             body.accept(store.dsl());
         }
