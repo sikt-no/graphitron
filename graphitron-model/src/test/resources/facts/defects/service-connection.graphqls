@@ -1,0 +1,18 @@
+# A @service whose field returns a connection: the service answers film rows and graphitron would page
+# them, which is not generated for a service yet.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Query {
+  filmsPage(ids: [Int!]!): [Film!]! @asConnection
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
+      method: "filmsByIds"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_CONNECTION_UNSUPPORTED'", rows: """
+  code,                           coordinate
+  SERVICE_CONNECTION_UNSUPPORTED, Query.filmsPage
+  """)

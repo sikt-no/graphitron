@@ -21,9 +21,9 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * That a key column projected out of a node id into a {@code @service} parameter is refused where the
- * store does not emit the field's fetcher yet, rather than handed the encoded id: only the fetcher the
- * store emits reads the projection. The refusal names why the fetcher is not emitted.
+ * That a key column projected out of a node id into a {@code @service} parameter is never handed the
+ * encoded id: only the fetcher the store emits reads the projection, and a field whose fetcher it does
+ * not emit is refused by the store's own deferral, which names why.
  */
 @PipelineTier
 class ServiceKeyProjectionRejectionPipelineTest {
@@ -34,7 +34,7 @@ class ServiceKeyProjectionRejectionPipelineTest {
         """;
 
     @Test
-    void aServiceTheStoreDoesNotEmitYet_isRefusedAtItsProjection(@TempDir Path tmp) throws IOException {
+    void aServiceTheStoreDoesNotEmitYet_isRefusedByItsStoredDeferral(@TempDir Path tmp) throws IOException {
         assertThat(errors(tmp, FILM + """
             type Query {
                 filmsPage(ids: [ID!] @nodeId(typeName: "Film")): [Film!]! @asConnection
@@ -44,8 +44,7 @@ class ServiceKeyProjectionRejectionPipelineTest {
             """))
             .singleElement().asString()
             .startsWith("Field 'Query.filmsPage': ")
-            .contains("The argMapping entry 'ids: ids.film_id' projects a key column of a node id into a @service parameter")
-            .contains("not emitted from the store yet (CONNECTION)");
+            .contains("[SERVICE_CONNECTION_UNSUPPORTED]");
     }
 
     /** The negative beside the positive, so the refusal cannot pass because every projection fails. */

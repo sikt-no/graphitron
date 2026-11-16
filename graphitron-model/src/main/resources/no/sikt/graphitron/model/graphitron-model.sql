@@ -15666,61 +15666,6 @@ COMMENT ON VIEW graphitron_occurrence_routine_parameter_defect_rule IS 'One row 
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_defect_rule.parameter_name IS 'the parameter_name of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.parameter_name';
 -- COMMENT ON COLUMN graphitron_occurrence_routine_parameter_defect_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_occurrence_call_parameter_defect.code';
 
--- The occurrence-producers stage's defects: a root @routine's parameter nothing fills, at the
--- @routine, once per routine, the detail the first such parameter. A parameter an argMapping entry
--- names is the entry's to judge, where it lands nowhere.
-CREATE VIEW graphitron_occurrence_producer_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- A service's or a root routine's parameter nothing binds or two fills bind, at the reference the
--- directive the call came from names its method by, or the directive where it names none: once per
--- written directive and code, the detail the first such parameter.
-SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-       COALESCE(r.source_column, da.source_column), d.code,
-       -- The first such parameter, or where none carries a name, the class compiled without them.
-       CASE WHEN d.code = 'PARAMETER_NAMES_MISSING' THEN MIN(cm.method_class_name) ELSE MIN(d.parameter_name) END,
-       'occurrence-producers'
-  FROM graphitron_occurrence_call_parameter_defect d
-  JOIN graphitron_occurrence_call oc
-    ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
-  LEFT JOIN graphitron_occurrence_call_method cm
-    ON cm.graph_name = d.graph_name AND cm.coordinate = d.coordinate AND cm.call = d.call
-  JOIN graphitron_directive_application da
-    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
-   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
-  LEFT JOIN graphitron_code_reference r
-    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
-   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
-   AND r.owner = oc.application_directive AND r.method_descriptor IS NOT NULL
- WHERE d.call_kind IN ('SERVICE', 'ROUTINE') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
- GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
-          COALESCE(r.source_column, da.source_column), d.code
-UNION ALL
--- A re-read of what a delete removed, at the field that would re-read it: a field under the object
--- type a delete returns re-reading its rows by key, or the delete's own field returning a @table
--- type. The rows are gone once the delete runs; what it hands back is their keys.
-SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'occurrence-producers'
-  FROM graphitron_occurrence_producer pp
-  JOIN graphitron_occurrence o
-    ON o.graph_name = pp.graph_name AND o.parent_coordinate = pp.coordinate
-  JOIN graphitron_occurrence_producer cp
-    ON cp.graph_name = o.graph_name AND cp.coordinate = o.coordinate
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_tabletype b
-    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
-  JOIN graphql_ast_element_entry el
-    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
- WHERE pp.kind = 'DELETE' AND cp.start = 'CHILD' AND cp.kind IN ('SELECT', 'LOOKUP');
-COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading field''s';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING or REREAD_OF_DELETED_ROWS';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for a re-read';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 
 -- Which node type each occurrence's id belongs to, by the rule that decided it, and that node's key
@@ -19836,6 +19781,72 @@ COMMENT ON COLUMN graphitron_occurrence_producer_result.table_name IS 'that tabl
 COMMENT ON COLUMN graphitron_occurrence_producer_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_source_ref IS 'the classpath entry half of the class''s code_class key, the first of the graph''s own entries by name where two declare it, so a reader joins the class''s members on their key; nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_occurrence_producer_result.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
+
+-- The occurrence-producers stage's defects: a root @routine's parameter nothing fills, at the
+-- @routine, once per routine, the detail the first such parameter. A parameter an argMapping entry
+-- names is the entry's to judge, where it lands nowhere.
+CREATE VIEW graphitron_occurrence_producer_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A service's or a root routine's parameter nothing binds or two fills bind, at the reference the
+-- directive the call came from names its method by, or the directive where it names none: once per
+-- written directive and code, the detail the first such parameter.
+SELECT d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+       COALESCE(r.source_column, da.source_column), d.code,
+       -- The first such parameter, or where none carries a name, the class compiled without them.
+       CASE WHEN d.code = 'PARAMETER_NAMES_MISSING' THEN MIN(cm.method_class_name) ELSE MIN(d.parameter_name) END,
+       'occurrence-producers'
+  FROM graphitron_occurrence_call_parameter_defect d
+  JOIN graphitron_occurrence_call oc
+    ON oc.graph_name = d.graph_name AND oc.coordinate = d.coordinate AND oc.call = d.call
+  LEFT JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = d.graph_name AND cm.coordinate = d.coordinate AND cm.call = d.call
+  JOIN graphitron_directive_application da
+    ON da.graph_name = oc.graph_name AND da.coordinate = oc.application_coordinate
+   AND da.directive_name = oc.application_directive AND da.ordinal = oc.application_ordinal
+  LEFT JOIN graphitron_code_reference r
+    ON r.graph_name = oc.graph_name AND r.coordinate = oc.application_coordinate
+   AND r.directive_name = oc.application_directive AND r.ordinal = oc.application_ordinal
+   AND r.owner = oc.application_directive AND r.method_descriptor IS NOT NULL
+ WHERE d.call_kind IN ('SERVICE', 'ROUTINE') AND COALESCE(r.source_name, da.source_name) IS NOT NULL
+ GROUP BY d.graph_name, COALESCE(r.source_name, da.source_name), COALESCE(r.source_line, da.source_line),
+          COALESCE(r.source_column, da.source_column), d.code
+UNION ALL
+-- A re-read of what a delete removed, at the field that would re-read it: a field under the object
+-- type a delete returns re-reading its rows by key, or the delete's own field returning a @table
+-- type. The rows are gone once the delete runs; what it hands back is their keys.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'REREAD_OF_DELETED_ROWS', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer pp
+  JOIN graphitron_occurrence o
+    ON o.graph_name = pp.graph_name AND o.parent_coordinate = pp.coordinate
+  JOIN graphitron_occurrence_producer cp
+    ON cp.graph_name = o.graph_name AND cp.coordinate = o.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_tabletype b
+    ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE pp.kind = 'DELETE' AND cp.start = 'CHILD' AND cp.kind IN ('SELECT', 'LOOKUP')
+UNION ALL
+-- A @service whose field returns a connection, at the field: the service answers rows and graphitron
+-- would page them, which is not generated for a service yet, so it is refused until then.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_CONNECTION_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE p.kind = 'SERVICE' AND r.shape = 'CONNECTION';
+COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading or connection-returning field''s';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS or SERVICE_CONNECTION_UNSUPPORTED';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for a re-read or a connection';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 -- What a service answers to a call that names nothing, where it is an empty value the generated code
 -- can build without a connection.
@@ -27173,6 +27184,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field of a type nested under a global table reaches a tenant''s rows by a key landing on the tenant column, which is not routed by the parent row''s tenant yet: declare the field on a type with its own @table, or read the rows through an argument naming the tenant.'),
   ('TENANT_FAN_OUT_INLINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_INLINE_UNSUPPORTED',
    'A field whose foreign key reaches a tenant''s rows from a global table is routed by its parent row''s tenant, and needs @splitQuery until its producer is emitted from the store: write @splitQuery on the field.'),
+  ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
+   'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',
    'A child @service under a global table reads a tenant''s rows, by a key landing on the tenant column or by none naming the tenant, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',

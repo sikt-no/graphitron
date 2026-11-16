@@ -26,7 +26,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
@@ -116,7 +115,6 @@ public final class ServiceEmission {
     private final Map<String, Map<Integer, BuildQuery.Result>> builds;
     private final Map<String, LiftQuery.Row> lifts;
     private final Map<String, PolymorphicLiftQuery.Row> polymorphic;
-    private final Map<String, String> excluded;
     /** The services whose outcome claims validation, by coordinate. */
     private final Set<String> validating;
     /** The occurrences whose rows a column of one shared table tells apart, by coordinate. */
@@ -129,7 +127,6 @@ public final class ServiceEmission {
     private ServiceEmission(Set<String> services, Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
-                            Map<String, String> excluded,
                             Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated,
                             Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
         this.services = services;
@@ -139,7 +136,6 @@ public final class ServiceEmission {
         this.builds = builds;
         this.lifts = lifts;
         this.polymorphic = polymorphic;
-        this.excluded = excluded;
         this.validating = validating;
         this.discriminated = discriminated;
         this.connections = connections;
@@ -148,7 +144,7 @@ public final class ServiceEmission {
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
-        return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
+        return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
             Map.of(), Optional.empty());
     }
 
@@ -170,7 +166,6 @@ public final class ServiceEmission {
             builds,
             lifts,
             byCoordinate(PolymorphicLiftQuery.read(store), PolymorphicLiftQuery.Row::coordinate),
-            excluded(store),
             validating(store),
             DiscriminatedQuery.read(store, targets),
             ConnectionQuery.read(store),
@@ -192,20 +187,6 @@ public final class ServiceEmission {
     private static <R> Map<String, R> byCoordinate(List<R> rows, Function<R, String> coordinate) {
         var out = new LinkedHashMap<String, R>();
         rows.forEach(r -> out.put(coordinate.apply(r), r));
-        return out;
-    }
-
-    /**
-     * The services the store states a part of the fetcher for that is not emitted here yet, by why: a
-     * connection's page.
-     */
-    private static Map<String, String> excluded(StoreHandle store) {
-        var out = new LinkedHashMap<String, String>();
-        var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
-        store.dsl().select(r.COORDINATE).from(r)
-            .where(r.GRAPH_NAME.eq(store.graphName()), r.SHAPE.eq("CONNECTION"))
-            .fetch(r.COORDINATE)
-            .forEach(c -> out.putIfAbsent(c, "CONNECTION"));
         return out;
     }
 
@@ -256,7 +237,6 @@ public final class ServiceEmission {
     public String verdict(String coordinate) {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
-        if (excluded.containsKey(coordinate)) return excluded.get(coordinate);
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
         var told = discriminated.get(coordinate);
         if (told != null && (told.refusal().isPresent() || !lifts.containsKey(coordinate)
