@@ -340,8 +340,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * mount becomes, plus the {@code MountedSession} and {@code SessionState} the consumer builds the
      * input with, all exactly when the graph supplies session identity
      * ({@link SessionIdentityRows#emitsHookImplementation()}, the same fact the generator gates on),
-     * plus the {@code RequestTenants} value and the {@code ConnectionKey} the carrier is keyed by
-     * exactly in a {@code <tenantColumn>} build
+     * plus the {@code ConnectionKey} the carrier is keyed by in every build, and the
+     * {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
      * ({@link GraphitronSchema#requestTenantKeyType()}, the fact the generator's tenant key type
      * is read from). A graph that supplies no session identity plans no hook unit at all:
      * nothing is emitted and nothing is held.
@@ -352,10 +352,10 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         refs.add(units.ownedConnections());
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA,
+            no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME));
         if (multiTenant) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "RequestTenants"));
-            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA,
-                no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME));
         }
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorLog"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorResponse"));

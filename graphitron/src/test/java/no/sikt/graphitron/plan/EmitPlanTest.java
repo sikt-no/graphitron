@@ -73,13 +73,13 @@ class EmitPlanTest {
     }
 
     @Test
-    void connectionRuntime_commitsTheFixedThreeWithoutSessionState() {
+    void connectionRuntime_commitsTheFixedUnitsAndTheKeyWithoutSessionState() {
         // A graph supplying no session identity plans no hook unit at all: no SessionHook interface exists any
         // more, and nothing is emitted for the no-configuration case.
         var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "FetcherErrorLog",
-                "FetcherErrorResponse", "BatchSizeLimit");
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "ConnectionKey",
+                "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit");
     }
 
     @Test
@@ -88,7 +88,7 @@ class EmitPlanTest {
         var plan = EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE, SessionIdentityFixtures.handleLess());
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections",
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "ConnectionKey",
                 "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "GraphitronSessionHook", "MountedSession",
                 "SessionState", "SessionMountException");
     }

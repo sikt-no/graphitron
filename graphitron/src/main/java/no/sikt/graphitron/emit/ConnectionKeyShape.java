@@ -12,9 +12,9 @@ import java.util.Optional;
  * once for the build and handed to every generator that writes, reads or keys by it, so no site decides
  * for itself whether the slot carries a key.
  *
- * <p>The tenant part is present in a multi-tenant build, typed as the tenant column's Java type. A build
- * whose key has no part writes nothing to the slot and emits no {@code ConnectionKey}; its connections
- * are keyed as the single-tenant one-key case.
+ * <p>Every build emits a {@code ConnectionKey} and keys its connections by it. The tenant part is typed
+ * as the tenant column's Java type in a multi-tenant build and as {@code Object} in one without, where no
+ * routed site ever fills it; only a multi-tenant build writes the slot.
  *
  * @param tenantKey the tenant part's type, boxed, in a multi-tenant build
  */
@@ -38,7 +38,7 @@ public record ConnectionKeyShape(Optional<TypeName> tenantKey) {
         return new ConnectionKeyShape(Optional.ofNullable(tenantKeyType));
     }
 
-    /** Whether the build writes the slot, and so emits a {@code ConnectionKey} and keys its connections by it. */
+    /** Whether the build writes the slot and runs the tenant machinery: whether the key has a tenant part. */
     public boolean writesSlot() {
         return tenantKey.isPresent();
     }

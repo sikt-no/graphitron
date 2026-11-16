@@ -355,12 +355,12 @@ public final class ConnectionRuntimeClassGenerator {
 
         boolean multiTenant = shape.writesSlot();
         var connectionKey = ConnectionKeyShape.className(outputPackage);
-        TypeName keyType = multiTenant ? connectionKey : ParameterizedTypeName.get(OPTIONAL, tenantKey);
+        // Every build keys its connections by the ConnectionKey; an untenanted build's tenant part is never
+        // present from a routed site, but the key is the same value either way.
+        TypeName keyType = connectionKey;
 
         var units = new ArrayList<TypeSpec>();
-        if (multiTenant) {
-            units.add(connectionKey(connectionKey, tenantKey));
-        }
+        units.add(connectionKey(connectionKey, tenantKey));
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
@@ -1655,9 +1655,9 @@ public final class ConnectionRuntimeClassGenerator {
      * multi-tenant refusal after a pin keeps naming the scatter deadline, which shares its check.
      */
     private static CodeBlock closedRefusal(boolean multiTenant, boolean pinned) {
-        // A multi-tenant carrier is keyed by the ConnectionKey; its message names the tenant part as the
-        // Optional key it replaced did.
-        String tenant = multiTenant ? "key.tenant()" : "key";
+        // The carrier is keyed by the ConnectionKey; its message names the tenant part as the Optional key
+        // it replaced did.
+        String tenant = "key.tenant()";
         if (multiTenant && pinned) {
             return CodeBlock.of("$S + $L + $S", "Key '", tenant,
                 "' was pinned after its scatter deadline or after the operation completed.");
@@ -1820,7 +1820,7 @@ public final class ConnectionRuntimeClassGenerator {
         }
         String acquireDefault = "runtime.acquire(" + (payload.isEmpty() ? ""
             : payloadArgs.substring(2)) + ")";
-        String acquireKeyed = "runtime.acquireForTenant(" + (multiTenant ? "k.tenant().get()" : "k.get()")
+        String acquireKeyed = "runtime.acquireForTenant(" + "k.tenant().get()"
             + payloadArgs + ")";
 
         var entryForBuilder = MethodSpec.methodBuilder("entryFor")
@@ -1880,7 +1880,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addCode("entry = entries.computeIfAbsent(key, k -> {\n")
             .addCode("    try {\n")
             .addCode("        $T pinned = $L ? $L : $L;\n", pinnedConnection,
-                multiTenant ? "k.tenant().isPresent()" : "k.isPresent()", acquireKeyed, acquireDefault)
+                "k.tenant().isPresent()", acquireKeyed, acquireDefault)
             .addCode("        $T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings());\n",
                 DSL_CONTEXT, DSL)
             .addCode("        $T provider = new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin);\n", provider, provider)
@@ -1944,9 +1944,7 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(DSL_CONTEXT)
             .addParameter(tenantKey, "tenantKey")
             .addException(SQL_EXCEPTION)
-            .addCode(multiTenant
-                ? CodeBlock.of("$T key = $T.forTenant(tenantKey);\n", connectionKey, connectionKey)
-                : CodeBlock.of("$T key = $T.of(tenantKey);\n", keyType, ClassName.get("java.util", "Optional")))
+            .addCode(CodeBlock.of("$T key = $T.forTenant(tenantKey);\n", connectionKey, connectionKey))
             .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code tenantKey}, pinning and\n"
                 + "mounting one connection for the key on first use and reusing it thereafter. A drop-in for\n"
@@ -1958,9 +1956,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
             .addException(SQL_EXCEPTION)
-            .addCode(multiTenant
-                ? CodeBlock.of("$T key = $T.defaultSource();\n", connectionKey, connectionKey)
-                : CodeBlock.of("$T key = $T.empty();\n", keyType, ClassName.get("java.util", "Optional")))
+            .addCode(CodeBlock.of("$T key = $T.defaultSource();\n", connectionKey, connectionKey))
             .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for the default source, pinning and\n"
                 + "mounting one connection on first use and reusing it thereafter. The untenanted\n"
@@ -2131,7 +2127,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(MutationFieldScopeEmitter.markFieldRefused(self))
             .addMethod(MutationFieldScopeEmitter.runningField(self));
         if (failureMessages) {
-            String freshAcquisition = (multiTenant ? "k.tenant().isPresent()" : "k.isPresent()")
+            String freshAcquisition = "k.tenant().isPresent()"
                 + " ? " + acquireKeyed + " : " + acquireDefault;
             carrier.addType(MutationFieldScopeEmitter.fieldRollbackType())
                 .addMethod(MutationFieldScopeEmitter.onFieldRollback(self))
