@@ -12,6 +12,7 @@ import no.sikt.graphitron.model.schema.input.SchemaSource;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -62,6 +63,19 @@ class FederationKeyDerivationTest {
 
     private static final CatalogInput JOOQ = CatalogInput.of(TestRunContext.JOOQ_PACKAGE);
 
+    /** The graph a run of {@link #context} captures, into a store of its own. */
+    private static final String RUN_GRAPH = "FederationKeyDerivationTest";
+
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to the graph it asserts about.
+     */
+    private final String graph;
+
+    FederationKeyDerivationTest(TestInfo info) {
+        graph = "federationKey." + info.getTestMethod().orElseThrow().getName();
+    }
+
     private static final String LINK =
         "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\", import: [\"@key\"])";
 
@@ -98,12 +112,12 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("a node type without an id key gets one, and it is a derived row rather than a captured one")
     void federationKeyIsDerivedForNodes(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED, JOOQ)) {
+        try (var store = CapturedStore.ofCatalog(tmp, graph, FEDERATED, JOOQ)) {
             var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
             assertThat(store.dsl()
                 .select(a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL)
                 .from(a)
-                .where(a.COORDINATE.eq("Film"))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq("Film"))
                 .and(a.DIRECTIVE_NAME.eq("key"))
                 .orderBy(a.DIRECTIVE_ARGUMENT_NAME)
                 .fetch()
@@ -111,14 +125,15 @@ class FederationKeyDerivationTest {
                 .as("the minted key is the node's id, resolvable")
                 .containsExactly("fields: \"id\"", "resolvable: true");
 
-            assertThat(keyApplicationsOf(store.dsl(), "Film"))
+            assertThat(keyApplicationsOf(store.dsl(), store.graphName(), "Film"))
                 .as("the SDL declares no @key, so the transcription holds none")
                 .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_AST_FEDERATION_KEY_ENTRY))
+            assertThat(store.dsl().fetchCount(GRAPHITRON_AST_FEDERATION_KEY_ENTRY,
+                    GRAPHITRON_AST_FEDERATION_KEY_ENTRY.GRAPH_NAME.eq(store.graphName())))
                 .as("the decode holds authored applications alone")
                 .isZero();
 
-            assertThat(composedKeysOf(store.dsl(), "Film"))
+            assertThat(composedKeysOf(store.dsl(), store.graphName(), "Film"))
                 .as("the directive anchor is where a reader sees the key, minted after the authored")
                 .containsExactly("0:MINTED:id");
         }
@@ -135,13 +150,13 @@ class FederationKeyDerivationTest {
     void anAuthoredIdKeyStandsTheDerivationDown(@TempDir Path tmp) {
         String sdl = FEDERATED.replace(FILM + " {",
             FILM + " @key(fields: \"id\", resolvable: false) {");
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl())).isEmpty();
+        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName())).isEmpty();
             var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
             assertThat(store.dsl()
                 .select(a.VALUE_SDL)
                 .from(a)
-                .where(a.COORDINATE.eq("Film"))
+                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq("Film"))
                 .and(a.DIRECTIVE_NAME.eq("key"))
                 .and(a.DIRECTIVE_ARGUMENT_NAME.eq("resolvable"))
                 .fetchSingle().value1()).isEqualTo("false");
@@ -157,8 +172,9 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("an inferred node gets a key; with no catalog captured, it does not")
     void nodeInferenceDecidesWhetherAnInferredNodeGetsAKey(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), INFERRED, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl()))
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), graph + ".inferred",
+                INFERRED, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName()))
                 .as("film_actor publishes node metadata, so Pairing is a node without saying @node")
                 .containsExactly("Pairing");
 
@@ -168,18 +184,20 @@ class FederationKeyDerivationTest {
                 .join(GRAPHITRON_TABLETYPE)
                 .on(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME),
                     GRAPHITRON_TABLETYPE.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME))
-                .where(GRAPHITRON_NODE.TYPE_NAME.eq("Pairing"))
+                .where(GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()),
+                    GRAPHITRON_NODE.TYPE_NAME.eq("Pairing"))
                 .fetch()
                 .map(r -> r.value1() + "." + r.value2()))
                 .as("the node names the table whose metadata answered, through the binding a node"
                     + " cannot be one without")
                 .containsExactly("public.film_actor");
         }
-        try (var store = CapturedStore.of(tmp.resolve("bare"), INFERRED)) {
-            assertThat(mintedKeysOf(store.dsl()))
+        try (var store = CapturedStore.of(tmp.resolve("bare"), graph + ".bare", INFERRED)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName()))
                 .as("no catalog facts to conjoin, so nothing infers nodehood")
                 .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_NODE)).isZero();
+            assertThat(store.dsl().fetchCount(GRAPHITRON_NODE,
+                GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()))).isZero();
         }
     }
 
@@ -193,10 +211,10 @@ class FederationKeyDerivationTest {
     void anOtherFieldKeyLeavesTheDerivedKeyBesideIt(@TempDir Path tmp) {
         String sdl = FEDERATED.replace(FILM + " {",
             FILM + " @key(fields: \"title\") {");
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
-            assertThat(composedKeysOf(store.dsl(), "Film"))
+        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
+            assertThat(composedKeysOf(store.dsl(), store.graphName(), "Film"))
                 .containsExactly("0:AUTHORED:title", "1:MINTED:id");
-            assertThat(keyApplicationsOf(store.dsl(), "Film"))
+            assertThat(keyApplicationsOf(store.dsl(), store.graphName(), "Film"))
                 .as("only the authored application is transcribed")
                 .containsExactly(0);
         }
@@ -213,8 +231,9 @@ class FederationKeyDerivationTest {
     void neitherACompoundKeyNorANestedPathStandsTheDerivationDown(@TempDir Path tmp) {
         String compound = FEDERATED.replace(FILM + " {",
             FILM + " @key(fields: \"id title\") {");
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("compound"), compound, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl())).contains("Film");
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("compound"), graph + ".compound",
+                compound, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName())).contains("Film");
         }
         String nested = FEDERATED.replace("title: String", "title: Title")
             + """
@@ -223,8 +242,9 @@ class FederationKeyDerivationTest {
             """;
         nested = nested.replace(FILM + " {",
             FILM + " @key(fields: \"title { id }\") {");
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("nested"), nested, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl())).contains("Film");
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("nested"), graph + ".nested", nested,
+                JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName())).contains("Film");
         }
     }
 
@@ -232,9 +252,10 @@ class FederationKeyDerivationTest {
     @DisplayName("no federation link, no derived key")
     void theDerivationNeedsAFederationLink(@TempDir Path tmp) {
         String sdl = DIRECTIVES + FEDERATED.replace(LINK, "");
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl())).isEmpty();
+        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName())).isEmpty();
             assertThat(store.dsl().fetchCount(GRAPHITRON_DIRECTIVE_APPLICATION,
+                GRAPHITRON_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(store.graphName()),
                 GRAPHITRON_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))).isZero();
         }
     }
@@ -248,8 +269,8 @@ class FederationKeyDerivationTest {
     void aLinkToAnotherSpecIsNotTheOptIn(@TempDir Path tmp) {
         String sdl = DIRECTIVES + FEDERATED.replace(LINK,
             "extend schema @link(url: \"https://specs.apollo.dev/tag/v0.3\", import: [\"@tag\"])");
-        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl())).isEmpty();
+        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl(), store.graphName())).isEmpty();
         }
     }
 
@@ -269,48 +290,50 @@ class FederationKeyDerivationTest {
 
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("tagged"), unlinked, "stable")).store()) {
-            assertThat(originOf(store.dsl())).containsExactly("CONFIGURED");
-            assertThat(mintedKeysOf(store.dsl())).containsExactly("Film");
-            assertThat(importsOf(store.dsl())).containsExactly("@key", "@tag");
-            assertThat(problemsOf(store.dsl())).isEmpty();
+            assertThat(originOf(store.dsl(), RUN_GRAPH)).containsExactly("CONFIGURED");
+            assertThat(mintedKeysOf(store.dsl(), RUN_GRAPH)).containsExactly("Film");
+            assertThat(importsOf(store.dsl(), RUN_GRAPH)).containsExactly("@key", "@tag");
+            assertThat(problemsOf(store.dsl(), RUN_GRAPH)).isEmpty();
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("untagged"), unlinked, null)).store()) {
-            assertThat(originOf(store.dsl())).isEmpty();
-            assertThat(mintedKeysOf(store.dsl())).isEmpty();
+            assertThat(originOf(store.dsl(), RUN_GRAPH)).isEmpty();
+            assertThat(mintedKeysOf(store.dsl(), RUN_GRAPH)).isEmpty();
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("linked"), linkedWithTag, "stable")).store()) {
-            assertThat(originOf(store.dsl()))
+            assertThat(originOf(store.dsl(), RUN_GRAPH))
                 .as("the author wrote the link, so the configuration adds none")
                 .containsExactly("AUTHORED");
-            assertThat(mintedKeysOf(store.dsl())).containsExactly("Film");
-            assertThat(importsOf(store.dsl())).containsExactly("@key", "@tag");
+            assertThat(mintedKeysOf(store.dsl(), RUN_GRAPH)).containsExactly("Film");
+            assertThat(importsOf(store.dsl(), RUN_GRAPH)).containsExactly("@key", "@tag");
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("linked-key-only"), FEDERATED, "stable")).store()) {
-            assertThat(importsOf(store.dsl()))
+            assertThat(importsOf(store.dsl(), RUN_GRAPH))
                 .as("the author imported the key; graphitron adds the tag it configures")
                 .containsExactly("@key", "@tag");
-            assertThat(problemsOf(store.dsl())).isEmpty();
+            assertThat(problemsOf(store.dsl(), RUN_GRAPH)).isEmpty();
         }
     }
 
     /** What the graph's link imports, in order. */
-    private static List<String> importsOf(DSLContext dsl) {
+    private static List<String> importsOf(DSLContext dsl, String graph) {
         var i = GRAPHITRON_FEDERATION_LINK_IMPORT;
-        return dsl.select(i.NAME).from(i).orderBy(i.ORDINAL).fetch(i.NAME);
+        return dsl.select(i.NAME).from(i).where(i.GRAPH_NAME.eq(graph)).orderBy(i.ORDINAL)
+            .fetch(i.NAME);
     }
 
     /** What the toolchain refused, by error class. */
-    private static List<String> problemsOf(DSLContext dsl) {
+    private static List<String> problemsOf(DSLContext dsl, String graph) {
         var p = GRAPHQL_SCHEMA_PROBLEM;
-        return dsl.select(p.ERROR_CLASS).from(p).fetch(p.ERROR_CLASS);
+        return dsl.select(p.ERROR_CLASS).from(p).where(p.GRAPH_NAME.eq(graph)).fetch(p.ERROR_CLASS);
     }
 
     /** How the graph opts in to federation, if it does. */
-    private static List<String> originOf(DSLContext dsl) {
+    private static List<String> originOf(DSLContext dsl, String graph) {
         return dsl.select(GRAPHITRON_FEDERATION_LINK.ORIGIN).from(GRAPHITRON_FEDERATION_LINK)
+            .where(GRAPHITRON_FEDERATION_LINK.GRAPH_NAME.eq(graph))
             .fetch(GRAPHITRON_FEDERATION_LINK.ORIGIN);
     }
 
@@ -321,26 +344,27 @@ class FederationKeyDerivationTest {
         Files.writeString(file, sdl);
         return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(file), Optional.ofNullable(tag), Optional.empty())),
-            dir, "FederationKeyDerivationTest", dir.resolve("out"),
+            dir, RUN_GRAPH, dir.resolve("out"),
             TestRunContext.OUTPUT_PACKAGE, TestRunContext.JOOQ_PACKAGE);
     }
 
     /** The types the rule minted a key for, by name. */
-    private static List<String> mintedKeysOf(DSLContext dsl) {
+    private static List<String> mintedKeysOf(DSLContext dsl, String graph) {
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
         return dsl.select(d.COORDINATE)
             .from(d)
-            .where(d.DIRECTIVE_NAME.eq("key"))
+            .where(d.GRAPH_NAME.eq(graph), d.DIRECTIVE_NAME.eq("key"))
             .and(d.ORIGIN.eq("MINTED"))
             .orderBy(d.COORDINATE)
             .fetch(d.COORDINATE);
     }
 
     /** The ordinals of the {@code @key} applications transcribed for a type, in order. */
-    private static List<Integer> keyApplicationsOf(DSLContext dsl, String typeName) {
+    private static List<Integer> keyApplicationsOf(DSLContext dsl, String graph, String typeName) {
         return dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
             .from(GRAPHQL_DIRECTIVE_APPLICATION)
-            .where(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE
+            .where(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(graph))
+            .and(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE
                 .eq(SchemaCoordinateSyntax.ofType(typeName)))
             .and(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))
             .orderBy(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
@@ -348,7 +372,7 @@ class FederationKeyDerivationTest {
     }
 
     /** A type's emitted keys as {@code ordinal:origin:fields}, from the directive anchor. */
-    private static List<String> composedKeysOf(DSLContext dsl, String typeName) {
+    private static List<String> composedKeysOf(DSLContext dsl, String graph, String typeName) {
         var d = GRAPHITRON_DIRECTIVE_APPLICATION;
         var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
         return dsl.select(d.ORDINAL, d.ORIGIN, a.VALUE_SDL)
@@ -356,7 +380,7 @@ class FederationKeyDerivationTest {
             .join(a).on(a.GRAPH_NAME.eq(d.GRAPH_NAME).and(a.COORDINATE.eq(d.COORDINATE))
                 .and(a.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME)).and(a.ORDINAL.eq(d.ORDINAL))
                 .and(a.DIRECTIVE_ARGUMENT_NAME.eq("fields")))
-            .where(d.COORDINATE.eq(typeName))
+            .where(d.GRAPH_NAME.eq(graph), d.COORDINATE.eq(typeName))
             .and(d.DIRECTIVE_NAME.eq("key"))
             .orderBy(d.ORDINAL)
             .fetch()
