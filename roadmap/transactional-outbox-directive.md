@@ -328,7 +328,7 @@ Starts once R1101 phase 2 (nested scopes join the field transaction) is on trunk
 
 A service or routine-writing coordinate becomes admissible by the same route: the store row that says the coordinate is a write. The routine write is already rendered from store rows (`RoutineWriteQuery`), so its seam is the same one; a `@service` mutation is still rendered from the classified model, so its seam is a second call site on the walk until that variant moves, and `$result` resolves against the service method's return type in memory rather than by subselect (open decision 4). Owned path only; request-time refusal on the escape hatch.
 
-### Phase 4: the failure outcome (Ready; signed off in review round 8)
+### Phase 4: the failure outcome (In Progress; signed off in review round 8; the store, the `$error` resolution and an `UNSUPPORTED` deferral shipped at `50c9e042e`)
 
 Added 2026-11-16, after phases 1, 1b and 2 shipped, so it has not been through the reviewer gate; a different session reviews this section before it is built. Goal: `@outbox(on: ERROR)` writes a message when the mutation field fails, after its transaction has rolled back, carrying the arguments, the session, the scope and the typed error, so a producer can publish refusals and failures as well as changes.
 
