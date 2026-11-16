@@ -1,0 +1,19 @@
+extend schema @withConfiguration(sessionState: true, tenantColumn: "film_id")
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+"A vouched connection is keyed by the vouched-for values alone, and nothing yet pairs a voucher with the tenant of the key it decodes to, so @accept in a database-per-tenant build is refused at the @accept."
+type Language @table(name: "language") @key(fields: "languageId") {
+  languageId: Int! @field(name: "language_id")
+  name: String!
+  voucher: String! @accept(scope: "languages", vouchesFor: "name")
+}
+
+type Query {
+  languages: [Language!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'VOUCHER_ACCEPT_WITH_TENANT_COLUMN'", rows: """
+  code,                              type_name, detail
+  VOUCHER_ACCEPT_WITH_TENANT_COLUMN, Language,  Language.voucher
+  """)

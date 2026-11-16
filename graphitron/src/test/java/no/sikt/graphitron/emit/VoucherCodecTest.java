@@ -216,24 +216,20 @@ class VoucherCodecTest {
     }
 
     @Test
-    void vouchersSharingAVouchIdMustAgreeOnScopeAndExpiry() throws Throwable {
+    void vouchersSharingAVouchIdAreEachCheckedOnTheirOwn() throws Throwable {
+        // The vouch id is an audit handle: vouchers carrying one need not agree on scope or expiry.
         var keys = keys();
         var vouchedFor = Set.of("ownerId");
         var key = Set.of("id");
         var first = issue(keys, VOUCH, "results", EXPIRES, "Result", Map.of("ownerId", 42), Map.of("id", "r-1"));
-        var second = issue(keys, VOUCH, "results", EXPIRES, "Result", Map.of("ownerId", 42), Map.of("id", "r-2"));
-        var otherScope = issue(keys, VOUCH, "documents", EXPIRES, "Result", Map.of("ownerId", 42), Map.of("id", "r-3"));
+        var otherScope = issue(keys, VOUCH, "documents", EXPIRES, "Result", Map.of("ownerId", 42), Map.of("id", "r-2"));
         var otherExpiry = issue(keys, VOUCH, "results", EXPIRES.plusSeconds(1), "Result", Map.of("ownerId", 42),
-            Map.of("id", "r-4"));
-        var otherVouch = issue(keys, UUID.randomUUID(), "documents", EXPIRES, "Result", Map.of("ownerId", 42),
-            Map.of("id", "r-5"));
+            Map.of("id", "r-3"));
 
         var verifier = verifierAt(keys, ISSUED);
         check(verifier, "Result", first, "results", vouchedFor, key);
-        check(verifier, "Result", second, "results", vouchedFor, key);
-        check(verifier, "Result", otherVouch, "documents", vouchedFor, key);
-        assertRejected(() -> check(verifier, "Result", otherScope, "documents", vouchedFor, key), "INCONSISTENT");
-        assertRejected(() -> check(verifier, "Result", otherExpiry, "results", vouchedFor, key), "INCONSISTENT");
+        check(verifier, "Result", otherScope, "documents", vouchedFor, key);
+        check(verifier, "Result", otherExpiry, "results", vouchedFor, key);
     }
 
     @Test

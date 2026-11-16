@@ -118,7 +118,6 @@ public final class VoucherRuntime {
             .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting field's vouchesFor"))
             .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key"))
             .addEnumConstant("VALUE", constant("a value in the voucher does not parse as its field's scalar"))
-            .addEnumConstant("INCONSISTENT", constant("vouchers sharing a vouch id disagree on scope, caller or expiry"))
             .addField(String.class, "check", Modifier.PRIVATE, Modifier.FINAL)
             .addMethod(MethodSpec.constructorBuilder()
                 .addParameter(String.class, "check")
@@ -439,8 +438,8 @@ public final class VoucherRuntime {
             .addJavadoc("Decodes and checks a voucher presented for an entity of {@code typeName}: its signature\n"
                 + "with the type name, its expiry within {@link VoucherCodec#CLOCK_SKEW}, its scope, its caller,\n"
                 + "that its vouched-for section names exactly {@code vouchedForFields} and its lookup part exactly\n"
-                + "{@code keyFields}, and that it agrees on scope, caller and expiry with every voucher this\n"
-                + "verifier passed under the same vouch id. Needs no connection.\n"
+                + "{@code keyFields}. Each voucher is checked on its own; the vouch id is an audit handle and\n"
+                + "agrees with nothing. Needs no connection.\n"
                 + "\n"
                 + "@throws $T naming the first check that failed\n", rejected)
             .addParameter(String.class, "typeName")
@@ -500,25 +499,16 @@ public final class VoucherRuntime {
             .beginControlFlow("if (!decoded.lookup().keySet().equals(keyFields))")
             .addStatement("throw new $T($T.KEY)", rejected, reason)
             .endControlFlow()
-            .addStatement("$T seen = vouches.putIfAbsent(decoded.vouchId(), decoded)", token)
-            .beginControlFlow("if (seen != null && !(seen.scope().equals(decoded.scope())"
-                + " && seen.expires().equals(decoded.expires())))")
-            .addStatement("throw new $T($T.INCONSISTENT)", rejected, reason)
-            .endControlFlow()
             .addStatement("return decoded")
             .build();
 
         var verifier = TypeSpec.classBuilder("Verifier")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("Checks the vouchers one request presents, against the request's caller and the instant it\n"
-                + "checks at, and remembers each vouch id it passed so vouchers of one vouch must agree. One per\n"
-                + "request; not for sharing between threads.\n")
+                + "checks at. One per request.\n")
             .addField(keys, "keys", Modifier.PRIVATE, Modifier.FINAL)
             .addField(Instant.class, "now", Modifier.PRIVATE, Modifier.FINAL)
             .addField(String.class, "caller", Modifier.PRIVATE, Modifier.FINAL)
-            .addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(Map.class), ClassName.get(UUID.class), token),
-                "vouches", Modifier.PRIVATE, Modifier.FINAL)
-                .initializer("new $T<>()", HashMap.class).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(keys, "keys")

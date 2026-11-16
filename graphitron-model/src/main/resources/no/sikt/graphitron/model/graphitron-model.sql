@@ -17641,7 +17641,7 @@ WITH marker (graph_name, source_name, source_line, source_column, directive_name
    WHERE d.directive_name IN ('issue', 'accept')
 ),
 issue AS (SELECT * FROM marker WHERE directive_name = 'issue'),
--- Each selection either marker's claims parsed into, the two parses read alike.
+-- Each selection either marker's vouchesFor parsed into, the two parses read alike.
 claim_entry (graph_name, source_name, source_line, source_column, position, field_name) AS (
   SELECT graph_name, source_name, source_line, source_column, position, field_name
     FROM graphitron_ast_issue_vouched_for_entry
@@ -17682,6 +17682,14 @@ SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_WIT
        s.coordinate, 'vouchers'
   FROM marker s
  WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied ss WHERE ss.graph_name = s.graph_name)
+UNION ALL
+-- A vouched connection is keyed by the vouched-for values alone: nothing pairs a voucher with the tenant
+-- of the key it decodes to, so @accept in a database-per-tenant graph is refused.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_ACCEPT_WITH_TENANT_COLUMN',
+       s.coordinate, 'vouchers'
+  FROM marker s
+ WHERE s.directive_name = 'accept'
+   AND EXISTS (SELECT 1 FROM store_graph_tenant_column tc WHERE tc.graph_name = s.graph_name)
 UNION ALL
 SELECT s.graph_name, s.source_name, s.source_line, s.source_column, 'VOUCHER_TTL_INVALID',
        COALESCE(e.ttl, ''), 'vouchers'
@@ -27842,6 +27850,8 @@ INSERT INTO graphitron_defect_type VALUES
    '@issue is on a type with no other field, so the voucher would carry nothing: add the fields the other subgraph''s key and vouched-for fields are.'),
   ('VOUCHER_WITHOUT_SESSION_STATE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_WITHOUT_SESSION_STATE',
    'A voucher marker binds each voucher to the caller on the request''s SessionState, and the build configures no <sessionState>: configure one.'),
+  ('VOUCHER_ACCEPT_WITH_TENANT_COLUMN', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_WITH_TENANT_COLUMN',
+   '@accept is in a build with a <tenantColumn>, and a voucher is not yet paired with the tenant of the key it decodes to: accept vouchers in a single-tenant build.'),
   ('VOUCHER_TTL_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_TTL_INVALID',
    '@issue''s ttl is not an ISO-8601 duration of hours, minutes and seconds, such as PT5M.'),
   ('VOUCHER_VOUCHES_FOR_EMPTY', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_VOUCHES_FOR_EMPTY',
