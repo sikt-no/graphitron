@@ -144,11 +144,10 @@ from the next recording.
    only the tables holding rows changed nothing.
 3. **The thread store goes: its borrowers move onto the population's pool, to fact documents, or
    to a store of their own** (A2a, R1160's migration). The clear exists only because a thread's
-   cases share one store. The store that accumulates instead is the one Alf ruled for an inline
-   capture that reads only its own graph (testing.adoc § "Where a store-backed test gets its
-   store", 2026-11-12): the population lends it from a pool kept per catalog and classpath, beside
-   a ballast graph that fails a read missing its graph filter, through
-   `FactGraphs.Reader.readInline`. No per-thread store that stops clearing is built beside it.
+   cases share one store. What replaces it is the population: a test's inline schema becomes a fact
+   document the population captures (testing.adoc § "Keep a store of your own only for a reason",
+   Alf 2026-11-14, which deprecates inline SDL and so `FactGraphs.Reader.readInline` with it, a
+   waypoint at most). No per-thread store that stops clearing is built beside it.
    Recounted 2026-11-16 by a reading of every class that borrows the thread store: 94 classes, 45
    reading only their own graph, 15 only relations no capture changes, 17 reading a graph-keyed
    relation without a graph filter, and 17 writing or asserting what the whole store shares.
@@ -179,8 +178,10 @@ from the next recording.
       worked under its node; this item ranks the order by cost. About 107 sites in
       30 files call `ThreadConfinedStore.run`, 81 in 13 call `withSeededStore`, and `CapturedStore`'s
       borrowing arms and the LSP and MCP `StoreFixture` case arms have about 230 more. A case that
-      captures inline SDL once and reads it takes `readInline`; one that reads twice, or drives a
-      gatherer by hand to pin what a second reading sweeps, becomes a scenario document; one that
+      captures inline SDL once and reads it becomes a fact document, its assertions claims where a
+      claim can state them and a read of the document's graph where one cannot; one that reads
+      twice, or drives a gatherer by hand to pin what a second reading sweeps, becomes a scenario
+      document with its readings; one that
       writes the store keeps a store of its own. The arms that capture under the one default name
       are removed rather than given a name, and `CapturedStore.GRAPH` stays only on the arms that
       own their store. `SeededStore` dissolves with its callers, under `SeedingDissolutionGateTest`,
