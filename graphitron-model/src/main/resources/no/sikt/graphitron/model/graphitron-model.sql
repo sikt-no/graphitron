@@ -12002,8 +12002,8 @@ COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last
 -- and results the stage has just written. The detail is NULL; the code says why.
 CREATE VIEW graphitron_fetcher_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- A field routed by its parent row's tenant and written inline, at the field: it is a producer of its
--- own, grouping its parents by the tenant they name, which the generator emits only split until its
+-- A field routed by its parent row's tenant and written inline, at the field, a @service being split
+-- already: it is a producer of its own, grouping its parents by the tenant they name, which the generator emits only split until its
 -- producer is emitted from the store.
 SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
        'TENANT_FAN_OUT_INLINE_UNSUPPORTED', CAST(NULL AS VARCHAR), 'fetchers'
@@ -12012,7 +12012,7 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
     ON el.graph_name = tf.graph_name AND el.coordinate = tf.element_coordinate
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_directive_application s
                     WHERE s.graph_name = tf.graph_name AND s.coordinate = tf.element_coordinate
-                      AND s.directive_name = 'splitQuery')
+                      AND s.directive_name IN ('splitQuery', 'service'))
 UNION ALL
 -- A paginated return on an insert, update or delete, at its @mutation: the write's rows are re-read
 -- by the keys it returned, which is not a page, as a @routine write's are.
@@ -20094,7 +20094,23 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_tenant_column ptc
                     WHERE ptc.graph_name = sc.graph_name AND ptc.source_name = sc.from_source_name
                       AND ptc.table_schema = sc.from_schema AND ptc.table_name = sc.from_table)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype t WHERE t.graph_name = f.graph_name AND t.type_name = f.type_name);
+   AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype t WHERE t.graph_name = f.graph_name AND t.type_name = f.type_name)
+UNION ALL
+-- A child @service of a graph with a tenant column routed by its parent row's tenant, or with no
+-- connection the generated code can say for it, at the field: a frame grouping its parents by the
+-- tenant each names is not emitted yet, so it is refused until then.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'SERVICE_TENANT_FAN_OUT_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-routes'
+  FROM graphitron_occurrence_producer p
+  JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection c
+                    WHERE c.graph_name = p.graph_name AND c.coordinate = p.coordinate
+                      AND c.outcome <> 'ROUTED');
 COMMENT ON VIEW graphitron_occurrence_route_entry_defect_rule IS 'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.';
 
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
@@ -27157,6 +27173,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field of a type nested under a global table reaches a tenant''s rows by a key landing on the tenant column, which is not routed by the parent row''s tenant yet: declare the field on a type with its own @table, or read the rows through an argument naming the tenant.'),
   ('TENANT_FAN_OUT_INLINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_INLINE_UNSUPPORTED',
    'A field whose foreign key reaches a tenant''s rows from a global table is routed by its parent row''s tenant, and needs @splitQuery until its producer is emitted from the store: write @splitQuery on the field.'),
+  ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',
+   'A child @service under a global table reads a tenant''s rows, by a key landing on the tenant column or by none naming the tenant, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
    'An argMapping names $tenant where nothing routes by it yet: $tenant names the tenant of a @service''s call, so write it in the @service''s argMapping.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',

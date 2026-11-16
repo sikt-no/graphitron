@@ -23,7 +23,6 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_CONNECTION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -31,10 +30,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER_RES
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
-import static org.jooq.impl.DSL.exists;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.selectOne;
 
 /**
  * A {@code @service} fetcher emitted from the store, composed of the parts' emitters: the frame
@@ -201,32 +196,11 @@ public final class ServiceEmission {
     }
 
     /**
-     * The root services the store states a part of the fetcher for that is not emitted here yet,
-     * by why: a build with a tenant column, which routes calls by tenant; a target whose participants a
-     * discriminating column tells apart, read off one shared table; and a connection's page.
+     * The services the store states a part of the fetcher for that is not emitted here yet, by why: a
+     * connection's page.
      */
     private static Map<String, String> excluded(StoreHandle store) {
-        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
-        var tc = STORE_GRAPH_TENANT_COLUMN;
         var out = new LinkedHashMap<String, String>();
-        boolean tenanted = store.dsl().fetchExists(selectOne().from(tc).where(tc.GRAPH_NAME.eq(store.graphName())));
-        if (tenanted) {
-            // Each service runs on the connection the store states for it; a root without one is refused
-            // there. A child routed by its row's tenant, or without a connection, is a frame grouping its
-            // parents by tenant, which is not emitted here yet, so the walk keeps emitting it.
-            var cn = GRAPHITRON_OCCURRENCE_CONNECTION;
-            store.dsl().select(p.COORDINATE, p.START,
-                    field(exists(selectOne().from(cn).where(cn.GRAPH_NAME.eq(p.GRAPH_NAME),
-                        cn.COORDINATE.eq(p.COORDINATE),
-                        p.START.ne("CHILD").or(cn.OUTCOME.ne("ROUTED"))))))
-                .from(p)
-                .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
-                .forEach(r -> {
-                    if (!r.value3()) {
-                        out.put(r.value1(), "CHILD".equals(r.value2()) ? "FAN_OUT_BY_ROW_TENANT" : "UNROUTED");
-                    }
-                });
-        }
         var r = GRAPHITRON_OCCURRENCE_PRODUCER_RESULT;
         store.dsl().select(r.COORDINATE).from(r)
             .where(r.GRAPH_NAME.eq(store.graphName()), r.SHAPE.eq("CONNECTION"))

@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmEndorsementRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.DSLContext;
@@ -122,6 +123,28 @@ public final class FilmRatingService {
         /** A child service taking the {@code DSLContext} as a parameter. */
     public static Map<FilmRecord, String> servedBy(Set<FilmRecord> films, DSLContext dsl) {
         return byFilm(films, database(dsl));
+    }
+
+    /**
+     * A child service on a global parent answering the film its endorsement names, by a key landing on
+     * the tenant column: its parents would be grouped by the tenant each names.
+     */
+    public static Map<FilmEndorsementRecord, FilmRecord> endorsedFilm(Set<FilmEndorsementRecord> endorsements,
+                                                                     DSLContext dsl) {
+        var films = dsl.selectFrom(FILM)
+            .where(FILM.FILM_ID.in(endorsements.stream().map(FilmEndorsementRecord::getEndorsedFilm).toList()))
+            .fetchMap(FILM.FILM_ID);
+        return endorsements.stream().filter(e -> films.containsKey(e.getEndorsedFilm()))
+            .collect(Collectors.toMap(Function.identity(), e -> films.get(e.getEndorsedFilm())));
+    }
+
+    /** A child service on a global parent answering a tenant's rows by a key naming no tenant. */
+    public static Map<LanguageRecord, List<FilmRecord>> languageFilms(Set<LanguageRecord> languages, DSLContext dsl) {
+        Map<Integer, List<FilmRecord>> films = dsl.selectFrom(FILM)
+            .where(FILM.LANGUAGE_ID.in(languages.stream().map(LanguageRecord::getLanguageId).toList()))
+            .fetch().stream().collect(Collectors.groupingBy(FilmRecord::getLanguageId));
+        return languages.stream().collect(Collectors.toMap(Function.identity(),
+            language -> films.getOrDefault(language.getLanguageId(), List.of())));
     }
 
     static Map<FilmRecord, String> byFilm(Set<FilmRecord> films, String database) {

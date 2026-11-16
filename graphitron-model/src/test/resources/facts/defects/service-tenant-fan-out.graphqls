@@ -1,0 +1,38 @@
+# A child @service under a tenant column whose rows a frame would have to group by the tenant each
+# parent names: FilmEndorsement.endorsedFilm follows a key landing on the tenant column film_id from
+# the global film_endorsement, so it is routed by its parent row's tenant; Language.films answers
+# film rows a tenant's database holds from the global language by a key naming no tenant, so no
+# connection can be said for it. Neither is emitted yet.
+
+extend schema @withConfiguration(tenantColumn: "film_id")
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmEndorsement @table(name: "film_endorsement") {
+  note: String
+  endorsedFilm: Film @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+    method: "endorsedFilm"})
+}
+
+type Language @table(name: "language") {
+  name: String
+  films: [Film!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+    method: "languageFilms"})
+}
+
+type Query {
+  endorsements: [FilmEndorsement!]!
+  languages: [Language!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_TENANT_FAN_OUT_UNSUPPORTED'", rows: """
+  code,                               coordinate
+  SERVICE_TENANT_FAN_OUT_UNSUPPORTED, FilmEndorsement.endorsedFilm
+  SERVICE_TENANT_FAN_OUT_UNSUPPORTED, Language.films
+  """)
+
+# A service is a producer of its own, so it is not refused as written inline.
+extend schema @assertEmpty(relation: "graphitron_entry_defect", where: "code = 'TENANT_FAN_OUT_INLINE_UNSUPPORTED'")
