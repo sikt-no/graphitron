@@ -20091,7 +20091,7 @@ UNION ALL
 -- A @service under an object whose rows may be any of several participants, at the field: its parents'
 -- answers would be lifted participant by participant, which is generated for a root call only, so it
 -- is refused until then. An outcome, whose members are the call's success and its errors, is no such
--- answer.
+-- answer, and a union is refused for a service of its own.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
        'SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
   FROM graphitron_occurrence_producer p
@@ -20104,6 +20104,19 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
                     WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
                       AND po.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_type t
+                    WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'UNION')
+UNION ALL
+-- A @service whose field answers a union, at the field: a Java method declares one result type, and
+-- no Java type is a union of others, so what the method answers says nothing of which member it is.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_UNION_RETURN', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'SERVICE' AND t.kind = 'UNION'
 UNION ALL
 -- A @service whose outcome claims validation, under an object or answering participants on tables of
 -- their own, at the field: the arguments its call builds are validated once per fetch of a root call
@@ -27762,6 +27775,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
   ('SERVICE_BATCH_SHAPE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_BATCH_SHAPE_UNSUPPORTED',
    'A @service under an object takes its keys or answers in a shape the batch does not read: keys in a container delivering many, a jOOQ Result only of the parent''s table records; an answer a Map by key, or a List or Result in the keys'' order under keys a List, Collection or Result gives an order: take a Set and answer a Map, or take a List and answer a List.'),
+  ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
+   'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',
    'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',

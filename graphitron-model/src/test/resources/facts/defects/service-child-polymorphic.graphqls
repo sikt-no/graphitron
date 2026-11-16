@@ -1,10 +1,10 @@
-# A @service under an object answering a union of two tables: each address's occupants may be
-# customers or staff, which the store-fed fetcher lifts participant by participant for a root call
+# A @service under an object answering an interface over two tables: each address's occupants may
+# be customers or staff, which the store-fed fetcher lifts participant by participant for a root call
 # only.
 
-type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
-type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
-union AddressOccupant = Customer | Staff
+interface AddressOccupant { firstName: String }
+type Customer implements AddressOccupant @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff implements AddressOccupant @table(name: "staff") { firstName: String @field(name: "first_name") }
 
 type Address @table(name: "address") {
   occupants: [AddressOccupant!]! @service(service: {

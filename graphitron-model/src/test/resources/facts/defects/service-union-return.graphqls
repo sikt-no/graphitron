@@ -1,0 +1,38 @@
+# A @service answering a union, at a root and under an object: a Java method declares one result
+# type, and no Java type is a union of others. The same services answering an interface the members
+# implement are no union return.
+
+type Film implements Document @table(name: "film") { title: String }
+type Actor implements Document @table(name: "actor") { title: String }
+union FilmOrActor = Film | Actor
+interface Document { title: String }
+
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+union AddressOccupant = Customer | Staff
+
+type Address @table(name: "address") {
+  occupants: [AddressOccupant!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.AddressOccupantCarrierService", method: "occupantsOf"})
+}
+
+type Query {
+  addresses: [Address!]!
+  search: [FilmOrActor!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
+  documents: [Document!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.PolymorphicSearchService", method: "searchDocuments"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_UNION_RETURN'", rows: """
+  code,                 coordinate
+  SERVICE_UNION_RETURN, Address.occupants
+  SERVICE_UNION_RETURN, Query.search
+  """)
+
+# The child union is refused as a union, not as a polymorphic child not generated yet.
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                                  coordinate
+  SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED, Address.occupants
+  """)
