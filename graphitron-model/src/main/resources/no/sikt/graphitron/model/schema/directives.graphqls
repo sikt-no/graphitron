@@ -604,30 +604,47 @@ directive @routine(
 ) repeatable on FIELD_DEFINITION
 
 """
-Writes one message to the transactional outbox every time the mutation field succeeds, inside the
-transaction that made the change, so the message exists if and only if the write committed. The
-directive is repeatable: each occurrence is a message of its own, written in the order the
-directives appear, so a new event (or a new version of one) is added beside the published ones
-without changing them. Valid on Mutation fields that write a table with `@mutation`. Where the
-messages go is configured once, in the plugin's `<outbox>` block.
+Writes one message to the transactional outbox for the outcome named by `on`. A `SUCCESS` message,
+the default, is written every time the mutation field succeeds, inside the transaction that made
+the change, so the message exists if and only if the write committed. The directive is repeatable:
+each occurrence is a message of its own, written in the order the directives appear, so a new event
+(or a new version of one) is added beside the published ones without changing them. Valid on
+Mutation fields that write a table with `@mutation`. Where the messages go is configured once, in
+the plugin's `<outbox>` block.
 """
 directive @outbox(
   """
   The message's event type, the name downstream consumers subscribe to. Defaults to the field's
-  coordinate (`Mutation.createFilm`). Two `@outbox` in the schema with the same event, given or
-  defaulted, are rejected.
+  coordinate (`Mutation.createFilm`) on a `SUCCESS` message, and to the coordinate followed by
+  `.failed` (`Mutation.createFilm.failed`) on an `ERROR` one. Two `@outbox` in the schema with the
+  same event, given or defaulted, are rejected.
   """
   event: String
+  """
+  The outcome the message is written on: `SUCCESS`, the default, when the field succeeds, or
+  `ERROR` when it fails. `ERROR` is declared but not generated yet, so a schema naming it is
+  rejected.
+  """
+  on: OutboxOutcome = SUCCESS
   """
   Builds the message's flat JSON payload. Each entry is `jsonKey: source`; multiple entries are
   comma-separated. A source is a field argument (a dot path walks into nested input fields; an
   input-object argument yields an object of the fields the client sent, a list yields an array),
-  `$result` or `$result.<path>` (what the write produced), or `$scope.<member>` (`coordinate`,
-  `operationName`, `alias`). A key bound twice, or one that collides with a key of the
-  configured common payload, is rejected.
+  `$result` or `$result.<path>` (what the write produced, on a `SUCCESS` message), `$error` or
+  `$error.<path>` (the error the failure was reported as, on an `ERROR` message), or
+  `$scope.<member>` (`coordinate`, `operationName`, `alias`). A key bound twice, or one that
+  collides with a key of the configured common payload, is rejected.
   """
   argMapping: String
 ) repeatable on FIELD_DEFINITION
+
+"""The outcome of a mutation field an `@outbox` message is written on."""
+enum OutboxOutcome {
+  """The field succeeded: the message is written in the field's transaction and commits with it."""
+  SUCCESS
+  """The field failed: the message describes the refusal or the failure."""
+  ERROR
+}
 
 """
 Marks the voucher field of a table-bound type in a federated subgraph that vouches for its rows to

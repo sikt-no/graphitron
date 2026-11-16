@@ -1,0 +1,93 @@
+# Whether a source fits an @outbox message is a question of the message's outcome, which the
+# argMapping site cannot see, so the store judges it at the entry as ARGMAPPING_SOURCE_MISFIT, from
+# the key the key rule did not resolve. $result reads what the call wrote, which is gone when an
+# ERROR message is written; $error reads the error the call failed with, which a SUCCESS message
+# does not have. An $error path resolves only where every error type of the field's errors field
+# declares it with one type: constraint is declared by one of the two members, code by both with
+# two types, and the error whole is no value a payload key carries. A field returning no type with
+# an errors field names no $error at all. The near misses beside each, $result.title on SUCCESS and
+# $error.message on ERROR, are keys and draw nothing.
+#
+# An ERROR message with no event is published under <coordinate>.failed, so it collides with a
+# SUCCESS message given that event by hand: the two messages carry one event, which the
+# duplicate-event rule, unchanged and pinned by outbox-defects, reports at each of the two. Every
+# ERROR application is also the deferral outbox-error-outcome pins. The misfits are claimed entry by
+# entry, which is where their detail is; the string-level rows these roll up to are the same code
+# outbox-session-defects already pins.
+
+extend schema @withConfiguration(outboxTable: "outbox")
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+type FilmLanguageMissing @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+  message: String!
+  constraint: String
+  code: String
+}
+
+type FilmValueMissing @error(handlers: [{handler: DATABASE, sqlState: "23502"}]) {
+  message: String!
+  code: Int
+}
+
+union FilmInsertError = FilmLanguageMissing | FilmValueMissing
+
+type FilmInsertPayload {
+  film: Film
+  errors: [FilmInsertError]
+}
+
+type Mutation {
+  resultOnError(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "ResultWritten", argMapping: "t: $result.title")
+    @outbox(on: ERROR, event: "ResultFailed", argMapping: "t: $result.title")
+  errorOnSuccess(in: FilmInput!): FilmInsertPayload
+    @mutation(typeName: INSERT, table: "film")
+    @outbox(event: "ErrorWritten", argMapping: "k: $error.__typename")
+  unresolved(in: FilmInput!): FilmInsertPayload
+    @mutation(typeName: INSERT, table: "film")
+    @outbox(on: ERROR, event: "Unresolved",
+            argMapping: "why: $error.message, c: $error.constraint, n: $error.code, all: $error")
+  withoutErrors(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(on: ERROR, event: "WithoutErrors", argMapping: "why: $error.message")
+  collides(in: FilmInput!): FilmInsertPayload
+    @mutation(typeName: INSERT, table: "film")
+    @outbox(on: ERROR)
+    @outbox(event: "Mutation.collides.failed")
+}
+
+extend schema @expectEquals(relation: "graphitron_argmapping_pair_defect", rows: """
+  position, code,                     detail
+  0,        ARGMAPPING_SOURCE_MISFIT, "t: $result.title (an ERROR message is written after the rollback, when nothing the call wrote is left)"
+  0,        ARGMAPPING_SOURCE_MISFIT, "k: $error.__typename (a SUCCESS message is written when the call succeeds, with no error to read)"
+  1,        ARGMAPPING_SOURCE_MISFIT, "c: $error.constraint (neither __typename nor a field every error type of FilmInsertPayload.errors declares with one type)"
+  2,        ARGMAPPING_SOURCE_MISFIT, "n: $error.code (neither __typename nor a field every error type of FilmInsertPayload.errors declares with one type)"
+  3,        ARGMAPPING_SOURCE_MISFIT, "all: $error (the error whole is no value a payload key carries)"
+  0,        ARGMAPPING_SOURCE_MISFIT, "why: $error.message (the field returns no type with an errors field)"
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_key", where: """
+  coordinate IN ('Mutation.resultOnError', 'Mutation.unresolved')
+  """, rows: """
+  coordinate,             ordinal, key_name, fill,   reads,  source_path
+  Mutation.resultOnError, 0,       t,        RESULT, COLUMN, title
+  Mutation.unresolved,    0,       why,      ERROR,  ,       message
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_message", where: """
+  coordinate = 'Mutation.collides'
+  """, rows: """
+  ordinal, outcome, event
+  0,       ERROR,   Mutation.collides.failed
+  1,       SUCCESS, Mutation.collides.failed
+  """)

@@ -25,7 +25,8 @@ class DirectiveSupportTypesTest {
             "ReferenceElement",
             "ErrorHandlerType",
             "SortDirection",
-            "MutationType");
+            "MutationType",
+            "OutboxOutcome");
     }
 
     @Test

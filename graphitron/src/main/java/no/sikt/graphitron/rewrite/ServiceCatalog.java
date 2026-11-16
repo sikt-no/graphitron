@@ -371,6 +371,12 @@ class ServiceCatalog {
                     case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ResultPath ignored ->
                         throw new IllegalStateException("a $result binding reached @service claims; the"
                             + " SERVICE site does not admit it");
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ErrorRoot ignored ->
+                        throw new IllegalStateException("an $error binding reached @service claims; the"
+                            + " SERVICE site does not admit it");
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ErrorPath ignored ->
+                        throw new IllegalStateException("an $error binding reached @service claims; the"
+                            + " SERVICE site does not admit it");
                     case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ScopeMember ignored ->
                         throw new IllegalStateException("a $scope binding reached @service claims; the"
                             + " SERVICE site does not admit it");
@@ -1160,6 +1166,12 @@ class ServiceCatalog {
                             + " CONDITION site does not admit it");
                     case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ResultPath ignored ->
                         throw new IllegalStateException("a $result binding reached @condition claims; the"
+                            + " CONDITION site does not admit it");
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ErrorRoot ignored ->
+                        throw new IllegalStateException("an $error binding reached @condition claims; the"
+                            + " CONDITION site does not admit it");
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ErrorPath ignored ->
+                        throw new IllegalStateException("an $error binding reached @condition claims; the"
                             + " CONDITION site does not admit it");
                     case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.ScopeMember ignored ->
                         throw new IllegalStateException("a $scope binding reached @condition claims; the"

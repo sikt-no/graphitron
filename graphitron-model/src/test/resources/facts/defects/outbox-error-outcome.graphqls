@@ -1,0 +1,88 @@
+# An @outbox(on: ERROR) is a message on the failure outcome. Its outcome is a column of the message,
+# SUCCESS where the application says nothing, and an ERROR message with no event is published under
+# the field's coordinate followed by .failed. Its $error paths resolve against the errors field the
+# field's outcome names: __typename, the error type's name, and a field every error type the errors
+# field holds declares with one type, here message on both members of a union, and on the one
+# @error type an errors field of a single type holds. Arguments fill an ERROR message's keys as they
+# fill a SUCCESS message's. Nothing writes a message on the failure outcome yet, so each ERROR
+# application is a deferral at the application; the SUCCESS message beside it is the near miss and
+# draws nothing.
+
+extend schema @withConfiguration(outboxTable: "outbox")
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+type FilmLanguageMissing @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type FilmValueMissing @error(handlers: [{handler: DATABASE, sqlState: "23502"}]) {
+  path: [String!]!
+  message: String!
+}
+
+union FilmInsertError = FilmLanguageMissing | FilmValueMissing
+
+type FilmInsertPayload {
+  film: Film
+  errors: [FilmInsertError]
+}
+
+type FilmDirectPayload {
+  film: Film
+  errors: [FilmLanguageMissing]
+}
+
+type Mutation {
+  createFilm(in: FilmInput!): FilmInsertPayload
+    @mutation(typeName: INSERT, table: "film")
+    @outbox(event: "FilmCreated", argMapping: "title: in.title")
+    @outbox(on: ERROR, argMapping: "kind: $error.__typename, why: $error.message, title: in.title")
+  createDirect(in: FilmInput!): FilmDirectPayload
+    @mutation(typeName: INSERT, table: "film")
+    @outbox(on: ERROR, event: "DirectFailed", argMapping: "why: $error.message")
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_outbox_entry", rows: """
+  event_ref,    outcome_ref
+  FilmCreated,
+  ,             ERROR
+  DirectFailed, ERROR
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_message", rows: """
+  coordinate,            ordinal, outcome, event
+  Mutation.createFilm,   0,       SUCCESS, FilmCreated
+  Mutation.createFilm,   1,       ERROR,   Mutation.createFilm.failed
+  Mutation.createDirect, 0,       ERROR,   DirectFailed
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_key", rows: """
+  coordinate,            ordinal, key_name, fill,     source_path, outcome_type_name, errors_field_name
+  Mutation.createFilm,   0,       title,    ARGUMENT, in.title,    ,                  
+  Mutation.createFilm,   1,       kind,     ERROR,    __typename,  FilmInsertPayload, errors
+  Mutation.createFilm,   1,       why,      ERROR,    message,     FilmInsertPayload, errors
+  Mutation.createFilm,   1,       title,    ARGUMENT, in.title,    ,                  
+  Mutation.createDirect, 0,       why,      ERROR,    message,     FilmDirectPayload, errors
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                        coordinate
+  OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createFilm
+  OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createDirect
+  """)
+
+extend schema @assertContains(relation: "diagnostic", rows: """
+  lsp_code,                               coordinate,            severity, actionable
+  GRAPHITRON_OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createFilm,   error,    FALSE
+  GRAPHITRON_OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createDirect, error,    FALSE
+  """)

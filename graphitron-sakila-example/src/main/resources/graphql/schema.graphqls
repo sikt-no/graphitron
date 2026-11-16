@@ -2004,6 +2004,28 @@ type FilmRentalRateUpdatePayload {
     errors: [FilmRentalRateOverflowError]
 }
 
+# An INSERT whose errors union holds two DATABASE-handled types, each on a constraint class of its
+# own: a languageId naming no language trips the foreign key (23503), an explicit null
+# rentalDuration the NOT NULL column (23502). FilmWriteInvalid takes the over-long title the
+# VALIDATION handler rejects before the statement. Every member declares path and message with one
+# type, so an @outbox on the failure outcome can name $error.__typename and $error.message here.
+type FilmInsertLanguageMissing @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+    path: [String!]!
+    message: String!
+}
+
+type FilmInsertValueMissing @error(handlers: [{handler: DATABASE, sqlState: "23502"}]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmInsertError = FilmInsertLanguageMissing | FilmInsertValueMissing | FilmWriteInvalid
+
+type FilmInsertPayload {
+    film: Film
+    errors: [FilmInsertError]
+}
+
 type Customer implements Node @table(name: "customer") @node {
     id:         ID!      @nodeId
     customerId: Int!     @field(name: "CUSTOMER_ID")
@@ -5758,6 +5780,10 @@ type Mutation {
     # rental-rate type, so a replacement-cost overflow there redacts.
     updateFilmPrice(in: FilmPriceUpdateInput!): FilmPriceUpdatePayload @mutation(typeName: UPDATE)
     updateFilmRentalRate(in: FilmPriceUpdateInput!): FilmRentalRateUpdatePayload @mutation(typeName: UPDATE)
+
+    # A DML INSERT whose errors field is a union of two @error types claiming different
+    # constraint violations; see FilmInsertError.
+    insertFilmReportingFailure(in: FilmCreateInput!): FilmInsertPayload @mutation(typeName: INSERT, table: "film")
 
     # A @service mutation over a list of input objects whose errors union shares FilmWriteInvalid, a
     # {handler: VALIDATION} type, with the DML carriers above: the shape a consumer reaches by putting

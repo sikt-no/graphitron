@@ -86,6 +86,40 @@ class ArgMappingSigilTest {
                 ArgMappingSigil.sessionHandleNotAdmittedMessage(ArgMappingSigil.Site.OUTBOX)));
     }
 
+    @Test
+    void errorAtTheOutboxSite_isAdmittedWholeAndByPath() {
+        var result = ArgMappingSigil.scan(
+            "kind: $error.__typename, why: $error.message, all: $error", ArgMappingSigil.Site.OUTBOX);
+        assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Ok.class, scanned -> {
+            assertThat(scanned.sigilBindings()).containsExactly(
+                Map.entry("kind", new ArgMappingSigil.Binding.ErrorPath(List.of("__typename"))),
+                Map.entry("why", new ArgMappingSigil.Binding.ErrorPath(List.of("message"))),
+                Map.entry("all", new ArgMappingSigil.Binding.ErrorRoot()));
+            assertThat(scanned.sigilBindings().get("why").raw()).isEqualTo("$error.message");
+        });
+    }
+
+    @Test
+    void errorPathWithAnEmptyName_rejectsNamingTheForm() {
+        for (String rhs : new String[] {"$error.", "$error.a..b"}) {
+            var result = ArgMappingSigil.scan("x: " + rhs, ArgMappingSigil.Site.OUTBOX);
+            assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+                assertThat(rejected.message()).isEqualTo(ArgMappingSigil.malformedErrorPathMessage(rhs)));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ArgMappingSigil.Site.class, names = "OUTBOX", mode = EnumSource.Mode.EXCLUDE)
+    void errorAtANonAdmittedSite_rejectsNamingTheOutboxSite(ArgMappingSigil.Site site) {
+        assertThat(site.admitsErrorSigil()).isFalse();
+        for (String rhs : new String[] {"$error", "$error.message"}) {
+            var result = ArgMappingSigil.scan("x: " + rhs, site);
+            assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+                assertThat(rejected.message())
+                    .isEqualTo(ArgMappingSigil.outboxSigilNotAdmittedMessage(rhs, site)));
+        }
+    }
+
     @ParameterizedTest
     @EnumSource(value = ArgMappingSigil.Site.class, names = {"SERVICE", "CONDITION", "OUTBOX"},
         mode = EnumSource.Mode.EXCLUDE)

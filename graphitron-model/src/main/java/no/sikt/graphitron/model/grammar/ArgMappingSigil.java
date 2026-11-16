@@ -60,6 +60,19 @@ public final class ArgMappingSigil {
     public static final String RESULT_PREFIX = "$result.";
 
     /**
+     * Sigil literal. At an {@code @outbox} entry's right-hand side, binds the payload key to the
+     * field's failure outcome: the error the failure was reported as.
+     */
+    public static final String ERROR_LITERAL = "$error";
+
+    /**
+     * Sigil prefix of the path form. {@code $error.<path>} binds the key to a member of the error:
+     * {@code __typename}, or a field its error types declare. The path is one or more dot-separated
+     * names; whether it fits the message is the store's question, not the site's.
+     */
+    public static final String ERROR_PREFIX = "$error.";
+
+    /**
      * Sigil prefix. {@code $scope.<member>} binds the key to one member of the field's scope: the
      * coordinate, the operation name, the alias, or the tenant. Exactly one name after the dot.
      */
@@ -81,7 +94,8 @@ public final class ArgMappingSigil {
      * the other. {@link #raw()} is the right-hand side as written, for diagnostics and fact capture.
      */
     public sealed interface Binding permits Binding.SessionHandle, Binding.SessionMember, Binding.SourceColumn,
-            Binding.ResultRoot, Binding.ResultPath, Binding.ScopeMember {
+            Binding.ResultRoot, Binding.ResultPath, Binding.ErrorRoot, Binding.ErrorPath,
+            Binding.ScopeMember {
         String raw();
 
         /** {@code $session}: the whole session handle. */
@@ -110,6 +124,19 @@ public final class ArgMappingSigil {
                 segments = List.copyOf(segments);
             }
             @Override public String raw() { return RESULT_PREFIX + String.join(".", segments); }
+        }
+
+        /** {@code $error}: the error the field's failure was reported as, whole. */
+        record ErrorRoot() implements Binding {
+            @Override public String raw() { return ERROR_LITERAL; }
+        }
+
+        /** {@code $error.<path>}: a member of that error, one or more dot-separated names. */
+        record ErrorPath(List<String> segments) implements Binding {
+            public ErrorPath {
+                segments = List.copyOf(segments);
+            }
+            @Override public String raw() { return ERROR_PREFIX + String.join(".", segments); }
         }
 
         /** {@code $scope.<member>}: one member of the field's scope. */
@@ -166,6 +193,15 @@ public final class ArgMappingSigil {
 
         /** True only at the outbox site, the one whose payload describes what a write produced. */
         public boolean admitsResultSigil() {
+            return this == OUTBOX;
+        }
+
+        /**
+         * True only at the outbox site, the one whose payload can describe a failure. Admission is per
+         * site; whether the error fits a given message is a question of the message's outcome, which
+         * the store judges.
+         */
+        public boolean admitsErrorSigil() {
             return this == OUTBOX;
         }
 
@@ -269,6 +305,20 @@ public final class ArgMappingSigil {
                         return new ScanResult.Rejected(malformedResultPathMessage(rhs));
                     }
                     binding = new Binding.ResultPath(path);
+                } else if (ERROR_LITERAL.equals(rhs)) {
+                    if (!site.admitsErrorSigil()) {
+                        return new ScanResult.Rejected(outboxSigilNotAdmittedMessage(rhs, site));
+                    }
+                    binding = new Binding.ErrorRoot();
+                } else if (rhs.startsWith(ERROR_PREFIX)) {
+                    if (!site.admitsErrorSigil()) {
+                        return new ScanResult.Rejected(outboxSigilNotAdmittedMessage(rhs, site));
+                    }
+                    List<String> path = errorPath(rhs);
+                    if (path == null) {
+                        return new ScanResult.Rejected(malformedErrorPathMessage(rhs));
+                    }
+                    binding = new Binding.ErrorPath(path);
                 } else if (rhs.startsWith(SCOPE_PREFIX)) {
                     if (!site.admitsScopeSigil()) {
                         return new ScanResult.Rejected(outboxSigilNotAdmittedMessage(rhs, site));
@@ -412,6 +462,23 @@ public final class ArgMappingSigil {
     }
 
     /**
+     * The names a {@code $error.<path>} right-hand side walks, or {@code null} where {@code rhs} is
+     * not that sigil with one or more non-empty dot-separated names after the prefix.
+     */
+    public static List<String> errorPath(String rhs) {
+        if (rhs == null || !rhs.startsWith(ERROR_PREFIX)) {
+            return null;
+        }
+        String[] segments = rhs.substring(ERROR_PREFIX.length()).split("\\.", -1);
+        for (String segment : segments) {
+            if (segment.isEmpty()) {
+                return null;
+            }
+        }
+        return List.of(segments);
+    }
+
+    /**
      * The member a {@code $scope.<member>} right-hand side names, or {@code null} where {@code rhs}
      * is not that sigil with exactly one non-empty name after the dot.
      */
@@ -454,18 +521,27 @@ public final class ArgMappingSigil {
             + RESULT_PREFIX + "<name>[." + "<name>...], with no empty name between the dots.";
     }
 
+    /** Canonical message for an {@code $error.} path with an empty segment. */
+    public static String malformedErrorPathMessage(String raw) {
+        return "'" + raw + "' is not an error binding; the form is " + ERROR_LITERAL + " or "
+            + ERROR_PREFIX + "<name>[." + "<name>...], with no empty name between the dots.";
+    }
+
     /** Canonical message for a {@code $scope.} value that is not exactly one member name. */
     public static String malformedScopeMemberMessage(String raw) {
         return "'" + raw + "' is not a scope binding; the form is " + SCOPE_PREFIX
             + "<member>, exactly one member name after the dot.";
     }
 
-    /** Canonical message for {@code $result} or {@code $scope.<member>} at a site that does not admit it. */
+    /**
+     * Canonical message for {@code $result}, {@code $error} or {@code $scope.<member>} at a site that
+     * does not admit it.
+     */
     public static String outboxSigilNotAdmittedMessage(String raw, Site site) {
         return "'" + raw + "' is not admitted in " + site.description()
-            + "; " + RESULT_LITERAL + " and " + SCOPE_PREFIX + "<member> are only valid in @outbox"
-            + " argMapping, where they bind a payload key to what the write produced or to the"
-            + " field's scope.";
+            + "; " + RESULT_LITERAL + ", " + ERROR_LITERAL + " and " + SCOPE_PREFIX + "<member> are"
+            + " only valid in @outbox argMapping, where they bind a payload key to what the write"
+            + " produced, to the error the field failed with, or to the field's scope.";
     }
 
     /** Canonical message for a {@code $session.} path that is not exactly one member name. */
@@ -478,7 +554,8 @@ public final class ArgMappingSigil {
     public static String unknownSigilMessage(String raw) {
         return "Unknown sigil '" + raw + "' in argMapping; allowed: " + SESSION_LITERAL + ", "
             + SESSION_MEMBER_PREFIX + "<member>, " + SOURCE_PREFIX + "<column>, " + RESULT_LITERAL
-            + ", " + RESULT_PREFIX + "<path>, " + SCOPE_PREFIX + "<member>, " + CONTEXT_PREFIX + "<key>";
+            + ", " + RESULT_PREFIX + "<path>, " + ERROR_LITERAL + ", " + ERROR_PREFIX + "<path>, "
+            + SCOPE_PREFIX + "<member>, " + CONTEXT_PREFIX + "<key>";
     }
 
     /** Canonical message for {@code $source.<column>} at an argMapping site that does not admit it. */

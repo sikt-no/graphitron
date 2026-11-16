@@ -217,15 +217,17 @@ final class GraphitronFieldEntries {
             application -> GraphQLAstEntries.sourceColumn(application),
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(string(application, "event"), t.EVENT_REF),
-            application -> val(string(application, "argMapping"), t.ARGMAPPING)));
+            application -> val(string(application, "argMapping"), t.ARGMAPPING),
+            application -> val(token(application, "on"), t.OUTCOME_REF)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.EVENT_REF, t.ARGMAPPING)
+                    t.TOUCHED_AT, t.EVENT_REF, t.ARGMAPPING, t.OUTCOME_REF)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.EVENT_REF, excluded(t.EVENT_REF))
-                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
+                .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
+                .set(t.OUTCOME_REF, excluded(t.OUTCOME_REF)));
     }
 
     private static void issues(DSLContext dsl, String graph, LocalDateTime touchedAt,

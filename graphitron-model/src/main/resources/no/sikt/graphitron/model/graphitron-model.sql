@@ -2698,13 +2698,14 @@ CREATE TABLE graphitron_ast_outbox_entry (
   touched_at    TIMESTAMP NOT NULL,
   event_ref     VARCHAR,
   argmapping    VARCHAR,
+  outcome_ref   VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_outbox_entry IS 'What an @outbox application says: the event it names and the mapping that builds its payload, as written. For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.';
+COMMENT ON TABLE graphitron_ast_outbox_entry IS 'What an @outbox application says: the event it names, the outcome it is written on and the mapping that builds its payload, as written. For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.';
 COMMENT ON COLUMN graphitron_ast_outbox_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_outbox_entry.source_name IS 'the file the application was written in';
 COMMENT ON COLUMN graphitron_ast_outbox_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
@@ -2712,6 +2713,7 @@ COMMENT ON COLUMN graphitron_ast_outbox_entry.source_column IS 'source column of
 COMMENT ON COLUMN graphitron_ast_outbox_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_outbox_entry.event_ref IS 'the event argument exactly as written, or NULL where the author left it out; what an omitted event defaults to is the anchor''s resolution, not a value to keep here';
 COMMENT ON COLUMN graphitron_ast_outbox_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its entries name is a question for the derivation over the argument-mapping pairs';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.outcome_ref IS 'the on argument exactly as written, SUCCESS or ERROR, or NULL where the author left it out; what an omitted outcome defaults to is the message rule''s resolution, not a value to keep here';
 
 CREATE TABLE graphitron_ast_issue_entry (
   graph_name    VARCHAR NOT NULL,
@@ -12246,6 +12248,7 @@ CREATE TABLE graphitron_outbox_message (
   coordinate                VARCHAR   NOT NULL,
   directive_name            VARCHAR   NOT NULL,
   ordinal                   INT       NOT NULL,
+  outcome                   VARCHAR   NOT NULL,
   event                     VARCHAR   NOT NULL,
   source_name               VARCHAR   NOT NULL,
   source_line               INT       NOT NULL,
@@ -12261,16 +12264,18 @@ CREATE TABLE graphitron_outbox_message (
   FOREIGN KEY (occurrence_graph_ref, occurrence_coordinate_ref)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE SET NULL,
   CHECK (directive_name = 'outbox'),
+  CHECK (outcome IN ('SUCCESS', 'ERROR')),
   CHECK (occurrence_graph_ref IS NULL OR occurrence_graph_ref = graph_name),
   CHECK (occurrence_coordinate_ref IS NULL OR occurrence_coordinate_ref = coordinate)
 );
 CREATE INDEX graphitron_outbox_message_event_ix ON graphitron_outbox_message (graph_name, event);
-COMMENT ON TABLE graphitron_outbox_message IS 'One @outbox message: one application of @outbox on a field, the message the field''s call writes when it succeeds. For example @outbox(event: "FilmCreated") on Mutation.createFilm is the message at ordinal 0 of Mutation.createFilm, with the event FilmCreated, and a second @outbox beside it a second message.';
+COMMENT ON TABLE graphitron_outbox_message IS 'One @outbox message: one application of @outbox on a field, the message the field''s call writes on the outcome the application names, when it succeeds or when it fails. For example @outbox(event: "FilmCreated") on Mutation.createFilm is the SUCCESS message at ordinal 0 of Mutation.createFilm, with the event FilmCreated, and an @outbox(on: ERROR) beside it the ERROR message at ordinal 1, with the event Mutation.createFilm.failed.';
 COMMENT ON COLUMN graphitron_outbox_message.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_outbox_message.coordinate IS 'the field the @outbox is written on, Type.field';
 COMMENT ON COLUMN graphitron_outbox_message.directive_name IS 'always outbox; part of the reference to the application the message is';
 COMMENT ON COLUMN graphitron_outbox_message.ordinal IS 'which @outbox on the field, in the order they are written; with the graph and the coordinate, the key';
-COMMENT ON COLUMN graphitron_outbox_message.event IS 'the event the message is published under: the one written, else the field''s coordinate';
+COMMENT ON COLUMN graphitron_outbox_message.outcome IS 'the outcome the message is written on: SUCCESS, the field succeeded, where the application says so or says nothing; ERROR, the field failed. The one fact the emitter, the defects and the docs read, rather than each working it out from the on argument';
+COMMENT ON COLUMN graphitron_outbox_message.event IS 'the event the message is published under: the one written, else the field''s coordinate on a SUCCESS message and the coordinate followed by .failed on an ERROR one';
 COMMENT ON COLUMN graphitron_outbox_message.source_name IS 'the document the application is written in';
 COMMENT ON COLUMN graphitron_outbox_message.source_line IS 'the line the application is written on';
 COMMENT ON COLUMN graphitron_outbox_message.source_column IS 'the column the application starts at; with the document and the line, where a defect of the message is reported';
@@ -12279,9 +12284,14 @@ COMMENT ON COLUMN graphitron_outbox_message.occurrence_coordinate_ref IS 'the fi
 COMMENT ON COLUMN graphitron_outbox_message.touched_at IS 'when the reading that stated this row ran; the outbox stage deletes the graph''s rows a reading did not mark';
 
 CREATE VIEW graphitron_outbox_message_rule
-  (graph_name, coordinate, directive_name, ordinal, event, source_name, source_line, source_column,
-   occurrence_coordinate) AS
-SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, COALESCE(e.event_ref, a.coordinate),
+  (graph_name, coordinate, directive_name, ordinal, outcome, event, source_name, source_line,
+   source_column, occurrence_coordinate) AS
+-- The outcome is the written one, else SUCCESS, and the event the written one, else the outcome's
+-- default, so the duplicate-event rule judges a defaulted ERROR event as it does a written one. An
+-- outcome that is neither value is no message; the directive's own argument type refuses it.
+SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, COALESCE(e.outcome_ref, 'SUCCESS'),
+       COALESCE(e.event_ref,
+                CASE WHEN e.outcome_ref = 'ERROR' THEN a.coordinate || '.failed' ELSE a.coordinate END),
        a.source_name, a.source_line, a.source_column, oc.coordinate
   FROM graphql_directive_application a
   JOIN graphql_field_element f ON f.graph_name = a.graph_name AND f.coordinate = a.coordinate
@@ -12289,7 +12299,8 @@ SELECT a.graph_name, a.coordinate, a.directive_name, a.ordinal, COALESCE(e.event
     ON e.graph_name = a.graph_name AND e.source_name = a.source_name
    AND e.source_line = a.source_line AND e.source_column = a.source_column
   LEFT JOIN graphitron_occurrence oc ON oc.graph_name = a.graph_name AND oc.coordinate = a.coordinate
- WHERE a.directive_name = 'outbox';
+ WHERE a.directive_name = 'outbox'
+   AND COALESCE(e.outcome_ref, 'SUCCESS') IN ('SUCCESS', 'ERROR');
 COMMENT ON VIEW graphitron_outbox_message_rule IS 'One row the outbox message rule computes, in the shape graphitron_outbox_message stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_message, which is the name every reader spells.';
 
 
@@ -15993,7 +16004,8 @@ COMMENT ON VIEW graphitron_occurrence_node_id_rule IS 'One row the occurrence no
 -- COMMENT ON COLUMN graphitron_occurrence_node_id_rule.column_name IS 'the key column';
 
 -- Each key of each @outbox message's payload, as the call it is fills a parameter: by an argument the
--- path lands on, by what the call returns, by the field's scope, or by a session member.
+-- path lands on, by what the call returns, by the error the call failed with, by the field's scope,
+-- or by a session member.
 CREATE TABLE graphitron_outbox_key (
   graph_name         VARCHAR   NOT NULL,
   coordinate         VARCHAR   NOT NULL,
@@ -16008,17 +16020,25 @@ CREATE TABLE graphitron_outbox_key (
   column_name        VARCHAR,
   node_type_name     VARCHAR,
   key_position       INT,
+  outcome_type_name  VARCHAR,
+  errors_field_name  VARCHAR,
   touched_at         TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, ordinal, key_name),
   FOREIGN KEY (graph_name, coordinate, ordinal)
     REFERENCES graphitron_outbox_message (graph_name, coordinate, ordinal) ON DELETE CASCADE,
+  -- The errors field an ERROR key resolved against, so a change to it, or to the union or interface
+  -- it holds, takes the key with it.
+  FOREIGN KEY (graph_name, outcome_type_name, errors_field_name)
+    REFERENCES graphitron_errors_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   -- The key column an argument key decodes, so a node whose key changes takes it.
   FOREIGN KEY (graph_name, node_type_name, key_position)
     REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE CASCADE,
   CHECK (key_position IS NULL OR fill = 'ARGUMENT'),
   CHECK (origin IN ('MESSAGE', 'COMMON')),
-  CHECK (fill IN ('ARGUMENT', 'RESULT', 'SCOPE', 'SESSION_MEMBER')),
+  CHECK (fill IN ('ARGUMENT', 'RESULT', 'ERROR', 'SCOPE', 'SESSION_MEMBER')),
   CHECK ((fill = 'RESULT') = (reads IS NOT NULL)),
+  CHECK ((fill = 'ERROR') = (errors_field_name IS NOT NULL)),
+  CHECK ((outcome_type_name IS NULL) = (errors_field_name IS NULL)),
   CHECK (reads IS NULL OR reads IN ('ROOT', 'NODE_ID', 'COLUMN', 'MEMBER'))
 );
 COMMENT ON TABLE graphitron_outbox_key IS 'One key of one @outbox message''s payload, as the parameter of the message''s call it is, by what fills it. For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two keys, filmId filled by the result''s node id and title by the argument path in.title, and a configured common payload entry adds its own key to every message.';
@@ -16028,13 +16048,15 @@ COMMENT ON COLUMN graphitron_outbox_key.ordinal IS 'which @outbox on the field; 
 COMMENT ON COLUMN graphitron_outbox_key.key_name IS 'the payload key; with the message, the key. A key the message and the common payload both name is the message''s';
 COMMENT ON COLUMN graphitron_outbox_key.origin IS 'MESSAGE where the @outbox''s own argMapping writes it, COMMON where the configured common payload does';
 COMMENT ON COLUMN graphitron_outbox_key.position IS 'its place in the mapping that writes it, the order the payload is built in';
-COMMENT ON COLUMN graphitron_outbox_key.fill IS 'what fills it, on graphitron_occurrence_call_parameter''s terms: ARGUMENT, an argument or input field its path lands on; RESULT, what the call returns; SCOPE, a member of the field''s scope; SESSION_MEMBER, a member of the session handle';
+COMMENT ON COLUMN graphitron_outbox_key.fill IS 'what fills it, on graphitron_occurrence_call_parameter''s terms: ARGUMENT, an argument or input field its path lands on; RESULT, what the call returns; ERROR, on an ERROR message only as RESULT is on a SUCCESS one, the error the call failed with, its type name or a field every error type the field''s errors field holds declares with one type; SCOPE, a member of the field''s scope; SESSION_MEMBER, a member of the session handle';
 COMMENT ON COLUMN graphitron_outbox_key.reads IS 'for a RESULT key, what it reads of the result: ROOT, the result whole; NODE_ID, a node''s id; COLUMN, a column of the written row; MEMBER, a member of the object a service returns. Null for every other fill';
 COMMENT ON COLUMN graphitron_outbox_key.source_path IS 'the source as written without its sigil, null for the result whole';
 COMMENT ON COLUMN graphitron_outbox_key.landing_coordinate IS 'the occurrence an ARGUMENT or RESULT path lands on, whose binding the key reads; null where no path is written';
 COMMENT ON COLUMN graphitron_outbox_key.column_name IS 'the written table''s column a COLUMN key reads, off the landed occurrence''s column binding; or the key column an ARGUMENT key names past a node id, which it decodes';
 COMMENT ON COLUMN graphitron_outbox_key.node_type_name IS 'the node type whose id a ROOT or NODE_ID key encodes, or whose id an ARGUMENT key naming a key column decodes';
 COMMENT ON COLUMN graphitron_outbox_key.key_position IS 'for an ARGUMENT key naming a key column past a node id, the column''s position in the node''s key, which the key decodes out of each id; null where the argument is carried as the client sent it';
+COMMENT ON COLUMN graphitron_outbox_key.outcome_type_name IS 'for an ERROR key, the type the field returns, which declares the errors field the key resolved against; null for every other fill';
+COMMENT ON COLUMN graphitron_outbox_key.errors_field_name IS 'for an ERROR key, the errors field of the returned type, as graphitron_producer_outcome names it; with the type, a graphitron_errors_field key. Null for every other fill';
 COMMENT ON COLUMN graphitron_outbox_key.touched_at IS 'when the reading that stated this row ran; the outbox stage deletes the graph''s rows a reading did not mark';
 
 -- How a child producer's keys are filled from its source, stated per occurrence at the end of its
@@ -16559,7 +16581,8 @@ COMMENT ON VIEW graphitron_occurrence_producer_lift_accessor_rule IS 'One row th
 
 CREATE VIEW graphitron_outbox_key_rule
   (graph_name, coordinate, ordinal, key_name, origin, position, fill, reads, source_path,
-   landing_coordinate, column_name, node_type_name, key_position) AS
+   landing_coordinate, column_name, node_type_name, key_position, outcome_type_name,
+   errors_field_name) AS
 -- One accessor of the handle class under the property name $session.<member> names, the slots the
 -- class declares itself: graphitron_session_handle_member's rows, read off the tables it joins.
 WITH handle_member (graph_name, member_name, source_name, class_name, method_name, descriptor) AS (
@@ -16686,6 +16709,20 @@ service_path (graph_name, coordinate, ordinal, key_name, segments) AS (
    GROUP BY r.graph_name, r.coordinate, r.ordinal, r.key_name
   HAVING COUNT(*) = MIN(r.segments)
      AND SUM(CASE WHEN r.consumed < r.segments AND (r.is_list OR r.value_read = 0) THEN 1 ELSE 0 END) = 0
+),
+-- The error types an errors field holds: the members of the union or interface it is typed as, or
+-- the one @error type itself.
+error_member (graph_name, type_name, field_name, member_type_name) AS (
+  SELECT ef.graph_name, ef.type_name, ef.field_name, tm.member_type_name
+    FROM graphitron_errors_field ef
+    JOIN graphitron_type_member tm
+      ON tm.graph_name = ef.graph_name AND tm.container_name = ef.container_name
+     AND tm.member_kind = 'OBJECT'
+  UNION ALL
+  SELECT ef.graph_name, ef.type_name, ef.field_name, ef.container_name
+    FROM graphitron_errors_field ef
+    JOIN graphitron_type t ON t.graph_name = ef.graph_name AND t.type_name = ef.container_name
+   WHERE t.kind = 'OBJECT'
 )
 SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
        CASE WHEN r.bound_to LIKE '$result%' THEN 'RESULT'
@@ -16706,7 +16743,7 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
        CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.coordinate IS NOT NULL)
             THEN nt.node_type_name
             WHEN r.bound_to NOT LIKE '$%' THEN dc.node_type_name END,
-       dc.key_position
+       dc.key_position, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM ranked r
   JOIN graphitron_outbox_message m
     ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
@@ -16734,9 +16771,10 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position,
    AND r.bound_to LIKE '$result.%'
    AND tc.table_source_name = w.table_source_name AND tc.table_schema = w.table_schema
    AND tc.table_name = w.table_name
- WHERE ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL
+ WHERE ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL AND m.outcome = 'SUCCESS'
          AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
      OR (r.origin = 'MESSAGE' AND r.bound_to LIKE '$result.%' AND w.kind IS NOT NULL
+         AND m.outcome = 'SUCCESS'
          AND POSITION('.', SUBSTRING(r.bound_to, 9)) = 0
          AND ((nid.coordinate IS NOT NULL AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
               OR (nid.coordinate IS NULL AND tc.column_name IS NOT NULL AND w.kind <> 'DELETE')))
@@ -16767,7 +16805,7 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
        CASE WHEN rec.step_coordinate IS NOT NULL
             THEN (SELECT MIN(oni.node_type_name) FROM graphitron_occurrence_node_id oni
                    WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate) END,
-       CAST(NULL AS INT)
+       CAST(NULL AS INT), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM ranked r
   JOIN graphitron_outbox_message m
     ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
@@ -16787,7 +16825,7 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
     ON rec.graph_name = r.graph_name AND rec.coordinate = r.coordinate AND rec.ordinal = r.ordinal
    AND rec.key_name = r.key_name AND rec.consumed = rec.segments - 1 AND rec.record_read = 1
    AND NOT rec.is_list
- WHERE r.origin = 'MESSAGE' AND NOT rf.is_list
+ WHERE r.origin = 'MESSAGE' AND NOT rf.is_list AND m.outcome = 'SUCCESS'
    AND ((r.bound_to = '$result'
          AND EXISTS (SELECT 1 FROM graphitron_type st
                       WHERE st.graph_name = rt.graph_name AND st.type_name = rt.target_type_name
@@ -16824,7 +16862,36 @@ SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 
                        AND nt2.table_schema = oni.table_schema AND nt2.table_name = oni.table_name
                        AND nt2.node_types = 1 AND nt2.key_is_primary
                        AND nt2.node_type_name = oni.node_type_name
-                     WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate)));
+                     WHERE oni.graph_name = r.graph_name AND oni.coordinate = ld.landing_coordinate)))
+UNION ALL
+-- An $error path on an ERROR message, resolved against the errors field graphitron_producer_outcome
+-- names for the field: __typename, the error type's name, which no type declares as a field; or a
+-- field every error type the errors field holds declares, with one type among them, so the payload
+-- has one shape whichever error it was.
+SELECT r.graph_name, r.coordinate, r.ordinal, r.key_name, r.origin, r.position, 'ERROR',
+       CAST(NULL AS VARCHAR), SUBSTRING(r.bound_to, 8), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS INT), po.outcome_type_name, po.errors_field_name
+  FROM ranked r
+  JOIN graphitron_outbox_message m
+    ON m.graph_name = r.graph_name AND m.coordinate = r.coordinate AND m.ordinal = r.ordinal
+  JOIN graphitron_field f ON f.graph_name = m.graph_name AND f.coordinate = m.coordinate
+  JOIN graphitron_producer_outcome po
+    ON po.graph_name = f.graph_name AND po.type_name = f.type_name AND po.field_name = f.field_name
+ WHERE r.origin = 'MESSAGE' AND m.outcome = 'ERROR' AND r.bound_to LIKE '$error.%'
+   AND (SUBSTRING(r.bound_to, 8) = '__typename'
+        OR (NOT EXISTS (SELECT 1 FROM error_member em
+                         WHERE em.graph_name = po.graph_name AND em.type_name = po.outcome_type_name
+                           AND em.field_name = po.errors_field_name
+                           AND NOT EXISTS (SELECT 1 FROM graphitron_field ef
+                                            WHERE ef.graph_name = em.graph_name
+                                              AND ef.type_name = em.member_type_name
+                                              AND ef.field_name = SUBSTRING(r.bound_to, 8)))
+            AND (SELECT COUNT(DISTINCT ef.type_sdl) FROM error_member em
+                   JOIN graphitron_field ef
+                     ON ef.graph_name = em.graph_name AND ef.type_name = em.member_type_name
+                    AND ef.field_name = SUBSTRING(r.bound_to, 8)
+                  WHERE em.graph_name = po.graph_name AND em.type_name = po.outcome_type_name
+                    AND em.field_name = po.errors_field_name) = 1));
 COMMENT ON VIEW graphitron_outbox_key_rule IS 'One row the outbox key rule computes, in the shape graphitron_outbox_key stores: the rule itself, evaluated on demand rather than read off disk. For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_key, which is the name every reader spells.';
 
 CREATE VIEW graphitron_outbox_entry_defect_rule
@@ -16861,12 +16928,20 @@ handle_member (graph_name, member_name, source_name, class_name, method_name, de
    WHERE slot.declaring_class = slot.class_name
 ),
 -- The written entries of an @outbox whose message has no key by the entry's name though its field
--- writes or calls a service, so the message is judged; NOT_A_WRITE speaks for any other.
+-- writes or calls a service, so the message is judged; NOT_A_WRITE speaks for any other. The
+-- message's outcome and the field's errors field come along, so a misfit is told by what the key
+-- rule did not resolve and on which outcome, the rule's own joins not repeated.
 outbox_unkeyed (graph_name, source_name, source_line, source_column, position, coordinate, ordinal,
-                key_name, bound_to, write_kind, is_service) AS (
+                key_name, bound_to, write_kind, is_service, outcome, errors_field) AS (
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, m.coordinate,
          m.ordinal, p.target_name, p.bound_to, w.kind,
-         CASE WHEN w.kind IS NULL THEN 1 ELSE 0 END
+         CASE WHEN w.kind IS NULL THEN 1 ELSE 0 END, m.outcome,
+         (SELECT po.outcome_type_name || '.' || po.errors_field_name
+            FROM graphitron_field f
+            JOIN graphitron_producer_outcome po
+              ON po.graph_name = f.graph_name AND po.type_name = f.type_name
+             AND po.field_name = f.field_name
+           WHERE f.graph_name = m.graph_name AND f.coordinate = m.coordinate)
     FROM graphitron_outbox_message m
     JOIN graphitron_argmapping_site s
       ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
@@ -16911,13 +16986,25 @@ result_landed (graph_name, coordinate, ordinal, key_name, through_list, type_nam
 ),
 pair_defect (graph_name, source_name, source_line, source_column, position, code, detail) AS (
   -- A source found that cannot fill the place it binds, here a payload key: the whole session handle,
-  -- a member whose yield JSON cannot carry, or a landed $result path that reads no node id, column or
-  -- value the message can take. A source not found is a defect of its sigil, raised where its facts
-  -- are. The detail is the entry and why.
+  -- a member whose yield JSON cannot carry, a landed $result path that reads no node id, column or
+  -- value the message can take, $result on an ERROR message, $error on a SUCCESS one, or an $error
+  -- the field's errors field does not resolve, or a field without one. A source not found is a
+  -- defect of its sigil, raised where its facts are. The detail is the entry and why.
   SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
          'ARGMAPPING_SOURCE_MISFIT',
          u.key_name || ': ' || u.bound_to || ' ('
-           || CASE WHEN u.bound_to = '$session' THEN hf.handle_class
+           || CASE WHEN u.outcome = 'ERROR' AND u.bound_to LIKE '$result%'
+                     THEN 'an ERROR message is written after the rollback, when nothing the call wrote is left'
+                   WHEN u.outcome = 'SUCCESS' AND u.bound_to LIKE '$error%'
+                     THEN 'a SUCCESS message is written when the call succeeds, with no error to read'
+                   WHEN u.bound_to LIKE '$error%' AND u.errors_field IS NULL
+                     THEN 'the field returns no type with an errors field'
+                   WHEN u.bound_to = '$error'
+                     THEN 'the error whole is no value a payload key carries'
+                   WHEN u.bound_to LIKE '$error.%'
+                     THEN 'neither __typename nor a field every error type of ' || u.errors_field
+                          || ' declares with one type'
+                   WHEN u.bound_to = '$session' THEN hf.handle_class
                    WHEN u.bound_to LIKE '$session.%'
                      THEN (SELECT MAX(cs.slot_type) FROM handle_member hm
                              JOIN code_read_slot cs
@@ -16945,7 +17032,8 @@ pair_defect (graph_name, source_name, source_line, source_column, position, code
           AND (SELECT COUNT(*) FROM handle_member hm
                 WHERE hm.graph_name = u.graph_name AND hm.member_name = SUBSTRING(u.bound_to, 10)) = 1)
       OR u.bound_to = '$result'
-      OR (u.bound_to LIKE '$result.%' AND rl.key_name IS NOT NULL)
+      OR (u.bound_to LIKE '$result.%' AND (rl.key_name IS NOT NULL OR u.outcome = 'ERROR'))
+      OR u.bound_to = '$error' OR u.bound_to LIKE '$error.%'
 ),
 -- An entry of an @outbox's own mapping whose key it binds twice, or the common payload also names,
 -- with where its mapping string sits so the first one as written is found by position, then site.
@@ -17091,6 +17179,13 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_TARG
             AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_routine_target t
                              WHERE t.graph_name = m.graph_name)))
 UNION ALL
+-- An @outbox(on: ERROR): its message is resolved, but nothing writes a message on the failure
+-- outcome yet, so the application is a deferral.
+SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_ON_ERROR_UNSUPPORTED',
+       CAST(NULL AS VARCHAR), 'outbox'
+  FROM graphitron_outbox_message m
+ WHERE m.outcome = 'ERROR'
+UNION ALL
 -- Two @outbox with one event, at each of the two.
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPLICATE_EVENT', m.event, 'outbox'
   FROM graphitron_outbox_message m
@@ -17157,12 +17252,20 @@ handle_member (graph_name, member_name, source_name, class_name, method_name, de
    WHERE slot.declaring_class = slot.class_name
 ),
 -- The written entries of an @outbox whose message has no key by the entry's name though its field
--- writes or calls a service, so the message is judged; NOT_A_WRITE speaks for any other.
+-- writes or calls a service, so the message is judged; NOT_A_WRITE speaks for any other. The
+-- message's outcome and the field's errors field come along, so a misfit is told by what the key
+-- rule did not resolve and on which outcome, the rule's own joins not repeated.
 outbox_unkeyed (graph_name, source_name, source_line, source_column, position, coordinate, ordinal,
-                key_name, bound_to, write_kind, is_service) AS (
+                key_name, bound_to, write_kind, is_service, outcome, errors_field) AS (
   SELECT p.graph_name, p.source_name, p.source_line, p.source_column, p.position, m.coordinate,
          m.ordinal, p.target_name, p.bound_to, w.kind,
-         CASE WHEN w.kind IS NULL THEN 1 ELSE 0 END
+         CASE WHEN w.kind IS NULL THEN 1 ELSE 0 END, m.outcome,
+         (SELECT po.outcome_type_name || '.' || po.errors_field_name
+            FROM graphitron_field f
+            JOIN graphitron_producer_outcome po
+              ON po.graph_name = f.graph_name AND po.type_name = f.type_name
+             AND po.field_name = f.field_name
+           WHERE f.graph_name = m.graph_name AND f.coordinate = m.coordinate)
     FROM graphitron_outbox_message m
     JOIN graphitron_argmapping_site s
       ON s.graph_name = m.graph_name AND s.directive_name = 'outbox'
@@ -17206,13 +17309,25 @@ result_landed (graph_name, coordinate, ordinal, key_name, through_list, type_nam
    GROUP BY st.graph_name, st.coordinate, st.ordinal, st.target_name
 )
 -- A source found that cannot fill the place it binds, here a payload key: the whole session handle,
--- a member whose yield JSON cannot carry, or a landed $result path that reads no node id, column or
--- value the message can take. A source not found is a defect of its sigil, raised where its facts
--- are. The detail is the entry and why.
+-- a member whose yield JSON cannot carry, a landed $result path that reads no node id, column or
+-- value the message can take, $result on an ERROR message, $error on a SUCCESS one, or an $error
+-- the field's errors field does not resolve, or a field without one. A source not found is a
+-- defect of its sigil, raised where its facts are. The detail is the entry and why.
 SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
        'ARGMAPPING_SOURCE_MISFIT',
        u.key_name || ': ' || u.bound_to || ' ('
-         || CASE WHEN u.bound_to = '$session' THEN hf.handle_class
+         || CASE WHEN u.outcome = 'ERROR' AND u.bound_to LIKE '$result%'
+                   THEN 'an ERROR message is written after the rollback, when nothing the call wrote is left'
+                 WHEN u.outcome = 'SUCCESS' AND u.bound_to LIKE '$error%'
+                   THEN 'a SUCCESS message is written when the call succeeds, with no error to read'
+                 WHEN u.bound_to LIKE '$error%' AND u.errors_field IS NULL
+                   THEN 'the field returns no type with an errors field'
+                 WHEN u.bound_to = '$error'
+                   THEN 'the error whole is no value a payload key carries'
+                 WHEN u.bound_to LIKE '$error.%'
+                   THEN 'neither __typename nor a field every error type of ' || u.errors_field
+                        || ' declares with one type'
+                 WHEN u.bound_to = '$session' THEN hf.handle_class
                  WHEN u.bound_to LIKE '$session.%'
                    THEN (SELECT MAX(cs.slot_type) FROM handle_member hm
                            JOIN code_read_slot cs
@@ -17240,7 +17355,8 @@ SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
         AND (SELECT COUNT(*) FROM handle_member hm
               WHERE hm.graph_name = u.graph_name AND hm.member_name = SUBSTRING(u.bound_to, 10)) = 1)
     OR u.bound_to = '$result'
-    OR (u.bound_to LIKE '$result.%' AND rl.key_name IS NOT NULL);
+    OR (u.bound_to LIKE '$result.%' AND (rl.key_name IS NOT NULL OR u.outcome = 'ERROR'))
+    OR u.bound_to = '$error' OR u.bound_to LIKE '$error.%';
 COMMENT ON VIEW graphitron_outbox_entry_defect_pair_rule IS 'One row the outbox stage''s entry-grain defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example h: $session on an @outbox gives one ARGMAPPING_SOURCE_MISFIT row at that entry, the handle class being no value a payload key carries.';
 
 CREATE TABLE graphitron_key_field_binding (
@@ -27829,7 +27945,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('OUTBOX_TARGET_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_TARGET_INVALID',
    'The <outbox> block cannot be used as written: fix the configuration the detail names.'),
   ('OUTBOX_DUPLICATE_EVENT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_DUPLICATE_EVENT',
-   'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate, so a consumer could not tell their messages apart: give each its own event.'),
+   'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate on a SUCCESS message and to the coordinate followed by .failed on an ERROR one, so a consumer could not tell their messages apart: give each its own event.'),
+  ('OUTBOX_ON_ERROR_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_OUTBOX_ON_ERROR_UNSUPPORTED',
+   '@outbox(on: ERROR) is declared and its message resolved, but graphitron does not write failure-outcome messages yet: remove the application, or write the message on SUCCESS.'),
   ('OUTBOX_KEY_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_KEY_CONFLICT',
    'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.'),
   ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',
@@ -28962,8 +29080,8 @@ INSERT INTO meta_relation VALUES
    'For example the outbox stage inserts this view''s rows for one graph into graphitron_outbox_key, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_outbox_message', 'outbox-message', 'graphitron',
-   'One @outbox message: one application of @outbox on a field, the message the field''s call writes when it succeeds.',
-   'For example @outbox(event: "FilmCreated") on Mutation.createFilm is the message at ordinal 0 of Mutation.createFilm, with the event FilmCreated, and a second @outbox beside it a second message.',
+   'One @outbox message: one application of @outbox on a field, the message the field''s call writes on the outcome the application names, when it succeeds or when it fails.',
+   'For example @outbox(event: "FilmCreated") on Mutation.createFilm is the SUCCESS message at ordinal 0 of Mutation.createFilm, with the event FilmCreated, and an @outbox(on: ERROR) beside it the ERROR message at ordinal 1, with the event Mutation.createFilm.failed.',
    'The application stated once as the message it is, so the outbox''s rules and its emitter read a row rather than joining the application, the field element and the decoded entry again, which the outbox views did three times over. Keyed by the application, the field and the repeat, since a message is what was written, so one written on a field no query reaches is still a message and its defects still land at its position; the field''s occurrence is referenced where there is one, the call whose producer writes the message, which is how placement is judged against the occurrence model rather than against a field-keyed producer. Written by the outbox stage from graphitron_outbox_message_rule, marked and swept.'),
   ('graphitron_outbox_message_rule', 'outbox-message', 'graphitron',
    'One row the outbox message rule computes, in the shape graphitron_outbox_message stores: the rule itself, evaluated on demand rather than read off disk.',
@@ -29354,9 +29472,9 @@ INSERT INTO meta_relation VALUES
    'For example the voucher-members stage writes this view''s rows for one graph into graphitron_voucher_member, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_ast_outbox_entry', 'sdl-declaration-site', 'graphitron',
-   'What an @outbox application says: the event it names and the mapping that builds its payload, as written.',
+   'What an @outbox application says: the event it names, the outcome it is written on and the mapping that builds its payload, as written.',
    'For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.',
-   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. Both arguments are kept as typed and nothing is checked: an omitted event defaults to the field''s coordinate in the anchor, and the mapping string is read by the generic argMapping writer into its pair entries, which is where its entries are decoded.'),
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The arguments are kept as typed and nothing is checked: an omitted outcome defaults to SUCCESS and an omitted event to the field''s coordinate, or on an ERROR message the coordinate followed by .failed, in the message rule, and the mapping string is read by the generic argMapping writer into its pair entries, which is where its entries are decoded.'),
   ('graphitron_ast_mutation_entry', 'sdl-declaration-site', 'graphitron',
    'What a @mutation application says: which write the field performs, over how many rows, against which table, as written.',
    'For example deleteFilm(input:): Boolean @mutation(typeName: DELETE, multiRow: true, table: "film") gives one row.',
