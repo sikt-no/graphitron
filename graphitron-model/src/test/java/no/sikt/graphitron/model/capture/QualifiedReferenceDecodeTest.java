@@ -5,6 +5,7 @@ import org.jooq.DSLContext;
 import org.jooq.Record2;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -65,14 +66,24 @@ class QualifiedReferenceDecodeTest {
         type Category @table(name: "category") { name: String }
         """;
 
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    QualifiedReferenceDecodeTest(TestInfo info) {
+        graph = "qualifiedReference." + info.getTestMethod().orElseThrow().getName();
+    }
+
     // ===== The partition, one case per arm =====
 
     /** No period appeared, so the namespace half is null and the name half is the whole value. */
     @Test
     @DisplayName("an unqualified name partitions to a null namespace and itself")
     void anUnqualifiedNamePartitionsToANullNamespace(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(tableRefParts(store.dsl(), "Film"))
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
+            assertThat(tableRefParts(store.dsl(), graph, "Film"))
                 .containsExactly(null, "film");
         }
     }
@@ -80,8 +91,8 @@ class QualifiedReferenceDecodeTest {
     @Test
     @DisplayName("a qualified name partitions on its period")
     void aQualifiedNamePartitionsOnItsPeriod(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(tableRefParts(store.dsl(), "Qualified"))
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
+            assertThat(tableRefParts(store.dsl(), graph, "Qualified"))
                 .containsExactly("public", "film");
         }
     }
@@ -94,8 +105,8 @@ class QualifiedReferenceDecodeTest {
     @Test
     @DisplayName("a trailing period leaves the name half empty rather than absent")
     void aTrailingPeriodLeavesTheNameHalfEmpty(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(tableRefParts(store.dsl(), "Trailing"))
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
+            assertThat(tableRefParts(store.dsl(), graph, "Trailing"))
                 .containsExactly("film", "");
         }
     }
@@ -104,8 +115,8 @@ class QualifiedReferenceDecodeTest {
     @Test
     @DisplayName("a leading period leaves the namespace half empty rather than absent")
     void aLeadingPeriodLeavesTheNamespaceHalfEmpty(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(tableRefParts(store.dsl(), "Leading"))
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
+            assertThat(tableRefParts(store.dsl(), graph, "Leading"))
                 .containsExactly("", "film");
         }
     }
@@ -118,8 +129,8 @@ class QualifiedReferenceDecodeTest {
     @Test
     @DisplayName("a second period rides into the name half")
     void aSecondPeriodRidesIntoTheNameHalf(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            assertThat(tableRefParts(store.dsl(), "Deep"))
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
+            assertThat(tableRefParts(store.dsl(), graph, "Deep"))
                 .containsExactly("a", "b.c");
         }
     }
@@ -134,16 +145,18 @@ class QualifiedReferenceDecodeTest {
     @Test
     @DisplayName("a path element's key and table partition by the same rule")
     void aPathElementPartitionsByTheSameRule(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
             var k = GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
             assertThat(halves(store.dsl()
                 .select(k.KEY_REF_NAMESPACE_PART, k.KEY_REF_NAME_PART)
-                .from(k).where(k.KEY_REF.eq("public.film_language_id_fkey")).fetchOne()))
+                .from(k).where(k.GRAPH_NAME.eq(graph), k.KEY_REF.eq("public.film_language_id_fkey"))
+                .fetchOne()))
                 .containsExactly("public", "film_language_id_fkey");
             var t = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
             assertThat(halves(store.dsl()
                 .select(t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-                .from(t).where(t.TABLE_REF.eq("public.film_category")).fetchOne()))
+                .from(t).where(t.GRAPH_NAME.eq(graph), t.TABLE_REF.eq("public.film_category"))
+                .fetchOne()))
                 .containsExactly("public", "film_category");
         }
     }
@@ -151,16 +164,18 @@ class QualifiedReferenceDecodeTest {
     @Test
     @DisplayName("a routine name and a mutation's write target partition by the same rule")
     void aRoutineAndAMutationPartitionByTheSameRule(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
             assertThat(halves(store.dsl()
                 .select(GRAPHITRON_AST_ROUTINE_ENTRY.ROUTINE_REF_NAMESPACE_PART,
                         GRAPHITRON_AST_ROUTINE_ENTRY.ROUTINE_REF_NAME_PART)
-                .from(GRAPHITRON_AST_ROUTINE_ENTRY).fetchOne()))
+                .from(GRAPHITRON_AST_ROUTINE_ENTRY)
+                .where(GRAPHITRON_AST_ROUTINE_ENTRY.GRAPH_NAME.eq(graph)).fetchOne()))
                 .containsExactly("public", "films_for_actor");
             assertThat(halves(store.dsl()
                 .select(GRAPHITRON_AST_MUTATION_ENTRY.TABLE_REF_NAMESPACE_PART,
                         GRAPHITRON_AST_MUTATION_ENTRY.TABLE_REF_NAME_PART)
-                .from(GRAPHITRON_AST_MUTATION_ENTRY).fetchOne()))
+                .from(GRAPHITRON_AST_MUTATION_ENTRY)
+                .where(GRAPHITRON_AST_MUTATION_ENTRY.GRAPH_NAME.eq(graph)).fetchOne()))
                 .containsExactly("public", "film");
         }
     }
@@ -168,14 +183,15 @@ class QualifiedReferenceDecodeTest {
     // ===== Helpers =====
 
     /** One type's {@code @table} reference as its two halves, either of which may be null. */
-    private static List<String> tableRefParts(DSLContext dsl, String typeName) {
+    private static List<String> tableRefParts(DSLContext dsl, String graph, String typeName) {
         var a = GRAPHQL_DIRECTIVE_APPLICATION;
         var t = GRAPHITRON_AST_TABLE_ENTRY;
         return halves(dsl.select(t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
             .from(a)
             .leftJoin(t).on(t.GRAPH_NAME.eq(a.GRAPH_NAME), t.SOURCE_NAME.eq(a.SOURCE_NAME),
                 t.SOURCE_LINE.eq(a.SOURCE_LINE), t.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-            .where(a.COORDINATE.eq(typeName), a.DIRECTIVE_NAME.eq("table"), a.ORDINAL.eq(0))
+            .where(a.GRAPH_NAME.eq(graph), a.COORDINATE.eq(typeName), a.DIRECTIVE_NAME.eq("table"),
+                a.ORDINAL.eq(0))
             .fetchOne());
     }
 
