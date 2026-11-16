@@ -368,6 +368,21 @@ class CursorEncodingTest {
     }
 
     @Test
+    void aTokenWithAnExtremeExponent_isTheClientError_promptly_inEitherCursorFormat() {
+        // Both readings refuse a token on its size before jOOQ parses it.
+        Field<?> wide = DSL.field(DSL.name("wide"), SQLDataType.DECIMAL_INTEGER);
+        org.junit.jupiter.api.Assertions.assertTimeout(java.time.Duration.ofSeconds(1), () -> {
+            for (String token : List.of("1e30000000", "1e-30000000")) {
+                assertRejected(releaseCandidateCursor(token), wide);
+                assertRejected(releaseCandidateCursor(token), FILM.FILM_ID);
+                assertRejected(jsonCursor("[" + token + "]"), wide);
+                assertRejected(jsonCursor("[" + token + "]"), FILM.FILM_ID);
+            }
+        });
+        assertThat(bound(releaseCandidateCursor("1e3"), wide)).containsExactly(java.math.BigInteger.valueOf(1000));
+    }
+
+    @Test
     void malformedReleaseCandidateCursor_isTheClientError() {
         assertRejected("Mg-+", FILM.FILM_ID);
         assertRejected("Mg=x", FILM.FILM_ID);

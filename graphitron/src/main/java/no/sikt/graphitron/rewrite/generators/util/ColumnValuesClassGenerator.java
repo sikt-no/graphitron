@@ -75,6 +75,14 @@ import java.util.Objects;
  *       column.</li>
  * </ul>
  *
+ * <p>Each first asks {@code inRange(type, value)}, which bounds the work: on a column with a number
+ * class on either side of its converter, text over {@code MAX_NUMBER_TEXT} characters, or a number
+ * with more integer digits than that class holds or more than {@code MAX_DIGITS} fraction digits,
+ * is no value of the column. It is decided from the text's length and the number's scale and bit
+ * length before anything parses or rescales the value, since parsing and rescaling cost time that
+ * grows with a value's length and exponent. A cursor of the release-candidate form, which does not
+ * pass through {@code ColumnValues}, asks {@code inRange} itself.
+ *
  * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
  * value of the column, so whether that is a skipped slot or a client error stays with the caller.
  *
@@ -108,6 +116,10 @@ public class ColumnValuesClassGenerator {
     private static final ClassName LOCAL_DATE_TIME     = ClassName.get("java.time", "LocalDateTime");
     private static final ClassName INSTANT             = ClassName.get("java.time", "Instant");
     private static final ClassName ZONE_OFFSET         = ClassName.get("java.time", "ZoneOffset");
+    private static final ClassName U_BYTE              = ClassName.get("org.jooq.types", "UByte");
+    private static final ClassName U_SHORT             = ClassName.get("org.jooq.types", "UShort");
+    private static final ClassName U_INTEGER           = ClassName.get("org.jooq.types", "UInteger");
+    private static final ClassName U_LONG              = ClassName.get("org.jooq.types", "ULong");
 
     /** The name of the formatter for a date-time to whole seconds, the part every temporal form shares. */
     private static final String SECONDS = "SECONDS";
@@ -132,7 +144,7 @@ public class ColumnValuesClassGenerator {
                 + "when it names none: the text must be exactly what {@code NodeIdEncoder.encode} writes for\n"
                 + "that value, and the value must fit the column. The text is parsed as {@code parseClass}\n"
                 + "says before the converter runs on it.\n")
-            .addStatement("if (text == null) return null")
+            .addStatement("if (text == null || !inRange(type, text)) return null")
             .addStatement("$T trip = trip(type, parseClass(type), text)", tripOfT)
             .addStatement("if (trip == null || !trip.canonical.toString().equals(text)) return null")
             .addStatement("return fitsPrecision(type, numericValue(trip)) ? trip.canonical : null")
@@ -147,7 +159,7 @@ public class ColumnValuesClassGenerator {
             .addJavadoc("The value an authored {@code value} binds as in a column of {@code type}, or {@code null}\n"
                 + "when it binds as none: the column's own coercion, except that a number which would\n"
                 + "wrap, or which does not fit the column's precision, is refused.\n")
-            .addStatement("if (value == null) return null")
+            .addStatement("if (value == null || !inRange(type, value)) return null")
             .addStatement("$T trip = trip(type, null, value)", tripOfT)
             .addStatement("if (trip == null) return null")
             .addStatement("$T number = numericValue(trip)", BIG_DECIMAL)
@@ -170,7 +182,7 @@ public class ColumnValuesClassGenerator {
                 + "when that is not the parsed value; {@code null} when the converter gives the value back,\n"
                 + "the text does not parse, or the column's text is not parsed as its user type.\n")
             .addStatement("$T parseClass = parseClass(type)", classWildcard)
-            .addStatement("if (text == null || parseClass == null) return null")
+            .addStatement("if (text == null || parseClass == null || !inRange(type, text)) return null")
             .addStatement("$T trip = trip(type, parseClass, text)", tripOfT)
             .addStatement("return trip == null || $T.deepEquals(trip.parsed, trip.canonical) ? null : trip.canonical",
                 Objects.class)
@@ -188,7 +200,7 @@ public class ColumnValuesClassGenerator {
                 + "{@code value} as a date-time, so the time of day {@code toText} wrote survives. A column\n"
                 + "with no SQL type has no database type to parse as, so {@code value} is itself the database\n"
                 + "value the converter reads, when it is an instance of the converter's database class.\n")
-            .addStatement("if (value == null) return null")
+            .addStatement("if (value == null || !inRange(type, value)) return null")
             .beginControlFlow("try")
             .addStatement("$T sql = type.getSQLDataType()", dataTypeWildcard)
             .addStatement("Object database")
@@ -437,6 +449,53 @@ public class ColumnValuesClassGenerator {
             .addStatement("return integerDigits <= type.precision() - scale && fractionDigits <= scale")
             .build();
 
+        // Runs before anything parses or rescales the value, so its own cost is what bounds every
+        // entry point's: a length test on text, a scale and a bit length on a number, and a precision
+        // read only once those have bounded the number's size.
+        var inRange = MethodSpec.methodBuilder("inRange")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(dataTypeWildcard, "type")
+            .addParameter(Object.class, "value")
+            .addJavadoc("Whether {@code value} is small enough to be read as a value of a column of {@code type}\n"
+                + "at all: {@code false} for text over {@value #MAX_NUMBER_TEXT} characters, or a number with more\n"
+                + "integer digits than the column's numeric class holds or more than {@value #MAX_DIGITS} fraction\n"
+                + "digits, when either side of the column's converter is a number class. Its cost does not grow\n"
+                + "with the value's exponent, so a value it passes parses and rescales cheaply, and every entry\n"
+                + "point here answers {@code null} for one it refuses. Anything that is not a number, and any\n"
+                + "value of a column with no number class, passes.\n")
+            .addStatement("int digits = $T.min(integerDigits(type.getType()), integerDigits(type.getConverter().fromType()))",
+                Math.class)
+            .addStatement("if (digits == $T.MAX_VALUE) return true", Integer.class)
+            .beginControlFlow("if (value instanceof $T s && s.length() > MAX_NUMBER_TEXT && s.trim().length() > MAX_NUMBER_TEXT)",
+                String.class)
+            .addComment("Parsing a digit string costs more than linear time in its length, in BigDecimal and in jOOQ.")
+            .addStatement("return false")
+            .endControlFlow()
+            .addStatement("$T n = readNumber(value)", BIG_DECIMAL)
+            .addStatement("if (n == null) return true")
+            .addComment("Every decimal digit takes under four bits, so a number within both bounds has a bit length")
+            .addComment("under 8 * MAX_DIGITS, and precision() is cheap on one that passes this test.")
+            .addStatement("if (n.scale() > MAX_DIGITS || n.unscaledValue().bitLength() > 8 * MAX_DIGITS) return false")
+            .addStatement("return (long) n.precision() - n.scale() <= digits")
+            .build();
+
+        // Integer digits enough for every value of the class; Integer.MAX_VALUE for no number class.
+        var integerDigits = MethodSpec.methodBuilder("integerDigits")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(int.class)
+            .addParameter(classWildcard, "c")
+            .addStatement("if (c == null || !$T.class.isAssignableFrom(c)) return $T.MAX_VALUE", Number.class, Integer.class)
+            .addStatement("if (c == $T.class || c == $T.class) return 3", Byte.class, U_BYTE)
+            .addStatement("if (c == $T.class || c == $T.class) return 5", Short.class, U_SHORT)
+            .addStatement("if (c == $T.class || c == $T.class) return 10", Integer.class, U_INTEGER)
+            .addStatement("if (c == $T.class) return 19", Long.class)
+            .addStatement("if (c == $T.class) return 20", U_LONG)
+            .addStatement("if (c == $T.class) return 39", Float.class)
+            .addStatement("if (c == $T.class) return 309", Double.class)
+            .addStatement("return MAX_DIGITS")
+            .build();
+
         var tripClass = TypeSpec.classBuilder("Trip")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addTypeVariable(t)
@@ -480,10 +539,20 @@ public class ColumnValuesClassGenerator {
             .addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(java.util.Set.class), classWildcard),
                     "TEXT_FORM_CLASSES", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("textFormClasses()").build())
+            .addField(FieldSpec.builder(int.class, "MAX_DIGITS", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The most fraction digits a number read as a column value may carry, and the most integer\n"
+                    + "digits on a column whose number class sets no smaller bound: no key a client sends\n"
+                    + "approaches it, and a number this size costs microseconds to rescale.\n")
+                .initializer("1000").build())
+            .addField(FieldSpec.builder(int.class, "MAX_NUMBER_TEXT", Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .addJavadoc("The longest text, once trimmed, read as a value of a numeric column: both digit bounds,\n"
+                    + "a sign, a point and an exponent.\n")
+                .initializer("2 * MAX_DIGITS + 16").build())
             .addField(FieldSpec.builder(DATE_TIME_FORMATTER, SECONDS, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.ofPattern($S)", DATE_TIME_FORMATTER, "uuuu-MM-dd'T'HH:mm:ss")
                 .build())
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .addMethod(inRange)
             .addMethod(exact)
             .addMethod(coerce)
             .addMethod(folded)
@@ -501,6 +570,7 @@ public class ColumnValuesClassGenerator {
             .addMethod(readNumber)
             .addMethod(toBigDecimal)
             .addMethod(fitsPrecision)
+            .addMethod(integerDigits)
             .addType(tripClass)
             .addType(textRecord)
             .build();

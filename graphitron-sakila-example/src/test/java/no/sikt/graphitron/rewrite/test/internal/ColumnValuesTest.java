@@ -10,11 +10,15 @@ import org.jooq.impl.SQLDataType;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.math.BigInteger;
 import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTimeout;
 
 /**
  * Direct unit coverage for the generator-emitted {@link ColumnValues} helper over column types no
@@ -273,5 +277,67 @@ class ColumnValuesTest {
         assertThat(ColumnValues.fromDatabase(NUMERIC_4, "9999")).isEqualByComparingTo("9999");
         assertThat(ColumnValues.fromDatabase(INTEGER, "abc")).isNull();
         assertThat(ColumnValues.fromDatabase(INTEGER, null)).isNull();
+    }
+
+    // ===== inRange: a value's size is bounded before anything parses or rescales it =====
+
+    /** A value refused on its size is refused before it is parsed or rescaled, well inside this budget. */
+    private static final Duration PROMPTLY = Duration.ofSeconds(1);
+    private static final DataType<BigInteger> DECIMAL_INTEGER = SQLDataType.DECIMAL_INTEGER;
+    private static final DataType<BigDecimal> NUMERIC = SQLDataType.NUMERIC;
+    private static final DataType<Double> DOUBLE = SQLDataType.DOUBLE;
+    private static final String MANY_DIGITS = "7".repeat(500_000);
+
+    @Test
+    void everyEntryPoint_refusesAnExtremeNumberPromptly_onEveryNumericColumn() {
+        List<DataType<?>> types = List.of(SMALLINT, INTEGER, BIGINT, DECIMAL_INTEGER, NUMERIC, NUMERIC_4_1, DOUBLE,
+            ORG_CODE, TRUNCATING);
+        List<String> texts = List.of("1e30000000", "-1e30000000", "1E+30000000", "1e-30000000", "0e30000000",
+            " 1e30000000 ", MANY_DIGITS, "0." + MANY_DIGITS);
+        assertTimeout(PROMPTLY, () -> {
+            for (DataType<?> type : types) {
+                for (String text : texts) {
+                    String what = type.getName() + " " + text.substring(0, Math.min(16, text.length()));
+                    assertThat(ColumnValues.inRange(type, text)).as(what).isFalse();
+                    assertThat(ColumnValues.coerce(type, text)).as("coerce " + what).isNull();
+                    assertThat(ColumnValues.exact(type, text)).as("exact " + what).isNull();
+                    assertThat(ColumnValues.folded(type, text)).as("folded " + what).isNull();
+                    assertThat(ColumnValues.fromDatabase(type, text)).as("fromDatabase " + what).isNull();
+                }
+                assertThat(ColumnValues.coerce(type, new BigDecimal("1e30000000"))).as(type.getName()).isNull();
+                assertThat(ColumnValues.coerce(type, new BigDecimal("1e-30000000"))).as(type.getName()).isNull();
+                assertThat(ColumnValues.coerce(type, BigInteger.ONE.shiftLeft(1_000_000))).as(type.getName()).isNull();
+            }
+        });
+    }
+
+    @Test
+    void inRange_passesEveryValueTheColumnsNumberClassHolds() {
+        assertThat(ColumnValues.coerce(BIGINT, "9223372036854775807")).isEqualTo(Long.MAX_VALUE);
+        assertThat(ColumnValues.coerce(BIGINT, "-9223372036854775808")).isEqualTo(Long.MIN_VALUE);
+        assertThat(ColumnValues.exact(BIGINT, "-9223372036854775808")).isEqualTo(Long.MIN_VALUE);
+        assertThat(ColumnValues.coerce(SMALLINT, "-32768")).isEqualTo((short) -32768);
+        assertThat(ColumnValues.coerce(INTEGER, "1e3")).as("an exponent within range still binds").isEqualTo(1000);
+        assertThat(ColumnValues.coerce(INTEGER, "1.5" + "0".repeat(ColumnValues.MAX_DIGITS - 1)))
+            .as("MAX_DIGITS fraction digits").isEqualTo(1);
+        assertThat(ColumnValues.coerce(INTEGER, "1.5" + "0".repeat(ColumnValues.MAX_DIGITS)))
+            .as("one fraction digit more").isNull();
+        String widest = "9".repeat(ColumnValues.MAX_DIGITS);
+        assertThat(ColumnValues.coerce(NUMERIC, widest)).as("MAX_DIGITS integer digits").isEqualByComparingTo(widest);
+        assertThat(ColumnValues.coerce(DECIMAL_INTEGER, widest)).isEqualTo(new BigInteger(widest));
+        assertThat(ColumnValues.coerce(NUMERIC, widest + "9")).as("one integer digit more").isNull();
+        assertThat(ColumnValues.coerce(DOUBLE, "1e308")).isEqualTo(1e308);
+        assertThat(ColumnValues.inRange(SQLDataType.VARCHAR, "1e30000000"))
+            .as("a text column reads the text as text, at any exponent").isTrue();
+        assertThat(ColumnValues.coerce(SQLDataType.VARCHAR, "1e30000000")).isEqualTo("1e30000000");
+        assertThat(ColumnValues.inRange(SQLDataType.VARCHAR, MANY_DIGITS)).isTrue();
+    }
+
+    @Test
+    void fromDatabase_readsBackEveryDoubleToTextWrites() {
+        for (double d : new double[] {Double.MIN_VALUE, -Double.MIN_VALUE, Double.MAX_VALUE, 1e-300, 0.1}) {
+            String text = ColumnValues.toText(DOUBLE, d).text();
+            assertThat(ColumnValues.fromDatabase(DOUBLE, text)).as(text).isEqualTo(d);
+        }
     }
 }

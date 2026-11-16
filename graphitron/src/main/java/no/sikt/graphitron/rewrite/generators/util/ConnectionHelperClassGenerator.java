@@ -548,6 +548,10 @@ public class ConnectionHelperClassGenerator {
             .addCode("    if (\"\\u0001\".equals(tokens[i])) {\n")
             .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
             .addCode("    } else {\n")
+            // jOOQ's own parse of a numeric token costs time that grows with its exponent and length,
+            // so the size bound every ColumnValues entry point applies runs first.
+            .addCode("        if (!$T.inRange(col.getDataType(), tokens[i]))\n", columnValuesClass)
+            .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
             .addCode("        Object value = $T.val((Object) tokens[i], col.getDataType()).getValue();\n", DSL)
             .addCode("        if (value == null)\n")
             .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
