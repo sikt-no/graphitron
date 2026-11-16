@@ -255,6 +255,8 @@ Decisions the user made on this item; each is stated where it applies below.
   key. No per-voucher detail reaches the mount: the covered lookup keys and a `Vouch` type are dropped.
 * The vouch id is an audit field that Graphitron logs; handing it to the consumer can be added later
   (2026-11-16). The verifier's check that vouchers sharing a vouch id agree is dropped.
+* `_entities` does not change: it executes on the connection acquired for the vouched-for value. It is
+  not a new producer in the store's connection facts (2026-11-16).
 * Version 1 has no tenant pairing: `@accept` in a graph with a `<tenantColumn>` is refused (2026-11-16).
   A vouched key's tenant part is always empty, so the dispatch needs no tenant source for the voucher
   alternative. Pairing it with the authored key's tenant source can follow.
@@ -608,7 +610,9 @@ field at a time", for the children it covers.
   to "a producer of a graph whose generated code carries a `ConnectionKey`", so the children below an
   accepting entity get `INHERIT` rows in an untenanted graph too. A child inherits the whole key its
   producer hands down, which is already what `INHERIT` means; no vouched-for part is restated on child
-  rows, and the part `CHECK` stays `'TENANT'`. R876 should carry a note that the relation's grain covers
+  rows, and the part `CHECK` stays `'TENANT'`. `_entities` itself does not change and gets no row: it
+  runs as today, on the connection the dispatcher acquired for the vouched-for value, and hands that key
+  down as it hands down a tenant's (2026-11-16). R876 should carry a note that the relation's grain covers
   accepting graphs, so a rewrite of its rule does not narrow it back to tenancy.
 * Store-side emitters below the entity read it; a `@service` child and a connection-typed child under the
   entity acquire from the inherited key.
@@ -725,8 +729,6 @@ want to see the plan.
   connection and B's policies hide it. No page states which; it is for Alf and Filip, and the answer
   belongs in `docs/architecture/reference/code-generation-triggers.adoc`. In version 1 there is no tenant
   column in an accepting graph, so no child is `UNSCOPED` there.
-* Whether `_entities` becomes a stated `ROUTED` producer in `graphitron_occurrence_connection`. It has no
-  authored occurrence, so nothing says yet.
 * Whether `MountedSession.tenant()` retires in slice 8a or with R1185, which rewrites the manual's
   tenant pages. Either keeps the key the one source; retiring it is a breaking consumer change.
 
