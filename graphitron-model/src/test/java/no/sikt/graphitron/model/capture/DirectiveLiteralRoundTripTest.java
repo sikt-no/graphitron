@@ -3,9 +3,9 @@ package no.sikt.graphitron.model.capture;
 import graphql.language.AstPrinter;
 import graphql.parser.Parser;
 import no.sikt.graphitron.model.test.CapturedStore;
-import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -36,6 +36,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  * to lean on for.
  */
 class DirectiveLiteralRoundTripTest {
+
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    DirectiveLiteralRoundTripTest(TestInfo info) {
+        graph = "directiveLiteral." + info.getTestMethod().orElseThrow().getName();
+    }
 
     private static final String FIXTURE = """
         directive @carrier(
@@ -69,8 +79,8 @@ class DirectiveLiteralRoundTripTest {
     @Test
     @DisplayName("every stored literal parses back to the value it was printed from")
     void everyStoredLiteralParsesBack(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FIXTURE)) {
-            var stored = literalsOf(store.dsl());
+        try (var store = CapturedStore.of(tmp, graph, FIXTURE)) {
+            var stored = literalsOf(store);
             assertThat(stored)
                 .as("the fixture has to reach every literal shape, so an empty read would pass"
                     + " vacuously; the fixture writes one at each of the sites")
@@ -94,9 +104,10 @@ class DirectiveLiteralRoundTripTest {
      * Every authored literal a capture stored. One relation, where this walked five: the arguments
      * of an application are one fact whatever site the application sits at.
      */
-    private static List<String> literalsOf(DSLContext dsl) {
-        return dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
+    private static List<String> literalsOf(CapturedStore store) {
+        return store.dsl().select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
             .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
+            .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.GRAPH_NAME.eq(store.graphName()))
             .fetch(0, String.class);
     }
 }
