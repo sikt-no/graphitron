@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.capture.store.StoreEntries;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.config.WorkspaceModule;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -20,13 +21,15 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
-import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Which workspace modules a run read stale: one read from an installed copy for want of output, and
  * one whose own output is older than its newest source. A module compiled since its last edit is
  * not one.
+ *
+ * <p>Each case on a store of its own: the class files and source roots it seeds are keyed by path,
+ * shared by every graph that reads them, so a store another case seeded first would answer for it.
  */
 class StaleModuleTest {
 
@@ -38,7 +41,8 @@ class StaleModuleTest {
     @Test
     @DisplayName("an installed copy and an output older than its sources are stale, a fresh compile is not")
     void staleModulesAreTheOnesReadStale() {
-        withSeededStore(dsl -> {
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
             seedGraph(dsl, GRAPH);
             var current = module("current");
             var edited = module("edited");
@@ -76,13 +80,14 @@ class StaleModuleTest {
                         + " installed copy from 2026-07-23 09:00 was read in its place, so anything"
                         + " added to it since reads as not found. Compile it from the reactor root:"
                         + " mvn -pl :installed compile"));
-        });
+        }
     }
 
     @Test
     @DisplayName("an error in a graph that read a module stale says the module may be why")
     void anErrorNamesTheStaleModules() {
-        withSeededStore(dsl -> {
+        try (var store = FactStores.inMemory()) {
+            DSLContext dsl = store.dsl();
             seedGraph(dsl, GRAPH);
             var installed = module("installed");
             StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), List.of(
@@ -98,13 +103,14 @@ class StaleModuleTest {
                 .isEqualTo("service method could not be resolved (1 workspace module was read stale;"
                     + " this may be why. See the stale-module warning or status.)");
 
-            dsl.deleteFrom(STORE_GRAPH_MODULE_ENTRY).execute();
+            dsl.deleteFrom(STORE_GRAPH_MODULE_ENTRY)
+                .where(STORE_GRAPH_MODULE_ENTRY.GRAPH_NAME.eq(GRAPH)).execute();
             assertThat(dsl.select(DIAGNOSTIC.MESSAGE).from(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).and(DIAGNOSTIC.SOURCE.eq("schema"))
                 .fetchOne(DIAGNOSTIC.MESSAGE))
                 .as("once no module is read stale the error says only itself")
                 .isEqualTo("service method could not be resolved");
-        });
+        }
     }
 
     private static WorkspaceModule module(String name) {
