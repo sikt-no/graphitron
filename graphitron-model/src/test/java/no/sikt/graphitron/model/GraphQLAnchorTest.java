@@ -22,6 +22,7 @@ import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -70,13 +71,21 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 class GraphQLAnchorTest {
 
-    private static final String GRAPH = "anchors";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphQLAnchorTest(TestInfo info) {
+        graph = "anchors." + info.getTestMethod().orElseThrow().getName();
+    }
 
     @Test
     @DisplayName("every coordinate the corpus declares gets a row, and the kind is the arm it came from")
     void everyCoordinate(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 type Film {
                   title: String
@@ -115,7 +124,7 @@ class GraphQLAnchorTest {
     @DisplayName("an application lands at the coordinate it was written on, at each of the five sites")
     void applicationsLandAtTheirCoordinate(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 directive @mark(note: String) repeatable on OBJECT | FIELD_DEFINITION
                   | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION | ENUM_VALUE | SCHEMA
@@ -131,7 +140,8 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
                         GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME,
                         GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
-                    .from(GRAPHQL_DIRECTIVE_APPLICATION).fetch())
+                    .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(graph)).fetch())
                 .as("every site in one relation, told apart by the coordinate rather than by "
                     + "which relation holds the row, and the schema block among them")
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
@@ -151,7 +161,8 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE,
                         GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
                     .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
-                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.DIRECTIVE_NAME.eq("mark")).fetch())
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.GRAPH_NAME.eq(graph),
+                        GRAPHQL_DIRECTIVE_APPLICATION_ARG.DIRECTIVE_NAME.eq("mark")).fetch())
                 .as("each application's argument lands beside it, keyed by the ordinal the "
                     + "application took rather than by one counted again")
                 .extracting(r -> r.value1(), r -> r.value2())
@@ -165,7 +176,8 @@ class GraphQLAnchorTest {
 
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.DIRECTIVE_ARGUMENT_NAME)
                     .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
-                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.GRAPH_NAME.eq(graph),
+                        GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE
                         .eq("@asConnection(connectionName:)"))
                     .fetch(0, String.class))
                 .as("and the sixth site carries its argument like the rest; the value is a long "
@@ -183,12 +195,13 @@ class GraphQLAnchorTest {
     @Test
     @DisplayName("per-coordinate applied-directive counts match the SDL")
     void appliedDirectiveCountsMatchTheSdl(@TempDir Path directory) {
-        try (var store = CapturedStore.of(directory, AgreementCorpus.SDL)) {
+        try (var store = CapturedStore.of(directory, graph, AgreementCorpus.SDL)) {
             var captured = new LinkedHashMap<String, Integer>();
             store.dsl()
                 .select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
                     GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
                 .from(GRAPHQL_DIRECTIVE_APPLICATION)
+                .where(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(graph))
                 .fetch()
                 .forEach(row -> captured.merge(
                     String.join("|", row.value1(), row.value2()), 1, Integer::sum));
@@ -275,7 +288,7 @@ class GraphQLAnchorTest {
     @DisplayName("an application displaced in place takes its arguments with it")
     void aDisplacedApplicationTakesItsArgumentsWithIt(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 directive @mark(note: String) on OBJECT
                 directive @other(note: String) on OBJECT
@@ -283,6 +296,7 @@ class GraphQLAnchorTest {
                 """);
             read(dsl, LocalDateTime.now(), file);
             assertThat(dsl.fetchCount(GRAPHQL_DIRECTIVE_APPLICATION_ARG,
+                    GRAPHQL_DIRECTIVE_APPLICATION_ARG.GRAPH_NAME.eq(graph),
                     GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE.eq("Film")))
                 .as("written").isEqualTo(1);
 
@@ -295,13 +309,15 @@ class GraphQLAnchorTest {
 
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
                     .from(GRAPHQL_DIRECTIVE_APPLICATION)
-                    .where(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE.eq("Film"))
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(graph),
+                        GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE.eq("Film"))
                     .fetch(0, String.class))
                 .as("one application at that position, the one the author now writes")
                 .containsExactly("other");
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION_ARG.VALUE_SDL)
                     .from(GRAPHQL_DIRECTIVE_APPLICATION_ARG)
-                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE.eq("Film"))
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION_ARG.GRAPH_NAME.eq(graph),
+                        GRAPHQL_DIRECTIVE_APPLICATION_ARG.COORDINATE.eq("Film"))
                     .fetch(0, String.class))
                 .as("and one argument, belonging to it")
                 .containsExactly("\"second\"");
@@ -317,7 +333,7 @@ class GraphQLAnchorTest {
     @DisplayName("repeats number from zero in merge order, across a base and its extension")
     void repeatsNumberInMergeOrder(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var base = write(directory, "base.graphqls", """
                 directive @mark(note: String) repeatable on OBJECT
                 type Film @mark(note: "first") { title: String }
@@ -329,7 +345,8 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL,
                         GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME)
                     .from(GRAPHQL_DIRECTIVE_APPLICATION)
-                    .where(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE.eq("Film"))
+                    .where(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(graph),
+                        GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE.eq("Film"))
                     .orderBy(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL).fetch())
                 .as("zero on the base declaration, one on the extension")
                 .extracting(r -> r.value1(), r -> r.value2().endsWith("extension.graphqls"))
@@ -341,7 +358,7 @@ class GraphQLAnchorTest {
     @DisplayName("two documents declaring one type are two entries and one element")
     void oneElementPerCoordinate(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var first = write(directory, "first.graphqls", "type Film { title: String }");
             var second = write(directory, "second.graphqls", "type Film { rated: String }");
             read(dsl, LocalDateTime.now(), first, second);
@@ -355,7 +372,7 @@ class GraphQLAnchorTest {
     @DisplayName("a coordinate the corpus stopped declaring is swept, and the rest stand")
     void sweepsWhatWentAway(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", "type Film { title: String rated: String }");
             read(dsl, LocalDateTime.now(), file);
             declared(dsl).contains(tuple("Film.rated", "FIELD"));
@@ -373,7 +390,7 @@ class GraphQLAnchorTest {
     @DisplayName("each key-to-coordinate map holds its own population under its own key")
     void keyToCoordinateMaps(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 type Film {
                   rated(prefix: String): String
@@ -388,7 +405,8 @@ class GraphQLAnchorTest {
             read(dsl, LocalDateTime.now(), file);
 
             assertThat(dsl.select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME, GRAPHQL_TYPE_ELEMENT.COORDINATE)
-                    .from(GRAPHQL_TYPE_ELEMENT).where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_TYPE_ELEMENT)
+                    .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2())))
                 .contains(tuple("Film", "Film"), tuple("FilmFilter", "FilmFilter"),
                     tuple("Rating", "Rating"));
@@ -396,7 +414,8 @@ class GraphQLAnchorTest {
             // An object's field and an input object's are one relation, one key shape apiece.
             assertThat(dsl.select(GRAPHQL_FIELD_ELEMENT.TYPE_NAME, GRAPHQL_FIELD_ELEMENT.FIELD_NAME,
                         GRAPHQL_FIELD_ELEMENT.COORDINATE)
-                    .from(GRAPHQL_FIELD_ELEMENT).where(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_FIELD_ELEMENT)
+                    .where(GRAPHQL_FIELD_ELEMENT.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
                 .contains(tuple("Film", "rated", "Film.rated"),
                     tuple("FilmFilter", "title", "FilmFilter.title"));
@@ -405,14 +424,14 @@ class GraphQLAnchorTest {
                         GRAPHQL_ARGUMENT_ELEMENT.FIELD_NAME, GRAPHQL_ARGUMENT_ELEMENT.ARGUMENT_NAME,
                         GRAPHQL_ARGUMENT_ELEMENT.COORDINATE)
                     .from(GRAPHQL_ARGUMENT_ELEMENT)
-                    .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3(), row.value4())))
                 .contains(tuple("Film", "rated", "prefix", "Film.rated(prefix:)"));
 
             assertThat(dsl.select(GRAPHQL_ENUM_VALUE_ELEMENT.TYPE_NAME,
                         GRAPHQL_ENUM_VALUE_ELEMENT.VALUE_NAME, GRAPHQL_ENUM_VALUE_ELEMENT.COORDINATE)
                     .from(GRAPHQL_ENUM_VALUE_ELEMENT)
-                    .where(GRAPHQL_ENUM_VALUE_ELEMENT.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_ENUM_VALUE_ELEMENT.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
                 .contains(tuple("Rating", "G", "Rating.G"));
         });
@@ -422,7 +441,7 @@ class GraphQLAnchorTest {
     @DisplayName("a type that went away takes its fields and arguments with it, parents last")
     void sweepsTheWholeChain(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 type Film {
                   rated(prefix: String): String
@@ -445,11 +464,11 @@ class GraphQLAnchorTest {
             // Named rather than counted: the bundled directive vocabulary is read alongside and
             // declares types of its own, so a count would be asserting something about that document.
             assertThat(dsl.select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME).from(GRAPHQL_TYPE_ELEMENT)
-                    .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(graph))
                     .fetch(GRAPHQL_TYPE_ELEMENT.TYPE_NAME))
                 .contains("Actor").doesNotContain("Film");
             assertThat(dsl.select(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE).from(GRAPHQL_ARGUMENT_ELEMENT)
-                    .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_ARGUMENT_ELEMENT.GRAPH_NAME.eq(graph))
                     .fetch(GRAPHQL_ARGUMENT_ELEMENT.COORDINATE))
                 .doesNotContain("Film.rated(prefix:)");
         });
@@ -459,7 +478,7 @@ class GraphQLAnchorTest {
     @DisplayName("the content anchors carry the payload, and ordinals count from the base declaration")
     void contentAnchors(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 "the film"
                 type Film {
@@ -477,7 +496,8 @@ class GraphQLAnchorTest {
             read(dsl, LocalDateTime.now(), file);
 
             assertThat(dsl.select(GRAPHQL_TYPE.TYPE_NAME, GRAPHQL_TYPE.KIND, GRAPHQL_TYPE.DESCRIPTION)
-                    .from(GRAPHQL_TYPE).where(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_TYPE)
+                    .where(GRAPHQL_TYPE.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
                 .contains(tuple("Film", "OBJECT", "the film"),
                     tuple("FilmFilter", "INPUT_OBJECT", null),
@@ -492,7 +512,8 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.ORDINAL,
                         GRAPHQL_FIELD.TYPE_SDL, GRAPHQL_FIELD.NON_NULL, GRAPHQL_FIELD.IS_LIST)
                     .from(GRAPHQL_FIELD)
-                    .where(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPH)).and(GRAPHQL_FIELD.TYPE_NAME.eq("Film"))
+                    .where(GRAPHQL_FIELD.GRAPH_NAME.eq(graph))
+                    .and(GRAPHQL_FIELD.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3(), row.value4(),
                         row.value5())))
                 .containsExactlyInAnyOrder(
@@ -501,20 +522,22 @@ class GraphQLAnchorTest {
 
             // An input field lands in the same relation and is the one kind that carries a default.
             assertThat(dsl.select(GRAPHQL_FIELD.DEFAULT_VALUE_SDL).from(GRAPHQL_FIELD)
-                    .where(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_FIELD.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_FIELD.TYPE_NAME.eq("FilmFilter"))
                     .fetch(GRAPHQL_FIELD.DEFAULT_VALUE_SDL))
                 .containsExactly("\"any\"");
 
             assertThat(dsl.select(GRAPHQL_ARGUMENT.ARGUMENT_NAME, GRAPHQL_ARGUMENT.ORDINAL,
                         GRAPHQL_ARGUMENT.DEFAULT_VALUE_SDL)
-                    .from(GRAPHQL_ARGUMENT).where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_ARGUMENT)
+                    .where(GRAPHQL_ARGUMENT.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_ARGUMENT.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
                 .containsExactly(tuple("prefix", 0, "\"x\""));
 
             assertThat(dsl.select(GRAPHQL_ENUM_VALUE.VALUE_NAME, GRAPHQL_ENUM_VALUE.ORDINAL)
-                    .from(GRAPHQL_ENUM_VALUE).where(GRAPHQL_ENUM_VALUE.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_ENUM_VALUE)
+                    .where(GRAPHQL_ENUM_VALUE.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_ENUM_VALUE.TYPE_NAME.eq("Rating"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
                 .containsExactlyInAnyOrder(tuple("G", 0), tuple("PG", 1));
@@ -525,7 +548,7 @@ class GraphQLAnchorTest {
     @DisplayName("an extension merges after the base declaration whatever order the files are read in")
     void extensionsMergeAfterTheBase(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             // The extension is the older file, so a rule that ordered by mtime alone would put its
             // fields first. Base before extension is what decides it.
             var extension = write(directory, "a-extension.graphqls", "extend type Film { rated: String }");
@@ -538,14 +561,15 @@ class GraphQLAnchorTest {
             read(dsl, LocalDateTime.now(), extension, base);
 
             assertThat(dsl.select(GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.ORDINAL)
-                    .from(GRAPHQL_FIELD).where(GRAPHQL_FIELD.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_FIELD)
+                    .where(GRAPHQL_FIELD.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_FIELD.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
                 .containsExactlyInAnyOrder(tuple("title", 0), tuple("rated", 1));
 
             // The kind and the description are the base declaration's, an extension carrying neither.
             assertThat(dsl.select(GRAPHQL_TYPE.KIND, GRAPHQL_TYPE.DESCRIPTION).from(GRAPHQL_TYPE)
-                    .where(GRAPHQL_TYPE.GRAPH_NAME.eq(GRAPH)).and(GRAPHQL_TYPE.TYPE_NAME.eq("Film"))
+                    .where(GRAPHQL_TYPE.GRAPH_NAME.eq(graph)).and(GRAPHQL_TYPE.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
                 .containsExactly(tuple("OBJECT", "the film"));
 
@@ -553,7 +577,7 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL,
                         GRAPHQL_TYPE_DECLARATION.IS_EXTENSION)
                     .from(GRAPHQL_TYPE_DECLARATION)
-                    .where(GRAPHQL_TYPE_DECLARATION.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_TYPE_DECLARATION.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_TYPE_DECLARATION.TYPE_NAME.eq("Film"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
                 .containsExactlyInAnyOrder(tuple(0, false), tuple(1, true));
@@ -564,7 +588,7 @@ class GraphQLAnchorTest {
     @DisplayName("a union names its members and a type names its interfaces, from opposite ends")
     void polyMembers(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 interface Node { id: ID! }
                 interface Named { name: String }
@@ -579,7 +603,8 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_POLY_MEMBER.CONTAINER_KIND,
                         GRAPHQL_POLY_MEMBER.CONTAINER_NAME, GRAPHQL_POLY_MEMBER.MEMBER_TYPE_NAME,
                         GRAPHQL_POLY_MEMBER.DECLARED_ON, GRAPHQL_POLY_MEMBER.POSITION)
-                    .from(GRAPHQL_POLY_MEMBER).where(GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_POLY_MEMBER)
+                    .where(GRAPHQL_POLY_MEMBER.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3(), row.value4(),
                         row.value5())))
                 .contains(
@@ -596,7 +621,7 @@ class GraphQLAnchorTest {
     @DisplayName("the directive vocabulary carries its locations and its arguments")
     void directives(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 "binds a table"
                 directive @table(name: String, schema: String = "public") repeatable
@@ -606,14 +631,15 @@ class GraphQLAnchorTest {
             read(dsl, LocalDateTime.now(), file);
 
             assertThat(dsl.select(GRAPHQL_DIRECTIVE.REPEATABLE, GRAPHQL_DIRECTIVE.DESCRIPTION)
-                    .from(GRAPHQL_DIRECTIVE).where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(GRAPH))
+                    .from(GRAPHQL_DIRECTIVE)
+                    .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.eq("table"))
                     .fetch(row -> tuple(row.value1(), row.value2())))
                 .containsExactly(tuple(true, "binds a table"));
 
             assertThat(dsl.select(GRAPHQL_DIRECTIVE_LOCATION.LOCATION)
                     .from(GRAPHQL_DIRECTIVE_LOCATION)
-                    .where(GRAPHQL_DIRECTIVE_LOCATION.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_DIRECTIVE_LOCATION.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_DIRECTIVE_LOCATION.DIRECTIVE_NAME.eq("table"))
                     .fetch(GRAPHQL_DIRECTIVE_LOCATION.LOCATION))
                 .containsExactlyInAnyOrder("OBJECT", "INTERFACE");
@@ -622,7 +648,7 @@ class GraphQLAnchorTest {
                         GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL,
                         GRAPHQL_DIRECTIVE_ARGUMENT.DEFAULT_VALUE_SDL)
                     .from(GRAPHQL_DIRECTIVE_ARGUMENT)
-                    .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(graph))
                     .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq("table"))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3())))
                 .containsExactlyInAnyOrder(tuple("name", 0, null), tuple("schema", 1, "\"public\""));
@@ -633,7 +659,7 @@ class GraphQLAnchorTest {
     @DisplayName("a spelled root binding wins, and the name convention fills what none spells")
     void rootOperations(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 schema { query: Root }
                 type Root { title: String }
@@ -647,7 +673,7 @@ class GraphQLAnchorTest {
             assertThat(dsl.select(GRAPHQL_ROOT_OPERATION.OPERATION, GRAPHQL_ROOT_OPERATION.TYPE_NAME,
                         GRAPHQL_ROOT_OPERATION.SOURCE_NAME)
                     .from(GRAPHQL_ROOT_OPERATION)
-                    .where(GRAPHQL_ROOT_OPERATION.GRAPH_NAME.eq(GRAPH))
+                    .where(GRAPHQL_ROOT_OPERATION.GRAPH_NAME.eq(graph))
                     .fetch(row -> tuple(row.value1(), row.value2(), row.value3() == null)))
                 .containsExactlyInAnyOrder(
                     tuple("QUERY", "Root", false),
@@ -659,7 +685,7 @@ class GraphQLAnchorTest {
     @DisplayName("reading the same corpus twice leaves the same rows, restamped")
     void capturingTwiceRestampsRatherThanDuplicating(@TempDir Path directory) {
         withSeededStore(dsl -> {
-            seedGraph(dsl, GRAPH);
+            seedGraph(dsl, graph);
             var file = write(directory, "schema.graphqls", """
                 schema { query: Root }
                 directive @table(name: String) on OBJECT
@@ -691,20 +717,20 @@ class GraphQLAnchorTest {
     }
 
     /** How many rows each derived anchor holds, which is what a second reading must not change. */
-    private static Map<String, Integer> census(DSLContext dsl) {
+    private Map<String, Integer> census(DSLContext dsl) {
         var counts = new LinkedHashMap<String, Integer>();
         for (Table<?> table : DERIVED) {
             counts.put(table.getName(), dsl.fetchCount(table,
-                table.field("GRAPH_NAME", String.class).eq(GRAPH)));
+                table.field("GRAPH_NAME", String.class).eq(graph)));
         }
         return counts;
     }
 
     /** Rows across the anchors carrying one reading's instant. */
-    private static int stamps(DSLContext dsl, LocalDateTime touchedAt) {
+    private int stamps(DSLContext dsl, LocalDateTime touchedAt) {
         int total = 0;
         for (Table<?> table : DERIVED) {
-            total += dsl.fetchCount(table, table.field("GRAPH_NAME", String.class).eq(GRAPH)
+            total += dsl.fetchCount(table, table.field("GRAPH_NAME", String.class).eq(graph)
                 .and(table.field("TOUCHED_AT", LocalDateTime.class).eq(touchedAt)));
         }
         return total;
@@ -723,19 +749,19 @@ class GraphQLAnchorTest {
         GRAPHQL_ROOT_OPERATION);
 
     /** The graph's elements as coordinate and kind, which is the whole of what this anchor holds. */
-    private static ListAssert<Tuple> declared(DSLContext dsl) {
+    private ListAssert<Tuple> declared(DSLContext dsl) {
         return assertThat(dsl
             .select(GRAPHQL_ELEMENT.COORDINATE, GRAPHQL_ELEMENT.ELEMENT_KIND)
             .from(GRAPHQL_ELEMENT)
-            .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(GRAPH))
+            .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(graph))
             .fetch(row -> tuple(row.value1(), row.value2())));
     }
 
     /** The coordinates alone, for a count that does not care what kind sits at one. */
-    private static List<String> coordinates(DSLContext dsl) {
+    private List<String> coordinates(DSLContext dsl) {
         return dsl.select(GRAPHQL_ELEMENT.COORDINATE)
             .from(GRAPHQL_ELEMENT)
-            .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(GRAPH))
+            .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(graph))
             .fetch(GRAPHQL_ELEMENT.COORDINATE);
     }
 
@@ -743,14 +769,14 @@ class GraphQLAnchorTest {
      * Reads every file as its own document, then derives the anchors once, which is the cadence
      * {@link GraphQLAstCapture} runs them at.
      */
-    private static void read(DSLContext dsl, LocalDateTime touchedAt, Path... files) {
+    private void read(DSLContext dsl, LocalDateTime touchedAt, Path... files) {
         seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
         Arrays.stream(files).forEach(file -> seedSource(dsl, file.toString(), "SCHEMA_FILE"));
         SchemaLoader.parsePerSource(Arrays.stream(files).map(SchemaSource::file).toList())
             .perSource()
             .forEach(document ->
-                GraphQLAstEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
-        GraphQLAstCapture.anchor(dsl, GRAPH, touchedAt);
+                GraphQLAstEntries.write(dsl, graph, document.sourceName(), document.registry(), touchedAt));
+        GraphQLAstCapture.anchor(dsl, graph, touchedAt);
     }
 
     /** Sets a file's modification time, which is what the merge order sorts sources by. */
