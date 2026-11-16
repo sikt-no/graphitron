@@ -1,9 +1,11 @@
 package no.sikt.graphitron.model.derive;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.FactGraphs;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -19,8 +21,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * claims under them, message-identical to what a build has always reported. Every expectation is a
  * hand-written message the store does not hold, the message being the reader's aggregation of the
  * directives that wrote the claims under the defect.
- * Beside the fixtures sit the build-error consumer's population pin, the sibling-graph scoping
- * guard and the undecoded applications.
+ * The conflicts the {@code defects/claims-conflict} document holds are read from its graph; a
+ * fixture no document produces stays inline: a {@code @service} beside a {@code @nodeId}, the
+ * {@code @service} and {@code @routine} pair at the root positions, three claims at one field, and
+ * beside them the build-error consumer's population pin, the sibling-graph scoping guard and the
+ * undecoded applications.
  *
  * <p>What the claims and the defects hold is not asked here. That is the relations' own rule, and it
  * lives in the module whose DDL declares them, in the {@code producer-claim}, {@code binding-claim},
@@ -38,40 +43,29 @@ class ClaimConflictsTest {
     @TempDir
     Path tmp;
 
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
+    /** The document whose conflicts the read cases are about. */
+    private static final String CONFLICTS = "defects/claims-conflict";
+
     // ===== The migrated conflict fixtures =====
 
     @Test
     void tableAndErrorMintOneTypeViolation() {
-        var sdl = """
-            type Film @table(name: "film") @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) { title: String }
-            type Query { film: Film }
-            """;
-        var violations = detect(sdl);
-        assertThat(violations).hasSize(1);
-        var v = violations.getFirst();
-        assertThat(v.coordinate()).isEqualTo("Film");
-        assertThat(v.message()).isEqualTo("Type 'Film': @table, @error are mutually exclusive");
+        var v = conflictAt("Failure");
+        assertThat(v.message()).isEqualTo("Type 'Failure': @table, @error are mutually exclusive");
         assertThat(v.location()).isNotNull();
-        assertThat(v.location().getSourceName()).endsWith("fixture.graphqls");
+        assertThat(v.location().getSourceName()).endsWith("claims-conflict.graphqls");
     }
 
     @Test
     void serviceAndExternalFieldMintOneFieldViolation() {
-        var sdl = """
-            type Film @table(name: "film") {
-                title: String
-                    @service(service: {className: "%s", method: "get"})
-                    @externalField(reference: {className: "%s", method: "rating"})
-            }
-            type Query { film: Film }
-            """.formatted(SERVICE_STUB, EXTERNAL_FIELD_STUB);
-        var violations = detect(sdl);
-        assertThat(violations).hasSize(1);
-        var v = violations.getFirst();
-        assertThat(v.coordinate()).isEqualTo("Film.title");
-        assertThat(v.message()).isEqualTo("Field 'Film.title': @service, @externalField are mutually exclusive");
+        var v = conflictAt("Film.serviceAndReader");
+        assertThat(v.message())
+            .isEqualTo("Field 'Film.serviceAndReader': @service, @externalField are mutually exclusive");
         assertThat(v.location()).isNotNull();
-        assertThat(v.location().getSourceName()).endsWith("fixture.graphqls");
+        assertThat(v.location().getSourceName()).endsWith("claims-conflict.graphqls");
     }
 
     @Test
@@ -90,35 +84,15 @@ class ClaimConflictsTest {
 
     @Test
     void serviceAndLookupKeyMintOneFieldViolation() {
-        var sdl = """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                film(id: ID @lookupKey): Film
-                    @service(service: {className: "%s", method: "get"})
-            }
-            """.formatted(SERVICE_STUB);
-        var violations = detect(sdl);
-        assertThat(violations).hasSize(1);
-        assertThat(violations.getFirst().message())
-            .isEqualTo("Field 'Query.film': @service, @lookupKey are mutually exclusive");
+        assertThat(conflictAt("Query.serviceAndKey").message())
+            .isEqualTo("Field 'Query.serviceAndKey': @service, @lookupKey are mutually exclusive");
     }
 
     @Test
     void serviceAndMutationMintOneFieldViolation() {
-        var sdl = """
-            type Film @table(name: "film") { title: String }
-            type Query { x: String }
-            type Mutation {
-                createFilm: Film
-                    @service(service: {className: "%s", method: "run"})
-                    @mutation(typeName: INSERT)
-            }
-            """.formatted(SERVICE_STUB);
-        var violations = detect(sdl);
-        assertThat(violations).hasSize(1);
-        var v = violations.getFirst();
+        var v = conflictAt("Mutation.writeAndService");
         assertThat(v.message())
-            .isEqualTo("Field 'Mutation.createFilm': @service, @mutation are mutually exclusive");
+            .isEqualTo("Field 'Mutation.writeAndService': @service, @mutation are mutually exclusive");
         // The typed directives list survives the coordinate prefix wrap (the near-miss consumers
         // group and count rejections per directive without re-parsing prose).
         assertThat(v.rejection()).isInstanceOf(Rejection.InvalidSchema.DirectiveConflict.class);
@@ -160,18 +134,10 @@ class ClaimConflictsTest {
 
     @Test
     void routineWithLookupKeyMintsThePinnedDeferral() {
-        var sdl = """
-            type Film @table(name: "film") { title: String }
-            type Query {
-                film(id: ID @lookupKey): Film @routine(name: "film_fn")
-            }
-            """;
-        var violations = detect(sdl);
-        assertThat(violations).hasSize(1);
-        var v = violations.getFirst();
+        var v = conflictAt("Query.routineAndKey");
         assertThat(v.rejection()).isInstanceOf(Rejection.Deferred.class);
-        assertThat(v.message()).isEqualTo(
-            "Field 'Query.film': @routine with @lookupKey on a root field classifies but does not emit yet");
+        assertThat(v.message()).isEqualTo("Field 'Query.routineAndKey': @routine with @lookupKey on a"
+            + " root field classifies but does not emit yet");
     }
 
     @Test
@@ -286,6 +252,15 @@ class ClaimConflictsTest {
 
 
     // ===== Helpers =====
+
+    /** The one violation the claims-conflict document's graph reports at {@code coordinate}. */
+    private static ValidationError conflictAt(String coordinate) {
+        List<ValidationError> at = FACTS.read(CONFLICTS, graph ->
+            ClaimConflicts.detect(graph.handle().dsl(), graph.handle().graphName()).violations()
+                .stream().filter(v -> coordinate.equals(v.coordinate())).toList());
+        assertThat(at).as("violations at %s", coordinate).hasSize(1);
+        return at.getFirst();
+    }
 
     /** Captures {@code sdl} and runs the detection over what the capture wrote. */
     private List<ValidationError> detect(String sdl) {
