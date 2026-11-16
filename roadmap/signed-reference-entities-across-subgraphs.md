@@ -144,8 +144,8 @@ read simply once the spellings are chosen, the design is wrong.
    For each row Graphitron builds the token (version, vouch id, scope, caller, expiry, key id, and each
    absorbed field's name and wire value) and signs it, together with the entity type name, using the
    runtime's signing key. The vouch id is a random 128-bit value minted once per operation and scope,
-   logged by Graphitron as the audit handle; the expiry is the operation's start plus `ttl`. The decision is the read itself: a row A's rules hide
-   is never returned and never signed. Under a mutation payload the rows are read and signed inside the
+   logged by Graphitron as the audit handle; the expiry is the operation's start plus `ttl`. The
+   decision is the read itself: a row A's rules hide is never returned and never signed. Under a mutation payload the rows are read and signed inside the
    mutation field's transaction, and a field that rolls back is `null`, so a voucher for rows that are
    gone never reaches the router.
 2. *Carry.* The router fetches `voucher` from A, the only field A publishes on the type, and sends
@@ -448,8 +448,9 @@ Decisions the user made on this item; each is stated where it applies below.
     field whose column does not resolve (a member with no component row); either
     marker in a graph with no `<sessionState>` (no `store_graph_session_supplied` row), since the caller
     rides on `SessionState`; `@accept` in a graph with a `<tenantColumn>`, since version 1 has no tenant
-    pairing (read off the graph's tenant-column configuration; the implementer confirms that relation is
-    upstream of the stage, or moves the refusal to the first stage it is). And the vouched-for fields, on either marker: a `vouchesFor:` naming no field, a field named
+    pairing (read off `store_graph_tenant_column`, captured configuration like the
+    `store_graph_session_supplied` row the session-state refusal reads, so upstream of the stage). And
+    the vouched-for fields, on either marker: a `vouchesFor:` naming no field, a field named
     twice, a list, object or nested selection, or a field carrying `@nodeId`, `@service`, `@routine`,
     `@reference` or another value-giving directive; on `@issue`, a vouched-for field that is not an absorbed
     field; on `@accept`, a vouched-for field that is not a field of the type; and two
@@ -526,15 +527,30 @@ Decisions the user made on this item; each is stated where it applies below.
   unaffected. The handler then builds a `ConnectionKey` per representation from its optional parts (the tenant part from the
   alternative's routing source, the vouched-for part from the verified voucher), and groups on that key
   once. There is no voucher branch beside the tenant branch: every alternative groups by its key, which is
-  what R1185 puts behind the consumer's hook. In version 1 an accepting graph has no tenant column
+  what R1185 puts behind the consumer's hook. A failed check fails the request the way a rejected mount
+  does: the carrier remembers the first request rejection, a generated supertype of
+  `SessionMountException` and `VoucherRejectedException` held in the one slot the mount failure uses
+  today, `instrumentExecutionResult` throws it in place of the result, and once one is remembered the
+  carrier's entry resolution refuses to pin, so "nothing taken" is the carrier's invariant and not an
+  accident of `fetchEntities` running first. Throwing from the fetcher alone would make a field error.
+  The voucher alternative is a sealed arm of `EntityKeyQuery.Alternative` with its own identity, the
+  minted `ACCEPT` key, carrying the scope, the vouched-for fields, and the authored key it decodes onto
+  by identity with that key's fields; the vouched-for values filter nothing. In version 1 an accepting graph has no tenant column
   (*Rejections*), so the voucher alternative's tenant part is empty and `EntityTenantRouting.fromWalk`,
   which runs only in multi-tenant builds, never meets it. No exemption is added there and no new
   reference to the classified model's `TenantBinding`. Tenant pairing, later, gives the voucher
   alternative the tenant source of the authored key it decodes onto (`graphitron_accept_key`), paired in
   `EntityKeyQuery` and carried through `EntityTenantRouting.Source`.
-* *Connection key.* Every build that writes the `localContext` slot, multi-tenant or accepting, carries a
-  generated `ConnectionKey` there, with a tenant part in multi-tenant builds (shipped in slice 3) and the
+* *Connection key.* A build that is multi-tenant or accepting emits a generated `ConnectionKey` and keys
+  its connections by it, with a tenant part in multi-tenant builds (shipped in slice 3) and the
   vouched-for part with `@accept` (slice 8a), its components the accepting fields' vouched-for fields.
+  The shape answers three questions apart: whether the key is emitted and connections keyed by it
+  (either part), whether the tenant machinery runs (the tenant part), and whether the `localContext`
+  slot is written. In slice 8a the slot is written by the tenant part alone: nothing below an accepting
+  entity reads it yet (the narrowed refusal), and stamping single-tenant entity rows would change
+  `resolveByReps`' return shape for `QueryNodeFetcher` and for consumers overriding `fetchEntities`.
+  Slice 8b makes the slot follow either part, a change to the shape alone. The store's rows carry the
+  vouched-for fields as field and scalar names; emit maps a scalar to its Java type once.
   The graph's `@accept` fields share one vouched-for shape (names and scalars); differing shapes are
   refused, so the generated type is one. A single-tenant build with no `@accept` writes nothing there, so
   its output is unchanged. The shape is computed once, as one value beside `SessionIdentityRows`, at the
@@ -634,19 +650,23 @@ that way.
   through A's members, so B's accepting field, which has none, would drop out of it and be asked of the
   walk; the stand-down takes the binding and the projection takes the components.
 * The refusal narrows. `VOUCHER_ACCEPT_NOT_GENERATED` now refuses only an accepting type with a field
-  below it, at any depth through projected children, that has a fetcher of its own; its message says
-  such fields are not yet read on the vouched connection. Which fields have their own fetcher is read
-  from the store; where the store does not yet say it for a family of field, that family counts as
-  having one, so the refusal errs toward refusing. `accept.adoc` states the narrower rule.
+  below it, at any depth through projected children, that is not read in the entity's SELECT; its
+  message says such fields are not yet read on the vouched connection. It reads the occurrences under
+  the accepting type and allows what the store states is projected (column and node-id bindings, and
+  join paths read as a nested `multiset`), refusing everything else, so a family the store does not
+  yet state is refused rather than let through. Reading occurrence facts, it moves out of the anchor
+  stage's defect rule to the stage that writes the last relation it reads, with its `meta_stage_rule`
+  row. The fact document gains an accepted shape with a projected nested child, so the narrowing is
+  pinned both ways. `accept.adoc` and the diagnostics glossary state the narrower rule.
 * The redaction check (*Redaction*).
 * Execution tests: the entity and a nested read projected into its SELECT on the vouched connection,
   under a policy that otherwise hides the rows; every verification failure, with no connection taken; a
   bad voucher on a second type failing before the first type's group acquires; the limit error; and the
   refusal of a type with a separately fetched field below it.
 
-**Slice 8b, fields with a fetcher of their own.** Taken up with or after R876's nodes "A child whose
-followed key lands on the tenant column is routed by its row's tenant" and "`TypeFetcherGenerator` reads
-the store, one family of field at a time", for the fields it covers.
+**Slice 8b, fields with a fetcher of their own.** Taken up with or after R876's node "`TypeFetcherGenerator`
+reads the store, one family of field at a time", for the fields it covers. It waits on no tenant-routing
+node: version 1 refuses `@accept` in a tenant-column graph.
 
 * `graphitron_occurrence_connection`'s grain widens from "one producer of a database-per-tenant graph"
   to "a producer of a graph whose generated code carries a `ConnectionKey`", so the fields below an
@@ -657,6 +677,8 @@ the store, one family of field at a time", for the fields it covers.
   down as it hands down a tenant's (2026-11-16). R876 carries this as its node "The connection
   relation's grain covers accepting graphs", so a rewrite of its rule does not narrow it back to
   tenancy.
+* The `localContext` slot follows either part of the key (*Connection key*), so each resolved entity row
+  is a `DataFetcherResult` carrying its group's key in an accepting build.
 * Store-side fetchers below the entity read it; a batched field, a `@service` field and a
   connection-typed field under the entity acquire from the inherited key.
 * `VOUCHER_ACCEPT_NOT_GENERATED` goes, with the "refused for now" sentence in `accept.adoc` and the
@@ -1094,3 +1116,20 @@ Two notes for the implementer, both plan edits in In Progress:
 > Response: both taken at In Progress. The voucher stage runs after `nodes`, and the minted keys
 > (`minted-keys`) and the entity key alternatives (`entity-key-alternatives`) each have a named owning
 > stage with a stated position.
+
+### Round 5: slice 8a take-up (session_01WkW2JHwmdHjyuEcZChjpE6, 2026-11-16)
+
+A second-party read of the four plan commits of 2026-11-16 against trunk, before slice 8a is built. The
+design changes rest on Alf's rulings of that day; the text is checked here. Verified: `resolveByReps`
+resolves type after type, each acquiring as its groups decode, so verification in `fetchEntities` is
+needed; `VoucherBindingQuery` reaches a voucher field through A's members, so B's field drops out of it;
+`ConnectionKeyShape.writesSlot()` is what `ConnectionRuntimeClassGenerator` calls multi-tenant; and
+`graphitron_producer` already states which fields are taken out of the parent's statement. Corrected
+in the text: slice 8b's gate named an R876 node that does not exist, and needs no tenant-routing node
+in version 1; a failed check fails the request only through the carrier and the instrumentation, as a
+rejected mount does, which slice 8a had not named; the tenant-column refusal's relation is captured
+configuration, so the hedge is settled; and the entity rows' `localContext` stamping moves to 8b
+(*Connection key*). The principles architect's points at take-up are folded in: the rejection is the
+carrier's invariant through one supertype, the shape answers three questions apart, the voucher
+alternative pairs with its decode-onto key by identity, and the narrowed refusal reads occurrences and
+allows what is stated projected.
