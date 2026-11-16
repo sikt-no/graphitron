@@ -68,38 +68,6 @@ public final class ThreadConfinedStore {
     private static final AtomicLong BOOTS = new AtomicLong();
     private static final Set<Long> BOOTING_THREADS = ConcurrentHashMap.newKeySet();
 
-    /**
-     * The most stores this module may open in one JVM before the funnel treats it as a regression
-     * rather than as growth. Most cases share one store per thread; what boots per case is the
-     * classes whose subject is the boot path itself, those that bend the schema they run on, and
-     * those whose subject is a store handle rather than a context over one, which the funnel
-     * cannot hand them.
-     *
-     * <p>It bounds {@link FactStores#boots()} rather than {@link #boots()}: the funnel's own count
-     * cannot see a boot that does not go through the funnel, and a new path opening a store per
-     * case is exactly what would not.
-     *
-     * <p>One constant over two modules whose counts differ by a factor of seven, so while it sits
-     * here it guards this module against nothing; that is the price of keeping the number in one
-     * place while the larger module is mid-conversion.
-     *
-     * <p>{@link FactGraphs} boots under it too, a few stores per catalog for a whole run, which a
-     * test reading a fact document spends instead of a boot of its own.
-     *
-     * <p>Raising it is a deliberate act: recount what boots and why, and if a new class opens a
-     * store per case, ask whether it should run on the funnel instead.
-     *
-     * <p>Raised from 250 to 300 when fixtures started reading the emitted schema off a store
-     * instead of off the walk's synthesis. The question the paragraph above asks was asked: this
-     * path cannot run on the funnel, because the caller may already be holding a store of its own
-     * and borrowing the thread's would clear the rows that fixture captured, which is what
-     * happened to five shadow cases before it booted its own. What it can do is not boot twice for
-     * one document, and it does not: the derivation is a function of the schema text alone and is
-     * memoised on it, which took the count from 288 to 253. So the boots left are one per distinct
-     * fixture schema, which is what the module means to pay for, and the headroom is for the
-     * schemas it has not written yet rather than for a path nobody looked at.
-     */
-    private static final int BOOT_BUDGET = 300;
 
     private final GraphitronModelStore store;
 
@@ -158,7 +126,6 @@ public final class ThreadConfinedStore {
                 + " FactStores directly, and one wanting a second graph should anchor it with"
                 + " ModelCapture.writeGraph inside the body it already has");
         }
-        verifyBootBudget();
         held.inUse = true;
         try {
             held.clear();
@@ -200,7 +167,6 @@ public final class ThreadConfinedStore {
                 + " second graph should anchor it with ModelCapture.writeGraph inside the body it"
                 + " has");
         }
-        verifyBootBudget();
         held.clear();
         return held.store;
     }
@@ -217,11 +183,6 @@ public final class ThreadConfinedStore {
     static void release() {
     }
 
-    /** The budget {@link FactStores#boots()} is held to, so a test need not restate the number. */
-    static int bootBudget() {
-        return BOOT_BUDGET;
-    }
-
     /**
      * How many stores this module's funnel has booted, which the mechanism claims is one per thread
      * that ever ran a case through it.
@@ -236,31 +197,6 @@ public final class ThreadConfinedStore {
      */
     static int bootingThreads() {
         return BOOTING_THREADS.size();
-    }
-
-    /**
-     * Fails the calling case if the module has opened more stores than {@link #BOOT_BUDGET} allows.
-     *
-     * <p>Checked on every funnel call rather than in a test method, because the count is monotonic
-     * and a test reads it wherever the class scheduler happened to reach that class: under
-     * concurrent classes in an unspecified order, an assertion that ran early sees a fraction of the
-     * run and passes on a suite that ended far over budget. A funnel call happens hundreds of times
-     * across the whole run, so checking here samples the total continuously and names the case that
-     * was running when the budget went. What it cannot see is a boot after the run's last funnel
-     * call, which is at most one class's worth and is the price of not needing a listener to hold
-     * the check.
-     */
-    private static void verifyBootBudget() {
-        long boots = FactStores.boots();
-        if (boots > BOOT_BUDGET) {
-            throw new IllegalStateException(("this module has opened %d stores in one JVM, past its"
-                + " budget of %d. Almost every case is meant to run on the store its thread booted"
-                + " once, through ThreadConfinedStore.run, so a count this high means either a"
-                + " new path opens a store per case or a class that boots per case has grown. Route"
-                + " it through the funnel, or raise ThreadConfinedStore.BOOT_BUDGET deliberately"
-                + " once the recount says the boots are ones the module means to pay for.")
-                .formatted(boots, BOOT_BUDGET));
-        }
     }
 
     private static ThreadConfinedStore boot() {

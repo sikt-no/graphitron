@@ -212,6 +212,10 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
                     <argLine>@{argLine} --enable-native-access=ALL-UNNAMED</argLine>
+                    <!-- The most stores one test JVM may open; FactStores refuses the boot past it. -->
+                    <systemPropertyVariables combine.children="append">
+                        <graphitron.test.bootBudget>300</graphitron.test.bootBudget>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
 

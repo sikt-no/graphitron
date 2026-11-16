@@ -7,6 +7,7 @@ import org.junit.jupiter.api.extension.BeforeAllCallback;
 import org.junit.jupiter.api.extension.ExtensionContext;
 
 import java.nio.file.Path;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -34,14 +35,20 @@ import java.util.concurrent.atomic.AtomicLong;
  * <p>It counts what it opens, and that count is the only instrument that sees every boot in a run.
  * A schema boot is the most expensive thing a fact-store test can do, so this module runs almost
  * every case on a store {@link ThreadConfinedStore} booted once per thread and clears between
- * bodies; {@link #boots()} is what notices a path that boots per case appearing beside it. The
- * count carries no policy of its own, because the harness is reached from four modules and what
- * counts as too many boots is each one's own claim: the module that owns a funnel states its
- * budget next to the funnel.
+ * bodies; {@link #boots()} is what notices a path that boots per case appearing beside it. What
+ * counts as too many boots is each module's own claim, since the harness is reached from four: a
+ * module states its budget as {@value #BOOT_BUDGET_PROPERTY} in its surefire configuration, and
+ * every boot is checked against it.
  */
 public final class FactStores {
 
     private static final AtomicLong BOOTS = new AtomicLong();
+
+    /**
+     * The system property a module states its boot budget in: the most stores one test JVM may
+     * open before a boot counts as a regression rather than as growth. Unset, nothing is bounded.
+     */
+    public static final String BOOT_BUDGET_PROPERTY = "graphitron.test.bootBudget";
 
     private static final AtomicLong CAPTURES = new AtomicLong();
 
@@ -119,8 +126,7 @@ public final class FactStores {
     /**
      * How many stores this harness has opened so far in this JVM, across every thread and every
      * entry point. Monotonic, so a reader that wants a run's total reads it at the end of the run;
-     * a module holding itself to a budget checks it where its own cases pass, which is what
-     * {@link ThreadConfinedStore} does.
+     * a module holding itself to a budget states it as {@value #BOOT_BUDGET_PROPERTY}.
      */
     public static long boots() {
         return BOOTS.get();
@@ -156,9 +162,31 @@ public final class FactStores {
         ON_THIS_THREAD.get()[1]++;
     }
 
+    /** The budget the running module states, if it states one. */
+    public static OptionalLong bootBudget() {
+        String stated = System.getProperty(BOOT_BUDGET_PROPERTY);
+        return stated == null ? OptionalLong.empty() : OptionalLong.of(Long.parseLong(stated));
+    }
+
+    /**
+     * Counts a boot about to happen, and refuses it past the module's budget. Checked here rather
+     * than in a test method, because the count is monotonic and a test reads it wherever the class
+     * scheduler happened to reach that class: the boot that goes over fails, in the case that asked
+     * for it, before the store opens.
+     */
     private static void countBoot() {
-        BOOTS.incrementAndGet();
+        long boots = BOOTS.incrementAndGet();
         ON_THIS_THREAD.get()[0]++;
+        var budget = bootBudget();
+        if (budget.isPresent() && boots > budget.getAsLong()) {
+            throw new IllegalStateException(("this module has opened %d stores in one JVM, past its"
+                + " budget of %d. A case reading a fact document spends no boot of its own, so a"
+                + " count this high means a new path opens a store per case or a class that boots"
+                + " per case has grown. Read through FactGraphs, or raise %s in the module's"
+                + " surefire configuration deliberately once the recount says the boots are ones"
+                + " the module means to pay for.")
+                .formatted(boots, budget.getAsLong(), BOOT_BUDGET_PROPERTY));
+        }
     }
 
     /**
@@ -186,7 +214,7 @@ public final class FactStores {
      * {@link org.jooq.DSLContext}, deliberately, and a case that needs the store <em>handle</em>
      * (the connection, or something the handle mints) has nothing to ask it for. Widening the funnel
      * to hand out the handle would give every case on it the ability to close the thread's store.
-     * These boots are counted in {@link #boots()} like any other and land under the funnel's budget.
+     * These boots are counted in {@link #boots()} like any other and land under the module's budget.
      *
      * <p>Only for a class whose cases do not interfere. The store arrives empty and stays whatever
      * the cases leave it, so a class that seeds rows and counts them wants a store per case, from

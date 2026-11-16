@@ -151,8 +151,8 @@ class ThreadConfinedStoreTest {
     void staysInsideTheBootBudget() {
         assertThat(FactStores.boots())
             .as("the funnel's boots plus the per-case boots of the classes whose subject is the"
-                + " boot path; every funnel call checks this too, so the count is bounded wherever"
-                + " in the run it goes over rather than only where this class happens to run")
-            .isLessThanOrEqualTo(ThreadConfinedStore.bootBudget());
+                + " boot path; every boot checks this too, so the count is bounded wherever in the"
+                + " run it goes over rather than only where this class happens to run")
+            .isLessThanOrEqualTo(FactStores.bootBudget().orElseThrow());
     }
 }

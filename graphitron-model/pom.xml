@@ -304,6 +304,13 @@
                          set sits near 3.3 GB; the default cap on a 16 GB machine leaves no headroom
                          and the build would pass or fail on the machine it ran on. -->
                     <argLine>@{argLine} -Xmx5g</argLine>
+                    <!-- The most stores one test JVM may open; FactStores refuses the boot past it.
+                         Raised from 250 to 300 when fixtures read the emitted schema off a store of
+                         their own, one per distinct fixture schema; raise it only after a recount
+                         says the new boots are ones the module means to pay for. -->
+                    <systemPropertyVariables combine.children="append">
+                        <graphitron.test.bootBudget>300</graphitron.test.bootBudget>
+                    </systemPropertyVariables>
                 </configuration>
             </plugin>
         </plugins>
