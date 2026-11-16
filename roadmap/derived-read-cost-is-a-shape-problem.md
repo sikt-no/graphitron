@@ -97,7 +97,6 @@ The walk's read path is gone
     └── The service fields are emitted from the store
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
-            ├── The throwables' read slots are read
             ├── A record bean nested in a class is built
             └── An @error field read off a public field or a bare accessor is judged
 ```
@@ -1106,26 +1105,6 @@ static method needs no holder.
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
     `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
     `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
-    * **The throwables' read slots are read** `open`, E's. An `@error` type's extra fields are read
-      off the throwable its handler matches, and a field no accessor of that throwable answers can
-      only fail at run time; the walk refuses it, and so does a checked exception a service method
-      declares that no handler of its outcome covers, a javac failure in the consumer's build. The
-      store can refuse neither yet, since `code_read_slot`
-      holds a throwable's accessors only where its class sits on a classpath entry the reading read,
-      inheritance followed within those entries. A JDK throwable a handler names
-      (`java.lang.RuntimeException`, `IllegalArgumentException`) has no rows, and what every
-      throwable inherits from `java.lang.Throwable` (`getMessage`, `getCause`) is missing on all of
-      them, and a JDK exception a method declares (`java.sql.SQLException`, `java.io.IOException`)
-      has no `code_throwable` row, so whether it is checked cannot be read either. The node reads
-      each throwable a handler names, every exception `code_method_exception` holds, and
-      `java.lang.Throwable`, whole, from its entry or from the platform image, extending
-      `code_read_slot` and `code_throwable_supertype` as a session handle's or a nested class's slots
-      are read; whether a JDK class gets rows under a platform source is the architect's question when
-      the node is taken up. Checked needs no column: an exception is checked where neither
-      `java.lang.RuntimeException` nor `java.lang.Error` is among its supertypes. Then an `@error`
-      field no accessor answers is a stored defect, `ERROR_FIELD_UNREADABLE`, and a checked exception
-      no handler covers another, both at fetchers, and the walk's two refusals go. The service
-      fields' stand-down waits for it.
     * **A record bean nested in a class is built** `open`, E's. An input bean declared as a record
       nested in another class (`ParameterShapeService.FilmIdBean`) drew no
       `graphitron_occurrence_binding_member` rows, and so no member defect, where the same record at

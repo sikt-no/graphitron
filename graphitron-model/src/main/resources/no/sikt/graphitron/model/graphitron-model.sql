@@ -12471,7 +12471,70 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_claim c
                       JOIN graphitron_claim_kind k ON k.kind = c.kind AND k.family = 'PRODUCER'
                     WHERE c.graph_name = f.graph_name AND c.coordinate = f.coordinate
-                      AND c.kind IN ('UPSERT', 'WRITE'));
+                      AND c.kind IN ('UPSERT', 'WRITE'))
+UNION ALL
+-- A checked exception a @service method declares, the method its code reference resolves to, that no
+-- handler of its field's outcome covers, at the field: one extending neither RuntimeException nor Error, and neither an IOException nor an
+-- InterruptedException, which redact rather than surface. A GENERIC handler covers its class and
+-- what extends it, a DATABASE handler every SQLException; a field with no outcome covers none.
+-- Judged where the graph resolves the exception's class, its ancestry read off
+-- code_throwable_supertype, the platform's included. The detail is the first such exception.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'CHECKED_EXCEPTION_UNHANDLED', MIN(me.exception_class), 'fetchers'
+  FROM graphitron_producer ps
+  JOIN graphitron_code_reference cr
+    ON cr.graph_name = ps.graph_name AND cr.type_name = ps.type_name
+   AND cr.field_name = ps.field_name AND cr.directive_name = 'service'
+  JOIN graphitron_field f
+    ON f.graph_name = ps.graph_name AND f.type_name = ps.type_name AND f.field_name = ps.field_name
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN code_method_exception me
+    ON me.source_name = cr.method_source_name AND me.class_name = cr.method_class_name
+   AND me.method_name = cr.method_name AND me.descriptor = cr.method_descriptor
+  JOIN code_graph_class k ON k.graph_name = ps.graph_name AND k.class_name = me.exception_class
+ WHERE ps.kind = 'SERVICE' AND NOT (me.exception_class = 'java.lang.RuntimeException'
+                  OR EXISTS (SELECT 1 FROM code_throwable_supertype st
+                              WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
+                                AND st.supertype_name = 'java.lang.RuntimeException'))
+   AND NOT (me.exception_class = 'java.lang.Error'
+                  OR EXISTS (SELECT 1 FROM code_throwable_supertype st
+                              WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
+                                AND st.supertype_name = 'java.lang.Error'))
+   AND NOT (me.exception_class = 'java.io.IOException'
+                  OR EXISTS (SELECT 1 FROM code_throwable_supertype st
+                              WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
+                                AND st.supertype_name = 'java.io.IOException'))
+   AND NOT (me.exception_class = 'java.lang.InterruptedException'
+                  OR EXISTS (SELECT 1 FROM code_throwable_supertype st
+                              WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
+                                AND st.supertype_name = 'java.lang.InterruptedException'))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                     JOIN graphitron_errors_field ef
+                       ON ef.graph_name = po.graph_name AND ef.type_name = po.outcome_type_name
+                      AND ef.field_name = po.errors_field_name
+                     LEFT JOIN graphitron_type_member tm
+                       ON tm.graph_name = ef.graph_name AND tm.container_name = ef.container_name
+                     JOIN graphql_directive_application da
+                       ON da.graph_name = ef.graph_name
+                      AND da.coordinate = COALESCE(tm.member_type_name, ef.container_name)
+                      AND da.directive_name = 'error'
+                     JOIN graphitron_ast_error_handler_entry h
+                       ON h.graph_name = da.graph_name AND h.source_name = da.source_name
+                      AND h.application_line = da.source_line AND h.application_column = da.source_column
+                     LEFT JOIN graphitron_ast_error_generic_handler_entry g
+                       ON g.graph_name = h.graph_name AND g.source_name = h.source_name
+                      AND g.source_line = h.source_line AND g.source_column = h.source_column
+                    WHERE po.graph_name = ps.graph_name AND po.type_name = ps.type_name
+                      AND po.field_name = ps.field_name
+                      AND (h.handler = 'GENERIC' AND (me.exception_class = g.class_name
+                  OR EXISTS (SELECT 1 FROM code_throwable_supertype st
+                              WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
+                                AND st.supertype_name = g.class_name))
+                           OR h.handler = 'DATABASE' AND (me.exception_class = 'java.sql.SQLException'
+                  OR EXISTS (SELECT 1 FROM code_throwable_supertype st
+                              WHERE st.source_name = k.source_name AND st.class_name = me.exception_class
+                                AND st.supertype_name = 'java.sql.SQLException'))))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_fetcher_entry_defect_rule IS 'One row the fetchers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example an UPDATE @mutation @asConnection gives one CONNECTION_RETURN row at its @mutation, and a query root field with neither a producer nor a reader one FIELD_WITHOUT_FETCHER row at its declaration.';
 
 CREATE TABLE graphitron_outbox_message (
@@ -28224,6 +28287,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
   ('ERROR_FIELD_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ERROR_FIELD_UNREADABLE',
    'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no accessor of the field''s name or @field(name:), get, is or bare, returning what the field''s scalar is: name an accessor the class has with @field(name:), or give the field the type its accessor returns.'),
+  ('CHECKED_EXCEPTION_UNHANDLED', 'error', 'GRAPHITRON', 'GRAPHITRON_CHECKED_EXCEPTION_UNHANDLED',
+   'A @service method declares a checked exception no handler of its field''s outcome covers, so the generated fetcher, which catches only what a handler claims, does not compile: add an @error type whose GENERIC handler names the exception or a supertype of it, or a DATABASE handler for an SQLException, or remove the throws clause. IOException and InterruptedException are exempt, as infrastructure failures that redact rather than surface; a declared exception the build resolves to no class, one on a transitive jar among them, is not judged here and is left to the compile.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',

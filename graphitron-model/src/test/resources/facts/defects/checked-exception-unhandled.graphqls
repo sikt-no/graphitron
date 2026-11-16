@@ -1,0 +1,37 @@
+# A checked exception a @service method declares that no handler of its field's outcome covers: an
+# SQLException is covered by a DATABASE handler and a FilmLookupCheckedException by a GENERIC handler
+# naming its supertype Exception; without an outcome, or with only a handler that matches neither,
+# each is refused. An IOException is exempt and an unchecked exception needs no handler.
+
+type Film @table(name: "film") { title: String }
+
+type SqlFailed @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
+type AnyFailed @error(handlers: [{handler: GENERIC, className: "java.lang.Exception"}]) { path: [String!]! message: String! }
+type StateFailed @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalStateException"}]) { path: [String!]! message: String! }
+
+type SqlPayload { title: String errors: [SqlFailed!] }
+type AnyPayload { title: String errors: [AnyFailed!] }
+type StatePayload { title: String errors: [StateFailed!] }
+
+type Query {
+  films: [Film!]!
+  sqlCovered(id: Int): SqlPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrSql"})
+  sqlBare(id: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrSql"})
+  checkedCovered(id: Int): AnyPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrChecked"})
+  checkedWrongHandler(id: Int): StatePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrChecked"})
+  ioBare(id: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrIo"})
+  runtimeBare(id: Int): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrRuntime"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'CHECKED_EXCEPTION_UNHANDLED'", rows: """
+  code,                        coordinate,                detail
+  CHECKED_EXCEPTION_UNHANDLED, Query.sqlBare,             java.sql.SQLException
+  CHECKED_EXCEPTION_UNHANDLED, Query.checkedWrongHandler, no.sikt.graphitron.rewrite.test.services.FilmLookupCheckedException
+  """)
