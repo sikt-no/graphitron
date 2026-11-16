@@ -20107,6 +20107,20 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_type t
                     WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'UNION')
 UNION ALL
+-- An input object reached again inside itself under a class a call builds, at the input field that
+-- reaches it again: the occurrences stop there, so building the class would drop the nested value
+-- rather than build it. The detail is the input type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'INPUT_CYCLE_EXPANDED', it.type_name, 'occurrence-producers'
+  FROM graphitron_occurrence_input_type it
+  JOIN graphitron_occurrence_chain ch
+    ON ch.graph_name = it.graph_name AND ch.coordinate = it.coordinate AND ch.type_name = it.type_name
+  JOIN graphitron_occurrence o ON o.graph_name = it.graph_name AND o.coordinate = it.coordinate
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.stated_by = 'SERVICE'
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE it.type_kind = 'INPUT_OBJECT'
+UNION ALL
 -- A @service whose field answers a union, at the field: a Java method declares one result type, and
 -- no Java type is a union of others, so what the method answers says nothing of which member it is.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -27775,6 +27789,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
   ('SERVICE_BATCH_SHAPE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_BATCH_SHAPE_UNSUPPORTED',
    'A @service under an object takes its keys or answers in a shape the batch does not read: keys in a container delivering many, a jOOQ Result only of the parent''s table records; an answer a Map by key, or a List or Result in the keys'' order under keys a List, Collection or Result gives an order: take a Set and answer a Map, or take a List and answer a List.'),
+  ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
+   'An input object is reached again inside itself where a call builds its value into a class, and the class cannot be built without end, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',

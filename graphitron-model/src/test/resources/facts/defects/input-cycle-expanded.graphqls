@@ -1,0 +1,35 @@
+# An input object reached again inside itself where a @service builds it into a record: CycleInput's
+# self field reaches CycleInput again, and the occurrences stop there, so the nested value would be
+# dropped. The same record built from an input with a nested input that does not reach itself again
+# draws nothing.
+
+type Film @table(name: "film") { title: String }
+
+input CycleInput @table(name: "film") {
+  title: String
+  self: CycleInput
+}
+
+input PlainInput @table(name: "film") {
+  title: String
+  inner: InnerInput
+}
+
+input InnerInput @table(name: "film") {
+  description: String
+}
+
+type Query { films: [Film!]! }
+
+type Mutation {
+  modifyCycle(in: CycleInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
+  modifyPlain(in: PlainInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'INPUT_CYCLE_EXPANDED'", rows: """
+  code,                 coordinate,      detail
+  INPUT_CYCLE_EXPANDED, CycleInput.self, CycleInput
+  """)
