@@ -372,10 +372,13 @@ class GraphitronMcpServerTest {
         }
     }
 
-    /** Asked across graphs, the status names every graph's slowest statements, each with its graph. */
+    /**
+     * Asked across graphs, the status names every graph's slowest statements, each with its graph.
+     * On a store of its own, since the answer across graphs is every graph the store holds.
+     */
     @Test
     void statusToolNamesTheSlowestWritesAcrossGraphs(@TempDir Path tmp) {
-        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
+        try (var fixture = StoreFixture.held().ofSchema(tmp, "type Query { film: String }\n")) {
             var dsl = fixture.handle().dsl();
             var at = java.time.LocalDateTime.of(2026, 10, 21, 12, 0);
             var g = no.sikt.graphitron.model.Tables.STORE_GRAPH;
