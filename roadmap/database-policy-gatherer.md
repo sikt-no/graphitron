@@ -334,15 +334,20 @@ PostgreSQL first, because sakila tests it:
 * view: `pg_get_viewdef`, wrapped as `CREATE VIEW`;
 * trigger: `pg_get_triggerdef`, followed by its function's `pg_get_functiondef`;
 * key (what a `@reference` names): `pg_get_constraintdef`, wrapped as `ALTER TABLE ... ADD CONSTRAINT`;
-* table: PostgreSQL has no single statement for a table, so its definition is composed: the
-  `CREATE TABLE` with columns from the catalog, `pg_get_constraintdef` for each constraint,
-  `pg_get_indexdef` for each index not backing a constraint, `pg_get_triggerdef` for each trigger, and
-  the table's row-security statements and policies, read live in the same transaction. Not from the
-  stored `database_policy` rows, which would put a possibly stale reading beside live DDL in one
-  answer, and not through the gatherer's code, whose job is to decode facts into the store's words.
+* table: PostgreSQL has no single statement for a table, so any table definition is a reconstruction.
+  The table part comes from jOOQ's runtime metadata over the live connection,
+  `DSLContext.meta().filterTables(...).ddl()` filtered to the table the store resolved: columns,
+  primary key, unique, foreign key and check constraints, indexes and comments, in jOOQ's normalized
+  rendering. jOOQ's `Meta` has no triggers, routines or policies, so the definition then appends
+  `pg_get_triggerdef` for each trigger and the table's row-security statements and policies, read live
+  in the same transaction. Not from the stored `database_policy` rows, which would put a possibly stale
+  reading beside live DDL in one answer, and not through the gatherer's code, whose job is to decode
+  facts into the store's words.
 
-Oracle answers every kind through `DBMS_METADATA.GET_DDL`; until Oracle is read, the tool refuses with
-that cause, as the gatherer logs it.
+Every kind other than the table uses the database's own rendering. jOOQ's `meta().ddl()` is also
+dialect-neutral, so the table part works on Oracle as written; Oracle's other kinds would come from
+`DBMS_METADATA.GET_DDL`. Until Oracle is read, the tool refuses every Oracle request with that cause,
+as the gatherer logs it, so Oracle lands as one change.
 
 ## Keeping the facts out of generation
 
