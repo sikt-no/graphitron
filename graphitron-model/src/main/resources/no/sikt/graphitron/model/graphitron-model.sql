@@ -2041,6 +2041,33 @@ COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.class_name IS 'the 
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.matches IS 'a substring the exception message must contain, as written, or NULL where the handler takes every exception of the class';
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.description IS 'the client-facing message this handler returns, as written, or NULL where the exception''s own message is used';
 
+CREATE TABLE graphitron_ast_error_database_handler_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  code          VARCHAR,
+  sql_state     VARCHAR,
+  matches       VARCHAR,
+  description   VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_error_handler_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_error_database_handler_entry IS 'A DATABASE handler of an @error application, at its position in the list, as written. For example {handler: DATABASE, sqlState: "23503"} at position 0.';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.source_column IS 'source column of the same. The four columns are the key of graphitron_ast_error_handler_entry, which names the element''s row of graphql_ast_value_entry and the application holding it, so this relation carries what the kind reads and nothing the supertype does';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose whole application went is swept with the supertype row it hangs on';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.code IS 'the vendor error code this handler matches on, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.sql_state IS 'the SQL state this handler matches on, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.matches IS 'a substring the exception message must contain, as written, or NULL where the handler takes every database failure its code or state names';
+COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.description IS 'the client-facing message this handler returns, as written, or NULL where the exception''s own message is used';
+
 -- The field site's decode. Every relation below is keyed by the position of the @ token, which is
 -- graphql_ast_directive_application_entry's key, so a row is the decode of exactly one application there
 -- and carries no type name, no field name and no file: all three are one join away. Five of the
@@ -29130,6 +29157,10 @@ INSERT INTO meta_relation VALUES
    'A GENERIC handler of an @error application, at its position in the list, as written.',
    'For example {handler: GENERIC, className: "java.lang.IllegalStateException"} at position 0.',
    'One relation per handler kind, because the kind decides which fields mean anything. A GENERIC handler matches by class identity, so it carries a class name and nothing about SQL; the directive rejects sqlState and code on it outright. Every GENERIC element is a row whatever it carries, the class name NULL where none was written: entries capture rather than validate, and a handler naming no class is a defect for a detection to state. Merged with its siblings this would be six nullable columns of which a row fills three, and which three is a rule no constraint over that shape can state. A field an author wrote where their handler''s kind rejects it has no column here and is not lost: the whole handler list stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
+  ('graphitron_ast_error_database_handler_entry', 'sdl-written-value', 'graphitron',
+   'A DATABASE handler of an @error application, at its position in the list, as written.',
+   'For example {handler: DATABASE, sqlState: "23503"} at position 0.',
+   'One relation per handler kind, as for GENERIC: a DATABASE handler matches any SQLException by its vendor code or SQL state and a message substring, so it carries those and no class. Captured since a channel judging whether two of its handlers match the same failures reads them; every DATABASE element is a row whatever it carries.'),
   ('graphitron_ast_binding_entry', 'sdl-declaration-site', 'graphitron',
    'What a @field application says: the name written, wherever it was written.',
    'For example title: String @field(name: "title") on an output field, films(titleFilter: String @field(name: "title")) on an argument and TITLE @field(name: "title") on an enum value give one row each, all reading title.',
