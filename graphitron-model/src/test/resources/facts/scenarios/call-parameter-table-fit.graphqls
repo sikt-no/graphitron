@@ -11,6 +11,9 @@ type Film @table(name: "film") {
   "Table<? extends UpdatableRecord<?>>: fits film, which has a primary key."
   keyedTitle: String
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits"})
+  "Set<FilmRecord>, the parent films' records many at once: fits film by its records."
+  titleServed: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.extensions.TableTypeFits", method: "titlesOf"})
 }
 
 type Actor @table(name: "actor") {
@@ -37,6 +40,14 @@ extend schema @assertContains(relation: "graphitron_call_parameter_table",
   titleOfFilm, 0,        film,       JOOQ_TYPE
   """)
 
+# A service's parameter taking film's records fits film as RECORD, many at once; a table parameter
+# takes no records.
+extend schema @assertContains(relation: "graphitron_call_parameter_table",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits' AND fit = 'RECORD'", rows: """
+  method_name, position, table_name, delivery
+  titlesOf,    0,        film,       MANY
+  """)
+
 # The wildcard's bound is what the record argument names, so the updatable record's rule decides it.
 extend schema @assertContains(relation: "code_method_parameter",
     where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits'", rows: """
@@ -45,11 +56,14 @@ extend schema @assertContains(relation: "code_method_parameter",
   """)
 
 # Neither record argument fits a table whose record it is not, and jOOQ's internal TableImpl fits none.
+# titleIs's overload taking jOOQ's bare Record names no table: it fits none, not even recordless_note,
+# whose generated record is that bare type.
 extend schema @assertAbsent(relation: "graphitron_call_parameter_table",
     where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits'", rows: """
   method_name,  position, table_name
   nameOfActor,  0,        film
   titleIs,      0,        actor
+  titleIs,      0,        recordless_note
   titleOfFilm,  0,        actor
   titleViaImpl, 0,        film
   """)
