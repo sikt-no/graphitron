@@ -15,6 +15,7 @@ import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -48,7 +49,15 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 class GraphitronEnumValueEntriesTest {
 
-    private static final String GRAPH = "enum-value";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphitronEnumValueEntriesTest(TestInfo info) {
+        graph = "enumValueEntries." + info.getTestMethod().orElseThrow().getName();
+    }
 
     /**
      * The name a {@code @field} writes is one fact wherever it is written, so the enum value's and
@@ -67,7 +76,8 @@ class GraphitronEnumValueEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.fetch(GRAPHITRON_AST_BINDING_ENTRY))
+            assertThat(dsl.fetch(GRAPHITRON_AST_BINDING_ENTRY,
+                    GRAPHITRON_AST_BINDING_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("the enum value's binding and the output field's, side by side")
                 .extracting(row -> row.get(GRAPHITRON_AST_BINDING_ENTRY.NAME_REF))
                 .containsExactlyInAnyOrder("rating_code", "title");
@@ -97,6 +107,7 @@ class GraphitronEnumValueEntriesTest {
             var t = GRAPHITRON_AST_ORDER_ENTRY;
 
             assertThat(dsl.select(t.INDEX_REF, t.PRIMARY_KEY).from(t)
+                    .where(t.GRAPH_NAME.eq(graph))
                     .orderBy(t.SOURCE_LINE).fetch())
                 .as("one row per application, each saying which surface by what it left null")
                 .extracting(row -> row.value1(), row -> row.value2())
@@ -105,7 +116,8 @@ class GraphitronEnumValueEntriesTest {
                     tuple(null, true),
                     tuple(null, null));
 
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_FIELD_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_FIELD_ENTRY,
+                    GRAPHITRON_AST_ORDER_FIELD_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and only the field-list arm has children")
                 .isEqualTo(1);
         });
@@ -134,6 +146,7 @@ class GraphitronEnumValueEntriesTest {
             var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 
             assertThat(dsl.select(writtenAt(t), t.NAME_REF, t.COLLATE).from(t)
+                    .where(t.GRAPH_NAME.eq(graph))
                     .orderBy(writtenAt(t)).fetch())
                 .as("both elements, at the indices the author wrote them at")
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
@@ -172,7 +185,8 @@ class GraphitronEnumValueEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 
-            assertThat(dsl.select(writtenAt(t), t.NAME_REF).from(t).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME_REF).from(t)
+                    .where(t.GRAPH_NAME.eq(graph)).fetch())
                 .as("the legal element is withheld with the illegal one, the application being the "
                     + "unit the definition admits or does not")
                 .isEmpty();
@@ -218,6 +232,7 @@ class GraphitronEnumValueEntriesTest {
                         .and(value.SOURCE_NAME.eq(entry.SOURCE_NAME))
                         .and(value.SOURCE_LINE.eq(entry.PARENT_LINE))
                         .and(value.SOURCE_COLUMN.eq(entry.PARENT_COLUMN))
+                    .where(GRAPHITRON_AST_INDEX_ENTRY.GRAPH_NAME.eq(graph))
                     .fetch())
                 .as("and only the one that named an index decoded to a row")
                 .extracting(row -> row.value1(), row -> row.value2())
@@ -229,12 +244,12 @@ class GraphitronEnumValueEntriesTest {
      * The names applied at one site: the application entries whose index row gives them that
      * entry kind.
      */
-    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
+    private List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
         var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         return dsl.select(applied.NAME)
             .from(applied)
             .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
-            .where(where)
+            .where(applied.GRAPH_NAME.eq(graph), where)
             .orderBy(applied.NAME)
             .fetch(applied.NAME);
     }
@@ -253,8 +268,8 @@ class GraphitronEnumValueEntriesTest {
     }
 
     /** One reading of everything the directory holds, which is what a run does. */
-    private static void read(DSLContext dsl, Path baseDir) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
+    private void read(DSLContext dsl, Path baseDir) {
+        var graph = new GraphIdentity(this.graph, baseDir);
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
