@@ -28,6 +28,7 @@ import org.jooq.Record;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -77,7 +78,15 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 class GraphQLAstEntriesTest {
 
-    private static final String GRAPH = "entries";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphQLAstEntriesTest(TestInfo info) {
+        graph = "astEntries." + info.getTestMethod().orElseThrow().getName();
+    }
 
     /**
      * Which relations hold which node kind. Stated here rather than derived, so a relation added to
@@ -115,12 +124,13 @@ class GraphQLAstEntriesTest {
         Path first = write(tmp, "first.graphqls", "type X { a: String }\n");
         Path second = write(tmp, "second.graphqls", "type X { b: Int! }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, first, second);
 
             assertThat(dsl.select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME)
                     .from(GRAPHQL_AST_TYPE_DECLARATION_ENTRY)
-                    .where(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("X"))
+                    .where(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.GRAPH_NAME.eq(graph),
+                        GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("X"))
                     .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME))
                 .as("one row per declaration site, so a corpus the merge refuses is a corpus the "
                     + "store still holds")
@@ -162,12 +172,12 @@ class GraphQLAstEntriesTest {
             extend scalar Money @deprecated
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 
             assertThat(dsl.select(t.NAME, t.KIND, t.IS_EXTENSION).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString())).fetch())
+                    .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString())).fetch())
                 .as("twelve declaration sites, each saying its form and whether it extends; the "
                     + "engine's built-in scalars are not a document's facts, carry no position to "
                     + "key on, and so are in no file's rows at all")
@@ -181,14 +191,14 @@ class GraphQLAstEntriesTest {
                     tuple("Filter", "INPUT_OBJECT", true), tuple("Money", "SCALAR", true));
 
             assertThat(dsl.select(t.NAME, t.SOURCE_NAME).from(t)
-                    .where(t.GRAPH_NAME.eq(GRAPH))
+                    .where(t.GRAPH_NAME.eq(graph))
                     .and(t.NAME.in("Int", "Float", "String", "Boolean", "ID")).fetch())
                 .as("no reading of this graph wrote a specification scalar; the accessor offers "
                     + "the five to every source and the gatherer removes them by name")
                 .isEmpty();
 
             assertThat(dsl.select(t.DESCRIPTION).from(t)
-                    .where(t.NAME.eq("Obj")).and(t.IS_EXTENSION.isFalse())
+                    .where(t.GRAPH_NAME.eq(graph), t.NAME.eq("Obj")).and(t.IS_EXTENSION.isFalse())
                     .fetchOne(t.DESCRIPTION))
                 .as("a description written on a base declaration is kept").isEqualTo("an object");
         });
@@ -215,7 +225,7 @@ class GraphQLAstEntriesTest {
             schema { query: Film }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
 
             assertThat(named(dsl, GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
@@ -265,7 +275,8 @@ class GraphQLAstEntriesTest {
             assertThat(dsl.select(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.NAME,
                         GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.VALUE_SDL)
                     .from(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY)
-                    .where(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString())).fetch())
+                    .where(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.GRAPH_NAME.eq(graph),
+                        GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString())).fetch())
                 .as("the value kept as the author wrote it")
                 .extracting(r -> r.value1(), r -> r.value2())
                 .containsExactlyInAnyOrder(tuple("fields", "\"id\""), tuple("reason", "\"gone\""));
@@ -289,7 +300,7 @@ class GraphQLAstEntriesTest {
             type B { shared: Int }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var child = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
             var parent = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
@@ -322,7 +333,7 @@ class GraphQLAstEntriesTest {
     void aChildNamingNoParentIsRefused(@TempDir Path tmp) {
         Path file = write(tmp, "keyed.graphqls", "type A @deprecated { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var t = GRAPHQL_AST_ENTRY;
 
@@ -330,7 +341,7 @@ class GraphQLAstEntriesTest {
                         t.SOURCE_COLUMN, t.ENTRY_KIND, t.PARENT_LINE, t.PARENT_COLUMN, t.TOUCHED_AT)
                     // The parent is the index's own relation, so it names a position other than
                     // the row's: a row naming itself would satisfy the key it is meant to break.
-                    .values(GRAPH, file.toString(), 99, 1, EntryKind.TYPE_DIRECTIVE, 98, 1,
+                    .values(graph, file.toString(), 99, 1, EntryKind.TYPE_DIRECTIVE, 98, 1,
                         LocalDateTime.now())
                     .execute())
                 .as("no declaration was written at that position, so the row is about nothing")
@@ -359,13 +370,13 @@ class GraphQLAstEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var field = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
             var argument = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 
             assertThat(dsl.select(field.NAME).from(field)
-                    .where(field.SOURCE_NAME.eq(file.toString()))
+                    .where(field.GRAPH_NAME.eq(graph), field.SOURCE_NAME.eq(file.toString()))
                     .and(field.NAME.ne("zzz"))
                     .orderBy(field.PARENT_LINE, field.PARENT_COLUMN,
                              field.SOURCE_LINE, field.SOURCE_COLUMN)
@@ -375,7 +386,7 @@ class GraphQLAstEntriesTest {
                 .containsExactly("zebra", "aardvark");
 
             assertThat(dsl.select(argument.NAME).from(argument)
-                    .where(argument.SOURCE_NAME.eq(file.toString()))
+                    .where(argument.GRAPH_NAME.eq(graph), argument.SOURCE_NAME.eq(file.toString()))
                     .orderBy(argument.PARENT_LINE, argument.PARENT_COLUMN,
                              argument.SOURCE_LINE, argument.SOURCE_COLUMN)
                     .fetch(argument.NAME))
@@ -402,13 +413,15 @@ class GraphQLAstEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var t = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 
             assertThat(dsl.select(t.NAME, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST,
                         t.ITEM_NON_NULL, t.LIST_DEPTH)
-                    .from(t).where(t.SOURCE_NAME.eq(file.toString())).fetch())
+                    .from(t)
+                    .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString()))
+                    .fetch())
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(),
                             r -> r.value4(), r -> r.value5(), r -> r.value6(), r -> r.value7())
                 .containsExactlyInAnyOrder(
@@ -439,12 +452,12 @@ class GraphQLAstEntriesTest {
         var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
         var e = GRAPHQL_AST_ENTRY;
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             assertThat(dsl.select(e.SOURCE_NAME, e.SOURCE_REF).from(e)
                     .join(t).on(t.GRAPH_NAME.eq(e.GRAPH_NAME), t.SOURCE_NAME.eq(e.SOURCE_NAME),
                         t.SOURCE_LINE.eq(e.SOURCE_LINE), t.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
-                    .where(t.NAME.eq("Gone")).fetch())
+                    .where(t.GRAPH_NAME.eq(graph), t.NAME.eq("Gone")).fetch())
                 .as("before the removal, the registry vouches for the reading")
                 .extracting(r -> r.value1(), r -> r.value2())
                 .containsExactly(tuple(file.toString(), file.toString()));
@@ -454,7 +467,7 @@ class GraphQLAstEntriesTest {
             assertThat(dsl.select(e.SOURCE_NAME, e.SOURCE_REF).from(e)
                     .join(t).on(t.GRAPH_NAME.eq(e.GRAPH_NAME), t.SOURCE_NAME.eq(e.SOURCE_NAME),
                         t.SOURCE_LINE.eq(e.SOURCE_LINE), t.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
-                    .where(t.NAME.eq("Gone")).fetch())
+                    .where(t.GRAPH_NAME.eq(graph), t.NAME.eq("Gone")).fetch())
                 .as("the row stands, still saying which file declared it, and no longer vouched for")
                 .extracting(r -> r.value1(), r -> r.value2())
                 .containsExactly(tuple(file.toString(), null));
@@ -470,7 +483,7 @@ class GraphQLAstEntriesTest {
     void readingTheSameFileTwiceIsIdempotent(@TempDir Path tmp) {
         Path file = write(tmp, "again.graphqls", "type Twice { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             read(dsl, file);
 
@@ -496,7 +509,7 @@ class GraphQLAstEntriesTest {
     void anEditThatRemovesAFieldRemovesItsRows(@TempDir Path tmp) {
         Path file = write(tmp, "edited.graphqls", "type Kept { a: String\n b: Int }\ntype Dropped { c: Int }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             assertThat(named(dsl, GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
                     GRAPHQL_AST_FIELD_DEFINITION_ENTRY.NAME, file))
@@ -529,14 +542,15 @@ class GraphQLAstEntriesTest {
     void anEditInPlaceUpdatesTheRow(@TempDir Path tmp) {
         Path file = write(tmp, "described.graphqls", "type Same { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             write(tmp, "described.graphqls", "type Same { a: Int! }\n");
             read(dsl, file);
 
             assertThat(dsl.select(GRAPHQL_AST_FIELD_DEFINITION_ENTRY.TYPE_SDL)
                     .from(GRAPHQL_AST_FIELD_DEFINITION_ENTRY)
-                    .where(GRAPHQL_AST_FIELD_DEFINITION_ENTRY.SOURCE_NAME.eq(file.toString()))
+                    .where(GRAPHQL_AST_FIELD_DEFINITION_ENTRY.GRAPH_NAME.eq(graph),
+                        GRAPHQL_AST_FIELD_DEFINITION_ENTRY.SOURCE_NAME.eq(file.toString()))
                     .fetch(GRAPHQL_AST_FIELD_DEFINITION_ENTRY.TYPE_SDL))
                 .as("one row, carrying what the document says now")
                 .containsExactly("Int!");
@@ -562,12 +576,12 @@ class GraphQLAstEntriesTest {
             }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var t = GRAPHQL_AST_VALUE_ENTRY;
 
             assertThat(dsl.select(t.KIND, t.WRITTEN_TEXT, t.POSITION, t.OBJECT_FIELD_NAME).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString()))
+                    .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString()))
                     .and(t.PARENT_LINE.isNull())
                     .fetch())
                 .as("one root per slot that was written with an expression, at the three arguments "
@@ -579,10 +593,11 @@ class GraphQLAstEntriesTest {
                     tuple("NULL", null, null, null));
 
             var list = dsl.select(t.SOURCE_LINE, t.SOURCE_COLUMN).from(t)
-                .where(t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("LIST")).fetchOne();
+                .where(t.GRAPH_NAME.eq(graph),
+                    t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("LIST")).fetchOne();
             var object = dsl.select(t.SOURCE_LINE, t.SOURCE_COLUMN, t.POSITION,
                     t.OBJECT_FIELD_NAME).from(t)
-                .where(t.SOURCE_NAME.eq(file.toString()))
+                .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString()))
                 .and(t.PARENT_LINE.eq(list.value1())).and(t.PARENT_COLUMN.eq(list.value2()))
                 .fetchOne();
 
@@ -592,7 +607,7 @@ class GraphQLAstEntriesTest {
                 .isEqualTo(tuple(0, null));
 
             assertThat(dsl.select(t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT, t.POSITION).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString()))
+                    .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString()))
                     .and(t.PARENT_LINE.eq(object.value1())).and(t.PARENT_COLUMN.eq(object.value2()))
                     .fetch())
                 .as("the object's fields are rows of their values, each carrying the name it was "
@@ -603,7 +618,7 @@ class GraphQLAstEntriesTest {
                     tuple("depth", "INT", "1", 1));
 
             assertThat(dsl.selectDistinct(t.HOLDER_LINE, t.HOLDER_COLUMN).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString()))
+                    .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString()))
                     .and(t.KIND.in("LIST", "OBJECT", "STRING", "INT"))
                     .fetch())
                 .as("every node of one expression names one holder, so a reader fetches the whole "
@@ -611,12 +626,14 @@ class GraphQLAstEntriesTest {
                 .hasSize(1);
 
             assertThat(dsl.select(t.HOLDER_LINE, t.HOLDER_COLUMN).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("LIST")).fetchOne())
+                    .where(t.GRAPH_NAME.eq(graph),
+                        t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("LIST")).fetchOne())
                 .as("and the holder is the applied argument the expression was written at")
                 .isEqualTo(dsl.select(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_LINE,
                         GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_COLUMN)
                     .from(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY)
-                    .where(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString()))
+                    .where(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.GRAPH_NAME.eq(graph),
+                        GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString()))
                     .and(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.NAME.eq("steps"))
                     .fetchOne());
         });
@@ -636,12 +653,12 @@ class GraphQLAstEntriesTest {
             type Query { films(first: Int = 10): String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var t = GRAPHQL_AST_VALUE_ENTRY;
 
             assertThat(dsl.select(t.KIND, t.WRITTEN_TEXT).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString())).fetch())
+                    .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(file.toString())).fetch())
                 .as("three defaults, at the three kinds of declaration that can carry one, and no "
                     + "applied argument in the file at all")
                 .extracting(r -> r.value1(), r -> r.value2())
@@ -649,14 +666,16 @@ class GraphQLAstEntriesTest {
                     tuple("STRING", "fallback"), tuple("STRING", "all"), tuple("INT", "10"));
 
             assertThat(dsl.select(t.HOLDER_LINE, t.HOLDER_COLUMN).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString())).and(t.WRITTEN_TEXT.eq("10"))
+                    .where(t.GRAPH_NAME.eq(graph),
+                        t.SOURCE_NAME.eq(file.toString())).and(t.WRITTEN_TEXT.eq("10"))
                     .fetchOne())
                 .as("held by the argument that declared it, which is a row of the relation for "
                     + "that site and not of the applied argument relation")
                 .isEqualTo(dsl.select(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_LINE,
                         GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_COLUMN)
                     .from(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY)
-                    .where(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString()))
+                    .where(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.GRAPH_NAME.eq(graph),
+                        GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.SOURCE_NAME.eq(file.toString()))
                     .and(GRAPHQL_AST_FIELD_ARGUMENT_ENTRY.NAME.eq("first"))
                     .fetchOne());
         });
@@ -678,7 +697,7 @@ class GraphQLAstEntriesTest {
             type Film @path(steps: [{table: "film_actor"}, {table: "actor"}]) { a: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
             var t = GRAPHQL_AST_VALUE_ENTRY;
 
@@ -693,7 +712,8 @@ class GraphQLAstEntriesTest {
             read(dsl, file);
 
             assertThat(dsl.select(t.WRITTEN_TEXT).from(t)
-                    .where(t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("STRING"))
+                    .where(t.GRAPH_NAME.eq(graph),
+                        t.SOURCE_NAME.eq(file.toString())).and(t.KIND.eq("STRING"))
                     .fetch(t.WRITTEN_TEXT))
                 .as("the element the author deleted is gone, and so is the string written inside it")
                 .containsExactly("film_actor");
@@ -737,7 +757,7 @@ class GraphQLAstEntriesTest {
             extend schema @tag(name: "sx") { mutation: Film }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, file);
 
             Map<String, Long> stored = new TreeMap<>();
@@ -823,10 +843,11 @@ class GraphQLAstEntriesTest {
      * vocabulary is read alongside it and declares nodes of its own; an unscoped read would be
      * asserting something about that document too.
      */
-    private static <R extends Record, T> List<T> named(DSLContext dsl, Table<R> table,
-                                                       Field<T> column, Path file) {
+    private <R extends Record, T> List<T> named(DSLContext dsl, Table<R> table,
+                                                Field<T> column, Path file) {
         return dsl.select(column).from(table)
-            .where(table.field("SOURCE_NAME", String.class).eq(file.toString()))
+            .where(table.field("GRAPH_NAME", String.class).eq(graph),
+                table.field("SOURCE_NAME", String.class).eq(file.toString()))
             .fetch(column);
     }
 
@@ -851,14 +872,14 @@ class GraphQLAstEntriesTest {
      * Reads each file as its own document and writes it, which is the whole of the reader's use.
      * The bundled directive vocabulary is a document like any other and is read alongside them.
      */
-    private static void read(DSLContext dsl, Path... files) {
+    private void read(DSLContext dsl, Path... files) {
         // A distinct instant per reading, which is what the sweep tells readings apart by.
         LocalDateTime touchedAt = LocalDateTime.now();
         seedSource(dsl, SchemaLoader.DIRECTIVES_SOURCE_NAME, "SCHEMA_FILE");
         Arrays.stream(files).forEach(file -> seedSource(dsl, file.toString(), "SCHEMA_FILE"));
         SchemaLoader.parsePerSource(Arrays.stream(files).map(SchemaSource::file).toList())
             .perSource()
-            .forEach(document -> GraphQLAstEntries.write(dsl, GRAPH, document.sourceName(), document.registry(), touchedAt));
+            .forEach(document -> GraphQLAstEntries.write(dsl, graph, document.sourceName(), document.registry(), touchedAt));
     }
 
     private static Path write(Path directory, String name, String sdl) {
