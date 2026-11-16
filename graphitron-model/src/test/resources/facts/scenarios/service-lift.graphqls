@@ -30,9 +30,9 @@ type Query {
   filmById(id: Int!): Film @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmById"})
-  filmActorsByIds(ids: [Int!]!): [FilmActor!]! @service(service: {
+  filmActorsByIds(actorIds: [Int!]!, filmIds: [Int!]!): [FilmActor!]! @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService",
-      method: "filmActorsByIds"})
+      method: "filmActorsByKeys"})
   filmsAsPayload(ids: [Int!]!): FilmsPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService",
       method: "filmsByIds"})
