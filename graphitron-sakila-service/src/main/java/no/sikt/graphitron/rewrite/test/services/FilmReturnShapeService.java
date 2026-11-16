@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.services;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmListRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
 import org.jooq.Result;
@@ -12,7 +13,8 @@ import java.util.Set;
  * Services whose answer a field is or is not handed, the mismatched ones refused as
  * {@code SERVICE_RETURN_MISMATCH}: records of another table, values of another class than the
  * field's scalar, many where the field is one, one where it is a list, at a root and per key under
- * Film. Never called.
+ * Film. Never called. The film_list answers are records of a table with no primary key to read them
+ * back by, refused as {@code KEY_TABLE_WITHOUT_PRIMARY_KEY}.
  */
 public final class FilmReturnShapeService {
 
@@ -63,6 +65,14 @@ public final class FilmReturnShapeService {
     }
 
     public static Map<FilmRecord, List<LanguageRecord>> languagesAsOne(Set<FilmRecord> films) {
+        return Map.of();
+    }
+
+    public static List<FilmListRecord> filmList() {
+        return List.of();
+    }
+
+    public static Map<FilmRecord, List<FilmListRecord>> filmListByFilm(Set<FilmRecord> films) {
         return Map.of();
     }
 }

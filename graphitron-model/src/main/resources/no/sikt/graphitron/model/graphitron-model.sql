@@ -20121,6 +20121,21 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
  WHERE it.type_kind = 'INPUT_OBJECT'
 UNION ALL
+-- A @service handing back records of a table with no primary key, at the field, at a root or under an
+-- object: the records it answers are read back from their table by its primary key, so there is
+-- nothing to read them back by. The detail is the table. A child's key table lacking one is the depth
+-- defects stage's arm of the same rule.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'KEY_TABLE_WITHOUT_PRIMARY_KEY', r.table_name, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE p.kind = 'SERVICE' AND r.table_name IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                    WHERE pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema
+                      AND pk.table_name = r.table_name)
+UNION ALL
 -- A @service whose field answers a union, at the field: a Java method declares one result type, and
 -- no Java type is a union of others, so what the method answers says nothing of which member it is.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -27858,7 +27873,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('KEY_ROW_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_ROW_AMBIGUOUS',
    'A field fetching its own rows under a parent holding an object takes its keys through one member of the object''s class: for a @service the member returning records of the table its source parameter collects, otherwise the member named as the field reads. More than one member qualifies, so nothing says which: keep one.'),
   ('KEY_TABLE_WITHOUT_PRIMARY_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_KEY_TABLE_WITHOUT_PRIMARY_KEY',
-   'A field fetching its own rows under a parent holding an object is batched by the primary key of the table its keys are records of, and that table has none: give the table a primary key, or fetch the field another way.'),
+   'Rows graphitron keys by their table''s primary key are of a table that has none: a field fetching its own rows under a parent holding an object is batched by the key table''s, and the records a @service hands back are read back by their own table''s. Give the table a primary key, or fetch the field another way.'),
   ('SOURCE_PARAMETER_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_SOURCE_PARAMETER_MISSING',
    'A @service under an object type is fetched for many parents at once, and its method has no parameter taking their keys: add a Set or List parameter of the records the parents are keyed by, and return a Map by those keys or a List in their order.'),
   ('SERVICE_HOLDER_UNBUILDABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_HOLDER_UNBUILDABLE',
