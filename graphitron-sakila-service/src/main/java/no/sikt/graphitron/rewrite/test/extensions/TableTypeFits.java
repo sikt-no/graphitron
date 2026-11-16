@@ -4,7 +4,6 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import org.jooq.Condition;
 import org.jooq.Field;
-import org.jooq.Record;
 import org.jooq.Table;
 import org.jooq.UpdatableRecord;
 import org.jooq.impl.DSL;
@@ -18,9 +17,8 @@ import java.util.Set;
  * for the fact documents {@code call-parameter-table-fit} and {@code external-field-expression}: which
  * catalog tables such a parameter fits is jOOQ's public hierarchy above the generated classes, the
  * same for an {@code @externalField} lifter as for a {@code @condition}. One takes jOOQ's internal
- * {@code TableImpl}, which is no public contract and fits no table. Two more take records rather than
- * tables: a service's set of film records fits film by its records, and jOOQ's bare {@code Record}
- * fits nothing.
+ * {@code TableImpl}, which is no public contract and fits no table. One more takes records rather than a
+ * table: a service's set of film records fits film by its records.
  *
  * <p>The bodies are not the point and none of them is called.
  */
@@ -51,14 +49,6 @@ public final class TableTypeFits {
     /** A condition typed as a Table of film's record, its other parameter taking the field's argument. */
     public static Condition titleIs(Table<FilmRecord> table, String title) {
         return table.field("title", String.class).eq(title);
-    }
-
-    /**
-     * An overload taking jOOQ's bare Record: it names no table, so it fits none, not even one whose
-     * generated record is that bare type.
-     */
-    public static Condition titleIs(Record row, String title) {
-        return DSL.trueCondition();
     }
 
     /** A child service taking film's records, many at once: fits film by its records. */

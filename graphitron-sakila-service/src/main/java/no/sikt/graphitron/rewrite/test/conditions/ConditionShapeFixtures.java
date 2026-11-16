@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.conditions;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Staff;
 import org.jooq.Condition;
+import org.jooq.Record;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
 
@@ -65,6 +66,14 @@ public final class ConditionShapeFixtures {
 
     /** A string at parameter 0: a table in one declaration and not the other. */
     public static Condition tableAtPosition(String name, Staff staff) {
+        return DSL.noCondition();
+    }
+
+    /**
+     * jOOQ's bare Record at parameter 0, disagreeing as the string does. It names no table, so it fits
+     * none as a table's records, not even recordless_note's, whose generated record is that bare type.
+     */
+    public static Condition tableAtPosition(Record row, String name) {
         return DSL.noCondition();
     }
 

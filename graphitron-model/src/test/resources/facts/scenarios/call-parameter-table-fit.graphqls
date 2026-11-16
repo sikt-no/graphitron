@@ -56,14 +56,11 @@ extend schema @assertContains(relation: "code_method_parameter",
   """)
 
 # Neither record argument fits a table whose record it is not, and jOOQ's internal TableImpl fits none.
-# titleIs's overload taking jOOQ's bare Record names no table: it fits none, not even recordless_note,
-# whose generated record is that bare type.
 extend schema @assertAbsent(relation: "graphitron_call_parameter_table",
     where: "class_name = 'no.sikt.graphitron.rewrite.test.extensions.TableTypeFits'", rows: """
   method_name,  position, table_name
   nameOfActor,  0,        film
   titleIs,      0,        actor
-  titleIs,      0,        recordless_note
   titleOfFilm,  0,        actor
   titleViaImpl, 0,        film
   """)

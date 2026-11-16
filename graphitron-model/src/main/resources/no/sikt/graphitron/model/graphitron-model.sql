@@ -23366,10 +23366,10 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
                  WHERE s.class_name = rc.class_name AND s.delivery = 'DIRECT' AND s.element_class IN (
                          SELECT mp.element_class FROM code_method_parameter mp
                            JOIN graphitron_call_parameter_table kt
-                             ON kt.graph_name = p.graph_name AND kt.fit = 'RECORD'
-                            AND kt.source_name = mp.source_name AND kt.class_name = mp.class_name
-                            AND kt.method_name = mp.method_name AND kt.descriptor = mp.descriptor
-                            AND kt.position = mp.position
+                             ON kt.graph_name = p.graph_name AND kt.source_name = ps.method_source_name
+                            AND kt.class_name = ps.method_class_name AND kt.method_name = ps.method_name
+                            AND kt.descriptor = ps.method_descriptor AND kt.position = mp.position
+                            AND kt.fit = 'RECORD'
                           WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                             AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
                             AND kt.delivery = 'MANY')) AS found
@@ -23387,20 +23387,20 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
            -- A service whose keys reach no parameter is SOURCE_PARAMETER_MISSING's, not a fill's.
            AND EXISTS (SELECT 1 FROM code_method_parameter mp
                           JOIN graphitron_call_parameter_table kt
-                             ON kt.graph_name = p.graph_name AND kt.fit = 'RECORD'
-                            AND kt.source_name = mp.source_name AND kt.class_name = mp.class_name
-                            AND kt.method_name = mp.method_name AND kt.descriptor = mp.descriptor
-                            AND kt.position = mp.position
+                             ON kt.graph_name = p.graph_name AND kt.source_name = ps.method_source_name
+                            AND kt.class_name = ps.method_class_name AND kt.method_name = ps.method_name
+                            AND kt.descriptor = ps.method_descriptor AND kt.position = mp.position
+                            AND kt.fit = 'RECORD'
                         WHERE mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                           AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor
                           AND kt.delivery = 'MANY')
            -- The record's own table is the key: read straight off it, so no member is wanted.
            AND NOT EXISTS (SELECT 1 FROM code_method_parameter mp
                              JOIN graphitron_call_parameter_table kt
-                             ON kt.graph_name = p.graph_name AND kt.fit = 'RECORD'
-                            AND kt.source_name = mp.source_name AND kt.class_name = mp.class_name
-                            AND kt.method_name = mp.method_name AND kt.descriptor = mp.descriptor
-                            AND kt.position = mp.position
+                             ON kt.graph_name = p.graph_name AND kt.source_name = ps.method_source_name
+                            AND kt.class_name = ps.method_class_name AND kt.method_name = ps.method_name
+                            AND kt.descriptor = ps.method_descriptor AND kt.position = mp.position
+                            AND kt.fit = 'RECORD'
                             WHERE mp.element_class = rc.class_name AND kt.delivery = 'MANY'
                               AND mp.source_name = ps.method_source_name AND mp.class_name = ps.method_class_name
                               AND mp.method_name = ps.method_name AND mp.descriptor = ps.method_descriptor)) c

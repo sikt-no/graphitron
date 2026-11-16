@@ -36,3 +36,11 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   "Query.byArgument(value:)", parameter 1
   CustomerFilter.name,       parameter 1
   """)
+
+# tableAtPosition's overload taking jOOQ's bare Record names no table: it fits none as a table's
+# records, not even recordless_note, whose generated record is that bare type.
+extend schema @assertAbsent(relation: "graphitron_call_parameter_table",
+    where: "class_name = 'no.sikt.graphitron.rewrite.test.conditions.ConditionShapeFixtures'", rows: """
+  method_name,     position, table_name
+  tableAtPosition, 0,        recordless_note
+  """)
