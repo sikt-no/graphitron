@@ -294,6 +294,14 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <pkg>.util.TableAliases}: the generated scaffold that names the tables a statement
+     * reads inside correlated subqueries and bounds how deep one statement nests.
+     */
+    public UnitRef tableAliases() {
+        return unit(SUB_UTIL, no.sikt.graphitron.rewrite.generators.util.TableAliasesClassGenerator.CLASS_NAME);
+    }
+
+    /**
      * {@code <pkg>.util.NestingCoordinates}: the generated per-schema nesting-coordinate set and
      * the runtime walk that composes a spliced field's result-key alias path from it.
      */

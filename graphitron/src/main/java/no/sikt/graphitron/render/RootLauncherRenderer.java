@@ -151,7 +151,7 @@ public final class RootLauncherRenderer {
                 switch (row.tenancy()) {
                     case TenantStrategy.Single ignored -> {
                         switch (row.result()) {
-                            case ResultShape.SingleRecord single -> builder.addCode(singleRecordBody(single,
+                            case ResultShape.SingleRecord single -> builder.addCode(singleRecordBody(row, single,
                                 ProjectionCall.fromLauncher(className(anchor.projection()), tableLocal, row),
                                 tableLocal, select -> selectChain(select, tableLocal, false, false)));
                             case ResultShape.RecordList list -> {
@@ -211,12 +211,14 @@ public final class RootLauncherRenderer {
                     // shape-forked here, over the same fetch tail the anchor arm chains.
                     case ResultShape.SingleRecord ignored -> {
                         builder.addCode(DiscriminatedTableFragments.assembly(disc,
-                            java.util.List.of(), tableLocal, ProjectionCall.SelectionScope.of(row.result())));
+                            java.util.List.of(), tableLocal, ProjectionCall.SelectionScope.of(row.result()),
+                            TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
                         builder.addCode(directReturn(stepChain(false, false)));
                     }
                     case ResultShape.RecordList list -> {
                         builder.addCode(DiscriminatedTableFragments.assembly(disc,
-                            java.util.List.of(), tableLocal, ProjectionCall.SelectionScope.of(row.result())));
+                            java.util.List.of(), tableLocal, ProjectionCall.SelectionScope.of(row.result()),
+                            TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
                         boolean ordered = list.ordering() != null;
                         if (ordered) {
                             builder.addCode(orderByStatement(list.ordering(), tableLocal));
@@ -225,7 +227,8 @@ public final class RootLauncherRenderer {
                     }
                     case ResultShape.Connection connection -> builder.addCode(
                         discriminatedConnectionBody(disc, connection,
-                            ConnectionConstruction.of(connections, row), tableLocal, carrierDsl));
+                            ConnectionConstruction.of(connections, row), tableLocal, carrierDsl,
+                            TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
                     case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
                         "the LoaderDelegated result belongs to the service arms; the"
                         + " command constructor rejects the pair before rendering");
@@ -343,8 +346,9 @@ public final class RootLauncherRenderer {
      * launcher serves one coordinate, so the check has no nullable and non-null site to keep
      * apart, and the alias's writer and reader stay in one method.
      */
-    private static CodeBlock singleRecordBody(ResultShape.SingleRecord single, CodeBlock projection,
-            String correlatedAlias, java.util.function.Function<CodeBlock, CodeBlock> chainOver) {
+    private static CodeBlock singleRecordBody(LauncherCommand row, ResultShape.SingleRecord single,
+            CodeBlock projection, String correlatedAlias,
+            java.util.function.Function<CodeBlock, CodeBlock> chainOver) {
         return switch (single.check()) {
             case NullCheck.None ignored -> directReturn(chainOver.apply(projection));
             case NullCheck.Collapses check -> {
@@ -356,7 +360,8 @@ public final class RootLauncherRenderer {
                     code.endControlFlow();
                 }
                 check.probe().ifPresent(probe -> code.addStatement("selectFields.add($L)",
-                    PresenceProbeFragments.declare(code, probe, correlatedAlias, "")));
+                    PresenceProbeFragments.declare(code, probe, correlatedAlias, "",
+                        TableAliasFragments.tableAliasesBeside(row.selectionOccurrences()))));
                 code.add("$T row = $L;\n", RECORD, chainOver.apply(CodeBlock.of("selectFields")));
                 code.add("if (row == null) return null;\n");
                 code.add(PresenceFragments.check(CodeBlock.of("$L", correlatedAlias), check, "row"));
@@ -477,10 +482,10 @@ public final class RootLauncherRenderer {
      */
     private static CodeBlock discriminatedConnectionBody(LaunchSource.DiscriminatedTable disc,
             ResultShape.Connection connection, no.sikt.graphitron.emit.ConnectionsQuery.FieldConnection built, String tableLocal,
-            CarrierDsl carrierDsl) {
+            CarrierDsl carrierDsl, ClassName tableAliases) {
         var code = CodeBlock.builder();
         code.add(DiscriminatedTableFragments.projection(disc, java.util.List.of(), tableLocal,
-            ProjectionCall.SelectionScope.of(connection)));
+            ProjectionCall.SelectionScope.of(connection), tableAliases));
         code.add(OrderingBlock.declareBothViews(connection.ordering(), tableLocal));
         code.addStatement("Integer first = env.getArgument($S)", "first");
         code.addStatement("Integer last = env.getArgument($S)", "last");
@@ -638,7 +643,7 @@ public final class RootLauncherRenderer {
             LookupRows.aliasArgs(mapping, alias, fieldName));
         var projection = ProjectionCall.fromLauncher(className(lookup.projection()), tableLocal, row);
         if (row.result() instanceof ResultShape.SingleRecord single) {
-            return code.add(singleRecordBody(single, projection, tableLocal, select -> CodeBlock.builder()
+            return code.add(singleRecordBody(row, single, projection, tableLocal, select -> CodeBlock.builder()
                 .add("dsl\n")
                 .indent()
                 .add(".select($L)\n", select)
@@ -721,7 +726,7 @@ public final class RootLauncherRenderer {
         switch (row.result()) {
             case ResultShape.SingleRecord single -> {
                 String from = fromLocal;
-                code.add(singleRecordBody(single, projection, terminal,
+                code.add(singleRecordBody(row, single, projection, terminal,
                     select -> selectChain(select, from, false, false)));
             }
             case ResultShape.RecordList list -> {

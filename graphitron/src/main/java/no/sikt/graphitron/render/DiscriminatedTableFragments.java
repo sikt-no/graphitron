@@ -121,9 +121,10 @@ public final class DiscriminatedTableFragments {
      * halves itself.
      */
     public static CodeBlock assembly(LaunchSource.DiscriminatedTable source,
-            List<ColumnRef> alwaysProject, String tableLocal, ProjectionCall.SelectionScope scope) {
+            List<ColumnRef> alwaysProject, String tableLocal, ProjectionCall.SelectionScope scope,
+            ClassName tableAliases) {
         return CodeBlock.builder()
-            .add(projection(source, alwaysProject, tableLocal, scope))
+            .add(projection(source, alwaysProject, tableLocal, scope, tableAliases))
             .add(joinedStep(source, tableLocal,
                 CodeBlock.of("new $T<>($L)", ArrayList.class, FIELDS_LOCAL)))
             .build();
@@ -139,10 +140,12 @@ public final class DiscriminatedTableFragments {
      *
      * <p>{@code scope} says where the participants' fields sit relative to the fetched field:
      * its own children, or the node level of a connection. Every selection read in the fold
-     * reads that one scoped map.
+     * reads that one scoped map. {@code tableAliases} names the hop aliases of the cross-table
+     * subselects ({@link TableAliasFragments}).
      */
     public static CodeBlock projection(LaunchSource.DiscriminatedTable source,
-            List<ColumnRef> alwaysProject, String tableLocal, ProjectionCall.SelectionScope scope) {
+            List<ColumnRef> alwaysProject, String tableLocal, ProjectionCall.SelectionScope scope,
+            ClassName tableAliases) {
         var b = CodeBlock.builder();
         b.add(discriminatorFilter(source, tableLocal));
         b.add(fieldsList(source, tableLocal, scope));
@@ -152,7 +155,7 @@ public final class DiscriminatedTableFragments {
         for (var col : alwaysProject) {
             b.addStatement("fields.add($L.$L)", tableLocal, col.javaName());
         }
-        b.add(crossTableProjections(source, tableLocal));
+        b.add(crossTableProjections(source, tableLocal, tableAliases));
         b.add(joinedDetailAliasDeclarations(source, tableLocal));
         return b.build();
     }
@@ -330,7 +333,8 @@ public final class DiscriminatedTableFragments {
      *
      * <p>The gate reads the fold's scoped selection ({@link #typeConditionedGate}).
      */
-    private static CodeBlock crossTableProjections(LaunchSource.DiscriminatedTable source, String tableLocal) {
+    private static CodeBlock crossTableProjections(LaunchSource.DiscriminatedTable source, String tableLocal,
+            ClassName tableAliases) {
         var b = CodeBlock.builder();
         for (var branch : source.branches()) {
             if (!(branch instanceof LaunchSource.DiscriminatedTable.Branch.SingleTable single)) continue;
@@ -349,9 +353,10 @@ public final class DiscriminatedTableFragments {
                 for (int i = 0; i < term.path().size(); i++) {
                     var target = ((no.sikt.graphitron.rewrite.model.JoinStep.HasTargetTable)
                         term.path().get(i)).targetTable();
-                    b.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
+                    b.addStatement("$T $L = $T.$L.as($L)",
                         CatalogRefs.tableClass(target), locals.get(i), CatalogRefs.constantsClass(target),
-                        target.javaFieldName(), tableLocal, "_" + aliases.get(i));
+                        target.javaFieldName(),
+                        TableAliasFragments.nested(tableAliases, tableLocal, target.javaFieldName(), aliases.get(i)));
                 }
                 b.addStatement("fields.add($T.field($L).as($S))",
                     DSL, PathFragments.scalarInnerSelect(term, locals, tableLocal), term.asName());

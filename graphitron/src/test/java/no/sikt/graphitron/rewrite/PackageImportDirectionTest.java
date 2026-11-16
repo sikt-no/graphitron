@@ -292,6 +292,8 @@ class PackageImportDirectionTest {
             "the $project call has one spelling"),
         java.util.Map.entry("no.sikt.graphitron.render.NodeIdDecodeFailure",
             "a refused node id fails with one client error whichever emitter decoded it"),
+        java.util.Map.entry("no.sikt.graphitron.render.TableAliasFragments",
+            "a table read inside a correlated subquery is named one way, one nesting level below the row it reads"),
         java.util.Map.entry("no.sikt.graphitron.render.LoaderConstruction",
             "a loader is built one way, with the request's batch-size options, whichever emitter builds it"));
 

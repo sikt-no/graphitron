@@ -41,6 +41,8 @@ public enum GlobalUnitKind {
     /** Present exactly when the schema is federated and uses {@code @oneOf}. */
     ONE_OF_DIRECTIVE_SDL,
     SELECTION_OCCURRENCES,
+    /** The nested-read alias namer and nesting-depth bound every correlated subquery calls. */
+    TABLE_ALIASES,
     /** The schema's nesting coordinates and the result-key alias path walk over them. */
     NESTING_COORDINATES,
     ORDER_BY_RESULT,

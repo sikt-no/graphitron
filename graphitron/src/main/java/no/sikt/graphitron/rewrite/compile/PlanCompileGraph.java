@@ -108,6 +108,7 @@ public final class PlanCompileGraph {
         GlobalUnitKind.CONNECTION_HELPER,
         GlobalUnitKind.PAGE_INFO,
         GlobalUnitKind.SELECTION_OCCURRENCES,
+        GlobalUnitKind.TABLE_ALIASES,
         GlobalUnitKind.NESTING_COORDINATES,
         GlobalUnitKind.ORDER_BY_RESULT,
         GlobalUnitKind.OUTCOME,
@@ -300,7 +301,7 @@ public final class PlanCompileGraph {
             switch (kind) {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES,
                      CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
-                     SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
+                     SELECTION_OCCURRENCES, TABLE_ALIASES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS, VOUCHER_KEYS, VOUCHER_REJECTED_EXCEPTION -> { }
                 // The codec signs with the keys and throws the rejection.
@@ -441,6 +442,9 @@ public final class PlanCompileGraph {
         private void addConditionEdges() {
             for (var row : plan.conditions().rows()) {
                 UnitRef glue = row.glue().owner();
+                // A reached column's EXISTS names its hop tables through the alias scaffold; frozen,
+                // so declaring it for every glue unit is a pruning-harmless superset.
+                declared(glue, require(GlobalUnitKind.TABLE_ALIASES));
                 if (row.decodesNodeId()) {
                     precise(glue, require(GlobalUnitKind.NODE_ID_ENCODER));
                     precise(glue, require(GlobalUnitKind.CLIENT_EXCEPTION));
@@ -465,6 +469,7 @@ public final class PlanCompileGraph {
                 UnitRef unit = row.unit();
                 declared(unit, require(GlobalUnitKind.CLIENT_EXCEPTION));
                 declared(unit, require(GlobalUnitKind.SELECTION_OCCURRENCES));
+                declared(unit, require(GlobalUnitKind.TABLE_ALIASES));
                 for (Contribution contribution : row.contributions()) {
                     switch (contribution) {
                         case Contribution.Call call -> {

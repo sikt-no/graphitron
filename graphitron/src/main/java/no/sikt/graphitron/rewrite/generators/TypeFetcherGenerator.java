@@ -1184,7 +1184,7 @@ public class TypeFetcherGenerator {
         }
 
         for (var sortKey : sortKeyMethods.entrySet()) {
-            builder.addMethod(no.sikt.graphitron.render.SortKeyFragments.method(sortKey.getKey(), sortKey.getValue()));
+            builder.addMethod(no.sikt.graphitron.render.SortKeyFragments.method(sortKey.getKey(), sortKey.getValue(), outputPackage));
         }
 
         if (lookupScatterNeeded[0]) {
@@ -1423,7 +1423,7 @@ public class TypeFetcherGenerator {
             var sortKeyMethods = new java.util.LinkedHashMap<String, OrderBySpec.SortKey.Path>();
             collectSortKeyMethods(sortKeyMethods, List.of(tif.orderBy()), sortKeys);
             sortKeyMethods.forEach((name, path) ->
-                ctx.addCompanionMethod(no.sikt.graphitron.render.SortKeyFragments.method(name, path)));
+                ctx.addCompanionMethod(no.sikt.graphitron.render.SortKeyFragments.method(name, path, outputPackage)));
             builder.addStatement("$T payload = step.where(condition).orderBy(orderBy).fetch()", valueType);
         } else {
             builder.addStatement("$T payload = step.where(condition).fetchOne()", valueType);
@@ -1500,7 +1500,8 @@ public class TypeFetcherGenerator {
         // single record, so the participants' fields are the fetched field's own.
         return no.sikt.graphitron.render.DiscriminatedTableFragments.assembly(
             source, alwaysProject, tableLocal,
-            no.sikt.graphitron.render.ProjectionCall.SelectionScope.OWN_FIELDS);
+            no.sikt.graphitron.render.ProjectionCall.SelectionScope.OWN_FIELDS,
+            no.sikt.graphitron.render.TableAliasFragments.tableAliasesClass(outputPackage));
     }
 
     /**

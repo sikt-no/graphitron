@@ -142,7 +142,8 @@ public final class ReentryRowsFragments {
             b.add(valuesJoinDecls(correlation))
                 .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
                 .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal,
-                    ProjectionCall.SelectionScope.of(row.result())))
+                    ProjectionCall.SelectionScope.of(row.result()),
+                    TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())))
                 .addStatement("return step.join($L).on($L).where(condition).orderBy($L).fetch()",
                     KEYS_INPUT, ValuesJoinRowBuilder.onCondition(
                         correlation.columns(), c -> c, ownerExpr(correlation), KEYS_INPUT),
@@ -150,7 +151,8 @@ public final class ReentryRowsFragments {
         } else {
             b.addStatement("$T condition = $L", CONDITION, keyEquality(correlation))
                 .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal,
-                    ProjectionCall.SelectionScope.of(row.result())))
+                    ProjectionCall.SelectionScope.of(row.result()),
+                    TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())))
                 .addStatement("return step.where(condition).fetchOne()");
         }
         return b.build();

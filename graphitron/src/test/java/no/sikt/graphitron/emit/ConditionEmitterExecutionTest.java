@@ -66,7 +66,8 @@ class ConditionEmitterExecutionTest {
         results = new HashMap<>();
         for (var row : rows) {
             var name = row.coordinate().substring(row.coordinate().indexOf('.') + 1);
-            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME, read.builds());
+            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME,
+                no.sikt.graphitron.render.TableAliasFragments.tableAliasesClass(PACKAGE), read.builds());
             results.put(row.coordinate(), result);
             if (result instanceof ConditionEmitter.Result.Emitted emitted) {
                 type.addMethod(emitted.method());
@@ -80,6 +81,9 @@ class ConditionEmitterExecutionTest {
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
             units.put(PACKAGE + ".schema." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.TableAliasesClassGenerator.generate(PACKAGE)) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
         }
         for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
@@ -246,11 +250,16 @@ class ConditionEmitterExecutionTest {
     }
 
     @Test
-    @DisplayName("a reached condition applied inside an aliased statement aliases its steps under that alias")
+    @DisplayName("a reached condition applied inside an aliased statement names its steps one nesting level below that alias")
     void reachedUnderAnAlias() throws Exception {
         var outer = FILM.as("outer_film");
         var condition = (Condition) conditions.get("filmsByCast").invoke(null, outer, args("cast", args("firstName", "X")));
-        assertThat(condition.toString()).contains("\"outer_film_firstName_0\"").contains("\"outer_film_firstName_1\"");
+        assertThat(condition.toString())
+            .contains("\"film_actor_firstName_0_d1\"").contains("\"actor_firstName_1_d1\"");
+        var nested = (Condition) conditions.get("filmsByCast").invoke(null, FILM.as("film_x_d7"),
+            args("cast", args("firstName", "X")));
+        assertThat(nested.toString())
+            .contains("\"film_actor_firstName_0_d8\"").contains("\"actor_firstName_1_d8\"");
     }
 
     @Test

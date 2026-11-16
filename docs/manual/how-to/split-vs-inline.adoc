@@ -35,7 +35,9 @@ The Sakila example schema shows both shapes at the same logical position. `Film.
 
 A child xref:../reference/directives/service.adoc[`@service`] is split without the directive: the method is always called once per batch of parents through a DataLoader, so `@splitQuery` beside it is redundant and draws a lint warning. xref:handle-services.adoc[How-to: Handle services] covers the batched contract the method signs up to.
 
-Self-referencing FKs (e.g. `Category.parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])`) work *inline* in the rewrite. The `InlineTableFieldEmitter` prefixes alias names with the parent alias's runtime name so recursive subselects don't collide (line 75-88), and the live `Category.parent` / `Category.children` fixtures cover this in `GraphQLQueryTest` (the "self-referential recursion" suite). Reach for `@splitQuery` on a self-FK only when the same fan-out arguments above apply; the directive is not structurally required for self-joins.
+Self-referencing FKs (e.g. `Category.parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])`) work *inline* in the rewrite. Each inline level names the tables it reads one nesting level below its parent's, so a recursive subselect never shadows the row it is correlated to, and the live `Category.parent` / `Category.children` fixtures cover this in `GraphQLQueryTest` (the "self-referential recursion" suite). Reach for `@splitQuery` on a self-FK only when the same fan-out arguments above apply; the directive is not structurally required for self-joins.
+
+One statement nests at most 32 levels of inline reads; a query that follows an inline cycle deeper is refused with a client error before any SQL runs. A `@splitQuery` boundary starts a new statement and a new count, so a schema meant to be walked deeper than that splits somewhere along the cycle (see xref:../reference/directives/splitQuery.adoc[`@splitQuery`]).
 
 == `DataLoader` cache key and lifecycle
 

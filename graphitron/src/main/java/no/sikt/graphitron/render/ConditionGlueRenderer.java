@@ -49,11 +49,10 @@ import java.util.Map;
  * <p>Reach renders as a correlated {@code EXISTS} over the row's {@link ReachPath} hops, whose
  * {@link no.sikt.graphitron.rewrite.model.On} arms this class does not switch on itself: both the
  * hop-0 correlation and the walk-back bridging joins dispatch through {@link PathFragments}, the
- * same arms the projection rail uses. SQL aliases are
- * runtime-prefixed on the base table's name ({@code table.getName() + "_fkt0_0"}): glue methods
- * are per-coordinate scopes, but two glue methods can land in one query (a polymorphic root's
- * participant branches), so a static alias could collide across branches; one convention beats
- * two, and the recursion-prone inline sites already prove this one.
+ * same arms the projection rail uses. SQL aliases are named at runtime one nesting level deeper
+ * than the base table ({@link TableAliasFragments}): a glue method can be applied at any depth of
+ * a nested read, so a static alias could shadow the row it is correlated to; one convention for
+ * every nested read.
  */
 public final class ConditionGlueRenderer {
 
@@ -164,7 +163,7 @@ public final class ConditionGlueRenderer {
         }
         // Ahead of the binding locals: a partial list-of-input local compares against its term's
         // own table, which for a reached term is the terminal hop alias. Aliases read only table.
-        var aliasesByReach = declareReachAliases(builder, predicates);
+        var aliasesByReach = declareReachAliases(builder, predicates, outputPackage);
         var partialTables = partialMatchTables(predicates, aliasesByReach);
 
         // Composed before it is emitted: a projected binding registers a node-id decode with the
@@ -278,14 +277,14 @@ public final class ConditionGlueRenderer {
     /**
      * Declares one aliased jOOQ table local per hop of every reach path in the method, keyed by
      * the {@link ReachPath} instance's identity. Java locals are static per method scope
-     * ({@code table_fkt<p>_<h>}); the SQL alias rides the base table's runtime name so two glue
-     * calls in one query cannot collide. Identity, not value: locals are minted per reach
+     * ({@code table_fkt<p>_<h>}); the SQL alias is named one nesting level deeper than the base
+     * table ({@link TableAliasFragments}) so the {@code EXISTS} never shadows the row it reads. Identity, not value: locals are minted per reach
      * occurrence, so two structurally equal reaches on different terms keep their own aliases (see
      * {@link ReachPath}). {@code reachIndex} is this loop's own emission-scoped numbering and stays
      * here rather than riding the carrier.
      */
     private static Map<ReachPath, List<String>> declareReachAliases(
-            MethodSpec.Builder builder, List<Predicate> predicates) {
+            MethodSpec.Builder builder, List<Predicate> predicates, String outputPackage) {
         var aliases = new java.util.IdentityHashMap<ReachPath, List<String>>();
         int reachIndex = 0;
         for (var predicate : predicates) {
@@ -300,10 +299,11 @@ public final class ConditionGlueRenderer {
                 for (int h = 0; h < reach.size(); h++) {
                     var target = reach.hop(h).targetTable();
                     String local = "table_fkt" + reachIndex + "_" + h;
-                    builder.addStatement("$T $L = $T.$L.as(table.getName() + $S)",
+                    builder.addStatement("$T $L = $T.$L.as($L)",
                         CatalogRefs.tableClass(target), local,
                         CatalogRefs.constantsClass(target), target.javaFieldName(),
-                        "_fkt" + reachIndex + "_" + h);
+                        TableAliasFragments.nested(outputPackage, "table", target.javaFieldName(),
+                            "fkt" + reachIndex + "_" + h));
                     hopLocals.add(local);
                 }
                 aliases.put(reach, hopLocals);

@@ -29,16 +29,17 @@ public final class PresenceProbeFragments {
      * {@code indent}, and returns the probe column's expression. Only an existence term declares
      * locals; {@code correlatedAlias} is typed as the row's generated table class, which a null
      * term's {@code @externalField} method takes. The locals are named
-     * {@code presence<term>_<hop>} and their SQL aliases derive from {@code correlatedAlias}'s
-     * name, so they cannot meet the correlated row's own alias; sibling {@code EXISTS} scopes may
-     * reuse them freely. The caller declares at most one probe per Java block.
+     * {@code presence<term>_<hop>} and their SQL aliases are named one nesting level deeper than
+     * {@code correlatedAlias} through {@code tableAliases} ({@link TableAliasFragments}), so they
+     * cannot meet the correlated row's own alias; sibling {@code EXISTS} scopes may reuse them
+     * freely. The caller declares at most one probe per Java block.
      */
     public static CodeBlock declare(CodeBlock.Builder code, PresenceProbe probe, String correlatedAlias,
-            String indent) {
+            String indent, ClassName tableAliases) {
         var terms = new ArrayList<CodeBlock>();
         for (int t = 0; t < probe.terms().size(); t++) {
             terms.add(switch (probe.terms().get(t)) {
-                case PresenceProbe.ProbeTerm.Exists exists -> exists(code, exists, t, correlatedAlias, indent);
+                case PresenceProbe.ProbeTerm.Exists exists -> exists(code, exists, t, correlatedAlias, indent, tableAliases);
                 case PresenceProbe.ProbeTerm.NotNull notNull ->
                     CodeBlock.of("$L.isNotNull()", ExternalFieldCall.of(notNull.method(), correlatedAlias));
             });
@@ -56,16 +57,17 @@ public final class PresenceProbeFragments {
 
     /** The {@code t}-th term's correlated {@code EXISTS}, its hop-alias locals declared into {@code code}. */
     private static CodeBlock exists(CodeBlock.Builder code, PresenceProbe.ProbeTerm.Exists term, int t,
-            String correlatedAlias, String indent) {
+            String correlatedAlias, String indent, ClassName tableAliases) {
         var hopAliases = new ArrayList<String>(term.reach().size());
         for (int h = 0; h < term.reach().size(); h++) {
             var target = term.reach().hop(h).targetTable();
             String local = "presence" + t + "_" + h;
             code.add(indent);
-            code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
+            code.addStatement("$T $L = $T.$L.as($L)",
                 CatalogRefs.tableClass(target), local,
                 CatalogRefs.constantsClass(target), target.javaFieldName(),
-                correlatedAlias, "_p" + t + "_" + h);
+                TableAliasFragments.nested(tableAliases, correlatedAlias, target.javaFieldName(),
+                    "p" + t + "_" + h));
             hopAliases.add(local);
         }
         String terminal = hopAliases.get(hopAliases.size() - 1);

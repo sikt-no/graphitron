@@ -96,6 +96,9 @@ class ProjectionEmitterExecutionTest {
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
             compiled.put(pkg + ".schema." + spec.name(), spec);
         }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.TableAliasesClassGenerator.generate(pkg)) {
+            compiled.put(pkg + ".util." + spec.name(), spec);
+        }
         return EmittedCodeHarness.compileStrictly(compiled);
     }
 

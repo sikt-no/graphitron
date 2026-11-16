@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.render.TableAliasFragments;
 import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
@@ -127,11 +128,12 @@ public final class ConditionEmitter {
 
     /**
      * The row's condition as the method {@code name}, with the helpers that decode its node ids beside
-     * it, or why it is not emitted.
+     * it, or why it is not emitted. {@code tableAliases} is the generated scaffold that names the
+     * tables a path reaches ({@link TableAliasFragments}).
      */
     public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
-                              FillEmitter.Runtime runtime) {
-        return emit(row, name, decodes, runtime, Map.of());
+                              FillEmitter.Runtime runtime, ClassName tableAliases) {
+        return emit(row, name, decodes, runtime, tableAliases, Map.of());
     }
 
     /**
@@ -139,7 +141,8 @@ public final class ConditionEmitter {
      * {@code builds} says how to make, keyed by the call, the position and the input object taken.
      */
     public static Result emit(ConditionQuery.Row row, String name, NodeIdDecodeQuery decodes,
-                              FillEmitter.Runtime runtime, Map<BuildQuery.Root, BuildQuery.Result> builds) {
+                              FillEmitter.Runtime runtime, ClassName tableAliases,
+                              Map<BuildQuery.Root, BuildQuery.Result> builds) {
         if ("FACETS".equals(row.producerKind())) {
             return new Result.NotYet(Reason.FACETS, row.coordinate());
         }
@@ -207,7 +210,7 @@ public final class ConditionEmitter {
             if (term.nodeId()) {
                 var decode = decodeOnto(row, term, decodes).orElseThrow();
                 var onOwn = decode.recordClass().equals(row.table().recordClassName());
-                var hops = onOwn ? List.<String>of() : hops(method, term.steps(), local);
+                var hops = onOwn ? List.<String>of() : hops(method, term.steps(), local, tableAliases);
                 var alias = hops.isEmpty() ? "table" : hops.getLast();
                 var compare = nodeId(method, helpers, term, decode, name + "_" + local, local, alias, counter,
                     runtime.decode());
@@ -220,7 +223,7 @@ public final class ConditionEmitter {
                     : CodeBlock.of("if ($L) conditions.add($L)", guard, predicate));
                 continue;
             }
-            var hops = hops(method, term.steps(), local);
+            var hops = hops(method, term.steps(), local, tableAliases);
             var alias = hops.isEmpty() ? "table" : hops.getLast();
             var column = CodeBlock.of("$L.$L", alias, term.column().javaName());
             var type = type(term.column().bindingType()).orElseThrow();
@@ -249,7 +252,7 @@ public final class ConditionEmitter {
             }
         }
         for (var elements : listed.values()) {
-            list(method, adds, helpers, name, row, elements, locals, counter);
+            list(method, adds, helpers, name, row, elements, locals, counter, tableAliases);
         }
         if (row.calls().stream().flatMap(call -> call.fills().stream())
                 .anyMatch(fill -> "ARGUMENT".equals(fill.fill()) && !fill.landingNodeId()
@@ -262,7 +265,7 @@ public final class ConditionEmitter {
             // A call a node id applies to the table it identifies is called on that table, reached
             // over the node id's join path and aliased per call.
             boolean onNode = "NODE_ID".equals(call.bindingKind());
-            var hops = onNode ? hops(method, call.steps(), fresh(call.path().names().getLast(), locals))
+            var hops = onNode ? hops(method, call.steps(), fresh(call.path().names().getLast(), locals), tableAliases)
                 : List.<String>of();
             var alias = hops.isEmpty() ? "table" : hops.getLast();
             var arguments = new ArrayList<CodeBlock>();
@@ -320,12 +323,12 @@ public final class ConditionEmitter {
      */
     private static void list(MethodSpec.Builder method, CodeBlock.Builder adds, List<MethodSpec> helpers,
                              String name, ConditionQuery.Row row, List<ConditionQuery.Term> elements,
-                             Set<String> locals, int[] counter) {
+                             Set<String> locals, int[] counter, ClassName tableAliases) {
         var first = elements.getFirst();
         int at = first.lists().getFirst().position();
         var names = first.names().subList(0, at + 1);
         var local = fresh(names.getLast(), locals);
-        var hops = hops(method, first.steps(), local);
+        var hops = hops(method, first.steps(), local, tableAliases);
         var alias = hops.isEmpty() ? "table" : hops.getLast();
         var tableClass = ClassName.bestGuess(hops.isEmpty() ? row.table().tableClassName()
             : first.steps().getLast().to().tableClassName());
@@ -766,17 +769,19 @@ public final class ConditionEmitter {
     }
 
     /**
-     * Declares the table each step of a path lands on, aliased under the table the condition is handed
-     * so a condition applied inside another statement's alias stays distinct, and returns their locals
-     * in step order; none for an empty path.
+     * Declares the table each step of a path lands on, aliased one nesting level deeper than the table
+     * the condition is handed ({@link TableAliasFragments}) so a condition applied inside another
+     * statement's alias never shadows it, and returns their locals in step order; none for an empty path.
      */
-    private static List<String> hops(MethodSpec.Builder method, List<ConditionQuery.Step> steps, String local) {
+    private static List<String> hops(MethodSpec.Builder method, List<ConditionQuery.Step> steps, String local,
+            ClassName tableAliases) {
         var hops = new java.util.ArrayList<String>();
         for (var step : steps) {
             var hop = local + "Hop" + step.position();
-            method.addStatement("$T $L = $T.$L.as(table.getName() + $S)", ClassName.bestGuess(step.to().tableClassName()),
+            method.addStatement("$T $L = $T.$L.as($L)", ClassName.bestGuess(step.to().tableClassName()),
                 hop, ClassName.bestGuess(step.to().constantsClassName()), step.to().javaFieldName(),
-                "_" + local + "_" + step.position());
+                TableAliasFragments.nested(tableAliases, "table", step.to().javaFieldName(),
+                    local + "_" + step.position()));
             hops.add(hop);
         }
         return hops;

@@ -66,13 +66,13 @@ public final class SortKeyFragments {
 
     /**
      * {@code private static Field<?> <name>(<Table> table)}: the emitted method behind a
-     * {@code path:} key. Each hop's alias is a local of this method, declared under the SQL alias
-     * {@code table.getName() + "_" + <local>} (the scheme the projection unit's subselect terms
-     * use), so it always extends the outer alias the correlation reads and never meets a local of
-     * the calling site or of another key. Every hop is a to-one key join, so the subselect's
+     * {@code path:} key. Each hop's alias is a local of this method, declared under an SQL alias
+     * one nesting level deeper than {@code table} ({@link TableAliasFragments}, the scheme the
+     * projection unit's subselect terms use), so it never meets the outer alias the correlation
+     * reads, a local of the calling site, or one of another key. Every hop is a to-one key join, so the subselect's
      * {@code limit(1)} is inert and a parent with no related row sorts on {@code NULL}.
      */
-    public static MethodSpec method(String name, OrderBySpec.SortKey.Path path) {
+    public static MethodSpec method(String name, OrderBySpec.SortKey.Path path, String outputPackage) {
         List<JoinStep> steps = List.copyOf(path.hops());
         var aliases = PathFragments.generateAliases(steps);
         var body = CodeBlock.builder();
@@ -81,11 +81,12 @@ public final class SortKeyFragments {
             String previousAlias = i == 0 ? "table" : aliases.get(i - 1);
             // Path hops are key joins onto catalog tables (no routine node), so the registry the
             // routine arm would register a descent helper with is never reached.
-            body.addStatement("$T $L = $L.as($L.getName() + $S)",
+            body.addStatement("$T $L = $L.as($L)",
                 CatalogRefs.tableClass(hop.targetTable()), aliases.get(i),
                 PathFragments.emitTableExpression(hop, new PreviousNodeRef.TypedAlias(previousAlias),
                     new ArgumentValueSource.Env(), null),
-                "table", "_" + aliases.get(i));
+                TableAliasFragments.nested(outputPackage, "table", hop.targetTable().javaFieldName(),
+                    aliases.get(i)));
         }
         var subselect = new SelectTerm.ScalarSubselect(steps,
             new ParentCorrelation.OnFkSlots(path.hops().getFirst()), path.column());

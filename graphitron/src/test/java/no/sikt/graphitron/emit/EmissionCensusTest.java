@@ -146,7 +146,8 @@ class EmissionCensusTest {
         int n = 0;
         for (var row : rows) {
             var key = row.coordinate() + " " + row.table().sqlName();
-            switch (ConditionEmitter.emit(row, "condition" + n++, decodes, RUNTIME, builds)) {
+            switch (ConditionEmitter.emit(row, "condition" + n++, decodes, RUNTIME,
+                    no.sikt.graphitron.render.TableAliasFragments.tableAliasesClass("census"), builds)) {
                 case ConditionEmitter.Result.Emitted emitted -> {
                     census.computeIfAbsent(EMITTED, k -> new ArrayList<>()).add(key);
                     type.addMethod(emitted.method());
@@ -165,6 +166,9 @@ class EmissionCensusTest {
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
             units.put("census.schema." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.TableAliasesClassGenerator.generate("census")) {
+            units.put("census.util." + spec.name(), spec);
         }
         for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
             units.put("census.util." + spec.name(), spec);
@@ -284,6 +288,9 @@ class EmissionCensusTest {
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
             units.put("census.schema." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.TableAliasesClassGenerator.generate("census")) {
+            units.put("census.util." + spec.name(), spec);
         }
         EmittedCodeHarness.compileStrictly(units).close();
         java.util.Collections.sort(emitted);

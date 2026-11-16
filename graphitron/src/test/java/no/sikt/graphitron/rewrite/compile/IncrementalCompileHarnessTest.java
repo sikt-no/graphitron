@@ -221,7 +221,9 @@ class IncrementalCompileHarnessTest {
                 "schema.FetcherErrorResponse", "schema.GraphitronClientException", "schema.OwnedConnections"),
             "util.ConnectionHelper", Set.of("schema.GraphitronClientException", "schema.GraphitronContext",
                 "util.ColumnValues"),
-            "util.SelectionOccurrences", Set.of("schema.GraphitronClientException")));
+            "util.SelectionOccurrences", Set.of("schema.GraphitronClientException"),
+            // TableAliases: refuses an over-deep nesting through the client exception's one constructor.
+            "util.TableAliases", Set.of("schema.GraphitronClientException")));
     }
 
     @Test

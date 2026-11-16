@@ -70,7 +70,7 @@ public final class ProjectionUnitRenderer {
                     buildTableContextMethod(argHelpers, a.table(), a.contributions(), false, a.takesDsl(), outputPackage));
                 case ProjectionCommand.NestedUnit n -> builder.addMethod(
                     buildTableContextMethod(argHelpers, n.table(), n.contributions(), true, n.takesDsl(), outputPackage));
-                case ProjectionCommand.PivotUnit p -> builder.addMethod(buildPivotMethod(p, argHelpers));
+                case ProjectionCommand.PivotUnit p -> builder.addMethod(buildPivotMethod(p, argHelpers, outputPackage));
             }
         });
         // Per-field VALUES-rows helpers for this unit's own lookup contributions; the switch arm
@@ -94,7 +94,7 @@ public final class ProjectionUnitRenderer {
                 for (var sortKey : m.sortKeyMethods()) {
                     if (sortKeyMethods.add(sortKey.method().methodName())) {
                         builder.addMethod(SortKeyFragments.method(sortKey.method().methodName(),
-                            (OrderBySpec.SortKey.Path) sortKey.entry().key()));
+                            (OrderBySpec.SortKey.Path) sortKey.entry().key(), outputPackage));
                     }
                 }
             }
@@ -183,7 +183,7 @@ public final class ProjectionUnitRenderer {
     private static void emitArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder,
             Contribution contribution, boolean nestedUnit, String outputPackage) {
         switch (contribution) {
-            case Contribution.Project p -> emitProjectArm(argHelpers, builder, p);
+            case Contribution.Project p -> emitProjectArm(argHelpers, builder, p, outputPackage);
             case Contribution.Call c -> {
                 switch (c.wrap()) {
                     // A spliced nesting unit's terms are declared on the nested type, which owns
@@ -209,7 +209,8 @@ public final class ProjectionUnitRenderer {
                             }
                             if (s.probe().isPresent()) {
                                 var probeCode = CodeBlock.builder();
-                                var probe = PresenceProbeFragments.declare(probeCode, s.probe().get(), "table", "            ");
+                                var probe = PresenceProbeFragments.declare(probeCode, s.probe().get(), "table", "            ",
+                                    TableAliasFragments.tableAliasesClass(outputPackage));
                                 builder.addCode("$L", probeCode.build());
                                 builder.addCode("            fields.add($L);\n", probe);
                             }
@@ -237,10 +238,11 @@ public final class ProjectionUnitRenderer {
         }
     }
 
-    private static void emitProjectArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder, Contribution.Project p) {
+    private static void emitProjectArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder, Contribution.Project p,
+            String outputPackage) {
         if (p.terms().size() == 1) {
             var pre = CodeBlock.builder();
-            var expr = termExpression(argHelpers, p.terms().get(0), pre, rkAlias(p));
+            var expr = termExpression(argHelpers, p.terms().get(0), pre, rkAlias(p), outputPackage);
             var preamble = pre.build();
             if (preamble.isEmpty()) {
                 builder.addCode("        case $S -> fields.add($L);\n", p.field(), expr);
@@ -258,7 +260,7 @@ public final class ProjectionUnitRenderer {
         builder.addCode("        case $S -> {\n", p.field());
         for (var term : p.terms()) {
             var pre = CodeBlock.builder();
-            var expr = termExpression(argHelpers, term, pre, rkAlias(p));
+            var expr = termExpression(argHelpers, term, pre, rkAlias(p), outputPackage);
             builder.addCode("$L", pre.build());
             builder.addCode("            fields.add($L);\n", expr);
         }
@@ -272,7 +274,7 @@ public final class ProjectionUnitRenderer {
      * result-key-aliased arms alias their term by.
      */
     private static CodeBlock termExpression(ArgPathHelperRegistry argHelpers, SelectTerm term,
-            CodeBlock.Builder preamble, CodeBlock rkAlias) {
+            CodeBlock.Builder preamble, CodeBlock rkAlias, String outputPackage) {
         return switch (term) {
             case SelectTerm.Column c -> switch (c.alias()) {
                 case BY_COLUMN_IDENTITY -> CodeBlock.of("table.$L", c.column().javaName());
@@ -284,7 +286,7 @@ public final class ProjectionUnitRenderer {
                 CodeBlock.of("$L.as($L)", ExternalFieldCall.of(h.method(), "table"), rkAlias);
             case SelectTerm.ScalarSubselect s -> {
                 var aliases = PathFragments.generateAliases(s.path());
-                declareHopAliases(argHelpers, preamble, s.path(), aliases, "            ");
+                declareHopAliases(argHelpers, preamble, s.path(), aliases, "            ", outputPackage);
                 var inner = PathFragments.scalarInnerSelect(s, aliases, "table");
                 yield s.asName() == null
                     ? CodeBlock.of("$T.field($L).as($L)", DSL, inner, rkAlias)
@@ -314,7 +316,7 @@ public final class ProjectionUnitRenderer {
 
         var pathAliases = PathFragments.generateAliases(m.path());
         String terminalAlias = pathAliases.get(pathAliases.size() - 1);
-        declareHopAliases(argHelpers, code, m.path(), pathAliases, "");
+        declareHopAliases(argHelpers, code, m.path(), pathAliases, "", outputPackage);
 
         var callee = ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
             CodeBlock.of("$L", terminalAlias), outputPackage, c.calleeTakesDsl());
@@ -329,7 +331,8 @@ public final class ProjectionUnitRenderer {
             }
             if (m.probe().isPresent()) {
                 code.addStatement("single.add($L)",
-                    PresenceProbeFragments.declare(code, m.probe().get(), terminalAlias, ""));
+                    PresenceProbeFragments.declare(code, m.probe().get(), terminalAlias, "",
+                    TableAliasFragments.tableAliasesClass(outputPackage)));
             }
             code.addStatement("single.addAll($L)", callee);
             selectList = CodeBlock.of("single");
@@ -401,7 +404,7 @@ public final class ProjectionUnitRenderer {
         var path = lm.path();
         var aliases = PathFragments.generateAliases(path);
         String terminalAlias = aliases.get(aliases.size() - 1);
-        declareHopAliases(argHelpers, code, path, aliases, "");
+        declareHopAliases(argHelpers, code, path, aliases, "", outputPackage);
 
         String diagnostic = c.callee().simpleName() + "." + c.field();
         code.addStatement("$T rows = $L(sf, $L)",
@@ -466,12 +469,12 @@ public final class ProjectionUnitRenderer {
             String outputPackage) {
         var code = CodeBlock.builder();
         String aliasVar = c.field() + "PivotAlias";
-        // Alias string prefixed with the parent alias's runtime name so recursive /
-        // self-referential subselects never shadow each other, like every multiset arm.
-        code.addStatement("$T $L = $T.$L.as($L.getName() + $S)",
+        // Named one level deeper than the parent alias, like every multiset arm, so a recursive
+        // subselect never shadows it; the attribute table is the subquery's only table.
+        code.addStatement("$T $L = $T.$L.as($L)",
             CatalogRefs.tableClass(pm.attributeTable()), aliasVar,
             CatalogRefs.constantsClass(pm.attributeTable()), pm.attributeTable().javaFieldName(),
-            "table", "_" + c.field() + "_pv");
+            TableAliasFragments.nested(outputPackage, "table", pm.attributeTable().javaFieldName(), "pv"));
 
         // Correlation: AND-chain over the single FK hop's column pairs — target side on the
         // attribute alias, source side on the parent alias. Arity-generic.
@@ -506,7 +509,8 @@ public final class ProjectionUnitRenderer {
      * selection carrying no slot (introspection-only) appends the one-record sentinel so the
      * enclosing subselect stays well-formed and the one-record-per-parent invariant holds.
      */
-    private static MethodSpec buildPivotMethod(ProjectionCommand.PivotUnit p, ArgPathHelperRegistry argHelpers) {
+    private static MethodSpec buildPivotMethod(ProjectionCommand.PivotUnit p, ArgPathHelperRegistry argHelpers,
+            String outputPackage) {
         var builder = MethodSpec.methodBuilder(ProjectionCall.METHOD_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(listOfFieldWildcard())
@@ -526,7 +530,7 @@ public final class ProjectionUnitRenderer {
             var project = (Contribution.Project) contribution;
             for (var term : project.terms()) {
                 builder.addCode("    case $S -> fields.add($L);\n", project.field(),
-                    termExpression(argHelpers, term, CodeBlock.builder(), rkAlias(project)));
+                    termExpression(argHelpers, term, CodeBlock.builder(), rkAlias(project), outputPackage));
             }
         }
         builder.addCode("    default -> { } // non-slot selections (__typename) project nothing\n");
@@ -544,27 +548,27 @@ public final class ProjectionUnitRenderer {
     // ------------------------------------------------------------------------------------------
 
     /**
-     * Declares one aliased jOOQ table per hop. Alias strings are prefixed with the parent
-     * alias's runtime name (via the jOOQ parent table's {@code getName()}) so recursive /
-     * self-referential subselects never shadow each other's aliases: the outermost call's
-     * prefix is the raw table name, and each nested {@code $project} call accumulates the
-     * prefix through the table instance it receives. Materialization routes through the shared
+     * Declares one aliased jOOQ table per hop, each named one nesting level deeper than the
+     * parent alias ({@link TableAliasFragments}), so a recursive or self-referential
+     * subselect never shadows an alias it is nested in, however deep the selection nests.
+     * Materialization routes through the shared
      * {@link PathFragments#emitTableExpression} switch: a catalog hop declares {@code Tables.X},
      * a routine hop declares {@code Routines.m(<bound args>)} reading the previous node's alias
      * (the parent at hop 0) and runtime arguments off the canonical {@code SelectedField}.
      */
     private static void declareHopAliases(ArgPathHelperRegistry argHelpers, CodeBlock.Builder code,
-            List<JoinStep> path, List<String> aliases, String indent) {
+            List<JoinStep> path, List<String> aliases, String indent, String outputPackage) {
         for (int i = 0; i < path.size(); i++) {
             JoinStep.HasTargetTable ht = (JoinStep.HasTargetTable) path.get(i);
             String previousAlias = i == 0 ? "table" : aliases.get(i - 1);
             code.add(indent);
-            code.addStatement("$T $L = $L.as($L.getName() + $S)",
+            code.addStatement("$T $L = $L.as($L)",
                 CatalogRefs.tableClass(ht.targetTable()), aliases.get(i),
                 PathFragments.emitTableExpression(path.get(i),
                     new PreviousNodeRef.TypedAlias(previousAlias),
                     new ArgumentValueSource.FromSelectedField("sf"), argHelpers),
-                "table", "_" + aliases.get(i));
+                TableAliasFragments.nested(outputPackage, "table",
+                    ht.targetTable().javaFieldName(), aliases.get(i)));
         }
     }
 

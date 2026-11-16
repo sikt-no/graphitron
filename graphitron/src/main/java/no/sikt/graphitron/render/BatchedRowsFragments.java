@@ -111,7 +111,8 @@ public final class BatchedRowsFragments {
         }
         if (chain.probe().isPresent()) {
             body.addStatement("selectFields.add($L)",
-                PresenceProbeFragments.declare(body, chain.probe().get(), prelude.terminalAlias(), ""));
+                PresenceProbeFragments.declare(body, chain.probe().get(), prelude.terminalAlias(), "",
+                    TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
         }
 
         // The lookup sibling's key-set narrowing: the emitted input-rows helper's typed
@@ -296,7 +297,8 @@ public final class BatchedRowsFragments {
         body.addStatement("$T condition = $L", ClassName.get("org.jooq", "Condition"),
             whereCondition(row, chain, prelude));
         body.add(DiscriminatedTableFragments.projection(
-            chain.discriminated(), List.of(), baseLocal, ProjectionCall.SelectionScope.of(row.result())));
+            chain.discriminated(), List.of(), baseLocal, ProjectionCall.SelectionScope.of(row.result()),
+            TableAliasFragments.tableAliasesBeside(row.selectionOccurrences())));
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
             discriminatedConnectionTail(body, chain, prelude, conn, ConnectionConstruction.of(connections, row),

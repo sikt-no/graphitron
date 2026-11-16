@@ -1,5 +1,6 @@
 package no.sikt.graphitron.emit;
 
+import no.sikt.graphitron.render.TableAliasFragments;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.MethodSpec;
@@ -403,8 +404,9 @@ public final class ProjectionEmitter {
      * A list read inline as one correlated multiset: the steps joined in order, each on its column
      * pairs, the first correlated to the unit's row, selecting the listed type's unit over the
      * table the last step lands on, in the order the client picks or else the default, named for
-     * the field's result key under its owner. Each step's alias extends the row's own, so a list
-     * nested in a list of its own type never shadows the row it is correlated to.
+     * the field's result key under its owner. Each step's alias is one nesting level deeper than the
+     * row's own ({@link TableAliasFragments}), so a list nested in a list of its own type never
+     * shadows the row it is correlated to, however deep.
      */
     private static CodeBlock multiset(ProjectionQuery.Arm arm, ClassName occurrences, String outputPackage) {
         var steps = arm.steps();
@@ -412,8 +414,9 @@ public final class ProjectionEmitter {
         var body = CodeBlock.builder().add("{\n").indent();
         for (int i = 0; i < steps.size(); i++) {
             var step = steps.get(i);
-            body.addStatement("var x$L = $T.$L.as(table.getName() + $S)", i,
-                ClassName.bestGuess(step.constantsClassName()), step.javaFieldName(), "_" + i);
+            body.addStatement("var x$L = $T.$L.as($L)", i,
+                ClassName.bestGuess(step.constantsClassName()), step.javaFieldName(),
+                TableAliasFragments.nested(outputPackage, "table", step.javaFieldName(), String.valueOf(i)));
         }
         String listed = "x" + (steps.size() - 1);
         body.addStatement("$T<$T<?>> order = new $T<>()", LIST, SORT_FIELD, ARRAY_LIST);
@@ -510,8 +513,9 @@ public final class ProjectionEmitter {
         var body = CodeBlock.builder().add("{\n").indent();
         for (int i = 0; i < steps.size(); i++) {
             var step = steps.get(i);
-            body.addStatement("var x$L = $T.$L.as(table.getName() + $S)", i,
-                ClassName.bestGuess(step.constantsClassName()), step.javaFieldName(), "_" + i);
+            body.addStatement("var x$L = $T.$L.as($L)", i,
+                ClassName.bestGuess(step.constantsClassName()), step.javaFieldName(),
+                TableAliasFragments.nested(outputPackage, "table", step.javaFieldName(), String.valueOf(i)));
         }
         String listed = "x" + (steps.size() - 1);
         if (!keys.isEmpty()) {

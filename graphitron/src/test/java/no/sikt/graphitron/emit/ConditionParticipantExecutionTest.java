@@ -73,7 +73,8 @@ class ConditionParticipantExecutionTest {
         results = new HashMap<>();
         for (var row : read.rows()) {
             var name = row.coordinate().substring(row.coordinate().indexOf('.') + 1) + "_" + row.table().sqlName();
-            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME, read.builds());
+            var result = ConditionEmitter.emit(row, name, read.decodes(), RUNTIME,
+                no.sikt.graphitron.render.TableAliasFragments.tableAliasesClass(PACKAGE), read.builds());
             results.put(name, result);
             if (result instanceof ConditionEmitter.Result.Emitted emitted) {
                 type.addMethod(emitted.method());
@@ -87,6 +88,9 @@ class ConditionParticipantExecutionTest {
         }
         for (TypeSpec spec : GraphitronClientExceptionClassGenerator.generate()) {
             units.put(PACKAGE + ".schema." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.TableAliasesClassGenerator.generate(PACKAGE)) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
         }
         for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
             units.put(PACKAGE + ".util." + spec.name(), spec);
