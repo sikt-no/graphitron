@@ -1,0 +1,37 @@
+# A node by inference gets a key too. Pairing has no @node: it is a node because it implements Node
+# over film_actor, whose generated class publishes the node-identity constants, so nodehood is a
+# conjunction over the schema and the catalog, and the key is minted from it. The key is a derived
+# row: the transcription holds no @key for Pairing, and the decode holds authored keys alone.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query { pairing: Pairing }
+
+interface Node { id: ID! }
+
+type Pairing implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+extend schema @assertContains(relation: "graphitron_directive_application", rows: """
+  coordinate, directive_name, ordinal, origin
+  Pairing,    key,            0,       MINTED
+  """)
+
+extend schema @assertContains(relation: "graphitron_node", rows: """
+  type_name
+  Pairing
+  """)
+
+# The node names the table whose metadata answered, through the binding a node cannot be one without.
+extend schema @expectEquals(relation: "graphitron_tabletype", where: "type_name = 'Pairing'", rows: """
+  type_name, table_schema, table_name
+  Pairing,   public,       film_actor
+  """)
+
+extend schema @assertAbsent(relation: "graphql_directive_application", rows: """
+  coordinate, directive_name
+  Pairing,    key
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_ast_federation_key_entry")

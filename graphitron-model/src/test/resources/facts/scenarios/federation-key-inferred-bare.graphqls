@@ -1,0 +1,21 @@
+# federation-key-inferred's schema read with no catalog: there are no metadata rows to conjoin, so
+# nothing infers nodehood and no key is minted. The SDL is the other document's byte for byte, so
+# what differs is what the inference reads from the store, not a live probe.
+
+extend schema @withConfiguration(jooqPackage: null)
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query { pairing: Pairing }
+
+interface Node { id: ID! }
+
+type Pairing implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+extend schema @assertEmpty(relation: "graphitron_node")
+
+extend schema @assertEmpty(relation: "graphitron_directive_application", where: """
+  directive_name = 'key' AND origin = 'MINTED'
+  """)

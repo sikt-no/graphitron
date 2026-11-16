@@ -1,0 +1,26 @@
+# An authored id key stands the rule down, and its explicit resolvable: false, which keeps the type
+# out of _Entity, reaches the directive anchor unaltered. That is why the stand-down is a condition
+# on the rule rather than a precedence in the anchor: a minted row asserting resolvable true beside
+# this one would put the opt-out back.
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+type Query { film: Film }
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node @key(fields: "id", resolvable: false) {
+  id: ID!
+  title: String
+}
+
+extend schema @assertEmpty(relation: "graphitron_directive_application", where: """
+  directive_name = 'key' AND origin = 'MINTED'
+  """)
+
+extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """
+  coordinate = 'Film' AND directive_name = 'key' AND directive_argument_name = 'resolvable'
+  """, rows: """
+  value_sdl
+  false
+  """)

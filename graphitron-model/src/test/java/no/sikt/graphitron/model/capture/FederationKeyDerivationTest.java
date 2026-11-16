@@ -1,18 +1,13 @@
 package no.sikt.graphitron.model.capture;
 
-import no.sikt.graphitron.model.test.CatalogInput;
-
-import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
-import no.sikt.graphitron.model.test.TestRunContext;
-import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -21,60 +16,28 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Optional;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK_IMPORT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Federation's node-entity rule, over a real capture: a node type without an authored
- * {@code @key(fields: "id")} gets one, and the rule now answers as a derivation instead of as a
- * write the capture walk performed.
+ * Federation's node-entity rule under a configured tag, the opt-in's second arm: a run configured
+ * with a tag and no authored link federates through a link of graphitron's own. Each case is a run
+ * under a configuration, captured into a store of its own.
  *
- * <p>What each case reads is the point. Nothing lands in the transcription or its decode for a
- * minted key, so those are asserted <em>empty</em> at the minted coordinate and the membership is
- * read from the {@code MINTED} {@code key} rows of {@code graphitron_directive_application}. What
- * the documents say is transcribed and nothing more.
- *
- * <p>These are capture-driven cases rather than seeded ones, which is what the module boundary asks
- * for: the rule's own algebra is pinned row-in-verdict-out in {@code graphitron-model}, and what
- * these add is that a real {@code .graphqls} read by the real walk, against a real generated jOOQ
- * catalog, produces the rows that algebra needs.
+ * <p>The rule over a graph's own schema is stated by fact documents: {@code defects/federation-key}
+ * (keyless nodes, the stand-downs and alternatives, the minted key's arguments and ordinals),
+ * {@code scenarios/federation-key-opt-out} (an authored {@code resolvable: false} reaching the
+ * anchor unaltered), {@code scenarios/federation-key-inferred} and
+ * {@code scenarios/federation-key-inferred-bare} (a node by inference, with a catalog and without),
+ * {@code defects/federation-key-unlinked} and {@code defects/federation-key-not-the-opt-in}.
  */
 class FederationKeyDerivationTest {
 
-    /**
-     * The declarations a schema with no federation {@code @link} has to write itself to use
-     * {@code @key}. A linked schema writes none: the {@code @link} imports them.
-     */
-    private static final String DIRECTIVES = """
-        directive @link(url: String!, import: [String]) repeatable on SCHEMA
-        directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
-        """;
-
-    /** The node type every federated case declares, the anchor its variations replace at. */
-    private static final String FILM = "type Film implements Node @table(name: \"film\") @node";
-
-    private static final CatalogInput JOOQ = CatalogInput.of(TestRunContext.JOOQ_PACKAGE);
-
     /** The graph a run of {@link #context} captures, into a store of its own. */
     private static final String RUN_GRAPH = "FederationKeyDerivationTest";
-
-    /**
-     * The case's own graph, named for its method, so a store several cases capture into holds each
-     * case's rows apart; every read below filters to the graph it asserts about.
-     */
-    private final String graph;
-
-    FederationKeyDerivationTest(TestInfo info) {
-        graph = "federationKey." + info.getTestMethod().orElseThrow().getName();
-    }
 
     private static final String LINK =
         "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\", import: [\"@key\"])";
@@ -91,188 +54,6 @@ class FederationKeyDerivationTest {
           title: String
         }
         """;
-
-    /**
-     * An {@code @table} type implementing {@code Node} with no {@code @node} of its own. Nodehood
-     * here is a conjunction over two corpora, so the case only means anything with a real catalog
-     * behind it; {@code film_actor} is the fixture table that publishes the node-identity constants.
-     */
-    private static final String INFERRED = LINK + """
-
-
-        type Query { pairing: Pairing }
-
-        interface Node { id: ID! }
-
-        type Pairing implements Node @table(name: "film_actor") {
-          id: ID!
-        }
-        """;
-
-    @Test
-    @DisplayName("a node type without an id key gets one, and it is a derived row rather than a captured one")
-    void federationKeyIsDerivedForNodes(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp, graph, FEDERATED, JOOQ)) {
-            var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
-            assertThat(store.dsl()
-                .select(a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL)
-                .from(a)
-                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq("Film"))
-                .and(a.DIRECTIVE_NAME.eq("key"))
-                .orderBy(a.DIRECTIVE_ARGUMENT_NAME)
-                .fetch()
-                .map(r -> r.value1() + ": " + r.value2()))
-                .as("the minted key is the node's id, resolvable")
-                .containsExactly("fields: \"id\"", "resolvable: true");
-
-            assertThat(keyApplicationsOf(store.dsl(), store.graphName(), "Film"))
-                .as("the SDL declares no @key, so the transcription holds none")
-                .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_AST_FEDERATION_KEY_ENTRY,
-                    GRAPHITRON_AST_FEDERATION_KEY_ENTRY.GRAPH_NAME.eq(store.graphName())))
-                .as("the decode holds authored applications alone")
-                .isZero();
-
-            assertThat(composedKeysOf(store.dsl(), store.graphName(), "Film"))
-                .as("the directive anchor is where a reader sees the key, minted after the authored")
-                .containsExactly("0:MINTED:id");
-        }
-    }
-
-    /**
-     * An authored id key stands the rule down, and the explicit {@code resolvable: false} that keeps
-     * the type out of {@code _Entity} survives into the directive anchor unaltered. That is the reason
-     * the stand-down is a condition on the rule rather than a precedence in the anchor: a minted row
-     * asserting {@code resolvable} true beside this one would put the opt-out back.
-     */
-    @Test
-    @DisplayName("an authored id key stands the derivation down, opt-out intact")
-    void anAuthoredIdKeyStandsTheDerivationDown(@TempDir Path tmp) {
-        String sdl = FEDERATED.replace(FILM + " {",
-            FILM + " @key(fields: \"id\", resolvable: false) {");
-        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName())).isEmpty();
-            var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
-            assertThat(store.dsl()
-                .select(a.VALUE_SDL)
-                .from(a)
-                .where(a.GRAPH_NAME.eq(store.graphName()), a.COORDINATE.eq("Film"))
-                .and(a.DIRECTIVE_NAME.eq("key"))
-                .and(a.DIRECTIVE_ARGUMENT_NAME.eq("resolvable"))
-                .fetchSingle().value1()).isEqualTo("false");
-        }
-    }
-
-    /**
-     * The two-corpus arm, both ways round. With the catalog captured, {@code film_actor}'s published
-     * metadata makes {@code Pairing} a node and the key is derived; with no catalog captured there
-     * are no metadata rows to conjoin and nothing is. The second arm is what says the inference is
-     * reading captured facts rather than a live probe: the SDL is byte-identical across the two.
-     */
-    @Test
-    @DisplayName("an inferred node gets a key; with no catalog captured, it does not")
-    void nodeInferenceDecidesWhetherAnInferredNodeGetsAKey(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), graph + ".inferred",
-                INFERRED, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName()))
-                .as("film_actor publishes node metadata, so Pairing is a node without saying @node")
-                .containsExactly("Pairing");
-
-            assertThat(store.dsl()
-                .select(GRAPHITRON_TABLETYPE.TABLE_SCHEMA, GRAPHITRON_TABLETYPE.TABLE_NAME)
-                .from(GRAPHITRON_NODE)
-                .join(GRAPHITRON_TABLETYPE)
-                .on(GRAPHITRON_TABLETYPE.GRAPH_NAME.eq(GRAPHITRON_NODE.GRAPH_NAME),
-                    GRAPHITRON_TABLETYPE.TYPE_NAME.eq(GRAPHITRON_NODE.TYPE_NAME))
-                .where(GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()),
-                    GRAPHITRON_NODE.TYPE_NAME.eq("Pairing"))
-                .fetch()
-                .map(r -> r.value1() + "." + r.value2()))
-                .as("the node names the table whose metadata answered, through the binding a node"
-                    + " cannot be one without")
-                .containsExactly("public.film_actor");
-        }
-        try (var store = CapturedStore.of(tmp.resolve("bare"), graph + ".bare", INFERRED)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName()))
-                .as("no catalog facts to conjoin, so nothing infers nodehood")
-                .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_NODE,
-                GRAPHITRON_NODE.GRAPH_NAME.eq(store.graphName()))).isZero();
-        }
-    }
-
-    /**
-     * An other-field key is an additional alternative rather than the id contract, so the rule still
-     * fires and the two coexist on one type: the authored application keeps its document position
-     * and the minted one is numbered after it.
-     */
-    @Test
-    @DisplayName("an authored non-id key and a derived key coexist on one type")
-    void anOtherFieldKeyLeavesTheDerivedKeyBesideIt(@TempDir Path tmp) {
-        String sdl = FEDERATED.replace(FILM + " {",
-            FILM + " @key(fields: \"title\") {");
-        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
-            assertThat(composedKeysOf(store.dsl(), store.graphName(), "Film"))
-                .containsExactly("0:AUTHORED:title", "1:MINTED:id");
-            assertThat(keyApplicationsOf(store.dsl(), store.graphName(), "Film"))
-                .as("only the authored application is transcribed")
-                .containsExactly(0);
-        }
-    }
-
-    /**
-     * A compound key names more than one field, so it is not the id contract either, and neither is
-     * a single key naming a nested path. Both are shapes the decode produces rows for, which is what
-     * makes them worth a case: the rule's condition is a count over those rows rather than a reading
-     * of the {@code fields:} literal.
-     */
-    @Test
-    @DisplayName("a compound key and a nested path are both alternatives, not the id contract")
-    void neitherACompoundKeyNorANestedPathStandsTheDerivationDown(@TempDir Path tmp) {
-        String compound = FEDERATED.replace(FILM + " {",
-            FILM + " @key(fields: \"id title\") {");
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("compound"), graph + ".compound",
-                compound, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName())).contains("Film");
-        }
-        String nested = FEDERATED.replace("title: String", "title: Title")
-            + """
-
-            type Title implements Node @table(name: "language") @node { id: ID! }
-            """;
-        nested = nested.replace(FILM + " {",
-            FILM + " @key(fields: \"title { id }\") {");
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("nested"), graph + ".nested", nested,
-                JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName())).contains("Film");
-        }
-    }
-
-    @Test
-    @DisplayName("no federation link, no derived key")
-    void theDerivationNeedsAFederationLink(@TempDir Path tmp) {
-        String sdl = DIRECTIVES + FEDERATED.replace(LINK, "");
-        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName())).isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHITRON_DIRECTIVE_APPLICATION,
-                GRAPHITRON_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(store.graphName()),
-                GRAPHITRON_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))).isZero();
-        }
-    }
-
-    /**
-     * A {@code @link} to something other than the federation spec is not the opt-in. The condition
-     * is a prefix over the decoded url, so a link that shares the host and not the path answers no.
-     */
-    @Test
-    @DisplayName("a non-federation link is not the opt-in")
-    void aLinkToAnotherSpecIsNotTheOptIn(@TempDir Path tmp) {
-        String sdl = DIRECTIVES + FEDERATED.replace(LINK,
-            "extend schema @link(url: \"https://specs.apollo.dev/tag/v0.3\", import: [\"@tag\"])");
-        try (var store = CapturedStore.ofCatalog(tmp, graph, sdl, JOOQ)) {
-            assertThat(mintedKeysOf(store.dsl(), store.graphName())).isEmpty();
-        }
-    }
 
     /**
      * The opt-in's second arm: a configured tag with no {@code @link} in any document federates the
@@ -357,35 +138,5 @@ class FederationKeyDerivationTest {
             .and(d.ORIGIN.eq("MINTED"))
             .orderBy(d.COORDINATE)
             .fetch(d.COORDINATE);
-    }
-
-    /** The ordinals of the {@code @key} applications transcribed for a type, in order. */
-    private static List<Integer> keyApplicationsOf(DSLContext dsl, String graph, String typeName) {
-        return dsl.select(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
-            .from(GRAPHQL_DIRECTIVE_APPLICATION)
-            .where(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(graph))
-            .and(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE
-                .eq(SchemaCoordinateSyntax.ofType(typeName)))
-            .and(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))
-            .orderBy(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL)
-            .fetch(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL);
-    }
-
-    /** A type's emitted keys as {@code ordinal:origin:fields}, from the directive anchor. */
-    private static List<String> composedKeysOf(DSLContext dsl, String graph, String typeName) {
-        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
-        var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
-        return dsl.select(d.ORDINAL, d.ORIGIN, a.VALUE_SDL)
-            .from(d)
-            .join(a).on(a.GRAPH_NAME.eq(d.GRAPH_NAME).and(a.COORDINATE.eq(d.COORDINATE))
-                .and(a.DIRECTIVE_NAME.eq(d.DIRECTIVE_NAME)).and(a.ORDINAL.eq(d.ORDINAL))
-                .and(a.DIRECTIVE_ARGUMENT_NAME.eq("fields")))
-            .where(d.GRAPH_NAME.eq(graph), d.COORDINATE.eq(typeName))
-            .and(d.DIRECTIVE_NAME.eq("key"))
-            .orderBy(d.ORDINAL)
-            .fetch()
-            .map(r -> r.value1() + ":" + r.value2() + ":"
-                + ((graphql.language.StringValue) graphql.parser.Parser.parseValue(r.value3()))
-                    .getValue());
     }
 }
