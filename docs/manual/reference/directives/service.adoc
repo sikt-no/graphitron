@@ -98,7 +98,7 @@ Each parameter of the method is filled once, by the first of these that reaches 
   list of `String` against a `List<Integer>`, stays unfilled, since the call could not compile.
 
 A parameter an `argMapping` entry names is that entry's, even where the entry's path lands nowhere;
-the entry's own error reports it, and nothing else stands in. Four refusals name the parameter at
+the entry's own error reports it, and nothing else stands in. Five refusals name the parameter at
 the `@service`:
 
 * *Unfilled*: nothing above reaches it. Name it after its argument, or bind it in `argMapping` or
@@ -112,6 +112,10 @@ the `@service`:
   `Object` parameter takes any value whole. A member of an input bean is judged the same way, at its
   input field, so a jOOQ record member filled from an `ID` needs `@nodeId(typeName:)` to decode it.
   A node id decoded onto a parameter is the `@nodeId` rules' to judge.
+* *Missing constant* (`ENUM_CONSTANT_MISSING`): a GraphQL enum value it takes as a Java enum constant
+  names no constant the enum declares, its `@field(name:)` or else its own name, so `Enum.valueOf`
+  would throw when a client sends it. An input bean's enum member is judged the same way, at its
+  input field. Take the value as a `String` to read it by name instead.
 
 An input object a parameter takes as a table's jOOQ record (`FilmRecord`) is built column by
 column, each input field writing the column it binds on that table:

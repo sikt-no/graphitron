@@ -20304,6 +20304,69 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE pk.source_name = r.table_source_name AND pk.table_schema = r.table_schema
                       AND pk.table_name = r.table_name)
 UNION ALL
+-- A GraphQL enum value a service parameter or input member takes as a constant of a Java enum that
+-- declares none of its name, at the parameter's field or the member's input field: the value is
+-- handed Enum.valueOf of its runtime name, its @field(name:) or else its own, which throws. Judged
+-- only where the graph read the enum class and it declares constants, so a class the census did not
+-- read flags nothing. The detail is the first such value, by coordinate.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ENUM_CONSTANT_MISSING', MIN(v.coordinate), 'occurrence-producers'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+  JOIN graphitron_occurrence lo ON lo.graph_name = cp.graph_name AND lo.coordinate = cp.landing_coordinate
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = lo.graph_name AND it.coordinate = lo.coordinate AND it.type_kind = 'ENUM'
+  JOIN code_graph_class g
+    ON g.graph_name = cp.graph_name AND g.class_name = COALESCE(mp.element_class, mp.erased_class)
+  JOIN graphitron_enum_value v ON v.graph_name = it.graph_name AND v.type_name = it.type_name
+  LEFT JOIN graphql_directive_application da
+    ON da.graph_name = v.graph_name AND da.coordinate = v.coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+  LEFT JOIN graphitron_ast_binding_entry b
+    ON b.graph_name = da.graph_name AND b.source_name = da.source_name
+   AND b.source_line = da.source_line AND b.source_column = da.source_column
+  JOIN graphitron_occurrence co ON co.graph_name = cp.graph_name AND co.coordinate = cp.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = co.graph_name AND el.coordinate = co.element_coordinate
+ WHERE cp.call_kind = 'SERVICE' AND cp.fill = 'ARGUMENT' AND mp.extraction = 'ENUM_VALUE_OF'
+   AND EXISTS (SELECT 1 FROM code_enum_constant k0
+                WHERE k0.source_name = g.source_name AND k0.class_name = g.class_name)
+   AND NOT EXISTS (SELECT 1 FROM code_enum_constant k
+                    WHERE k.source_name = g.source_name AND k.class_name = g.class_name
+                      AND k.constant_name = COALESCE(b.name_ref, v.value_name))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'ENUM_CONSTANT_MISSING', MIN(v.coordinate), 'occurrence-producers'
+  FROM graphitron_occurrence_binding_member m
+  JOIN code_write_slot ws
+    ON ws.source_name = m.slot_source_name AND ws.class_name = m.class_name
+   AND ws.method_name = m.slot_method_name AND ws.descriptor = m.slot_descriptor
+   AND ws.position = m.slot_position
+  JOIN graphitron_occurrence o ON o.graph_name = m.graph_name AND o.coordinate = m.coordinate
+  JOIN graphitron_occurrence_input_type it
+    ON it.graph_name = o.graph_name AND it.coordinate = o.coordinate AND it.type_kind = 'ENUM'
+  JOIN code_graph_class g
+    ON g.graph_name = m.graph_name AND g.class_name = COALESCE(ws.element_class, ws.erased_class)
+  JOIN graphitron_enum_value v ON v.graph_name = it.graph_name AND v.type_name = it.type_name
+  LEFT JOIN graphql_directive_application da
+    ON da.graph_name = v.graph_name AND da.coordinate = v.coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+  LEFT JOIN graphitron_ast_binding_entry b
+    ON b.graph_name = da.graph_name AND b.source_name = da.source_name
+   AND b.source_line = da.source_line AND b.source_column = da.source_column
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE m.stated_by = 'SERVICE'
+   AND EXISTS (SELECT 1 FROM code_enum_constant k0
+                WHERE k0.source_name = g.source_name AND k0.class_name = g.class_name)
+   AND NOT EXISTS (SELECT 1 FROM code_enum_constant k
+                    WHERE k.source_name = g.source_name AND k.class_name = g.class_name
+                      AND k.constant_name = COALESCE(b.name_ref, v.value_name))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
 -- A @service whose field answers a union, at the field: a Java method declares one result type, and
 -- no Java type is a union of others, so what the method answers says nothing of which member it is.
 SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
@@ -28010,6 +28073,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service under an object takes its parents'' keys as a class that is neither a jOOQ table record nor a jOOQ row or record of the key columns, and nothing says how to put a key into one: take the parent table''s records, or Row<N> or Record<N> of its key columns.'),
   ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
    'An input object is reached again inside itself where a call builds its value into a class, and the class cannot be built without end, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
+  ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
+   'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',

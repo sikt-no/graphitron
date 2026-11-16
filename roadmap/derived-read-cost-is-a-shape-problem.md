@@ -97,7 +97,6 @@ The walk's read path is gone
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
             ├── The throwables' read slots are read
-            ├── A Java enum's constants are captured
             └── A record bean nested in a class is built
 ```
 
@@ -1117,17 +1116,6 @@ static method needs no holder.
       field no accessor answers is a stored defect, `ERROR_FIELD_UNREADABLE`, and a checked exception
       no handler covers another, both at fetchers, and the walk's two refusals go. The service
       fields' stand-down waits for it.
-    * **A Java enum's constants are captured** `open`, E's. A service parameter or input member
-      taking an enum by its Java constant is handed `Enum.valueOf` of the GraphQL value's name, or of
-      its `@field(name:)`, which throws at run time where the Java enum has no such constant; the walk
-      refuses it, and the store cannot yet, since no `code_` relation holds a Java enum's constants
-      (`sql_enum_binding_literal` holds a jOOQ column enum's database literals, a different fact).
-      The node captures `code_enum_constant` (source, class, constant name) for every enum class the
-      code reading reads, generated jOOQ enums among them, swept with its class; no ordinal until a
-      reader asks for one. Then a GraphQL enum value no constant answers is a stored defect,
-      `ENUM_CONSTANT_MISSING`, at occurrence-producers, judged only where the enum class was read; an
-      `@enum(enumReference:)` naming the class at the type is judged once at that application, if
-      the store does not already.
     * **A record bean nested in a class is built** `open`, E's. An input bean declared as a record
       nested in another class (`ParameterShapeService.FilmIdBean`) drew no
       `graphitron_occurrence_binding_member` rows, and so no member defect, where the same record at

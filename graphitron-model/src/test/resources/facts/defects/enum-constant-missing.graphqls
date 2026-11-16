@@ -1,0 +1,27 @@
+# A GraphQL enum value a @service parameter or input member takes as a Java enum constant that the
+# enum does not declare: FilmMood declares HAPPY and SAD, so ANGRY has no constant, at the field whose
+# parameter takes the constant and at the input field filling FilmSurvey's mood. A value renamed onto
+# a constant with @field(name:), and an enum every value of which is a constant, draw nothing; so does
+# a parameter taking the value by name as a String.
+
+enum Mood { HAPPY SAD ANGRY }
+enum KnownMood { HAPPY GLAD @field(name: "SAD") }
+input FilmSurveyInput { count: Int!, mood: Mood, note: String }
+
+type FilmDraftsCountedPayload { count: Int }
+
+type Query {
+  moods(moodName: Mood, mood: Mood, moods: [Mood!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FillShapeService", method: "moods"})
+  knownMoods(moodName: KnownMood, mood: KnownMood, moods: [KnownMood!]): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FillShapeService", method: "moods"})
+  countFilmSurvey(in: FilmSurveyInput!): FilmDraftsCountedPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmSurveyService", method: "count"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'ENUM_CONSTANT_MISSING'", rows: """
+  code,                  coordinate,           detail
+  ENUM_CONSTANT_MISSING, Query.moods,          Mood.ANGRY
+  ENUM_CONSTANT_MISSING, FilmSurveyInput.mood, Mood.ANGRY
+  """)
