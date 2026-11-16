@@ -1,13 +1,13 @@
 ---
 id: R920
 title: "a failed batch logs once, without its SQL, and a consumer can cap batch size"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: error-channel
 depends-on: []
 created: 2026-09-04
-last-updated: 2026-11-12
+last-updated: 2026-11-16
 ---
 
 # a failed batch logs once, without its SQL, and a consumer can cap batch size
@@ -638,3 +638,51 @@ Non-blocking, for the implementer and the Done reviewer:
 * No page under `docs/manual/reference/` states any `GraphitronRuntime` hook, and this item adds a
   third and changes a default log line. The Done gate's reference check will ask where the rule is
   written, so the question the handover left with Alf and Filip wants an answer before In Review.
+
+### Round 3: In Review → Done (session_01FY5Uvu9heH1ZGKxef6QCVs, 2026-11-16)
+
+Verdict: rework, on one approval precondition. Back to Ready.
+
+The full verification build passes on trunk at `df6eb169` (13 modules, BUILD SUCCESS), with
+`UnmatchedFailureLogExecutionTest` (4), `BatchSizeLimitExecutionTest` (7),
+`ErrorRouterDescribeTest` (8) and `GeneratedSourcesLintTest` (7) among it.
+
+Question one is answered. The delivered tree is the change the spec approved: `failureOf`, the
+second identity map on `Claims`, `reportUnmatched` with the setter as the one that logs, `describe`
+with the path, the first line and the 240-character bound, the fan-out's summary line, the
+`BatchSizeLimit` hook on `GraphitronRuntime` and published by the instrumentation,
+`ErrorRouter.loaderOptions` through `configured`/`contained`, `LoaderConstruction` at all five
+sites inside their `computeIfAbsent`, the `QUERY_NODE_FETCHER` edge to the router and the
+frozen-scaffold pin. The departures the implementation notes name (the lint rule's stricter shape,
+the `UnifiedEmissionPinsTest` move, the fixture being `filmById` over three films) are in the body.
+
+Question two is answered by the execution tier: one ERROR record and one reference across three
+fields, two records for two batches, one `FetcherErrorLog.unmatched` call, the database summary at
+ERROR without statement or `Where:` marker and the exception at DEBUG, a cap of two over five
+parents costing two more statements with the same response, and one record per failed chunk. The
+Reference check is met by "Consumer hooks on `GraphitronRuntime`" in
+`docs/manual/reference/runtime-api.adoc`; the User-facing-doc check finds no roadmap markers in the
+`docs/` changes; nothing is declared retired.
+
+**Finding (approval precondition: no assertions on generated code text).**
+`graphitron/src/test/java/no/sikt/graphitron/render/LoaderConstructionTest.java`, which the spec's
+Tests section does not name, asserts the exact Java text `LoaderConstruction.positional` and
+`mapped` render (`"org.dataloader.DataLoaderFactory.newDataLoader((keys, batchEnv) -> rows(keys),
+com.example.schema.ErrorRouter.loaderOptions(env))"`). That fragment is spliced into every
+generated fetcher's loader registration, so this is code-string matching on a generated method
+body, which `development-principles.adoc` ("Asserting on generated Java or SQL text is banned")
+and the Tests section's own "no assertions on generated method bodies" rule out. What it pins is
+already pinned by behaviour and structure: `BatchSizeLimitExecutionTest` shows the options reach
+positional and mapped loaders, `GeneratedSourcesLintTest.emittedLoadersAreBuiltWithTheRequestsOptions`
+holds every emitted construction to the router's options, and `UnifiedEmissionPinsTest` holds the
+call sites. Satisfied by deleting the test, or by replacing it with an assertion that is not on the
+rendered text; `PackageImportDirectionTest`'s "allowance in use" check does not depend on it.
+
+**Also for the next pass (precondition: the body reflects what shipped).** "Implementation" still
+reads as the forward plan. Collapse "Log each failure once, without its SQL" and "Let a consumer cap
+batch size" to one-line "shipped at `<sha>`" notes (`7a456e46`, `4d86d2ca`, with `e9929dcb` and
+`2c455634` beside them), keeping the implementation notes, which carry what a reader needs.
+
+Non-blocking: `RootLauncherRendererTest` asserts `m.code().toString()).contains(".fetchOne();")`, an
+older instance of the same ban this item did not introduce; worth its own Backlog item rather than
+this one.
