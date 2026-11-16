@@ -22908,12 +22908,10 @@ WITH -- Where reading a field off a class lands: the member the field names, its
 -- so it is no edge, and only object and input object types are landed on.
 hop (graph_name, type_name, from_class, to_type, to_class) AS (
   SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
-    FROM graphql_field f
-    JOIN graphitron_field bf
-      ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
+    FROM graphitron_field f
     JOIN store_graph_source g ON g.graph_name = f.graph_name
     JOIN code_read_slot sl
-      ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
+      ON sl.source_name = g.source_name AND sl.slot_name = f.bound_name
     -- A class name two of the graph's entries declare is the copy the graph sees, as a classloader
     -- would load it: a slot read off another entry's copy is no edge.
     JOIN code_graph_class v
@@ -22921,10 +22919,10 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
    WHERE sl.element_class IS NOT NULL
      -- The kinds are filters on keys, not joins: H2 searches every join order of a block up to seven
      -- tables, and as joins they made this block seven, which cost a tenth of a second to plan.
-     AND EXISTS (SELECT 1 FROM graphql_type owner
+     AND EXISTS (SELECT 1 FROM graphitron_type owner
                   WHERE owner.graph_name = f.graph_name AND owner.type_name = f.type_name
                     AND owner.kind IN ('OBJECT', 'INTERFACE'))
-     AND EXISTS (SELECT 1 FROM graphql_type child
+     AND EXISTS (SELECT 1 FROM graphitron_type child
                   WHERE child.graph_name = f.graph_name AND child.type_name = f.named_type
                     AND child.kind IN ('OBJECT', 'INPUT_OBJECT'))
      -- Read off the stored applications rather than the reference sites: H2 evaluates a view
@@ -22935,19 +22933,17 @@ hop (graph_name, type_name, from_class, to_type, to_class) AS (
                         AND x.directive_name IN ('service', 'externalField'))
   UNION ALL
   SELECT f.graph_name, f.type_name, sl.class_name, f.named_type, sl.element_class
-    FROM graphql_field f
-    JOIN graphitron_field bf
-      ON bf.graph_name = f.graph_name AND bf.type_name = f.type_name AND bf.field_name = f.field_name
+    FROM graphitron_field f
     JOIN store_graph_source g ON g.graph_name = f.graph_name
     JOIN code_write_slot sl
-      ON sl.source_name = g.source_name AND sl.slot_name = bf.bound_name
+      ON sl.source_name = g.source_name AND sl.slot_name = f.bound_name
     JOIN code_graph_class v
       ON v.graph_name = g.graph_name AND v.class_name = sl.class_name AND v.source_name = sl.source_name
    WHERE sl.element_class IS NOT NULL
-     AND EXISTS (SELECT 1 FROM graphql_type owner
+     AND EXISTS (SELECT 1 FROM graphitron_type owner
                   WHERE owner.graph_name = f.graph_name AND owner.type_name = f.type_name
                     AND owner.kind = 'INPUT_OBJECT')
-     AND EXISTS (SELECT 1 FROM graphql_type child
+     AND EXISTS (SELECT 1 FROM graphitron_type child
                   WHERE child.graph_name = f.graph_name AND child.type_name = f.named_type
                     AND child.kind IN ('OBJECT', 'INPUT_OBJECT'))
 )
