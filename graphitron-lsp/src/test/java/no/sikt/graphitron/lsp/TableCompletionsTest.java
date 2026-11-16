@@ -104,7 +104,7 @@ class TableCompletionsTest {
             """;
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
+        try (var fixture = StoreFixture.held().ofCatalog(tmp, SDL)) {
             var items = items(fixture.handle(), source, cursor);
             assertThat(documentationOf(items, "actor"))
                 .as("no source has been parsed yet, and the database declares no comment on actor")
@@ -137,7 +137,7 @@ class TableCompletionsTest {
             """;
         Point cursor = new Point(0, source.indexOf('"') + 1);
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, SDL)) {
+        try (var fixture = StoreFixture.held().ofCatalog(tmp, SDL)) {
             assertThat(documentationOf(items(fixture.handle(), source, cursor), "film"))
                 .as("the comment answers before anything has parsed the generated class")
                 .isEqualTo("One film in the rental catalogue.");

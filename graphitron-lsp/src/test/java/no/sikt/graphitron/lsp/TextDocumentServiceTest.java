@@ -237,7 +237,7 @@ class TextDocumentServiceTest {
      */
     @Test
     void definitionRequestRoundTripsToTheParsedDeclaration(@TempDir Path tmp) throws Exception {
-        try (var fixture = StoreFixture.ofCatalog(tmp, "type Query { x: Int }\n");
+        try (var fixture = StoreFixture.held().ofCatalog(tmp, "type Query { x: Int }\n");
              var access = fixture.access()) {
             String filmFqn = fixture.tableClassFqn("film");
             fixture.withJavaSource(tmp, filmFqn, """

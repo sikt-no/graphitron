@@ -97,7 +97,7 @@ class SourceCadenceHoverAndDefinitionTest {
         var file = file("type Foo @table(name: \"actor\") { bar: Int }");
         var tablePos = pointAt(file, 0, "actor\"");
 
-        try (var store = StoreFixture.ofCatalog(srcRoot, PLACEHOLDER_SDL)) {
+        try (var store = StoreFixture.held().ofCatalog(srcRoot, PLACEHOLDER_SDL)) {
             // The generated table class, written under the FQN the catalog walk actually captured
             // rather than a spelled-out one, so the join both readers make is a real one.
             String actorFqn = store.tableClassFqn("actor");
@@ -181,7 +181,7 @@ class SourceCadenceHoverAndDefinitionTest {
         // Cursor on the 'c' of the Actor declaration's own name token.
         var namePos = new Point(0, "type Ac".length());
 
-        try (var store = StoreFixture.ofCatalog(srcRoot, DECLARED_ACTOR_SDL)) {
+        try (var store = StoreFixture.held().ofCatalog(srcRoot, DECLARED_ACTOR_SDL)) {
             String actorFqn = store.tableClassFqn("actor");
             store.withJavaSource(srcRoot, actorFqn, """
                 /** The actor table. */
@@ -205,7 +205,7 @@ class SourceCadenceHoverAndDefinitionTest {
      * comes from, and hover needs both.
      */
     private static StoreFixture namedMemberServiceStore(Path srcRoot) {
-        var store = StoreFixture.ofClasspath(srcRoot, List.of(ClasspathCorpus.service()));
+        var store = StoreFixture.held().ofClasspath(srcRoot, List.of(ClasspathCorpus.service()));
         store.refreshJavaSources(srcRoot);
         return store;
     }

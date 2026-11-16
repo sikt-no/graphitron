@@ -546,7 +546,7 @@ class FieldCompletionsTest {
         int line = 1;
         Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
+        try (var fixture = StoreFixture.held().ofCatalog(tmp, source)) {
             assertThat(documentationOf(
                 run(fixture.handle(), source, cursor), "FILM_ID"))
                 .as("nothing parsed yet, so the database comment is what documents the column")
@@ -582,7 +582,7 @@ class FieldCompletionsTest {
         int line = 1;
         Point cursor = new Point(line, source.split("\n")[line].indexOf('"') + 1);
 
-        try (var fixture = StoreFixture.ofCatalog(tmp, source)) {
+        try (var fixture = StoreFixture.held().ofCatalog(tmp, source)) {
             assertThat(documentationOf(
                 run(fixture.handle(), source, cursor), "RELEASE_YEAR"))
                 .isEmpty();

@@ -27,6 +27,7 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 
 /**
  * A booted fact store with one or more graphs captured into it, for the tests that read the store.
@@ -355,12 +356,15 @@ final class StoreFixture implements AutoCloseable {
     /**
      * The FQN of the generated table class for {@code tableName}, read back out of the census rather
      * than spelled out here, so a test joining the java-source family to it cannot hard-code a
-     * naming strategy the generator might not be using.
+     * naming strategy the generator might not be using. Read through this graph's sources, the
+     * catalog rows being shared by every graph that read the catalog.
      */
     String tableClassFqn(String tableName) {
         return dsl().select(SQL_TABLE.CLASS_FQN)
             .from(SQL_TABLE)
-            .where(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
+            .join(STORE_GRAPH_SOURCE).on(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(SQL_TABLE.SOURCE_NAME))
+            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graphName),
+                SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
             .fetchOptional(SQL_TABLE.CLASS_FQN)
             .orElseThrow(() -> new AssertionError("no captured table named " + tableName));
     }
@@ -375,7 +379,9 @@ final class StoreFixture implements AutoCloseable {
             .from(SQL_SCHEMA)
             .join(SQL_TABLE).on(SQL_TABLE.SOURCE_NAME.eq(SQL_SCHEMA.SOURCE_NAME)
                 .and(SQL_TABLE.TABLE_SCHEMA.eq(SQL_SCHEMA.TABLE_SCHEMA)))
-            .where(SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
+            .join(STORE_GRAPH_SOURCE).on(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(SQL_TABLE.SOURCE_NAME))
+            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graphName),
+                SQL_TABLE.TABLE_NAME.equalIgnoreCase(tableName))
             .fetchOptional(SQL_SCHEMA.KEYS_CLASS_FQN)
             .orElseThrow(() -> new AssertionError("no captured Keys class for " + tableName));
     }
