@@ -179,3 +179,10 @@ extend schema @expectEquals(relation: "graphitron_order_input", rows: """
   """)
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect")
+
+# The key columns @node names keep the order they were written in.
+extend schema @expectEquals(relation: "graphitron_ast_node_keycolumn_entry", rows: """
+  position, column_ref
+  0,        holder_id
+  1,        role_code
+  """)

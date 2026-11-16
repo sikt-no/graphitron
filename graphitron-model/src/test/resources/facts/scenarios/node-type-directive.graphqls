@@ -34,3 +34,19 @@ extend schema @expectEquals(relation: "graphitron_ast_compose_directive_entry", 
   directive_name
   @nodeType
   """)
+
+# What each @node application says, as written: Film's id, and Customer's omitted one NULL rather than
+# its type's name, which is a reading of the directive and not a fact of it.
+extend schema @expectEquals(relation: "graphitron_ast_node_entry", where: """
+  type_id IS NOT NULL
+  """, rows: """
+  type_id
+  F
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_node_entry", where: """
+  type_id IS NULL
+  """, rows: """
+  source_line
+  20
+  """)

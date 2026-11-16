@@ -52,6 +52,16 @@ import static org.assertj.core.api.Assertions.tuple;
  * arguments meant and nothing about what they resolve to, so two documents applying one directive
  * to one type are two rows and neither is refused; which of them the corpus honours is a question
  * asked of the rows afterwards.
+ *
+ * <p>What the decode writes for a schema the generator accepts is stated by fact documents: a
+ * {@code @table} reference split at its period by {@code defects/qualified-reference-decode}, an
+ * {@code @error} application's handlers by kind and position by {@code undecided/error-handlers},
+ * an omitted {@code @node} type id by {@code scenarios/node-type-directive}, key columns in written
+ * order by {@code scenarios/inline-list-order}, both ends of discrimination by
+ * {@code scenarios/discriminated-interface}, and two {@code @key} applications on one type with
+ * their own selections and an omitted {@code resolvable} by
+ * {@code scenarios/entity-key-alternatives}. The cases here hold what no document does: a schema the
+ * generator refuses, an edit between two readings, or a shape no document writes.
  */
 class GraphitronTypeEntriesTest {
 
@@ -63,48 +73,6 @@ class GraphitronTypeEntriesTest {
 
     GraphitronTypeEntriesTest(TestInfo info) {
         graph = "typeEntries." + info.getTestMethod().orElseThrow().getName();
-    }
-
-    /**
-     * The row and the row it decodes, joined on the key they share. Asserted through the join
-     * rather than by reading the columns back, the claim being that the two meet: a decode keyed at
-     * a position nothing was written at would be a row about nothing.
-     */
-    @Test
-    @DisplayName("an application's decode is co-keyed to the row saying it was applied")
-    void theDecodeIsCoKeyedToTheApplication(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", "type Film @table(name: \"sakila.film\") { title: String }\n");
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var decode = GRAPHITRON_AST_TABLE_ENTRY;
-            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-            var entry = GRAPHQL_AST_ENTRY;
-            var declared = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-
-            assertThat(dsl.select(applied.NAME, declared.NAME, decode.TABLE_REF,
-                        decode.TABLE_REF_NAMESPACE_PART, decode.TABLE_REF_NAME_PART)
-                    .from(decode)
-                    .join(applied)
-                    .on(decode.GRAPH_NAME.eq(applied.GRAPH_NAME))
-                    .and(decode.SOURCE_NAME.eq(applied.SOURCE_NAME))
-                    .and(decode.SOURCE_LINE.eq(applied.SOURCE_LINE))
-                    .and(decode.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
-                    .join(entry)
-                    .on(entryOf(applied, EntryKind.TYPE_DIRECTIVE))
-                    .join(declared)
-                    .on(entry.GRAPH_NAME.eq(declared.GRAPH_NAME))
-                    .and(entry.SOURCE_NAME.eq(declared.SOURCE_NAME))
-                    .and(entry.PARENT_LINE.eq(declared.SOURCE_LINE))
-                    .and(entry.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
-                    .where(decode.GRAPH_NAME.eq(graph))
-                    .fetch())
-                .as("the decode, the application it decodes, and the declaration it was written on, "
-                    + "none of which repeats what another holds")
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(), r -> r.value4(),
-                    r -> r.value5())
-                .containsExactly(tuple("table", "Film", "sakila.film", "sakila", "film"));
-        });
     }
 
     /**
@@ -151,45 +119,6 @@ class GraphitronTypeEntriesTest {
                     GRAPHITRON_AST_TABLE_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and naming nothing, so there is no bound-to-this-table fact to hold")
                 .isZero();
-        });
-    }
-
-    /**
-     * A list argument, which is the one shape whose values need a key of their own, and three
-     * kinds of value, one of which has a relation of its own. The index is
-     * the author's order inside one application and is shared across the kinds, so it decides
-     * nothing about which document wins and everything about what the author wrote first.
-     */
-    @Test
-    @DisplayName("each handler of an @error application is a row of its kind's relation, where it has one")
-    void handlersAreRowsOfTheirKind(@TempDir Path tmp) {
-        write(tmp, "errors.graphqls", """
-            type Failed @error(handlers: [
-              {handler: DATABASE, code: "23505"},
-              {handler: VALIDATION},
-              {handler: GENERIC, className: "java.lang.IllegalStateException", description: "no"}
-            ]) { message: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var handler = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
-            var generic = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
-
-            assertThat(dsl.select(writtenAt(handler)).from(handler)
-                    .where(handler.GRAPH_NAME.eq(graph),
-                        handler.HANDLER.in("DATABASE", "VALIDATION"))
-                    .orderBy(writtenAt(handler))
-                    .fetch(writtenAt(handler)))
-                .as("a DATABASE or VALIDATION handler has no relation of its own, so its supertype "
-                    + "row is all of it")
-                .containsExactly(0, 1);
-
-            assertThat(dsl.select(writtenAt(generic), generic.CLASS_NAME, generic.DESCRIPTION)
-                    .from(generic).where(generic.GRAPH_NAME.eq(graph)).fetch())
-                .as("and the index is the author's order across all three, not a count per kind")
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
-                .containsExactly(tuple(2, "java.lang.IllegalStateException", "no"));
         });
     }
 
@@ -270,111 +199,6 @@ class GraphitronTypeEntriesTest {
         });
     }
 
-
-    /**
-     * The directive documents an omitted {@code typeId} as meaning the type's own name. That
-     * substitution is a reading of the document and not a fact of it, so the column stays NULL: a
-     * reader wanting the effective value joins the declaration, and this is the only place that can
-     * still say the author did not choose one.
-     */
-    @Test
-    @DisplayName("an omitted typeId stays NULL rather than becoming the type's name")
-    void anOmittedTypeIdIsNotDefaulted(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Film @node(typeId: "F") { title: String }
-            type Actor @node { name: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_NODE_ENTRY;
-
-            assertThat(dsl.select(t.TYPE_ID).from(t)
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(t.SOURCE_LINE).fetch(t.TYPE_ID))
-                .as("what the author wrote, and the absence of a choice as an absence")
-                .containsExactly("F", null);
-        });
-    }
-
-    /**
-     * Both arguments are optional and the key-column list is the child relation, so a row is
-     * written per application: a bare application is the fact that the type is addressable, and an
-     * absent list is the author asking for the database's own key in the order the database has it,
-     * which is a different fact from naming that same key.
-     */
-    @Test
-    @DisplayName("the key columns keep the order they were written in, and absence is not emptiness")
-    void theKeyColumnsKeepTheirWrittenOrder(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Film @node(typeId: "F", keyColumns: ["film_id", "language_id"]) { title: String }
-            type Actor @node(typeId: "A") { name: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-
-            assertThat(dsl.select(writtenAt(t), t.COLUMN_REF).from(t)
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(writtenAt(t)).fetch())
-                .as("the columns in the order the id takes them")
-                .extracting(row -> row.value1(), row -> row.value2())
-                .containsExactly(tuple(0, "film_id"), tuple(1, "language_id"));
-
-            var n = GRAPHITRON_AST_NODE_ENTRY;
-            assertThat(dsl.select(t.POSITION, t.COLUMN_REF, n.TYPE_ID).from(t)
-                    .join(n).on(n.GRAPH_NAME.eq(t.GRAPH_NAME), n.SOURCE_NAME.eq(t.SOURCE_NAME),
-                        n.SOURCE_LINE.eq(t.APPLICATION_LINE), n.SOURCE_COLUMN.eq(t.APPLICATION_COLUMN))
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(t.POSITION).fetch())
-                .as("each row says which application holds it and where in the list, without the element's row")
-                .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
-                .containsExactly(tuple(0, "film_id", "F"), tuple(1, "language_id", "F"));
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_NODE_ENTRY,
-                    GRAPHITRON_AST_NODE_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("and both applications are rows, the second naming no columns at all")
-                .isEqualTo(2);
-        });
-    }
-
-
-    /**
-     * One mechanism written at two ends, and two relations because the ends are two declarations:
-     * the interface names the column, each object names the value of it that means itself. Nothing
-     * joins them here, which is the claim: a decode states what one application wrote, and pairing
-     * the column with the values is a question about the corpus that the anchors and the detections
-     * ask of these rows afterwards.
-     */
-    @Test
-    @DisplayName("the discriminating column and the values that select it are separate decodes")
-    void theTwoEndsOfDiscriminationAreSeparateRelations(@TempDir Path tmp) {
-        write(tmp, "media.graphqls", """
-            interface Media @discriminate(on: "media_type") { title: String }
-            type Book implements Media @discriminator(value: "BOOK") { title: String }
-            type Film implements Media @discriminator(value: "FILM") { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-
-            assertThat(dsl.fetch(GRAPHITRON_AST_DISCRIMINATE_ENTRY,
-                    GRAPHITRON_AST_DISCRIMINATE_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("one column, written once where the subtypes are declared to exist")
-                .extracting(row -> row.get(GRAPHITRON_AST_DISCRIMINATE_ENTRY.ON_COLUMN))
-                .containsExactly("media_type");
-
-            var d = GRAPHITRON_AST_DISCRIMINATOR_ENTRY;
-            assertThat(dsl.select(d.DISCRIMINATOR_VALUE).from(d)
-                    .where(d.GRAPH_NAME.eq(graph))
-                    .orderBy(d.SOURCE_LINE)
-                    .fetch(d.DISCRIMINATOR_VALUE))
-                .as("and one value per subtype, each written on its own declaration")
-                .containsExactly("BOOK", "FILM");
-        });
-    }
-
     /**
      * The value is a string whatever the SQL type of the column it will be compared against,
      * because a string is what SDL lets an author write and this relation states what was written.
@@ -427,7 +251,6 @@ class GraphitronTypeEntriesTest {
                 .containsExactly("BOOK", "PAPER");
         });
     }
-
 
     /** The federation vocabulary a consumer declares for itself, above every key case below. */
     private static final String FEDERATION =
@@ -501,65 +324,6 @@ class GraphitronTypeEntriesTest {
                     .fetch(g.SEGMENT_NAME))
                 .as("and the prefix that parsed is there rather than nothing")
                 .contains("id");
-        });
-    }
-
-    /**
-     * The directive repeats and no ordinal is assigned here, so two keys on one type are told apart
-     * by where each was written. Under a coordinate key the second displaced the first.
-     */
-    @Test
-    @DisplayName("two keys on one type are two rows with their own selections")
-    void twoKeysOnOneTypeKeepTheirOwnSelections(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", FEDERATION + """
-            type Film
-              @key(fields: "id")
-              @key(fields: "isbn") { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
-
-            assertThat(dsl.select(t.FIELDS_SDL).from(t)
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(t.SOURCE_LINE, t.SOURCE_COLUMN)
-                    .fetch(t.FIELDS_SDL))
-                .as("both applications, neither displacing the other")
-                .containsExactly("id", "isbn");
-
-            var g = GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY;
-            assertThat(dsl.select(g.SEGMENT_NAME).from(g)
-                    .where(g.GRAPH_NAME.eq(graph))
-                    .orderBy(g.SOURCE_LINE, g.SOURCE_COLUMN)
-                    .fetch(g.SEGMENT_NAME))
-                .as("each with its own selection, hanging off its own application")
-                .containsExactly("id", "isbn");
-        });
-    }
-
-    /**
-     * An omitted {@code resolvable} stays NULL rather than becoming the directive's declared
-     * default, on the rule every optional argument in these entry relations takes: a default is a generator
-     * constant, and NULL is what says the author did not choose.
-     */
-    @Test
-    @DisplayName("an omitted resolvable stays NULL rather than becoming its default")
-    void anOmittedResolvableIsNotDefaulted(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", FEDERATION + """
-            type Film @key(fields: "id") { title: String }
-            type Actor @key(fields: "id", resolvable: false) { name: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
-
-            assertThat(dsl.select(t.RESOLVABLE).from(t)
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(t.SOURCE_LINE).fetch(t.RESOLVABLE))
-                .as("the absence of a choice as an absence, and the choice as what was written")
-                .containsExactly(null, false);
         });
     }
 

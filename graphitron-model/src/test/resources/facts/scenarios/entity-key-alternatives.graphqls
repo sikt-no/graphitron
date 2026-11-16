@@ -70,3 +70,27 @@ extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
   Customer,  NODE, id,     TRUE,       0
   Film,      NODE, id,     TRUE,       1
   """)
+
+# What each @key application says, as written: Rental's two keys are two rows, and an omitted resolvable
+# is NULL rather than the directive's default.
+extend schema @expectEquals(relation: "graphitron_ast_federation_key_entry", rows: """
+  source_line, fields_sdl,           resolvable
+  2,           languageId,
+  8,           id,
+  25,          id,
+  30,          rentalId inventoryId,
+  30,          rentalId,             FALSE
+  """)
+
+# A field set parsed into its selections, each hanging off its own application: Rental's first key has
+# two.
+extend schema @expectEquals(relation: "graphitron_ast_federation_key_segment_entry", where: """
+  (source_line, source_column) IN (
+    SELECT k.source_line, k.source_column FROM graphitron_ast_federation_key_entry k
+     WHERE k.graph_name = graphitron_ast_federation_key_segment_entry.graph_name
+       AND k.fields_sdl = 'rentalId inventoryId')
+  """, rows: """
+  position, segment_position, segment_name
+  0,        0,                rentalId
+  1,        0,                inventoryId
+  """)
