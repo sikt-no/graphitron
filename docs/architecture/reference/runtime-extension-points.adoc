@@ -284,12 +284,37 @@ xref:../../manual/how-to/tenant-scoping.adoc[How-to: Tenant scoping].
 
 The direction (Alf, 2026-11-14): a default source is supported for backwards compatibility and is
 not the model. Which connection a query gets is the consumer's choice, made in code it owns and can
-test rather than in the schema: the consumer registers a connection hook, which receives the whole
+test rather than in the schema: the consumer supplies a connection source, which receives the whole
 `ConnectionKey` and returns the connection for it. A key's parts are each optional, the tenant
 among them; a key whose tenant part is empty is a key like any other, and what it means is the
-hook's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
+source's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
 child's key differs from its parent's and acquires again only then. The `Map<TenantId, DataSource>`
-seam and the default tenant above are what today's runtime does in that hook's place.
+seam and the default tenant above are what today's runtime does in that source's place.
+
+The contract that source takes (Alf, 2026-11-16), which replaces the runtime's own connection setup once
+it lands:
+
+* The consumer hands each request a connection source, a generated functional interface whose one
+  method, `acquire`, takes the connection key and returns a lease; it is given to
+  `newOwnedExecutionInput`. It is built when the request is, captures whatever the consumer needs of the
+  request in its closure, and acquires nothing until called.
+* A lease holds the mounted connection, the session handle where `<handle>` names one, and its release.
+  Which pool, how to mount and how to clear are the source's, inside `acquire` and `release`; Graphitron
+  knows no mount and no unmount.
+* Graphitron owns the lifecycle. It calls `acquire` when a field first needs a key's connection, once per
+  distinct key per request, possibly for distinct keys from several threads at once, keeps the lease, uses it wherever that key applies, and releases every lease
+  exactly once on every path. A race of its own, such as a fan-out worker past its deadline, it settles
+  itself before releasing; the source never sees it.
+* A throwing `acquire` rejects the request as a whole and nothing more is acquired. A throwing `release`
+  is logged, the remaining leases are still released, and the first failure surfaces.
+* Tenancy is not a mode. `ConnectionKey` is a record with one `Optional` per part the schema has, the
+  tenant where it has a tenant column and each vouched-for field where it accepts vouchers, generated in
+  every build and empty in one with neither. What an empty part means is the source's decision.
+* Which tenants are valid and whether a request may reach one is the source's to decide: it refuses by
+  throwing from `acquire`. Graphitron keeps no request tenant set. A fan-out spans the tenants the
+  source's `tenants()` names, one key and one lease each.
+* A build whose key has parts, a tenant or vouched-for values, is owned connections only; the escape
+  hatch below does not apply to it.
 
 [#escape-hatch-path]
 == The escape-hatch path: GraphitronContext
@@ -306,7 +331,7 @@ Graphitron to use it rather than acquire its own.
 A tenant-routed build is owned connections only (Alf, 2026-11-14). Routing by tenant means
 graphitron acquires each query's connection from its connection key, so a caller-supplied
 connection has no place in such a build; the consumer's control over which connection a key gets
-is the connection hook, not this path.
+is the connection source, not this path.
 
 `GraphitronContext` is the sealed per-request contract every generated DataFetcher reads from. It is _emitted_ per app under `<outputPackage>.schema` and sealed to permit only the generator's own `GraphitronContextImpl` singleton (nested inside the interface to inherit same-compilation-unit permits); apps no longer implement it directly. The extension surface moves to the points where per-request values cross the boundary:
 
