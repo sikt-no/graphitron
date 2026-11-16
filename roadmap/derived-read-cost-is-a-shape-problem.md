@@ -91,6 +91,7 @@ The walk's read path is gone
 │   │   └── A single child is looked up by its keys, claimed by G
 │   ├── A narrowed inline list is emitted from the store
 │   ├── A nesting field's leaves state how they're read
+│   ├── A plain input filter's unbound leaf and its cycle are entry defects
 │   └── Every list states its order or is refused, claimed by F
 └── The walk's service path is gone
     └── The service fields are emitted from the store
@@ -858,6 +859,14 @@ static method needs no holder.
     `NARROWED_LIST` line: the multiset renders no filter yet. It reads the conditions and the
     bindings that narrow it, the positive facts, rather than the reader's present test of any other
     argument, and the line closes with it.
+  * **A plain input filter's unbound leaf and its cycle are entry defects** `open`. The walk refuses
+    a scalar or enum leaf under a plain input argument of a table-bound field that binds no column of
+    the landing table and has no `@condition`, and a circular plain filter input (`input A { b: B }`,
+    `input B { a: A }` under `films(filter: A)`); the store states neither, since `COLUMN_UNRESOLVED`'s
+    input arm and `INPUT_CYCLE_EXPANDED` read only inputs built into a class
+    (`graphitron_occurrence_built_class`). A third arm of `COLUMN_UNRESOLVED` and
+    `INPUT_CYCLE_EXPANDED` widened past `SERVICE` state them, so the read path's stand-down owes no
+    walk-only refusal here.
   * **Every list states its order or is refused, claimed by F** `open`. `LIST_ORDER_UNDETERMINED` refuses an
     inline list over a keyless table with no order; the walk refuses every SQL-generating list with
     none (`GraphitronSchemaValidator.validateListRequiresOrdering`), re-fetch fields exempt, and a
