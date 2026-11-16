@@ -3,12 +3,18 @@
 # tenant holding the film. Each field is a producer grouping its parents by the tenant they name, its
 # connection routed with a tenant part read off the parent row. A bookmark of no film names no tenant,
 # so its child answers empty without a connection; an endorsement always names one. A written path
-# whose first key lands there routes the same way, as a list or a connection.
+# whose first key lands there routes the same way, as a list or a connection. A film's language, a
+# global table's row, is read on the key with an empty tenant part even below the tenant's film.
 
 extend schema @withConfiguration(tenantColumn: "film_id")
 
 type Film @table(name: "film") {
   title: String
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type Language @table(name: "language") {
+  name: String
 }
 
 type FilmEndorsement @table(name: "film_endorsement") {
@@ -45,6 +51,7 @@ extend schema @expectEquals(relation: "graphitron_field_tenant_fan_out", rows: "
 
 extend schema @expectEquals(relation: "graphitron_occurrence_connection", where: "coordinate LIKE 'Film%'", rows: """
   coordinate,                            outcome
+  Film.language,                         UNSCOPED
   FilmBookmark.film,                     ROUTED
   FilmEndorsement.film,                  ROUTED
   FilmEndorsement.inventories,           ROUTED

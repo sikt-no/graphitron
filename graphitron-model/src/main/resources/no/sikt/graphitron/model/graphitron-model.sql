@@ -20135,26 +20135,37 @@ SELECT graph_name, coordinate, outcome,
        refusal
   FROM verdict
 UNION ALL
--- A child producer of a graph with a tenant column: routed by its parent row's tenant where its
--- field's first key fans out, the part EMPTY where the parent's column may hold none; else the key
--- its producer chain hands down, unless every table its rows come from and the one it answers with
--- lie in no tenant scope, when it runs on the key with an empty tenant part. Any other child whose
--- rows come from unscoped tables but which answers with scoped ones has no row.
-SELECT x.graph_name, x.coordinate,
-       CASE WHEN x.fans_out THEN 'ROUTED' WHEN x.inherits THEN 'INHERIT' ELSE 'UNSCOPED' END,
-       CASE WHEN NOT x.fans_out THEN CAST(NULL AS VARCHAR)
+-- A child producer of a graph with a tenant column, by the table of the parent it starts from: the
+-- declaring type's table for a field of a table-bound type, the parent occurrence's source tables for a
+-- field of a nesting type. Routed by its parent row's tenant where its field's first key fans out, the
+-- part EMPTY where the parent's column may hold none. Else a child answering rows of a table no tenant
+-- column scopes runs on the key with an empty tenant part, even below a tenant's row; one under a
+-- tenant's rows, or under an object with no table, whose producer chain hands its key down, runs on the
+-- key handed down; and one answering no table's rows under a table no tenant scopes runs on the key
+-- with an empty tenant part. A child answering a tenant's rows under a table no tenant scopes has no
+-- row: nothing says which tenant's database to read, which the stage's defect rule refuses.
+SELECT x.graph_name, x.coordinate, x.outcome,
+       CASE WHEN x.outcome <> 'ROUTED' THEN CAST(NULL AS VARCHAR)
             WHEN x.parent_nullable THEN 'EMPTY' ELSE 'UNREACHABLE' END,
        CAST(NULL AS VARCHAR)
   FROM (SELECT p.graph_name, p.coordinate,
-               NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st
-                            WHERE st.graph_name = p.graph_name AND st.coordinate = p.coordinate)
-                 OR EXISTS (SELECT 1 FROM graphitron_occurrence_source_table st
-                              JOIN graphitron_tenant_column tc
-                                ON tc.graph_name = st.graph_name AND tc.source_name = st.table_source_name
-                               AND tc.table_schema = st.table_schema AND tc.table_name = st.table_name
-                             WHERE st.graph_name = p.graph_name AND st.coordinate = p.coordinate) AS inherits,
-               rtc.table_name IS NOT NULL AS scoped_result,
-               tf.parent_column IS NOT NULL AS fans_out,
+               CASE WHEN tf.parent_column IS NOT NULL THEN 'ROUTED'
+                    WHEN pr.table_name IS NOT NULL AND rtc.table_name IS NULL THEN 'UNSCOPED'
+                    WHEN dt.type_name IS NULL
+                         AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_source_table pst
+                                          WHERE pst.graph_name = o.graph_name
+                                            AND pst.coordinate = o.parent_coordinate) THEN 'INHERIT'
+                    WHEN EXISTS (SELECT 1 FROM graphitron_tenant_column ptc
+                                  WHERE ptc.graph_name = p.graph_name
+                                    AND ptc.source_name = dt.table_source_name AND ptc.table_schema = dt.table_schema
+                                    AND ptc.table_name = dt.table_name)
+                      OR EXISTS (SELECT 1 FROM graphitron_occurrence_source_table pst
+                                   JOIN graphitron_tenant_column ptc
+                                     ON ptc.graph_name = pst.graph_name AND ptc.source_name = pst.table_source_name
+                                    AND ptc.table_schema = pst.table_schema AND ptc.table_name = pst.table_name
+                                  WHERE dt.type_name IS NULL AND pst.graph_name = o.graph_name
+                                    AND pst.coordinate = o.parent_coordinate) THEN 'INHERIT'
+                    WHEN pr.table_name IS NULL THEN 'UNSCOPED' END AS outcome,
                COALESCE(pc.nullable, FALSE) AS parent_nullable
           FROM graphitron_occurrence_producer p
           JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
@@ -20177,7 +20188,7 @@ SELECT x.graph_name, x.coordinate,
             ON pc.source_name = dt.table_source_name AND pc.table_schema = dt.table_schema
            AND pc.table_name = dt.table_name AND pc.column_name = tf.parent_column
          WHERE p.start = 'CHILD') x
- WHERE x.fans_out OR x.inherits OR NOT x.scoped_result;
+ WHERE x.outcome IS NOT NULL;
 COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer of a database-per-tenant graph: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none. For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.';
 
 -- The occurrence-routes stage's own defects: a call it cannot route, at the field making it. The detail
@@ -20214,21 +20225,37 @@ SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
                       AND ptc.table_schema = sc.from_schema AND ptc.table_name = sc.from_table)
    AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype t WHERE t.graph_name = f.graph_name AND t.type_name = f.type_name)
 UNION ALL
--- A child @service of a graph with a tenant column routed by its parent row's tenant, or with no
--- connection the generated code can say for it, at the field: a frame grouping its parents by the
--- tenant each names is not emitted yet, so it is refused until then.
+-- A child @service of a graph with a tenant column routed by its parent row's tenant, at the field: a
+-- frame grouping its parents by the tenant each names is not emitted yet, so it is refused until then.
 SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
        'SERVICE_TENANT_FAN_OUT_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-routes'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence_connection c
+    ON c.graph_name = p.graph_name AND c.coordinate = p.coordinate AND c.outcome = 'ROUTED'
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+UNION ALL
+-- A child producer of a graph with a tenant column that no connection is stated for, at the field: it
+-- answers a tenant's rows under a table no tenant column scopes, by a key naming no tenant, so nothing
+-- says which tenant's database to read. A field marked @tenantFanOut says so itself, reading every
+-- tenant the request may see, a route the connection does not state yet.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'UNROUTED_CHILD', CAST(NULL AS VARCHAR), 'occurrence-routes'
   FROM graphitron_occurrence_producer p
   JOIN store_graph_tenant_column t ON t.graph_name = p.graph_name
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphql_ast_field_definition_entry d
     ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+ WHERE p.start = 'CHILD'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_connection c
-                    WHERE c.graph_name = p.graph_name AND c.coordinate = p.coordinate
-                      AND c.outcome <> 'ROUTED');
+                    WHERE c.graph_name = p.graph_name AND c.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application fo
+                    WHERE fo.graph_name = f.graph_name AND fo.coordinate = f.coordinate
+                      AND fo.directive_name = 'tenantFanOut');
 COMMENT ON VIEW graphitron_occurrence_route_entry_defect_rule IS 'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.';
 
 -- The table an occurrence's rows or value land on: the TABLE subtype of the binding, one row per
@@ -27393,8 +27420,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
+  ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',
+   'A field under a table that no tenant column scopes reads rows a tenant''s database holds by a key that names no tenant, so nothing says which tenant''s database to read: follow a key landing on the tenant column, or read the rows from a field under a tenant''s rows.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',
-   'A child @service under a global table reads a tenant''s rows, by a key landing on the tenant column or by none naming the tenant, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
+   'A child @service under a global table reads a tenant''s rows by a key landing on the tenant column, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
    'An argMapping names $tenant where nothing routes by it yet: $tenant names the tenant of a @service''s call, so write it in the @service''s argMapping.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
