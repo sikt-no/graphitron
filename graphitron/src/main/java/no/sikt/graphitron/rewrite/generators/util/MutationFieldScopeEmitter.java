@@ -50,8 +50,10 @@ import java.util.List;
  * <h2>After a rollback</h2>
  * In a build with an {@code @outbox(on: ERROR)} message the scope also carries a field's failure
  * callback ({@code onFieldRollback}), which settle runs once the field's transaction has rolled back,
- * on every path that ends in one, with the link of the cause chain {@code ErrorRouter.claim} matched
- * ({@code field.claimed}, the first claim). It chooses the connection by what the rollback left of
+ * on every path that ends in one, with what the field's payload was claimed as
+ * ({@code field.claimed}, the first claim): the link of the cause chain {@code ErrorRouter.claim}
+ * matched, or the first error a {@code VALIDATION} refusal produced ({@code markFieldRefused}, which
+ * marks the field failed too, so a refused field rolls back and writes its messages). It chooses the connection by what the rollback left of
  * the field's own, the first it opened: that connection when the rollback succeeded; a fresh one
  * ({@code writeOnFreshConnection}) when the tenant timed out, or when the rollback failed and an
  * exception settle holds names the transaction as why the session ended
@@ -113,12 +115,13 @@ final class MutationFieldScopeEmitter {
                 .addJavadoc("The exceptions {@code ErrorRouter} handled for this field, so settle can tell a nested\n"
                     + "failure the field's code caught from one that propagated out of it.\n")
                 .build())
-            .addField(FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, ClassName.get(Throwable.class)),
+            .addField(FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, ClassName.get(Object.class)),
                     "claimed", Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("new $T<>()", ATOMIC_REFERENCE)
-                .addJavadoc("The link of the cause chain an {@code @error} channel claimed this field's failure as,\n"
-                    + "the first claim; {@code null} when nothing claimed it. A redacted or surfaced failure\n"
-                    + "never writes it.\n")
+                .addJavadoc("What an {@code @error} channel placed in this field's payload for its failure, the first\n"
+                    + "claim: the link of the cause chain a mapping matched, or the first {@code GraphQLError} a\n"
+                    + "{@code VALIDATION} refusal produced; {@code null} when nothing claimed it. A redacted or\n"
+                    + "surfaced failure never writes it.\n")
                 .build());
         if (failureMessages) {
             builder.addField(FieldSpec.builder(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "onRollback", Modifier.PRIVATE)
@@ -153,10 +156,11 @@ final class MutationFieldScopeEmitter {
             .addMethod(MethodSpec.methodBuilder("write")
                 .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
                 .addParameter(DSL_CONTEXT, "dsl")
-                .addParameter(Throwable.class, "claimed")
+                .addParameter(Object.class, "claimed")
                 .addJavadoc("Writes the field's failure messages.\n"
                     + "@param dsl the connection to write on, its session mounted, outside any transaction\n"
-                    + "@param claimed the error an {@code @error} channel claimed the failure as, or {@code null}\n")
+                    + "@param claimed the error an {@code @error} channel claimed the failure as, a {@code Throwable}\n"
+                    + "or a validation refusal's {@code GraphQLError}, or {@code null}\n")
                 .build())
             .build();
     }
@@ -763,6 +767,32 @@ final class MutationFieldScopeEmitter {
             .build();
     }
 
+    /** {@code public static void markFieldRefused(DataFetchingEnvironment env, List<?> errors)}. */
+    static MethodSpec markFieldRefused(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        return MethodSpec.methodBuilder("markFieldRefused")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(ParameterizedTypeName.get(LIST, com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)),
+                "errors")
+            .addStatement("$T field = runningField(env)", fieldScope)
+            .beginControlFlow("if (field == null)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("field.failed.set(true)")
+            .beginControlFlow("if (errors != null && !errors.isEmpty() && errors.get(0) != null)")
+            .addStatement("field.claimed.compareAndSet(null, errors.get(0))")
+            .endControlFlow()
+            .addJavadoc("Marks the running top-level mutation field failed because a {@code VALIDATION} pre-step\n"
+                + "refused its input, and records the first error the refusal produced as what the failure\n"
+                + "was claimed as, first claim winning as in {@link #markFieldClaimed}. The field's payload\n"
+                + "still carries the errors; the refusal only rolls the field back and, where it has\n"
+                + "{@code @outbox(on: ERROR)} messages, writes them. Lenient as {@link #markFieldFailed} is.\n"
+                + "@param env the refused field's environment, or {@code null}\n"
+                + "@param errors the errors the refusal answers with, in the order the payload lists them\n")
+            .build();
+    }
+
     /**
      * {@code private static FieldScope runningField(DataFetchingEnvironment env)}: the running
      * top-level mutation field {@code env} is at or under, or {@code null}.
@@ -860,7 +890,7 @@ final class MutationFieldScopeEmitter {
             .addParameter(keyType, "own")
             .addParameter(boolean.class, "rollbackFailed")
             .addParameter(throwableList, "lost")
-            .addStatement("$T claimed = field.claimed.get()", Throwable.class)
+            .addStatement("$T claimed = field.claimed.get()", Object.class)
             .beginControlFlow("try")
             .beginControlFlow("if (own == null)")
             .addStatement("$T mount = null", Throwable.class);
@@ -970,7 +1000,7 @@ final class MutationFieldScopeEmitter {
             .addParameter(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "write")
             .addParameter(ParameterizedTypeName.get(LIST, ClassName.get(String.class)), "events")
             .addParameter(keyType, "k")
-            .addParameter(Throwable.class, "claimed")
+            .addParameter(Object.class, "claimed")
             .addParameter(Throwable.class, "ended")
             .addStatement("$T bound = runtime.outboxAcquisitionTimeout()", ClassName.get("java.time", "Duration"))
             .addStatement("$T pin = new $T<>()", future, COMPLETABLE_FUTURE)

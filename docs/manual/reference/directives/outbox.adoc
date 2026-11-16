@@ -69,7 +69,7 @@ On a field that returns a payload with an errors field, `@outbox(on: ERROR, ...)
 include::examples/outbox.graphqls[tag=OnFailure]
 ----
 
-Graphitron first rolls the field's transaction back, so nothing the field wrote survives, its success messages included, and then writes the field's `ERROR` messages, all of them in one transaction of their own. Every way a field's transaction ends in a rollback writes them: a failure an `@error` channel claimed, an unexpected exception your clients see redacted, the field's own success message failing to write, and a `COMMIT` the database refuses at the end (a deferred constraint, say). A failure no `@error` channel claimed still writes the message, with every `$error` key absent, so nothing internal reaches the event.
+Graphitron first rolls the field's transaction back, so nothing the field wrote survives, its success messages included, and then writes the field's `ERROR` messages, all of them in one transaction of their own. Every way a field's transaction ends in a rollback writes them: a failure an `@error` channel claimed, an input a `VALIDATION` handler refused, an unexpected exception your clients see redacted, the field's own success message failing to write, and a `COMMIT` the database refuses at the end (a deferred constraint, say). A failure no `@error` channel claimed still writes the message, with every `$error` key absent, so nothing internal reaches the event.
 
 The guarantee is weaker than the success side's, and has to be: the message is written at most once, after the rollback, and a process that dies between the rollback and the write loses it. A consumer sees failure messages from transactions that wrote nothing else.
 
@@ -83,7 +83,7 @@ If your session mount fails, nothing is written, whether on the field's own conn
 
 Failure messages are written on graphitron's owned connections only. On the escape hatch (`Graphitron.newGraphQL()` with your own `DSLContext`) there is no point after the rollback where graphitron holds the connection, so the message is not written and a warning naming the field is logged. Under the rollback-everything dev mode (`CommitPolicy.ROLLBACK_ONLY`) the messages are written inside the operation's transaction and discarded with everything else, on a fresh connection as on the field's own.
 
-A failure an input check answers before the field writes anything, a `VALIDATION` handler's, puts its error in the payload without failing the field's transaction, so it writes neither a success message nor a failure message.
+An input a `VALIDATION` handler refuses is a failure like any other. The field answers with its typed error before it writes anything, the response is the same as without the message, and the field's transaction rolls back and its `ERROR` messages are written. `$error` reads the first error the refusal produced: `__typename` is the `@error` type carrying the `VALIDATION` handler, and `$error.message` the message the client read for it.
 
 == Constraints
 
@@ -101,9 +101,12 @@ The outbox makes a message exist exactly when its write commits. What happens af
 * *The table is a conduit.* Rows a relay has published can be deleted or archived; how long they stay is your relay's setting, not graphitron's.
 * *A payload is a contract.* Change it by adding a new `@outbox` beside the old one (see above), and put in it what a consumer needs, no more: the common payload goes on every message, so a secret or a personal detail there goes to everyone subscribed.
 
+xref:../../how-to/relay-outbox-messages.adoc[Relay outbox messages] covers what a relay and its consumers see of failure messages.
+
 == See also
 
 * xref:mutation.adoc[`@mutation`] picks the write the messages describe; xref:service.adoc[`@service`] runs a write of your own.
 * xref:../mojo-configuration.adoc[Plugin configuration] holds the `<outbox>` block.
+* xref:../../how-to/relay-outbox-messages.adoc[Relay outbox messages]: what a relay and its consumers see of success and failure messages.
 
 xref:../index.adoc[← Reference index]

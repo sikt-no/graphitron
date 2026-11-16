@@ -18,7 +18,7 @@ public final class OutboxFailureRuntime {
     /** What the generated carrier holds for a field: its failure messages, as the fetcher registered them. */
     @FunctionalInterface
     public interface FieldRollback {
-        void write(DSLContext dsl, Throwable claimed);
+        void write(DSLContext dsl, Object claimed);
     }
 
     /** The last registration, with the events it named. */

@@ -2084,6 +2084,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(MutationFieldScopeEmitter.rollBackQuietly(self, provider))
             .addMethod(MutationFieldScopeEmitter.markFieldFailed(self))
             .addMethod(MutationFieldScopeEmitter.markFieldClaimed(self))
+            .addMethod(MutationFieldScopeEmitter.markFieldRefused(self))
             .addMethod(MutationFieldScopeEmitter.runningField(self));
         if (failureMessages) {
             String freshAcquisition = (multiTenant ? "k.tenant().isPresent()" : "k.isPresent()")

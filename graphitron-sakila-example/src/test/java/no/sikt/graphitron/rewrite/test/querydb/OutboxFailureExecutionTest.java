@@ -185,6 +185,31 @@ class OutboxFailureExecutionTest {
     }
 
     @Test
+    void aValidationRefusal_writesTheFailureMessage_andTheResponseStillCarriesTheTypedError() {
+        // Longer than film.title's 255 characters: the VALIDATION handler refuses it before any statement.
+        var title = marker() + "-" + "x".repeat(255);
+        var a = alias();
+        var result = execute(engine(), "mutation { " + a + ": insertFilmReportingFailure(in: {title: \"" + title
+            + "\", languageId: 1}) { film { id } errors { __typename ... on FilmWriteInvalid { path message } } } }");
+
+        assertThat(result.getErrors()).as("the refusal is payload data, not an error").isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get(a);
+        assertThat(payload).as("the typed payload is returned, not nulled by the rollback").isNotNull()
+            .containsEntry("film", null);
+        var error = ((List<Map<String, Object>>) payload.get("errors")).getFirst();
+        assertThat(error).containsEntry("__typename", "FilmWriteInvalid")
+            .containsEntry("path", List.of(a, "in", "title"))
+            .containsEntry("message", "size must be between 0 and 255");
+        assertThat(films(title)).isZero();
+        assertThat(reported(title)).isZero();
+        assertThat(failures(title)).singleElement().satisfies(row -> assertThat(row)
+            .as("the refusal, as the client was shown it")
+            .containsEntry("kind", "FilmWriteInvalid")
+            .containsEntry("detail", error.get("message"))
+            .containsEntry("by", "alice"));
+    }
+
+    @Test
     void aSuccess_writesNoFailureMessage() {
         var title = marker();
         var result = execute(engine(), "mutation { " + insert(alias(), "{title: \"" + title + "\", languageId: 1}") + " }");

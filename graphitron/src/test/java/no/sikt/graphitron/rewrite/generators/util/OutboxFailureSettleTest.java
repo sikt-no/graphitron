@@ -49,7 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Every fake connection is labelled with its tenant, and every JDBC call it sees is recorded as
  * {@code call:label}, so a case reads whether a fresh connection was taken ({@code getConnection}
  * twice) and whether the old one was aborted. The registered messages are a stand-in that records
- * the connection it was handed and the claimed throwable.
+ * the connection it was handed and what the failure was claimed as.
  */
 @UnitTier
 class OutboxFailureSettleTest {
@@ -397,6 +397,46 @@ class OutboxFailureSettleTest {
         releaseAll(tc);
     }
 
+    @Test
+    void aValidationRefusal_failsTheField_andHandsItsFirstError() throws Throwable {
+        Object tc = newOwnedConnections(newRuntime(Duration.ofSeconds(5)));
+        beginField(tc);
+        var env = env(tc);
+        register(env);
+        Object own = dslFor(tc, "A");
+        var first = graphql.GraphqlErrorBuilder.newError().message("title is too long").build();
+        var second = graphql.GraphqlErrorBuilder.newError().message("rating is out of range").build();
+
+        markFieldRefused(env, List.of(first, second));
+
+        assertThat(settleField(tc, false))
+            .as("the payload already carries the refusal; settle reports nothing of its own")
+            .isNull();
+        assertThat(events).as("the refusal rolls the field back").contains("rollback:A").doesNotContain("commit:A");
+        assertThat(written).singleElement().satisfies(w -> {
+            assertThat(w[0]).as("on the field's own connection").isSameAs(own);
+            assertThat(w[1]).as("the first error the refusal produced").isSameAs(first);
+        });
+        releaseAll(tc);
+    }
+
+    @Test
+    void aClaimBeforeARefusal_stillWins() throws Throwable {
+        Object tc = newOwnedConnections(newRuntime(Duration.ofSeconds(5)));
+        beginField(tc);
+        var env = env(tc);
+        register(env);
+        dslFor(tc, "A");
+        var violation = new SQLException("insert violates foreign key", "23503");
+
+        claim(violation, env);
+        markFieldRefused(env, List.of(graphql.GraphqlErrorBuilder.newError().message("later").build()));
+        settleField(tc, false);
+
+        assertThat(written).singleElement().satisfies(w -> assertThat(w[1]).isSameAs(violation));
+        releaseAll(tc);
+    }
+
     // --- the classification ------------------------------------------------------------------------
 
     @Test
@@ -470,14 +510,14 @@ class OutboxFailureSettleTest {
 
     @FunctionalInterface
     private interface Write {
-        void write(Object dsl, Throwable claimed);
+        void write(Object dsl, Object claimed);
     }
 
     private void onFieldRollback(DataFetchingEnvironment env, Write write) throws Throwable {
         Object proxy = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[] {fieldRollbackClass},
             (p, method, args) -> switch (method.getName()) {
                 case "write" -> {
-                    write.write(args[0], (Throwable) args[1]);
+                    write.write(args[0], args[1]);
                     yield null;
                 }
                 case "hashCode" -> System.identityHashCode(p);
@@ -488,12 +528,17 @@ class OutboxFailureSettleTest {
             fieldRollbackClass).invoke(null, env, List.of("Mutation.m.failed"), proxy));
     }
 
-    /** Registers failure messages that record the connection and the claimed throwable they were handed. */
+    /** Registers failure messages that record the connection and what the failure was claimed as. */
     private void register(DataFetchingEnvironment env) throws Throwable {
         onFieldRollback(env, (dsl, claimed) -> {
             events.add("written");
             written.add(new Object[] {dsl, claimed});
         });
+    }
+
+    private void markFieldRefused(DataFetchingEnvironment env, List<?> errors) throws Throwable {
+        invoke(() -> ownedConnectionsClass.getMethod("markFieldRefused", DataFetchingEnvironment.class, List.class)
+            .invoke(null, env, errors));
     }
 
     private void markFieldFailed(DataFetchingEnvironment env, Throwable thrown) throws Throwable {

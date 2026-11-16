@@ -42,11 +42,13 @@ import java.util.Optional;
  * directly.
  *
  * <p>A field with {@code @outbox(on: ERROR)} messages gets a second companion,
- * {@code static void outboxFailed<Field>(DSLContext dsl, DataFetchingEnvironment env, Throwable claimed)}
+ * {@code static void outboxFailed<Field>(DSLContext dsl, DataFetchingEnvironment env, Object claimed)}
  * ({@link #renderFailed}), which the fetcher registers with the connection carrier before it
  * acquires a connection ({@link #registration}); the carrier runs it after the field's transaction
  * rolled back, handing it the connection to write on and the error the field's {@code @error}
- * channel claimed, {@code null} where none did. It writes every failure message of the field in one
+ * channel claimed, {@code null} where none did: the matched link of a thrown cause chain, or the
+ * first {@code GraphQLError} of a {@code VALIDATION} refusal, which the errors field's type choice
+ * routes to its {@code VALIDATION} member as the response does. It writes every failure message of the field in one
  * transaction of its own, from bind values only: the arguments, the scope, the session and the
  * claimed error, read as the response reads it. The success companion writes the
  * {@code SUCCESS} messages only.
@@ -249,10 +251,11 @@ public final class OutboxEmitter {
             .addModifiers(Modifier.STATIC)
             .addParameter(DSL_CONTEXT, "dsl")
             .addParameter(ENV, "env")
-            .addParameter(Throwable.class, "claimed")
+            .addParameter(Object.class, "claimed")
             .addJavadoc("Writes the failure messages of {@code $L.$L} after its transaction rolled back, all in\n"
                 + "one transaction on {@code dsl}. {@code claimed} is the error the field's {@code @error}\n"
-                + "channel claimed the failure as, or {@code null}, which leaves every {@code $$error} key out.\n",
+                + "channel claimed the failure as, a thrown cause or a validation refusal's error, or\n"
+                + "{@code null}, which leaves every {@code $$error} key out.\n",
                 row.typeName(), row.fieldName());
         var opened = CodeBlock.builder()
             .add(OwnedScope.transactionResult(OwnedScope.provider(outputPackage), "dsl")).add("{\n").indent()
@@ -264,7 +267,7 @@ public final class OutboxEmitter {
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addParameter(DSL_CONTEXT, "tx")
             .addParameter(ENV, "env")
-            .addParameter(Throwable.class, "claimed")
+            .addParameter(Object.class, "claimed")
             .addJavadoc("The statements of {@link #$L}, on the transaction it opened.\n", failedMethodName(row));
         statements.addCode(prelude(row));
         if (anyLeaf(row, l -> l.kind() == LeafKind.ERROR)) {

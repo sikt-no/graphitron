@@ -28,6 +28,7 @@ a|
 * xref:migrating-from-legacy.adoc[Migrating from the legacy generator]: walk a schema authored against `graphitron-codegen-parent` to the rewrite.
 * xref:multi-hop-nodeid-filter.adoc[Multi-hop `@nodeId` filters]: reach a related node type through intermediate tables or against a foreign key's direction, and read off whether the path compiles to a single-table predicate or a correlated `EXISTS`.
 * xref:polymorphic-types.adoc[Polymorphic types]: choose between single-table and multi-table layouts for GraphQL interfaces and unions.
+* xref:relay-outbox-messages.adoc[Relay outbox messages]: what a relay and its consumers see of `@outbox` success and failure messages, and how to tell them apart.
 * xref:result-types.adoc[Result-type variants]: understand the backing class reflected from a class-backed parent's producer (jOOQ `TableRecord`, jOOQ `Record`, Java record, plain POJO).
 * xref:sort-results.adoc[Sort results]: pick a column source, build stable keyset cursors with explicit tie-breakers, and avoid the collation pitfalls.
 * xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches.
@@ -56,7 +57,7 @@ xref:external-code.adoc[Wire external Java code], xref:handle-services.adoc[Hand
 xref:result-types.adoc[Result-type variants], xref:polymorphic-types.adoc[Polymorphic types]
 
 *Mutations and errors* +
-xref:error-channel.adoc[The errors channel]
+xref:error-channel.adoc[The errors channel], xref:relay-outbox-messages.adoc[Relay outbox messages]
 
 *Global IDs and federation* +
 xref:global-id.adoc[Global object IDs], xref:federation-keys.adoc[Federation key fields], xref:apollo-federation.adoc[Apollo Federation transport]

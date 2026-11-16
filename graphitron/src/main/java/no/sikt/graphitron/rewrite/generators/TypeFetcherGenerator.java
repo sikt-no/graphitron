@@ -1703,7 +1703,7 @@ public class TypeFetcherGenerator {
         var validation = new no.sikt.graphitron.emit.ValidationEmitter.Runtime(className(units.outcome()),
             no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage)
                 .enclosingClassName(),
-            env -> CodeBlock.of("$L.getValidator($L)", ctx.graphitronContextCall(), env));
+            env -> CodeBlock.of("$L.getValidator($L)", ctx.graphitronContextCall(), env), ownedConnections);
         // The generated classes a routed call names; which calls are routed is the store's to say, so a
         // graph with no tenant column states no connection and names none of them.
         var routing = new no.sikt.graphitron.emit.ServiceEmission.Routing(ownedConnections,

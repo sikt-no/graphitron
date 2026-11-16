@@ -6,8 +6,12 @@ import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 
 /**
- * Emits the Jakarta-violation early return for a service fetcher's validator pre-step:
+ * Emits the early return of a refusal by a {@code VALIDATION} pre-step, a service fetcher's
+ * Jakarta validation or a DML fetcher's length check:
+ * {@code OwnedConnections.markFieldRefused(env, violations);} then
  * {@code return DataFetcherResult.<P>newResult().data(new Outcome.ErrorList<>(violations)).build();}.
+ * The refusal fails the running mutation field, so its transaction rolls back and its
+ * {@code @outbox(on: ERROR)} messages are written; the payload still carries the errors.
  * Replaces the legacy {@code TypeFetcherGenerator.declareEarlyPayloadFromErrors}, which built a
  * developer payload class from the violation list.
  *
@@ -23,7 +27,9 @@ public final class ChannelEarlyReturnEmitter {
     private ChannelEarlyReturnEmitter() {}
 
     public static CodeBlock emit(TypeName valueType, String violationsLocal, String outputPackage) {
-        return CodeBlock.of("return $T.<$T>newResult().data(new $T<>($L)).build();\n",
+        var ownedConnections = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).ownedConnections();
+        return CodeBlock.of("$T.markFieldRefused(env, $L);\nreturn $T.<$T>newResult().data(new $T<>($L)).build();\n",
+            ClassName.get(ownedConnections.packageName(), ownedConnections.simpleName()), violationsLocal,
             ClassName.get("graphql.execution", "DataFetcherResult"),
             valueType,
             errorListClass(outputPackage),

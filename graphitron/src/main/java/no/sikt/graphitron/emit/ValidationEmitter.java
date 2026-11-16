@@ -17,7 +17,9 @@ import java.util.function.Function;
  * a time, for each column it wrote that its getter offers; each element of a list on its own, before
  * the call. A violation becomes a GraphQL error at the argument, the element's index for a list, and
  * the SDL input fields its Java members or columns were bound from; any violation answers the call's
- * outcome with the errors in place of calling it.
+ * outcome with the errors in place of calling it, and marks the running mutation field refused, so
+ * its transaction rolls back and its {@code @outbox(on: ERROR)} messages are written with the first
+ * error as what the failure was claimed as.
  *
  * <pre>{@code
  * Validator validator = graphitronContext(env).getValidator(env);
@@ -33,6 +35,7 @@ import java.util.function.Function;
  *     }
  * }
  * if (!violations.isEmpty()) {
+ *     OwnedConnections.markFieldRefused(env, violations);
  *     return new Outcome.ErrorList<>(violations);
  * }
  * }</pre>
@@ -48,14 +51,17 @@ public final class ValidationEmitter {
 
     /**
      * The generated runtime the pass reads through: the outcome its errors answer, the class turning
-     * a violation into a GraphQL error with its member-to-input-field names, and the validator of
-     * the request, spelled with the environment's variable.
+     * a violation into a GraphQL error with its member-to-input-field names, the validator of the
+     * request, spelled with the environment's variable, and the connection carrier a refusal is
+     * reported to.
      */
-    public record Runtime(ClassName outcome, ClassName constraintViolations, Function<String, CodeBlock> validator) {
+    public record Runtime(ClassName outcome, ClassName constraintViolations, Function<String, CodeBlock> validator,
+                          ClassName ownedConnections) {
         public Runtime {
             Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(constraintViolations, "constraintViolations");
             Objects.requireNonNull(validator, "validator");
+            Objects.requireNonNull(ownedConnections, "ownedConnections");
         }
 
         /** The names a built class's members bind to, one constant per class validated. */
@@ -122,6 +128,7 @@ public final class ValidationEmitter {
             b.endControlFlow();
         }
         b.beginControlFlow("if (!violations.isEmpty())")
+            .addStatement("$T.markFieldRefused(env, violations)", runtime.ownedConnections())
             .addStatement("return new $T.ErrorList<>(violations)", runtime.outcome())
             .endControlFlow();
         return new Pass(b.build(), constants);

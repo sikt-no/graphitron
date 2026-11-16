@@ -106,7 +106,7 @@ public final class ServiceEmission {
         key -> CodeBlock.of("null"), coordinate -> CodeBlock.of("null"), (member, coordinate) -> CodeBlock.of("null"),
         new NodeIdDecodeEmitter.Runtime(CENSUS_HOST, "census"));
     private static final ValidationEmitter.Runtime CENSUS_VALIDATION = new ValidationEmitter.Runtime(
-        CENSUS_HOST, CENSUS_HOST, env -> CodeBlock.of("null"));
+        CENSUS_HOST, CENSUS_HOST, env -> CodeBlock.of("null"), CENSUS_HOST);
 
     /** Every service producer occurrence the store states, by coordinate: what the census reads. */
     private final Set<String> services;

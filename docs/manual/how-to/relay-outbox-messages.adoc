@@ -1,0 +1,26 @@
+= How-to: Relay outbox messages
+:description: What a relay and its consumers see of the messages @outbox writes, success and failure alike, and how a consumer tells them apart.
+:!toc:
+
+xref:../reference/directives/outbox.adoc[`@outbox`] writes rows to your outbox table; a relay of yours (a poller, or change data capture such as Debezium) publishes them to a broker. This recipe covers what the relay and the consumers behind it see when a field has both a success message and an `@outbox(on: ERROR)` failure message. The reference page's "What is yours, and what is the relay's" section holds the rules that apply to every message: at-least-once delivery, order per key, the table as a conduit, the payload as a contract.
+
+== Telling success from failure
+
+A success message and a failure message are rows of the same table, and the relay treats them alike. They differ by event type, which graphitron writes into the outbox's `type` column (or passes as the routine's `type` parameter), so route or filter on that:
+
+[source,graphql]
+----
+include::../reference/directives/examples/outbox.graphqls[tag=OnFailure]
+----
+
+A committed `createFilm` writes a row whose event type is `FilmCreated`. A failed one writes a row whose event type is `Mutation.createFilm.failed`, the default for an `ERROR` message without `event`; give it an `event` of its own (`FilmCreateFailed`) when consumers should not depend on the field's name. One call writes rows of one outcome only, never both, so a consumer never has to reconcile a success and a failure for the same call.
+
+Do not tell them apart by payload shape. A failure message whose failure no `@error` channel claimed carries no `$error` keys, and may then look like a success message with the same keys.
+
+== What a failure message promises
+
+* *It comes from a transaction that wrote nothing else.* Graphitron rolls the field's transaction back first and writes the failure messages afterwards, in a transaction of their own. A consumer reading one should not expect the film, or anything else the call meant to write, to exist.
+* *It is written at most once.* A process that dies between the rollback and the write loses it, and so does a connection lost for a reason outside the transaction; graphitron logs each loss. Treat failure events as a best-effort signal, for alerting, auditing or answering a user, and never as a ledger a consumer must balance against success events.
+* *Once written, it is delivered like any other row.* The relay may publish it more than once, so consumers drop a duplicate by the row's id, as they do for success messages.
+
+An input a `VALIDATION` handler refuses writes a failure message too, carrying the `@error` type the client was shown in `$error.__typename`, so a consumer can count refusals apart from database or service failures.
