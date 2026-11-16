@@ -1,0 +1,74 @@
+# How far the type-backing closure reaches over the service corpus's backing package: a producer
+# backs the type it returns, and a parameter the type of the argument it is fed from; a member read
+# off a backed class backs the type of the field it answers, as far as the hops go. Read with the
+# corpus classpath, and the catalog only for Tabled.
+#
+# Film is grounded by Query.films, and Film.related, whose type is its own parent's, is a cycle that
+# ends at that one row. Language, Country and Actor are reached by hops, Actor through a list the
+# hop peels; Country is two hops deep, so backed and not grounded. Review comes from its field's own
+# producer rather than off Film's member of the same name, which delivers another class. Contested
+# is answered by two producers, one row each, and Grounded by a producer and by Film's member: two
+# rows, told apart by how each was reached. FilmFilter is backed by the parameter search takes, and
+# NestedFilter by a member read off that class.
+#
+# What no row is stated for: Int and String, which no class backs; Node, an interface, which no hop
+# lands on; Rating, whose producer names a class no entry declares, and Score, whose @service names
+# no method, both still stopping the hop off Film's members because the application is there;
+# Tabled, bound by @table and so the table binding's population rather than the closure's; Orphan,
+# which nothing reaches. Carrier is backed by what one returns even though that is a collection,
+# the cardinality being a fact of its own.
+
+type Query {
+  films: [Film] @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "findAll"})
+  count: Int @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "count"})
+  node: Node @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "node"})
+  contested: Contested @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "left"})
+  also: Contested @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "right"})
+  one: Carrier @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "one"})
+  search(filter: FilmFilter): [Film] @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "search"})
+  grounded: Grounded @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.FilmService", method: "grounded"})
+}
+
+type Film {
+  title: String
+  language: Language
+  actors: [Actor]
+  reviews: [Review] @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.ReviewService", method: "forFilm"})
+  rating: Rating @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.RatingService", method: "forFilm"})
+  score: Score @service(service: {className: "no.sikt.graphitron.rewrite.test.backing.ScoreService"})
+  related: Film
+  grounded: Grounded
+}
+
+type Language { name: String, country: Country }
+type Tabled @table(name: "film") { title: String }
+type Country { code: String }
+type Actor { name: String }
+type Review { body: String }
+type Contested { id: ID }
+type Rating { stars: Int }
+type Score { value: Int }
+type Carrier { id: ID }
+type Orphan { id: ID }
+type Grounded { id: ID }
+interface Node { id: ID }
+input FilmFilter { title: String, nested: NestedFilter }
+input NestedFilter { code: String }
+
+extend schema @expectEquals(relation: "graphitron_type_backing", where: """
+  declared_via IN ('PRODUCER', 'ACCESSOR')
+  """, rows: """
+  type_name,    class_name,                    declared_via
+  Film,         no.sikt.graphitron.rewrite.test.backing.Film,           PRODUCER
+  Language,     no.sikt.graphitron.rewrite.test.backing.Language,       ACCESSOR
+  Country,      no.sikt.graphitron.rewrite.test.backing.Country,        ACCESSOR
+  Actor,        no.sikt.graphitron.rewrite.test.backing.Actor,          ACCESSOR
+  Review,       no.sikt.graphitron.rewrite.test.backing.ReviewDto,      PRODUCER
+  Contested,    no.sikt.graphitron.rewrite.test.backing.Left,           PRODUCER
+  Contested,    no.sikt.graphitron.rewrite.test.backing.Right,          PRODUCER
+  Carrier,      no.sikt.graphitron.rewrite.test.backing.Carrier,        PRODUCER
+  FilmFilter,   no.sikt.graphitron.rewrite.test.backing.FilmFilter,     PRODUCER
+  NestedFilter, no.sikt.graphitron.rewrite.test.backing.NestedFilter,   ACCESSOR
+  Grounded,     no.sikt.graphitron.rewrite.test.backing.GroundedDto,    PRODUCER
+  Grounded,     no.sikt.graphitron.rewrite.test.backing.GroundedRecord, ACCESSOR
+  """)

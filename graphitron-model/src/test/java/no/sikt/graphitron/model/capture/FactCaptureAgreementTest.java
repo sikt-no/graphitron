@@ -150,10 +150,9 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       catalog, with {@code no.sikt.graphitron.model.TypeBackingPartitionTest} carrying the cases
  *       a document cannot state because they vary the classpath (a graph reading its own entries
  *       only, one class name on two entries, a parameter compiled without its name);
- *       {@code no.sikt.graphitron.rewrite.derive.TypeBackingClassTest} binds its reach to captured
- *       SDL over a stated census, its cases pinning how far the frontier goes, that a cycle
- *       terminates, the one condition that stops a hop, and each population it deliberately does
- *       not reach;
+ *       the fact document {@code type-backing-closure.graphqls} binds its reach over the service
+ *       corpus, stating how far the frontier goes, that a cycle terminates, the one condition that
+ *       stops a hop, and each population it deliberately does not reach;
  *       {@code no.sikt.graphitron.rewrite.capture.ClassificationDomainTest} states
  *       {@code intent_type_domain}'s membership as hand-written expectations over a real capture,
  *       whole sets where the schema is small enough to write one out, with the two node-seed
