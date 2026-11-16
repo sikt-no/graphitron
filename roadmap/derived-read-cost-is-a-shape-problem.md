@@ -1101,6 +1101,7 @@ static method needs no holder.
       `leggTilBegrensningerForEmnevalgIStudieoppbygningsdeler`'s `studienivaIntervall.fraStudienivaId`
       on `EMNEVALG_I_EMNEKOMBINASJON`, which `NODE_ID_TYPE_NAME_UNDECLARED_STUB` already refuses. That
       breaks sis's build where it builds today, so whether and when is Alf's and Filip's call.
+* **A @tenantFanOut scatter is stated as a connection outcome** `open`, off the critical path. A field marked `@tenantFanOut` reads every tenant the request may see, one statement per tenant, a route `graphitron_occurrence_connection` has no outcome for: under a global parent it gets no row, and `UNROUTED_CHILD` leaves it out by the marker rather than by a stated route. Stating the scatter as an outcome beside `ROUTED`, `INHERIT` and `UNSCOPED` lets the exemption go and the emitter read the route off the store; sakila's multitenant `Language.films` is the case that pins it.
 * **A routine write's re-read keeps its rows in the order the write returned them** `open`, off the critical path. A routine write's rows are re-read by
   the keys it returned through an unordered `IN`, so they can come back in another order than the
   write handed them; the re-read keeps the write's order. A fix of its own, not a gate on the
