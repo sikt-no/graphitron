@@ -1,0 +1,19 @@
+# A @service under Film whose source parameter collects FilmKey, a class of the author's own rather
+# than film records or rows of its key columns: nothing says how to put a parent's key into one. The
+# same field taking film records draws nothing.
+
+type Film @table(name: "film") {
+  title: String
+  byOwnKey: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.ParameterShapeService", method: "titlesByFilmKey"})
+  byRecord: String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "titleByFilm"})
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_SOURCES_NOT_KEYS'", rows: """
+  code,                     coordinate,    detail
+  SERVICE_SOURCES_NOT_KEYS, Film.byOwnKey, no.sikt.graphitron.rewrite.test.services.ParameterShapeService$FilmKey
+  """)

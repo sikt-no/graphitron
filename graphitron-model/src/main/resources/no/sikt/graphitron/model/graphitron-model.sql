@@ -20235,6 +20235,31 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_type t
                     WHERE t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'UNION')
 UNION ALL
+-- A child @service whose source parameter collects a class that is neither a jOOQ table record nor
+-- a jOOQ row or record of the key columns, at the field: nothing says how to put a parent's key into
+-- one, so there is no batch to hand it. The detail is the class.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_SOURCES_NOT_KEYS', mp.element_class, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_occurrence_call_parameter cp
+    ON cp.graph_name = p.graph_name AND cp.coordinate = p.coordinate AND cp.fill = 'SOURCE'
+  JOIN graphitron_occurrence_call_method cm
+    ON cm.graph_name = cp.graph_name AND cm.coordinate = cp.coordinate AND cm.call = cp.call
+  JOIN code_method_parameter mp
+    ON mp.source_name = cm.method_source_name AND mp.class_name = cm.method_class_name
+   AND mp.method_name = cm.method_name AND mp.descriptor = cm.method_descriptor AND mp.position = cp.position
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD' AND mp.element_class IS NOT NULL
+   -- Keys in no container delivering many are the batch shape's.
+   AND mp.erased_class IN ('java.util.Set', 'java.util.List', 'java.util.Collection', 'org.jooq.Result')
+   AND NOT REGEXP_LIKE(mp.element_class, '^org\.jooq\.(Record|Row)[0-9]+$')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_call_parameter_table kt
+                    WHERE kt.graph_name = p.graph_name AND kt.source_name = cm.method_source_name
+                      AND kt.class_name = cm.method_class_name AND kt.method_name = cm.method_name
+                      AND kt.descriptor = cm.method_descriptor AND kt.position = cp.position
+                      AND kt.fit = 'RECORD')
+UNION ALL
 -- An input object reached again inside itself under a class a call builds, at the input field that
 -- reaches it again: the occurrences stop there, so building the class would drop the nested value
 -- rather than build it. The detail is the input type.
@@ -27963,6 +27988,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service under an object takes its keys or answers in a shape the batch does not read: keys in a container delivering many, a jOOQ Result only of the parent''s table records; an answer a Map by key, or a List or Result in the keys'' order under keys a List, Collection or Result gives an order: take a Set and answer a Map, or take a List and answer a List.'),
   ('SERVICE_KEY_OFF_OBJECT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_KEY_OFF_OBJECT_UNSUPPORTED',
    'A @service under a parent holding an object rather than a table''s row takes its keys as jOOQ rows or records of the key columns, which are not read off a member of the object yet: take the keys as the table''s own records, which the member returning them hands over, or give the parent type a @table.'),
+  ('SERVICE_SOURCES_NOT_KEYS', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_SOURCES_NOT_KEYS',
+   'A @service under an object takes its parents'' keys as a class that is neither a jOOQ table record nor a jOOQ row or record of the key columns, and nothing says how to put a key into one: take the parent table''s records, or Row<N> or Record<N> of its key columns.'),
   ('INPUT_CYCLE_EXPANDED', 'error', 'GRAPHITRON', 'GRAPHITRON_INPUT_CYCLE_EXPANDED',
    'An input object is reached again inside itself where a call builds its value into a class, and the class cannot be built without end, so the nested value would be dropped: break the cycle in the input type, or take the nested part as a parameter of its own.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
