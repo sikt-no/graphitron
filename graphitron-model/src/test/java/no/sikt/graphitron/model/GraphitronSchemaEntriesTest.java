@@ -12,6 +12,7 @@ import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -40,7 +41,15 @@ import static org.assertj.core.api.Assertions.tuple;
  */
 class GraphitronSchemaEntriesTest {
 
-    private static final String GRAPH = "schema-site";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphitronSchemaEntriesTest(TestInfo info) {
+        graph = "schemaEntries." + info.getTestMethod().orElseThrow().getName();
+    }
 
     /**
      * What every case here writes above its own schema block. No federation declaration: a
@@ -71,7 +80,8 @@ class GraphitronSchemaEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 
-            assertThat(dsl.select(writtenAt(t), t.NAME, t.ALIAS).from(t).orderBy(writtenAt(t)).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME, t.ALIAS).from(t)
+                    .where(t.GRAPH_NAME.eq(graph)).orderBy(writtenAt(t)).fetch())
                 .as("a bare name, an aliased object and a bare name after it, at their own indices")
                 .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
                 .containsExactly(
@@ -80,6 +90,7 @@ class GraphitronSchemaEntriesTest {
                     tuple(2, "@external", null));
 
             assertThat(dsl.select(GRAPHITRON_AST_LINK_ENTRY.URL).from(GRAPHITRON_AST_LINK_ENTRY)
+                    .where(GRAPHITRON_AST_LINK_ENTRY.GRAPH_NAME.eq(graph))
                     .fetchOne(GRAPHITRON_AST_LINK_ENTRY.URL))
                 .as("and the application they hang off carries the specification it opted in to")
                 .isEqualTo("https://specs.apollo.dev/federation/v2.10");
@@ -103,12 +114,14 @@ class GraphitronSchemaEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_ENTRY;
 
-            assertThat(dsl.select(t.URL).from(t).orderBy(t.SOURCE_LINE).fetch(t.URL))
+            assertThat(dsl.select(t.URL).from(t)
+                    .where(t.GRAPH_NAME.eq(graph)).orderBy(t.SOURCE_LINE).fetch(t.URL))
                 .as("two applications, told apart by where they were written")
                 .containsExactly("https://specs.apollo.dev/federation/v2.10",
                     "https://example.com/other/v1.0");
 
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_IMPORT_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_IMPORT_ENTRY,
+                    GRAPHITRON_AST_LINK_IMPORT_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and each keeps its own imports, both at position 0 under different parents")
                 .isEqualTo(2);
         });
@@ -129,9 +142,11 @@ class GraphitronSchemaEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_ENTRY,
+                    GRAPHITRON_AST_LINK_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("the opt-in is a fact whether or not anything was imported").isEqualTo(1);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_IMPORT_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_IMPORT_ENTRY,
+                    GRAPHITRON_AST_LINK_IMPORT_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and nothing hangs off it").isZero();
         });
     }
@@ -154,7 +169,8 @@ class GraphitronSchemaEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 
-            assertThat(dsl.select(writtenAt(t), t.NAME).from(t).fetch())
+            assertThat(dsl.select(writtenAt(t), t.NAME).from(t)
+                    .where(t.GRAPH_NAME.eq(graph)).fetch())
                 .as("the object naming nothing writes no row, and the name after it is still at 1")
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple(1, "@key"));
@@ -181,7 +197,8 @@ class GraphitronSchemaEntriesTest {
             read(dsl, tmp);
             var t = GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
 
-            assertThat(dsl.select(t.DIRECTIVE_NAME).from(t).orderBy(t.SOURCE_LINE).fetch(t.DIRECTIVE_NAME))
+            assertThat(dsl.select(t.DIRECTIVE_NAME).from(t)
+                    .where(t.GRAPH_NAME.eq(graph)).orderBy(t.SOURCE_LINE).fetch(t.DIRECTIVE_NAME))
                 .as("the plain spelling and the namespaced one, each as written, at its own position")
                 .containsExactly("@nodeType", "@other");
         });
@@ -205,7 +222,8 @@ class GraphitronSchemaEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY,
+                    GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("a name that is not a string, and no name at all").isZero();
         });
     }
@@ -226,7 +244,8 @@ class GraphitronSchemaEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY)).isOne();
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY,
+                    GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY.GRAPH_NAME.eq(graph))).isOne();
 
             write(tmp, "schema.graphqls", FEDERATION + """
                 extend schema
@@ -234,14 +253,15 @@ class GraphitronSchemaEntriesTest {
                 """);
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY,
+                    GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("the second reading no longer finds it").isZero();
         });
     }
 
     /** One reading of everything the directory holds, which is what a run does. */
-    private static void read(DSLContext dsl, Path baseDir) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
+    private void read(DSLContext dsl, Path baseDir) {
+        var graph = new GraphIdentity(this.graph, baseDir);
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"),
             List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
         var readAt = LocalDateTime.now();
