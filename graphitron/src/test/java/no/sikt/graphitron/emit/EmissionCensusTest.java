@@ -75,7 +75,7 @@ class EmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(135);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(136);
         assertThat(byVerdict.get(ServiceEmission.EMITTED))
             .as("a single-table discriminated row whose participants nest objects and read their own paths")
             .contains("Query.fanItemsByService");
@@ -89,6 +89,9 @@ class EmissionCensusTest {
             .as("an id of several node types, at a parameter, a bean member and a member's list")
             .contains("Mutation.assignOccupantByArgument", "Mutation.assignOccupantRecord",
                 "Mutation.assignOccupantRecordList");
+        assertThat(byVerdict.get(ServiceEmission.EMITTED))
+            .as("a bean member that is a list of jOOQ records, each built on its table's columns")
+            .contains("Query.filmRecordBundle");
         // A service the store does not emit is a change to look at, not to re-pin.
         assertThat(byVerdict).containsOnlyKeys(ServiceEmission.EMITTED);
     }

@@ -12846,7 +12846,10 @@ CREATE TABLE graphitron_occurrence_built_class (
   record_source_name VARCHAR,
   record_schema      VARCHAR,
   record_table       VARCHAR,
+  stated_by          VARCHAR   NOT NULL,
   PRIMARY KEY (graph_name, coordinate, class_name),
+  -- What a member binding references, so a member hangs under a class of its own kind.
+  UNIQUE (graph_name, coordinate, class_name, stated_by),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
   -- The class, through the row's own copy of its key, where the graph's entries declare it.
@@ -12859,7 +12862,8 @@ CREATE TABLE graphitron_occurrence_built_class (
   CHECK (class_name_ref IS NULL OR class_name_ref = class_name),
   CHECK ((record_source_name IS NULL) = (record_table IS NULL) AND (record_schema IS NULL) = (record_table IS NULL)),
   CHECK (declared_via IN ('PARAMETER', 'MEMBER', 'GROUPING')),
-  CHECK (member_names IN ('BOUND', 'GRAPHQL'))
+  CHECK (member_names IN ('BOUND', 'GRAPHQL')),
+  CHECK (stated_by IN ('SERVICE', 'CONDITION'))
 );
 COMMENT ON TABLE graphitron_occurrence_built_class IS 'The class an input object occurrence is built into: one row per occurrence and class. For example Mutation.assignFilmRecordList(in:) is built into FilmRecordListAssignment, the class its @service parameter takes, and Mutation.customerUpsert(in:).details into CustomerRecord, the record its parent is built into, as a grouping.';
 COMMENT ON COLUMN graphitron_occurrence_built_class.graph_name IS 'the owning graph''s partition';
@@ -12872,6 +12876,7 @@ COMMENT ON COLUMN graphitron_occurrence_built_class.constructible IS 'whether th
 COMMENT ON COLUMN graphitron_occurrence_built_class.record_source_name IS 'the catalog source of the table the class is the generated jOOQ record of; null for any other class';
 COMMENT ON COLUMN graphitron_occurrence_built_class.record_schema IS 'that table''s schema';
 COMMENT ON COLUMN graphitron_occurrence_built_class.record_table IS 'the table the class is the generated record of, its fields then writing that table''s columns rather than filling members; null for a bean. Decided here once for every reader';
+COMMENT ON COLUMN graphitron_occurrence_built_class.stated_by IS 'which stage states the row: SERVICE where a service, write or routine call reaches the occurrence with the class, written by occurrence-producers ahead of the depth loop from those calls alone, so a record''s fields find their table there; CONDITION where a condition or expression call does and no SERVICE row states the class, written by occurrence-builds, which holds those calls. A class a service and a condition both take is SERVICE''s, its members named as the service names them';
 COMMENT ON COLUMN graphitron_occurrence_built_class.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 COMMENT ON COLUMN graphitron_occurrence_built_class.class_source_ref IS 'the classpath entry half of the class''s code_class key, nullable so the class''s removal sets the reference null rather than cascading; null where none of the graph''s entries declares the class';
 COMMENT ON COLUMN graphitron_occurrence_built_class.class_name_ref IS 'the name half of the class''s key, equal to class_name while the class stands';
@@ -12887,14 +12892,16 @@ CREATE TABLE graphitron_occurrence_binding_member (
   slot_method_name  VARCHAR   NOT NULL,
   slot_descriptor   VARCHAR   NOT NULL,
   slot_position     INT       NOT NULL,
+  stated_by         VARCHAR   NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, coordinate, bound),
   -- The binding it details, pinned to the kind that fills a member of a built class.
   FOREIGN KEY (graph_name, coordinate, bound, kind)
     REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
-  -- A member of the class its parent is built into, which the database holds rather than the rule.
-  FOREIGN KEY (graph_name, parent_coordinate, class_name)
-    REFERENCES graphitron_occurrence_built_class (graph_name, coordinate, class_name) ON DELETE CASCADE,
+  -- A member of the class its parent is built into, stated by the stage that states the class, which
+  -- the database holds rather than the rule.
+  FOREIGN KEY (graph_name, parent_coordinate, class_name, stated_by)
+    REFERENCES graphitron_occurrence_built_class (graph_name, coordinate, class_name, stated_by) ON DELETE CASCADE,
   FOREIGN KEY (slot_source_name, class_name, slot_method_name, slot_descriptor, slot_position)
     REFERENCES code_write_slot (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE,
   CHECK (kind = 'MEMBER'),
@@ -12907,6 +12914,7 @@ COMMENT ON COLUMN graphitron_occurrence_binding_member.coordinate IS 'the input 
 COMMENT ON COLUMN graphitron_occurrence_binding_member.bound IS 'the place bound, the class and the member filled, Class#member; with the two columns before it, the binding''s key';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.kind IS 'always MEMBER, pinned so the foreign key holds the row to a binding of that kind';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.parent_coordinate IS 'the occurrence whose built class the member is of: the input field''s parent, or for a field under a grouping the grouping, which is built into the enclosing class';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.stated_by IS 'which stage states the row, its parent''s class''s: SERVICE by occurrence-producers, CONDITION by occurrence-builds';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.class_name IS 'the class the member is of, the parent''s built class, shared by both foreign keys so the member is one of that class''s. Generated as the part of bound before its #, so nothing writes it';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_source_name IS 'the classpath entry of the member''s code_write_slot row, the entry the parent''s built class is read from';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_method_name IS 'the call that fills the member, the constructor or the setter, as on code_write_slot';
@@ -14882,10 +14890,10 @@ COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id lands
 -- A record's fields write columns, so a record's setters are no members here, however they are named.
 CREATE VIEW graphitron_occurrence_binding_member_rule
   (graph_name, coordinate, bound, kind, parent_coordinate, class_name, slot_source_name, slot_method_name,
-   slot_descriptor, slot_position, parent_touched_at) AS
+   slot_descriptor, slot_position, stated_by, parent_touched_at) AS
 SELECT o.graph_name, o.coordinate, pr.class_name || '#' || w.slot_name, 'MEMBER',
        o.parent_coordinate,
-       pr.class_name, w.source_name, w.method_name, w.descriptor, w.position, pr.touched_at
+       pr.class_name, w.source_name, w.method_name, w.descriptor, w.position, pr.stated_by, pr.touched_at
   FROM graphitron_occurrence o
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_occurrence_built_class pr
@@ -14908,15 +14916,15 @@ COMMENT ON VIEW graphitron_occurrence_binding_member_rule IS 'The member of the 
 -- before its classes, carried with when they were written so the writer reads this reading's only.
 CREATE VIEW graphitron_occurrence_built_class_rule
   (graph_name, coordinate, depth, class_name, declared_via, member_names, built_at, parent_touched_at,
-   class_source_ref, class_name_ref, constructible, record_source_name, record_schema, record_table) AS
+   class_source_ref, class_name_ref, constructible, record_source_name, record_schema, record_table,
+   stated_by) AS
 WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_names, built_at,
-              parent_touched_at) AS (
-  -- Every call's ARGUMENT fill, a condition's among them, at the occurrence it lands on.
+              parent_touched_at, stated_by) AS (
+  -- Every service, write or routine call's ARGUMENT fill at the occurrence it lands on, stated with
+  -- the service by occurrence-producers, which holds these calls and no condition's: the class the
+  -- parameter takes, its members named by their bound names.
   SELECT cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class),
-         'PARAMETER',
-         CASE WHEN MIN(s.call_kind) = 'CONDITION' AND MAX(s.call_kind) = 'CONDITION'
-              THEN 'GRAPHQL' ELSE 'BOUND' END,
-         cp.landing_coordinate, CAST(NULL AS TIMESTAMP)
+         'PARAMETER', 'BOUND', cp.landing_coordinate, CAST(NULL AS TIMESTAMP), 'SERVICE'
     FROM graphitron_occurrence_call_parameter cp
     JOIN graphitron_occurrence_call_method s
       ON s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate AND s.call = cp.call
@@ -14930,26 +14938,55 @@ WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_na
     JOIN graphitron_type t
       ON t.graph_name = o.graph_name AND t.type_name = COALESCE(a.named_type, f.named_type)
      AND t.kind = 'INPUT_OBJECT'
-   WHERE cp.fill = 'ARGUMENT'
+   WHERE cp.fill = 'ARGUMENT' AND s.call_kind NOT IN ('CONDITION', 'EXPRESSION')
+     AND COALESCE(mp.element_class, mp.erased_class) NOT IN ('java.util.Map', 'java.lang.Object')
+   GROUP BY cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class)
+  UNION ALL
+  -- Every condition or expression call's ARGUMENT fill, stated by occurrence-builds where no service
+  -- call takes the same class at the landing: a condition names members by their GraphQL names.
+  SELECT cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class),
+         'PARAMETER',
+         CASE WHEN MIN(s.call_kind) = 'CONDITION' AND MAX(s.call_kind) = 'CONDITION'
+              THEN 'GRAPHQL' ELSE 'BOUND' END,
+         cp.landing_coordinate, CAST(NULL AS TIMESTAMP), 'CONDITION'
+    FROM graphitron_occurrence_call_parameter cp
+    JOIN graphitron_occurrence_call_method s
+      ON s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate AND s.call = cp.call
+    JOIN code_method_parameter mp
+      ON mp.source_name = s.method_source_name AND mp.class_name = s.method_class_name
+     AND mp.method_name = s.method_name AND mp.descriptor = s.method_descriptor
+     AND mp.position = cp.position
+    JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
+    LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+    LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+    JOIN graphitron_type t
+      ON t.graph_name = o.graph_name AND t.type_name = COALESCE(a.named_type, f.named_type)
+     AND t.kind = 'INPUT_OBJECT'
+   WHERE cp.fill = 'ARGUMENT' AND s.call_kind IN ('CONDITION', 'EXPRESSION')
+     -- A class a service call takes at the landing is stated with the service, by the stage before.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class sb
+                      WHERE sb.graph_name = cp.graph_name AND sb.coordinate = cp.landing_coordinate
+                        AND sb.class_name = COALESCE(mp.element_class, mp.erased_class)
+                        AND sb.stated_by = 'SERVICE')
      AND COALESCE(mp.element_class, mp.erased_class) NOT IN ('java.util.Map', 'java.lang.Object')
    GROUP BY cp.graph_name, cp.landing_coordinate, o.depth, COALESCE(mp.element_class, mp.erased_class)
   UNION ALL
   -- A call pinning no method, a write, binds an input object against the record of the table its
   -- fill names, so that table's generated record is the class.
   SELECT cp.graph_name, cp.landing_coordinate, o.depth, st.record_class_fqn, 'PARAMETER', 'BOUND',
-         cp.landing_coordinate, CAST(NULL AS TIMESTAMP)
+         cp.landing_coordinate, CAST(NULL AS TIMESTAMP), 'SERVICE'
     FROM graphitron_occurrence_call_parameter cp
     JOIN sql_table st
       ON st.source_name = cp.record_source_name AND st.table_schema = cp.record_schema
      AND st.table_name = cp.record_table
     JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
-   WHERE cp.fill = 'ARGUMENT'
+   WHERE cp.fill = 'ARGUMENT' AND cp.call_kind NOT IN ('CONDITION', 'EXPRESSION')
      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call_method s
                       WHERE s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate
                         AND s.call = cp.call)
   UNION ALL
   SELECT m.graph_name, m.coordinate, o.depth, COALESCE(w.element_class, w.erased_class), 'MEMBER',
-         pr.member_names, m.coordinate, pr.touched_at
+         pr.member_names, m.coordinate, pr.touched_at, pr.stated_by
     FROM graphitron_occurrence_binding_member m
     JOIN graphitron_occurrence o ON o.graph_name = m.graph_name AND o.coordinate = m.coordinate
     JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
@@ -14958,7 +14995,7 @@ WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_na
     -- The member bindings of this reading, written before the classes at each depth.
     JOIN graphitron_occurrence_built_class pr
       ON pr.graph_name = m.graph_name AND pr.coordinate = m.parent_coordinate
-     AND pr.class_name = m.class_name AND pr.touched_at = m.touched_at
+     AND pr.class_name = m.class_name AND pr.stated_by = m.stated_by AND pr.touched_at = m.touched_at
     JOIN code_write_slot w
       ON w.source_name = m.slot_source_name AND w.class_name = m.class_name
      AND w.method_name = m.slot_method_name AND w.descriptor = m.slot_descriptor
@@ -14968,7 +15005,7 @@ WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_na
   -- under a record, whose fields write columns, and under a bean where no member has its name and
   -- nothing renames it.
   SELECT o.graph_name, o.coordinate, o.depth, pr.class_name, 'GROUPING', pr.member_names, pr.built_at,
-         pr.touched_at
+         pr.touched_at, pr.stated_by
     FROM graphitron_occurrence o
     JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
     JOIN graphitron_type t
@@ -14978,7 +15015,8 @@ WITH reached (graph_name, coordinate, depth, class_name, declared_via, member_na
    WHERE o.kind = 'INPUT_FIELD' AND NOT f.is_list
      AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
                       WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
-                        AND m.class_name = pr.class_name AND m.touched_at = pr.touched_at)
+                        AND m.class_name = pr.class_name AND m.stated_by = pr.stated_by
+                        AND m.touched_at = pr.touched_at)
      AND (pr.record_table IS NOT NULL OR pr.member_names = 'GRAPHQL' OR f.bound_name = o.name)
 ),
 -- The table each class read is the generated record of, among the graph's catalog sources.
@@ -14992,7 +15030,7 @@ SELECT r.graph_name, r.coordinate, r.depth, r.class_name, r.declared_via, r.memb
        r.parent_touched_at, cc.source_name, cc.class_name,
        EXISTS (SELECT 1 FROM code_construction k
                 WHERE k.source_name = cc.source_name AND k.class_name = r.class_name),
-       rc.source_name, rc.table_schema, rc.table_name
+       rc.source_name, rc.table_schema, rc.table_name, r.stated_by
   FROM reached r
   LEFT JOIN recorded rc ON rc.graph_name = r.graph_name AND rc.record_class = r.class_name
   -- The class by its key, the copy the graph resolves the name to, as
@@ -24288,13 +24326,19 @@ COMMENT ON VIEW graphitron_occurrence_source_claim_own_service_record_rule IS 'O
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_own_service_record_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.table_name';
 
 CREATE VIEW graphitron_occurrence_source_claim_record_parameter_rule (graph_name, coordinate, rule, kind, table_source_name, table_schema, table_name) AS
-SELECT DISTINCT o.graph_name, o.coordinate, 'recordParameter', 'TABLE', c.record_source_name, c.record_schema, c.record_table
+SELECT DISTINCT o.graph_name, o.coordinate, 'recordParameter', 'TABLE', bc.record_source_name, bc.record_schema, bc.record_table
   FROM graphitron_occurrence o
-  JOIN graphitron_occurrence_call_parameter c
-    ON c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
-   AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.coordinate AND bc.stated_by = 'SERVICE'
+   AND bc.record_table IS NOT NULL
+   -- A member a service's bean takes, or a service's own parameter; a write's record is not this rule's.
+   AND (bc.declared_via = 'MEMBER'
+        OR bc.declared_via = 'PARAMETER'
+           AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter c
+                        WHERE c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
+                          AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL))
  WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD');
-COMMENT ON VIEW graphitron_occurrence_source_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service call takes as a table''s jOOQ record reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
+COMMENT ON VIEW graphitron_occurrence_source_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service takes as a table''s jOOQ record, as a parameter or a bean member, reads that table. For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.graph_name';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.coordinate';
 -- COMMENT ON COLUMN graphitron_occurrence_source_claim_record_parameter_rule.rule IS 'the rule of a row of this rule, which the stage writes into graphitron_occurrence_source_claim_table.rule';
@@ -24837,14 +24881,20 @@ CREATE VIEW graphitron_path_need_claim_record_parameter_rule (graph_name, coordi
 SELECT DISTINCT o.graph_name, o.coordinate, COALESCE(ra.named_type, rf.named_type), 'recordParameter', st.table_source_name, st.table_schema, st.table_name, CASE WHEN cl.element_coordinate IS NULL THEN st.table_source_name END, CASE WHEN cl.element_coordinate IS NULL THEN st.table_schema END, CASE WHEN cl.element_coordinate IS NULL THEN st.table_name END
   FROM graphitron_occurrence o
   JOIN graphitron_occurrence_source_table st ON st.graph_name = o.graph_name AND st.coordinate = o.coordinate
-  JOIN graphitron_occurrence_call_parameter c
-    ON c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
-   AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.coordinate AND bc.stated_by = 'SERVICE'
+   AND bc.record_table IS NOT NULL
+   -- A member a service's bean takes, or a service's own parameter; a write's record is not this rule's.
+   AND (bc.declared_via = 'MEMBER'
+        OR bc.declared_via = 'PARAMETER'
+           AND EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter c
+                        WHERE c.graph_name = o.graph_name AND c.landing_coordinate = o.coordinate
+                          AND c.call_kind = 'SERVICE' AND c.record_table IS NOT NULL))
   LEFT JOIN graphitron_argument ra ON ra.graph_name = o.graph_name AND ra.coordinate = o.element_coordinate
   LEFT JOIN graphitron_field rf ON rf.graph_name = o.graph_name AND rf.coordinate = o.element_coordinate
   LEFT JOIN graphitron_join_path_claim cl ON cl.graph_name = o.graph_name AND cl.element_coordinate = o.element_coordinate AND (cl.claim_kind <> 'REFERENCE_FOR' OR cl.target_type = COALESCE(ra.named_type, rf.named_type))
  WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND COALESCE(ra.named_type, rf.named_type) IS NOT NULL;
-COMMENT ON VIEW graphitron_path_need_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_path_need_claim stores: an argument or input field a service call takes as a table''s record reaches its own input type, on the record''s table. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
+COMMENT ON VIEW graphitron_path_need_claim_record_parameter_rule IS 'One claim the recordParameter rule makes, in the shape graphitron_path_need_claim stores: an argument or input field a service takes as a table''s record, as a parameter or a bean member, reaches its own input type on the record''s table. For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.';
 -- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_path_need_claim.graph_name';
 -- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.coordinate IS 'the coordinate of a row of this rule, which the stage writes into graphitron_path_need_claim.coordinate';
 -- COMMENT ON COLUMN graphitron_path_need_claim_record_parameter_rule.target_type IS 'the target_type of a row of this rule, which the stage writes into graphitron_path_need_claim.target_type';
@@ -26028,6 +26078,8 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot_record_column'),
   ('occurrence-builds', 'graphitron_entry_defect'),
   ('occurrence-builds', 'graphitron_entry_defect_member'),
+  ('occurrence-producers', 'graphitron_occurrence_binding_member'),
+  ('occurrence-producers', 'graphitron_occurrence_built_class'),
   ('occurrence-builds', 'graphitron_occurrence_binding'),
   ('occurrence-builds', 'graphitron_occurrence_binding_member'),
   ('occurrence-builds', 'graphitron_occurrence_built_class'),
@@ -26180,7 +26232,12 @@ INSERT INTO meta_stage_write_kind VALUES
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'EXPRESSION'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'TABLE'),
   ('occurrence-bindings', 'graphitron_occurrence_binding', 'kind', 'PARAMETER'),
+  ('occurrence-producers', 'graphitron_occurrence_binding', 'kind', 'MEMBER'),
   ('occurrence-builds', 'graphitron_occurrence_binding', 'kind', 'MEMBER'),
+  ('occurrence-producers', 'graphitron_occurrence_binding_member', 'stated_by', 'SERVICE'),
+  ('occurrence-builds', 'graphitron_occurrence_binding_member', 'stated_by', 'CONDITION'),
+  ('occurrence-producers', 'graphitron_occurrence_built_class', 'stated_by', 'SERVICE'),
+  ('occurrence-builds', 'graphitron_occurrence_built_class', 'stated_by', 'CONDITION'),
   ('occurrence-tenants', 'graphitron_occurrence_binding', 'kind', 'TENANT'),
   ('occurrence-values', 'graphitron_occurrence_binding', 'kind', 'VALUE');
 
@@ -26281,6 +26338,8 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-bindings', 'graphitron_occurrence_producer_lift_accessor', 'graphitron_occurrence_producer_lift_accessor_rule'),
   ('occurrence-builds', 'graphitron_entry_defect', 'graphitron_occurrence_build_entry_defect_rule'),
   ('occurrence-builds', 'graphitron_entry_defect_member', 'graphitron_occurrence_build_entry_defect_member_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_member_rule'),
+  ('occurrence-producers', 'graphitron_occurrence_built_class', 'graphitron_occurrence_built_class_rule'),
   ('occurrence-builds', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_member_rule'),
   ('occurrence-builds', 'graphitron_occurrence_built_class', 'graphitron_occurrence_built_class_rule'),
   ('occurrence-builds', 'graphitron_occurrence_node_id_shape', 'graphitron_occurrence_node_id_shape_rule'),
@@ -28020,7 +28079,7 @@ INSERT INTO meta_relation VALUES
    'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
    'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_occurrence_source_claim_record_parameter_rule', 'source-claim-table', 'graphitron',
-   'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service call takes as a table''s jOOQ record reads that table.',
+   'One claim the recordParameter rule makes, in the shape graphitron_occurrence_source_claim_table stores: an argument or input field a service takes as a table''s jOOQ record, as a parameter or a bean member, reads that table.',
    'For example the occurrence-source-claims stage inserts this view''s rows for one graph into graphitron_occurrence_source_claim_table, the rule''s own and no other.',
    'One arm of what the source writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_occurrence_source_claim_argument_target_rule', 'source-claim-table', 'graphitron',
@@ -28120,7 +28179,7 @@ INSERT INTO meta_relation VALUES
    'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
    'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_path_need_claim_record_parameter_rule', 'path-need-claim', 'graphitron',
-   'One claim the recordParameter rule makes, in the shape graphitron_path_need_claim stores: an argument or input field a service call takes as a table''s record reaches its own input type, on the record''s table.',
+   'One claim the recordParameter rule makes, in the shape graphitron_path_need_claim stores: an argument or input field a service takes as a table''s record, as a parameter or a bean member, reaches its own input type on the record''s table.',
    'For example the occurrence-depths stage inserts this view''s rows for one graph and one depth into graphitron_path_need_claim, the rule''s own and no other.',
    'One arm of what the need writer once evaluated as a single union, kept in the catalog as a rule of its own so H2 plans it alone and the gates reading stored definitions see what it reads. It reads no reading''s mark: every stored row it reads is current when it runs.'),
   ('graphitron_path_need_claim_argument_table_bound_rule', 'path-need-claim', 'graphitron',

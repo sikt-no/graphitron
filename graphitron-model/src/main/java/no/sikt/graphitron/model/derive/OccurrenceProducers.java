@@ -57,7 +57,8 @@ public final class OccurrenceProducers {
 
     /**
      * The stage: the producers and their service, write and root routine calls, the calls' fills,
-     * what they produce, the sweep, then the defects its facts break.
+     * what they produce, the sweep, the classes those calls build their input objects into, then the
+     * defects its facts break.
      */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         write(dsl, graph, touchedAt);
@@ -69,6 +70,10 @@ public final class OccurrenceProducers {
         OccurrenceCallParameters.sweep(dsl, graph, touchedAt, "ROUTINE");
         writeResults(dsl, graph, touchedAt);
         sweep(dsl, graph, touchedAt);
+        // The classes the service, write and routine calls build their input objects into, ahead of
+        // the depth loop, which reads a record's table off them for its fields.
+        OccurrenceBuilds.write(dsl, graph, touchedAt, OccurrenceBuilds.SERVICE);
+        OccurrenceBuilds.sweep(dsl, graph, touchedAt, OccurrenceBuilds.SERVICE);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.PRODUCERS);
     }
 

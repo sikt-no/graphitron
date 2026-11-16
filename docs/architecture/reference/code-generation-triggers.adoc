@@ -148,7 +148,8 @@ wording is the manual's xref:../../manual/reference/directives/reference.adoc#pa
 rules], and a rule changes in the same commit as its code and that page.
 
 * An input is bound to a table record: the field's target table, or under a `@service` the table of
-  the record type of the parameter it fills. An input type is never table-bound itself.
+  the record type of the parameter or bean member it fills, as `graphitron_occurrence_built_class`
+  states it ahead of the depth loop. An input type is never table-bound itself.
 * Without `@reference` an input's path is `EMPTY`: a nested input is the same row, unnested into
   the bound record.
 * On an input that filters, a written path is a join in the condition, a correlated `EXISTS`,

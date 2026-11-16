@@ -136,7 +136,7 @@ type Category @table(name: "category") {
 
 === Arguments and input fields
 
-. *An input is bound to a table record.* An argument and the input fields under it are bound to the field's target table; under a `@service`, to the table of the record type of the parameter they fill (a `FilmRecord` parameter binds `film`). An input type is never bound to a table itself.
+. *An input is bound to a table record.* An argument and the input fields under it are bound to the field's target table; under a `@service`, to the table of the record type of the parameter they fill (a `FilmRecord` parameter binds `film`), or of the bean member they fill (a `List<PersonTelefonRecord>` member binds `person_telefon` for each element). An input type is never bound to a table itself.
 . *Without `@reference` the path is empty.* A nested input is the same row, unnested into the bound record.
 . *A filter's `@reference` is a join in its condition.* On an argument or input field that filters, a path lowers to a correlated `EXISTS`, single- or multi-hop, by the output rules.
 . *On an input that fills a record, `@reference` goes with `@nodeId` only.* A record does not nest, so a path elsewhere on such an input is an error.

@@ -1,0 +1,29 @@
+# A @service bean whose member is a list of a table's jOOQ records: FilmRecordBundle's films member is a
+# List<FilmRecord>, so each film input object is built into a film record and its fields bind film's
+# columns, as a record parameter's do. The occurrence-producers stage states the built class ahead of
+# the depth loop, so the member's input object reads film there.
+
+input FilmRecordTitleInput { title: String @field(name: "title") }
+input FilmRecordBundleInput {
+  name: String
+  films: [FilmRecordTitleInput!]
+}
+
+type Film @table(name: "film") { title: String }
+
+type Query {
+  films: [Film!]!
+  filmRecordBundle(in: FilmRecordBundleInput!): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmRecordBundleService",
+    method: "describe", argMapping: "bundle: in"})
+}
+
+extend schema @expectEquals(relation: "graphitron_occurrence_built_class", where: "record_table IS NOT NULL", rows: """
+  coordinate,                        class_name,                                                             declared_via, record_table, stated_by
+  Query.filmRecordBundle(in.films:), no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, MEMBER,       film,         SERVICE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_column", where: "coordinate LIKE 'Query.filmRecordBundle%'", rows: """
+  coordinate,                               table_name, column_name
+  Query.filmRecordBundle(in.films.title:),  film,       title
+  """)

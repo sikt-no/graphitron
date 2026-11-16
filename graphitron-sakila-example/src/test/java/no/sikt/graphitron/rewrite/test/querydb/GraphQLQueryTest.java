@@ -9339,6 +9339,18 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void filmRecordBundle_aRecordListMember_isBuiltColumnByColumn() {
+        // FilmRecordBundle's films member is a List<FilmRecord>: each element is built from its input
+        // object on the column axis, the title written and marked touched.
+        Map<String, Object> data = execute("""
+            {
+                filmRecordBundle(in: { name: "BUNDLE", films: [{ title: "ONE" }, { title: "TWO" }] })
+            }
+            """);
+        assertThat(data).containsEntry("filmRecordBundle", "BUNDLE:ONE,TWO");
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void countFilmBundleDraft_validBundle_runsTheService() {
         Map<String, Object> data = execute("""
