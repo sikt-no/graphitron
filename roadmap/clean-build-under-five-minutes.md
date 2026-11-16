@@ -131,27 +131,41 @@ The steps below, from either track or from R876, in the order their measured eff
 Whoever works this item takes the top open step, prices it before it lands, and re-ranks the queue
 from the next recording.
 
-1. **`graphitron_type_backing_rule` stops recursing** (R876,
-   "The type-backing closure is stored, not recursed, claimed by B").
-   About 1 s off every capture, not only every fresh store, since H2's view-index cache evicts the
-   recursive view within each capture (A5); and off a consumer's cold capture.
-2. **Fewer fresh stores** (A2, A2a, R1160's migration onto the population). The 57 classes with
-   stores of their own, heaviest first by per-class prepare time, re-measured after step 1 and
-   attributed per class: the counted run charged a thread-confined store to the class that first
-   opened it, so its four heaviest openers are the 37 thread-confined classes together. A store that
-   has to stay its own (a lifetime or oracle test) is made as small as what it tests.
-3. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
+1. **`graphitron_type_backing_rule` stops recursing.** Done: the closure is a stage stepping one
+   hop a round, and its first compile fell from about 1,000 ms to about 11 ms.
+2. **The thread store's clear keeps its thread's statements.** Measured 2026-11-16 by binning every
+   prepare of the model suite by what H2's session held before it (826 s of prepare time summed over
+   forks): a re-prepare after a wipe costs 1.0 ms and builds almost no view index, but
+   `ThreadConfinedStore`'s clear toggled `SET REFERENTIAL_INTEGRITY`, which empties every session's
+   statement cache, so its 354 clears threw away about 1,250 statements each: 442 thousand
+   re-prepares and 443 s, 54% of the total. The clear without a setting is written; its measurement,
+   with the delete's own cost against the truncate's, decides it.
+3. **Fewer fresh stores** (A2, A2a, R1160's migration onto the population). Prepares on a session
+   that never saw the statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest
+   in `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
+   `StoreNodeTablesTest` 12 s and `SourceGraphScopingTest` 10 s, besides the population's own 39 s.
+   A store that has to stay its own (a lifetime or oracle test) is made as small as what it tests:
+   a capture of only the gatherers its subject needs. `GraphCountGrowthGateTest` spends 33 s
+   re-preparing what its 64-entry cache evicts across sixteen captures; a larger cache changes what
+   the gate can see, so that one is Alf's call.
+4. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
    step 1 removes that cost; no other rule view costs more than a few milliseconds to compile again.
    Nothing to change unless the re-measure after step 1 shows another view paying it.
-4. **A fresh store opens cheaply** (A6). The DDL's 3,661 `COMMENT ON` statements, which capture
+5. **A fresh store opens cheaply** (A6). The DDL's 3,661 `COMMENT ON` statements, which capture
    never reads, and the DDL hash taken twice on every open.
-5. **A test's catalog is read once** (A7). The catalog skip needs the catalog's classpath entry, and
+6. **A test's catalog is read once** (A7). The catalog skip needs the catalog's classpath entry, and
    tests pass none, so every capture re-reads it.
-6. **Planning per statement** (Track C: R876's view nodes and per-depth nodes), by `prepare_ms` on a
+7. **Planning per statement** (Track C: R876's view nodes and per-depth nodes), by `prepare_ms` on a
    cold capture.
-7. **Track B**, priced after the above, since it divides what is left.
-8. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
+8. **Track B**, priced after the above, since it divides what is left.
+9. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
    ranked: a stage that runs with no input for the schema, the two store-wide `ANALYZE`s per capture.
+
+A question for production rather than a step here: a bounded `ReadBudget` installs itself with
+`SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
+session on the database, the writer's included. The model suite runs it four times, so it costs the
+build nothing; what it costs the language server and the tool server depends on how often they mint
+a bounded reader, which nobody has counted.
 
 ## The plan
 
