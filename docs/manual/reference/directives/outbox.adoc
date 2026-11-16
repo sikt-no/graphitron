@@ -1,18 +1,21 @@
 = @outbox
-:description: Write a transactional outbox message every time a mutation field succeeds, inside the transaction that made the change.
+:description: Write a transactional outbox message every time a mutation field succeeds, inside the transaction that made the change, or after it fails.
 :!toc:
 
 Tells graphitron to write a message to your transactional outbox every time a mutation field succeeds, inside the transaction that made the change, so the message exists if and only if the write committed. A *transactional outbox* is the pattern where a service records "this happened" in its own database, in the transaction that made it happen, and a separate relay (a poller, or change data capture such as Debezium) publishes it to a message broker afterwards.
 
 A message is a business event: what happened, named by you (`FilmCreated`, `RentalReturned`), and a body you shape for the systems that consume it. It is not a record of which rows changed, and an event may mention any number of ids in its payload. Graphitron writes the event's type and its payload; your table or routine gives it an id and a time, and your relay decides where it goes.
 
-The directive is repeatable: each `@outbox` on a field is one message, written once per successful call, in the order the directives appear. To publish something new, add another `@outbox` beside the ones you have; the published messages do not change, so their consumers are not affected. That includes a new version of an event: add `@outbox(event: "FilmCreated.v2", ...)` beside the old one, and remove the old one when its last consumer has moved.
+A message can also describe the field's failure: an `@outbox(on: ERROR)` is written when the field fails, after its transaction has rolled back (<<on-failure,On failure>>). A call that commits writes its success messages and no failure message, and a call that rolls back writes its failure messages and no success message.
+
+The directive is repeatable: each `@outbox` on a field is one message, written once per call that ends in its outcome, in the order the directives appear. To publish something new, add another `@outbox` beside the ones you have; the published messages do not change, so their consumers are not affected. That includes a new version of an event: add `@outbox(event: "FilmCreated.v2", ...)` beside the old one, and remove the old one when its last consumer has moved.
 
 == SDL signature
 
 [source,graphql]
 ----
-directive @outbox(event: String, argMapping: String) repeatable on FIELD_DEFINITION
+directive @outbox(event: String, argMapping: String, on: OutboxOutcome = SUCCESS) repeatable on FIELD_DEFINITION
+enum OutboxOutcome { SUCCESS, ERROR }
 ----
 
 == Parameters
@@ -20,8 +23,9 @@ directive @outbox(event: String, argMapping: String) repeatable on FIELD_DEFINIT
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `event` | `String` | the field's coordinate (`Mutation.createFilm`) | The message's event type, the name your downstream consumers subscribe to. Name it when the event should outlive the field's name, since renaming a field without an `event` renames the event its consumers subscribe to. Two `@outbox` in the schema with the same event, given or defaulted, fail the build, so on one field at most one `@outbox` may leave `event` out.
+| `event` | `String` | the field's coordinate (`Mutation.createFilm`), followed by `.failed` on an `ERROR` message (`Mutation.createFilm.failed`) | The message's event type, the name your downstream consumers subscribe to. Name it when the event should outlive the field's name, since renaming a field without an `event` renames the event its consumers subscribe to. Two `@outbox` in the schema with the same event, given or defaulted, fail the build, so on one field at most one `@outbox` per outcome may leave `event` out.
 | `argMapping` | `String` | (none) | Builds the message's flat JSON payload, `jsonKey: source`, comma-separated, the same form `@service` and `@routine` use. The same key twice in one `argMapping`, or a key that is also in the common payload, fails the build.
+| `on` | `OutboxOutcome` | `SUCCESS` | The outcome the message is written on: `SUCCESS`, in the field's transaction when it commits; `ERROR`, after the field's transaction rolled back (<<on-failure,On failure>>).
 |===
 
 == Where a value comes from
@@ -33,6 +37,7 @@ directive @outbox(event: String, argMapping: String) repeatable on FIELD_DEFINIT
 | `$result`, `$result.id` | The field's success outcome: what the write produced. For an `@mutation` field that is the written type's node id and its own column fields, read from the rows the write wrote. A path that would need another query (a `@reference`, a `@splitQuery` field, a `@service` child) is rejected at build. A list result yields an array. After a `DELETE` there are no rows left to read, so only the node id can be named. For a `@service` field it is the value the service returned: `$result` itself where that is a scalar, a member read through the fields your path names (`$result.holder.blurb.description`), or the node id of a record a member returns (`$result.film.id`). A path through a list, or ending on an object or a record, is rejected at build.
 | `$session.userId` | One member of the session handle your `<sessionState>` mount returned, read on the write's own transaction. The handle must be configured, the member named exactly as in xref:../mojo-configuration.adoc#consuming-the-handle[`@service` and `@condition`], and its type must be one a JSON payload carries: text, a number, a boolean, a character, a UUID or a `java.time` value. A member that is not, an unknown or ambiguous one, and the whole handle `$session` are rejected at build. Only the owned acquisition mounts a handle, so a field that reads one fails on a caller-supplied `DSLContext` and rolls its write back.
 | `$scope.coordinate`, `$scope.operationName`, `$scope.alias` | The field and its operation. `operationName` and `alias` are absent when there is none.
+| `$error.__typename`, `$error.message` | On an `ERROR` message only, in place of `$result`: the error an `@error` channel claimed the failure as. `__typename` is the `@error` type the client was shown, and `$error.<field>` a field of it, read as the type's own fetcher reads it for the response, so a `message` is the one the client read. The field returns a type with an errors field, and every `@error` type that errors field holds must declare the field with one type, so the payload has one shape whichever error it was. When nothing claimed the failure every `$error` key is absent. `$result` on an `ERROR` message, `$error` on a `SUCCESS` one, and a path not every error type declares are refused at build (`ARGMAPPING_SOURCE_MISFIT`).
 |===
 
 Values appear in your API's own representation: an `ID` as your clients see it, an enum by its GraphQL name.
@@ -54,9 +59,36 @@ A call that wrote no rows (an `UPDATE` that matched nothing, or one whose input 
 
 On a `@service` field the service runs inside the same transaction as its messages: graphitron opens it and hands the service a `DSLContext` on it. What the service writes through that `DSLContext`, nested transactions included, commits with the messages or rolls back with them. A write the service makes some other way, through a connection of its own or a call to another system, is outside the transaction, and no message can be made atomic with it.
 
+[#on-failure]
+== On failure
+
+On a field that returns a payload with an errors field, `@outbox(on: ERROR, ...)` is written when the field fails instead:
+
+[source,graphql]
+----
+include::examples/outbox.graphqls[tag=OnFailure]
+----
+
+Graphitron first rolls the field's transaction back, so nothing the field wrote survives, its success messages included, and then writes the field's `ERROR` messages, all of them in one transaction of their own. Every way a field's transaction ends in a rollback writes them: a failure an `@error` channel claimed, an unexpected exception your clients see redacted, the field's own success message failing to write, and a `COMMIT` the database refuses at the end (a deferred constraint, say). A failure no `@error` channel claimed still writes the message, with every `$error` key absent, so nothing internal reaches the event.
+
+The guarantee is weaker than the success side's, and has to be: the message is written at most once, after the rollback, and a process that dies between the rollback and the write loses it. A consumer sees failure messages from transactions that wrote nothing else.
+
+Where the message is written depends on what the failure left of the field's connection:
+
+* *The connection survived the rollback*, the common case: the message is written on it, with your session still mounted.
+* *The transaction cost the connection*: a tenant that timed out in a fanned-out part of the field, or the database ending the session over the transaction (on PostgreSQL `idle_in_transaction_session_timeout`, and `transaction_timeout` from PostgreSQL 17; on Oracle a resource limit or a killed session). The old connection is aborted or evicted, and the message is written on a fresh connection graphitron acquires and mounts your session on for the purpose, then releases at once. Graphitron waits for that connection for at most the runtime's xref:../runtime-api.adoc#outbox-acquisition-timeout[`outboxAcquisitionTimeout`], five seconds unless you set it; past that the message is not written and the loss is logged, saying how much of the wait was spent queued for the executor and how much acquiring, so the next field is never held longer.
+* *The connection failed for a reason outside the transaction*: the database is down or restarting, the network broke, a backend was terminated, no connection could be acquired. There is nothing to write on, and the lost message is logged with the field's path, the event names and the cause. A `COMMIT` whose answer was lost is in this case too, since it may have committed, and a failure message then would contradict the success messages that committed with it.
+
+If your session mount fails, nothing is written, whether on the field's own connection or on a fresh one, and the loss is logged: every owned statement runs on a mounted connection, and the mount may be what sets the database role or the row-level security context. If writing the messages fails, the failure is logged and the response is unchanged, since the field has already failed.
+
+Failure messages are written on graphitron's owned connections only. On the escape hatch (`Graphitron.newGraphQL()` with your own `DSLContext`) there is no point after the rollback where graphitron holds the connection, so the message is not written and a warning naming the field is logged. Under the rollback-everything dev mode (`CommitPolicy.ROLLBACK_ONLY`) the messages are written inside the operation's transaction and discarded with everything else, on a fresh connection as on the field's own.
+
+A failure an input check answers before the field writes anything, a `VALIDATION` handler's, puts its error in the payload without failing the field's transaction, so it writes neither a success message nor a failure message.
+
 == Constraints
 
 * Valid on Mutation fields that write a table with `@mutation` (`INSERT`, `UPDATE` or `DELETE`), and on Mutation fields a `@service` answers; every other placement is a build error naming the field.
+* An `ERROR` message's `$error` keys need the field to return a type with an errors field; without one, an `ERROR` message carries arguments, session and scope only.
 * On a `@service` field, the field's fetcher must be one graphitron generates from its model of the schema. A service taking a jOOQ record built from its input is not yet, and its `@outbox` is a build error naming why, until it is.
 * Where the messages go is configured once, in the plugin's `<outbox>` block. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
 

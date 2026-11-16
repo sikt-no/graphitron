@@ -9,6 +9,9 @@ import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.emit.ErrorChannelRelation;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
@@ -79,6 +82,15 @@ public final class ErrorMappingsClassGenerator {
         return GeneratedUnits.screamingSnake(errorTypeName);
     }
 
+    /**
+     * The name of the type choice emitted for one {@code @error}-only union or interface:
+     * {@code typeOf} and the container's name. The schema's type resolver for the container and an
+     * {@code @outbox(on: ERROR)} companion reading the claimed error's type both call it.
+     */
+    public static String typeChoiceMethodName(String containerName) {
+        return "typeOf" + containerName;
+    }
+
     /** The constant an outcome type's dispatch table is emitted under, and every catch arm names. */
     public static String channelConstantName(String outcomeTypeName) {
         return GeneratedUnits.mappingsConstant(outcomeTypeName);
@@ -133,7 +145,78 @@ public final class ErrorMappingsClassGenerator {
             builder.addMethod(buildConcatMethod(mapping, mappingArray));
         }
 
+        // A type with no participants is no union or interface, which the predicate answers false for.
+        schema.types().entrySet().stream()
+            .filter(e -> GraphitronSchemaClassGenerator.isErrorOnlyPolymorphic(e.getValue(), schema))
+            .sorted(Map.Entry.comparingByKey())
+            .forEach(e -> builder.addMethod(buildTypeChoiceMethod(e.getKey(), e.getValue(), schema, outputPackage)));
+
         return List.of(builder.build());
+    }
+
+    /**
+     * {@code public static String typeOf<Container>(Object src, GraphQLContext context)}: the
+     * {@code @error} member an errors-list source resolves to under an {@code @error}-only union or
+     * interface, or {@code null}. It runs the same predicates, in the same order, as
+     * {@code <ErrorType>Fetchers.message}:
+     *
+     * <ol>
+     *   <li>Under one {@code src instanceof Throwable}: for each participant in member order and
+     *       each of its dispatch-capable handlers in declaration order,
+     *       {@code ErrorRouter.matchesSource(ByType.<T>[i], thr, context)}. These are the mappings
+     *       dispatch claimed the source with, re-checked against the chain roots dispatch recorded,
+     *       so a {@code DATABASE} {@code matches} text found only in a wrapper resolves to the type
+     *       dispatch chose.</li>
+     *   <li>Then, for each participant carrying a {@code VALIDATION} handler,
+     *       {@code src instanceof GraphQLError}. After every mapping, because a source can be both a
+     *       {@code Throwable} and a {@code GraphQLError}; such a source caught by a {@code GENERIC}
+     *       member resolves to that member, the type dispatch chose.</li>
+     * </ol>
+     *
+     * <p>Falls through to {@code null} when nothing matches (unreachable for a source dispatch
+     * placed in the errors list, since its match step has already filtered).
+     */
+    private static MethodSpec buildTypeChoiceMethod(String typeName, GraphitronType type,
+                                                    GraphitronSchema schema, String outputPackage) {
+        var participants = switch (type) {
+            case UnionType u -> u.participants();
+            case InterfaceType i -> i.participants();
+            default -> List.<no.sikt.graphitron.rewrite.model.ParticipantRef>of();
+        };
+        var graphqlError = ClassName.get("graphql", "GraphQLError");
+        var errorRouter = ErrorRouterClassGenerator.routerClass(outputPackage);
+        var byType = mappingsClass(outputPackage).nestedClass(BY_TYPE_HOLDER);
+        var errorTypes = participants.stream().map(p -> (ErrorType) schema.type(p.typeName())).toList();
+
+        var method = MethodSpec.methodBuilder(typeChoiceMethodName(typeName))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(Object.class, "src")
+            .addParameter(ClassName.get("graphql", "GraphQLContext"), "context")
+            .addJavadoc("The {@code @error} type of {@code $L} that {@code src}, a source dispatch placed in an\n"
+                + "errors list, resolves to, or {@code null}. The schema's type resolver for {@code $L}\n"
+                + "and every {@code @outbox(on: ERROR)} message naming {@code $$error} ask this, so the\n"
+                + "two cannot disagree.\n", typeName, typeName);
+        if (errorTypes.stream().anyMatch(et -> et.handlers().stream().anyMatch(h -> !(h instanceof ValidationHandler)))) {
+            method.beginControlFlow("if (src instanceof $T thr)", Throwable.class);
+            for (var et : errorTypes) {
+                String constant = byTypeConstantName(et.name());
+                int index = 0;
+                for (var handler : et.handlers()) {
+                    if (handler instanceof ValidationHandler) continue;
+                    method.addStatement("if ($T.matchesSource($T.$L[$L], thr, context)) return $S",
+                        errorRouter, byType, constant, index, et.name());
+                    index++;
+                }
+            }
+            method.endControlFlow();
+        }
+        for (var et : errorTypes) {
+            if (et.handlers().stream().anyMatch(h -> h instanceof ValidationHandler)) {
+                method.addStatement("if (src instanceof $T) return $S", graphqlError, et.name());
+            }
+        }
+        return method.addStatement("return null").build();
     }
 
     /**

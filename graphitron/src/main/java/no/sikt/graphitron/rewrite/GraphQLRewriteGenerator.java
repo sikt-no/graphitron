@@ -626,7 +626,8 @@ public class GraphQLRewriteGenerator {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
                     connectionKeyShape, federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
-                    plan.sessionIdentity(), connections, vouchers, vouches),
+                    plan.sessionIdentity(), connections, vouchers, vouches,
+                    plan.outboxes().rows().stream().anyMatch(row -> !row.failureMessages().isEmpty())),
                 emittedThisRun);
         }
         for (var unit : fixedRuntime) {
@@ -718,7 +719,7 @@ public class GraphQLRewriteGenerator {
                                         no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity,
                                         com.palantir.javapoet.ClassName connections,
                                         com.palantir.javapoet.ClassName vouchers,
-                                        boolean vouches) {
+                                        boolean vouches, boolean failureMessages) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
@@ -743,7 +744,7 @@ public class GraphQLRewriteGenerator {
             case NESTING_COORDINATES -> NestingCoordinatesClassGenerator.generate(schema.nestingReach());
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
             case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, sessionIdentity, connectionKeyShape, tenantColumn,
-                vouches);
+                vouches, failureMessages);
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, sessionIdentity,
                 vouches);
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,

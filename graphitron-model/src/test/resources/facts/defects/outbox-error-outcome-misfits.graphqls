@@ -10,9 +10,8 @@
 #
 # An ERROR message with no event is published under <coordinate>.failed, so it collides with a
 # SUCCESS message given that event by hand: the two messages carry one event, which the
-# duplicate-event rule, unchanged and pinned by outbox-defects, reports at each of the two. Every
-# ERROR application is also the deferral outbox-error-outcome pins. The misfits are claimed entry by
-# entry, which is where their detail is; the string-level rows these roll up to are the same code
+# duplicate-event rule, unchanged and pinned by outbox-defects, reports at each of the two. The
+# misfits are claimed entry by entry, which is where their detail is; the string-level rows these roll up to are the same code
 # outbox-session-defects already pins.
 
 extend schema @withConfiguration(outboxTable: "outbox")

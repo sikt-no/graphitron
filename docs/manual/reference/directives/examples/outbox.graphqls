@@ -18,3 +18,35 @@ input FilmCreateInput {
   releaseYear: Int @field(name: "release_year")
 }
 # end::TwoEvents[]
+
+# tag::OnFailure[]
+type Mutation {
+  createFilm(in: FilmInput!): FilmInsertPayload
+      @mutation(typeName: INSERT, table: "film")
+      @outbox(event: "FilmCreated", argMapping: "title: in.title")
+      @outbox(on: ERROR, argMapping: "kind: $error.__typename, why: $error.message, title: in.title")
+}
+
+type FilmInsertPayload {
+  film: Film
+  errors: [FilmInsertError]
+}
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+}
+
+type FilmLanguageMissing @error(handlers: [{handler : DATABASE, sqlState : "23503"}]) {
+  message: String!
+}
+
+type FilmValueMissing @error(handlers: [{handler : DATABASE, sqlState : "23502"}]) {
+  message: String!
+}
+
+union FilmInsertError = FilmLanguageMissing | FilmValueMissing
+
+input FilmInput {
+  title: String
+}
+# end::OnFailure[]

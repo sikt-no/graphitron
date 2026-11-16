@@ -79,8 +79,20 @@ import java.util.List;
  * set. {@code matchesSource} re-checks a mapping against the source and against the exceptions
  * that wrapped it when dispatch claimed it, so a {@code DATABASE} {@code matches} text found only
  * in jOOQ's SQL text resolves here as it did in dispatch.
+ *
+ * <p>Every declared field also has a named read, {@code public static Object <field>Of(Object source,
+ * DataFetchingEnvironment env)} ({@link #readMethodName}), which takes the error as a value rather
+ * than as the environment's source; {@code env} is the environment of the field whose value holds
+ * the error (its {@code path} is that field's path). The fetchers above read through it, or through
+ * the rule it shares, so an {@code @outbox(on: ERROR)} companion reading a claimed error's field
+ * reads what the response shows.
  */
 public final class ErrorTypeFetcherClassGenerator {
+
+    /** The name of the named read of one declared field: the field's name and {@code Of}. */
+    public static String readMethodName(String field) {
+        return field + "Of";
+    }
 
     private static final ClassName ENV           = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
@@ -88,6 +100,7 @@ public final class ErrorTypeFetcherClassGenerator {
     private static final ClassName THROWABLE     = ClassName.get(Throwable.class);
     private static final ClassName STRING_CN     = ClassName.get(String.class);
     private static final ClassName PROPERTY_FETCHER = ClassName.get("graphql.schema", "PropertyDataFetcher");
+    private static final ClassName ENV_IMPL = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
 
     private ErrorTypeFetcherClassGenerator() {}
 
@@ -102,12 +115,24 @@ public final class ErrorTypeFetcherClassGenerator {
         var cls = TypeSpec.classBuilder(et.name() + GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(pathMethod())
-            .addMethod(messageMethod(et, errorMappings, errorRouter));
+            .addMethod(pathAtMethod())
+            .addMethod(messageMethod())
+            .addMethod(messageOfMethod(et, errorMappings, errorRouter));
+        cls.addMethod(pathOfMethod());
+        boolean readsProperty = false;
         for (var read : fieldReads) {
-            if (read instanceof ErrorFieldRead.SourceAccessor accessor
-                    && accessor.wire() instanceof CallSiteCompaction.NodeIdEncodeKeys encode) {
-                cls.addMethod(encodedFieldMethod(accessor, encode));
+            if (read instanceof ErrorFieldRead.SourceAccessor accessor) {
+                readsProperty = true;
+                if (accessor.wire() instanceof CallSiteCompaction.NodeIdEncodeKeys encode) {
+                    cls.addMethod(encodedFieldMethod(accessor));
+                    cls.addMethod(encodedFieldReadMethod(accessor, encode));
+                } else {
+                    cls.addMethod(accessorReadMethod(accessor));
+                }
             }
+        }
+        if (readsProperty) {
+            cls.addMethod(readPropertyMethod());
         }
         return cls.build();
     }
@@ -123,19 +148,75 @@ public final class ErrorTypeFetcherClassGenerator {
      * still a {@code DataFetcher}. The null test is on the value rather than on the id: a source
      * that carries no key has an absent field, never an id encoding the absence.
      */
-    private static MethodSpec encodedFieldMethod(ErrorFieldRead.SourceAccessor accessor,
-            CallSiteCompaction.NodeIdEncodeKeys encode) {
-        var keyType = CatalogRefs.columnType(encode.encodeMethod().paramSignature().get(0));
+    private static MethodSpec encodedFieldMethod(ErrorFieldRead.SourceAccessor accessor) {
         return MethodSpec.methodBuilder(accessor.sdlFieldName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
             .addException(Exception.class)
-            .addStatement("$T key = ($T) $T.fetching($S).get(env)",
-                keyType, keyType, PROPERTY_FETCHER, accessor.accessorBase())
+            .addStatement("return $L(env.getSource(), env)", readMethodName(accessor.sdlFieldName()))
+            .build();
+    }
+
+    /** The named read behind {@link #encodedFieldMethod}: the accessor's value, encoded. */
+    private static MethodSpec encodedFieldReadMethod(ErrorFieldRead.SourceAccessor accessor,
+            CallSiteCompaction.NodeIdEncodeKeys encode) {
+        var keyType = CatalogRefs.columnType(encode.encodeMethod().paramSignature().get(0));
+        return MethodSpec.methodBuilder(readMethodName(accessor.sdlFieldName()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "source")
+            .addParameter(ENV, "env")
+            .addStatement("$T key = ($T) $L", keyType, keyType, propertyRead(accessor))
             .addStatement("return key == null ? null : $T.$L(key)",
                 encode.encodeMethod().encoderClass(), encode.encodeMethod().methodName())
+            .addJavadoc("The {@code $L} of {@code source}, as the response reads it.\n", accessor.sdlFieldName())
             .build();
+    }
+
+    /**
+     * The named read of an extra field the schema registers as graphql-java's
+     * {@code PropertyDataFetcher} on its accessor base: the same fetcher, over an environment whose
+     * source is {@code source}.
+     */
+    private static MethodSpec accessorReadMethod(ErrorFieldRead.SourceAccessor accessor) {
+        return MethodSpec.methodBuilder(readMethodName(accessor.sdlFieldName()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "source")
+            .addParameter(ENV, "env")
+            .addStatement("return $L", propertyRead(accessor))
+            .addJavadoc("The {@code $L} of {@code source}, as the response reads it.\n", accessor.sdlFieldName())
+            .build();
+    }
+
+    /**
+     * {@code private static Object readProperty(String base, Object source, DataFetchingEnvironment env)}:
+     * graphql-java's {@code PropertyDataFetcher} on {@code base}, over {@code env} with {@code source}
+     * as its source, which is the read the schema registers for the field; its checked failure is
+     * rethrown unchecked.
+     */
+    private static MethodSpec readPropertyMethod() {
+        return MethodSpec.methodBuilder("readProperty")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(STRING_CN, "base")
+            .addParameter(Object.class, "source")
+            .addParameter(ENV, "env")
+            .beginControlFlow("try")
+            .addStatement("return $T.fetching(base).get($T.newDataFetchingEnvironment(env).source(source).build())",
+                PROPERTY_FETCHER, ENV_IMPL)
+            .nextControlFlow("catch ($T e)", RuntimeException.class)
+            .addStatement("throw e")
+            .nextControlFlow("catch ($T e)", Exception.class)
+            .addStatement("throw new $T(e)", IllegalStateException.class)
+            .endControlFlow()
+            .build();
+    }
+
+    /** graphql-java's property read of {@code accessor} off {@code source}, its checked failure unchecked. */
+    private static com.palantir.javapoet.CodeBlock propertyRead(ErrorFieldRead.SourceAccessor accessor) {
+        return com.palantir.javapoet.CodeBlock.of("readProperty($S, source, env)", accessor.accessorBase());
     }
 
     private static MethodSpec pathMethod() {
@@ -143,27 +224,60 @@ public final class ErrorTypeFetcherClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
-            .addStatement("Object src = env.getSource()")
-            .beginControlFlow("if (src instanceof $T ge && ge.getPath() != null && !ge.getPath().isEmpty())",
-                GRAPHQL_ERROR)
-            .addStatement("return ge.getPath().stream().map($T::valueOf).toList()", STRING_CN)
-            .endControlFlow()
             .addStatement("$T step = env.getExecutionStepInfo().getParent()", STEP_INFO)
             .beginControlFlow("while (step.getPath().isListSegment())")
             .addStatement("step = step.getParent()")
             .endControlFlow()
-            .addStatement("return step.getParent().getPath().toList().stream()"
-                + ".map($T::valueOf).toList()", STRING_CN)
+            .addStatement("return pathAt(env.getSource(), step.getParent())")
             .build();
     }
 
-    private static MethodSpec messageMethod(GraphitronType.ErrorType et, ClassName errorMappings,
-            ClassName errorRouter) {
-        var method = MethodSpec.methodBuilder("message")
+    /** The one path rule: a {@code GraphQLError}'s own non-empty path, else the holder's path. */
+    private static MethodSpec pathAtMethod() {
+        return MethodSpec.methodBuilder("pathAt")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "src")
+            .addParameter(STEP_INFO, "holder")
+            .beginControlFlow("if (src instanceof $T ge && ge.getPath() != null && !ge.getPath().isEmpty())",
+                GRAPHQL_ERROR)
+            .addStatement("return ge.getPath().stream().map($T::valueOf).toList()", STRING_CN)
+            .endControlFlow()
+            .addStatement("return holder.getPath().toList().stream().map($T::valueOf).toList()", STRING_CN)
+            .build();
+    }
+
+    /** The named read of {@code path}: {@code env} is the holder's own environment. */
+    private static MethodSpec pathOfMethod() {
+        return MethodSpec.methodBuilder(readMethodName("path"))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "source")
+            .addParameter(ENV, "env")
+            .addStatement("return pathAt(source, env.getExecutionStepInfo())")
+            .addJavadoc("The {@code path} of {@code source} held by the field {@code env} is the environment\n"
+                + "of, as the response reads it.\n")
+            .build();
+    }
+
+    private static MethodSpec messageMethod() {
+        return MethodSpec.methodBuilder("message")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
             .addParameter(ENV, "env")
-            .addStatement("Object src = env.getSource()");
+            .addStatement("return $L(env.getSource(), env)", readMethodName("message"))
+            .build();
+    }
+
+    private static MethodSpec messageOfMethod(GraphitronType.ErrorType et, ClassName errorMappings,
+            ClassName errorRouter) {
+        var method = MethodSpec.methodBuilder(readMethodName("message"))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object.class)
+            .addParameter(Object.class, "src")
+            .addParameter(ENV, "env")
+            .addJavadoc("The {@code message} of {@code src}, as the response reads it; {@code env} supplies the\n"
+                + "request's context and is handed to a configured {@code FetcherErrorResponse}.\n");
 
         method.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
         int lastOverride = lastOverrideIndex(et);

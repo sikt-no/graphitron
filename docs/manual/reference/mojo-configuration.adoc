@@ -457,6 +457,8 @@ CREATE TABLE outbox (
 
 Name exactly one of `<table>` and `<function>`. A block naming both, or neither, is reported at every `@outbox` it affects.
 
+An `@outbox(on: ERROR)` message goes to the same target, with the same common payload, but not in the field's transaction: it is written after that transaction rolled back, in a transaction of its own (see xref:directives/outbox.adoc#on-failure[On failure]). How long graphitron waits for a fresh connection to write one on is a runtime setting, xref:runtime-api.adoc#outbox-acquisition-timeout[`withOutboxAcquisitionTimeout`], not a plugin one.
+
 == The non-emitting goals' package sentinel
 
 The `validate` and `capture` goals exist so consumers can run `mvn graphitron:validate` or `mvn graphitron:capture` from the command line without editing their POM's `<execution>` block to thread `<outputPackage>` / `<jooqPackage>`. The mojo substitutes an inert sentinel (`validation.unused`) for both packages when they are not configured, so the run context's non-null contract holds. The sentinel never reaches generated code; neither goal emits anything.

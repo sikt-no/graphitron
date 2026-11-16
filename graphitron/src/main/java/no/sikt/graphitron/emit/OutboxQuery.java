@@ -26,6 +26,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_MESSAGE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ROUTINE_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
@@ -62,8 +65,15 @@ public final class OutboxQuery {
     /** The write the messages describe: its verb decides what the outcome can still be read from. */
     public enum WriteKind { INSERT, UPDATE, DELETE }
 
-    /** Where a payload key comes from. */
-    public enum LeafKind { ARGUMENT, RESULT_ROOT, RESULT_NODE_ID, RESULT_COLUMN, RESULT_MEMBER, SCOPE, SESSION }
+    /**
+     * Where a payload key comes from. {@code ERROR} is the error a failed call was claimed as, on an
+     * {@code ERROR} message only: its path is {@code __typename} or a field every member of the
+     * field's errors field declares.
+     */
+    public enum LeafKind { ARGUMENT, RESULT_ROOT, RESULT_NODE_ID, RESULT_COLUMN, RESULT_MEMBER, SCOPE, SESSION, ERROR }
+
+    /** The outcome a message is written on: the call committed, or it rolled back. */
+    public enum Outcome { SUCCESS, ERROR }
 
     /** Whether an entry is the directive's own or the configured common payload's. */
     public enum Origin { COMMON, MESSAGE }
@@ -108,13 +118,26 @@ public final class OutboxQuery {
     }
 
     /**
-     * One message: its place among the field's applications, the event it carries, and its keys,
-     * the common payload's first.
+     * One message: its place among the field's applications, the outcome it is written on, the event
+     * it carries, and its keys, the common payload's first.
      */
-    public record Message(int ordinal, String event, List<Leaf> leaves) {
+    public record Message(int ordinal, Outcome outcome, String event, List<Leaf> leaves) {
         public Message {
+            Objects.requireNonNull(outcome, "outcome");
             Objects.requireNonNull(event, "event");
             leaves = List.copyOf(leaves);
+        }
+    }
+
+    /**
+     * The errors field a failed call's error is read from: the type its list holds, and, where that
+     * is a union or an interface, the {@code @error} types it admits; a single {@code @error} type
+     * admits itself. {@code polymorphic} is whether a type choice is made at run time.
+     */
+    public record ErrorSource(String containerName, boolean polymorphic, List<String> memberTypes) {
+        public ErrorSource {
+            Objects.requireNonNull(containerName, "containerName");
+            memberTypes = List.copyOf(memberTypes);
         }
     }
 
@@ -195,15 +218,45 @@ public final class OutboxQuery {
      */
     public record Row(String typeName, String fieldName, Producer producer, Location at,
                       Destination target, List<Message> messages,
-                      java.util.Map<String, NodeKey> nodeKeys) {
+                      java.util.Map<String, NodeKey> nodeKeys, Optional<ErrorSource> errors) {
         public Row {
             Objects.requireNonNull(producer, "producer");
             Objects.requireNonNull(at, "at");
+            Objects.requireNonNull(errors, "errors");
             messages = List.copyOf(messages);
             nodeKeys = java.util.Map.copyOf(nodeKeys);
             if (messages.isEmpty()) {
                 throw new IllegalStateException(typeName + "." + fieldName + " carries no message");
             }
+            boolean readsError = messages.stream().flatMap(m -> m.leaves().stream())
+                .anyMatch(l -> l.kind() == LeafKind.ERROR);
+            if (readsError && errors.isEmpty()) {
+                throw new IllegalStateException(typeName + "." + fieldName
+                    + " reads $error but states no errors field to read it from");
+            }
+        }
+
+        /** The same row without an errors field: what a row reads where its messages name no {@code $error}. */
+        public Row(String typeName, String fieldName, Producer producer, Location at, Destination target,
+                   List<Message> messages, java.util.Map<String, NodeKey> nodeKeys) {
+            this(typeName, fieldName, producer, at, target, messages, nodeKeys, Optional.empty());
+        }
+
+        /** The messages written when the call commits, in directive order. */
+        public List<Message> successMessages() {
+            return messages.stream().filter(m -> m.outcome() == Outcome.SUCCESS).toList();
+        }
+
+        /** The messages written after the call rolled back, in directive order. */
+        public List<Message> failureMessages() {
+            return messages.stream().filter(m -> m.outcome() == Outcome.ERROR).toList();
+        }
+
+        /** This row with only the messages of {@code outcome}. */
+        public Row only(Outcome outcome) {
+            var kept = messages.stream().filter(m -> m.outcome() == outcome).toList();
+            return new Row(typeName, fieldName, producer, at, target, kept, nodeKeys,
+                outcome == Outcome.ERROR ? errors : Optional.empty());
         }
     }
 
@@ -255,7 +308,7 @@ public final class OutboxQuery {
     private record RawLeaf(String key, String origin, String kind, String path, String columnSql,
                            String columnJava, String columnType, String nodeType, Integer keyPosition) {}
 
-    private record RawMessage(int ordinal, String event, List<RawLeaf> leaves) {}
+    private record RawMessage(int ordinal, String outcome, String event, List<RawLeaf> leaves) {}
 
     /** The field's first {@code @outbox}, where a verdict on its messages is reported. */
     private static Location location(StoreHandle store, String coordinate) {
@@ -284,7 +337,7 @@ public final class OutboxQuery {
                 List<RawMessage> raw = r.value4();
                 var messages = raw.stream().map(m -> message(store, r.value3(), m, true)).toList();
                 return new Row(r.value1(), r.value2(), new Service(), location(store, r.value3()), target,
-                    messages, nodeKeys(store, raw));
+                    messages, nodeKeys(store, raw), errorSource(store, r.value1(), r.value2(), messages));
             });
     }
 
@@ -311,7 +364,7 @@ public final class OutboxQuery {
             .otherwise(l.FILL);
         Field<String> none = DSL.castNull(String.class);
         return multiset(
-            select(o.ORDINAL, o.EVENT, multiset(
+            select(o.ORDINAL, o.OUTCOME, o.EVENT, multiset(
                     select(l.KEY_NAME, l.ORIGIN, kind, l.SOURCE_PATH, none, none, none, l.NODE_TYPE_NAME,
                             l.KEY_POSITION)
                         .from(l)
@@ -379,12 +432,13 @@ public final class OutboxQuery {
                 String coordinate = r.value1() + "." + r.value2();
                 var messages = raw.stream().map(m -> message(store, coordinate, m, false)).toList();
                 return new Row(r.value1(), r.value2(), new Write(WriteKind.valueOf(r.value3()), table),
-                    location(store, coordinate), target, messages, nodeKeys(store, raw));
+                    location(store, coordinate), target, messages, nodeKeys(store, raw),
+                    errorSource(store, r.value1(), r.value2(), messages));
             });
     }
 
     private static Message message(StoreHandle store, String coordinate, RawMessage m, boolean service) {
-        return new Message(m.ordinal(), m.event(), m.leaves().stream()
+        return new Message(m.ordinal(), Outcome.valueOf(m.outcome()), m.event(), m.leaves().stream()
             .map(l -> {
                 var kind = LeafKind.valueOf(l.kind());
                 boolean readsValue = service && (kind == LeafKind.RESULT_MEMBER || kind == LeafKind.RESULT_NODE_ID);
@@ -398,6 +452,41 @@ public final class OutboxQuery {
                         : List.of());
             })
             .toList());
+    }
+
+    /**
+     * The errors field of the type {@code typeName.fieldName} returns, which a failed call's
+     * {@code $error} keys are read from, or empty where the field has no {@code ERROR} message or
+     * returns no type with an errors field. The members are the container's, in their declared
+     * order, or the container alone where it is one {@code @error} type.
+     */
+    private static Optional<ErrorSource> errorSource(StoreHandle store, String typeName, String fieldName,
+                                                     List<Message> messages) {
+        if (messages.stream().noneMatch(m -> m.outcome() == Outcome.ERROR)) {
+            return Optional.empty();
+        }
+        var po = GRAPHITRON_PRODUCER_OUTCOME;
+        var ef = GRAPHITRON_ERRORS_FIELD;
+        var container = store.dsl()
+            .select(ef.CONTAINER_NAME)
+            .from(po)
+            .join(ef).on(ef.GRAPH_NAME.eq(po.GRAPH_NAME), ef.TYPE_NAME.eq(po.OUTCOME_TYPE_NAME),
+                ef.FIELD_NAME.eq(po.ERRORS_FIELD_NAME))
+            .where(po.GRAPH_NAME.eq(store.graphName()), po.TYPE_NAME.eq(typeName), po.FIELD_NAME.eq(fieldName))
+            .fetchOptional(ef.CONTAINER_NAME);
+        if (container.isEmpty()) {
+            return Optional.empty();
+        }
+        var tm = GRAPHITRON_TYPE_MEMBER;
+        var members = store.dsl()
+            .select(tm.MEMBER_TYPE_NAME)
+            .from(tm)
+            .where(tm.GRAPH_NAME.eq(store.graphName()), tm.CONTAINER_NAME.eq(container.get()))
+            .orderBy(tm.POSITION, tm.MEMBER_TYPE_NAME)
+            .fetch(tm.MEMBER_TYPE_NAME);
+        return Optional.of(members.isEmpty()
+            ? new ErrorSource(container.get(), false, List.of(container.get()))
+            : new ErrorSource(container.get(), true, members));
     }
 
     /**
@@ -448,7 +537,7 @@ public final class OutboxQuery {
         // Each message at the field, with the event it is published under.
         var o = GRAPHITRON_OUTBOX_MESSAGE.as("message");
         return multiset(
-            select(o.ORDINAL, o.EVENT, leaves(o, w))
+            select(o.ORDINAL, o.OUTCOME, o.EVENT, leaves(o, w))
                 .from(o)
                 .where(o.GRAPH_NAME.eq(w.GRAPH_NAME),
                     o.COORDINATE.eq(concat(w.TYPE_NAME, inline("."), w.FIELD_NAME)))

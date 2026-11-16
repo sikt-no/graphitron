@@ -1660,7 +1660,8 @@ public class TypeFetcherGenerator {
             .map(row -> {
                 ctx.requestOutboxJsonValue();
                 return new no.sikt.graphitron.emit.ServiceEmission.Outbox(row, outboxRuntime(outputPackage),
-                    outputPackage, no.sikt.graphitron.emit.OwnedScope.provider(outputPackage));
+                    outputPackage, no.sikt.graphitron.emit.OwnedScope.provider(outputPackage),
+                    TenantDslEmitter.ownedConnectionsClass(outputPackage));
             });
         var emitted = ctx.services().emit(field.qualifiedName(), field.name(), storeRuntime(ctx, outputPackage),
             outbox);
@@ -5194,6 +5195,7 @@ public class TypeFetcherGenerator {
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
             listInput ? TenantDslEmitter.gatedOnEmptyInput(ctx, field, inputArgName)
                       : TenantDslEmitter.EmptyAnswerSite.NoEmptyAnswer.INSTANCE);
+        builder.addCode(failureRegistration(ctx, field.name(), outputPackage));
         builder.addCode(tenantDsl.declaration());
         emitDialectGuard(builder, dialectRequirement);
         if (!listInput) {
@@ -5964,6 +5966,7 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
+        builder.addCode(failureRegistration(ctx, field.name(), outputPackage));
         builder.addCode(tenantDsl.declaration());
         builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, argName);
         builder.addStatement("$T $L = $T.$L",
@@ -6222,7 +6225,7 @@ public class TypeFetcherGenerator {
     private static Optional<OutboxHook> outboxHook(TypeFetcherEmissionContext ctx, String fieldName,
             boolean listResult, List<no.sikt.graphitron.model.jooq.ColumnRef> capturedColumns,
             String outputPackage) {
-        return ctx.outboxFor(fieldName).map(row -> {
+        return ctx.outboxFor(fieldName).filter(row -> !row.successMessages().isEmpty()).map(row -> {
             ctx.addCompanionMethod(no.sikt.graphitron.emit.OutboxEmitter.render(row, listResult,
                 capturedColumns.stream().map(no.sikt.graphitron.model.jooq.ColumnRef::javaName).toList(),
                 outputPackage, outboxRuntime(outputPackage)));
@@ -6231,14 +6234,57 @@ public class TypeFetcherGenerator {
         });
     }
 
-    /** What an outbox companion takes from the generated runtime: its exception and the session read. */
+    /**
+     * The registration of {@code fieldName}'s failure companion, for a write site to place before it
+     * acquires a connection, rendering the companion on the class; empty where the field carries no
+     * {@code @outbox(on: ERROR)}. The same store row the success hook reads, so a field's two
+     * outcomes come from one seam.
+     */
+    private static CodeBlock failureRegistration(TypeFetcherEmissionContext ctx, String fieldName,
+            String outputPackage) {
+        return ctx.outboxFor(fieldName)
+            .filter(row -> row.producer() instanceof no.sikt.graphitron.emit.OutboxQuery.Write)
+            .filter(row -> !row.failureMessages().isEmpty())
+            .map(row -> {
+                no.sikt.graphitron.emit.OutboxEmitter.renderFailed(row, outputPackage, outboxRuntime(outputPackage))
+                    .forEach(ctx::addCompanionMethod);
+                ctx.requestOutboxJsonValue();
+                return no.sikt.graphitron.emit.OutboxEmitter.registration(row,
+                    TenantDslEmitter.ownedConnectionsClass(outputPackage));
+            })
+            .orElse(CodeBlock.of(""));
+    }
+
+    /**
+     * What an outbox companion takes from the generated runtime: its exception, the session read,
+     * and the reads of a claimed error, its type through {@code ErrorMappings} and each of its fields
+     * through its type's fetchers class.
+     */
     private static no.sikt.graphitron.emit.OutboxEmitter.Runtime outboxRuntime(String outputPackage) {
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         return new no.sikt.graphitron.emit.OutboxEmitter.Runtime(
             ErrorRouterClassGenerator.routerClass(outputPackage)
                 .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION),
             (member, coordinate) -> CodeBlock.of("$T.$L(tx, $S)",
                 TenantDslEmitter.ownedConnectionsClass(outputPackage),
-                no.sikt.graphitron.command.SessionAccessors.memberMethod(member), coordinate));
+                no.sikt.graphitron.command.SessionAccessors.memberMethod(member), coordinate),
+            new no.sikt.graphitron.emit.OutboxEmitter.ErrorReads() {
+                @Override
+                public CodeBlock typeChoice(String containerName, String sourceLocal, String envLocal) {
+                    return CodeBlock.of("$T.$L($L, $L.getGraphQlContext())",
+                        no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator.mappingsClass(outputPackage),
+                        no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator.typeChoiceMethodName(containerName),
+                        sourceLocal, envLocal);
+                }
+
+                @Override
+                public CodeBlock fieldRead(String memberType, String field, String sourceLocal, String envLocal) {
+                    var fetchers = units.fetchers(memberType);
+                    return CodeBlock.of("$T.$L($L, $L)", ClassName.get(fetchers.packageName(), fetchers.simpleName()),
+                        no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator.readMethodName(field),
+                        sourceLocal, envLocal);
+                }
+            });
     }
 
     /**
@@ -6562,6 +6608,7 @@ public class TypeFetcherGenerator {
             .endControlFlow();
         var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
             TenantDslEmitter.gatedOnEmptyInput(ctx, field, argName));
+        builder.addCode(failureRegistration(ctx, field.name(), outputPackage));
         builder.addCode(tenantDsl.declaration());
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());

@@ -285,16 +285,28 @@ public final class ServiceEmission {
 
     /**
      * What an emitted mutation's {@code @outbox} messages need: the store's row for the field, what
-     * the companion takes from the generated runtime, the package its node-id encoder is under, and
-     * the provider an owned transaction is opened through.
+     * the companion takes from the generated runtime, the package its node-id encoder is under, the
+     * provider an owned transaction is opened through, and the connection carrier a failure
+     * companion is registered with.
      */
     public record Outbox(OutboxQuery.Row row, OutboxEmitter.Runtime runtime, String outputPackage,
-                         ClassName provider) {
+                         ClassName provider, ClassName ownedConnections) {
         public Outbox {
             Objects.requireNonNull(row, "row");
             Objects.requireNonNull(runtime, "runtime");
             Objects.requireNonNull(outputPackage, "outputPackage");
             Objects.requireNonNull(provider, "provider");
+            Objects.requireNonNull(ownedConnections, "ownedConnections");
+        }
+
+        /** Whether the field writes messages when it commits. */
+        boolean writesSuccess() {
+            return !row.successMessages().isEmpty();
+        }
+
+        /** Whether the field writes messages after it rolled back. */
+        boolean writesFailure() {
+            return !row.failureMessages().isEmpty();
         }
     }
 
@@ -378,18 +390,26 @@ public final class ServiceEmission {
             : answered(SessionIdentityRows.typeOf(call.resultType()).box(), frameKey.isPresent());
         String framed = bodyName;
         var written = new ArrayList<MethodSpec>();
-        if (outbox.isPresent()) {
-            if (frameKey.isPresent()) {
-                throw new IllegalStateException(coordinate + " carries an @outbox under an object; the store"
-                    + " admits one on a mutation field only");
-            }
+        boolean writesSuccess = outbox.map(Outbox::writesSuccess).orElse(false);
+        if (outbox.isPresent() && frameKey.isPresent()) {
+            throw new IllegalStateException(coordinate + " carries an @outbox under an object; the store"
+                + " admits one on a mutation field only");
+        }
+        if (writesSuccess) {
             framed = fieldName + "Written";
             written.addAll(written(outbox.get(), emitted.body(), framed, runtime.fetchersClass(), validates));
         }
         var frame = FrameEmitter.render(frameRow, fieldName, valueType, runtime.fetchersClass(),
             framed, runtime.frame(),
-            outbox.isPresent() || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
+            writesSuccess || needsContext(call, fills.get(coordinate), lift.isPresent() || members.isPresent()),
             validates, connection(coordinate, fieldCoordinate, runtime));
+        if (outbox.isPresent() && outbox.get().writesFailure()) {
+            // Registered first thing, before the frame acquires a connection, so a failure to
+            // acquire or mount is covered too.
+            var o = outbox.get();
+            frame = prepended(frame, OutboxEmitter.registration(o.row(), o.ownedConnections()));
+            written.addAll(OutboxEmitter.renderFailed(o.row(), o.outputPackage(), o.runtime()));
+        }
         var all = new ArrayList<MethodSpec>();
         all.add(frame);
         all.addAll(written);
@@ -433,6 +453,24 @@ public final class ServiceEmission {
             .addCode(lambda.build())
             .build();
         return List.of(wrapper, companion);
+    }
+
+    /** {@code method} with {@code first} ahead of its body. */
+    private static MethodSpec prepended(MethodSpec method, CodeBlock first) {
+        var copy = MethodSpec.methodBuilder(method.name())
+            .addModifiers(method.modifiers())
+            .addAnnotations(method.annotations())
+            .addTypeVariables(method.typeVariables())
+            .returns(method.returnType())
+            .addParameters(method.parameters())
+            .addExceptions(method.exceptions())
+            .varargs(method.varargs())
+            .addCode(first)
+            .addCode(method.code());
+        if (!method.javadoc().isEmpty()) {
+            copy.addJavadoc(method.javadoc());
+        }
+        return copy.build();
     }
 
     /**

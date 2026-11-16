@@ -3,6 +3,7 @@ package no.sikt.graphitron.emit;
 import no.sikt.graphitron.emit.OutboxQuery.Leaf;
 import no.sikt.graphitron.emit.OutboxQuery.LeafKind;
 import no.sikt.graphitron.emit.OutboxQuery.Message;
+import no.sikt.graphitron.emit.OutboxQuery.Outcome;
 import no.sikt.graphitron.emit.OutboxQuery.PayloadKind;
 import no.sikt.graphitron.emit.OutboxQuery.Row;
 import com.palantir.javapoet.ClassName;
@@ -39,6 +40,16 @@ import java.util.Optional;
  * captures the key its own re-read is keyed on, and the method reads the written rows back by that
  * same key. The method is package-private and static so a test in the fetchers' package calls it
  * directly.
+ *
+ * <p>A field with {@code @outbox(on: ERROR)} messages gets a second companion,
+ * {@code static void outboxFailed<Field>(DSLContext dsl, DataFetchingEnvironment env, Throwable claimed)}
+ * ({@link #renderFailed}), which the fetcher registers with the connection carrier before it
+ * acquires a connection ({@link #registration}); the carrier runs it after the field's transaction
+ * rolled back, handing it the connection to write on and the error the field's {@code @error}
+ * channel claimed, {@code null} where none did. It writes every failure message of the field in one
+ * transaction of its own, from bind values only: the arguments, the scope, the session and the
+ * claimed error, read as the response reads it. The success companion writes the
+ * {@code SUCCESS} messages only.
  */
 public final class OutboxEmitter {
 
@@ -63,6 +74,34 @@ public final class OutboxEmitter {
     public static String methodName(Row row) {
         var name = row.fieldName();
         return "outbox" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    }
+
+    /** The failure companion's generated name: {@code outboxFailed} and the field's name. */
+    public static String failedMethodName(Row row) {
+        var name = row.fieldName();
+        return "outboxFailed" + Character.toUpperCase(name.charAt(0)) + name.substring(1);
+    }
+
+    /**
+     * The fetcher's registration of its failure companion with the connection carrier, placed
+     * before the fetcher acquires a connection so a failure to acquire or mount is covered too:
+     * {@code OwnedConnections.onFieldRollback(env, List.of(<events>), (dsl, claimed) ->
+     * outboxFailed<Field>(dsl, env, claimed));}. The events name the messages in the carrier's log
+     * line when they cannot be written.
+     *
+     * @param ownedConnections the generated connection carrier
+     */
+    public static CodeBlock registration(Row row, ClassName ownedConnections) {
+        var failures = row.failureMessages();
+        if (failures.isEmpty()) {
+            throw new IllegalStateException(row.typeName() + "." + row.fieldName()
+                + " has no ERROR message to register");
+        }
+        var events = CodeBlock.join(failures.stream().map(m -> CodeBlock.of("$S", m.event())).toList(), ", ");
+        return CodeBlock.builder()
+            .addStatement("$T.onFieldRollback(env, $T.of($L), (dsl, claimed) -> $L(dsl, env, claimed))",
+                ownedConnections, LIST, events, failedMethodName(row))
+            .build();
     }
 
     /**
@@ -135,6 +174,7 @@ public final class OutboxEmitter {
             throw new IllegalStateException("the write at " + row.typeName() + "." + row.fieldName()
                 + " captures no column, so its messages cannot read the written rows back");
         }
+        row = row.only(Outcome.SUCCESS);
         var table = CatalogRefs.className(write.table().tableClassName());
         var constants = CatalogRefs.className(write.table().constantsClassName());
         TypeName writtenType = listResult
@@ -175,6 +215,7 @@ public final class OutboxEmitter {
             throw new IllegalStateException(row.typeName() + "." + row.fieldName()
                 + " is a write; its messages are rendered by render");
         }
+        row = row.only(Outcome.SUCCESS);
         var method = MethodSpec.methodBuilder(methodName(row))
             .addModifiers(Modifier.STATIC)
             .addParameter(DSL_CONTEXT, "tx")
@@ -189,6 +230,54 @@ public final class OutboxEmitter {
             body.add(message(row, message, false, List.of(), outputPackage, runtime));
         }
         return wrapped(method, body.build(), runtime);
+    }
+
+    /**
+     * Renders the failure companion for {@code row}'s {@code ERROR} messages: every one of them in one
+     * owned transaction opened on {@code dsl}, so they commit together, from bind values only. Where
+     * {@code claimed} is {@code null} every {@code $error} key is absent; otherwise its type is the one
+     * the errors field's type resolver chooses, and each field is read as that type's fetcher reads
+     * it, so the message names the error the client was shown. Two methods: the companion
+     * {@link #failedMethodName} the fetcher registers, which opens the transaction and wraps a failure
+     * in the outbox's exception, and the statements it runs inside, {@code <companion>Messages}.
+     */
+    public static List<MethodSpec> renderFailed(Row row, String outputPackage, Runtime runtime) {
+        Objects.requireNonNull(row, "row");
+        row = row.only(Outcome.ERROR);
+        String inner = failedMethodName(row) + "Messages";
+        var companion = MethodSpec.methodBuilder(failedMethodName(row))
+            .addModifiers(Modifier.STATIC)
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addParameter(ENV, "env")
+            .addParameter(Throwable.class, "claimed")
+            .addJavadoc("Writes the failure messages of {@code $L.$L} after its transaction rolled back, all in\n"
+                + "one transaction on {@code dsl}. {@code claimed} is the error the field's {@code @error}\n"
+                + "channel claimed the failure as, or {@code null}, which leaves every {@code $$error} key out.\n",
+                row.typeName(), row.fieldName());
+        var opened = CodeBlock.builder()
+            .add(OwnedScope.transactionResult(OwnedScope.provider(outputPackage), "dsl")).add("{\n").indent()
+            .addStatement("$L($T.using(tx), env, claimed)", inner, DSL)
+            .addStatement("return null")
+            .unindent().add("});\n")
+            .build();
+        var statements = MethodSpec.methodBuilder(inner)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(DSL_CONTEXT, "tx")
+            .addParameter(ENV, "env")
+            .addParameter(Throwable.class, "claimed")
+            .addJavadoc("The statements of {@link #$L}, on the transaction it opened.\n", failedMethodName(row));
+        statements.addCode(prelude(row));
+        if (anyLeaf(row, l -> l.kind() == LeafKind.ERROR)) {
+            var source = row.errors().orElseThrow();
+            statements.addStatement("$T errorType = claimed == null ? null : $L", String.class,
+                source.polymorphic()
+                    ? runtime.errorReads().typeChoice(source.containerName(), "claimed", "env")
+                    : CodeBlock.of("$S", source.containerName()));
+        }
+        for (var message : row.messages()) {
+            statements.addCode(message(row, message, false, List.of(), outputPackage, runtime));
+        }
+        return List.of(wrapped(companion, opened, runtime), statements.build());
     }
 
     /** The locals the messages share: the scope members they read and the arguments at their roots. */
@@ -223,11 +312,25 @@ public final class OutboxEmitter {
      * What the emitter takes from the generated runtime and may not name itself: the exception a
      * failing statement is wrapped in, and the read of one session handle member.
      */
-    public record Runtime(ClassName emitException, SessionMemberRead sessionMember) {
+    public record Runtime(ClassName emitException, SessionMemberRead sessionMember, ErrorReads errorReads) {
         public Runtime {
             Objects.requireNonNull(emitException, "emitException");
             Objects.requireNonNull(sessionMember, "sessionMember");
+            Objects.requireNonNull(errorReads, "errorReads");
         }
+    }
+
+    /**
+     * The generated reads a failure message's {@code $error} keys call, which the emitter may not
+     * name itself: the type choice the errors field's type resolver makes, and the read of one field
+     * of one {@code @error} type the way that type's own fetcher reads it.
+     */
+    public interface ErrorReads {
+        /** The name of the {@code @error} type {@code source} resolves to under the union or interface. */
+        CodeBlock typeChoice(String containerName, String sourceLocal, String envLocal);
+
+        /** {@code field} of {@code memberType}, read off {@code source} under the field {@code env} names. */
+        CodeBlock fieldRead(String memberType, String field, String sourceLocal, String envLocal);
     }
 
     /**
@@ -381,6 +484,7 @@ public final class OutboxEmitter {
                     runtime.sessionMember().read(leaf.path(), row.typeName() + "." + row.fieldName()))
                 .build();
             case ARGUMENT -> argumentLeaf(row, leaf, entries, key, local, outputPackage);
+            case ERROR -> errorLeaf(row, leaf, entries, key, local, runtime);
             case RESULT_COLUMN -> CodeBlock.builder()
                 .addStatement("$L.add($L.value($L))", entries, key,
                     listResult ? CodeBlock.of("$T.jsonbArrayAgg(t.$L)", DSL, leaf.column().javaName())
@@ -435,6 +539,27 @@ public final class OutboxEmitter {
             .build();
     }
 
+
+    /**
+     * An {@code $error} key: absent when nothing claimed the failure, else the claimed error's type
+     * name, or one of its fields read the way the type's fetcher reads it for the response.
+     */
+    private static CodeBlock errorLeaf(Row row, Leaf leaf, String entries, CodeBlock key, String local,
+                                       Runtime runtime) {
+        var b = CodeBlock.builder().beginControlFlow("if (errorType != null)");
+        if ("__typename".equals(leaf.path())) {
+            b.addStatement("$L.add($L.value(errorType))", entries, key);
+            return b.endControlFlow().build();
+        }
+        var source = row.errors().orElseThrow();
+        b.add("$T $L = switch (errorType) {\n", Object.class, local).indent();
+        for (var member : source.memberTypes()) {
+            b.add("case $S -> $L;\n", member, runtime.errorReads().fieldRead(member, leaf.path(), "claimed", "env"));
+        }
+        b.add("default -> null;\n").unindent().add("};\n");
+        b.addStatement("$L.add($L.value($L($L)))", entries, key, JSON_VALUE_HELPER, local);
+        return b.endControlFlow().build();
+    }
 
     private static CodeBlock scopeLeaf(Row row, Leaf leaf, String entries, CodeBlock key) {
         return switch (leaf.path()) {

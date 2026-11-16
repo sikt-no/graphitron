@@ -492,9 +492,8 @@ class GraphitronSchemaClassGeneratorTest {
         // used for table-backed unions.
         var body = buildBody(ERROR_UNION_SDL);
         assertThat(body).contains("codeRegistry.typeResolver(\"SakError\"");
-        // Routes each source to the right SDL @error type.
-        assertThat(body).contains("env.getSchema().getObjectType(\"ValidationErr\")");
-        assertThat(body).contains("env.getSchema().getObjectType(\"DbErr\")");
+        // Which member a source resolves to is ErrorMappings' type choice, which an
+        // @outbox(on: ERROR) message asks too; the execution tier shows each source's member.
     }
 
     @Test

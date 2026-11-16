@@ -16,7 +16,6 @@ import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
@@ -245,7 +244,7 @@ public final class GraphitronSchemaClassGenerator {
             .filter(e -> e.getValue() instanceof InterfaceType || e.getValue() instanceof UnionType)
             .filter(e -> isErrorOnlyPolymorphic(e.getValue(), schema))
             .sorted(Map.Entry.comparingByKey())
-            .forEach(e -> body.add(buildErrorPolymorphicResolver(e.getKey(), e.getValue(), schema, outputPackage)));
+            .forEach(e -> body.add(buildErrorPolymorphicResolver(e.getKey(), outputPackage)));
 
         // Per-@error-type path/message DataFetchers. The SDL grammar restricts
         // @error types to {path: [String!]!, message: String!}; the @error type's source
@@ -425,7 +424,7 @@ public final class GraphitronSchemaClassGenerator {
      * and the SDL grammar disallows polymorphic types whose members can't be jOOQ-record-backed
      * either. This helper returns false for the empty-participant case (degenerate types).
      */
-    private static boolean isErrorOnlyPolymorphic(GraphitronType type, GraphitronSchema schema) {
+    static boolean isErrorOnlyPolymorphic(GraphitronType type, GraphitronSchema schema) {
         List<ParticipantRef> participants = switch (type) {
             case UnionType u -> u.participants();
             case InterfaceType i -> i.participants();
@@ -439,67 +438,18 @@ public final class GraphitronSchemaClassGenerator {
     }
 
     /**
-     * Emits the {@code codeRegistry.typeResolver(...)} call for an @error-only union or
-     * interface. The resolver runs the same predicates, in the same order, as
-     * {@code <ErrorType>Fetchers.message}:
-     *
-     * <ol>
-     *   <li>Under one {@code src instanceof Throwable}: for each participant in member order and
-     *       each of its dispatch-capable handlers in declaration order,
-     *       {@code ErrorRouter.matchesSource(ErrorMappings.ByType.<T>[i], thr, context)}. These
-     *       are the mappings dispatch claimed the source with, re-checked against the chain roots
-     *       dispatch recorded, so a {@code DATABASE} {@code matches} text found only in a wrapper
-     *       resolves to the type dispatch chose.</li>
-     *   <li>Then, for each participant carrying a {@code VALIDATION} handler,
-     *       {@code src instanceof GraphQLError}. After every mapping, because a source can be both
-     *       a {@code Throwable} and a {@code GraphQLError}; such a source caught by a
-     *       {@code GENERIC} member resolves to that member, the type dispatch chose.</li>
-     * </ol>
-     *
-     * <p>Falls through to {@code null} when nothing matches (unreachable in practice; the
-     * dispatcher's match step has already filtered).
+     * Emits the {@code codeRegistry.typeResolver(...)} call for an @error-only union or interface:
+     * it asks {@code ErrorMappings.typeOf<Container>} ({@link ErrorMappingsClassGenerator#typeChoiceMethodName})
+     * which member the source resolves to, the one type choice an {@code @outbox(on: ERROR)}
+     * companion also makes, so the response and the failure message cannot name different types.
      */
-    private static CodeBlock buildErrorPolymorphicResolver(String typeName, GraphitronType type,
-                                                           GraphitronSchema schema, String outputPackage) {
-        var participants = switch (type) {
-            case UnionType u -> u.participants();
-            case InterfaceType i -> i.participants();
-            default -> List.<ParticipantRef>of();
-        };
-
-        var GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
-        var THROWABLE     = ClassName.get(Throwable.class);
-        var errorRouter   = ErrorRouterClassGenerator.routerClass(outputPackage);
-        var byType        = ErrorMappingsClassGenerator.mappingsClass(outputPackage)
-            .nestedClass(ErrorMappingsClassGenerator.BY_TYPE_HOLDER);
-
-        var errorTypes = participants.stream().map(p -> (ErrorType) schema.type(p.typeName())).toList();
-
+    private static CodeBlock buildErrorPolymorphicResolver(String typeName, String outputPackage) {
+        var mappings = ErrorMappingsClassGenerator.mappingsClass(outputPackage);
         var cb = CodeBlock.builder();
         cb.add("codeRegistry.typeResolver($S, env -> {\n", typeName).indent();
-        cb.addStatement("Object src = env.getObject()");
-        if (errorTypes.stream().anyMatch(et -> et.handlers().stream().anyMatch(h -> !(h instanceof ValidationHandler)))) {
-            cb.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
-            for (var et : errorTypes) {
-                String constant = ErrorMappingsClassGenerator.byTypeConstantName(et.name());
-                int index = 0;
-                for (var handler : et.handlers()) {
-                    if (handler instanceof ValidationHandler) continue;
-                    cb.addStatement("if ($T.matchesSource($T.$L[$L], thr, env.getGraphQLContext())) "
-                            + "return env.getSchema().getObjectType($S)",
-                        errorRouter, byType, constant, index, et.name());
-                    index++;
-                }
-            }
-            cb.endControlFlow();
-        }
-        for (var et : errorTypes) {
-            if (et.handlers().stream().anyMatch(h -> h instanceof ValidationHandler)) {
-                cb.addStatement("if (src instanceof $T) return env.getSchema().getObjectType($S)",
-                    GRAPHQL_ERROR, et.name());
-            }
-        }
-        cb.addStatement("return null");
+        cb.addStatement("String name = $T.$L(env.getObject(), env.getGraphQLContext())", mappings,
+            ErrorMappingsClassGenerator.typeChoiceMethodName(typeName));
+        cb.addStatement("return name == null ? null : env.getSchema().getObjectType(name)");
         cb.unindent().add("});\n");
         return cb.build();
     }

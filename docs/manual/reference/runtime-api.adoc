@@ -204,6 +204,11 @@ A hook that throws never fails the request: the default stands, and Graphitron l
 
 xref:../how-to/error-channel.adoc#unmatched-exceptions[How-to: Error channel] covers the two error hooks in use; xref:../explanation/batching-model.adoc#bounding-a-batch[Bounding a batch] covers the limit.
 
+[#outbox-acquisition-timeout]
+=== `withOutboxAcquisitionTimeout(timeout)`
+
+In a schema with an xref:directives/outbox.adoc#on-failure[`@outbox(on: ERROR)`] message, `GraphitronRuntime` also has `withOutboxAcquisitionTimeout(Duration)`, returning a copy of the runtime, and `outboxAcquisitionTimeout()`. It bounds the wait for a fresh connection to write a field's failure messages on, when the field's transaction cost it its own: past it the messages are not written and the loss is logged. The default is five seconds (`DEFAULT_OUTBOX_ACQUISITION_TIMEOUT`); the timeout must be positive. The acquisition runs on the fan-out executor in a `<tenantColumn>` build and otherwise on a small pool of daemon threads the runtime creates on first use and never shuts down, so an idle pool holds no application open. Your `DataSource`'s own login timeout does not bound a wait for a free pooled connection, which is why this is a setting of its own.
+
 == See also
 
 * xref:directives/index.adoc[Directive reference] is the SDL-driven half of what generated code looks like; this page is the SDL-independent half.

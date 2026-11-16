@@ -3,10 +3,9 @@
 # the field's coordinate followed by .failed. Its $error paths resolve against the errors field the
 # field's outcome names: __typename, the error type's name, and a field every error type the errors
 # field holds declares with one type, here message on both members of a union, and on the one
-# @error type an errors field of a single type holds. Arguments fill an ERROR message's keys as they
-# fill a SUCCESS message's. Nothing writes a message on the failure outcome yet, so each ERROR
-# application is a deferral at the application; the SUCCESS message beside it is the near miss and
-# draws nothing.
+# @error type an errors field of a single type holds. A field may write more than one failure
+# message, as createDirect does. Arguments fill an ERROR message's keys as they fill a SUCCESS
+# message's, and a resolving ERROR application draws no defect, as a SUCCESS one does not.
 
 extend schema @withConfiguration(outboxTable: "outbox")
 extend schema @withFacts(docs: [{path: "layouts/anchor"}])
@@ -50,6 +49,7 @@ type Mutation {
   createDirect(in: FilmInput!): FilmDirectPayload
     @mutation(typeName: INSERT, table: "film")
     @outbox(on: ERROR, event: "DirectFailed", argMapping: "why: $error.message")
+    @outbox(on: ERROR, event: "DirectAudited", argMapping: "title: in.title")
 }
 
 extend schema @expectEquals(relation: "graphitron_ast_outbox_entry", rows: """
@@ -57,6 +57,7 @@ extend schema @expectEquals(relation: "graphitron_ast_outbox_entry", rows: """
   FilmCreated,
   ,             ERROR
   DirectFailed, ERROR
+  DirectAudited, ERROR
   """)
 
 extend schema @expectEquals(relation: "graphitron_outbox_message", rows: """
@@ -64,6 +65,7 @@ extend schema @expectEquals(relation: "graphitron_outbox_message", rows: """
   Mutation.createFilm,   0,       SUCCESS, FilmCreated
   Mutation.createFilm,   1,       ERROR,   Mutation.createFilm.failed
   Mutation.createDirect, 0,       ERROR,   DirectFailed
+  Mutation.createDirect, 1,       ERROR,   DirectAudited
   """)
 
 extend schema @expectEquals(relation: "graphitron_outbox_key", rows: """
@@ -73,16 +75,7 @@ extend schema @expectEquals(relation: "graphitron_outbox_key", rows: """
   Mutation.createFilm,   1,       why,      ERROR,    message,     FilmInsertPayload, errors
   Mutation.createFilm,   1,       title,    ARGUMENT, in.title,    ,                  
   Mutation.createDirect, 0,       why,      ERROR,    message,     FilmDirectPayload, errors
+  Mutation.createDirect, 1,       title,    ARGUMENT, in.title,    ,                  
   """)
 
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
-  code,                        coordinate
-  OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createFilm
-  OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createDirect
-  """)
-
-extend schema @assertContains(relation: "diagnostic", rows: """
-  lsp_code,                               coordinate,            severity, actionable
-  GRAPHITRON_OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createFilm,   error,    FALSE
-  GRAPHITRON_OUTBOX_ON_ERROR_UNSUPPORTED, Mutation.createDirect, error,    FALSE
-  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")

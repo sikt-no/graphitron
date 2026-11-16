@@ -2374,6 +2374,30 @@ CREATE TABLE outbox (
     written_by  varchar(32)  NOT NULL DEFAULT 'insert'
 );
 
+-- Two refusals the @outbox(on: ERROR) execution tests provoke with a marker no other row carries: a
+-- message refused as it is written, and one the database refuses only at COMMIT, through a deferred
+-- constraint trigger, which is how a field's COMMIT fails after every statement in it succeeded.
+CREATE FUNCTION outbox_refuse_marked() RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    IF NEW.payload ->> TG_ARGV[0] = TG_ARGV[1] THEN
+        RAISE EXCEPTION 'outbox message refused: % is %', TG_ARGV[0], TG_ARGV[1] USING ERRCODE = 'check_violation';
+    END IF;
+    RETURN NEW;
+END
+$$;
+
+CREATE TRIGGER outbox_refused_on_write BEFORE INSERT ON outbox
+    FOR EACH ROW EXECUTE FUNCTION outbox_refuse_marked('title', 'outbox-failure-refused-on-write');
+
+CREATE TRIGGER outbox_report_refused_on_write BEFORE INSERT ON outbox
+    FOR EACH ROW EXECUTE FUNCTION outbox_refuse_marked('reported', 'outbox-failure-report-refused-on-write');
+
+CREATE CONSTRAINT TRIGGER outbox_refused_at_commit AFTER INSERT ON outbox
+    DEFERRABLE INITIALLY DEFERRED
+    FOR EACH ROW EXECUTE FUNCTION outbox_refuse_marked('reported', 'outbox-failure-refused-at-commit');
+
 -- A stored-routine outbox: the same event, reached through a function the application role may call
 -- without being allowed to insert into the table.
 CREATE OR REPLACE FUNCTION public.outbox_emit(

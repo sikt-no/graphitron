@@ -17290,13 +17290,6 @@ SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_TARG
             AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_routine_target t
                              WHERE t.graph_name = m.graph_name)))
 UNION ALL
--- An @outbox(on: ERROR): its message is resolved, but nothing writes a message on the failure
--- outcome yet, so the application is a deferral.
-SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_ON_ERROR_UNSUPPORTED',
-       CAST(NULL AS VARCHAR), 'outbox'
-  FROM graphitron_outbox_message m
- WHERE m.outcome = 'ERROR'
-UNION ALL
 -- Two @outbox with one event, at each of the two.
 SELECT m.graph_name, m.source_name, m.source_line, m.source_column, 'OUTBOX_DUPLICATE_EVENT', m.event, 'outbox'
   FROM graphitron_outbox_message m
@@ -28267,8 +28260,6 @@ INSERT INTO graphitron_defect_type VALUES
    'The <outbox> block cannot be used as written: fix the configuration the detail names.'),
   ('OUTBOX_DUPLICATE_EVENT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_DUPLICATE_EVENT',
    'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate on a SUCCESS message and to the coordinate followed by .failed on an ERROR one, so a consumer could not tell their messages apart: give each its own event.'),
-  ('OUTBOX_ON_ERROR_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_OUTBOX_ON_ERROR_UNSUPPORTED',
-   '@outbox(on: ERROR) is declared and its message resolved, but graphitron does not write failure-outcome messages yet: remove the application, or write the message on SUCCESS.'),
   ('OUTBOX_KEY_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_KEY_CONFLICT',
    'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.'),
   ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',

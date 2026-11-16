@@ -308,6 +308,19 @@ public final class ConnectionRuntimeClassGenerator {
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches) {
+        return generate(outputPackage, identity, shape, tenantColumn, vouches, false);
+    }
+
+    /**
+     * As {@link #generate(String, SessionIdentityRows, ConnectionKeyShape, CodeBlock, boolean)}, for a
+     * graph whose schema may carry an {@code @outbox(on: ERROR)} message: where {@code failureMessages},
+     * the carrier runs a field's registered failure messages after its transaction rolled back
+     * ({@code onFieldRollback}), and the runtime gains the {@code outboxAcquisitionTimeout} that bounds
+     * the fresh connection they may be written on.
+     */
+    public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
+                                          ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches,
+                                          boolean failureMessages) {
         if (vouches && !identity.supplied()) {
             throw new IllegalArgumentException("a graph that vouches supplies session identity per request");
         }
@@ -350,10 +363,11 @@ public final class ConnectionRuntimeClassGenerator {
             tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
             batchSizeLimit, identity, tenantKey, multiTenant, ownedConnections,
-            vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null));
+            vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null,
+            failureMessages));
         units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException,
-            keyType, connectionKey));
+            keyType, connectionKey, failureMessages));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, ownedConnections, tenantKey));
         }
@@ -858,8 +872,12 @@ public final class ConnectionRuntimeClassGenerator {
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
                                     ClassName batchSizeLimit,
                                     SessionIdentityRows identity, TypeName tenantKey,
-                                    boolean multiTenant, ClassName ownedConnections, ClassName voucherKeys) {
+                                    boolean multiTenant, ClassName ownedConnections, ClassName voucherKeys,
+                                    boolean failureMessages) {
         var payload = payloadParams(identity, runtime);
+        // In a graph with failure messages the copy constructor carries the outbox acquisition bound
+        // after the batch size limit, so every wither hands it on.
+        String outboxArg = failureMessages ? ", outboxAcquisitionTimeout" : "";
         // In a build that vouches every public constructor takes the voucher keys last, so a runtime
         // without them is a compile error; keysArg appends them to a delegation.
         String keysArg = voucherKeys == null ? "" : ", voucherKeys";
@@ -976,6 +994,9 @@ public final class ConnectionRuntimeClassGenerator {
         canonicalBuilder.addStatement("this.fetcherErrorLog = null")
             .addStatement("this.fetcherErrorResponse = null")
             .addStatement("this.batchSizeLimit = null");
+        if (failureMessages) {
+            canonicalBuilder.addStatement("this.outboxAcquisitionTimeout = DEFAULT_OUTBOX_ACQUISITION_TIMEOUT");
+        }
 
         // The wither's copy constructor: every field as-is, so a multi-tenant runtime's fan-out
         // executor is shared rather than a second pool created, and the source map is not
@@ -992,6 +1013,9 @@ public final class ConnectionRuntimeClassGenerator {
         copyBuilder.addParameter(fetcherErrorLog, "fetcherErrorLog")
             .addParameter(fetcherErrorResponse, "fetcherErrorResponse")
             .addParameter(batchSizeLimit, "batchSizeLimit");
+        if (failureMessages) {
+            copyBuilder.addParameter(DURATION, "outboxAcquisitionTimeout");
+        }
         takesKeys.apply(copyBuilder)
             .addStatement("this.defaultSource = defaultSource")
             .addStatement("this.sourcesByTenant = sourcesByTenant");
@@ -1004,6 +1028,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("this.fetcherErrorLog = fetcherErrorLog")
             .addStatement("this.fetcherErrorResponse = fetcherErrorResponse")
             .addStatement("this.batchSizeLimit = batchSizeLimit")
+            .addCode(failureMessages ? CodeBlock.of("this.outboxAcquisitionTimeout = outboxAcquisitionTimeout;\n")
+                : CodeBlock.of(""))
             .addCode(voucherKeys == null ? CodeBlock.of("") : CodeBlock.of("this.voucherKeys = voucherKeys;\n"))
             .build();
 
@@ -1012,7 +1038,7 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(runtime)
             .addParameter(fetcherErrorLog, "log")
             .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S),"
-                    + " fetcherErrorResponse, batchSizeLimit)"),
+                    + " fetcherErrorResponse, batchSizeLimit" + outboxArg + ")"),
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "log")
             .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
                 + "claims to {@code log} instead of Graphitron's own ERROR line, and every exception a\n"
@@ -1028,7 +1054,7 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(runtime)
             .addParameter(fetcherErrorResponse, "response")
             .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog,"
-                    + " $T.requireNonNull(response, $S), batchSizeLimit)"),
+                    + " $T.requireNonNull(response, $S), batchSizeLimit" + outboxArg + ")"),
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "response")
             .addJavadoc("A copy of this runtime that asks {@code response} for the reference of every fetcher\n"
                 + "exception, the {@code message:} of every error a handler caught and the top-level message\n"
@@ -1043,7 +1069,7 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(runtime)
             .addParameter(batchSizeLimit, "limit")
             .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog, fetcherErrorResponse,"
-                    + " $T.requireNonNull(limit, $S))"),
+                    + " $T.requireNonNull(limit, $S)" + outboxArg + ")"),
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "limit")
             .addJavadoc("A copy of this runtime that asks {@code limit} how many keys one batched query may\n"
                 + "carry: a batch over the answer runs as several queries of at most that many keys. Without\n"
@@ -1401,6 +1427,9 @@ public final class ConnectionRuntimeClassGenerator {
         builder.addField(fetcherErrorLogField)
             .addField(fetcherErrorResponseField)
             .addField(batchSizeLimitField);
+        if (failureMessages) {
+            addOutboxAcquisition(builder, runtime, multiTenant, delegating);
+        }
         if (voucherKeys != null) {
             builder.addField(FieldSpec.builder(voucherKeys, "voucherKeys", Modifier.PRIVATE, Modifier.FINAL)
                     .addJavadoc("The keys this subgraph signs and verifies vouchers with; every constructor takes\n"
@@ -1445,6 +1474,83 @@ public final class ConnectionRuntimeClassGenerator {
         }
         builder.addType(sourceType(source));
         return builder.build();
+    }
+
+    /**
+     * The runtime's members for a graph with {@code @outbox(on: ERROR)} messages: the bound on the
+     * fresh connection such a message may be written on ({@code outboxAcquisitionTimeout}, with its
+     * default, wither and accessor), and the executor that acquisition runs on: the scatter executor
+     * in a multi-tenant build, which already exists there, and otherwise a small fixed pool of daemon
+     * threads created on first use, as the default scatter pool is, and never shut down, since the
+     * runtime has no lifecycle and an idle daemon thread holds no application open.
+     */
+    private static void addOutboxAcquisition(TypeSpec.Builder builder, ClassName runtime, boolean multiTenant,
+                                             java.util.function.UnaryOperator<String> delegating) {
+        builder.addField(FieldSpec.builder(DURATION, "DEFAULT_OUTBOX_ACQUISITION_TIMEOUT",
+                    Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+                .initializer("$T.ofSeconds(5)", DURATION)
+                .addJavadoc("Default bound on acquiring a fresh connection for a mutation field's\n"
+                    + "{@code @outbox(on: ERROR)} messages.\n")
+                .build())
+            .addField(FieldSpec.builder(DURATION, "outboxAcquisitionTimeout", Modifier.PRIVATE, Modifier.FINAL)
+                .addJavadoc("How long settle waits for a fresh connection to write a field's failure messages on,\n"
+                    + "when the field's transaction cost it its own; set by {@link #withOutboxAcquisitionTimeout}.\n")
+                .build());
+        String fanOut = multiTenant ? ", fanOutExecutor, fanOutTimeout" : "";
+        builder.addMethod(MethodSpec.methodBuilder("withOutboxAcquisitionTimeout")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(runtime)
+                .addParameter(DURATION, "timeout")
+                .addStatement("$T.requireNonNull(timeout, $S)", OBJECTS, "timeout")
+                .beginControlFlow("if (timeout.isZero() || timeout.isNegative())")
+                .addStatement("throw new $T($S + timeout)", IllegalArgumentException.class,
+                    "outboxAcquisitionTimeout must be positive, got: ")
+                .endControlFlow()
+                .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant" + fanOut
+                    + ", fetcherErrorLog, fetcherErrorResponse, batchSizeLimit, timeout)"), runtime)
+                .addJavadoc("A copy of this runtime that waits at most {@code timeout} for a fresh connection to\n"
+                    + "write a mutation field's {@code @outbox(on: ERROR)} messages on, when the field's\n"
+                    + "transaction cost it its own (a tenant that timed out, or a session the database ended\n"
+                    + "over the transaction). Past it the messages are not written and the loss is logged; the\n"
+                    + "next field is never held longer. Five seconds by default. The copy shares everything\n"
+                    + "else with this runtime; this runtime is unchanged.\n"
+                    + "@param timeout the bound; must be positive\n"
+                    + "@return a runtime carrying {@code timeout}\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("outboxAcquisitionTimeout")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(DURATION)
+                .addStatement("return outboxAcquisitionTimeout")
+                .addJavadoc("The bound set by {@link #withOutboxAcquisitionTimeout}, five seconds by default.\n")
+                .build());
+        var outboxExecutor = MethodSpec.methodBuilder("outboxExecutor")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(EXECUTOR)
+            .addJavadoc("The executor a fresh connection for a mutation field's {@code @outbox(on: ERROR)}\n"
+                + "messages is acquired on"
+                + (multiTenant ? ": the scatter executor.\n"
+                    : ": a small pool of daemon threads, created on first use and\nshared by every runtime.\n"));
+        if (multiTenant) {
+            builder.addMethod(outboxExecutor.addStatement("return fanOutExecutor").build());
+            return;
+        }
+        var pool = ClassName.get(runtime.packageName(), runtime.simpleName(), "OutboxAcquisitionPool");
+        builder.addMethod(outboxExecutor.addStatement("return $T.EXECUTOR", pool).build());
+        builder.addType(TypeSpec.classBuilder("OutboxAcquisitionPool")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("Holds the outbox acquisition pool, created when the class is first used: a fixed pool of\n"
+                + "daemon platform threads, never shut down.\n")
+            .addField(FieldSpec.builder(EXECUTOR, "EXECUTOR", Modifier.STATIC, Modifier.FINAL)
+                .initializer(CodeBlock.builder()
+                    .add("$T.newFixedThreadPool(4, task -> {\n", EXECUTORS).indent()
+                    .addStatement("$T thread = new $T(task, $S)", Thread.class, Thread.class, "graphitron-outbox-acquisition")
+                    .addStatement("thread.setDaemon(true)")
+                    .addStatement("return thread")
+                    .unindent().add("})")
+                    .build())
+                .build())
+            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .build());
     }
 
     /**
@@ -1550,7 +1656,7 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName requestTenants, CodeBlock tenantColumn,
                                               ClassName errorRouter, ClassName columnValues,
                                               ClassName sessionMountException, TypeName keyType,
-                                              ClassName connectionKey) {
+                                              ClassName connectionKey, boolean failureMessages) {
         var payload = payloadParams(identity, self);
         boolean mounts = identity.emitsHookImplementation();
         TypeName handleType = identity.handleType().orElse(null);
@@ -1973,10 +2079,23 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(MutationFieldScopeEmitter.beginField(self))
             .addMethod(MutationFieldScopeEmitter.enlist(self, provider, keyType, multiTenant))
             .addMethod(MutationFieldScopeEmitter.await(self))
-            .addMethod(MutationFieldScopeEmitter.settleField(self, provider, keyType, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.settleField(self, provider, keyType, multiTenant, failureMessages))
             .addMethod(MutationFieldScopeEmitter.probe(self))
             .addMethod(MutationFieldScopeEmitter.rollBackQuietly(self, provider))
-            .addMethod(MutationFieldScopeEmitter.markFieldFailed(self));
+            .addMethod(MutationFieldScopeEmitter.markFieldFailed(self))
+            .addMethod(MutationFieldScopeEmitter.markFieldClaimed(self))
+            .addMethod(MutationFieldScopeEmitter.runningField(self));
+        if (failureMessages) {
+            String freshAcquisition = (multiTenant ? "k.tenant().isPresent()" : "k.isPresent()")
+                + " ? " + acquireKeyed + " : " + acquireDefault;
+            carrier.addType(MutationFieldScopeEmitter.fieldRollbackType())
+                .addMethod(MutationFieldScopeEmitter.onFieldRollback(self))
+                .addMethod(MutationFieldScopeEmitter.afterRollback(self, keyType, multiTenant, mounts))
+                .addMethod(MutationFieldScopeEmitter.dropped(self))
+                .addMethod(MutationFieldScopeEmitter.writeOnFreshConnection(self, provider, pinnedConnection, keyType,
+                    freshAcquisition, handled))
+                .addMethod(MutationFieldScopeEmitter.endedOverTransaction());
+        }
         if (mounts) {
             carrier.addMethod(MethodSpec.methodBuilder("mountFailure")
                 .addModifiers(Modifier.PUBLIC)
@@ -1998,7 +2117,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(MutationFieldScopeEmitter.reportedJoins())
             .addMethod(MutationFieldScopeEmitter.warnConsumerJoin(self));
         carrier.addType(entryClass)
-            .addType(MutationFieldScopeEmitter.fieldScopeType(self, provider, keyType))
+            .addType(MutationFieldScopeEmitter.fieldScopeType(self, provider, keyType, failureMessages))
             .addType(MutationFieldScopeEmitter.openingType(provider))
             .addType(MutationFieldScopeEmitter.nestedScopeFailedType());
         if (multiTenant) {

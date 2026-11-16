@@ -46,6 +46,17 @@ import java.util.List;
  * marks the scope settled first, and an enlist against a settled scope, or for a timed-out key,
  * is refused, so a straggler writes nothing. A timed-out key's scope is never ended: its worker may still be executing on the
  * connection, which {@code releaseAll} aborts, discarding the transaction with it.
+ *
+ * <h2>After a rollback</h2>
+ * In a build with an {@code @outbox(on: ERROR)} message the scope also carries a field's failure
+ * callback ({@code onFieldRollback}), which settle runs once the field's transaction has rolled back,
+ * on every path that ends in one, with the link of the cause chain {@code ErrorRouter.claim} matched
+ * ({@code field.claimed}, the first claim). It chooses the connection by what the rollback left of
+ * the field's own, the first it opened: that connection when the rollback succeeded; a fresh one
+ * ({@code writeOnFreshConnection}) when the tenant timed out, or when the rollback failed and an
+ * exception settle holds names the transaction as why the session ended
+ * ({@code endedOverTransaction}); nothing, logged, otherwise. A field without the callback settles
+ * exactly as it would in a build without the message.
  */
 final class MutationFieldScopeEmitter {
 
@@ -53,11 +64,13 @@ final class MutationFieldScopeEmitter {
 
     static final String OPENING_CLASS_NAME = "Opening";
     static final String NESTED_SCOPE_FAILED_CLASS_NAME = "NestedScopeFailedException";
+    static final String FIELD_ROLLBACK_CLASS_NAME = "FieldRollback";
 
     private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName COMPLETION_EXCEPTION = ClassName.get("java.util.concurrent", "CompletionException");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
     private static final ClassName ATOMIC_BOOLEAN = ClassName.get("java.util.concurrent.atomic", "AtomicBoolean");
+    private static final ClassName ATOMIC_REFERENCE = ClassName.get("java.util.concurrent.atomic", "AtomicReference");
     private static final ClassName CONCURRENT_HASH_MAP = ClassName.get("java.util.concurrent", "ConcurrentHashMap");
     private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
@@ -76,10 +89,10 @@ final class MutationFieldScopeEmitter {
     private MutationFieldScopeEmitter() {}
 
     /** The carrier's {@code FieldScope} nested type: one top-level mutation field's transaction state. */
-    static TypeSpec fieldScopeType(ClassName self, ClassName provider, TypeName keyType) {
+    static TypeSpec fieldScopeType(ClassName self, ClassName provider, TypeName keyType, boolean failureMessages) {
         var optionalKey = keyType;
         var scope = provider.nestedClass("Scope");
-        return TypeSpec.classBuilder(FIELD_SCOPE_CLASS_NAME)
+        var builder = TypeSpec.classBuilder(FIELD_SCOPE_CLASS_NAME)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("One top-level mutation field's transaction state: its result path, whether it\n"
                 + "failed, and the provider scope it opened on each connection it touched, in the order\n"
@@ -100,10 +113,50 @@ final class MutationFieldScopeEmitter {
                 .addJavadoc("The exceptions {@code ErrorRouter} handled for this field, so settle can tell a nested\n"
                     + "failure the field's code caught from one that propagated out of it.\n")
                 .build())
+            .addField(FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, ClassName.get(Throwable.class)),
+                    "claimed", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", ATOMIC_REFERENCE)
+                .addJavadoc("The link of the cause chain an {@code @error} channel claimed this field's failure as,\n"
+                    + "the first claim; {@code null} when nothing claimed it. A redacted or surfaced failure\n"
+                    + "never writes it.\n")
+                .build());
+        if (failureMessages) {
+            builder.addField(FieldSpec.builder(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "onRollback", Modifier.PRIVATE)
+                    .addJavadoc("What runs after this field's transaction rolled back, or {@code null}; guarded by this\n"
+                        + "object's monitor.\n")
+                    .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, ClassName.get(String.class)),
+                        "rollbackEvents", Modifier.PRIVATE)
+                    .addJavadoc("The events {@link #onRollback} writes, named when they cannot be written.\n")
+                    .build());
+        }
+        return builder
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(OBJECT_LIST, "path")
                 .addStatement("this.path = $T.copyOf(path)", LIST)
+                .build())
+            .build();
+    }
+
+    /**
+     * The carrier's {@code FieldRollback}: a field's failure messages, which settle runs on the
+     * connection it chose after the field's transaction rolled back.
+     */
+    static TypeSpec fieldRollbackType() {
+        return TypeSpec.interfaceBuilder(FIELD_ROLLBACK_CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(FunctionalInterface.class)
+            .addJavadoc("What a mutation field writes after its transaction rolled back: its\n"
+                + "{@code @outbox(on: ERROR)} messages, registered by the field's fetcher through\n"
+                + "{@link $L#onFieldRollback} and run by the carrier when the field settles.\n", "OwnedConnections")
+            .addMethod(MethodSpec.methodBuilder("write")
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .addParameter(DSL_CONTEXT, "dsl")
+                .addParameter(Throwable.class, "claimed")
+                .addJavadoc("Writes the field's failure messages.\n"
+                    + "@param dsl the connection to write on, its session mounted, outside any transaction\n"
+                    + "@param claimed the error an {@code @error} channel claimed the failure as, or {@code null}\n")
                 .build())
             .build();
     }
@@ -311,7 +364,8 @@ final class MutationFieldScopeEmitter {
     }
 
     /** {@code public Throwable settleField(boolean failed)}. */
-    static MethodSpec settleField(ClassName self, ClassName provider, TypeName keyType, boolean multiTenant) {
+    static MethodSpec settleField(ClassName self, ClassName provider, TypeName keyType, boolean multiTenant,
+                                  boolean failureMessages) {
         var optionalKey = keyType;
         var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
         var opening = self.nestedClass(OPENING_CLASS_NAME);
@@ -330,10 +384,22 @@ final class MutationFieldScopeEmitter {
             .addStatement("return null")
             .endControlFlow()
             .addStatement("$T recorded = new $T<>()", recordedType, LINKED_HASH_MAP)
-            .addStatement("$T<$T> inFlight = new $T<>()", LIST, optionalKey, ARRAY_LIST)
-            .beginControlFlow("synchronized (field)")
+            .addStatement("$T<$T> inFlight = new $T<>()", LIST, optionalKey, ARRAY_LIST);
+        if (failureMessages) {
+            builder.addStatement("$T write", self.nestedClass(FIELD_ROLLBACK_CLASS_NAME))
+                .addStatement("$T<$T> events", LIST, String.class)
+                .addStatement("$T own", optionalKey);
+        }
+        builder.beginControlFlow("synchronized (field)")
             .addComment("No scope is recorded on this field from here on; every one it holds is now visible.")
-            .addStatement("field.settled = true")
+            .addStatement("field.settled = true");
+        if (failureMessages) {
+            builder.addComment("The field's own connection is the first it opened: its fetcher acquires it first.")
+                .addStatement("write = field.onRollback")
+                .addStatement("events = field.rollbackEvents")
+                .addStatement("own = field.opened.isEmpty() ? null : field.opened.keySet().iterator().next()");
+        }
+        builder
             .beginControlFlow("for ($T<$T, $T> e : field.opened.entrySet())", MAP.nestedClass("Entry"), optionalKey, opening)
             .beginControlFlow("if (e.getValue().scope != null)")
             .addStatement("recorded.put(e.getKey(), e.getValue().scope)")
@@ -349,6 +415,11 @@ final class MutationFieldScopeEmitter {
             .addStatement("$T cause = null", Throwable.class)
             .addStatement("boolean nestedFailed = false")
             .addStatement("$T nested = null", Throwable.class);
+        if (failureMessages) {
+            builder.addComment("What ending the field's own connection raised, for the failure messages' choice.")
+                .addStatement("$T<$T> ownLost = new $T<>()", LIST, Throwable.class, ARRAY_LIST)
+                .addStatement("boolean ownRollbackFailed = false");
+        }
         if (multiTenant) {
             builder.beginControlFlow("for ($T key : inFlight)", optionalKey)
                 .addComment("Its worker may still be executing on the connection: never end the scope, leave")
@@ -360,6 +431,7 @@ final class MutationFieldScopeEmitter {
                     "Connection '", "' was still opening its transaction when mutation field ",
                     " settled; its transaction is discarded with its connection")
                 .endControlFlow()
+                .addCode(failureMessages ? abortTimedOutForFailureMessages(self) : com.palantir.javapoet.CodeBlock.of(""))
                 .endControlFlow()
                 .beginControlFlow("for ($T key : recorded.keySet())", optionalKey)
                 .beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
@@ -372,6 +444,7 @@ final class MutationFieldScopeEmitter {
                     "Tenant '", "' timed out while mutation field ", " was open; its transaction is discarded"
                         + " with its connection")
                 .endControlFlow()
+                .addCode(failureMessages ? abortTimedOutForFailureMessages(self) : com.palantir.javapoet.CodeBlock.of(""))
                 .endControlFlow()
                 .endControlFlow();
         }
@@ -405,6 +478,14 @@ final class MutationFieldScopeEmitter {
             .addComment("reporting writes that are gone.")
             .addStatement("rollBack = true")
             .addStatement("cause = e")
+            .addCode(failureMessages
+                ? com.palantir.javapoet.CodeBlock.builder()
+                    .add("// The first statement after the database ended the session is the one that says why.\n")
+                    .beginControlFlow("if (key.equals(own))")
+                    .addStatement("ownLost.add(e)")
+                    .endControlFlow()
+                    .build()
+                : com.palantir.javapoet.CodeBlock.of(""))
             .endControlFlow()
             .endControlFlow()
             .endControlFlow();
@@ -419,7 +500,7 @@ final class MutationFieldScopeEmitter {
                 .addStatement("continue")
                 .endControlFlow();
         }
-        return builder
+        builder
             .addStatement("$T entry = entries.get(key)", entryType)
             .beginControlFlow("if (entry == null)")
             .addStatement("continue")
@@ -431,8 +512,26 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("if (!rollBack)")
             .addStatement("rollBack = true")
             .addStatement("cause = e")
-            .addStatement("rollBackQuietly(entry, scope)")
-            .endControlFlow()
+            .addCode(failureMessages
+                ? com.palantir.javapoet.CodeBlock.builder()
+                    .addStatement("$T quiet = rollBackQuietly(entry, scope)", Throwable.class)
+                    .beginControlFlow("if (key.equals(own))")
+                    .add("// A COMMIT that failed, and the rollback after it: both name what happened.\n")
+                    .addStatement("ownLost.add(e)")
+                    .beginControlFlow("if (quiet != null)")
+                    .addStatement("ownRollbackFailed = true")
+                    .addStatement("ownLost.add(quiet)")
+                    .endControlFlow()
+                    .endControlFlow()
+                    .build()
+                : com.palantir.javapoet.CodeBlock.builder().addStatement("rollBackQuietly(entry, scope)").build());
+        if (failureMessages) {
+            builder.nextControlFlow("else if (key.equals(own))")
+                .addComment("The rollback failed: the connection did not survive it.")
+                .addStatement("ownRollbackFailed = true")
+                .addStatement("ownLost.add(e)");
+        }
+        builder.endControlFlow()
             .addComment("A failed rollback leaves the connection to release, which rolls an open")
             .addComment("transaction back before returning it.")
             .nextControlFlow("catch ($T e)", IllegalStateException.class)
@@ -456,9 +555,28 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("if (cause == null)")
             .addStatement("cause = e")
             .endControlFlow()
-            .addStatement("rollBackQuietly(entry, scope)")
+            .addCode(failureMessages
+                ? com.palantir.javapoet.CodeBlock.builder()
+                    .addStatement("$T quiet = rollBackQuietly(entry, scope)", Throwable.class)
+                    .beginControlFlow("if (key.equals(own))")
+                    .addStatement("ownLost.add(e)")
+                    .beginControlFlow("if (quiet != null)")
+                    .addStatement("ownRollbackFailed = true")
+                    .addStatement("ownLost.add(quiet)")
+                    .endControlFlow()
+                    .endControlFlow()
+                    .build()
+                : com.palantir.javapoet.CodeBlock.builder().addStatement("rollBackQuietly(entry, scope)").build())
             .endControlFlow()
-            .endControlFlow()
+            .endControlFlow();
+        if (failureMessages) {
+            builder.beginControlFlow("if (rollBack && write != null)")
+                .addComment("The field's transaction rolled back: its failure messages are written now, on the")
+                .addComment("connection what happened to its own leaves, or not at all and logged.")
+                .addStatement("afterRollback(field, write, events, own, ownRollbackFailed, ownLost)")
+                .endControlFlow();
+        }
+        return builder
             .beginControlFlow("if (nestedFailed)")
             .addComment("A transaction a consumer's code opened inside the field failed, whether or not that")
             .addComment("code caught it: reported beside whatever else the field already reported.")
@@ -516,19 +634,42 @@ final class MutationFieldScopeEmitter {
             .build();
     }
 
-    /** {@code private static void rollBackQuietly(Entry entry, Scope scope)}. */
+    /** {@code private static Throwable rollBackQuietly(Entry entry, Scope scope)}. */
     static MethodSpec rollBackQuietly(ClassName self, ClassName provider) {
         return MethodSpec.methodBuilder("rollBackQuietly")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Throwable.class)
             .addParameter(self.nestedClass("Entry"), "entry")
             .addParameter(provider.nestedClass("Scope"), "scope")
             .beginControlFlow("try")
             .addStatement("entry.provider.end(scope, true)")
-            .nextControlFlow("catch ($T | $T ignored)", SQL_EXCEPTION, IllegalStateException.class)
+            .addStatement("return null")
+            .nextControlFlow("catch ($T | $T failure)", SQL_EXCEPTION, IllegalStateException.class)
             .addComment("release rolls back an open transaction before returning the connection.")
+            .addStatement("return failure")
             .endControlFlow()
             .addJavadoc("Rolls {@code scope} back after its commit failed; the provider leaves a scope whose\n"
-                + "commit failed open for exactly this call. A failure here is left to release.\n")
+                + "commit failed open for exactly this call. A failure here is left to release, and\n"
+                + "returned, so settle can tell whether the connection survived; {@code null} when the\n"
+                + "rollback succeeded.\n")
+            .build();
+    }
+
+    /**
+     * The statements that abort a timed-out key's connection at settle, for a field with failure
+     * messages, and remove its entry: its worker may still be running on it, and the abort is what
+     * keeps that straggler from committing behind the message, and gives the pool its slot back
+     * before a fresh connection is asked for. Without the callback the connection is left to
+     * {@code releaseAll}, as it always was.
+     */
+    private static com.palantir.javapoet.CodeBlock abortTimedOutForFailureMessages(ClassName self) {
+        return com.palantir.javapoet.CodeBlock.builder()
+            .beginControlFlow("if (write != null)")
+            .addStatement("$T stale = entries.remove(key)", self.nestedClass("Entry"))
+            .beginControlFlow("if (stale != null)")
+            .addStatement("stale.pinned.abort()")
+            .endControlFlow()
+            .endControlFlow()
             .build();
     }
 
@@ -599,6 +740,357 @@ final class MutationFieldScopeEmitter {
                 + "@param env the failing field's environment, or {@code null}\n"
                 + "@param thrown the exception the router handled, kept so settle can tell whether a nested\n"
                 + "failure was caught by the consumer's code or propagated out of the field\n")
+            .build();
+    }
+
+    /** {@code public static void markFieldClaimed(DataFetchingEnvironment env, Throwable claimed)}. */
+    static MethodSpec markFieldClaimed(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        return MethodSpec.methodBuilder("markFieldClaimed")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(Throwable.class, "claimed")
+            .addStatement("$T field = runningField(env)", fieldScope)
+            .beginControlFlow("if (field != null && claimed != null)")
+            .addStatement("field.claimed.compareAndSet(null, claimed)")
+            .endControlFlow()
+            .addJavadoc("Records the link of the cause chain an {@code @error} channel claimed the running\n"
+                + "top-level mutation field's failure as; the first claim wins. {@code ErrorRouter.claim}\n"
+                + "calls this beside {@link #markFieldFailed}, and nothing else does, so a redacted or\n"
+                + "surfaced failure is never recorded as claimed. Lenient as {@code markFieldFailed} is.\n"
+                + "@param env the failing field's environment, or {@code null}\n"
+                + "@param claimed the matched link, which the payload's {@code @error} type reads\n")
+            .build();
+    }
+
+    /**
+     * {@code private static FieldScope runningField(DataFetchingEnvironment env)}: the running
+     * top-level mutation field {@code env} is at or under, or {@code null}.
+     */
+    static MethodSpec runningField(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        return MethodSpec.methodBuilder("runningField")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(fieldScope)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("if (env == null || env.getExecutionStepInfo() == null)")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .addStatement("$T carrier = context == null ? null : context.get($T.class)", self, self)
+            .beginControlFlow("if (carrier == null)")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T field = carrier.activeField", fieldScope)
+            .beginControlFlow("if (field == null)")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T path = env.getExecutionStepInfo().getPath().toList()", OBJECT_LIST)
+            .addStatement("return path.size() >= field.path.size() && path.subList(0, field.path.size())"
+                + ".equals(field.path) ? field : null")
+            .build();
+    }
+
+    /**
+     * {@code public static void onFieldRollback(DataFetchingEnvironment env, List<String> events,
+     * FieldRollback write)}: a fetcher's registration of its failure messages.
+     */
+    static MethodSpec onFieldRollback(ClassName self) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        var stringList = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        return MethodSpec.methodBuilder("onFieldRollback")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(stringList, "events")
+            .addParameter(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "write")
+            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .addStatement("$T carrier = context == null ? null : context.get($T.class)", self, self)
+            .addStatement("$T path = env.getExecutionStepInfo() == null ? $T.of() : env.getExecutionStepInfo().getPath().toList()",
+                OBJECT_LIST, LIST)
+            .beginControlFlow("if (carrier == null)")
+            .addComment("The escape hatch: the caller owns the connection and its transaction, so there is no")
+            .addComment("point after the rollback where graphitron holds a connection to write on.")
+            .addStatement("LOGGER.warn($S, path, events)",
+                "Mutation field {} runs on a caller-supplied DSLContext, where graphitron holds no connection"
+                    + " after its transaction rolls back: its @outbox(on: ERROR) messages {} are not written"
+                    + " if it fails.")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T field = carrier.activeField", fieldScope)
+            .beginControlFlow("if (field == null || !field.path.equals(path))")
+            .addStatement("LOGGER.warn($S, path, events)",
+                "Mutation field {} is not running as a top-level mutation field: its @outbox(on: ERROR)"
+                    + " messages {} are not written if it fails.")
+            .addStatement("return")
+            .endControlFlow()
+            .beginControlFlow("synchronized (field)")
+            .beginControlFlow("if (field.onRollback == null)")
+            .addStatement("field.onRollback = write")
+            .addStatement("field.rollbackEvents = $T.copyOf(events)", LIST)
+            .endControlFlow()
+            .endControlFlow()
+            .addJavadoc("Registers what the running top-level mutation field writes after its transaction rolled\n"
+                + "back, its {@code @outbox(on: ERROR)} messages. The field's fetcher calls this once per call,\n"
+                + "before it acquires a connection, so a failure to acquire or to mount is covered too; the\n"
+                + "carrier runs {@code write} when the field settles, after a rollback and never after a\n"
+                + "commit. Without a carrier (the escape hatch) a warning naming the field is logged and\n"
+                + "nothing is registered.\n"
+                + "@param env the field's environment\n"
+                + "@param events the events {@code write} writes, named in the log when they cannot be\n"
+                + "@param write the field's failure messages\n")
+            .build();
+    }
+
+    /**
+     * {@code private void afterRollback(...)}: runs a field's failure messages on the connection
+     * what happened to its own leaves, or logs their loss.
+     *
+     * @param acquireExpression the acquisition of a fresh connection for key {@code k}, as
+     *                          {@code entryFor} spells it
+     */
+    static MethodSpec afterRollback(ClassName self, TypeName keyType, boolean multiTenant, boolean mounts) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        var stringList = ParameterizedTypeName.get(LIST, ClassName.get(String.class));
+        var throwableList = ParameterizedTypeName.get(LIST, ClassName.get(Throwable.class));
+        var builder = MethodSpec.methodBuilder("afterRollback")
+            .addModifiers(Modifier.PRIVATE)
+            .addParameter(fieldScope, "field")
+            .addParameter(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "write")
+            .addParameter(stringList, "events")
+            .addParameter(keyType, "own")
+            .addParameter(boolean.class, "rollbackFailed")
+            .addParameter(throwableList, "lost")
+            .addStatement("$T claimed = field.claimed.get()", Throwable.class)
+            .beginControlFlow("try")
+            .beginControlFlow("if (own == null)")
+            .addStatement("$T mount = null", Throwable.class);
+        if (mounts) {
+            builder.addStatement("mount = firstMountFailure.get()");
+        }
+        builder.beginControlFlow("synchronized (field.handled)")
+            .beginControlFlow("for ($T handledThrowable : field.handled)", Throwable.class)
+            .beginControlFlow("if (mount == null && isMountFailure(handledThrowable))")
+            .addStatement("mount = handledThrowable")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .beginControlFlow("if (mount != null)")
+            .addComment("Every owned statement runs on a mounted connection, and the mount may be what sets")
+            .addComment("the role or the row-level security context: without one there is nothing they may be")
+            .addComment("written on.")
+            .addStatement("dropped(field, events, $S, mount)", "the session mount failed")
+            .nextControlFlow("else")
+            .addStatement("dropped(field, events, $S, null)", "the field acquired no connection")
+            .endControlFlow()
+            .addStatement("return")
+            .endControlFlow();
+        if (multiTenant) {
+            builder.beginControlFlow("if (own.tenant().isPresent() && timedOutTenants.contains(own.tenant().get()))")
+                .addComment("The transaction cost the connection: it was aborted at settle, so the messages go on")
+                .addComment("a fresh one.")
+                .addStatement("writeOnFreshConnection(field, write, events, own, claimed, null)")
+                .addStatement("return")
+                .endControlFlow();
+        }
+        builder.beginControlFlow("if (brokenKeys.contains(own))")
+            .addStatement("dropped(field, events, $S, null)",
+                "a transaction opened inside the field was left open on its connection")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T entry = entries.get(own)", self.nestedClass("Entry"))
+            .beginControlFlow("if (rollbackFailed)")
+            .addStatement("$T<$T> held = new $T<>(lost)", LIST, Throwable.class, ARRAY_LIST)
+            .beginControlFlow("synchronized (field.handled)")
+            .addStatement("held.addAll(field.handled)")
+            .endControlFlow()
+            .addStatement("$T dialect = entry != null ? entry.pinned.dialect() : runtime.dialect()", SQL_DIALECT)
+            .beginControlFlow("for ($T heldThrowable : held)", Throwable.class)
+            .beginControlFlow("if (endedOverTransaction(heldThrowable, dialect))")
+            .addComment("The transaction cost the connection: the database ended the session over it. The old")
+            .addComment("connection is dead and is evicted at release.")
+            .addStatement("writeOnFreshConnection(field, write, events, own, claimed, heldThrowable)")
+            .addStatement("return")
+            .endControlFlow()
+            .endControlFlow()
+            .addComment("Nothing held names the transaction: the connection failed for a reason outside it, and a")
+            .addComment("COMMIT whose answer was lost may have committed, so nothing is written.")
+            .addStatement("dropped(field, events, $S, lost.isEmpty() ? null : lost.get(0))",
+                "its connection failed for a reason outside the transaction")
+            .addStatement("return")
+            .endControlFlow()
+            .beginControlFlow("if (entry == null)")
+            .addStatement("dropped(field, events, $S, null)", "its connection was already released")
+            .addStatement("return")
+            .endControlFlow()
+            .addComment("The connection survived the rollback, its session still mounted.")
+            .addStatement("write.write(entry.dsl, claimed)")
+            .nextControlFlow("catch ($T e)", RuntimeException.class)
+            .addStatement("LOGGER.error($S, events, field.path, e)",
+                "Writing the @outbox(on: ERROR) messages {} of mutation field {} failed after its transaction"
+                    + " rolled back; the response is unchanged.")
+            .endControlFlow()
+            .addJavadoc("Runs the failure messages of {@code field}, whose transaction has rolled back. The\n"
+                + "connection is chosen by what the rollback left of the field's own, the first it opened:\n"
+                + "that connection when it survived; a fresh one when the transaction cost it (the tenant\n"
+                + "timed out, or the rollback failed and an exception held names the transaction as why\n"
+                + "the session ended); none otherwise, and the loss is logged. A failure writing them is\n"
+                + "logged and changes nothing in the response, since the field has already failed.\n");
+        return builder.build();
+    }
+
+    /** {@code private static void dropped(FieldScope field, List<String> events, String why, Throwable cause)}. */
+    static MethodSpec dropped(ClassName self) {
+        return MethodSpec.methodBuilder("dropped")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(self.nestedClass(FIELD_SCOPE_CLASS_NAME), "field")
+            .addParameter(ParameterizedTypeName.get(LIST, ClassName.get(String.class)), "events")
+            .addParameter(String.class, "why")
+            .addParameter(Throwable.class, "cause")
+            .addStatement("LOGGER.warn($S, events, field.path, why, cause)",
+                "The @outbox(on: ERROR) messages {} of mutation field {} were not written: {}.")
+            .addJavadoc("Logs that a field's failure messages were not written, naming the field's path, the\n"
+                + "events and why, with the cause when there is one.\n")
+            .build();
+    }
+
+    /**
+     * {@code private void writeOnFreshConnection(...)}: acquires and mounts a connection for the
+     * field's key outside {@code entryFor}, bounded by {@code outboxAcquisitionTimeout}, writes the
+     * messages on it and releases it at once.
+     */
+    static MethodSpec writeOnFreshConnection(ClassName self, ClassName provider, ClassName pinnedConnection,
+                                             TypeName keyType, String acquireExpression, boolean handled) {
+        var fieldScope = self.nestedClass(FIELD_SCOPE_CLASS_NAME);
+        var future = ParameterizedTypeName.get(COMPLETABLE_FUTURE, pinnedConnection);
+        var timeUnit = ClassName.get("java.util.concurrent", "TimeUnit");
+        var atomicLong = ClassName.get("java.util.concurrent.atomic", "AtomicLong");
+        var builder = MethodSpec.methodBuilder("writeOnFreshConnection")
+            .addModifiers(Modifier.PRIVATE)
+            .addParameter(fieldScope, "field")
+            .addParameter(self.nestedClass(FIELD_ROLLBACK_CLASS_NAME), "write")
+            .addParameter(ParameterizedTypeName.get(LIST, ClassName.get(String.class)), "events")
+            .addParameter(keyType, "k")
+            .addParameter(Throwable.class, "claimed")
+            .addParameter(Throwable.class, "ended")
+            .addStatement("$T bound = runtime.outboxAcquisitionTimeout()", ClassName.get("java.time", "Duration"))
+            .addStatement("$T pin = new $T<>()", future, COMPLETABLE_FUTURE)
+            .addStatement("long queuedAt = System.nanoTime()")
+            .addStatement("$T startedAt = new $T()", atomicLong, atomicLong)
+            .beginControlFlow("try")
+            .addCode("runtime.outboxExecutor().execute(() -> {\n$>")
+            .addStatement("startedAt.set(System.nanoTime())")
+            .beginControlFlow("try")
+            .addStatement("$T pinned = $L", pinnedConnection, acquireExpression)
+            .beginControlFlow("if (!pin.complete(pinned))")
+            .addComment("The wait was abandoned: a connection that arrives late is evicted, never used.")
+            .addStatement("pinned.abort()")
+            .endControlFlow()
+            .nextControlFlow("catch ($T t)", Throwable.class)
+            .addStatement("pin.completeExceptionally(t)")
+            .endControlFlow()
+            .addCode("$<});\n")
+            .nextControlFlow("catch ($T e)", RuntimeException.class)
+            .addStatement("dropped(field, events, $S, e)", "the executor refused the acquisition of a fresh connection")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T pinned", pinnedConnection)
+            .beginControlFlow("try")
+            .addStatement("pinned = pin.get(bound.toNanos(), $T.NANOSECONDS)", timeUnit)
+            .nextControlFlow("catch ($T e)", ClassName.get("java.util.concurrent", "TimeoutException"))
+            .addStatement("long now = System.nanoTime()")
+            .addStatement("long started = startedAt.get()")
+            .addStatement("long queuedMillis = (started == 0 ? now - queuedAt : started - queuedAt) / 1_000_000")
+            .addStatement("long acquiringMillis = started == 0 ? 0 : (now - started) / 1_000_000")
+            .beginControlFlow("if (!pin.completeExceptionally(e))")
+            .addComment("It arrived as the wait gave up: evict it all the same.")
+            .addStatement("pin.join().abort()")
+            .endControlFlow()
+            .addStatement("dropped(field, events, $S + bound.toMillis() + $S + queuedMillis + $S + acquiringMillis"
+                + " + $S, ended)",
+                "no fresh connection within outboxAcquisitionTimeout (", " ms: ",
+                " ms queued for the executor, ", " ms acquiring and mounting)")
+            .addStatement("return")
+            .nextControlFlow("catch ($T e)", ClassName.get("java.util.concurrent", "ExecutionException"))
+            .addStatement("$T failure = e.getCause()", Throwable.class)
+            .addStatement("dropped(field, events, isMountFailure(failure) ? $S : $S, failure)",
+                "the session mount on a fresh connection failed", "no fresh connection could be acquired")
+            .addStatement("return")
+            .nextControlFlow("catch ($T e)", InterruptedException.class)
+            .addStatement("Thread.currentThread().interrupt()")
+            .beginControlFlow("if (!pin.completeExceptionally(e))")
+            .addStatement("pin.join().abort()")
+            .endControlFlow()
+            .addStatement("dropped(field, events, $S, e)", "interrupted while acquiring a fresh connection")
+            .addStatement("return")
+            .endControlFlow()
+            .beginControlFlow("try")
+            .addStatement("$T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings())",
+                DSL_CONTEXT, ClassName.get("org.jooq.impl", "DSL"))
+            .addStatement("dsl.configuration().set(new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin))",
+                provider);
+        if (handled) {
+            builder.addStatement("dsl.configuration().data($S, pinned.handle())",
+                no.sikt.graphitron.emit.SessionIdentityRows.HANDLE_DATA_KEY);
+        }
+        return builder
+            .addStatement("write.write(dsl, claimed)")
+            .nextControlFlow("finally")
+            .addStatement("pinned.release()")
+            .endControlFlow()
+            .addJavadoc("Writes a field's failure messages on a fresh connection for {@code k}, acquired and\n"
+                + "mounted as {@code entryFor} mints one but outside it: no entry is registered, so the\n"
+                + "refusal of a timed-out tenant there stays as it is, and the connection is released as\n"
+                + "soon as the messages are written. One attempt, on the runtime's outbox executor, waited\n"
+                + "on for at most {@code outboxAcquisitionTimeout}, so settle never stalls the next field\n"
+                + "longer than that; past it the attempt is abandoned, a late connection evicted, and the\n"
+                + "loss logged with the time spent queued and the time spent acquiring. A failed mount\n"
+                + "writes nothing.\n"
+                + "@param ended the exception that named the transaction as why the old session ended, or\n"
+                + "{@code null} for a timed-out tenant\n")
+            .build();
+    }
+
+    /** {@code public static boolean endedOverTransaction(Throwable thrown, SQLDialect dialect)}. */
+    static MethodSpec endedOverTransaction() {
+        var sqlException = SQL_EXCEPTION;
+        return MethodSpec.methodBuilder("endedOverTransaction")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(Throwable.class, "thrown")
+            .addParameter(SQL_DIALECT, "dialect")
+            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", Throwable.class)
+            .beginControlFlow("if (!(t instanceof $T sql))", sqlException)
+            .addStatement("continue")
+            .endControlFlow()
+            .beginControlFlow("for ($T next = sql; next != null; next = next.getNextException())", sqlException)
+            .addStatement("$T state = next.getSQLState()", String.class)
+            .beginControlFlow("if ($S.equals(state) || $S.equals(state))", "25P03", "25P04")
+            .addComment("PostgreSQL ended the session over its transaction: idle_in_transaction_session_timeout")
+            .addComment("(25P03) or transaction_timeout (25P04).")
+            .addStatement("return true")
+            .endControlFlow()
+            .addComment("By name: the open-source jOOQ edition the generated code may compile against has no")
+            .addComment("Oracle constant.")
+            .beginControlFlow("if (dialect != null && $S.equals(dialect.family().name()))", "ORACLE")
+            .addStatement("int code = next.getErrorCode()")
+            .beginControlFlow("if (code == 28 || (code >= 2392 && code <= 2399 && code != 2398))")
+            .addComment("Oracle killed the session (ORA-00028) or a resource limit ended it (ORA-02392 to")
+            .addComment("ORA-02399, the CPU, I/O, idle, private SGA and connect time limits).")
+            .addStatement("return true")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return false")
+            .addJavadoc("Whether {@code thrown}'s cause chain, or a {@code SQLException}'s chained exceptions, names\n"
+                + "a transaction as why the database ended its session, which is what cost a mutation field its\n"
+                + "connection when the rollback after it failed: {@code 25P03} and {@code 25P04} on\n"
+                + "PostgreSQL, a killed session or a resource limit on Oracle. Anything else, a\n"
+                + "connection-class error, an I/O failure without a state, a server shutdown, is outside the\n"
+                + "transaction, and so is anything unrecognised, since writing nothing is the safer error.\n"
+                + "Read beside {@link #isMountFailure} when a field with failure messages settles.\n"
+                + "@param thrown an exception settle holds\n"
+                + "@param dialect the dialect of the connection it came from\n")
             .build();
     }
 

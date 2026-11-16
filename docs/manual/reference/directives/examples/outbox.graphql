@@ -1,3 +1,10 @@
 fragment TwoEvents on Mutation @factDocument(path: "scenarios/outbox-two-events") {
   createFilm { id }
 }
+
+fragment OnFailure on Mutation @factDocument(path: "scenarios/outbox-error-outcome") {
+  createFilm {
+    film { id }
+    errors { __typename ... on FilmLanguageMissing { message } ... on FilmValueMissing { message } }
+  }
+}

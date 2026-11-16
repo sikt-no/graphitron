@@ -5584,6 +5584,7 @@ type Mutation {
             method: "writeTwiceThenThrow"
         })
         @outbox(event: "MarkerThrown", argMapping: "marker: marker")
+        @outbox(on: ERROR, event: "MarkerFailed", argMapping: "marker: marker, at: $scope.coordinate")
     outboxFilmBlurb(filmId: Int!): FilmBlurbHolder
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService",
@@ -5782,8 +5783,13 @@ type Mutation {
     updateFilmRentalRate(in: FilmPriceUpdateInput!): FilmRentalRateUpdatePayload @mutation(typeName: UPDATE)
 
     # A DML INSERT whose errors field is a union of two @error types claiming different
-    # constraint violations; see FilmInsertError.
+    # constraint violations; see FilmInsertError. It writes a message on each outcome
+    # (OutboxFailureExecutionTest): FilmReported when the insert commits, and when it rolls back the
+    # failure message, under the default event Mutation.insertFilmReportingFailure.failed, carrying
+    # the error it was claimed as, the title asked for and the mounted principal.
     insertFilmReportingFailure(in: FilmCreateInput!): FilmInsertPayload @mutation(typeName: INSERT, table: "film")
+        @outbox(event: "FilmReported", argMapping: "reported: in.title")
+        @outbox(on: ERROR, argMapping: "kind: $error.__typename, detail: $error.message, title: in.title, by: $session.principal")
 
     # A @service mutation over a list of input objects whose errors union shares FilmWriteInvalid, a
     # {handler: VALIDATION} type, with the DML carriers above: the shape a consumer reaches by putting
