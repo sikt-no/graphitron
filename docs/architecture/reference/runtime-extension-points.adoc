@@ -299,6 +299,8 @@ it lands:
   `newOwnedExecutionInput`. It is built when the request is, captures whatever the consumer needs of the
   request in its closure, and acquires nothing until called.
 * A lease holds the mounted connection, the session handle where `<handle>` names one, and its release.
+  The jOOQ dialect and settings Graphitron uses the connection with are the runtime's, application-wide;
+  a lease may name its own, for a pool of another database or another configuration.
   Which pool, how to mount and how to clear are the source's, inside `acquire` and `release`; Graphitron
   knows no mount and no unmount.
 * Graphitron owns the lifecycle. It calls `acquire` when a field first needs a key's connection, once per
