@@ -24,20 +24,19 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_IMPORT_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 /**
- * The schema site's decode: federation's opt-in, read where it was written.
- *
- * <p>The claims worth standing up here are the ones this site decides. Its import list is the one
- * argument in the family whose elements admit two spellings, so that both land in one relation and
- * in the order the author wrote them is the thing to pin. And a repeatable directive applied twice
- * on one schema is two rows keyed by position with no ordinal assigned, which is what keying on the
- * at sign buys and what the site has no coordinate to do instead.
+ * The schema site's decode where it tolerates what the generator refuses. What the site writes for a
+ * schema the generator accepts is stated by the fact documents {@code scenarios/federation-link},
+ * {@code scenarios/node-type-directive} and {@code scenarios/node-type-directive-namespaced}: each
+ * {@code @link} application a row, the one importing nothing included, both import spellings in one
+ * relation, both {@code @composeDirective} spellings in one relation, and the sweep of one the author
+ * removed. The two cases here write a list element or an application that names nothing, which no
+ * document can hold, so they stay inline.
  */
 class GraphitronSchemaEntriesTest {
 
@@ -59,97 +58,6 @@ class GraphitronSchemaEntriesTest {
         type Query { films: [Film!] }
         type Film { title: String }
         """;
-
-    /**
-     * The two spellings are one fact with the alias absent in the first, so they are one relation
-     * and not two, and the index each element was written at is what orders them. Reading them back
-     * in position order is the whole claim: the bare string and the aliased object arrive from two
-     * separate readings inside the writer, and nothing downstream should be able to tell.
-     */
-    @Test
-    @DisplayName("both import spellings land in one relation, in written order")
-    void bothImportSpellingsLandInOneRelation(@TempDir Path tmp) {
-        write(tmp, "schema.graphqls", FEDERATION + """
-            extend schema @link(
-              url: "https://specs.apollo.dev/federation/v2.10"
-              import: ["@key", {name: "@shareable", as: "@federatedShareable"}, "@external"]
-            )
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_LINK_IMPORT_ENTRY;
-
-            assertThat(dsl.select(writtenAt(t), t.NAME, t.ALIAS).from(t)
-                    .where(t.GRAPH_NAME.eq(graph)).orderBy(writtenAt(t)).fetch())
-                .as("a bare name, an aliased object and a bare name after it, at their own indices")
-                .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
-                .containsExactly(
-                    tuple(0, "@key", null),
-                    tuple(1, "@shareable", "@federatedShareable"),
-                    tuple(2, "@external", null));
-
-            assertThat(dsl.select(GRAPHITRON_AST_LINK_ENTRY.URL).from(GRAPHITRON_AST_LINK_ENTRY)
-                    .where(GRAPHITRON_AST_LINK_ENTRY.GRAPH_NAME.eq(graph))
-                    .fetchOne(GRAPHITRON_AST_LINK_ENTRY.URL))
-                .as("and the application they hang off carries the specification it opted in to")
-                .isEqualTo("https://specs.apollo.dev/federation/v2.10");
-        });
-    }
-
-    /**
-     * The directive repeats and the site has no coordinate to number applications at, so the
-     * position of the at sign is the key. Two applications are two rows with no ordinal assigned
-     * here, the numbering being the anchors' work over rows that carry what it would sort by.
-     */
-    @Test
-    @DisplayName("a repeatable application needs no ordinal, the at sign being the key")
-    void twoApplicationsAreTwoRowsWithoutAnOrdinal(@TempDir Path tmp) {
-        write(tmp, "schema.graphqls", FEDERATION + """
-            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
-            extend schema @link(url: "https://example.com/other/v1.0", import: ["@other"])
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_LINK_ENTRY;
-
-            assertThat(dsl.select(t.URL).from(t)
-                    .where(t.GRAPH_NAME.eq(graph)).orderBy(t.SOURCE_LINE).fetch(t.URL))
-                .as("two applications, told apart by where they were written")
-                .containsExactly("https://specs.apollo.dev/federation/v2.10",
-                    "https://example.com/other/v1.0");
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_IMPORT_ENTRY,
-                    GRAPHITRON_AST_LINK_IMPORT_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("and each keeps its own imports, both at position 0 under different parents")
-                .isEqualTo(2);
-        });
-    }
-
-    /**
-     * An application with no import list is still the fact that the schema opted in, so the parent
-     * row exists with no children. The row is written for every application rather than only for
-     * those that wrote an argument, which is what lets the child relation hang off it at all.
-     */
-    @Test
-    @DisplayName("an application with no imports is still a row")
-    void anApplicationWithoutImportsIsStillARow(@TempDir Path tmp) {
-        write(tmp, "schema.graphqls", FEDERATION + """
-            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10")
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_ENTRY,
-                    GRAPHITRON_AST_LINK_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("the opt-in is a fact whether or not anything was imported").isEqualTo(1);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_LINK_IMPORT_ENTRY,
-                    GRAPHITRON_AST_LINK_IMPORT_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("and nothing hangs off it").isZero();
-        });
-    }
 
     /**
      * An element that names nothing spends its index, which keeps the elements after it at the
@@ -178,33 +86,6 @@ class GraphitronSchemaEntriesTest {
     }
 
     /**
-     * Federation spells the directive two ways, the plain name where the schema's {@code @link}
-     * imports it and the namespaced one where it does not, and the question asked of the relation
-     * is only which directives the graph composes. So both land in one relation, and a graph
-     * composing through either answers the same.
-     */
-    @Test
-    @DisplayName("both spellings of @composeDirective land in one relation")
-    void bothComposeDirectiveSpellingsLandInOneRelation(@TempDir Path tmp) {
-        write(tmp, "schema.graphqls", FEDERATION + """
-            extend schema
-              @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"])
-              @composeDirective(name: "@nodeType")
-            extend schema @federation__composeDirective(name: "@other")
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY;
-
-            assertThat(dsl.select(t.DIRECTIVE_NAME).from(t)
-                    .where(t.GRAPH_NAME.eq(graph)).orderBy(t.SOURCE_LINE).fetch(t.DIRECTIVE_NAME))
-                .as("the plain spelling and the namespaced one, each as written, at its own position")
-                .containsExactly("@nodeType", "@other");
-        });
-    }
-
-    /**
      * The argument is required, so an application without a string name asks the supergraph for
      * nothing a row could hold. The applied-directive row already says it was applied; a row here
      * would hold its key and nothing else.
@@ -225,37 +106,6 @@ class GraphitronSchemaEntriesTest {
             assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY,
                     GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("a name that is not a string, and no name at all").isZero();
-        });
-    }
-
-    /**
-     * Removing the application removes the row, which is the sweep working on the new relation: the
-     * writer's list of what it sweeps is written out rather than found by prefix, so a relation it
-     * gained and did not list would keep its stale rows silently.
-     */
-    @Test
-    @DisplayName("an @composeDirective the author removed is swept")
-    void aRemovedComposeDirectiveIsSwept(@TempDir Path tmp) {
-        write(tmp, "schema.graphqls", FEDERATION + """
-            extend schema
-              @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@composeDirective"])
-              @composeDirective(name: "@nodeType")
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY,
-                    GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY.GRAPH_NAME.eq(graph))).isOne();
-
-            write(tmp, "schema.graphqls", FEDERATION + """
-                extend schema
-                  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@composeDirective"])
-                """);
-            read(dsl, tmp);
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY,
-                    GRAPHITRON_AST_COMPOSE_DIRECTIVE_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("the second reading no longer finds it").isZero();
         });
     }
 

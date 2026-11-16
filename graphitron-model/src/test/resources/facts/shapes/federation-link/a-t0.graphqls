@@ -1,10 +1,12 @@
 # A graph's federation opt-in read in steps, over one file. The first reading finds two links, one
 # of them federation's, so the graph is federated by its author and imports what that link imports,
 # in the order written and with the alias an object element binds. Only the federation link is
-# decoded as one, the other naming another specification.
+# decoded as one, the other naming another specification. It also composes a directive by the
+# namespaced spelling, which the second reading drops.
 
 extend type Query { film: FactAnchor }
 
 extend schema @link(url: "https://specs.apollo.dev/link/v1.0")
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
   import: ["@key", {name: "@shareable", as: "@federatedShareable"}])
+extend schema @federation__composeDirective(name: "@other")

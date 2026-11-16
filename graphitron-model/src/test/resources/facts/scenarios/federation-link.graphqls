@@ -18,6 +18,25 @@ extend schema @expectEquals(relation: "graphitron_federation_link", rows: """
   AUTHORED, v2.10,   1000000000
   """)
 
+# Each application is a row, told apart by where it was written, the one importing nothing included.
+extend schema @expectEquals(relation: "graphitron_ast_link_entry", rows: """
+  url
+  https://specs.apollo.dev/link/v1.0
+  https://specs.apollo.dev/federation/v2.10
+  """)
+
+# Both import spellings land in one relation, the bare name with no alias.
+extend schema @expectEquals(relation: "graphitron_ast_link_import_entry", rows: """
+  name,       alias
+  @key,
+  @shareable, @federatedShareable
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_compose_directive_entry", rows: """
+  directive_name
+  @other
+  """)
+
 extend schema @expectEquals(relation: "graphitron_federation_link_import", rows: """
   ordinal, name,       alias,                touched_at
   0,       @key,       ,                     1000000000
@@ -38,6 +57,9 @@ extend schema @expectEquals(relation: "graphitron_federation_link_import", rows:
   ordinal, name, alias, touched_at
   0,       @key,      , 1000000060
   """)
+
+# The @composeDirective the author removed is swept.
+extend schema @assertEmpty(relation: "graphitron_ast_compose_directive_entry")
 
 extend schema @tick(ms: 60000)
 
