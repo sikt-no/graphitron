@@ -19884,14 +19884,31 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
   JOIN graphitron_occurrence_producer_result r ON r.graph_name = p.graph_name AND r.coordinate = p.coordinate
   JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
   JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE p.kind = 'SERVICE' AND r.shape = 'CONNECTION';
+ WHERE p.kind = 'SERVICE' AND r.shape = 'CONNECTION'
+UNION ALL
+-- A @service under an object whose rows may be any of several participants, at the field: its parents'
+-- answers would be lifted participant by participant, which is generated for a root call only, so it
+-- is refused until then. An outcome, whose members are the call's success and its errors, is no such
+-- answer.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE p.kind = 'SERVICE' AND p.start = 'CHILD'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant pt
+                WHERE pt.graph_name = p.graph_name AND pt.coordinate = p.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                    WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                      AND po.field_name = f.field_name);
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading or connection-returning field''s';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning or polymorphic child field''s';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS or SERVICE_CONNECTION_UNSUPPORTED';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for a re-read or a connection';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED or SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for a re-read, a connection or a polymorphic child';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
 -- What a service answers to a call that names nothing, where it is an empty value the generated code
@@ -27294,6 +27311,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A participant of a discriminated @service''s result answers an object with no table of its own read down a path, where the service''s lift reads each participant off its one row: read the object off the row, give its type a @table, or read the rows with a field graphitron fetches.'),
   ('SCALAR_PATH', 'error', 'UNSUPPORTED', 'GRAPHITRON_SCALAR_PATH',
    'A value is read off another table by a path the reading site does not follow yet: under a discriminated @service, a participant''s field reads its value more than one step off the shared table, or by a path not departing it. Read it one step off the shared table, or read the rows with a field graphitron fetches. Other sites that cannot read a scalar down a path join this code rather than mint their own.'),
+  ('SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED',
+   'A @service under an object answers an interface or union whose rows may be any of several participants, which is lifted for a root @service only: move the call to a root field, or answer one participant''s type.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',

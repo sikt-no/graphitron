@@ -3,6 +3,13 @@ package no.sikt.graphitron.rewrite.test.services;
 import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.AddressRecord;
 import org.jooq.DSLContext;
+import org.jooq.TableRecord;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * Execution-tier fixture: a record-backed (Pojo) parent that exposes a single typed jOOQ
@@ -32,5 +39,13 @@ public final class AddressOccupantCarrierService {
             .where(Tables.ADDRESS.ADDRESS_ID.eq(addressId))
             .fetchOne();
         return a == null ? null : new AddressOccupantCarrier(a);
+    }
+
+    /**
+     * A child service answering each address's occupants, customers and staff alike: a polymorphic
+     * answer under an object, which the store-fed fetcher does not lift yet.
+     */
+    public static Map<AddressRecord, List<TableRecord<?>>> occupantsOf(Set<AddressRecord> addresses, DSLContext dsl) {
+        return addresses.stream().collect(Collectors.toMap(Function.identity(), a -> List.of()));
     }
 }
