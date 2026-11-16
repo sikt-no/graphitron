@@ -1,0 +1,26 @@
+# A @service answering rows of a discriminated interface, one of whose participants is on a table of
+# its own: FanGamma is told apart by fan_kind like the others but is a row of fan_target, which the
+# service's lift, reading every participant off the one fan_base row, does not read yet.
+
+interface FanItem @table(name: "fan_base") @discriminate(on: "fan_kind") {
+  name: String @field(name: "label")
+}
+
+type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: "ALPHA") {
+  name: String @field(name: "label")
+}
+
+type FanGamma implements FanItem @table(name: "fan_target") @discriminator(value: "GAMMA") {
+  name: String @field(name: "target_label")
+}
+
+type Query {
+  fanItemsByService(ids: [Int!]!): [FanItem!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FanItemService", method: "byIds"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED'", rows: """
+  code,                                        coordinate,              detail
+  SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED, Query.fanItemsByService, FanGamma
+  """)

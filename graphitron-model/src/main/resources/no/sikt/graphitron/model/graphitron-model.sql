@@ -15452,6 +15452,32 @@ COMMENT ON COLUMN graphitron_occurrence_participant.discriminator_column IS 'on 
 COMMENT ON COLUMN graphitron_occurrence_participant.discriminator_value IS 'on DISCRIMINATOR, the value the column holds for a row of this participant, as @discriminator(value:) writes it: the database''s own spelling, an enum column''s literal';
 COMMENT ON COLUMN graphitron_occurrence_participant.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+-- The occurrence-participants stage's own defects: a @service whose participants are told apart other
+-- than by one column of one shared table, at the field. The detail names the participant.
+CREATE VIEW graphitron_occurrence_participant_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail, stage) AS
+-- A participant of a @service's target that a discriminator does not tell apart on the shared table,
+-- beside one it does: told apart by its own table, or on a table of its own. The service's lift reads
+-- every participant off the one shared row, so it is refused until a lift reading several tables is
+-- generated for a service.
+SELECT DISTINCT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED', p.participant_type, 'occurrence-participants'
+  FROM graphitron_occurrence_participant p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_producer pr
+    ON pr.graph_name = f.graph_name AND pr.type_name = f.type_name AND pr.field_name = f.field_name
+   AND pr.kind = 'SERVICE'
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE (p.recognized_by = 'TABLE'
+        OR NOT (p.table_source_name = p.base_source_name AND p.table_schema = p.base_schema
+                AND p.table_name = p.base_name))
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_participant dp
+                WHERE dp.graph_name = p.graph_name AND dp.coordinate = p.coordinate
+                  AND dp.recognized_by = 'DISCRIMINATOR');
+COMMENT ON VIEW graphitron_occurrence_participant_entry_defect_rule IS 'One row the occurrence-participants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @service returning an interface whose participants a discriminator tells apart on film, one of them on a table of its own, gives one SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED row at the field, naming that participant.';
+
 CREATE TABLE graphitron_occurrence_producer_routine (
   graph_name          VARCHAR   NOT NULL,
   coordinate          VARCHAR   NOT NULL,
@@ -20794,7 +20820,59 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND pc.kind = 'SERVICE'
                      JOIN graphitron_claim_kind pk ON pk.kind = pc.kind AND pk.family = 'PRODUCER'
                     WHERE fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate)
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column;
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+UNION ALL
+-- A field of a participant a discriminator tells apart under a @service, answering an object with no
+-- table of its own read down a path rather than off the row, at the field: the service's lift reads
+-- each participant off the one shared row, so it is refused until such a read is generated there. A
+-- nesting field, read off the row, is the lift's own; the nesting fields are this stage's.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-bindings'
+  FROM (SELECT DISTINCT p.graph_name, p.participant_type, p.base_source_name, p.base_schema, p.base_name
+          FROM graphitron_occurrence_participant p
+          JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+          JOIN graphitron_field sf ON sf.graph_name = o.graph_name AND sf.coordinate = o.element_coordinate
+          JOIN graphitron_producer pr
+            ON pr.graph_name = sf.graph_name AND pr.type_name = sf.type_name AND pr.field_name = sf.field_name
+           AND pr.kind = 'SERVICE'
+         WHERE p.recognized_by = 'DISCRIMINATOR') dp
+  JOIN graphitron_field f ON f.graph_name = dp.graph_name AND f.type_name = dp.participant_type
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'OBJECT'
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = f.graph_name AND tt.type_name = f.named_type)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_nesting ns
+                     JOIN graphitron_occurrence no ON no.graph_name = ns.graph_name AND no.coordinate = ns.coordinate
+                    WHERE ns.graph_name = f.graph_name AND no.element_coordinate = f.coordinate)
+UNION ALL
+-- A field of a participant a discriminator tells apart under a @service, answering a value read off
+-- another table than the shared one, by a path of more than one step or one not departing the shared
+-- table, at the field: the service's lift reads such a value through one step off the shared table
+-- for that participant's rows alone, so a longer read is refused until it is generated there.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SCALAR_PATH', CAST(NULL AS VARCHAR), 'occurrence-bindings'
+  FROM (SELECT DISTINCT p.graph_name, p.participant_type, p.base_source_name, p.base_schema, p.base_name
+          FROM graphitron_occurrence_participant p
+          JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+          JOIN graphitron_field sf ON sf.graph_name = o.graph_name AND sf.coordinate = o.element_coordinate
+          JOIN graphitron_producer pr
+            ON pr.graph_name = sf.graph_name AND pr.type_name = sf.type_name AND pr.field_name = sf.field_name
+           AND pr.kind = 'SERVICE'
+         WHERE p.recognized_by = 'DISCRIMINATOR') dp
+  JOIN graphitron_field f ON f.graph_name = dp.graph_name AND f.type_name = dp.participant_type
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind <> 'OBJECT'
+  JOIN graphitron_join_path jp ON jp.graph_name = f.graph_name AND jp.coordinate = f.coordinate AND jp.kind = 'JOIN'
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = f.graph_name AND tt.type_name = f.named_type)
+   AND NOT (jp.target_source_name = dp.base_source_name AND jp.target_schema = dp.base_schema
+            AND jp.target_table = dp.base_name)
+   AND (EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                 WHERE sc.graph_name = f.graph_name AND sc.coordinate = f.coordinate AND sc.position > 0)
+        OR NOT EXISTS (SELECT 1 FROM graphitron_join_path_step_column sc
+                        WHERE sc.graph_name = f.graph_name AND sc.coordinate = f.coordinate AND sc.position = 0
+                          AND sc.from_source_name = dp.base_source_name AND sc.from_schema = dp.base_schema
+                          AND sc.from_table = dp.base_name));
 COMMENT ON VIEW graphitron_occurrence_binding_entry_defect_rule IS 'One row the binding defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-bindings inserts this view''s rows for one graph into graphitron_entry_defect, a bare @nodeId landing on a table two nodes are bound to giving one NODE_ID_TARGET_AMBIGUOUS row at that @nodeId.';
 
 -- The keys a caller narrows a list by: each @lookupKey argument of the field, or each field of the
@@ -25896,6 +25974,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-depths', 'graphitron_path_need_table'),
   ('occurrence-values', 'graphitron_occurrence_binding'),
   ('occurrence-values', 'graphitron_occurrence_binding_value'),
+  ('occurrence-participants', 'graphitron_entry_defect'),
   ('occurrence-participants', 'graphitron_occurrence_participant'),
   ('entity-key-alternatives', 'graphitron_entry_defect'),
   ('entity-key-alternatives', 'graphitron_key_field_binding'),
@@ -26118,6 +26197,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-orderings', 'graphitron_order_input', 'graphitron_order_input_rule'),
   ('occurrence-orderings', 'graphitron_sort_enum', 'graphitron_sort_enum_rule'),
   ('occurrence-overrides', 'graphitron_occurrence_overridden', 'graphitron_occurrence_overridden_rule'),
+  ('occurrence-participants', 'graphitron_entry_defect', 'graphitron_occurrence_participant_entry_defect_rule'),
   ('occurrence-participants', 'graphitron_occurrence_participant', 'graphitron_occurrence_participant_rule'),
   ('occurrence-producers', 'graphitron_entry_defect', 'graphitron_occurrence_producer_entry_defect_rule'),
   ('occurrence-producers', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_parameter_rule'),
@@ -27184,6 +27264,12 @@ INSERT INTO graphitron_defect_type VALUES
    'A field of a type nested under a global table reaches a tenant''s rows by a key landing on the tenant column, which is not routed by the parent row''s tenant yet: declare the field on a type with its own @table, or read the rows through an argument naming the tenant.'),
   ('TENANT_FAN_OUT_INLINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_INLINE_UNSUPPORTED',
    'A field whose foreign key reaches a tenant''s rows from a global table is routed by its parent row''s tenant, and needs @splitQuery until its producer is emitted from the store: write @splitQuery on the field.'),
+  ('SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED',
+   'A @service returns an interface or union whose participants a discriminator tells apart on one shared table, and one of them is told apart by a table of its own, which the service''s lift does not read yet: keep every participant on the shared table, or read the rows with a field graphitron fetches.'),
+  ('SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED',
+   'A participant of a discriminated @service''s result answers an object with no table of its own read down a path, where the service''s lift reads each participant off its one row: read the object off the row, give its type a @table, or read the rows with a field graphitron fetches.'),
+  ('SCALAR_PATH', 'error', 'UNSUPPORTED', 'GRAPHITRON_SCALAR_PATH',
+   'A value is read off another table by a path the reading site does not follow yet: under a discriminated @service, a participant''s field reads its value more than one step off the shared table, or by a path not departing it. Read it one step off the shared table, or read the rows with a field graphitron fetches. Other sites that cannot read a scalar down a path join this code rather than mint their own.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',
@@ -28597,6 +28683,10 @@ INSERT INTO meta_relation VALUES
    'One row per producer of a database-per-tenant graph: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none.',
    'For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.',
    'The rule, stated once for all three: a producer is routed, inherits, runs unscoped or is refused by the same facts, so the connection, its part and its defect cannot disagree about which producers they cover.'),
+  ('graphitron_occurrence_participant_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
+   'One row the occurrence-participants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a @service returning an interface whose participants a discriminator tells apart on film, one of them on a table of its own, gives one SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED row at the field, naming that participant.',
+   'The stage''s own defects, read off the participants it has just written, so a service whose participants its lift cannot read off one row is refused where they are known.'),
   ('graphitron_occurrence_route_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence-routes stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a root @service handed a DSLContext under a tenant column, naming no tenant in its arguments, gives one UNROUTED_SERVICE_CALL row at the field.',

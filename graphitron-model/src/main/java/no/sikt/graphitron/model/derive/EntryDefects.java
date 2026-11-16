@@ -29,6 +29,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_TABLE_ENTRY_DEF
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_CLAIM_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_ENTRY_DEFECT_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_ROUTE_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY_ENTRY_DEFECT_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY_DEFECT_RULE;
@@ -119,6 +120,10 @@ public final class EntryDefects {
 
     /** The build and decode-shape defects' rule, {@link OccurrenceBuilds}. */
     public static final Rule BUILDS = new Rule("occurrence-builds", GRAPHITRON_OCCURRENCE_BUILD_ENTRY_DEFECT_RULE);
+
+    /** The participant defects' rule, {@link OccurrenceParticipants}. */
+    public static final Rule PARTICIPANTS =
+        new Rule("occurrence-participants", GRAPHITRON_OCCURRENCE_PARTICIPANT_ENTRY_DEFECT_RULE);
 
     /** The route defects' rule, {@link OccurrenceRoutes}. */
     public static final Rule ROUTES =

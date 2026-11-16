@@ -31,9 +31,11 @@ import static no.sikt.graphitron.model.Tables.SQL_TABLE;
  * kept to the participants' values, and a participant's field on another table read through its
  * step from the shared row, for that participant's rows alone.
  *
- * <p>What this query does not state yet is refused, the reason naming it, so the lift is emitted
- * whole or not at all: a participant on a table of its own, a field the interface declares off the
- * shared table, a participant's field nesting an object, and a field more than one step away.
+ * <p>What this query does not state the store refuses before it is asked, so the lift is emitted
+ * whole: a participant on a table of its own, {@code SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED}; a
+ * participant's field answering an object with no table read down a path,
+ * {@code SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED}; and a field more than one step away,
+ * {@code SCALAR_PATH}. Meeting one here is a broken invariant.
  */
 public final class DiscriminatedQuery {
 
@@ -61,8 +63,8 @@ public final class DiscriminatedQuery {
 
     /**
      * One occurrence the column tells apart: its coordinate, the column by its SQL name, the
-     * participants in name order, the names of the fields whose terms land under an alias no
-     * participant qualifies, or why it is not lifted here.
+     * participants in name order, and the names of the fields whose terms land under an alias no
+     * participant qualifies.
      *
      * <p>Every participant's projection lands in one select list, where an aliased field compares
      * equal on its alias alone, so each participant's selection keeps every occurrence of those
@@ -70,12 +72,11 @@ public final class DiscriminatedQuery {
      * interface declares that is read by alias rather than by column identity.
      */
     public record Row(String coordinate, String discriminatorColumn, List<Participant> participants,
-                      List<String> sharedAliasFieldNames, Optional<String> refusal) {
+                      List<String> sharedAliasFieldNames) {
         public Row {
             Objects.requireNonNull(coordinate, "coordinate");
             participants = List.copyOf(participants);
             sharedAliasFieldNames = List.copyOf(sharedAliasFieldNames);
-            Objects.requireNonNull(refusal, "refusal");
         }
     }
 
@@ -85,8 +86,9 @@ public final class DiscriminatedQuery {
     private record FieldFact(String typeName, String fieldName, String targetKind, String reaches, boolean tableBound) {}
 
     /**
-     * The graph's discriminated occurrences, by coordinate; {@code targets} names the interface each
-     * lifting occurrence answers, whose own fields are checked beside its participants'.
+     * The lifting occurrences a discriminator tells apart, by coordinate; {@code targets} names each
+     * lifting occurrence with the interface it answers, whose own fields are checked beside its
+     * participants'. An occurrence that does not lift is not this query's.
      */
     public static Map<String, Row> read(StoreHandle store, Map<String, String> targets) {
         var p = GRAPHITRON_OCCURRENCE_PARTICIPANT;
@@ -102,6 +104,7 @@ public final class DiscriminatedQuery {
         // Only an occurrence a discriminator tells apart is this query's; one told apart by table is
         // the polymorphic lift's.
         byCoordinate.values().removeIf(rows -> rows.stream().noneMatch(s -> "DISCRIMINATOR".equals(s.recognizedBy())));
+        byCoordinate.keySet().retainAll(targets.keySet());
         var fields = fields(store);
         // The participants' fields that are nesting fields, read off their parent's row.
         var ns = GRAPHITRON_OCCURRENCE_NESTING;
@@ -130,7 +133,8 @@ public final class DiscriminatedQuery {
         var participants = new ArrayList<Participant>();
         for (var s : stated) {
             if (!"DISCRIMINATOR".equals(s.recognizedBy()) || !s.table().equals(base)) {
-                return refused(coordinate, first, s.type() + " is a participant on a table of its own");
+                throw refused(coordinate, s.type() + " is a participant on a table of its own",
+                    "SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED");
             }
             var crossFields = new ArrayList<CrossField>();
             for (var f : fields.getOrDefault(s.type(), List.of())) {
@@ -144,26 +148,29 @@ public final class DiscriminatedQuery {
                     shared.add(f.fieldName());
                 }
                 if ("OBJECT".equals(f.targetKind()) && !f.tableBound()) {
-                    return refused(coordinate, first, s.type() + "." + f.fieldName()
-                        + " reads an object with no table of its own off another row");
+                    throw refused(coordinate, s.type() + "." + f.fieldName()
+                        + " reads an object with no table of its own off another row",
+                        "SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED");
                 }
                 if (f.tableBound() || f.reaches() == null || f.reaches().equals(base)) {
                     continue;
                 }
                 var cross = crossField(store, s.type(), f.fieldName(), base);
                 if (cross.isEmpty()) {
-                    return refused(coordinate, first, s.type() + "." + f.fieldName()
-                        + " is read more than one step off " + base);
+                    throw refused(coordinate, s.type() + "." + f.fieldName()
+                        + " is read more than one step off " + base, "SCALAR_PATH");
                 }
                 crossFields.add(cross.get());
             }
             participants.add(new Participant(s.type(), s.value(), crossFields));
         }
-        return new Row(coordinate, first.column(), participants, List.copyOf(shared), Optional.empty());
+        return new Row(coordinate, first.column(), participants, List.copyOf(shared));
     }
 
-    private static Row refused(String coordinate, Stated first, String reason) {
-        return new Row(coordinate, first.column(), List.of(), List.of(), Optional.of(reason));
+    /** A lift the store should have refused, by the code it refuses it with. */
+    private static IllegalStateException refused(String coordinate, String reason, String code) {
+        return new IllegalStateException(coordinate + " is lifted, though " + reason
+            + ", which the store refuses as " + code);
     }
 
     /**

@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PARTICIPANT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TENANT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -117,8 +118,10 @@ public final class ServiceEmission {
     private final Map<String, PolymorphicLiftQuery.Row> polymorphic;
     /** The services whose outcome claims validation, by coordinate. */
     private final Set<String> validating;
-    /** The occurrences whose rows a column of one shared table tells apart, by coordinate. */
+    /** The lifting occurrences whose rows a column of one shared table tells apart, by coordinate. */
     private final Map<String, DiscriminatedQuery.Row> discriminated;
+    /** The services whose rows a column of one shared table tells apart, lifting or not. */
+    private final Set<String> toldApart;
     /** Each root call's connection in a database-per-tenant graph, by coordinate. */
     private final Map<String, ConnectionQuery.Row> connections;
     /** The tenant column's Java type, in a database-per-tenant graph whose tables agree on one. */
@@ -128,6 +131,7 @@ public final class ServiceEmission {
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
                             Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated,
+                            Set<String> toldApart,
                             Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
         this.services = services;
         this.frames = frames;
@@ -138,6 +142,7 @@ public final class ServiceEmission {
         this.polymorphic = polymorphic;
         this.validating = validating;
         this.discriminated = discriminated;
+        this.toldApart = toldApart;
         this.connections = connections;
         this.tenantType = tenantType;
     }
@@ -145,7 +150,7 @@ public final class ServiceEmission {
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
         return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
-            Map.of(), Optional.empty());
+            Set.of(), Map.of(), Optional.empty());
     }
 
     /** Reads every part's rows for the graph once. */
@@ -168,6 +173,7 @@ public final class ServiceEmission {
             byCoordinate(PolymorphicLiftQuery.read(store), PolymorphicLiftQuery.Row::coordinate),
             validating(store),
             DiscriminatedQuery.read(store, targets),
+            toldApart(store),
             ConnectionQuery.read(store),
             tenantType(store));
     }
@@ -188,6 +194,18 @@ public final class ServiceEmission {
         var out = new LinkedHashMap<String, R>();
         rows.forEach(r -> out.put(coordinate.apply(r), r));
         return out;
+    }
+
+    /** The services a discriminator tells some participant of apart. */
+    private static Set<String> toldApart(StoreHandle store) {
+        var p = GRAPHITRON_OCCURRENCE_PRODUCER;
+        var pt = GRAPHITRON_OCCURRENCE_PARTICIPANT;
+        return Set.copyOf(store.dsl().selectDistinct(p.COORDINATE)
+            .from(p)
+            .join(pt).on(pt.GRAPH_NAME.eq(p.GRAPH_NAME), pt.COORDINATE.eq(p.COORDINATE),
+                pt.RECOGNIZED_BY.eq("DISCRIMINATOR"))
+            .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE"))
+            .fetch(p.COORDINATE));
     }
 
     /**
@@ -238,9 +256,7 @@ public final class ServiceEmission {
         var frame = frames.get(coordinate);
         if (frame == null) return "NO_FRAME";
         if (occurrencesOf(elementOf(frame)).size() > 1) return "SEVERAL_OCCURRENCES";
-        var told = discriminated.get(coordinate);
-        if (told != null && (told.refusal().isPresent() || !lifts.containsKey(coordinate)
-                || !lifts.get(coordinate).root())) {
+        if (toldApart.contains(coordinate) && (!lifts.containsKey(coordinate) || !lifts.get(coordinate).root())) {
             return "DISCRIMINATED";
         }
         var call = calls.get(coordinate);

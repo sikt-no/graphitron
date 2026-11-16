@@ -300,9 +300,8 @@ public final class LiftEmitter {
                                                java.util.function.Function<String, ClassName> projectionOf,
                                                ClassName selectionOccurrences) {
         requireKey(row.table(), row.key());
-        if (!row.root() || discriminated.refusal().isPresent()) {
-            throw new IllegalArgumentException(row.coordinate() + " is not a root lift this emits: "
-                + discriminated.refusal().orElse("it lifts under an object"));
+        if (!row.root()) {
+            throw new IllegalArgumentException(row.coordinate() + " is not a root lift this emits: it lifts under an object");
         }
         var table = row.table();
         var tableType = ClassName.bestGuess(table.tableClassName());

@@ -119,7 +119,6 @@ class DiscriminatedLiftExecutionTest {
 
     @Test
     void theStoreStatesWhichNamesEveryParticipantKeeps() {
-        assertThat(discriminated.refusal()).isEmpty();
         assertThat(discriminated.sharedAliasFieldNames())
             .as("each nesting field, and the child the interface declares; never a participant's own child")
             .containsExactly("alphaPlacement", "betaPlacement", "details");

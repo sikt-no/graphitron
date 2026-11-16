@@ -7,7 +7,6 @@ import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -30,7 +29,6 @@ class DiscriminatedQueryTest {
     @Test
     void eachParticipantIsToldApartByItsValueOfTheSharedColumn() {
         var row = content();
-        assertThat(row.refusal()).isEqualTo(Optional.empty());
         assertThat(row.discriminatorColumn()).isEqualTo("content_type");
         assertThat(row.participants()).extracting(DiscriminatedQuery.Participant::typeName,
                 DiscriminatedQuery.Participant::value)

@@ -1,0 +1,33 @@
+# What a discriminated @service's lift does not read off a participant's row yet: FanAlpha.targetView
+# answers an object with no table of its own down a path to fan_target, where the lift reads a
+# participant's objects off its own row; and FanAlpha.owner reads a value three steps off fan_base,
+# where the lift reads such a value through one step for that participant's rows alone.
+
+interface FanItem @table(name: "fan_base") @discriminate(on: "fan_kind") {
+  fanBaseId: Int! @field(name: "fan_base_id")
+}
+
+type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: "ALPHA") {
+  fanBaseId: Int! @field(name: "fan_base_id")
+  targetView: FanTargetView @reference(path: [{key: "fan_base_alpha_target_id_fkey"}])
+  owner: String @reference(path: [{key: "fan_mark_alpha_base_id_fkey"}, {key: "fan_mark_beta_base_id_fkey"},
+    {key: "fan_base_fan_owner_id_fkey"}]) @field(name: "owner_name")
+}
+
+type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "BETA") {
+  fanBaseId: Int! @field(name: "fan_base_id")
+}
+
+type FanTargetView { targetLabel: String @field(name: "target_label") }
+
+type Query {
+  fanItemsByService(ids: [Int!]!): [FanItem!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FanItemService", method: "byIds"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code IN ('SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED', 'SCALAR_PATH')", rows: """
+  code,                                          coordinate
+  SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED, FanAlpha.targetView
+  SCALAR_PATH,                                   FanAlpha.owner
+  """)

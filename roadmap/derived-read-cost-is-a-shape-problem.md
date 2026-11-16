@@ -995,13 +995,17 @@ static method needs no holder.
   refusal the store-fed emitters raise in Java becomes a stored defect, one rule per code at the
   stage whose facts it reads; among them `BuildQuery.place`'s refusal of an id of several node types
   in an input built into a jOOQ record, a slot the store states no decode shape for. Three are
-  `DiscriminatedQuery`'s, at the participant field's written position under the discriminated
-  `@service`, each with a diagnostics-glossary entry: a scalar read more than one step off the shared
-  table shares F's `SCALAR_PATH` code, owned where that rule is; an object with no table of its own
-  read down a path rather than off the row, and a participant on a table of its own, are codes of
-  basis `UNSUPPORTED`, owned by the stage writing `graphitron_occurrence_participant`. That
-  commit deletes `DiscriminatedQuery.Row.refusal` and the `IllegalArgumentException` in
-  `LiftEmitter.discriminatedLift`. opptak's `settMeldingLest`/`settMeldingUlest` lift through their
+  `DiscriminatedQuery`'s, each of basis `UNSUPPORTED` and raised by the first stage holding its facts
+  (A, 2026-11-16): a participant on a table of its own, `SERVICE_DISCRIMINATED_OWN_TABLE_UNSUPPORTED`,
+  at the `@service` field by occurrence-participants, which writes the participants; an object with
+  no table of its own read down a path rather than off the row,
+  `SERVICE_DISCRIMINATED_OBJECT_PATH_UNSUPPORTED`, and a scalar read more than one step off the shared
+  table, `SCALAR_PATH`, at the participant's field by occurrence-bindings, the first stage holding the
+  nesting fields and the paths' steps. `SCALAR_PATH` is the one code for a scalar a site cannot read
+  down a path: a read-side rule elsewhere adds an arm to it rather than minting another. That commit
+  deletes `DiscriminatedQuery.Row.refusal` and the refusal in `LiftEmitter.discriminatedLift`,
+  `DiscriminatedQuery` reading only lifting occurrences and treating what the store refuses as a
+  broken invariant. opptak's `settMeldingLest`/`settMeldingUlest` lift through their
   participants' projection units, where the nullable `avsender` is a nesting field, present wherever
   its parent is (Alf, 2026-11-15), so the flip leaves them emitted.
   The fold's shared-alias set (`DiscriminatedQuery.Row.sharedAliasFieldNames` and the selective

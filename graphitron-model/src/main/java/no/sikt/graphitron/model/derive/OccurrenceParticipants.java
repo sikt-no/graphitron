@@ -11,7 +11,8 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * Writes {@code graphitron_occurrence_participant}: the types each polymorphic occurrence's rows may
- * be, and how a row is told apart as each, from the rule view beside it, marked and swept.
+ * be, and how a row is told apart as each, from the rule view beside it, marked and swept; then the
+ * defects its participants break.
  *
  * <p>Runs after the occurrences, off them, the table types, the polymorphic membership and the two
  * discriminator directives' entries, with the catalog's columns and enum literals.
@@ -20,7 +21,7 @@ public final class OccurrenceParticipants {
 
     private OccurrenceParticipants() {}
 
-    /** States the graph's participants, and sweeps what the reading no longer finds. */
+    /** States the graph's participants and their defects, and sweeps what the reading no longer finds. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var p = GRAPHITRON_OCCURRENCE_PARTICIPANT;
         var r = GRAPHITRON_OCCURRENCE_PARTICIPANT_RULE;
@@ -51,5 +52,6 @@ public final class OccurrenceParticipants {
             .where(p.GRAPH_NAME.eq(graph))
             .and(p.TOUCHED_AT.ne(touchedAt))
             .execute();
+        EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.PARTICIPANTS);
     }
 }
