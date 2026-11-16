@@ -21,6 +21,7 @@ import org.jooq.DSLContext;
 import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -59,16 +60,25 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class GraphQLSchemaProblemsTest {
 
-    private static final String GRAPH = "problems";
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    GraphQLSchemaProblemsTest(TestInfo info) {
+        graph = "problems." + info.getTestMethod().orElseThrow().getName();
+    }
 
     @Test
     @DisplayName("a corpus that makes a schema records no problem")
     void aCorpusThatBuildsRecordsNothing(@TempDir Path tmp) {
         write(tmp, "ok.graphqls", "type Query { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)))
                 .as("it built, so there is nothing to say").isZero();
         });
     }
@@ -83,11 +93,12 @@ class GraphQLSchemaProblemsTest {
         write(tmp, "first.graphqls", "type Query { a: String }\ntype X { a: String }\n");
         write(tmp, "second.graphqls", "type X { b: Int }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS,
-                    GRAPHQL_SCHEMA_PROBLEM.MESSAGE).from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    GRAPHQL_SCHEMA_PROBLEM.MESSAGE).from(GRAPHQL_SCHEMA_PROBLEM)
+                        .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("graphql-java's own class and sentence, kept verbatim, and the stage that spoke")
                 .anySatisfy(row -> {
                     assertThat(row.value1()).isEqualTo("REGISTRY");
@@ -97,7 +108,8 @@ class GraphQLSchemaProblemsTest {
 
             assertThat(dsl.select(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME)
                     .from(GRAPHQL_AST_TYPE_DECLARATION_ENTRY)
-                    .where(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("X"))
+                    .where(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.GRAPH_NAME.eq(graph),
+                        GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("X"))
                     .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_NAME))
                 .as("the corpus did not build and both declarations are still captured, which is "
                     + "what a report about the collision reads")
@@ -114,10 +126,11 @@ class GraphQLSchemaProblemsTest {
     void aBuildCheckIsRecordedTheSameWay(@TempDir Path tmp) {
         write(tmp, "dangling.graphqls", "type Query { a: Missing }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("nothing was declared twice, so only the build could have caught this")
                 .anySatisfy(row -> {
                     assertThat(row.value1()).isEqualTo("ASSEMBLY");
@@ -137,11 +150,12 @@ class GraphQLSchemaProblemsTest {
         write(tmp, "ok.graphqls", "type Query { a: String }\n");
         Path broken = write(tmp, "broken.graphqls", "type Film { title: \n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             assertThatThrownBy(() -> read(dsl, tmp)).isInstanceOf(SchemaParseException.class);
 
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME,
-                    GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM)
+                        .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("the parser's refusal, attributed to the file it refused, under graphql-java's "
                     + "own class for it. An unterminated declaration is the base class itself; a "
                     + "document that parses and then does not stop is a subclass, which is why the "
@@ -158,6 +172,7 @@ class GraphQLSchemaProblemsTest {
                 .isZero();
 
             assertThat(dsl.fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY,
+                    GRAPHQL_AST_TYPE_DECLARATION_ENTRY.GRAPH_NAME.eq(graph),
                     GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("Query")))
                 .as("nor did its sibling land: a capture that stops at the parse transcribes nothing")
                 .isZero();
@@ -169,14 +184,16 @@ class GraphQLSchemaProblemsTest {
     void aProblemTheCorpusNoLongerHasIsSwept(@TempDir Path tmp) {
         write(tmp, "fixme.graphqls", "type Query { a: Missing }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
-            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM)).as("before the fix").isNotZero();
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph))).as("before the fix").isNotZero();
 
             write(tmp, "fixme.graphqls", "type Query { a: String }\n");
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM))
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)))
                 .as("the author fixed it, so the store stops claiming a problem that is over")
                 .isZero();
         });
@@ -196,24 +213,25 @@ class GraphQLSchemaProblemsTest {
         write(broken, "dangling.graphqls", "type Query { a: Missing }\n");
         write(clean, "ok.graphqls", "type Query { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        String sibling = graph + ".sibling";
+        withSeededStore(graph, dsl -> {
             // The sibling's anchor row, which no document gatherer mints: the graph is the
             // registry row every relation it writes hangs a key on, so ModelCapture writes it and
             // a case reading a second graph states it the way withSeededStore states the first.
-            seedGraph(dsl, "sibling");
-            read(dsl, GRAPH, broken);
+            seedGraph(dsl, sibling);
+            read(dsl, graph, broken);
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
-                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(GRAPH)))
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)))
                 .as("the graph with the dangling reference").isNotZero();
 
-            read(dsl, "sibling", clean);
+            read(dsl, sibling, clean);
 
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
-                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(GRAPH)))
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)))
                 .as("a clean reading of another graph is not a fix for this one")
                 .isNotZero();
             assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
-                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq("sibling")))
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(sibling)))
                 .as("and the graph that read clean has none of its own").isZero();
         });
     }
@@ -230,11 +248,12 @@ class GraphQLSchemaProblemsTest {
         write(tmp, "many.graphqls",
             "type Query { one: Gone, two: Gone, three: [Gone!]!, four: Gone, five: Gone }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
 
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("one absent type is one problem, however many fields reached for it")
                 .hasSize(1)
                 .allSatisfy(row -> assertThat(row.value1()).isEqualTo("MissingTypeError"));
@@ -264,10 +283,11 @@ class GraphQLSchemaProblemsTest {
     void aLinkedSchemaRecordsNothing(@TempDir Path tmp) {
         write(tmp, "linked.graphqls", LINKED);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("the @link imports @key, @shareable, @tag and @inaccessible, and @link itself")
                 .isEmpty();
         });
@@ -279,14 +299,15 @@ class GraphQLSchemaProblemsTest {
     void aSourceInTwoInputsIsRefused(@TempDir Path tmp) {
         Path file = write(tmp, "claimed.graphqls", "type Query { a: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp, List.of(
                 SchemaRecipe.Binding.pattern("*.graphqls"),
                 SchemaRecipe.Binding.literal(SchemaSource.file(file))), LocalDateTime.now());
 
             assertRefusedOnce(dsl, "SourceInTwoInputs", file);
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME).from(GRAPHQL_SCHEMA_PROBLEM)
-                    .where(GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE"))
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph),
+                        GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE"))
                     .fetchOne(GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME))
                 .as("the row names the source both inputs claim")
                 .isEqualTo(SchemaSource.file(file).sourceName());
@@ -298,7 +319,7 @@ class GraphQLSchemaProblemsTest {
     void twoFederationLinksAreRefused(@TempDir Path tmp) {
         Path file = write(tmp, "links.graphqls", TWO_LINKS);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
             assertRefusedOnce(dsl, "MultipleFederationLinks", file);
         });
@@ -310,7 +331,7 @@ class GraphQLSchemaProblemsTest {
         Path file = write(tmp, "future.graphqls",
             LINKED.replace("federation/v2.10", "federation/v9.0"));
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
             assertRefusedOnce(dsl, "UnsupportedFederationVersion", file);
         });
@@ -329,7 +350,7 @@ class GraphQLSchemaProblemsTest {
             type Film @key(fields: "id") { id: ID! }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp);
             assertRefusedOnce(dsl, "DeclarationCollision", file);
         });
@@ -349,13 +370,15 @@ class GraphQLSchemaProblemsTest {
             type Film @key(fields: "id") { id: ID! }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp, List.of(tagged("*.graphqls")), LocalDateTime.now());
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph))
                     .fetch(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS))
                 .isEmpty();
             assertThat(dsl.select(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME)
                     .from(GRAPHITRON_FEDERATION_LINK_IMPORT)
+                    .where(GRAPHITRON_FEDERATION_LINK_IMPORT.GRAPH_NAME.eq(graph))
                     .orderBy(GRAPHITRON_FEDERATION_LINK_IMPORT.ORDINAL)
                     .fetch(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME))
                 .containsExactly("@key", "@tag");
@@ -373,9 +396,11 @@ class GraphQLSchemaProblemsTest {
         var first = LocalDateTime.of(2026, 1, 1, 12, 0);
         var second = first.plusMinutes(1);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp, List.of(SchemaRecipe.Binding.pattern("*.graphqls")), first);
-            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM, GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE")))
+            assertThat(dsl.fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph),
+                    GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE")))
                 .as("the control: two @links are refused").isEqualTo(1);
 
             write(tmp, "links.graphqls", """
@@ -388,7 +413,8 @@ class GraphQLSchemaProblemsTest {
             read(dsl, tmp, List.of(SchemaRecipe.Binding.pattern("*.graphqls")), second);
 
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("one @link now, so neither the refusal nor what the assembly said after it stands")
                 .isEmpty();
         });
@@ -400,10 +426,11 @@ class GraphQLSchemaProblemsTest {
     void aTagWithNoLinkRecordsNothing(@TempDir Path tmp) {
         write(tmp, "plain.graphqls", "type Query { films: [Film!] }\ntype Film { title: String }\n");
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp, List.of(tagged("*.graphqls")), LocalDateTime.now());
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
-                    .from(GRAPHQL_SCHEMA_PROBLEM).fetch())
+                    .from(GRAPHQL_SCHEMA_PROBLEM)
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(graph)).fetch())
                 .as("the synthesised @link imports @tag, so the tag applications are declared")
                 .isEmpty();
         });
@@ -422,13 +449,13 @@ class GraphQLSchemaProblemsTest {
     void theDecodeDoesNotVaryWithConfiguration(@TempDir Path tmp) {
         var catalog = CatalogInput.of(TestRunContext.of());
         var untagged = new LinkedHashMap<String, List<String>>();
-        try (var store = CapturedStore.ownStoreOfDocument(tmp, "shapes/federation-authored-tag", GRAPH,
+        try (var store = CapturedStore.ownStoreOfDocument(tmp, "shapes/federation-authored-tag", graph,
                 catalog, List.<ClasspathEntry>of())) {
             untagged.putAll(transcribed(store.dsl()));
         }
         var tagged = new LinkedHashMap<String, List<String>>();
         try (var store = CapturedStore.ownStoreOfDocument(tmp,
-                "scenarios/federation-authored-tag-configured", GRAPH, catalog, List.<ClasspathEntry>of())) {
+                "scenarios/federation-authored-tag-configured", graph, catalog, List.<ClasspathEntry>of())) {
             tagged.putAll(transcribed(store.dsl()));
         }
 
@@ -458,7 +485,7 @@ class GraphQLSchemaProblemsTest {
             type Query { film: String }
             """);
 
-        withSeededStore(GRAPH, dsl -> {
+        withSeededStore(graph, dsl -> {
             read(dsl, tmp, List.of(tagged("*.graphqls")), LocalDateTime.now());
             assertRefusedOnce(dsl, "DeclarationCollision", file);
         });
@@ -482,9 +509,10 @@ class GraphQLSchemaProblemsTest {
      * corpus's own: what graphql-java says of the documents as written, computed here from the
      * files rather than read back from anything the capture holds.
      */
-    private static void assertRefusedOnce(DSLContext dsl, String variant, Path file) {
+    private void assertRefusedOnce(DSLContext dsl, String variant, Path file) {
         var p = GRAPHQL_SCHEMA_PROBLEM;
-        assertThat(dsl.select(p.ERROR_CLASS).from(p).where(p.STAGE.eq("REWRITE")).fetch(p.ERROR_CLASS))
+        assertThat(dsl.select(p.ERROR_CLASS).from(p)
+                .where(p.GRAPH_NAME.eq(graph), p.STAGE.eq("REWRITE")).fetch(p.ERROR_CLASS))
             .as("one refusal, the composition stopping at the first")
             .containsExactly(variant);
 
@@ -493,7 +521,8 @@ class GraphQLSchemaProblemsTest {
         var expected = asWritten.errors().stream()
             .map(error -> error.errorClass() + ": " + error.message())
             .distinct().toList();
-        assertThat(dsl.select(p.ERROR_CLASS, p.MESSAGE).from(p).where(p.STAGE.eq("ASSEMBLY"))
+        assertThat(dsl.select(p.ERROR_CLASS, p.MESSAGE).from(p)
+                .where(p.GRAPH_NAME.eq(graph), p.STAGE.eq("ASSEMBLY"))
                 .fetch(row -> row.value1() + ": " + row.value2()))
             .as("the assembly judged the merged corpus rather than a composition stopped partway")
             .containsExactlyInAnyOrderElementsOf(expected);
@@ -521,8 +550,8 @@ class GraphQLSchemaProblemsTest {
     }
 
     /** One reading of everything the directory holds, which is what a run does. */
-    private static void read(DSLContext dsl, Path baseDir) {
-        read(dsl, GRAPH, baseDir);
+    private void read(DSLContext dsl, Path baseDir) {
+        read(dsl, graph, baseDir);
     }
 
     /** {@link #read(DSLContext, Path)} under a graph the case names, for the two-graph case. */
@@ -532,9 +561,9 @@ class GraphQLSchemaProblemsTest {
     }
 
     /** {@link #read(DSLContext, Path)} under bindings the case states, at an instant it states. */
-    private static void read(DSLContext dsl, Path baseDir, List<SchemaRecipe.Binding> bindings,
+    private void read(DSLContext dsl, Path baseDir, List<SchemaRecipe.Binding> bindings,
                              LocalDateTime readAt) {
-        read(dsl, GRAPH, baseDir, bindings, readAt);
+        read(dsl, graph, baseDir, bindings, readAt);
     }
 
     private static void read(DSLContext dsl, String graphName, Path baseDir,
