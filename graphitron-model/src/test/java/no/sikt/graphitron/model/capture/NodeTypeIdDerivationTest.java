@@ -12,6 +12,7 @@ import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
@@ -189,8 +190,18 @@ class NodeTypeIdDerivationTest {
 
     // ---------------------------------------------------------------------------------------
 
-    private static CapturedStore captured(Path tmp, String sdl) {
-        return CapturedStore.ofCatalog(tmp, sdl, CatalogInput.of(TestRunContext.JOOQ_PACKAGE));
+    /**
+     * The case's own graph, named for its method, so a store several cases capture into holds each
+     * case's rows apart; every read below filters to it.
+     */
+    private final String graph;
+
+    NodeTypeIdDerivationTest(TestInfo info) {
+        graph = "nodeTypeId." + info.getTestMethod().orElseThrow().getName();
+    }
+
+    private CapturedStore captured(Path tmp, String sdl) {
+        return CapturedStore.ofCatalog(tmp, graph, sdl, CatalogInput.of(TestRunContext.JOOQ_PACKAGE));
     }
 
     /** The one author-facing message the emitted registry refuses with, in the author's terms. */
@@ -202,12 +213,13 @@ class NodeTypeIdDerivationTest {
     }
 
     private static StoreHandle handle(CapturedStore store) {
-        return new StoreHandle(store.dsl(), CapturedStore.GRAPH);
+        return new StoreHandle(store.dsl(), store.graphName());
     }
 
     private static List<org.assertj.core.groups.Tuple> rows(CapturedStore store) {
         var t = GRAPHITRON_SYNTHESIZED_NODE_TYPE_ID;
         return store.dsl().select(t.TYPE_NAME, t.TYPE_ID).from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()))
             .fetch(r -> tuple(r.value1(), r.value2()));
     }
 
