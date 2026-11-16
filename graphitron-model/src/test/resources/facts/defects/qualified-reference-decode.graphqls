@@ -1,0 +1,104 @@
+# How a written reference to a catalog object is partitioned into a namespace half and a name half,
+# which capture stores beside it. The rule is total, so these are its partition rather than a sample.
+# Null and the empty string mean different things and both are load-bearing: null says no period
+# appeared, the empty string that one did with nothing on that side of it. The values sit in each
+# claim's predicate, a CSV cell having no way to tell the two apart, so a wrong half drops the row.
+# What a half-empty reference then resolves to is a view's algebra over these rows, pinned there.
+
+type Query {
+  film: Film
+  qualified: Qualified
+  trailing: Trailing
+  leading: Leading
+  deep: Deep
+  byRoutine: [Film!]! @routine(name: "public.films_for_actor")
+}
+
+type Mutation {
+  dropFilm(id: Int!): Film @mutation(typeName: DELETE, table: "public.film")
+}
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @reference(path: [{key: "public.film_language_id_fkey"}])
+  categories: [Category!]! @reference(path: [{table: "public.film_category"}])
+}
+
+type Qualified @table(name: "public.film") { title: String }
+type Trailing @table(name: "film.") { title: String }
+type Leading @table(name: ".film") { title: String }
+type Deep @table(name: "a.b.c") { title: String }
+type Language @table(name: "language") { name: String }
+type Category @table(name: "category") { name: String }
+
+# No period: the namespace half is null and the name half is the whole value.
+extend schema @expectEquals(relation: "graphitron_ast_table_entry", where: """
+  table_ref = 'film' AND table_ref_namespace_part IS NULL AND table_ref_name_part = 'film'
+  """, rows: """
+  table_ref
+  film
+  """)
+
+# A qualified name partitions on its period.
+extend schema @expectEquals(relation: "graphitron_ast_table_entry", where: """
+  table_ref = 'public.film' AND table_ref_namespace_part = 'public' AND table_ref_name_part = 'film'
+  """, rows: """
+  table_ref
+  public.film
+  """)
+
+# A trailing period leaves the name half empty rather than absent.
+extend schema @expectEquals(relation: "graphitron_ast_table_entry", where: """
+  table_ref = 'film.' AND table_ref_namespace_part = 'film' AND table_ref_name_part = ''
+  """, rows: """
+  table_ref
+  film.
+  """)
+
+# A leading period leaves the namespace half empty rather than absent.
+extend schema @expectEquals(relation: "graphitron_ast_table_entry", where: """
+  table_ref = '.film' AND table_ref_namespace_part = '' AND table_ref_name_part = 'film'
+  """, rows: """
+  table_ref
+  .film
+  """)
+
+# The split is on the first period and everything after it is the name half, which then matches
+# nothing; deciding that a second period means something else would make the partition a parser.
+extend schema @expectEquals(relation: "graphitron_ast_table_entry", where: """
+  table_ref = 'a.b.c' AND table_ref_namespace_part = 'a' AND table_ref_name_part = 'b.c'
+  """, rows: """
+  table_ref
+  a.b.c
+  """)
+
+# A path element's key and table partition by the same rule; the qualifier names which schema's table
+# holds the constraint rather than the constraint's own schema.
+extend schema @expectEquals(relation: "graphitron_ast_reference_key_step_entry", where: """
+  key_ref = 'public.film_language_id_fkey' AND key_ref_namespace_part = 'public' AND key_ref_name_part = 'film_language_id_fkey'
+  """, rows: """
+  key_ref
+  public.film_language_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_reference_table_step_entry", where: """
+  table_ref = 'public.film_category' AND table_ref_namespace_part = 'public' AND table_ref_name_part = 'film_category'
+  """, rows: """
+  table_ref
+  public.film_category
+  """)
+
+# A routine name and a mutation's write target partition by the same rule.
+extend schema @expectEquals(relation: "graphitron_ast_routine_entry", where: """
+  routine_ref_namespace_part = 'public' AND routine_ref_name_part = 'films_for_actor'
+  """, rows: """
+  routine_ref_name_part
+  films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_mutation_entry", where: """
+  table_ref_namespace_part = 'public' AND table_ref_name_part = 'film'
+  """, rows: """
+  table_ref_name_part
+  film
+  """)
