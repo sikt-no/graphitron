@@ -9331,6 +9331,68 @@ COMMENT ON COLUMN graphitron_scalar_class.touched_at IS 'when the reading that d
 -- A reader holding a parameter's type asks whether any scalar arrives as it.
 CREATE INDEX graphitron_scalar_class_java_ix ON graphitron_scalar_class (graph_name, java_class);
 
+CREATE TABLE graphitron_type_arrival (
+  graph_name    VARCHAR   NOT NULL,
+  type_name     VARCHAR   NOT NULL,
+  type_kind     VARCHAR   NOT NULL,
+  arrival_kind  VARCHAR   NOT NULL,
+  arrival_class VARCHAR,
+  arrival_key   VARCHAR GENERATED ALWAYS AS (COALESCE(arrival_class, '')) NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, arrival_kind, arrival_key),
+  -- The type it is for, of the kind it is, by the supertype's own key.
+  FOREIGN KEY (graph_name, type_name, type_kind)
+    REFERENCES graphitron_type (graph_name, type_name, kind) ON DELETE CASCADE,
+  CHECK (type_kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT')),
+  CHECK (arrival_kind IN ('EXACT', 'ANY_NON_JDK', 'UNTYPED')),
+  -- Any class outside the JDK names none; an exact or untyped arrival names its class.
+  CHECK ((arrival_kind = 'ANY_NON_JDK') = (arrival_class IS NULL))
+);
+COMMENT ON TABLE graphitron_type_arrival IS 'One class an input type''s value may be handed to a parameter or a member as: one row per type and class, or per type that may arrive as any class outside the JDK. For example Int arrives as java.lang.Integer, as int and untyped as Object, an enum as java.lang.String and as any non-JDK class, an input object as any non-JDK class or the Map.';
+COMMENT ON COLUMN graphitron_type_arrival.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_type_arrival.type_name IS 'the scalar, enum or input object whose values arrive';
+COMMENT ON COLUMN graphitron_type_arrival.type_kind IS 'SCALAR, ENUM or INPUT_OBJECT, pinned so the foreign key holds the row to a type of that kind';
+COMMENT ON COLUMN graphitron_type_arrival.arrival_kind IS 'EXACT, a value arriving as the class arrival_class names; ANY_NON_JDK, a value arriving as any class with a package outside java., which an input object is built into and an enum is taken as by its constant, a class the schema names nowhere; UNTYPED, a declared type taking whatever is delivered, java.lang.Object for any value and java.util.Map for an input object, which takes it but tells no type apart, so a fill pairing by type does not read it';
+COMMENT ON COLUMN graphitron_type_arrival.arrival_class IS 'on EXACT, the class: a scalar''s graphitron_scalar_class, the primitive int, double or boolean an Int, Float or Boolean fills too, or java.lang.String for an enum taken by name; on UNTYPED, java.lang.Object or java.util.Map; NULL on ANY_NON_JDK';
+COMMENT ON COLUMN graphitron_type_arrival.arrival_key IS 'arrival_class, or the empty string where it is NULL, so the key can hold the ANY_NON_JDK row; generated, never written, and never read: a reader asks arrival_kind and arrival_class';
+COMMENT ON COLUMN graphitron_type_arrival.touched_at IS 'when the reading that derived this row ran; swept per graph after the reading upserts';
+
+CREATE VIEW graphitron_type_arrival_rule (graph_name, type_name, type_kind, arrival_kind, arrival_class) AS
+-- A scalar arrives as its class, and an Int, Float or Boolean as the primitive too; a scalar with no
+-- known class has no exact row. An enum arrives as its name, a String, or as a constant of whatever
+-- enum class takes it; an input object as whatever class it is built into. Any value arrives as an
+-- Object, and an input object as the delivered Map, which take it untyped. The federation
+-- vocabulary's scalars and enums, which another stage writes, are handed to no parameter.
+SELECT sc.graph_name, sc.type_name, 'SCALAR', 'EXACT', sc.java_class
+  FROM graphitron_scalar_class sc
+UNION ALL
+SELECT sc.graph_name, sc.type_name, 'SCALAR', 'EXACT', b.primitive
+  FROM graphitron_scalar_class sc
+  JOIN (VALUES ('Int', 'int'), ('Float', 'double'), ('Boolean', 'boolean')) b (scalar, primitive)
+    ON b.scalar = sc.type_name
+UNION ALL
+SELECT t.graph_name, t.type_name, 'ENUM', 'EXACT', 'java.lang.String'
+  FROM graphitron_type t
+ WHERE t.kind = 'ENUM' AND t.origin <> 'FEDERATION'
+UNION ALL
+SELECT t.graph_name, t.type_name, t.kind, 'ANY_NON_JDK', CAST(NULL AS VARCHAR)
+  FROM graphitron_type t
+ WHERE t.kind IN ('ENUM', 'INPUT_OBJECT') AND t.origin <> 'FEDERATION'
+UNION ALL
+SELECT t.graph_name, t.type_name, t.kind, 'UNTYPED', 'java.lang.Object'
+  FROM graphitron_type t
+ WHERE t.kind IN ('SCALAR', 'ENUM', 'INPUT_OBJECT') AND t.origin <> 'FEDERATION'
+UNION ALL
+SELECT t.graph_name, t.type_name, 'INPUT_OBJECT', 'UNTYPED', 'java.util.Map'
+  FROM graphitron_type t
+ WHERE t.kind = 'INPUT_OBJECT' AND t.origin <> 'FEDERATION';
+COMMENT ON VIEW graphitron_type_arrival_rule IS 'One row the type arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk. For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_type_arrival.graph_name';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.type_name IS 'the type_name of a row of this rule, which the stage writes into graphitron_type_arrival.type_name';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.type_kind IS 'the type_kind of a row of this rule, which the stage writes into graphitron_type_arrival.type_kind';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.arrival_kind IS 'the arrival_kind of a row of this rule, which the stage writes into graphitron_type_arrival.arrival_kind';
+-- COMMENT ON COLUMN graphitron_type_arrival_rule.arrival_class IS 'the arrival_class of a row of this rule, which the stage writes into graphitron_type_arrival.arrival_class';
+
 CREATE VIEW graphitron_scalar_class_rule (graph_name, type_name, kind, java_class) AS
 -- A scalar whose candidates disagree has no class: the constant is named in two entries that
 -- coerce differently, and nothing says which the generator is handed.
@@ -13600,11 +13662,8 @@ CREATE VIEW graphitron_occurrence_call_parameter_candidate_rule
    position, parameter_name, argument_coordinate) AS
 -- A parameter no written fill, no type, no name and no source fills, paired with each argument of
 -- the call no pair has taken and no parameter is named after, where the two agree on type: the
--- same list-ness, and an element the argument's value can arrive as. An input object arrives as a
--- class the input is built into, which nothing in the schema names, so any class outside the JDK
--- qualifies; an enum as a class or a String; a scalar as the class graphitron_scalar_class states.
--- A primitive erases to no class, so its element is the declared type, int for int, which a
--- built-in number or Boolean also fills. Where one named parameter and one argument are all
+-- same list-ness, and an element the argument's value can arrive as, which graphitron_type_arrival
+-- states. A primitive erases to no class, so its element is the declared type, int for int. Where one named parameter and one argument are all
 -- that is left of the call, they pair whenever their list-ness agrees and type cannot tell them
 -- apart: an input object, or a scalar no Java type is known for.
 WITH open_parameter (graph_name, coordinate, call, method_source_name, method_class_name, method_name,
@@ -13665,15 +13724,11 @@ SELECT p.graph_name, p.coordinate, p.call, p.method_source_name, p.method_class_
    AND a.method_class_name = p.method_class_name AND a.method_name = p.method_name
    AND a.method_descriptor = p.method_descriptor
  WHERE a.is_list = p.many
-   AND (CASE a.kind
-         WHEN 'INPUT_OBJECT' THEN POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'
-         WHEN 'ENUM' THEN (POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%')
-                          OR p.element = 'java.lang.String'
-         WHEN 'SCALAR' THEN a.java_class = p.element
-           OR EXISTS (SELECT 1 FROM (VALUES ('Int', 'int'), ('Float', 'double'), ('Boolean', 'boolean'))
-                                    b (scalar, primitive)
-                       WHERE b.scalar = a.named_type AND b.primitive = p.element)
-         ELSE FALSE END
+   AND (EXISTS (SELECT 1 FROM graphitron_type_arrival ar
+                 WHERE ar.graph_name = a.graph_name AND ar.type_name = a.named_type
+                   AND (ar.arrival_kind = 'EXACT' AND ar.arrival_class = p.element
+                        OR ar.arrival_kind = 'ANY_NON_JDK'
+                           AND POSITION('.', p.element) > 0 AND p.element NOT LIKE 'java.%'))
         OR (p.parameter_name IS NOT NULL
             AND (a.kind = 'INPUT_OBJECT'
                  OR (a.kind = 'SCALAR' AND a.java_class IS NULL))
@@ -26333,6 +26388,7 @@ INSERT INTO meta_stage_write VALUES
   ('macro-expansion', 'graphitron_type'),
   ('macro-expansion', 'graphitron_type_member'),
   ('macro-expansion', 'graphitron_scalar_class'),
+  ('macro-expansion', 'graphitron_type_arrival'),
   ('macro-expansion', 'graphitron_edge'),
   ('macro-expansion', 'graphitron_connection'),
   ('macro-expansion', 'graphitron_field_position'),
@@ -26641,6 +26697,7 @@ INSERT INTO meta_stage_rule VALUES
   ('macro-expansion', 'graphitron_field_minted_candidate', 'graphitron_field_minted_candidate_rule'),
   ('macro-expansion', 'graphitron_argument_minted_candidate', 'graphitron_argument_minted_candidate_rule'),
   ('macro-expansion', 'graphitron_scalar_class', 'graphitron_scalar_class_rule'),
+  ('macro-expansion', 'graphitron_type_arrival', 'graphitron_type_arrival_rule'),
   ('macro-expansion', 'graphitron_type_member', 'graphitron_type_member_rule'),
   ('call-parameter-tables', 'graphitron_call_parameter_table', 'graphitron_call_parameter_table_rule'),
   ('minted-keys', 'graphitron_entry_defect', 'graphitron_minted_key_entry_defect_rule'),
@@ -27521,6 +27578,9 @@ INSERT INTO meta_grain VALUES
   ('expanded-type',
    'one type the generator works with in one graph, whether an author declared it or macro expansion minted it',
    'graph_name, type_name', 'sdl'),
+  ('type-arrival',
+   'one way one input type''s value may be handed to a declared Java type in one graph: as one named class, or as any class outside the JDK',
+   'graph_name, type_name, arrival_kind, arrival_key', 'sdl'),
   ('type-member',
    'one type a union or an interface admits in one graph, of the types the generator works with',
    'graph_name, container_name, member_type_name', 'sdl'),
@@ -29867,6 +29927,14 @@ INSERT INTO meta_relation VALUES
    'The Java class a scalar''s values arrive as: one row per scalar whose class is known.',
    'For example Int arrives as java.lang.Integer, and scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") as the input type of the constant''s Coercing.',
    'A subtype of graphitron_type pinned to SCALAR. The built-in classes and the @scalarType resolution were spelled out in three rules, each re-deriving them on every evaluation and none scoping the constant to the graph''s classpath entries; stored here, by the gatherer that holds the document, the catalog of constants and the graph''s sources, the rules join one keyed table. The class graphql-java delivers is the fact: what a parameter of a primitive or another type accepts stays each reader''s rule, so no reader''s leniency becomes the fact. A scalar whose class is unknown, or whose constant two entries coerce differently, has no row.'),
+  ('graphitron_type_arrival', 'type-arrival', 'graphitron',
+   'One class an input type''s value may be handed to a parameter or a member as: one row per type and class, or per type that may arrive as any class outside the JDK.',
+   'For example Int arrives as java.lang.Integer, as int and untyped as Object, an enum as java.lang.String and as any non-JDK class, an input object as any non-JDK class or the Map.',
+   'Whether a value can be handed to a declared type is asked by the rule filling a call''s parameters by type and by the rule refusing a parameter or member that cannot take what fills it. Stated once here, both read one row set and cannot disagree. The class graphql-java delivers stays graphitron_scalar_class''s fact; this states what a declared type may take it as. An input object or an enum taken as a class arrives as a class the schema names nowhere, so that row is a kind, ANY_NON_JDK, rather than a class. Object and the delivered Map take any value without telling types apart, so they are UNTYPED rows a by-type fill does not pair on.'),
+  ('graphitron_type_arrival_rule', 'type-arrival', 'graphitron',
+   'One row the type arrival rule computes, in the shape graphitron_type_arrival stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_type_arrival, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_scalar_class_rule', 'expanded-type', 'graphitron',
    'One row the scalar class rule computes, in the shape graphitron_scalar_class stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the macro-expansion stage inserts this view''s rows for one graph into graphitron_scalar_class, which is the name every reader spells.',

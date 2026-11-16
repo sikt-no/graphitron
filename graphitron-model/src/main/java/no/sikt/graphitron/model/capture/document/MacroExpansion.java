@@ -33,6 +33,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_INHERITED_DIRECTIVE_RUL
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_EDGE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SCALAR_CLASS_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_ARRIVAL;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_ARRIVAL_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_MEMBER_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONFIGURED_TAG_RULE;
@@ -156,16 +158,48 @@ public final class MacroExpansion {
         sweep(dsl, graphName, touchedAt);
         // After the sweep, so the sets join only the coordinates this reading kept.
         federation(dsl, graphName, touchedAt);
-        // The members of each union and interface, the class each scalar arrives as, then the
-        // connection shape, edges before the connections keyed into them.
+        // The members of each union and interface, the class each scalar arrives as and the
+        // classes each input type may be handed to, which reads it, then the connection shape,
+        // edges before the connections keyed into them.
         store(dsl, graphName, touchedAt, GRAPHITRON_TYPE_MEMBER, GRAPHITRON_TYPE_MEMBER_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_SCALAR_CLASS, GRAPHITRON_SCALAR_CLASS_RULE);
+        arrivals(dsl, graphName, touchedAt);
         store(dsl, graphName, touchedAt, GRAPHITRON_EDGE, GRAPHITRON_EDGE_RULE);
         store(dsl, graphName, touchedAt, GRAPHITRON_CONNECTION, GRAPHITRON_CONNECTION_RULE);
         // Then the positions their fields fill, which read both.
         store(dsl, graphName, touchedAt, GRAPHITRON_FIELD_POSITION, GRAPHITRON_FIELD_POSITION_RULE);
         // Last, the defects judging what was just written.
         EntryDefects.derive(dsl, graphName, touchedAt, EntryDefects.MACRO_EXPANSION);
+    }
+
+    /**
+     * The classes each input type's value may be handed to, marked, swept and added by matching every
+     * column the rule states rather than by the key: the key holds a generated copy of the class, which
+     * no writer sets and an upsert cannot match on. Swept before the additions, so a type whose kind
+     * changed leaves no row in the way of its new one.
+     */
+    private static void arrivals(DSLContext dsl, String graphName, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_TYPE_ARRIVAL;
+        var r = GRAPHITRON_TYPE_ARRIVAL_RULE;
+        Condition same = r.GRAPH_NAME.eq(t.GRAPH_NAME).and(r.TYPE_NAME.eq(t.TYPE_NAME))
+            .and(r.TYPE_KIND.eq(t.TYPE_KIND)).and(r.ARRIVAL_KIND.eq(t.ARRIVAL_KIND))
+            .and(r.ARRIVAL_CLASS.isNotDistinctFrom(t.ARRIVAL_CLASS));
+        dsl.update(t)
+            .set(t.TOUCHED_AT, touchedAt)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(exists(selectOne().from(r).where(same)))
+            .execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graphName))
+            .and(t.TOUCHED_AT.ne(touchedAt))
+            .execute();
+        dsl.insertInto(t, t.GRAPH_NAME, t.TYPE_NAME, t.TYPE_KIND, t.ARRIVAL_KIND, t.ARRIVAL_CLASS, t.TOUCHED_AT)
+            .select(select(r.GRAPH_NAME, r.TYPE_NAME, r.TYPE_KIND, r.ARRIVAL_KIND, r.ARRIVAL_CLASS,
+                    val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graphName))
+                .andNotExists(selectOne().from(t).where(same)))
+            .execute();
     }
 
     /**
