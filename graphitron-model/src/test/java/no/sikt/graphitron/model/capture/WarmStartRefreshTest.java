@@ -456,9 +456,11 @@ class WarmStartRefreshTest {
         capture(directory, tmp);
 
         try (var store = GraphitronModelStore.openAt(directory)) {
-            assertThat(store.dsl().select(CODE_CLASS.CLASS_NAME).from(CODE_CLASS).fetch(0, String.class))
+            assertThat(store.dsl().select(CODE_CLASS.CLASS_NAME).from(CODE_CLASS)
+                    .where(CODE_CLASS.SOURCE_NAME.ne("jrt:/")).fetch(0, String.class))
                 .as("a source this run did not name is never examined and never deleted; "
-                    + "it may be another graph's live dependency, and it stays until eviction")
+                    + "it may be another graph's live dependency, and it stays until eviction; the "
+                    + "platform's throwables, read under a source of their own, are no classpath entry's")
                 .containsExactly("com.example.lib.LibraryClass");
             assertThat(store.dsl().fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_KIND.eq("JAR")))
                 .as("the jar's own source row survives with its partition").isEqualTo(1);

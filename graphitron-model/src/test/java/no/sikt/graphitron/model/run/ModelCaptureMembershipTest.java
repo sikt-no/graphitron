@@ -48,6 +48,8 @@ class ModelCaptureMembershipTest {
                 expectedA.add(entry.table().getSchema().getClass().getPackageName());
             }
             expectedA.addAll(declaredEntries(classpath));
+            // The platform, read off the runtime image and claimed by every graph reading a classpath.
+            expectedA.add("jrt:/");
             expectedA.add(FederationCapture.SOURCE_NAME);
             assertThat(membership(store.dsl(), "a")).isEqualTo(expectedA);
 

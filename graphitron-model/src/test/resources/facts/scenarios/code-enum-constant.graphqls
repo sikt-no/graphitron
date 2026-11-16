@@ -1,3 +1,7 @@
+# What the code reading states of classes no schema names: the constants each enum class on the
+# classpath declares, and the platform's throwables, read off the runtime image as a source of their
+# own.
+#
 # The constants each enum class on the classpath declares, read off the classfile's enum flag: the
 # names Enum.valueOf takes, so a GraphQL enum value taken as a Java constant can be checked against
 # them. FilmMood, a service fixture's enum, declares HAPPY and SAD. A class the census did not read
@@ -18,4 +22,28 @@ extend schema @assertAbsent(relation: "code_enum_constant",
     where: "class_name = 'no.sikt.graphitron.rewrite.test.services.FilmMood'", rows: """
   constant_name
   ANGRY
+  """)
+
+# The platform's throwables are read off the runtime image as a source of their own, jrt:/, and
+# claimed by every graph reading a classpath: java.sql.SQLException, which a service method declares
+# and a DATABASE handler matches, is a throwable with its ancestry stated, Exception and Throwable
+# among it, though no classpath entry declares it. A JDK class that is no throwable is not read.
+extend schema @assertContains(relation: "code_throwable_supertype",
+    where: "source_name = 'jrt:/' AND class_name = 'java.sql.SQLException'", rows: """
+  supertype_name
+  java.lang.Exception
+  java.lang.Throwable
+  """)
+
+extend schema @assertContains(relation: "code_graph_class",
+    where: "source_name = 'jrt:/'", rows: """
+  class_name
+  java.sql.SQLException
+  java.lang.IllegalArgumentException
+  """)
+
+extend schema @assertAbsent(relation: "code_class",
+    where: "source_name = 'jrt:/'", rows: """
+  class_name
+  java.lang.String
   """)

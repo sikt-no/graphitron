@@ -38,6 +38,13 @@ public final class ClassNameCompletions {
     /** The {@code store_source.source_kind} value naming a classpath jar. */
     private static final String JAR = "JAR";
 
+    /**
+     * The {@code store_source.source_kind} value naming the runtime image, whose throwables every
+     * graph reads. A true fact about what a graph can name, and no candidate for a class an author
+     * writes a service or a condition in, so the popup leaves it out.
+     */
+    private static final String PLATFORM = "PLATFORM";
+
     private ClassNameCompletions() {}
 
     public static List<CompletionItem> generate(
@@ -68,6 +75,7 @@ public final class ClassNameCompletions {
             .from(c)
             .join(STORE_SOURCE).on(STORE_SOURCE.SOURCE_NAME.eq(c.SOURCE_NAME))
             .where(c.GRAPH_NAME.eq(store.graphName()))
+            .and(STORE_SOURCE.SOURCE_KIND.ne(PLATFORM))
             .orderBy(rank, c.CLASS_NAME)
             .fetch();
         var items = new ArrayList<CompletionItem>(rows.size());

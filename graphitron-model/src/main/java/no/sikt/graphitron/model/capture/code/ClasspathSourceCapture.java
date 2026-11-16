@@ -189,6 +189,12 @@ public final class ClasspathSourceCapture {
         // that has already passed. Every entry the configuration named counts as read, an entry
         // left alone being one this reading vouched for rather than one it lost.
         reclaim(dsl, claimed);
+        // The platform, last: what a name the classpath does not declare resolves to, read when its
+        // stamp moved and claimed by every graph whatever it reads.
+        var platform = platform(dsl, held, readAt);
+        sources.add(platform);
+        claim(dsl, graph, List.of(PlatformClasses.SOURCE),
+            java.util.Map.of(PlatformClasses.SOURCE, PlatformClasses.stamp()), readAt);
         // In classpath order, which is the order a class name two entries declare resolves in.
         var order = new java.util.HashMap<String, Integer>();
         for (ClasspathEntry entry : classpath) {
@@ -196,7 +202,37 @@ public final class ClasspathSourceCapture {
         }
         sources.sort(java.util.Comparator.comparingInt(
             source -> order.getOrDefault(source.sourceName(), Integer.MAX_VALUE)));
-        return new Reading(reading.census(), List.copyOf(sources), graph);
+        var census = platform instanceof ClasspathSource.Read platformRead
+            ? new ClassfileCensus.Census(
+                java.util.stream.Stream.concat(reading.census().entries().stream(),
+                    java.util.stream.Stream.of(PLATFORM_ENTRY)).toList(),
+                java.util.stream.Stream.concat(reading.census().classes().stream(),
+                    platformRead.classes().stream()).toList())
+            : reading.census();
+        return new Reading(census, List.copyOf(sources), graph);
+    }
+
+    /** The platform's entry, which the census never reads from a classpath. */
+    private static final ClassfileCensus.EntryAt PLATFORM_ENTRY =
+        new ClassfileCensus.EntryAt(PlatformClasses.SOURCE, "PLATFORM", "PLATFORM", null);
+
+    /**
+     * The platform's source: left alone where the store holds its rows for this image, read
+     * otherwise, its throwables written as class files and handed on as an entry read, so the code
+     * gatherer transcribes them and the sweep scoped to entries read takes what an older image had.
+     */
+    private static ClasspathSource platform(DSLContext dsl, java.util.Map<String, Held> held,
+                                            LocalDateTime readAt) {
+        String stamp = PlatformClasses.stamp();
+        Held known = held.get(PlatformClasses.SOURCE);
+        if (known != null && stamp.equals(known.stamp())) {
+            return new ClasspathSource.Unchanged(PlatformClasses.SOURCE);
+        }
+        var classes = PlatformClasses.throwables();
+        writeSources(dsl, List.of(PLATFORM_ENTRY), readAt);
+        writeClassFiles(dsl, classes, readAt);
+        sweepClassFiles(dsl, List.of(PlatformClasses.SOURCE), readAt);
+        return new ClasspathSource.Read(PlatformClasses.SOURCE, classes, stamp);
     }
 
     /** The entries this run may read at all, which is every one it did not inherit. */
@@ -226,7 +262,7 @@ public final class ClasspathSourceCapture {
         var held = new java.util.HashMap<String, Held>();
         dsl.select(t.SOURCE_NAME, t.STAMP, t.READ_AT)
             .from(t)
-            .where(t.SOURCE_KIND.in("JAR", "DIRECTORY"))
+            .where(t.SOURCE_KIND.in("JAR", "DIRECTORY", "PLATFORM"))
             .and(t.STAMP.isNotNull())
             .forEach(row -> held.put(row.value1(), new Held(row.value2(), row.value3())));
         return held;
