@@ -96,6 +96,7 @@ The walk's read path is gone
     └── The service fields are emitted from the store
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
+            └── The throwables' read slots are read
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1089,6 +1090,18 @@ static method needs no holder.
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
     `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
     `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
+    * **The throwables' read slots are read** `open`, E's. An `@error` type's extra fields are read
+      off the throwable its handler matches, and a field no accessor of that throwable answers can
+      only fail at run time; the walk refuses it, and the store cannot yet, since `code_read_slot`
+      holds a throwable's accessors only where its class sits on a classpath entry the reading read,
+      inheritance followed within those entries. A JDK throwable a handler names
+      (`java.lang.RuntimeException`, `IllegalArgumentException`) has no rows, and what every
+      throwable inherits from `java.lang.Throwable` (`getMessage`, `getCause`) is missing on all of
+      them. The node reads each throwable a handler names, and `java.lang.Throwable`, whole, from its
+      entry or from the platform image, extending `code_read_slot` as a session handle's or a nested
+      class's slots are read; whether a JDK class gets rows under a platform source is the
+      architect's question when the node is taken up. Then an `@error` field no accessor answers is a
+      stored defect, `ERROR_FIELD_UNREADABLE`, at fetchers, and the walk's refusal goes.
 * **A @tenantFanOut scatter is stated as a connection outcome** `open`, off the critical path. A field marked `@tenantFanOut` reads every tenant the request may see, one statement per tenant, a route `graphitron_occurrence_connection` has no outcome for: under a global parent it gets no row, and `UNROUTED_CHILD` leaves it out by the marker rather than by a stated route. Stating the scatter as an outcome beside `ROUTED`, `INHERIT` and `UNSCOPED` lets the exemption go and the emitter read the route off the store; sakila's multitenant `Language.films` is the case that pins it.
 * **A routine write's re-read keeps its rows in the order the write returned them** `open`, off the critical path. A routine write's rows are re-read by
   the keys it returned through an unordered `IN`, so they can come back in another order than the
