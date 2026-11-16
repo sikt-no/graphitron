@@ -98,7 +98,8 @@ The walk's read path is gone
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
             ├── The throwables' read slots are read
-            └── A record bean nested in a class is built
+            ├── A record bean nested in a class is built
+            └── An @error field read off a public field or a bare accessor is judged
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -1132,6 +1133,13 @@ static method needs no holder.
       filled and no defect said. The node finds where the nested class's write slots or members are
       lost, whether in the code reading or in the build rules, and either builds the bean or refuses it
       with a stored defect.
+    * **An @error field read off a public field or a bare accessor is judged** `open`, E's, off the
+      FS path: no @error type in FS declares a field beyond path and message. The walk reads an
+      @error type's extra field off a public field or a bare `code()` method of a class that is no
+      record, and `code_read_slot` holds neither, only bean getters and record components, so
+      `ERROR_FIELD_UNREADABLE` refuses a field such a class answers. The node widens the slot
+      capture to public fields and bare no-argument accessors, or narrows the manual to what is
+      read.
 * **A @tenantFanOut scatter is stated as a connection outcome** `open`, off the critical path. A field marked `@tenantFanOut` reads every tenant the request may see, one statement per tenant, a route `graphitron_occurrence_connection` has no outcome for: under a global parent it gets no row, and `UNROUTED_CHILD` leaves it out by the marker rather than by a stated route. Stating the scatter as an outcome beside `ROUTED`, `INHERIT` and `UNSCOPED` lets the exemption go and the emitter read the route off the store; sakila's multitenant `Language.films` is the case that pins it.
 * **A routine write's re-read keeps its rows in the order the write returned them** `open`, off the critical path. A routine write's rows are re-read by
   the keys it returned through an unordered `IN`, so they can come back in another order than the
