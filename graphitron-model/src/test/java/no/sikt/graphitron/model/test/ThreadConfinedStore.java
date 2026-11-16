@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.Tables.META_STATED_RELATION;
  * for a schema boot.
  *
  * <p>The trade this makes is a boot for a clear. Applying the fact schema costs a few hundred
- * milliseconds under this module's four-way parallelism, and truncating every table a case can
+ * milliseconds under this module's four-way parallelism, and emptying every table a case can
  * write to costs under a millisecond, so a suite of hundreds of cases that each booted a private
  * store spent most of its time on DDL that produced the same empty schema every time. A thread
  * boots once, and every body after the first meets a store the clear has put back into its
@@ -106,6 +106,12 @@ public final class ThreadConfinedStore {
     /** The base tables a clear empties, upper-cased as the catalog spells them. */
     private final List<String> cleared;
 
+    /**
+     * The clear's statements, one per table in {@link #cleared}: a truncate where no foreign key
+     * references the table, a delete where one does, a referencing table before what it references.
+     */
+    private final List<String> clearStatements;
+
     /** Every base table with the row count it held at boot, which is what a clear restores. */
     private final Map<String, Integer> bootState;
 
@@ -123,9 +129,11 @@ public final class ThreadConfinedStore {
     private long generation;
 
     private ThreadConfinedStore(GraphitronModelStore store, List<String> cleared,
-                                Map<String, Integer> bootState, String census) {
+                                List<String> clearStatements, Map<String, Integer> bootState,
+                                String census) {
         this.store = store;
         this.cleared = cleared;
+        this.clearStatements = clearStatements;
         this.bootState = bootState;
         this.census = census;
     }
@@ -270,7 +278,8 @@ public final class ThreadConfinedStore {
         verifyBootState(cleared, bootState);
         BOOTS.incrementAndGet();
         BOOTING_THREADS.add(Thread.currentThread().threadId());
-        return new ThreadConfinedStore(store, cleared, bootState, census);
+        return new ThreadConfinedStore(store, cleared, clearStatements(dsl, cleared), bootState,
+            census);
     }
 
     /**
@@ -301,26 +310,17 @@ public final class ThreadConfinedStore {
     /**
      * Empties every clearable table and asserts the store is back in its booted state.
      *
-     * <p>{@code TRUNCATE} rather than {@code DELETE}, and the flag around it is what makes that
-     * legal rather than merely unchecked. H2 refuses to truncate a table any foreign key
-     * references, which is nearly all of these, but it asks whether referential integrity is on
-     * before it declines. That is the difference between a clear costing under a millisecond and
-     * costing a delete per table in foreign-key order. The flag goes back on in a {@code finally}
-     * because a case asserting that a foreign key rejects a row has to keep failing when it should:
-     * leaving it off could not corrupt anything, the flag being per database and each thread's store
-     * being its own, but it would silently retire a whole family of assertions, and it should break
-     * here rather than there.
+     * <p>Row statements only, never a setting. H2 empties every session's statement cache whenever
+     * its metadata changes, and {@code SET REFERENTIAL_INTEGRITY}, which a truncate of a referenced
+     * table needs, is such a change: a clear that toggled it threw away every statement the thread
+     * had compiled, and each case prepared its capture's again. So a table no foreign key references
+     * is truncated and the rest are deleted from in the order {@link #clearStatements} puts them in.
      */
     private void clear() {
         generation++;
         DSLContext dsl = store.dsl();
-        try {
-            dsl.execute("SET REFERENTIAL_INTEGRITY FALSE");
-            for (String relation : cleared) {
-                dsl.execute("TRUNCATE TABLE \"" + relation + "\"");
-            }
-        } finally {
-            dsl.execute("SET REFERENTIAL_INTEGRITY TRUE");
+        for (String statement : clearStatements) {
+            dsl.execute(statement);
         }
         verifyCleared(counts(dsl, census));
         // The statistics go back with the rows. H2 keeps per-column selectivity across a truncate,
@@ -381,6 +381,56 @@ public final class ThreadConfinedStore {
                 + " exclusion in ThreadConfinedStore.clearable names, or whatever seeds it belongs"
                 + " in a case rather than in the schema.").formatted(populated));
         }
+    }
+
+    /**
+     * The statements that empty {@code cleared}, in an order the foreign keys allow: a table is
+     * deleted from before any table it references, so no row is refused for a row still pointing at
+     * it, and a table nothing references is truncated, which H2 permits with its integrity checks on.
+     * A cycle among the cleared tables would leave no such order, and says so at boot.
+     */
+    private static List<String> clearStatements(DSLContext dsl, List<String> cleared) {
+        Set<String> clearable = Set.copyOf(cleared);
+        Map<String, Set<String>> referencedBy = new LinkedHashMap<>();
+        cleared.forEach(relation -> referencedBy.put(relation, new java.util.HashSet<>()));
+        dsl.fetch("""
+                SELECT fk.table_name, pk.table_name
+                  FROM information_schema.referential_constraints rc
+                  JOIN information_schema.table_constraints fk
+                    ON fk.constraint_schema = rc.constraint_schema
+                   AND fk.constraint_name = rc.constraint_name
+                  JOIN information_schema.table_constraints pk
+                    ON pk.constraint_schema = rc.unique_constraint_schema
+                   AND pk.constraint_name = rc.unique_constraint_name
+                 WHERE fk.table_schema = 'PUBLIC'""")
+            .forEach(row -> {
+                String child = row.get(0, String.class);
+                String parent = row.get(1, String.class);
+                if (clearable.contains(parent)) {
+                    referencedBy.get(parent).add(child);
+                }
+            });
+        List<String> statements = new ArrayList<>();
+        Set<String> done = new java.util.HashSet<>();
+        while (done.size() < cleared.size()) {
+            List<String> ready = cleared.stream()
+                .filter(relation -> !done.contains(relation))
+                .filter(relation -> referencedBy.get(relation).stream()
+                    .allMatch(child -> child.equals(relation) || done.contains(child)
+                        || !clearable.contains(child)))
+                .toList();
+            if (ready.isEmpty()) {
+                throw new IllegalStateException("the cleared tables reference each other in a cycle,"
+                    + " so no delete order empties them: " + cleared.stream()
+                    .filter(relation -> !done.contains(relation)).toList());
+            }
+            for (String relation : ready) {
+                statements.add((referencedBy.get(relation).isEmpty() ? "TRUNCATE TABLE \"" : "DELETE FROM \"")
+                    + relation + "\"");
+                done.add(relation);
+            }
+        }
+        return List.copyOf(statements);
     }
 
     /**
