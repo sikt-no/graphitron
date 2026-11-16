@@ -10,6 +10,8 @@ import static no.sikt.graphitron.model.Tables.CODE_GRAPH_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CODE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_SOURCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERROR_HANDLER_SOURCE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
@@ -151,8 +153,37 @@ final class GraphitronCodeReferences {
             .and(t.TOUCHED_AT.ne(touchedAt))
             .execute();
 
+        handlerSources(dsl, graph, touchedAt);
+
         // Last, the stage's own codes: a reference resolving to no one method or to one its
         // directive cannot call, overloads disagreeing in shape, and a service holder nothing builds.
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.CODE_REFERENCES);
+    }
+
+    /**
+     * The class backing each {@code @error} handler's fields, from its rule: a class the graph
+     * resolves, or graphql-java's contract. Marked by the reading and swept, so a handler whose class
+     * the graph no longer resolves loses its row.
+     */
+    private static void handlerSources(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var t = GRAPHITRON_ERROR_HANDLER_SOURCE;
+        var r = GRAPHITRON_ERROR_HANDLER_SOURCE_RULE;
+        dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.KIND,
+                t.CLASS_NAME, t.CLASS_SOURCE_NAME, t.TOUCHED_AT)
+            .select(dsl.select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN, r.KIND,
+                    r.CLASS_NAME, r.CLASS_SOURCE_NAME, val(touchedAt, t.TOUCHED_AT))
+                .from(r)
+                .where(r.GRAPH_NAME.eq(graph)))
+            .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN)
+            .doUpdate()
+            .set(t.KIND, excluded(t.KIND))
+            .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
+            .set(t.CLASS_SOURCE_NAME, excluded(t.CLASS_SOURCE_NAME))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph))
+            .and(t.TOUCHED_AT.ne(touchedAt))
+            .execute();
     }
 }

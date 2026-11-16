@@ -425,6 +425,8 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_member", Arm.DERIVED);
         registrations.put("graphitron_type_member_rule", Arm.DERIVED);
         registrations.put("graphitron_scalar_class", Arm.DERIVED);
+        registrations.put("graphitron_error_handler_source", Arm.DERIVED);
+        registrations.put("graphitron_error_handler_source_rule", Arm.DERIVED);
         registrations.put("graphitron_scalar_class_rule", Arm.DERIVED);
         registrations.put("graphitron_type_arrival", Arm.DERIVED);
         registrations.put("graphitron_type_arrival_rule", Arm.DERIVED);
@@ -673,6 +675,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_minted_candidate_rule", Arm.DERIVED);
         registrations.put("graphitron_argument_reachable_input", Arm.DERIVED);
         registrations.put("code_delivery_container", Arm.UNSHADOWED);
+        registrations.put("code_contract_slot", Arm.UNSHADOWED);
         registrations.put("code_tuple_class", Arm.UNSHADOWED);
         registrations.put("code_jooq_class", Arm.UNSHADOWED);
         registrations.put("graphitron_call_parameter_table", Arm.DERIVED);

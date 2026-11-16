@@ -1,0 +1,36 @@
+# The class whose accessors back an @error type's fields, one per handler: a GENERIC handler's class
+# as the graph resolves it, the SQLException a DATABASE handler matches, read off the platform, and
+# graphql-java's GraphQLError for a VALIDATION handler, stated as a contract since no entry the build
+# makes nameable declares it.
+
+type Film @table(name: "film") { title: String }
+
+type FilmNotFound @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type RateOverflow @error(handlers: [{handler: DATABASE, sqlState: "22003"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type Invalid @error(handlers: [{handler: VALIDATION}]) {
+  path: [String!]!
+  message: String!
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_error_handler_source", rows: """
+  kind,     class_name
+  CLASS,    no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
+  CLASS,    java.sql.SQLException
+  CONTRACT, graphql.GraphQLError
+  """)
+
+extend schema @assertContains(relation: "graphitron_error_handler_source",
+    where: "class_name = 'java.sql.SQLException'", rows: """
+  class_source_name
+  jrt:/
+  """)

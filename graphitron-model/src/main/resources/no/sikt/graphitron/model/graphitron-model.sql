@@ -9098,6 +9098,101 @@ COMMENT ON VIEW graphitron_call_context_key_entry_defect_pair_rule IS 'One row t
 -- Reported at the reference, the first clause it fails in the detail. And what an ordering's decode
 -- says wrong, the first stage holding it, beside the order field methods it resolves: an application
 -- writing other than one surface, and a fields element of no legal shape.
+CREATE TABLE code_contract_slot (
+  class_name    VARCHAR NOT NULL,
+  slot_name     VARCHAR NOT NULL,
+  method_name   VARCHAR NOT NULL,
+  erased_class  VARCHAR NOT NULL,
+  PRIMARY KEY (class_name, slot_name)
+);
+COMMENT ON TABLE code_contract_slot IS 'One accessor graphql-java''s error interface offers graphitron, as graphitron reads it: one row per class and slot. For example graphql.GraphQLError offers message through getMessage, a java.lang.String.';
+COMMENT ON COLUMN code_contract_slot.class_name IS 'graphql.GraphQLError, what a VALIDATION handler hands over, or graphql.GraphqlErrorException, the superclass of the client exception a run emits: graphql-java''s interface as graphitron uses it, stated rather than read because graphql-java sits on no entry a consumer''s build makes nameable';
+COMMENT ON COLUMN code_contract_slot.slot_name IS 'the member an @error type''s field reads, the accessor''s bean property; with the class, the key';
+COMMENT ON COLUMN code_contract_slot.method_name IS 'the accessor graphql-java declares for it';
+COMMENT ON COLUMN code_contract_slot.erased_class IS 'what the accessor returns, erased, as code_read_slot.erased_class spells it; a test reflecting on graphql-java holds every row to the library';
+INSERT INTO code_contract_slot VALUES
+  ('graphql.GraphQLError', 'message', 'getMessage', 'java.lang.String'),
+  ('graphql.GraphQLError', 'locations', 'getLocations', 'java.util.List'),
+  ('graphql.GraphQLError', 'errorType', 'getErrorType', 'graphql.ErrorClassification'),
+  ('graphql.GraphQLError', 'path', 'getPath', 'java.util.List'),
+  ('graphql.GraphQLError', 'extensions', 'getExtensions', 'java.util.Map'),
+  ('graphql.GraphqlErrorException', 'message', 'getMessage', 'java.lang.String'),
+  ('graphql.GraphqlErrorException', 'locations', 'getLocations', 'java.util.List'),
+  ('graphql.GraphqlErrorException', 'errorType', 'getErrorType', 'graphql.ErrorClassification'),
+  ('graphql.GraphqlErrorException', 'path', 'getPath', 'java.util.List'),
+  ('graphql.GraphqlErrorException', 'extensions', 'getExtensions', 'java.util.Map'),
+  ('graphql.GraphqlErrorException', 'cause', 'getCause', 'java.lang.Throwable');
+
+CREATE TABLE graphitron_error_handler_source (
+  graph_name        VARCHAR   NOT NULL,
+  source_name       VARCHAR   NOT NULL,
+  source_line       INT       NOT NULL,
+  source_column     INT       NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  class_name        VARCHAR   NOT NULL,
+  class_source_name VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_error_handler_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (kind IN ('CLASS', 'CONTRACT')),
+  -- A class is one the graph's entries declare, a contract graphql-java's interface, stated.
+  CHECK ((kind = 'CLASS') = (class_source_name IS NOT NULL))
+);
+COMMENT ON TABLE graphitron_error_handler_source IS 'The class whose accessors back the fields of one @error handler''s type: one row per handler entry that names one. For example a GENERIC handler naming FilmNotFoundException is backed by that class, a DATABASE handler by java.sql.SQLException, and a VALIDATION handler by graphql.GraphQLError.';
+COMMENT ON COLUMN graphitron_error_handler_source.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_error_handler_source.source_name IS 'the handler entry''s file; with its line and column, the handler entry''s key';
+COMMENT ON COLUMN graphitron_error_handler_source.source_line IS 'its line';
+COMMENT ON COLUMN graphitron_error_handler_source.source_column IS 'its column';
+COMMENT ON COLUMN graphitron_error_handler_source.kind IS 'CLASS, a class the graph''s entries or the platform declare, whose code_read_slot rows are its accessors; CONTRACT, graphql-java''s error interface, whose accessors code_contract_slot states';
+COMMENT ON COLUMN graphitron_error_handler_source.class_name IS 'the class: a GENERIC handler''s className, java.sql.SQLException for a DATABASE handler, graphql.GraphQLError for a VALIDATION handler, and graphql.GraphqlErrorException for the client exception the run emits, which no classpath holds before its first compile';
+COMMENT ON COLUMN graphitron_error_handler_source.class_source_name IS 'on CLASS, the entry the graph resolves the class to, by code_graph_class; NULL on CONTRACT';
+COMMENT ON COLUMN graphitron_error_handler_source.touched_at IS 'the reading that last wrote this row; the stage sweeps what an older reading wrote';
+
+CREATE VIEW graphitron_error_handler_source_rule
+  (graph_name, source_name, source_line, source_column, kind, class_name, class_source_name) AS
+-- A GENERIC handler naming the client exception the run emits reads graphql-java's contract, its
+-- superclass's, since no classpath holds the class before its first compile; any other class it
+-- names is the class the graph resolves the name to. A DATABASE handler reads the SQLException it
+-- matches, and a VALIDATION handler the GraphQLError it hands over. A name the graph resolves to no
+-- class has no row.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column, 'CONTRACT',
+       'graphql.GraphqlErrorException', CAST(NULL AS VARCHAR)
+  FROM graphitron_ast_error_handler_entry h
+  JOIN graphitron_ast_error_generic_handler_entry g ON h.graph_name = g.graph_name AND h.source_name = g.source_name
+   AND h.source_line = g.source_line AND h.source_column = g.source_column
+  JOIN store_graph_output o ON o.graph_name = h.graph_name
+ WHERE h.handler = 'GENERIC' AND g.class_name = o.output_package || '.schema.GraphitronClientException'
+UNION ALL
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column, 'CLASS', k.class_name, k.source_name
+  FROM graphitron_ast_error_handler_entry h
+  JOIN graphitron_ast_error_generic_handler_entry g ON h.graph_name = g.graph_name AND h.source_name = g.source_name
+   AND h.source_line = g.source_line AND h.source_column = g.source_column
+  JOIN code_graph_class k ON k.graph_name = h.graph_name AND k.class_name = g.class_name
+ WHERE h.handler = 'GENERIC'
+   AND NOT EXISTS (SELECT 1 FROM store_graph_output o
+                    WHERE o.graph_name = h.graph_name
+                      AND g.class_name = o.output_package || '.schema.GraphitronClientException')
+UNION ALL
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column, 'CLASS', k.class_name, k.source_name
+  FROM graphitron_ast_error_handler_entry h
+  JOIN code_graph_class k ON k.graph_name = h.graph_name AND k.class_name = 'java.sql.SQLException'
+ WHERE h.handler = 'DATABASE'
+UNION ALL
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column, 'CONTRACT', 'graphql.GraphQLError',
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_ast_error_handler_entry h
+ WHERE h.handler = 'VALIDATION';
+COMMENT ON VIEW graphitron_error_handler_source_rule IS 'One row the handler source rule computes, in the shape graphitron_error_handler_source stores: the rule itself, evaluated on demand rather than read off disk. For example the code-references stage inserts this view''s rows for one graph into graphitron_error_handler_source, which is the name every reader spells.';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_error_handler_source.graph_name';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_error_handler_source.source_name';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_error_handler_source.source_line';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_error_handler_source.source_column';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.kind IS 'the kind of a row of this rule, which the stage writes into graphitron_error_handler_source.kind';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.class_name IS 'the class_name of a row of this rule, which the stage writes into graphitron_error_handler_source.class_name';
+-- COMMENT ON COLUMN graphitron_error_handler_source_rule.class_source_name IS 'the class_source_name of a row of this rule, which the stage writes into graphitron_error_handler_source.class_source_name';
+
 CREATE VIEW graphitron_code_reference_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 SELECT r.graph_name, r.source_name, r.source_line, r.source_column, 'CODE_REFERENCE_METHOD_UNFIT',
@@ -25681,6 +25776,10 @@ COMMENT ON COLUMN meta_stated_relation.example IS 'one concrete row, on meta_rel
 COMMENT ON COLUMN meta_stated_relation.rationale IS 'why the rows are the file''s rather than a gatherer''s. The bar is not that the rows change rarely: a gathered relation whose corpus never changes is still gathered. It is that no corpus outside the store could be read to produce them, because they are the vocabulary this file itself declares, so a refresh has nothing to re-read and a gate has nothing to compare against but the DDL';
 
 INSERT INTO meta_stated_relation VALUES
+  ('code_contract_slot',
+   'One accessor graphql-java''s error interface offers graphitron, as graphitron reads it: one row per class and slot.',
+   'For example graphql.GraphQLError offers message through getMessage, a java.lang.String.',
+   'What a VALIDATION handler and the client exception a run emits hand an @error type''s fields is graphql-java''s error interface, which graphitron itself relies on and which sits on no classpath entry a consumer''s build makes nameable, so no reading of the consumer''s classpath could produce it. Stated as the accessors graphitron uses, and held to the library by a test reflecting on graphql.GraphQLError and graphql.GraphqlErrorException, so an upgrade that changes one fails the build rather than the generated code.'),
   ('meta_stage_rule',
    'One rule view a stage inserts a relation from: one row per stage, relation and view.',
    'For example occurrence-builds inserts graphitron_occurrence_binding from graphitron_occurrence_binding_member_rule, whose kind column says MEMBER.',
@@ -26510,6 +26609,7 @@ INSERT INTO meta_stage_write VALUES
   ('anchor', 'graphitron_deprecated'),
   ('anchor', 'graphitron_entry_defect'),
   ('code-references', 'graphitron_code_reference'),
+  ('code-references', 'graphitron_error_handler_source'),
   ('code-references', 'graphitron_entry_defect'),
   ('argmapping-sites', 'graphitron_argmapping_site'),
   ('argmapping-pairs', 'graphitron_argmapping_pair'),
@@ -26818,6 +26918,7 @@ INSERT INTO meta_stage_rule VALUES
   ('call-context-keys', 'graphitron_call_context_key', 'graphitron_call_context_key_rule'),
   ('call-context-keys', 'graphitron_entry_defect', 'graphitron_call_context_key_entry_defect_rule'),
   ('code-references', 'graphitron_entry_defect', 'graphitron_code_reference_entry_defect_rule'),
+  ('code-references', 'graphitron_error_handler_source', 'graphitron_error_handler_source_rule'),
   ('directive-applications', 'graphitron_entry_defect', 'graphitron_directive_application_entry_defect_rule'),
   ('entity-key-alternatives', 'graphitron_accept_key', 'graphitron_accept_key_rule'),
   ('entity-key-alternatives', 'graphitron_entry_defect', 'graphitron_entity_key_entry_defect_rule'),
@@ -29665,6 +29766,14 @@ INSERT INTO meta_relation VALUES
    'One @error application, at its @ token.',
    'For example type FilmNotFound @error(handlers: [{handler: VALIDATION}]) gives one row, and its one handler is a row of graphitron_ast_error_handler_entry hanging off it.',
    'A decode of one directive application, keyed by the application''s own position. The directive''s only argument is the handler list, so the row carries its key and nothing else; it is stored because the handlers are a child relation and a child hangs off the decode of the application it was written inside, which is what lets a reader go from an application to its handlers by key and lets deleting the application take them. An application writing an empty list is a row with no handlers under it.'),
+  ('graphitron_error_handler_source', 'sdl-written-value', 'graphitron',
+   'The class whose accessors back the fields of one @error handler''s type: one row per handler entry that names one.',
+   'For example a GENERIC handler naming FilmNotFoundException is backed by that class, a DATABASE handler by java.sql.SQLException, and a VALIDATION handler by graphql.GraphQLError.',
+   'Which class backs a handler''s fields was resolved by the walk from a class name, two constants and the run''s output package, and two rules need it: the @error field no accessor answers, and in time the error router''s emitter. Stated once at the handler''s grain by the stage resolving code references, so neither re-derives it, and a contract row says graphql-java''s interface stands in where the consumer''s classpath declares nothing nameable.'),
+  ('graphitron_error_handler_source_rule', 'sdl-written-value', 'graphitron',
+   'One row the handler source rule computes, in the shape graphitron_error_handler_source stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the code-references stage inserts this view''s rows for one graph into graphitron_error_handler_source, which is the name every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the table and this view stays runnable for as long as both exist.'),
   ('graphitron_ast_error_handler_entry', 'sdl-written-value', 'graphitron',
    'One element of an @error application''s handlers list, with the kind it names.',
    'For example handlers: [{handler: DATABASE, sqlState: "23503"}, {handler: VALIDATION}] gives two rows, one of each kind, under the one application.',
