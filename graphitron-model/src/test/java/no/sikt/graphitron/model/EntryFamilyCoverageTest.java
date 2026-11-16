@@ -70,7 +70,9 @@ class EntryFamilyCoverageTest {
     void theFixturePopulatesTheWholeEntryHalf() {
         var empty = new ArrayList<String>();
         for (String relation : EntryFamilyFixture.entryRelations()) {
-            if (store().dsl().fetchCount(table(relation)) == 0) {
+            Table<?> table = table(relation);
+            if (store().dsl().fetchCount(table,
+                    table.field("GRAPH_NAME", String.class).eq(store().graphName())) == 0) {
                 empty.add(relation);
             }
         }
@@ -103,7 +105,9 @@ class EntryFamilyCoverageTest {
             return Set.of();
         }
         return Set.copyOf(store().dsl().selectDistinct(sourceName).from(table)
-            .where(sourceName.isNotNull()).fetch(sourceName, String.class));
+            .where(table.field("GRAPH_NAME", String.class).eq(store().graphName()),
+                sourceName.isNotNull())
+            .fetch(sourceName, String.class));
     }
 
     private static Table<?> table(String relation) {
