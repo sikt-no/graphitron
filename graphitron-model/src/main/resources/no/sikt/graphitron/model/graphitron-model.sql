@@ -6756,6 +6756,8 @@ COMMENT ON COLUMN code_read_slot.origin IS 'RECORD_COMPONENT or BEAN_ACCESSOR, w
 COMMENT ON COLUMN code_read_slot.touched_at IS 'when the reading that produced this row ran; swept with the accessor it hangs on';
 CREATE INDEX code_read_slot_name_ix ON code_read_slot (source_name, slot_name);
 COMMENT ON INDEX code_read_slot_name_ix IS 'The slot name is a join key rather than a filter, graphitron_type_backing_rule''s hop matching every coordinate in a graph against every slot a source offers without binding a class first, so the answer is a product and the name is the only thing narrowing it. The primary key leads with the class and cannot serve that, and the same access without an index on the name was measured in minutes rather than seconds on the relation this replaces.';
+CREATE INDEX code_read_slot_class_ix ON code_read_slot (class_name, slot_name);
+COMMENT ON INDEX code_read_slot_class_ix IS 'Serves a read naming the class and the member it asks about, which the language server''s goto-definition on a member declaration is: DeclarationFacts reads the slots of the declaration''s backing classes, joining each to its slots by class and name, which code_read_slot_name_ix, leading on the source, cannot serve. Measured on SurfaceScanCountTest''s fixture once the platform''s throwables offer their slots, goto-definition on a member declaration name: 2,038 scans without it, 545 with it, against a ceiling of 900.';
 
 CREATE TABLE code_construction (
   source_name VARCHAR NOT NULL,

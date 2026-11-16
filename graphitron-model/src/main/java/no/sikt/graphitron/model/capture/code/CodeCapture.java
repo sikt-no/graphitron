@@ -185,6 +185,7 @@ public final class CodeCapture {
             var ancestry = new ClassAncestry(census.classes(), headers);
             throwables(dsl, census.classes(), ancestry, touchedAt);
             methods(dsl, reactor, ancestry, touchedAt);
+            throwableSlots(dsl, census, lookup(census), ancestry, touchedAt);
         }
         nestedSlots(dsl, reading, touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
@@ -292,7 +293,7 @@ public final class CodeCapture {
         types(dsl, at.get().methods().stream()
             .map(method -> new Member(at.get().source(), at.get().className(), method))
             .toList(), containers, touchedAt);
-        slots(dsl, List.of(at.get()), containers, touchedAt);
+        slots(dsl, List.of(at.get()), List.of(at.get()), containers, touchedAt);
     }
 
     /**
@@ -494,7 +495,7 @@ public final class CodeCapture {
             .map(d -> new Member(d.source(), d.className(), d.at()))
             .toList(), ancestry, containers, touchedAt);
 
-        slots(dsl, classes, containers, touchedAt);
+        slots(dsl, classes, classes, containers, touchedAt);
         construction(dsl, classes, containers, touchedAt);
 
         arm(dsl, CODE_CONDITION_METHOD, found.stream()
@@ -712,10 +713,11 @@ public final class CodeCapture {
      * that member and a rule that second-guessed the type would hide it.
      */
     private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                              List<ClassfileCensus.ClassAt> lookup,
                               Map<String, Container> containers, LocalDateTime touchedAt) {
         record Slot(String source, String className, String declaringClass,
                     ClassfileCensus.MethodAt at, String slotName, String origin) {}
-        var byName = byName(classes);
+        var byName = byName(lookup);
         var found = new ArrayList<Slot>();
         for (ClassfileCensus.ClassAt at : classes) {
             if ("RECORD".equals(at.kind())) {
@@ -742,10 +744,9 @@ public final class CodeCapture {
         // inherited accessor was read from the base class's entry, so its result type was written
         // down under that one, and a slot is partitioned by where the class an author names was
         // found rather than by where the method behind it was.
-        writeTypes(dsl, found.stream()
-            .map(row -> new Named(row.source(), row.at().qualifiedReturnType(),
-                row.at().declaredReturnType(), rootOf(row.at().returnTypeRefs())))
-            .toList(), touchedAt);
+        types(dsl, found.stream()
+            .map(row -> new Member(row.source(), row.className(), row.at()))
+            .toList(), containers, touchedAt);
         var t = CODE_READ_SLOT;
         var rows = found.stream().collect(Rows.toRowList(
             row -> val(row.source(), t.SOURCE_NAME),
@@ -778,6 +779,49 @@ public final class CodeCapture {
                 .set(t.DELIVERY, excluded(t.DELIVERY))
                 .set(t.ORIGIN, excluded(t.ORIGIN))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * What an inherited member is looked up among: every class this reading holds, and the
+     * platform's throwables where the reading did not read the platform itself, so an accessor a
+     * class inherits from a base on another entry, or from {@code java.lang.Throwable}, is offered
+     * by the class. An entry's rows then depend on the platform it was read under, never on which
+     * sibling entries were read beside it, the cost {@code code_throwable_supertype} already
+     * accepts.
+     */
+    private static List<ClassfileCensus.ClassAt> lookup(ClassfileCensus.Census census) {
+        boolean platformRead = census.entries().stream()
+            .anyMatch(entry -> PlatformClasses.SOURCE.equals(entry.source()));
+        if (platformRead) {
+            return census.classes();
+        }
+        var out = new ArrayList<>(census.classes());
+        out.addAll(PlatformClasses.throwables());
+        return out;
+    }
+
+    /**
+     * The members each throwable the reading holds offers, inherited ones included: a jar's, the
+     * platform's where the reading read it, and the reactor's, whose own slots stop at the reactor's
+     * edge. An {@code @error} field is read off the throwable its handler matches, and what it reads
+     * is mostly what {@code java.lang.Throwable} declares, so a throwable's members are looked up past
+     * its entry. Only a throwable's: what any other class inherits from a base on another entry stays
+     * outside its slots, as it always has.
+     */
+    private static void throwableSlots(DSLContext dsl, ClassfileCensus.Census census,
+                                       List<ClassfileCensus.ClassAt> lookup, ClassAncestry ancestry,
+                                       LocalDateTime touchedAt) {
+        var throwing = census.classes().stream()
+            .filter(at -> ancestry.isThrowable(at.className()))
+            .toList();
+        if (throwing.isEmpty()) {
+            return;
+        }
+        var containers = deliveryContainers(dsl);
+        types(dsl, throwing.stream()
+            .flatMap(at -> at.methods().stream().map(method -> new Member(at.source(), at.className(), method)))
+            .toList(), containers, touchedAt);
+        slots(dsl, throwing, lookup, containers, touchedAt);
     }
 
     /**

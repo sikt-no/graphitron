@@ -47,3 +47,13 @@ extend schema @assertAbsent(relation: "code_class",
   class_name
   java.lang.String
   """)
+
+# What a throwable offers includes what it inherits from java.lang.Throwable, under the class an
+# author names: a platform exception, and a reactor exception extending RuntimeException, each offer
+# message read through Throwable's getMessage.
+extend schema @assertContains(relation: "code_read_slot",
+    where: "slot_name = 'message' AND class_name IN ('java.lang.IllegalArgumentException', 'no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException')", rows: """
+  class_name,                                                    method_name, declaring_class
+  java.lang.IllegalArgumentException,                            getMessage,  java.lang.Throwable
+  no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException, getMessage,  java.lang.Throwable
+  """)

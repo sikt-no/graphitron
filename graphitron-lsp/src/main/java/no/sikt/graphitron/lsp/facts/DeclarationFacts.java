@@ -570,12 +570,17 @@ public final class DeclarationFacts {
     private static Field<List<SlotRow>> slotArm(StoreHandle store, Coord coord) {
         String memberName = coord.memberName();
         if (memberName == null) return null;
+        // Driven by the type's backing classes, each looking its slots up by class and name, so the
+        // read reaches the candidates' rows rather than scanning every slot the store holds.
+        var b = GRAPHITRON_TYPE_BACKING;
         return multiset(selectDistinct(CODE_READ_SLOT.CLASS_NAME,
                 CODE_READ_SLOT.SLOT_NAME, CODE_READ_SLOT.METHOD_NAME, CODE_READ_SLOT.ORIGIN)
-            .from(CODE_READ_SLOT)
-            .where(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
-            .and(CODE_READ_SLOT.SLOT_NAME.eq(memberName))
-            .and(CODE_READ_SLOT.CLASS_NAME.in(backingCandidates(store, coord)))
+            .from(b)
+            .join(CODE_READ_SLOT).on(CODE_READ_SLOT.CLASS_NAME.eq(b.CLASS_NAME),
+                CODE_READ_SLOT.SLOT_NAME.eq(memberName))
+            .where(b.GRAPH_NAME.eq(store.graphName()))
+            .and(b.TYPE_NAME.eq(coord.typeName()))
+            .and(store.resolves(CODE_READ_SLOT.SOURCE_NAME, CODE_READ_SLOT.CLASS_NAME))
             .orderBy(CODE_READ_SLOT.CLASS_NAME, CODE_READ_SLOT.METHOD_NAME))
             .convertFrom(rows -> rows.map(row -> new SlotRow(row.value1(), row.value2(),
                 row.value3(), ClassMemberSlots.Origin.of(row.value4()))));
