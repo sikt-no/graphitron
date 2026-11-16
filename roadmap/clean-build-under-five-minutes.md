@@ -142,40 +142,52 @@ from the next recording.
    instead: the suite's prepare time fell from 827 s to 389 s, and the delete costs back about 45 s
    of it, 137 ms a clear against the truncate's 4 ms, all of it the rows a case wrote, since clearing
    only the tables holding rows changed nothing.
-3. **The thread store's clear goes, the classes reading unscoped first** (A2a, R1160's migration).
-   The clear exists only for the cases that read rows of graphs other than their own or assert
-   relations the whole store shares; a case capturing under a graph name of its own into a store
-   that accumulates needs none. Recounted 2026-11-16 at `3da507f6d0`, by a reading of every class
-   that borrows the thread store: 94 classes (97 on 11-12), 45 reading only their own graph, 15 only
-   relations no capture changes, 17 reading a graph-keyed relation without a graph filter, and 17
-   writing or asserting what the whole store shares. `graphitron` borrows it no longer, which is most
-   of the fall from 31 unscoped classes. In this order:
-   1. **The 17 unscoped classes**, all in `graphitron-model`, each scoping its reads to its own graph
-      or moving to a fact document. By prepare seconds before the clear stopped wiping the cache:
-      `GraphQLSchemaProblemsTest` 36, `GraphitronTypeEntriesTest` 28, `FederationKeyDerivationTest`
-      22, `NodeTypeIdDerivationTest` 18, `GraphitronAnchorTest` 14, `QualifiedReferenceDecodeTest`
-      13, `GraphitronSchemaEntriesTest` 12, `GraphitronInputValueEntriesTest` 12,
-      `GraphitronFieldEntriesTest` 11, `PrimaryKeySelfJoinPathTest` 11,
-      `GraphitronEnumValueEntriesTest` 8, `FieldSetDecodeTest` 7, then `GraphQLAnchorTest`,
-      `DirectiveLiteralRoundTripTest`, `NameMatchedStepHopTest`, `EntryFamilyCoverageTest` and
-      `GraphQLAstEntriesTest` at 2 or less. Every borrowing fixture captures under one graph name,
-      `CapturedStore.GRAPH`, so a graph name per case comes with the first move.
-   2. **The 17 store-wide classes** take a store of their own made as small as what they test, or a
-      fact document: eight in `graphitron-model` (among them `ThreadConfinedStoreTest`, whose subject
-      goes with the store), eight in `graphitron-lsp`, one in `graphitron-mcp`.
-   3. **Once none reads unscoped, the thread store and its clear go**, and the scoped and static
-      classes capture under their own graph names into a store that accumulates, as A2a priced.
-      First the fixture factories that capture under the one default name, `CapturedStore.GRAPH`,
-      take a graph name or go: `ofFiles` has no overload that takes one, and
-      `EntryFamilyFixture.capture` reaches it, so `EntryFamilyCoverageTest` and
-      `CaptureCorpusIsolationTest` still capture under the default name. Two classes doing that
-      into one store would read each other's rows.
+3. **The thread store goes: its borrowers move onto the population's pool, to fact documents, or
+   to a store of their own** (A2a, R1160's migration). The clear exists only because a thread's
+   cases share one store. The store that accumulates instead is the one Alf ruled for an inline
+   capture that reads only its own graph (testing.adoc § "Where a store-backed test gets its
+   store", 2026-11-12): the population lends it from a pool kept per catalog and classpath, beside
+   a ballast graph that fails a read missing its graph filter, through
+   `FactGraphs.Reader.readInline`. No per-thread store that stops clearing is built beside it.
+   Recounted 2026-11-16 by a reading of every class that borrows the thread store: 94 classes, 45
+   reading only their own graph, 15 only relations no capture changes, 17 reading a graph-keyed
+   relation without a graph filter, and 17 writing or asserting what the whole store shares.
+   `graphitron` borrows it no longer. In this order:
+   1. **The 17 unscoped classes read only their own graph.** Done: each case captures under a graph
+      named for it and every read filters to it, proven with the clear switched off.
+   2. **The 17 store-wide classes**, by what they are about:
+      - what a schema captures goes to a fact document: graph-keyed rows as `@expectEquals`,
+        rows the store shares (`sql_`, `federation_version_`) as `@assertContains` or
+        `@assertAbsent`, and a count over the whole store as the rows it means
+        (`EnumBindingCaptureTest`, `NodeMetadataCaptureTest`, `CaptureCorpusIsolationTest` with
+        `EntryFamilyFixture` becoming a two-file document where the pass writes what its
+        hand-run writers do, `CapturedStoreTest`'s remaining claims, and
+        `RejectionSeverityCoverageTest`);
+      - what a store does keeps a store of its own, its schema from a document, under R1160's
+        "What keeps a store of its own": writes, locks, lifecycle and cost
+        (`FederationCaptureTest`, `SourceStampTest`, `StaleModuleTest`,
+        `DiagnosticsStatementCountTest`, `SurfaceScanCountTest`, `StoreBootCountTest`,
+        `GraphitronMcpServerTest`'s cross-graph status);
+      - `ThreadConfinedStoreTest` goes with its subject, the boot budget it pins moving to
+        `FactStores` as a bound on boots per JVM.
+      Five LSP classes (`FieldCompletionsTest`, `SourceCadenceHoverAndDefinitionTest`,
+      `TableCompletionsTest`, `TextDocumentServiceTest`, `DeclTargetTest`) meet other cases'
+      `java_` declarations because the readers of that family key on the class name alone; whether
+      that is the readers' to fix or the tests' to hold apart is an open question.
+   3. **The borrowers move, and the thread store and every borrowing arm go.** About 107 sites in
+      30 files call `ThreadConfinedStore.run`, 81 in 13 call `withSeededStore`, and `CapturedStore`'s
+      borrowing arms and the LSP and MCP `StoreFixture` case arms have about 230 more. A case that
+      captures inline SDL once and reads it takes `readInline`; one that reads twice, or drives a
+      gatherer by hand to pin what a second reading sweeps, becomes a scenario document; one that
+      writes the store keeps a store of its own. The arms that capture under the one default name
+      are removed rather than given a name, and `CapturedStore.GRAPH` stays only on the arms that
+      own their store. `SeededStore` dissolves with its callers, under `SeedingDissolutionGateTest`.
    4. **The classes with fresh stores of their own.** Prepares on a session that never saw the
       statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest in
       `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
       `StoreNodeTablesTest` 12 s and `SourceGraphScopingTest` 10 s, besides the population's own
-      39 s. A store that has to stay its own (a lifetime or oracle test) is made as small as what it
-      tests: a capture of only the gatherers its subject needs.
+      39 s. Each takes its schema from a document and keeps the store only where its subject is the
+      store.
    `GraphCountGrowthGateTest` spends 33 s re-preparing what its 64-entry cache evicts across sixteen
    captures; a larger cache changes what the gate can see, so that one is Alf's call.
 4. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
