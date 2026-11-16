@@ -19931,13 +19931,27 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                   AND h.application_line = da.source_line AND h.application_column = da.source_column
                   AND h.handler = 'VALIDATION'
                 WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
-                  AND po.field_name = f.field_name);
+                  AND po.field_name = f.field_name)
+UNION ALL
+-- A @service of a nesting type reached from more than one place, at the field: the field has one
+-- fetcher, and each place it is reached from is a producer of its own, so it is refused until a
+-- fetcher serving several occurrences is generated.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED', CAST(NULL AS VARCHAR), 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE p.kind = 'SERVICE'
+   AND EXISTS (SELECT 1 FROM graphitron_occurrence_producer p2
+                 JOIN graphitron_occurrence o2 ON o2.graph_name = p2.graph_name AND o2.coordinate = p2.coordinate
+                WHERE p2.graph_name = p.graph_name AND p2.kind = 'SERVICE'
+                  AND o2.element_coordinate = o.element_coordinate AND o2.coordinate <> o.coordinate);
 COMMENT ON VIEW graphitron_occurrence_producer_entry_defect_rule IS 'One row the occurrence-producers stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage writes this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_name IS 'the method reference''s or the @routine''s file, or the re-reading, connection-returning, polymorphic child or validating field''s';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_line IS 'its line';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.source_column IS 'its column';
--- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED, SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED or SERVICE_CHILD_VALIDATION_UNSUPPORTED';
+-- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.code IS 'PARAMETER_UNFILLED, PARAMETER_AMBIGUOUS, PARAMETER_FILLED_TWICE, PARAMETER_NAMES_MISSING, REREAD_OF_DELETED_ROWS, SERVICE_CONNECTION_UNSUPPORTED, SERVICE_CHILD_POLYMORPHIC_UNSUPPORTED, SERVICE_CHILD_VALIDATION_UNSUPPORTED or SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.detail IS 'the first parameter the defect names, the class compiled without parameter names, or null for the service deferrals';
 -- COMMENT ON COLUMN graphitron_occurrence_producer_entry_defect_rule.stage IS 'occurrence-producers';
 
@@ -27375,6 +27389,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @service whose outcome claims validation runs under an object, or answers participants on tables of their own, where its arguments are not validated yet: validation runs once per fetch of a root @service lifting onto at most one table. Move the call to a root field, or drop the VALIDATION handler.'),
   ('SERVICE_ARGUMENT_PATH_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_ARGUMENT_PATH_UNSUPPORTED',
    'A @service parameter is filled from an argument path that steps through a list above its last name and lands on a node id, an input object, or an enum the parameter takes as its Java constant, where each element is read for a scalar or an enum''s name only: hand the parameter the list itself, take the enum by name, or land the path on a scalar.'),
+  ('SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED',
+   'A @service on a type with no table of its own is reached from more than one place, each a producer of its own, and the field has one fetcher, which serves one place only so far: declare the service on a type reached from one place, or give the type a @table.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',

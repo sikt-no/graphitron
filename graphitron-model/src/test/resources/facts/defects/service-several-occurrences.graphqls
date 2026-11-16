@@ -1,0 +1,29 @@
+# A @service on a type with no table of its own reached from two places: FilmStats nests under Film
+# and under FilmAlias, both rows of film, so FilmStats.servedBy is a producer at Film.stats.servedBy
+# and at FilmAlias.stats.servedBy, while the field has one fetcher.
+
+type FilmStats {
+  servedBy: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+    method: "servedBy"})
+}
+
+type Film @table(name: "film") {
+  title: String
+  stats: FilmStats
+}
+
+type FilmAlias @table(name: "film") {
+  title: String
+  stats: FilmStats
+}
+
+type Query {
+  films: [Film!]!
+  aliases: [FilmAlias!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED'", rows: """
+  code,                                    coordinate
+  SERVICE_SEVERAL_OCCURRENCES_UNSUPPORTED, FilmStats.servedBy
+  """)
