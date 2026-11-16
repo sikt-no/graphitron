@@ -165,6 +165,11 @@ from the next recording.
       goes with the store), eight in `graphitron-lsp`, one in `graphitron-mcp`.
    3. **Once none reads unscoped, the thread store and its clear go**, and the scoped and static
       classes capture under their own graph names into a store that accumulates, as A2a priced.
+      First the fixture factories that capture under the one default name, `CapturedStore.GRAPH`,
+      take a graph name or go: `ofFiles` has no overload that takes one, and
+      `EntryFamilyFixture.capture` reaches it, so `EntryFamilyCoverageTest` and
+      `CaptureCorpusIsolationTest` still capture under the default name. Two classes doing that
+      into one store would read each other's rows.
    4. **The classes with fresh stores of their own.** Prepares on a session that never saw the
       statement cost 278 s (2.2 ms each, where the view indexes are built), heaviest in
       `WarmStartRefreshTest` 58 s, `PersistentStoreTest` 36 s, `FactSchemaGateTest` 20 s,
