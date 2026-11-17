@@ -1,0 +1,57 @@
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+
+"The issuing half of the handover voucher-accept-subgraph accepts: an application's results, each written the way the accepting subgraph's key looks. `id` is the accepting subgraph's key field and `eierId` the vouched-for field, both absorbed into the voucher and withheld from what this subgraph publishes, so it publishes VgsResultat with the voucher alone. The scope, the vouched-for field and the absorbed fields' names and types are the accepting subgraph's, which is what lets its vouchers decode there."
+type Query {
+  applications: [Application!]!
+}
+
+type Application @table(name: "vouched_application") {
+  applicationId: Int! @field(name: "application_id")
+  results: [VgsResultat!]! @reference(path: [{key: "vouched_application_result_application_id_fkey"}])
+}
+
+type VgsResultat @table(name: "vouched_application_result") {
+  id: ID! @field(name: "result_id")
+  eierId: String! @field(name: "owner_id")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M", vouchesFor: "eierId")
+}
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site")
+
+# Every other field of the type is absorbed into the voucher; the marked one never.
+extend schema @expectEquals(relation: "graphitron_voucher_member", rows: """
+  type_name,   field_name, issuing_field
+  VgsResultat, eierId,     voucher
+  VgsResultat, id,         voucher
+  """)
+
+# Each absorbed field read off the issuing table, with the scalar that serializes it: the names and
+# types the accepting subgraph's key field and vouched-for field declare.
+extend schema @expectEquals(relation: "graphitron_voucher_component", rows: """
+  type_name,   field_name, table_name,                 column_name, scalar_name
+  VgsResultat, eierId,     vouched_application_result, owner_id,    String
+  VgsResultat, id,         vouched_application_result, result_id,   ID
+  """)
+
+extend schema @expectEquals(relation: "graphitron_voucher_vouched_for", rows: """
+  position, type_name,   field_name
+  0,        VgsResultat, eierId
+  """)
+
+# The absorbed fields are no part of the published population; the voucher is.
+extend schema @assertAbsent(relation: "graphitron_element", rows: """
+  coordinate
+  VgsResultat.id
+  VgsResultat.eierId
+  """)
+
+extend schema @assertContains(relation: "graphitron_element", rows: """
+  coordinate
+  VgsResultat.voucher
+  """)
+
+# The voucher keys the type, as a key this subgraph does not resolve, and is kept from clients.
+extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
+  type_name,   role,  fields,  resolvable
+  VgsResultat, ISSUE, voucher, FALSE
+  """)

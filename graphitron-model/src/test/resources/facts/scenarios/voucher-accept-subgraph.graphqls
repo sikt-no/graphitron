@@ -1,6 +1,6 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@inaccessible"])
 
-"A subgraph that accepts vouchers for its results: the entity resolves by its authored key and by the voucher key minted beside it, and the details its SELECT nests are projected, so nothing below it is refused."
+"A subgraph that accepts vouchers for its results, the accepting half of the handover voucher-issue-subgraph issues: the entity resolves by its authored key and by the voucher key minted beside it, and the details its SELECT nests are projected, so nothing below it is refused."
 type Query {
   results: [VgsResultat!]!
 }
