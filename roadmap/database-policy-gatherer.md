@@ -143,14 +143,18 @@ collects its policies and sweeping a policy collects its roles.
   off, and the database then does not apply them: such policies are stored under their table's row,
   whose flag says they are not in force.
 * `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row.
-* `database_server`: one row per source, saying what the database reported about itself at the last
-  successful reading: product and version (`server_version_num` and the version string), the database
+* `database_server`: one row per source, saying what the database reported about itself in the
+  reading the source's other `database_` rows came from: product and version (`server_version_num` and the version string), the database
   name (`current_database()`), and the role the reading connected as (`current_user`). Keyed on
   `source_name` alone, a foreign key to `store_source` with `ON DELETE CASCADE`, swept with the rest of
   the family. The url-derived `source_name` stays the key, because it is stable, credential-free and
   what the author wrote; this row is the database's own answer beside it. Two urls naming one
   database (`localhost` and `127.0.0.1`, or through a pooler and directly) remain two sources, and
-  their `database_server` rows show they are the same database.
+  their `database_server` rows show they are the same database. It is written in the reading's
+  transaction only when the reading succeeds, and it is part of what the claim's stamp hashes, so the
+  stamp vouches for it as for the rest; a failed reading never overwrites the provenance of rows it
+  keeps from an earlier one. The role is a name `source_name` was built to keep out; whether it may be
+  stored is part of the open question on what configuration may enter the store.
 
 A follow-up that needs structure from an expression extracts the direct facts during the reading and
 stores them as rows beside the text: a policy reads a setting, a policy calls a function, a function
@@ -198,6 +202,14 @@ sets of stored rows. This item reports it nowhere, because it has no SDL positio
   and it commits after the facts it vouches for. `read_at` is the reading's instant, so it always
   names the last successful reading.
 * A `store_graph_progress` row records the gatherer's start and completion, as for every gatherer.
+* `store_graph_source_failure`: one row per claim whose last reading failed, saying why (the cause
+  the warning logged: refused connection, timeout, version below the minimum) and when. It keys and
+  foreign-keys the claim, `(graph_name, source_name)` to `store_graph_source` with `ON DELETE CASCADE`,
+  and a successful reading deletes it, so absence means the last reading did not fail. It records
+  the run rather than the corpus, so it is a `store_` relation, declared as its run-record siblings
+  are: `store_graph_progress` and `store_graph_write` are declared with the `capture` owner while each
+  gatherer writes its own rows, and this one is written by the `database` gatherer the same way. It
+  is what the readers show as the cause.
 
 ### Who drops a claim
 
@@ -261,7 +273,8 @@ that.
 One read-only transaction, three statements:
 
 * First, what the database is: `server_version_num`, `version()`, `current_database()` and
-  `current_user`, written to `database_server`. The reading needs PostgreSQL 10 or later, because
+  `current_user`, held until the reading succeeds and then written to `database_server` with the rest.
+  The reading needs PostgreSQL 10 or later, because
   `pg_policy.polpermissive` first exists there. Below that, the reading stops before reading any
   policy and is recorded as a failed reading whose cause names the version and the minimum, so the
   readers say why (§ Reader arms), rather than failing on a missing column.
@@ -306,7 +319,8 @@ stage lands without moving the call.
 * read, secured: `Row security: on` (`forced` when it is), then one line per policy: name, command,
   mode, roles, `USING`, `WITH CHECK`;
 * stale (claim stamp cleared, `read_at` kept): the same, marked as from the reading at `read_at`;
-* never read successfully (neither): `Row security: the database could not be read`, with the cause.
+* never read successfully (neither): `Row security: the database could not be read`, with the cause
+  from `store_graph_source_failure`; the stale arm shows that cause too.
 
 Every arm that shows facts names where they came from, from the stored `database_server` row:
 `read from postgres://localhost:5432/sakila (PostgreSQL 16.4, database sakila, as dev)`.
@@ -322,8 +336,8 @@ What graphitron reasons over is a stored fact; what only a person or an agent re
 asked. Policies are small and the follow-ups reason over them, so they are captured (§ The store).
 Definitions are large text nothing reasons over: capturing every routine and trigger body on every
 round costs in proportion to the schema for an answer wanted one object at a time. So they are read
-live, through the same `<database>` connector, and never enter the store. The database stays the
-authority for what it holds.
+live, through the same `<database>` connector, and never enter the store. A live read may render; it
+never decodes, stores or reasons over what it reads.
 
 ### Where it is available
 
@@ -362,7 +376,9 @@ PostgreSQL first, because sakila tests it:
 * view: `pg_get_viewdef`, wrapped as `CREATE VIEW`;
 * trigger: `pg_get_triggerdef`, followed by its function's `pg_get_functiondef`;
 * key (what a `@reference` names): `pg_get_constraintdef`, wrapped as `ALTER TABLE ... ADD CONSTRAINT`;
-* table: PostgreSQL has no single statement for a table, so any table definition is a reconstruction.
+* table: PostgreSQL has no single statement for a table, so any table definition is a reconstruction,
+  and the answer labels that part as one: it can leave out what jOOQ's `Meta` does not model (identity
+  and generated columns, partitioning, exclusion constraints), beside the database's own text.
   The table part comes from jOOQ's runtime metadata over the live connection,
   `DSLContext.meta().filterTables(...).ddl()` filtered to the table the store resolved: columns,
   primary key, unique, foreign key and check constraints, indexes and comments, in jOOQ's normalized
@@ -399,8 +415,8 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
   connection settings are given; `docs/architecture/explanation/fact-model.adoc` § "One base, many
   views" states that its facts never change generated output.
 * `docs/architecture/explanation/fact-model.adoc` § "One base, many views" also gains the limit of the
-  live read beside it: display text from a live corpus may be fetched on request, is never stored,
-  joined or reasoned over, and is fetched only in `dev`. Without it, the next consumer wanting a live
+  live read beside it: display text from a live corpus may be fetched and rendered on request, is
+  never decoded, stored, joined or reasoned over, and is fetched only in `dev`. Without it, the next consumer wanting a live
   answer has a precedent and no limit.
 * `docs/manual/reference/mojo-configuration.adoc`: `<database>` under shared parameters, `<execute>`
   under `dev`-goal parameters, the migration from `<devDatabase>`, the driver-scope rule. The sentence
@@ -438,7 +454,9 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
   fails within the timeout.
 * `source_name` never contains the user, the password or the url's query parameters.
 * `database_server` holds sakila's version, database name and connecting role after a reading, and
-  hover and `catalog.describe` show them.
+  hover and `catalog.describe` show them; a failed reading after a successful one leaves that row as
+  it was and writes a `store_graph_source_failure` row with the cause, which a later successful
+  reading deletes.
 * A declared dialect the connection disagrees with fails the goal, naming both.
 * The version gate: a server version below 10, stubbed at the version check, records a failed reading
   whose cause names the version and the minimum, and reads no policy.
@@ -489,7 +507,8 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream. The c
 * An unreachable database: keep the last reading's rows marked stale (this spec's default), or sweep
   them?
 * What configuration may enter the store. Nothing under `docs/architecture/` says; this spec stores
-  only a credential-free rendering of the connection.
+  only a credential-free rendering of the connection, and the role the reading connected as
+  (`database_server`), which is a name `source_name` deliberately keeps out.
 * Where a table the database has and the jOOQ classes lack, or the reverse, should be reported, given
   that it has no SDL position.
 * The application role. Policies apply `TO` roles, and without knowing which role the runtime
@@ -542,6 +561,13 @@ What it raised, and what this spec did:
   "Never in `generate` or CI" gets an enforcer, by widening the package guard: adopted. The new hover
   target needs a `TriggerDispatchMatrixTest` row: adopted. It found no written "one goal per item"
   rule, and read the goal as one outcome with two delivery tiers.
+* Before the second review: `database_server` written only with a successful reading and covered by
+  the stamp, so a failure never puts one server's provenance above another reading's rows: adopted.
+  The stored role named in the configuration open question: adopted. jOOQ's `Meta` is a renderer, not
+  a second reading, but its table answer is a reconstruction and is labelled one; the limit sentence
+  says a live read may render but never decode: adopted. The failure cause had no home: adopted, as
+  `store_graph_source_failure` on the `store_` side. The reclaim through `SourceClaims.unclaimed()`
+  matches the existing gatherers. Its point on a dialect mismatch is with Alf (§ Configuration).
 
 ## Reviewer findings
 
