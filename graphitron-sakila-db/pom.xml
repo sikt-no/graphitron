@@ -173,6 +173,12 @@
                                     <!-- recordless_note is generated without a record
                                          class, the case init.sql's comment on it explains. -->
                                     <recordsExcludes>recordless_note</recordsExcludes>
+                                    <!-- cursor_sort_text.mac is a macaddr, a type jOOQ has no
+                                         binding for, generated as Object as a consumer's would be.
+                                         jOOQ marks such a column @Deprecated by default, which the
+                                         -Werror compile of code reading it rejects; the column's
+                                         type is what the fixture is for, not the marker. -->
+                                    <deprecationOnUnknownTypes>false</deprecationOnUnknownTypes>
                                 </generate>
                                 <target>
                                     <packageName>${jooqPackage}</packageName>

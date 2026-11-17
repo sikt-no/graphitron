@@ -6,7 +6,9 @@ import no.sikt.graphitron.rewrite.fixtures.codegen.UtcLocalDateTimeConverter;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.Converter;
 import org.jooq.DataType;
+import org.jooq.impl.DefaultDataType;
 import org.jooq.impl.SQLDataType;
+import org.jooq.postgres.extensions.bindings.CitextBinding;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
@@ -17,6 +19,9 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.CURSOR_PERIOD;
+import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.CURSOR_SORT_TEXT;
+import static no.sikt.graphitron.rewrite.test.jooq.public_.Tables.FILM;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertTimeout;
 
@@ -33,6 +38,9 @@ import static org.junit.jupiter.api.Assertions.assertTimeout;
  * converter-backed slot keeps what its user type's text carries. {@code coerce} is the documented
  * coercion of an authored value, minus a wrap. {@code folded} names the value a converter gave back
  * in place of the parsed one, which the node-id decode logs when it refuses such a slot.
+ * {@code writtenByDatabase} decides which party writes and reads a connection cursor's element:
+ * pinned for one type of each family on each side, and for the columns codegen types through
+ * jOOQ's PostgreSQL extensions or leaves without a SQL type.
  */
 @UnitTier
 class ColumnValuesTest {
@@ -260,15 +268,39 @@ class ColumnValuesTest {
             .isNull();
     }
 
+    // ===== writtenByDatabase: which party writes and reads a column's cursor element =====
+
     @Test
-    void fromDatabase_handsAColumnWithNoSqlTypesInputToItsConverter() {
-        assertThat(ColumnValues.fromDatabase(Span.TYPE, "[a,b)")).isEqualTo(new Span("a", "b"));
-        assertThat(ColumnValues.fromDatabase(Span.TYPE, "garbage")).as("the converter refuses it").isNull();
-        assertThat(ColumnValues.fromDatabase(Span.TYPE, Boolean.TRUE)).as("the converter refuses it").isNull();
-        assertThat(ColumnValues.fromDatabase(Span.NARROW_TYPE, Boolean.TRUE))
-            .as("no instance of the converter's database class, so it never reaches the converter")
-            .isNull();
-        assertThat(ColumnValues.fromDatabase(Span.NARROW_TYPE, "[a,b)")).isEqualTo(new Span("a", "b"));
+    void writtenByDatabase_givesJavaTheColumnsItReadsExactly() {
+        for (DataType<?> type : List.<DataType<?>>of(SMALLINT, INTEGER, BIGINT, NUMERIC_4_1, SQLDataType.DOUBLE,
+                SQLDataType.BOOLEAN, SQLDataType.VARCHAR(20), SQLDataType.CHAR(2), SQLDataType.CLOB,
+                SQLDataType.DATE, SQLDataType.LOCALDATE, SQLDataType.LOCALDATETIME, SQLDataType.TIMESTAMP,
+                SQLDataType.OFFSETDATETIME, SQLDataType.INSTANT, SQLDataType.UUID,
+                FILM.RATING.getDataType(), ORG_CODE, CHANGE_INSTANT)) {
+            assertThat(ColumnValues.writtenByDatabase(type)).as(type.toString()).isFalse();
+        }
+    }
+
+    @Test
+    void writtenByDatabase_givesTheDatabaseEveryOtherColumn() {
+        for (DataType<?> type : List.<DataType<?>>of(SQLDataType.LOCALTIME, SQLDataType.TIME,
+                SQLDataType.OFFSETTIME, SQLDataType.INTERVAL, SQLDataType.BLOB, SQLDataType.VARBINARY,
+                SQLDataType.INTEGER.array(), SQLDataType.VARCHAR.array(), SQLDataType.JSONB, SQLDataType.OTHER,
+                Span.TYPE, CURSOR_PERIOD.VALID_PERIOD.getDataType(), CURSOR_SORT_TEXT.MAC.getDataType(),
+                CURSOR_SORT_TEXT.SPAN.getDataType())) {
+            assertThat(ColumnValues.writtenByDatabase(type)).as(type.toString()).isTrue();
+        }
+    }
+
+    @Test
+    void writtenByDatabase_givesACitextColumnBoundByTheExtensionsToTheDatabase() {
+        // How jOOQ codegen types a citext column when jooq-postgres-extensions is on its classpath: a
+        // type jOOQ has no SQL type for, read through CitextBinding. The database reads its element
+        // back as citext, so the seek compares as the column does, ignoring case.
+        DataType<String> citext = DefaultDataType.getDefaultDataType("\"public\".\"citext\"").nullable(false)
+            .asConvertedDataType(new CitextBinding());
+        assertThat(citext.getSQLDataType()).isNull();
+        assertThat(ColumnValues.writtenByDatabase(citext)).isTrue();
     }
 
     @Test

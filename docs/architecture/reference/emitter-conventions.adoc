@@ -76,7 +76,10 @@ Do *not* use the one-argument form with a Java-side cast (`DSL.val((JavaType) ra
 - The one-argument form ignores the column's registered jOOQ `Converter` entirely.
 
 The two-argument form hands `rawValue` to the column's `DataType` and its registered `Converter`
-at bind time. No SQL `CAST` is rendered; the coercion is purely Java-side, inside jOOQ.
+at bind time. No SQL `CAST` is rendered; the coercion is purely Java-side, inside jOOQ. The one
+deliberate exception is a connection cursor's element for a column the database writes, which is
+not GraphQL input but the database's own text handed back to it, and binds as a cast to the
+column's type (see "Cursor encode/decode").
 
 *`CallSiteExtraction` solves a different problem.* Its value-coercion strategies exist to produce
 a typed Java value for a *condition/ordering method parameter* ; code paths where a
@@ -189,11 +192,23 @@ The emitter companion to the "Model metadata over parallel type systems" princip
 column's jOOQ `DataType` is already known, so cursor round-tripping goes through the column
 metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
 
-- *Encode a seek value*: the column's database value, the record's value passed through the
-  column's `Converter.to` (jOOQ's identity converter when it has none; an `EnumType` as its
+- *Who writes an element*: `ColumnValues.writtenByDatabase(field.getDataType())`, the one place
+  it is decided, read at runtime off the column's `DataType` so a `method:` sort key is answered
+  like a column. Java writes and reads a column whose Java reading is exact: the forms Graphitron 9
+  issued (numeric, boolean, date, timestamp, timestamp with time zone) and the types whose Java
+  value and text are the database's (character, uuid, enum). The database writes and reads every
+  other column, one with no SQL type among them, so a type nobody listed is carried exactly rather
+  than approximately: an `infinity` bound, a fraction of a second, an array or a type jOOQ cannot
+  read is never held in Java.
+- *Encode a seek value Java writes*: the column's database value, the record's value passed through
+  the column's `Converter.to` (jOOQ's identity converter when it has none; an `EnumType` as its
   literal), written by `ColumnValues.toText` from the column's SQL `DataType`: numeric bare,
   boolean bare, temporal in Oracle's `JSON_ARRAY` form, everything else a JSON string. Never the
   user value's text: a converter's user type need not share its text with the database type.
+- *Encode a seek value the database writes*: the text the page selected beside the row,
+  `cast(column as varchar)` under the position's alias (`ConnectionHelper.cursorTexts`, which
+  `pageRequest` adds to the select list in place of the column itself), as a JSON string. A record
+  without the alias is an emitter fault and fails loudly; there is no fallback to the Java reading.
 - *Decode a seek value*: `ColumnValues.fromDatabase(field.getDataType(), element)`, which parses
   the element as the database type (`getSQLDataType().convert`) and runs `Converter.from`. Not the
   converted `field.getDataType().convert(element)`: it answers `null` for text the user type does
@@ -203,11 +218,18 @@ metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
   decoder still reads, is the one exception: its token is the user value's `toString()`, so it is
   coerced on the converted type with `DSL.val(token, field.getDataType()).getValue()`, the one
   place the decoder deliberately reads through the converted type, reproducing what those
-  releases read.
+  releases read. Its tokens stay Java's for every column: a token those releases could not page
+  from stays the client's error rather than becoming the database's.
+- *Decode a seek value the database writes*: `cast(? as <the column's type>)` over the element's
+  text, so the database reads back the value it wrote. A JSON number is read as its text; a JSON
+  boolean, which no such element is, is refused.
 - *Where the encoded value comes from*: the order column's value on the edge's own record, which
   need not be the expression the seek compared. On a multi-table connection the seek compares the
   `pages` union's column, while the edge is the participant's stage-2 record, re-projecting its own
-  key and slot columns under the union's aliases. The classifier's agreement rules, which type each
+  key and slot columns under the union's aliases, and casting the text of each column the database
+  writes from the participant's own column (`cursorTexts(extraFields, sources)`, the sources looked
+  up by the order columns' names in the one map that drives the re-projection). The classifier's
+  agreement rules, which type each
   union column by its first participant's column, are what make the two one value of one type, and
   no stronger invariant is held (Filip, 2026-11-16). A cursor is still computed from the element and
   the ordering, never from the element's place in the page.

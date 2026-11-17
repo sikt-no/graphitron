@@ -1,0 +1,71 @@
+# Connections ordered on columns whose value Java does not carry exactly, whose cursor element the
+# database writes and reads back: a tstzrange key with infinity bounds, at the root and batched
+# under its subjects, in both directions; a union of two bytea-keyed tables, at the root and batched
+# under the subjects; and an integer[], a time(6), a macaddr and a daterange as sort columns.
+
+type CursorSubject @table(name: "cursor_subject") {
+    subjectId: Int! @field(name: "subject_id")
+    periods(first: Int, last: Int, after: String, before: String): [CursorPeriod!]!
+        @asConnection @splitQuery @reference(path: [{key: "cursor_period_subject_id_fkey"}])
+        @defaultOrder(primaryKey: true)
+    periodsDesc(first: Int, last: Int, after: String, before: String): [CursorPeriod!]!
+        @asConnection @splitQuery @reference(path: [{key: "cursor_period_subject_id_fkey"}])
+        @defaultOrder(primaryKey: true, direction: DESC)
+    blobs(first: Int, last: Int, after: String, before: String): [CursorBlob!]! @asConnection
+}
+
+type CursorPeriod @table(name: "cursor_period") {
+    rowId: Int! @field(name: "row_id")
+}
+
+union CursorBlob = CursorBlobA | CursorBlobB
+
+type CursorBlobA @table(name: "cursor_blob_a") {
+    rowId: Int! @field(name: "row_id")
+}
+
+type CursorBlobB @table(name: "cursor_blob_b") {
+    rowId: Int! @field(name: "row_id")
+}
+
+type CursorSortValue @table(name: "cursor_sort_value") {
+    rowId: Int! @field(name: "row_id")
+    numbers: [Int!]!
+}
+
+enum CursorSortValueSort {
+    NUMBERS @order(fields: [{name: "numbers"}])
+    AT_TIME @order(fields: [{name: "at_time"}])
+}
+
+input CursorSortValueOrder {
+    field:     CursorSortValueSort!
+    direction: SortDirection
+}
+
+type CursorSortText @table(name: "cursor_sort_text") {
+    rowId: Int! @field(name: "row_id")
+}
+
+enum CursorSortTextSort {
+    MAC  @order(fields: [{name: "mac"}])
+    SPAN @order(fields: [{name: "span"}])
+}
+
+input CursorSortTextOrder {
+    field:     CursorSortTextSort!
+    direction: SortDirection
+}
+
+type Query {
+    subjects: [CursorSubject!]! @defaultOrder(primaryKey: true)
+    periods(first: Int, last: Int, after: String, before: String): [CursorPeriod!]!
+        @asConnection @defaultOrder(primaryKey: true)
+    periodsDesc(first: Int, last: Int, after: String, before: String): [CursorPeriod!]!
+        @asConnection @defaultOrder(primaryKey: true, direction: DESC)
+    blobs(first: Int, last: Int, after: String, before: String): [CursorBlob!]! @asConnection
+    sortValues(order: CursorSortValueOrder @orderBy,
+        first: Int, last: Int, after: String, before: String): [CursorSortValue!]! @asConnection
+    sortTexts(order: CursorSortTextOrder @orderBy,
+        first: Int, last: Int, after: String, before: String): [CursorSortText!]! @asConnection
+}

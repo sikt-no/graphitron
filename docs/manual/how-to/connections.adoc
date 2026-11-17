@@ -63,7 +63,10 @@ A cursor names one row's position in the active order: the values of the order's
 * A boolean column: `true` or `false`.
 * A date column: a date-time, `"2017-08-15T00:00:00"`, with the time of day when the column's Java type carries one.
 * A timestamp column: `"2017-08-15T13:45:10"`. A non-zero fraction of a second is written to six digits, or nine when the value needs them, `"2017-08-15T13:45:10.120000"`. With a time zone, the fraction is always written and the offset follows it, `Z` for UTC: `"2017-08-15T13:45:10.000000+01:00"`.
-* Any other column: a JSON string of its value.
+* A character, uuid or enum column: a JSON string of its value, an enum as its database literal.
+* Any other column: a JSON string holding the database's own text for the value, what `cast(column as varchar)` returns. The database reads it back when the next page is fetched, so the cursor names exactly the value the row holds: a range ending in `infinity` stays distinct from one with no upper bound, and an array, a `bytea` or a network address pages like any other column.
+
+Graphitron checks a cursor when it decodes it, and answers a malformed one with `cursor is not valid`. The exception is the text of a column in the last group, which only the database can read: a cursor edited so that this text is no value of the column's type fails when the page is fetched, as an unmatched exception with a correlation id.
 
 Clients should still treat a cursor as opaque. The format is stated here because it is a compatibility promise, not an interface to build on.
 

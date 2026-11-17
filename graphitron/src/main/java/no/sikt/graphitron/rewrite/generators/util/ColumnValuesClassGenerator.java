@@ -26,11 +26,10 @@ import java.util.Objects;
  * is one emitted shape): the user value {@code type.convert(input)}, or the input parsed as the
  * parse class {@code exact} is handed for a converter's user type, the database value
  * {@code converter.to(user)}, and the canonical value {@code converter.from(database)};
- * {@code fromDatabase} starts the trip at the database value, which on a column with no SQL type
- * is the input itself. The trip
+ * {@code fromDatabase} starts the trip at the database value. The trip
  * fails when a step gives {@code null} or throws {@code IllegalArgumentException} or
  * {@code DataTypeException}; any other exception is a fault in the consumer's converter and
- * propagates, on a column with no SQL type as on any other. Following the value through the converter is what catches a converter-backed column,
+ * propagates. Following the value through the converter is what catches a converter-backed column,
  * where {@code convert} alone passes a user-type input through untouched and the value would only
  * fail at bind time.
  *
@@ -66,13 +65,9 @@ import java.util.Objects;
  *       {@code java.sql.Date}, the one date class that can hold a time of day, reads the input as a
  *       date-time and coerces that to the column, so the time {@code toText} wrote survives; the
  *       plain date parse would bind midnight. Input that does not read as a date-time (one carrying
- *       an offset) falls back to the plain parse, so nothing read before is refused. A column with
- *       no SQL type ({@code type.getSQLDataType()} is {@code null}, as for a database type jOOQ
- *       has no built-in type for, reached through a forced converter or binding) has no database
- *       type to parse as: the input is the database value's text, the converter is the only thing
- *       that reads it, and so the input is handed to {@code converter.from} as the database value,
- *       once. An input that is no instance of the converter's database class is no value of the
- *       column.</li>
+ *       an offset) falls back to the plain parse, so nothing read before is refused. It is asked
+ *       only of a column {@code writtenByDatabase} answers {@code false} for, which has a SQL
+ *       type.</li>
  * </ul>
  *
  * <p>Each first asks {@code inRange(type, value)}, which bounds the work: on a column with a number
@@ -94,8 +89,20 @@ import java.util.Objects;
  * with no fraction, a timestamp with its fraction only when non-zero, a timestamp with time zone
  * with its fraction always and then its offset ({@code Z} at UTC), every fraction to six digits or
  * nine. Anything else, and any value the coercion refuses (a floating-point NaN or infinity, which
- * JSON cannot hold), is its {@code toString()} as a JSON string. So is every value of a column
- * with no SQL type, which is the text {@code fromDatabase} hands back to the column's converter.
+ * JSON cannot hold), is its {@code toString()} as a JSON string: the text of a character, uuid or
+ * enum column, which is the database's own.
+ *
+ * <p>{@code writtenByDatabase(type)} decides which party writes and reads a column's cursor
+ * element, and it is the one place that is decided. Java does, through {@code toText} and
+ * {@code fromDatabase}, for a column whose Java reading is exact: the forms Graphitron 9 issued
+ * (numeric, boolean, date, timestamp, timestamp with time zone) and the types whose Java value and
+ * text are the database's (character, uuid, enum). The database does for every other column, a
+ * column with no SQL type among them: the page selects {@code cast(column as varchar)} and the
+ * seek binds {@code cast(? as <the column's type>)}, so nothing Java cannot say (an
+ * {@code infinity} bound, a fraction of a second, an array, a type with no Java class) is lost.
+ * The default is the database, so a type nobody listed is carried exactly. It reads the column's
+ * {@code DataType} at runtime rather than a fact fixed at generation, so a {@code method:} sort
+ * key, an expression the generator never classified, is answered like a column.
  */
 public class ColumnValuesClassGenerator {
 
@@ -197,21 +204,11 @@ public class ColumnValuesClassGenerator {
             .addJavadoc("The value {@code value}, read as the column's database value, names in a column of\n"
                 + "{@code type}, or {@code null} when it names none: parsed as the database type, taken through\n"
                 + "the converter, and fitting the column's precision. A {@code java.sql.Date} column reads\n"
-                + "{@code value} as a date-time, so the time of day {@code toText} wrote survives. A column\n"
-                + "with no SQL type has no database type to parse as, so {@code value} is itself the database\n"
-                + "value the converter reads, when it is an instance of the converter's database class.\n")
+                + "{@code value} as a date-time, so the time of day {@code toText} wrote survives. Asked only\n"
+                + "of a column {@code writtenByDatabase} answers {@code false} for.\n")
             .addStatement("if (value == null || !inRange(type, value)) return null")
             .beginControlFlow("try")
-            .addStatement("$T sql = type.getSQLDataType()", dataTypeWildcard)
-            .addStatement("Object database")
-            .beginControlFlow("if (sql == null)")
-            .addComment("No database type to parse as: the element is the database value's text, which only the")
-            .addComment("converter reads. An element its database class cannot hold is no value of the column.")
-            .addStatement("if (!type.getConverter().fromType().isInstance(value)) return null")
-            .addStatement("database = value")
-            .nextControlFlow("else")
-            .addStatement("database = databaseValue(sql, value)")
-            .endControlFlow()
+            .addStatement("Object database = databaseValue(type.getSQLDataType(), value)")
             .addStatement("if (database == null) return null")
             .addStatement("$T canonical = fromDatabaseValue(type.getConverter(), database)", t)
             .addStatement("if (canonical == null) return null")
@@ -254,18 +251,17 @@ public class ColumnValuesClassGenerator {
         // Branches on the SQL type, not the value's class, and coerces through jOOQ inside each
         // branch, so a value of any class the column admits lands on one form. Timestamp with time
         // zone is tested before timestamp; an INSTANT column is placed at UTC itself, since jOOQ's
-        // Instant-to-OffsetDateTime coercion uses the JVM's zone. A column with no SQL type has no
-        // form to pick: its database value's text is written, the half fromDatabase reads back by
-        // handing that text to the converter.
+        // Instant-to-OffsetDateTime coercion uses the JVM's zone. Asked only of a column
+        // writtenByDatabase answers false for, which has a SQL type.
         var toText = MethodSpec.methodBuilder("toText")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(TEXT)
             .addParameter(dataTypeWildcard, "type")
             .addParameter(Object.class, "value")
-            .addJavadoc("The cursor text of {@code value}, a non-null database value of a column of {@code type},\n"
-                + "and whether it is a JSON literal written bare rather than a JSON string.\n")
+            .addJavadoc("The cursor text of {@code value}, a non-null database value of a column of {@code type}\n"
+                + "that {@code writtenByDatabase} gives to Java, and whether it is a JSON literal written bare\n"
+                + "rather than a JSON string.\n")
             .addStatement("$T sql = type.getSQLDataType()", dataTypeWildcard)
-            .addStatement("if (sql == null) return new $T(value.toString(), false)", TEXT)
             .beginControlFlow("if (sql.isBoolean())")
             .addStatement("Boolean b = coerced(value, $T.BOOLEAN)", SQL_DATA_TYPE)
             .addStatement("if (b != null) return new $T(b.toString(), true)", TEXT)
@@ -293,6 +289,21 @@ public class ColumnValuesClassGenerator {
             .addStatement("if (t != null) return new $T($L.format(t), false)", TEXT, SECONDS)
             .endControlFlow()
             .addStatement("return new $T(value.toString(), false)", TEXT)
+            .build();
+
+        // isDate, isTimestamp and isTimestampWithTimeZone rather than isDateTime, which answers for
+        // time as well, a type whose fraction of a second jOOQ's reading can drop.
+        var writtenByDatabase = MethodSpec.methodBuilder("writtenByDatabase")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(dataTypeWildcard, "type")
+            .addJavadoc("Whether a cursor element for a column of {@code type} is written and read by the database:\n"
+                + "{@code false} when the column's SQL type is numeric, boolean, character, date, timestamp,\n"
+                + "timestamp with time zone, uuid or enum, whose Java reading is exact; {@code true} for every\n"
+                + "other column, one with no SQL type among them.\n")
+            .addStatement("$T sql = type.getSQLDataType()", dataTypeWildcard)
+            .addStatement("return sql == null || !(sql.isNumeric() || sql.isBoolean() || sql.isString() || sql.isDate()\n"
+                + "|| sql.isTimestamp() || sql.isTimestampWithTimeZone() || sql.isUUID() || sql.isEnum())")
             .build();
 
         // jOOQ's own coercion, the one the generated code binds with; null where it refuses the value.
@@ -533,9 +544,9 @@ public class ColumnValuesClassGenerator {
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addAnnotation(suppressRemoval)
-            .addJavadoc("Whether a decoded value is a value of its column, and which one, and the cursor text a\n"
-                + "database value is written as. Static, non-extendable; see {@code ColumnValuesClassGenerator}\n"
-                + "for the contract.\n")
+            .addJavadoc("Whether a decoded value is a value of its column, and which one, which party writes a\n"
+                + "column's cursor element, and the cursor text Java writes a database value as. Static,\n"
+                + "non-extendable; see {@code ColumnValuesClassGenerator} for the contract.\n")
             .addField(FieldSpec.builder(ParameterizedTypeName.get(ClassName.get(java.util.Set.class), classWildcard),
                     "TEXT_FORM_CLASSES", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("textFormClasses()").build())
@@ -552,6 +563,7 @@ public class ColumnValuesClassGenerator {
                 .initializer("$T.ofPattern($S)", DATE_TIME_FORMATTER, "uuuu-MM-dd'T'HH:mm:ss")
                 .build())
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .addMethod(writtenByDatabase)
             .addMethod(inRange)
             .addMethod(exact)
             .addMethod(coerce)

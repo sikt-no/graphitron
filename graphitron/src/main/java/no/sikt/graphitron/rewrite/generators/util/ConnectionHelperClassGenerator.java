@@ -28,20 +28,31 @@ import java.util.OptionalInt;
  * handing out a {@value #SLOT_CLASS_NAME} per parent) and {@value #FACET_SPEC_CLASS_NAME} (one
  * facet arm). It resolves no field: the store-rendered {@code Connections} classes do.
  *
- * <p>Cursor encoding, the bytes Graphitron 9 issued on Oracle: a JSON array with one element per
- * order column and no whitespace, SQL {@code NULL} as {@code null} and every other value as
- * {@code ColumnValues.toText} of the column's database value (the record's value passed back
- * through the column's converter, an enum as its literal), which writes it the way Oracle's
- * {@code JSON_ARRAY} renders the column's SQL type: a number or boolean bare, a temporal value as
- * an ISO date-time, anything else as a JSON string. Encoded as URL-safe Base64 without padding.
- * Decoding reads any JSON scalar, so a cursor that wrote every value as a string still reads, and
- * binds each element through
- * {@code ColumnValues.fromDatabase(column.getDataType(), element)}, which parses it as the column's
- * database type and runs the converter, or, for a column with no SQL type, hands the element to
- * the converter as the database value. Returns {@code Field<?>[]} so jOOQ's
- * {@code .seek(Field<?>...)} receives correctly-typed bind values. When no cursor is present
- * (absent, empty, or blank), {@code DSL.noField(field)} is returned per column, making
- * {@code .seek()} a no-op.
+ * <p>Cursor encoding: a JSON array with one element per order column and no whitespace, SQL
+ * {@code NULL} as {@code null}, encoded as URL-safe Base64 without padding. Which party writes an
+ * element, and reads it back, is {@code ColumnValues.writtenByDatabase} of the column's
+ * {@code DataType}, asked nowhere else:
+ *
+ * <ul>
+ *   <li>Java, for a column whose Java reading is exact, in the bytes Graphitron 9 issued on Oracle:
+ *       {@code ColumnValues.toText} of the column's database value (the record's value passed back
+ *       through the column's converter, an enum as its literal), which writes it the way Oracle's
+ *       {@code JSON_ARRAY} renders the column's SQL type: a number or boolean bare, a temporal
+ *       value as an ISO date-time, a character, uuid or enum value as a JSON string. Decoding reads
+ *       any JSON scalar, so a cursor that wrote every value as a string still reads, and binds the
+ *       element through {@code ColumnValues.fromDatabase(column.getDataType(), element)}, which
+ *       parses it as the column's database type and runs the converter.</li>
+ *   <li>The database, for every other column: the page selects {@code cast(column as varchar)}
+ *       under a positional alias beside the row ({@code cursorTexts}, which {@code pageRequest}
+ *       adds to the select list in place of the column), the element is that text as a JSON
+ *       string, and decoding binds it as {@code cast(? as <the column's type>)}, so the database
+ *       reads back exactly the value it wrote. An element that is no value of the type is refused
+ *       by the database when the page runs, not here.</li>
+ * </ul>
+ *
+ * <p>Returns {@code Field<?>[]} so jOOQ's {@code .seek(Field<?>...)} receives correctly-typed
+ * fields. When no cursor is present (absent, empty, or blank), {@code DSL.noField(field)} is
+ * returned per column, making {@code .seek()} a no-op.
  *
  * <p>Decoding also reads a second format, the one the Graphitron 10 release candidates wrote,
  * so a cursor a client stored under one keeps its place after the upgrade: each order column's
@@ -54,7 +65,8 @@ import java.util.OptionalInt;
  * JSON form.
  *
  * <p>Every malformed-input failure of decode (bad Base64, a malformed JSON array, wrong element
- * arity, an element that is no value of its column) is rethrown as a {@code GraphitronClientException} carrying
+ * arity, a Java-read element that is no value of its column, a JSON boolean for a database-read
+ * one) is rethrown as a {@code GraphitronClientException} carrying
  * {@code cursor is not valid (was: "<echo>")}, echo capped at 100 characters; any other
  * unchecked throw from decode is a server fault and propagates. The {@code decodeCursor}
  * emission below carries the full blame contract.
@@ -95,6 +107,10 @@ public class ConnectionHelperClassGenerator {
     private static final ClassName BASE64           = ClassName.get("java.util", "Base64");
     private static final ClassName ENUM_TYPE        = ClassName.get("org.jooq", "EnumType");
     private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
+    private static final ClassName SQL_DATA_TYPE    = ClassName.get("org.jooq.impl", "SQLDataType");
+
+    /** The alias prefix of a database-written cursor text; the order column's position follows it. */
+    public static final String CURSOR_TEXT_PREFIX = "__cursor_";
 
     /** The name of the constant {@code pageRequest} lowers an oversized page size to. */
     public static final String MAX_PAGE_SIZE = "MAX_PAGE_SIZE";
@@ -225,13 +241,16 @@ public class ConnectionHelperClassGenerator {
             .addStatement("$T effectiveOrderBy = backward ? reverseOrderBy(orderBy) : orderBy", listOfSortField)
             // Matching on name (not Field.equals) avoids identity mismatches when the same
             // column arrives through different jOOQ Field instances (e.g. $project vs. the
-            // ordering path).
+            // ordering path). A database-written order column is selected as its text alone, so a
+            // column jOOQ cannot read pages as long as the client does not select it.
             .addStatement("$T<$T> selectFields = new $T<>(selection)", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
             .addStatement("$T<String> selectedNames = new $T<>()",
                 ClassName.get("java.util", "HashSet"), ClassName.get("java.util", "HashSet"))
             .addCode("for ($T f : selection) selectedNames.add(f.getName());\n", fieldWildcard)
-            .addCode("for ($T extra : extraFields) {\n", fieldWildcard)
-            .addCode("    if (!selectedNames.contains(extra.getName())) selectFields.add(extra);\n")
+            .addCode("for (int i = 0; i < extraFields.size(); i++) {\n")
+            .addCode("    $T text = cursorText(extraFields, extraFields, i);\n", fieldWildcard)
+            .addCode("    if (text != null) selectFields.add(text);\n")
+            .addCode("    else if (!selectedNames.contains(extraFields.get(i).getName())) selectFields.add(extraFields.get(i));\n")
             .addCode("}\n")
             .addStatement("return new $T(pageSize + 1, pageSize, backward, after, before,\n"
                 + "            effectiveOrderBy, seekFields, selectFields, extraFields)",
@@ -239,8 +258,11 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // --- encodeCursor(Record, List<Field<?>>) ---
-        // Column-driven: one JSON array element per order column, SQL NULL as null and every other
-        // value as ColumnValues.toText of the column's database value, which the column's SQL
+        // Column-driven: one JSON array element per order column, SQL NULL as null. A column the
+        // database writes contributes the text the page selected under its positional alias, as a
+        // JSON string; a record without that alias is an emitter that did not select the page's
+        // cursorTexts, and fails loudly rather than falling back to Java's reading. Every other
+        // column contributes ColumnValues.toText of its database value, which the column's SQL
         // DataType alone decides: Oracle's JSON_ARRAY rendering, the bytes Graphitron 9 issued
         // there. The same DataType decides how decodeCursor reads it back, so no type tag rides
         // beside it. URL-safe Base64 without padding.
@@ -254,6 +276,17 @@ public class ConnectionHelperClassGenerator {
             .addCode("for (int i = 0; i < orderByColumns.size(); i++) {\n")
             .addCode("    if (i > 0) json.append(',');\n")
             .addCode("    $T column = orderByColumns.get(i);\n", fieldWildcard)
+            .addCode("    if ($T.writtenByDatabase(column.getDataType())) {\n", columnValuesClass)
+            .addCode("        $T projected = record.field(cursorAlias(i));\n", fieldWildcard)
+            .addCode("        if (projected == null)\n")
+            .addCode("            throw new $T($S + i + $S + column.getName() + $S);\n", IllegalStateException.class,
+                "Graphitron generator bug: the page selected no cursor text for order column ", " ('",
+                "'); the page's select list must hold ConnectionHelper.cursorTexts")
+            .addCode("        String text = record.get(projected, String.class);\n")
+            .addCode("        if (text == null) json.append(\"null\");\n")
+            .addCode("        else writeJsonString(json, text);\n")
+            .addCode("        continue;\n")
+            .addCode("    }\n")
             .addCode("    Object value = databaseValue(record, column);\n")
             .addCode("    if (value == null) {\n")
             .addCode("        json.append(\"null\");\n")
@@ -268,13 +301,64 @@ public class ConnectionHelperClassGenerator {
                 + "json.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8))", BASE64)
             .build();
 
+        // --- cursorTexts(List<Field<?>>, List<Field<?>>) → List<Field<?>> ---
+        // The projections a page selects for its cursor: the database's text of each order column
+        // the database writes, under the position's alias. Public for the emitter whose rows are
+        // not the page's own select (a multi-table connection's stage 2), which casts the
+        // participant's column standing at each position.
+        var listOfFieldExtends = ParameterizedTypeName.get(LIST_CLASS,
+            WildcardTypeName.subtypeOf(fieldWildcard));
+        var cursorTexts = MethodSpec.methodBuilder("cursorTexts")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(listOfField)
+            .addParameter(listOfFieldExtends, "orderColumns")
+            .addParameter(listOfFieldExtends, "sources")
+            .addJavadoc("The projections a page selects so {@code encodeCursor} can write the cursor: for each\n"
+                + "position whose order column {@code ColumnValues.writtenByDatabase} gives to the database,\n"
+                + "{@code cast(sources[i] as varchar)} under that position's alias, and nothing for a\n"
+                + "position Java writes. {@code orderColumns} are the columns the seek binds against,\n"
+                + "{@code sources} the expressions at the same positions the text is cast from.\n")
+            .addStatement("$T<$T> texts = new $T<>()", ARRAY_LIST, fieldWildcard, ARRAY_LIST)
+            .addCode("for (int i = 0; i < orderColumns.size(); i++) {\n")
+            .addCode("    $T text = cursorText(orderColumns, sources, i);\n", fieldWildcard)
+            .addCode("    if (text != null) texts.add(text);\n")
+            .addCode("}\n")
+            .addStatement("return texts")
+            .build();
+
+        // --- cursorText(List<Field<?>>, List<Field<?>>, int) → Field<?> ---
+        // The one place the select side asks which party writes a position's element: the text
+        // projection when the database does, null when Java does and the column itself is read.
+        var cursorText = MethodSpec.methodBuilder("cursorText")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(fieldWildcard)
+            .addParameter(listOfFieldExtends, "orderColumns")
+            .addParameter(listOfFieldExtends, "sources")
+            .addParameter(int.class, "position")
+            .addCode("if (!$T.writtenByDatabase(orderColumns.get(position).getDataType())) return null;\n",
+                columnValuesClass)
+            .addStatement("return $T.cast(sources.get(position), $T.VARCHAR).as(cursorAlias(position))",
+                DSL, SQL_DATA_TYPE)
+            .build();
+
+        // --- cursorAlias(int) → String ---
+        // Positional, since two order columns can share a name (a path: entry sorts on a related
+        // table's column). Both the projection and encodeCursor read it from here.
+        var cursorAlias = MethodSpec.methodBuilder("cursorAlias")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(int.class, "position")
+            .addStatement("return $S + position", CURSOR_TEXT_PREFIX)
+            .build();
+
         // --- databaseValue(Record, Field<T>) ---
         // The record's value passed back through the column's converter (jOOQ's identity converter
         // when it has none), so a converter-backed column contributes its database type's text,
         // which is what Graphitron 9's SQL-side jsonArray carried. An enum's database text is its
         // literal ('NC-17'), not the Java constant's name toString() gives, and it is the literal
-        // the column's DataType parses back. Generic over the column's type so the wildcard capture
-        // type-checks in Java 17.
+        // the column's DataType parses back. Read only for a column Java writes; a column the
+        // database writes is never read into Java for the cursor's sake. Generic over the column's
+        // type so the wildcard capture type-checks in Java 17.
         var t = com.palantir.javapoet.TypeVariableName.get("T");
         var databaseValue = MethodSpec.methodBuilder("databaseValue")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -455,7 +539,10 @@ public class ConnectionHelperClassGenerator {
         // other unchecked throw (e.g. an NPE from a buggy custom Converter) is a genuine server
         // fault and keeps propagating. Arity is strict in both directions in both formats: a cursor
         // carries exactly one element per order column, so any other count is a forged, corrupted,
-        // or stale-across-schema-change cursor.
+        // or stale-across-schema-change cursor. The one element not checked here is the text of a
+        // column the database writes, which only the database can read: one that is no value of
+        // the column's type fails when the page runs, as a server error (a ruled narrowing,
+        // recorded under "Cursor encode/decode" in the emitter conventions).
         var decodeCursor = MethodSpec.methodBuilder("decodeCursor")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
@@ -493,10 +580,11 @@ public class ConnectionHelperClassGenerator {
 
         // --- readJsonCursor(String text, List<Field<?>>) → Field<?>[] ---
         // The decoded text of a JSON cursor, bound one element per order column: null as a typed
-        // NULL, anything else through ColumnValues.fromDatabase, which parses it as the column's
-        // database type and runs the converter, the inverse of encodeCursor's databaseValue. A
-        // column with no SQL type has no database type to parse as, so its element, the database
-        // value's text, goes to the converter as it is.
+        // NULL. An element the database wrote is its text, bound as cast(? as <the column's type>)
+        // so the database reads it; readJsonArray hands a JSON number over as its text too, and a
+        // JSON boolean, which no such element is, is refused. Any other element goes through
+        // ColumnValues.fromDatabase, which parses it as the column's database type and runs the
+        // converter, the inverse of encodeCursor's databaseValue.
         var readJsonCursor = MethodSpec.methodBuilder("readJsonCursor")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(ArrayTypeName.of(fieldWildcard))
@@ -510,6 +598,11 @@ public class ConnectionHelperClassGenerator {
             .addCode("    $T col = orderByColumns.get(i);\n", fieldWildcard)
             .addCode("    if (values.get(i) == null) {\n")
             .addCode("        seekFields[i] = $T.val((Object) null, col.getDataType());\n", DSL)
+            .addCode("    } else if ($T.writtenByDatabase(col.getDataType())) {\n", columnValuesClass)
+            .addCode("        if (!(values.get(i) instanceof String element))\n")
+            .addCode("            throw new IllegalArgumentException(\"cursor token not coercible\");\n")
+            .addCode("        seekFields[i] = $T.cast($T.val(element, $T.VARCHAR), col.getDataType());\n",
+                DSL, DSL, SQL_DATA_TYPE)
             .addCode("    } else {\n")
             // fromDatabase answers null for an element that is no value of the column (text its
             // database type does not parse or its converter refuses, a number wider than the
@@ -779,6 +872,9 @@ public class ConnectionHelperClassGenerator {
             .addType(scopedClass(totalCountRef, tableWildcard))
             .addType(batchCountsClass(outputPackage, totalCountRef, tableWildcard))
             .addMethod(encodeCursor)
+            .addMethod(cursorTexts)
+            .addMethod(cursorText)
+            .addMethod(cursorAlias)
             .addMethod(databaseValue)
             .addMethod(writeJsonString)
             .addMethod(decodeCursor)

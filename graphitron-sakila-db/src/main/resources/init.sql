@@ -637,6 +637,74 @@ INSERT INTO validity_period (period_id, label, valid_to) VALUES
 CREATE INDEX validity_period_valid_to_label_idx ON validity_period (valid_to, label);
 CREATE VIEW validity_period_view AS SELECT period_id, label, valid_to FROM validity_period;
 
+-- Order columns whose value Java does not carry exactly, for the connection cursor: the database
+-- writes such a column's cursor element and reads it back. Neighbouring rows differ only in what a
+-- Java reading loses, so a cursor read back through Java repeats or skips a row. jOOQ's PostgreSQL
+-- extensions are on the codegen classpath, so each column is typed as a consumer with them sees it.
+--
+-- cursor_period is keyed on a tstzrange, read as OffsetDateTimeRange, which has no way to say
+-- infinity: a range ending in infinity reads as one with no upper bound, which Postgres orders after
+-- it, and a lower bound of -infinity as none, which it orders before it. 'empty' sorts first.
+CREATE TABLE cursor_subject (
+    subject_id integer     PRIMARY KEY,
+    name       varchar(50) NOT NULL
+);
+INSERT INTO cursor_subject (subject_id, name) VALUES (1, 'One'), (2, 'Two'), (3, 'Three');
+CREATE TABLE cursor_period (
+    row_id       integer   NOT NULL UNIQUE,
+    subject_id   integer   NOT NULL REFERENCES cursor_subject (subject_id),
+    valid_period tstzrange NOT NULL,
+    PRIMARY KEY (subject_id, valid_period)
+);
+INSERT INTO cursor_period (row_id, subject_id, valid_period) VALUES
+    (1, 1, '[2021-01-01 00:00:00+01,infinity)'),
+    (2, 1, '[2021-01-01 00:00:00+01,)'),
+    (3, 1, '[-infinity,2021-01-01 00:00:00+01)'),
+    (4, 1, '(,2021-01-01 00:00:00+01)'),
+    (5, 1, '[2020-01-01 00:00:00+01,2021-01-01 00:00:00+01)'),
+    (6, 1, 'empty'),
+    (7, 2, '[2022-06-01 00:00:00+00,infinity)'),
+    (8, 2, '[2022-06-01 00:00:00+00,)'),
+    (9, 2, '[2022-01-01 00:00:00+00,2022-06-01 00:00:00+00)');
+-- Two tables keyed on bytea, the participants of one union. A Java reading writes the array's
+-- identity text, [B@..., whose bytes 5B 42 40 fall among the keys, so a page read back through it
+-- skips or repeats rows; the keys of the two tables also tie, which __typename breaks.
+CREATE TABLE cursor_blob_a (
+    blob_key bytea   PRIMARY KEY,
+    row_id   integer NOT NULL UNIQUE,
+    owner_id integer NOT NULL REFERENCES cursor_subject (subject_id)
+);
+INSERT INTO cursor_blob_a (blob_key, row_id, owner_id) VALUES
+    ('\x01', 101, 1), ('\x5b', 102, 1), ('\x5b42', 103, 1), ('\x5c', 104, 1), ('\xff', 105, 2);
+CREATE TABLE cursor_blob_b (
+    blob_key bytea   PRIMARY KEY,
+    row_id   integer NOT NULL UNIQUE,
+    owner_id integer NOT NULL REFERENCES cursor_subject (subject_id)
+);
+INSERT INTO cursor_blob_b (blob_key, row_id, owner_id) VALUES
+    ('\x5b', 201, 1), ('\x5b4240', 202, 1), ('\x00', 203, 2), ('\x5b41', 204, 2);
+-- An array, which a Java reading writes as its identity text and refuses on the way back, and a
+-- time with fractions of a second, which jOOQ reads without them.
+CREATE TABLE cursor_sort_value (
+    row_id  integer   PRIMARY KEY,
+    numbers integer[] NOT NULL,
+    at_time time(6)   NOT NULL
+);
+INSERT INTO cursor_sort_value (row_id, numbers, at_time) VALUES
+    (1, '{1,2}', '12:00:00'), (2, '{1,2,3}', '12:00:00.000001'), (3, '{1,3}', '12:00:00.5'),
+    (4, '{2}', '12:00:01'), (5, '{}', '11:59:59.999999');
+-- A macaddr, which the extensions do not bind, so jOOQ types it Object and a Java seek binds a
+-- string Postgres cannot compare with it; and a daterange with an infinity bound, which jOOQ fails
+-- to read at all, so it pages only while nothing reads it into Java.
+CREATE TABLE cursor_sort_text (
+    row_id integer   PRIMARY KEY,
+    mac    macaddr   NOT NULL,
+    span   daterange NOT NULL
+);
+INSERT INTO cursor_sort_text (row_id, mac, span) VALUES
+    (1, '08:00:2b:01:02:03', '[2020-01-01,infinity)'), (2, '08:00:2b:01:02:04', '[2020-01-01,)'),
+    (3, '08:00:2b:01:02:02', '[2019-01-01,2020-01-01)'), (4, '00:00:00:00:00:01', '[-infinity,2019-01-01)');
+
 -- R36 item 2 fixture: composite-PK parent for child interface @asConnection. Sakila has no
 -- junction-as-parent shape (film_actor and film_category are pure junctions with no children
 -- FK-referencing them), so we synthesise one. project (org_id, project_id) is the composite-PK

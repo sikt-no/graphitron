@@ -1181,7 +1181,7 @@ public final class MultiTablePolymorphicEmitter {
         for (var participant : participants) {
             String typeName = participant.typeName();
             builder.beginControlFlow("if (byType.containsKey($S))", typeName);
-            builder.addStatement("$L(byType.get($S), env, dsl, result)",
+            builder.addStatement("$L(byType.get($S), env, dsl, result, page.extraFields())",
                 perTypenameMethodName(fieldName, typeName), typeName);
             builder.endControlFlow();
         }
@@ -1988,7 +1988,7 @@ public final class MultiTablePolymorphicEmitter {
         for (var participant : participants) {
             String typeName = participant.typeName();
             b.beginControlFlow("if (byType.containsKey($S))", typeName);
-            b.addStatement("$L(byType.get($S), env, dsl, result)",
+            b.addStatement("$L(byType.get($S), env, dsl, result, page.extraFields())",
                 perTypenameMethodName(fieldName, typeName), typeName);
             b.endControlFlow();
         }
@@ -2202,21 +2202,41 @@ public final class MultiTablePolymorphicEmitter {
                 CodeBlock.of("$L", tableLocal)));
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 
-        // Connection mode: project each key column under its stage-1 alias on each typed stage-2
-        // Record, so {@code ConnectionHelper.encodeCursor} reads the cursor values by the names the
-        // seek uses when emitting per-edge cursors and pageInfo.start/endCursor. The VALUES input is
-        // aliased by the key columns' SQL names, so nothing collides.
+        // Connection mode: the participant's own column standing at each name an order column of
+        // the page carries, held in one map. Each key column (and each of the lowered ordering's
+        // slots, empty on every path but the root connection) is projected from it under its
+        // stage-1 alias, so {@code ConnectionHelper.encodeCursor} reads the cursor values by the
+        // names the seek uses; and the database's text of every order column the database writes
+        // is cast from it, so the edge carries its own cursor text. The order columns arrive as
+        // the page's extraFields and are matched by name, since a root's ordering is chosen per
+        // request. The VALUES input is aliased by the key columns' SQL names, so nothing collides.
         if (includeKey) {
+            var mapOfField = ParameterizedTypeName.get(MAP, ClassName.get(String.class), fieldWildcard);
+            b.addStatement("$T byName = new $T<>()", mapOfField, LINKED_HASH_MAP);
             var pks = participant.table().primaryKeyColumns();
             for (int i = 0; i < pks.size(); i++) {
-                b.addStatement("fields.add($L.$L.as($S))", tableLocal, pks.get(i).javaName(), keyAlias(i));
+                b.addStatement("byName.put($S, $L.$L)", keyAlias(i), tableLocal, pks.get(i).javaName());
             }
-        }
-        // The lowered ordering's slots ride the stage-2 record too: the per-edge cursor encodes
-        // every order column, and without them record.get(slot) would read null. Empty on every
-        // path but the root connection.
-        for (var slot : slots) {
-            b.addStatement("fields.add($L.$L.as($S))", tableLocal, slotColumn(slot, participant).javaName(), slotAlias(slot));
+            for (var slot : slots) {
+                b.addStatement("byName.put($S, $L.$L)", slotAlias(slot), tableLocal, slotColumn(slot, participant).javaName());
+            }
+            b.addStatement("byName.forEach((name, column) -> fields.add(column.as(name)))");
+            b.addStatement("byName.put($S, $T.inline($S))", TYPENAME_COLUMN, DSL, participant.typeName());
+            b.addStatement("$T sources = new $T<>(extraFields.size())", arrayListOfField, ARRAY_LIST);
+            b.beginControlFlow("for ($T orderColumn : extraFields)", fieldWildcard);
+            b.addStatement("$T source = byName.get(orderColumn.getName())", fieldWildcard);
+            b.beginControlFlow("if (source == null)");
+            b.addStatement("throw new $T($S + orderColumn.getName() + $S)", IllegalStateException.class,
+                "Graphitron generator bug: order column '", "' names no column of participant '"
+                    + participant.typeName() + "'");
+            b.endControlFlow();
+            b.addStatement("sources.add(source)");
+            b.endControlFlow();
+            b.addStatement("fields.addAll($T.cursorTexts(extraFields, sources))", ClassName.get(outputPackage + ".util",
+                no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME));
+        } else if (!slots.isEmpty()) {
+            throw new IllegalStateException("Graphitron generator bug: order slots reach the stage-2 select of '"
+                + fieldName + "' outside connection mode");
         }
 
         // idx column from the input derived table — needed both for the projection and the
@@ -2231,14 +2251,16 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("result[outIdx] = r");
         b.endControlFlow();
 
-        return MethodSpec.methodBuilder(perTypenameMethodName(fieldName, participant.typeName()))
+        var method = MethodSpec.methodBuilder(perTypenameMethodName(fieldName, participant.typeName()))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addParameter(listOfBindings, "bindings")
             .addParameter(ENV, "env")
             .addParameter(DSL_CONTEXT, "dsl")
-            .addParameter(ArrayTypeName.of(ClassName.get(Object.class)), "result")
-            .addCode(b.build())
-            .build();
+            .addParameter(ArrayTypeName.of(ClassName.get(Object.class)), "result");
+        if (includeKey) {
+            method.addParameter(ParameterizedTypeName.get(LIST, fieldWildcard), "extraFields");
+        }
+        return method.addCode(b.build()).build();
     }
 
     /**

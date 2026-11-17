@@ -19,14 +19,6 @@ record Span(String lower, String upper) {
     static final DataType<Span> TYPE = DefaultDataType.getDefaultDataType("\"pg_catalog\".\"tstzrange\"")
         .asConvertedDataType(new RangeTextConverter());
 
-    /**
-     * The same column with a converter that declares {@code String} as its database class, which
-     * only a hand-built type can: codegen's is always {@code Object}.
-     */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    static final DataType<Span> NARROW_TYPE = ((DataType) DefaultDataType.getDefaultDataType("\"pg_catalog\".\"tstzrange\""))
-        .asConvertedDataType(Converter.<String, Span>ofNullable(String.class, Span.class, Span::parse, Span::text));
-
     String text() {
         return "[" + lower + "," + upper + ")";
     }

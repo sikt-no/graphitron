@@ -9,6 +9,8 @@ import org.jooq.Field;
 import org.jooq.Param;
 import org.jooq.Record;
 import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
+import org.jooq.conf.StatementType;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.types.ULong;
@@ -27,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.TimeZone;
+import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -41,11 +44,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * with no trailing fractional zeros, a boolean bare, a date as a date-time without a fraction, a
  * timestamp with its fraction only when non-zero, a timestamp with time zone with its fraction
  * always and its offset, a string with Oracle's escapes. The literals below are Oracle's output for
- * the same values. The format depends only on the column and the value, never on the dialect, so
- * detached records over typed columns pin it on every database without one in the build.
+ * the same values, and a uuid or an enum is the database's own text. The format depends only on
+ * the column and the value, never on the dialect, so detached records over typed columns pin it on
+ * every database without one in the build.
  *
  * <p>Each case also reads back through {@link ConnectionHelper#decodeCursor} to the value it was
  * written from, except NaN, which JSON cannot hold.
+ *
+ * <p>Every other column's element is written and read by the database: the text the page selected
+ * beside the row, bound back as a cast to the column's type. Its section pins where the text comes
+ * from and what the database is handed, not the text itself, which is the database's.
  *
  * <p>The last section pins the read side's second format, the cursors the Graphitron 10 release
  * candidates issued: which format a cursor string is read as, and how each token binds per column
@@ -245,6 +253,21 @@ class CursorEncodingTest {
         assertThat(json(SQLDataType.VARCHAR(2), "06")).isEqualTo("[\"06\"]");
     }
 
+    // ===== uuid and enum, whose Java text is the database's =====
+
+    @Test
+    void uuid_isAString() {
+        var value = UUID.fromString("0f8fad5b-d9cb-469f-a165-70867728950e");
+        assertThat(json(SQLDataType.UUID, value)).isEqualTo("[\"0f8fad5b-d9cb-469f-a165-70867728950e\"]");
+        assertThat(readBack(SQLDataType.UUID, value)).isEqualTo(value);
+    }
+
+    @Test
+    void enum_isItsDatabaseLiteral() {
+        assertThat(json(List.<Field<?>>of(FILM.RATING), MpaaRating.NC_17)).isEqualTo("[\"NC-17\"]");
+        assertThat(readBack(List.<Field<?>>of(FILM.RATING), MpaaRating.NC_17)).containsExactly(MpaaRating.NC_17);
+    }
+
     // ===== Null and converters =====
 
     @Test
@@ -264,33 +287,98 @@ class CursorEncodingTest {
         assertThat(readBack(type, value)).isEqualTo(value);
     }
 
-    // ===== A column with no SQL type =====
-    // A database type jOOQ has no built-in type for, read through a converter: the element is the
-    // database value's text, and reading it back hands that text to the converter.
+    // ===== A column the database writes =====
+    // Every column outside the exact readings, one with no SQL type among them: the element is the
+    // text the page selected beside the row, cast(column as varchar) under the position's alias, and
+    // reading it back binds cast(? as <the column's type>), which the database reads. Java never holds
+    // the value, so these cases need no value of the type, only its text.
 
-    private static final Span YEAR_2024 = new Span("2024-01-01T00:00Z", "2025-01-01T00:00Z");
+    private static final Field<?> PERIOD = DSL.field(DSL.name("period"), Span.TYPE);
+    private static final Field<Integer> ID = DSL.field(DSL.name("id"), SQLDataType.INTEGER);
 
-    @Test
-    void columnWithNoSqlType_writesTheDatabaseValuesText() {
-        assertThat(Span.TYPE.getSQLDataType()).as("typed the way codegen types an unknown column").isNull();
-        assertThat(json(Span.TYPE, YEAR_2024)).isEqualTo("[\"[2024-01-01T00:00Z,2025-01-01T00:00Z)\"]");
+    /** A record as the page fetched it: the given fields' values, the cursor texts among them. */
+    private static Record row(List<Field<?>> fields, Object... values) {
+        Record record = DSL.using(SQLDialect.DEFAULT).newRecord(fields.toArray(new Field<?>[0]));
+        for (int i = 0; i < values.length; i++) {
+            @SuppressWarnings("unchecked")
+            Field<Object> field = (Field<Object>) fields.get(i);
+            record.set(field, values[i]);
+        }
+        return record;
+    }
+
+    private static Field<String> textAt(int position) {
+        return DSL.field(DSL.name("__cursor_" + position), SQLDataType.VARCHAR);
+    }
+
+    private static String jsonOf(String cursor) {
+        return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
+    }
+
+    /** What the database is handed for each element: the seek fields with their values inlined. */
+    private static List<String> seekSql(String cursor, Field<?>... columns) {
+        var ctx = DSL.using(SQLDialect.POSTGRES, new Settings().withStatementType(StatementType.STATIC_STATEMENT));
+        return Stream.of(ConnectionHelper.decodeCursor(cursor, List.of(columns))).map(ctx::render).toList();
     }
 
     @Test
-    void columnWithNoSqlType_readsBackToTheValueWritten() {
-        assertThat(readBack(Span.TYPE, YEAR_2024)).isEqualTo(YEAR_2024);
-        List<Field<?>> columns = List.of(DSL.field("id", SQLDataType.INTEGER), DSL.field("period", Span.TYPE));
-        assertThat(json(columns, 7, YEAR_2024)).isEqualTo("[7,\"[2024-01-01T00:00Z,2025-01-01T00:00Z)\"]");
-        assertThat(readBack(columns, 7, YEAR_2024)).containsExactly(7, YEAR_2024);
+    void databaseWrittenColumn_writesTheTextThePageSelected() {
+        String text = "[\"2024-01-01 00:00:00+00\",infinity)";
+        assertThat(jsonOf(ConnectionHelper.encodeCursor(row(List.of(textAt(0)), text), List.of(PERIOD))))
+            .isEqualTo("[\"[\\\"2024-01-01 00:00:00+00\\\",infinity)\"]");
+        assertThat(jsonOf(ConnectionHelper.encodeCursor(row(List.of(ID, textAt(1)), 7, text), List.of(ID, PERIOD))))
+            .as("Java writes the integer, the database the range, each at its position")
+            .isEqualTo("[7,\"[\\\"2024-01-01 00:00:00+00\\\",infinity)\"]");
+        assertThat(jsonOf(ConnectionHelper.encodeCursor(row(List.of(textAt(0)), (Object) null), List.of(PERIOD))))
+            .isEqualTo("[null]");
     }
 
     @Test
-    void columnWithNoSqlType_anElementItsConverterRefuses_isTheClientError() {
-        // Refused by the JSON reading and then by the release-candidate reading it falls back to,
-        // which hands the whole text to the same converter.
-        Field<?> period = DSL.field("period", Span.TYPE);
-        assertRejected(jsonCursor("[\"garbage\"]"), period);
-        assertRejected(jsonCursor("[true]"), period);
+    void databaseWrittenColumn_aRecordWithoutItsText_isAnEmitterFault() {
+        assertThatThrownBy(() -> ConnectionHelper.encodeCursor(row(List.of(PERIOD), (Object) null), List.of(PERIOD)))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageStartingWith("Graphitron generator bug: the page selected no cursor text for order column 0");
+    }
+
+    @Test
+    void databaseWrittenColumn_readsBackAsTheDatabaseReadsItsText() {
+        String cursor = jsonCursor("[7,\"[a,b)\"]");
+        assertThat(seekSql(cursor, ID, PERIOD))
+            .containsExactly("7", "cast('[a,b)' as \"pg_catalog\".\"tstzrange\")");
+        assertThat(seekSql(jsonCursor("[5]"), PERIOD)).as("a JSON number is read as its text")
+            .containsExactly("cast('5' as \"pg_catalog\".\"tstzrange\")");
+        assertThat(seekSql(jsonCursor("[\"garbage\"]"), PERIOD))
+            .as("only the database can tell whether the text is a value of the type")
+            .containsExactly("cast('garbage' as \"pg_catalog\".\"tstzrange\")");
+        assertThat(bound(jsonCursor("[null]"), PERIOD)).containsExactly((Object) null);
+    }
+
+    @Test
+    void databaseWrittenColumn_aJsonBoolean_isTheClientError() {
+        // No text the database writes is a JSON boolean. Refused by the JSON reading, and then by the
+        // release-candidate reading it falls back to, which hands the text to the column's converter.
+        assertRejected(jsonCursor("[true]"), PERIOD);
+    }
+
+    @Test
+    void thePageSelectsADatabaseWrittenColumnAsItsTextAlone() {
+        var page = ConnectionHelper.pageRequest(1, null, null, null, 10,
+            List.of(ID.asc(), PERIOD.asc()), List.of(ID, PERIOD), List.of());
+        var ctx = DSL.using(SQLDialect.POSTGRES);
+        assertThat(page.selectFields().stream().map(f -> ctx.render(DSL.select(f))).toList())
+            .containsExactly("select \"id\"", "select cast(\"period\" as varchar) as \"__cursor_1\"");
+    }
+
+    @Test
+    void cursorTexts_castsTheSourceStandingAtEachDatabaseWrittenPosition() {
+        // A multi-table connection's stage 2 casts the participant's own column at each position,
+        // asking the predicate of the order column the seek binds against.
+        Field<?> participantPeriod = DSL.field(DSL.name("t", "valid_period"), Span.TYPE);
+        Field<?> participantId = DSL.field(DSL.name("t", "id"), SQLDataType.INTEGER);
+        var ctx = DSL.using(SQLDialect.POSTGRES);
+        assertThat(ConnectionHelper.cursorTexts(List.of(ID, PERIOD), List.of(participantId, participantPeriod))
+                .stream().map(f -> ctx.render(DSL.select(f))).toList())
+            .containsExactly("select cast(\"t\".\"valid_period\" as varchar) as \"__cursor_1\"");
     }
 
     private static String jsonCursor(String json) {

@@ -115,6 +115,13 @@ The previous cursor fix argued that no execution test was needed because the cur
 
 The Done gate's evidence is the walk over the range-keyed table in descending order: it is the issue's failure, it loops today, and it passes only when the row holding `infinity` is left behind.
 
+## Where the implementation departs from the plan
+
+- **The walk is in `graphitron`, not `graphitron-sakila-example`.** `CursorDatabaseTextExecutionTest` walks the fact scenario `cursor-database-text.graphqls` through its generated facade, every connection and case the Tests section names. `principles-architect`, consulted at take-up, pointed at `docs/architecture/how-to/testing.adoc`: generated code is tested where it is generated, and sakila-example keeps what needs the plugin path or the Java 17 compile, which the walk does not. It fails on the previous helpers in ten of its twelve cases, one in every group; the descending range walk is among them.
+- **The array is the selected case.** "One case selects it" needs a GraphQL field over an order column, and of the fixture columns only `integer[]` maps to one (`[Int!]!`), so the selected walk is on that column.
+- **`<deprecationOnUnknownTypes>false</deprecationOnUnknownTypes>`** in `graphitron-sakila-db`'s codegen. jOOQ marks a column of a type it has no binding for (`cursor_sort_text.mac`) `@Deprecated`, which the `-Werror` compile of the scenario's generated code rejects. The column stays typed `Object`, which is the third group.
+- **One map in stage 2, one select-side asker** (also from `principles-architect`): the per-participant name-to-column map drives both the `__pk<i>__`/`__ord<n>__` re-projection and the cursor sources, so the two cannot drift; and `pageRequest`'s merge and `cursorTexts` both read one private per-position `cursorText`, so the select side asks the predicate in one place.
+
 ## Not covered
 
 - **`infinity` in a plain `date`, `timestamp` or `timestamptz` column, and timestamps before the common era.** They are in the promised forms, whose bytes this item does not change. Filed as R1181 (`infinity-in-a-date-or-timestamp-order-column.md`).
