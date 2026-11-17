@@ -109,7 +109,7 @@ the `@service`:
 * *Mismatched* (`PARAMETER_MISMATCH`): the argument it takes, by name or by an `argMapping` path, is a
   list where the parameter takes one value or one value where it takes a list, or arrives as a class
   the parameter is not: an `ID` as a `String`, never a `Long`; an `Int` as an `Integer` or `int`. An
-  `Object` parameter takes any value whole. A member of an input bean is judged the same way, at its
+  `Object` parameter takes any scalar or enum value whole. A member of an input bean is judged the same way, at its
   input field, so a jOOQ record member filled from an `ID` needs `@nodeId` to decode it, with
   `typeName:` where the record's table has no one node.
   A node id decoded onto a parameter is the `@nodeId` rules' to judge.
@@ -117,6 +117,10 @@ the `@service`:
   names no constant the enum declares, its `@field(name:)` or else its own name, so `Enum.valueOf`
   would throw when a client sends it. An input bean's enum member is judged the same way, at its
   input field. Take the value as a `String` to read it by name instead.
+* *Taken as a map* (`SERVICE_INPUT_AS_MAP`): an input object it takes as a `Map`, an `Object` or a
+  list of either. A map at the service boundary is a permanent anti-pattern: take a typed bean, a
+  record or a class with a public no-arg constructor mirroring the input object, or, for open-ended
+  JSON, declare a custom scalar with `@scalarType` and take its Java type. A `@condition` takes the map.
 
 An input object a parameter takes as a table's jOOQ record (`FilmRecord`) is built column by
 column, each input field writing the column it binds on that table:

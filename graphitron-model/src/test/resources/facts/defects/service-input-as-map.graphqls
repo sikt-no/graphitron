@@ -1,0 +1,31 @@
+# A @service parameter taking an input object as the map graphql-java delivers is
+# SERVICE_INPUT_AS_MAP at the argument: a map at the service boundary is a permanent anti-pattern, the
+# service taking a typed bean, or a custom scalar for open-ended JSON. Object, and a list of maps, the
+# same. The typed bean is the near miss.
+
+input ReviewDetails {
+  filmId: Int!
+  rating: Int!
+  comment: String
+}
+
+type Payload { ok: String }
+
+type Query {
+  asMap(in: ReviewDetails!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ServiceInputAsMapFixtures", method: "byMap"})
+  asObject(in: ReviewDetails!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ServiceInputAsMapFixtures", method: "byObject"})
+  asMaps(in: [ReviewDetails!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.ServiceInputAsMapFixtures", method: "byMaps"})
+  asBean(details: ReviewDetails!): Payload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "submitWithDetails"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'SERVICE_INPUT_AS_MAP'", rows: """
+  coordinate,             code,                 detail
+  Query.asMap(in:),       SERVICE_INPUT_AS_MAP, "java.util.Map<java.lang.String, java.lang.Object>"
+  Query.asObject(in:),    SERVICE_INPUT_AS_MAP, java.lang.Object
+  Query.asMaps(in:),      SERVICE_INPUT_AS_MAP, "java.util.List<java.util.Map<java.lang.String, java.lang.Object>>"
+  """)

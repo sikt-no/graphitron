@@ -371,7 +371,9 @@ public final class BuildQuery {
             .leftJoin(la).on(la.GRAPH_NAME.eq(lo.GRAPH_NAME), la.COORDINATE.eq(lo.ELEMENT_COORDINATE))
             .leftJoin(lf).on(lf.GRAPH_NAME.eq(lo.GRAPH_NAME), lf.COORDINATE.eq(lo.ELEMENT_COORDINATE))
             .join(t).on(t.GRAPH_NAME.eq(lo.GRAPH_NAME), t.TYPE_NAME.eq(coalesce(la.NAMED_TYPE, lf.NAMED_TYPE)))
-            .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"), t.KIND.eq("INPUT_OBJECT"))
+            .where(c.GRAPH_NAME.eq(store.graphName()), c.FILL.eq("ARGUMENT"), t.KIND.eq("INPUT_OBJECT"),
+                // A parameter taking the delivered map builds nothing, as the built-class rule states.
+                coalesce(p.ELEMENT_CLASS, p.ERASED_CLASS).notIn("java.util.Map", "java.lang.Object"))
             // A condition applied to several tables makes one call per table, taking the same bean.
             .forEach(r -> out.put(new Root(r.value1(), r.value2(), r.value3()),
                 new Rooted(r.value4(), "CONDITION".equals(r.value5()))));
@@ -435,7 +437,15 @@ public final class BuildQuery {
         if (built != null && built.record()) {
             return columns(occurrence, className, children, catalog);
         }
-        var construction = built == null ? null : constructions.get(built.sourceRef() + "|" + className);
+        if (built == null) {
+            // graphitron_occurrence_built_class_rule writes a row for every input object this reader
+            // visits: a root a call's ARGUMENT fill lands, by its PARAMETER arms, which leave out only the
+            // delivered map and Object, as roots() does; a member of a built class, by its MEMBER arm,
+            // off the same binding member and write slot bind() reads.
+            throw new IllegalStateException("Graphitron generator bug (input building): " + occurrence
+                + " builds " + className + ", which graphitron_occurrence_built_class does not state");
+        }
+        var construction = constructions.get(built.sourceRef() + "|" + className);
         if (construction == null) {
             return new Result.Refused("nothing says how to make " + className);
         }

@@ -19216,6 +19216,35 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT b.constructible
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
+-- A @service parameter taking an input object as the map graphql-java delivers, or as Object, or a
+-- list of either: a map at the service boundary is a permanent anti-pattern, the service taking a
+-- typed bean, or, for open-ended JSON, a custom scalar. A @condition takes the map. At the argument or
+-- input field, the detail the parameter's type as declared.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_INPUT_AS_MAP', MIN(mp.parameter_type), 'occurrence-builds'
+  FROM graphitron_occurrence_call_parameter cp
+  JOIN graphitron_occurrence_call_method s
+    ON s.graph_name = cp.graph_name AND s.coordinate = cp.coordinate AND s.call = cp.call
+   AND s.call_kind = 'SERVICE'
+  JOIN code_method_parameter mp
+    ON mp.source_name = s.method_source_name AND mp.class_name = s.method_class_name
+   AND mp.method_name = s.method_name AND mp.descriptor = s.method_descriptor
+   AND mp.position = cp.position
+  JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE cp.fill = 'ARGUMENT'
+   -- The map or Object itself, whatever it holds, or a list of either.
+   AND (mp.erased_class IN ('java.util.Map', 'java.lang.Object')
+        OR mp.element_class IN ('java.util.Map', 'java.lang.Object'))
+   AND EXISTS (SELECT 1 FROM graphitron_type t
+                WHERE t.graph_name = o.graph_name AND t.kind = 'INPUT_OBJECT'
+                  AND t.type_name IN (SELECT a.named_type FROM graphitron_argument a
+                                       WHERE a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
+                                      UNION ALL
+                                      SELECT f.named_type FROM graphitron_field f
+                                       WHERE f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
+UNION ALL
 -- A @condition's parameter taking a jOOQ record, built from an input object: a condition takes the
 -- delivered map or a bean, a record being a row to write rather than a filter's values. At the
 -- argument, the detail the record class.
@@ -28996,6 +29025,8 @@ INSERT INTO graphitron_defect_type VALUES
    '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.'),
   ('CONDITION_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_WITHOUT_METHOD',
    '@condition adds the predicate of the method its condition: names by className and method, and defaults neither, so without both there is no predicate to add.'),
+  ('SERVICE_INPUT_AS_MAP', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_INPUT_AS_MAP',
+   'A @service parameter takes an input object as a Map or Object, and a map at the service boundary is a permanent anti-pattern: take a typed bean, a record or a class with a public no-arg constructor mirroring the input object, or, for open-ended JSON, declare a custom scalar with @scalarType and take its Java type.'),
   ('SERVICE_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_WITHOUT_METHOD',
    '@service answers the field with the method its service: names by className and method, and defaults neither, so without both there is no method to call.'),
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
