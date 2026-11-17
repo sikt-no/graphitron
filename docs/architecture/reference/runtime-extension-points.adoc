@@ -299,6 +299,11 @@ among them; a key whose tenant part is empty is a key like any other, and what i
 source's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
 child's key differs from its parent's and acquires again only then.
 
+No default tenant and no `@defaultTenant` (Alf, 2026-11-17). The request names no default tenant:
+which pool serves the key whose tenant part is empty is the source's decision, so every read and write
+of a global table runs on that key and there is no separate global-read route. `@defaultTenant` goes
+with it, since its lookup needs a tenant value the request no longer names.
+
 The contract that source takes (Alf, 2026-11-16). The runtime's own connection setup is gone; the
 request tenant set stays until the source names the fan-out domain:
 
