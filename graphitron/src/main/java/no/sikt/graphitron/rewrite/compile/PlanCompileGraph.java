@@ -342,7 +342,6 @@ public final class PlanCompileGraph {
                     var keyNotPermitted = runtimeUnit("KeyNotPermitted");
                     var acquisitionFailed = runtimeUnit("AcquisitionFailedException");
                     var sources = runtimeUnit("ConnectionSources");
-                    var requestTenants = runtimeUnit("RequestTenants");
                     var connectionKey = runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME);
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
@@ -382,7 +381,6 @@ public final class PlanCompileGraph {
                     ownedConnections.ifPresent(t -> {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
-                        requestTenants.ifPresent(rt -> declared(t, rt));
                         // The carrier is keyed by the connection key and hands it down.
                         connectionKey.ifPresent(ck -> declared(t, ck));
                         source.ifPresent(x -> declared(t, x));
@@ -412,7 +410,6 @@ public final class PlanCompileGraph {
                     // acquisition out of execute.
                     runtimeUnit("ConnectionSource").ifPresent(x -> declared(instrumentation, x));
                     runtimeUnit("AcquisitionFailedException").ifPresent(x -> declared(instrumentation, x));
-                    runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("BatchSizeLimit").ifPresent(l -> declared(instrumentation, l));
@@ -451,8 +448,6 @@ public final class PlanCompileGraph {
                     runtimeUnit("ConnectionSource").ifPresent(x -> precise(facade, x));
                     // acquisitionFailure reads the cause chain through the carrier's static.
                     runtimeUnit("OwnedConnections").ifPresent(t -> precise(facade, t));
-                    // A <tenantColumn> build's factories take or wrap the RequestTenants value.
-                    runtimeUnit("RequestTenants").ifPresent(rt -> precise(facade, rt));
                     // A federated @oneOf build's schemaSdl prints through the helper.
                     refOf(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL).ifPresent(o -> precise(facade, o));
                 }

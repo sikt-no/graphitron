@@ -490,13 +490,11 @@ class OutboxFailureSettleTest {
 
     private Object newOwnedConnections(Object runtime) throws Throwable {
         Hosted hosted = (Hosted) runtime;
-        Class<?> requestTenantsClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
-        Object requestTenants = requestTenantsClass.getMethod("of", Collection.class).invoke(null, List.of("A"));
         Class<?> sourceClass = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
         @SuppressWarnings({"unchecked", "rawtypes"})
         Object commit = Enum.valueOf((Class) commitPolicyClass, "COMMIT");
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sourceClass)
-            .newInstance(hosted.runtime(), commit, requestTenants, hosted.source());
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sourceClass)
+            .newInstance(hosted.runtime(), commit, hosted.source());
     }
 
     private static ExecutionStepInfo step() {

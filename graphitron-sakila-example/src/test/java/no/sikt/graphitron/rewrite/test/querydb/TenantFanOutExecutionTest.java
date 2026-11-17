@@ -109,8 +109,8 @@ class TenantFanOutExecutionTest {
         dsl.execute("insert into language (language_id, name) values"
             + " (901, 'FanOutLangA'), (902, 'FanOutLangB'), (903, 'FanOutLangC')");
 
-        // The fan-out domain (and so the union's concatenation order) is the request tenant set
-        // in its given order; the pools are only where each tenant's connection comes from.
+        // The fan-out domain (and so the union's concatenation order) is the source's tenants() in
+        // its given order; the pools are only where each tenant's connection comes from.
         BY_TENANT.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null));
         BY_TENANT.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, TENANT_2_DOWN));
         graphql = new GraphitronRuntime(SQLDialect.POSTGRES).newGraphQL(Graphitron.buildSchema(b -> {})).build();
@@ -133,7 +133,7 @@ class TenantFanOutExecutionTest {
     }
 
     private static ExecutionResult execute(String query, Collection<Integer> tenants) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{}"), tenants)
+        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{}", BY_TENANT, tenants))
             .query(query)
             .build());
     }
@@ -146,7 +146,7 @@ class TenantFanOutExecutionTest {
         Map<String, Object> data = result.getData();
         var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
         assertThat(films).extracting(f -> f.get("title"))
-            .as("tenants concatenate in the request's tenant order; within a tenant the"
+            .as("tenants concatenate in the source's tenant order; within a tenant the"
                 + " field's ORDER BY (default: primary key) applies; no global re-sort")
             .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma", "T2 Delta");
     }
@@ -188,7 +188,7 @@ class TenantFanOutExecutionTest {
         // handle sequences occupy disjoint ranges (restarted at 1000 and 2000 in setup), so
         // the session number identifies which tenant's mount produced the observed handle.
         var result = graphql.execute(Graphitron
-            .newOwnedExecutionInput(source("{\"sub\":\"fanout-user\"}"), List.of(1, 2))
+            .newOwnedExecutionInput(source("{\"sub\":\"fanout-user\"}"))
             .query("{ filmsEverywhere { title mountedPrincipal } }")
             .build());
 
@@ -216,7 +216,7 @@ class TenantFanOutExecutionTest {
         // connection (the statement's dsl), so tenant 1's rows see a number from its 1000s range
         // and tenant 2's from the 2000s, in one operation, and rows of one tenant share the one.
         var result = graphql.execute(Graphitron
-            .newOwnedExecutionInput(source("{\"sub\":\"fanout-user\"}"), List.of(1, 2))
+            .newOwnedExecutionInput(source("{\"sub\":\"fanout-user\"}"))
             .query("{ filmsEverywhere { title mountedSessionNumber } }")
             .build());
 
@@ -263,8 +263,8 @@ class TenantFanOutExecutionTest {
 
     @Test
     void tenantTheSourceRefuses_yieldsPartialDataWithAnAppendedNullElementAndAPathBearingRedactedError() {
-        // Tenant 99 is in the request's set but the source hosts no pool for it, so it refuses
-        // the key: that tenant's share of the fan-out fails and the others answer.
+        // Tenant 99 is in the source's tenants() but it hosts no pool for it, so it refuses the
+        // key: that tenant's share of the fan-out fails and the others answer.
         var result = execute("{ filmsEverywhere { title } }", List.of(1, 99));
 
         Map<String, Object> data = result.getData();
@@ -290,7 +290,7 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void hostedTenantAbsentFromTheRequestSet_isNeverQueried() {
+    void hostedTenantTheSourceDoesNotName_isNeverQueried() {
         var result = execute("{ filmsEverywhere { title } }", List.of(1));
 
         assertThat(result.getErrors()).isEmpty();
@@ -298,7 +298,7 @@ class TenantFanOutExecutionTest {
         var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
         assertThat(films).extracting(f -> f.get("title")).containsExactly("T1 Alpha", "T1 Beta");
         assertThat(TENANT_2_OPENED.get())
-            .as("the authorization pre-filter: a hosted tenant the request did not name is"
+            .as("the domain is the source's tenants(): a hosted tenant it does not name is"
                 + " silently never queried")
             .isZero();
     }
@@ -323,7 +323,7 @@ class TenantFanOutExecutionTest {
         var slowRuntime = new GraphitronRuntime(SQLDialect.POSTGRES, null, 4, java.time.Duration.ofMillis(500));
         var slowEngine = slowRuntime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant), List.of(1, 2))
+        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -370,7 +370,7 @@ class TenantFanOutExecutionTest {
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = engine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant), List.of(1, 2))
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -398,7 +398,7 @@ class TenantFanOutExecutionTest {
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.execute(Graphitron
-                .newOwnedExecutionInput(source("{\"sub\":\"reject-me\"}", byTenant), List.of(1, 2))
+                .newOwnedExecutionInput(source("{\"sub\":\"reject-me\"}", byTenant))
                 .query("{ a: filmsEverywhere { title } b: filmsEverywhere { title } }")
                 .build()))
             .isInstanceOf(AcquisitionFailedException.class)
@@ -419,7 +419,7 @@ class TenantFanOutExecutionTest {
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = engine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant), List.of(1, 2))
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -521,7 +521,7 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void narrowedFanOut_namingATenantOutsideTheRequestSet_answersNoRowsAndOpensNothing() {
+    void narrowedFanOut_namingATenantOutsideTheSourcesDomain_answersNoRowsAndOpensNothing() {
         withTenantOwnedFilms(() -> {
             var result = execute("{ filmsNarrowable(filmId: 2) { title } }", List.of(1));
 
@@ -568,15 +568,21 @@ class TenantFanOutExecutionTest {
         assertThat(TENANT_2_OPENED.get()).isPositive();
     }
 
-    /** The request's connection source over the class's pools. */
+    /** The request's connection source over the class's pools, naming tenants 1 and 2. */
     private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(String claims) {
         return source(claims, BY_TENANT);
     }
 
-    /** The request's connection source over the default pool and {@code byTenant}. */
+    /** The request's connection source over the default pool and {@code byTenant}, naming tenants 1 and 2. */
     private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(
             String claims, Map<Integer, DataSource> byTenant) {
-        return Sources.multitenant(claims, defaultDataSource(), byTenant);
+        return source(claims, byTenant, List.of(1, 2));
+    }
+
+    /** The request's connection source over the default pool and {@code byTenant}, naming {@code tenants}. */
+    private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(
+            String claims, Map<Integer, DataSource> byTenant, Collection<Integer> tenants) {
+        return Sources.multitenant(claims, defaultDataSource(), byTenant, tenants);
     }
 
     private static DataSource defaultDataSource() {

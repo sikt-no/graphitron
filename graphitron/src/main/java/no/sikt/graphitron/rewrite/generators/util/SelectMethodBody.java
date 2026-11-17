@@ -85,14 +85,6 @@ final class SelectMethodBody {
         List<ColumnRef> columns = switch (source) {
             case null -> EntityKeys.columns(alt);
             case TenantBinding.EntityRepBound.TenantSource.KeyColumn ignored -> EntityKeys.columns(alt);
-            // The key names no tenant, so the dispatcher appends the routed tenant as one more
-            // cell of each binding, and the join matches it against the tenant column: the
-            // lookup resolves exactly as a key carrying the tenant would.
-            case TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault requestEntityDefault -> {
-                var withTenant = new java.util.ArrayList<>(EntityKeys.columns(alt));
-                withTenant.add(requestEntityDefault.tenantColumn());
-                yield List.copyOf(withTenant);
-            }
         };
         Function<ColumnRef, ColumnRef> column = Function.identity();
 

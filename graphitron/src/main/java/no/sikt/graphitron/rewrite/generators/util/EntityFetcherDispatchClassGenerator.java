@@ -103,7 +103,7 @@ public final class EntityFetcherDispatchClassGenerator {
 
     /**
      * The dispatcher over {@code entities}, the store's entities in type name order. {@code tenantKey}
-     * is the request tenant set's element type in a multi-tenant build and empty in a single-tenant
+     * is the tenant column's boxed Java type in a multi-tenant build and empty in a single-tenant
      * one, and {@code tenantRouting} says which entities route per tenant, by what; a single-tenant
      * build passes {@link EntityTenantRouting#none()}.
      */

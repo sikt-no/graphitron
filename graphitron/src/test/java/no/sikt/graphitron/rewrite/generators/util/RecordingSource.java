@@ -14,7 +14,8 @@ import java.util.function.Function;
 
 /**
  * Builds a real generated {@code ConnectionSource} for the emitted-code harness tests, through the
- * generated {@code ConnectionSources.mounting(pool, mount, unmount)}: the pool maps a key's tenant
+ * generated {@code ConnectionSources.mounting(pool, mount, unmount)}, or in a build with a tenant
+ * column {@code ConnectionSources.mounting(pool, tenants, mount, unmount)}: the pool maps a key's tenant
  * (or {@code "default"} for a key without one) to the test's fake {@code DataSource}, the mount runs
  * the recognisable statement the tests' recording fake connections observe on the connection it is
  * given, the way a consumer's lambda would, and the unmount runs the clearing statement. The
@@ -44,11 +45,18 @@ final class RecordingSource {
      * A mounting source over {@code pools}, keyed by tenant (a key without one is {@link #DEFAULT}),
      * whose mount issues {@code set_config(...)} and returns {@code "handle:" + claims}, and whose
      * unmount issues the clearing statement the fakes label as the disconnect phase. A tenant
-     * {@code pools} does not name is refused with the generated {@code KeyNotPermitted}.
+     * {@code pools} does not name is refused with the generated {@code KeyNotPermitted}. In a build
+     * with a tenant column the source's {@code tenants()} is every pool but {@link #DEFAULT}, in map
+     * order.
      */
     static Object create(EmittedCodeHarness harness, String schemaPackage, String claims,
                          Map<String, DataSource> pools) throws Exception {
-        return create(harness, schemaPackage, claims, poolOf(harness, schemaPackage, pools));
+        return create(harness, schemaPackage, claims, poolOf(harness, schemaPackage, pools), tenantsOf(pools));
+    }
+
+    /** The pools' labels but {@link #DEFAULT}, in map order: the tenants a source over them names. */
+    static List<Object> tenantsOf(Map<String, DataSource> pools) {
+        return pools.keySet().stream().filter(label -> !label.equals(DEFAULT)).map(label -> (Object) label).toList();
     }
 
     /** As {@link #create(EmittedCodeHarness, String, String, Map)}, every key on {@code pool}. */
@@ -60,7 +68,16 @@ final class RecordingSource {
     /** As {@link #create(EmittedCodeHarness, String, String, Map)}, over an arbitrary pool function. */
     static Object create(EmittedCodeHarness harness, String schemaPackage, String claims,
                          Function<Object, DataSource> pool) throws Exception {
-        return mounting(harness, schemaPackage, pool,
+        return create(harness, schemaPackage, claims, pool, List.of());
+    }
+
+    /**
+     * As {@link #create(EmittedCodeHarness, String, String, Map)}, over an arbitrary pool function and
+     * the tenants the source names (ignored in a build without a tenant column).
+     */
+    static Object create(EmittedCodeHarness harness, String schemaPackage, String claims,
+                         Function<Object, DataSource> pool, java.util.Collection<?> tenants) throws Exception {
+        return mounting(harness, schemaPackage, pool, tenants,
             (connection, key) -> {
                 recordTenant(key);
                 connection.prepareStatement("select set_config('app.uid', ?, false)").execute();
@@ -80,9 +97,18 @@ final class RecordingSource {
             (connection, key, handle) -> LifecycleHookFixture.unmount(connection, (String) handle));
     }
 
-    /** {@code ConnectionSources.mounting(pool, mount, unmount)} over plain Java callbacks. */
+    /** {@code ConnectionSources.mounting(pool, mount, unmount)} over plain Java callbacks, naming no tenants. */
     static Object mounting(EmittedCodeHarness harness, String schemaPackage, Function<Object, DataSource> pool,
                            MountBody mount, UnmountBody unmount) throws Exception {
+        return mounting(harness, schemaPackage, pool, List.of(), mount, unmount);
+    }
+
+    /**
+     * {@code ConnectionSources.mounting(pool, mount, unmount)} over plain Java callbacks, or in a build
+     * with a tenant column {@code mounting(pool, tenants, mount, unmount)}.
+     */
+    static Object mounting(EmittedCodeHarness harness, String schemaPackage, Function<Object, DataSource> pool,
+                           java.util.Collection<?> tenants, MountBody mount, UnmountBody unmount) throws Exception {
         Class<?> sources = harness.load(schemaPackage + ".ConnectionSources");
         Class<?> mountInterface = harness.load(schemaPackage + ".ConnectionSources$Mount");
         Class<?> unmountInterface = harness.load(schemaPackage + ".ConnectionSources$Unmount");
@@ -101,6 +127,10 @@ final class RecordingSource {
                 return null;
             });
         try {
+            if (tenanted(sources, "mounting")) {
+                return sources.getMethod("mounting", Function.class, java.util.Collection.class, mountInterface,
+                    unmountInterface).invoke(null, pool, tenants, mountProxy, unmountProxy);
+            }
             return sources.getMethod("mounting", Function.class, mountInterface, unmountInterface)
                 .invoke(null, pool, mountProxy, unmountProxy);
         } catch (InvocationTargetException e) {
@@ -114,12 +144,23 @@ final class RecordingSource {
      */
     static Object plain(EmittedCodeHarness harness, String schemaPackage, Map<String, DataSource> pools)
             throws Exception {
+        Class<?> sources = harness.load(schemaPackage + ".ConnectionSources");
         try {
-            return harness.load(schemaPackage + ".ConnectionSources").getMethod("of", Function.class)
-                .invoke(null, poolOf(harness, schemaPackage, pools));
+            if (tenanted(sources, "of")) {
+                return sources.getMethod("of", Function.class, java.util.Collection.class)
+                    .invoke(null, poolOf(harness, schemaPackage, pools), tenantsOf(pools));
+            }
+            return sources.getMethod("of", Function.class).invoke(null, poolOf(harness, schemaPackage, pools));
         } catch (InvocationTargetException e) {
             throw (Exception) e.getCause();
         }
+    }
+
+    /** Whether the generated {@code ConnectionSources.<name>} takes the tenants: a build with a tenant column. */
+    private static boolean tenanted(Class<?> sources, String name) {
+        return java.util.Arrays.stream(sources.getMethods())
+            .anyMatch(m -> m.getName().equals(name)
+                && java.util.Arrays.asList(m.getParameterTypes()).contains(java.util.Collection.class));
     }
 
     /** The tenant {@code key} carries, or {@link #DEFAULT}. */

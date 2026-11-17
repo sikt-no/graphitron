@@ -2,12 +2,12 @@
 # rewrite-generate-multitenant execution in this module's pom), so this is the compile-tier
 # proof that operation-divined tenant routing emits valid Java 17 for every TenantBinding arm.
 # The sakila catalog's film_id plays the tenant id: film, inventory and film_actor classify
-# tenant-scoped; language (no film_id column) classifies global and serves as the default-source
-# reference data, or the request's default tenant's when it names one. Kept deliberately slim: one
-# field per arm, nothing else.
+# tenant-scoped; language (no film_id column) classifies global and serves as the reference data
+# read on the key whose tenant part is empty, from whichever pool the source picks for it. Kept
+# deliberately slim: one field per arm, nothing else.
 
-# Federation, for the @defaultTenant entity below: _entities dispatches every @key and @node type,
-# routing each representation on the tenant its key names, or on the request's default tenant.
+# Federation, for the keyed entity below: _entities dispatches every @key and @node type, routing
+# each representation on the tenant its key names.
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
 interface Node { id: ID! }
@@ -69,14 +69,15 @@ input FilmActorFilter {
     actors: [ID!] @nodeId(typeName: "FilmActor")
 }
 
-# A federation entity whose key cannot name the tenant (inventory_id is unique within one tenant's
-# database only), so _entities resolves it on the request's entity default tenant, matching only rows
-# whose film_id is that tenant. film is a tenant-scoped batched child the resolved row hands its tenant.
-type Inventory @table(name: "inventory") @key(fields: "inventoryId") @defaultTenant {
+# A federation entity whose key carries the tenant column beside inventory_id (unique within one
+# tenant's database only), so _entities resolves each representation on the tenant its filmId
+# names. film is a tenant-scoped batched child the resolved row hands its tenant.
+type Inventory @table(name: "inventory") @key(fields: "inventoryId filmId") {
     inventoryId: Int @field(name: "inventory_id")
+    filmId: Int @field(name: "film_id")
     film: Film @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
     # Global-read batched child of a tenant-scoped parent: store is global, so its batch runs on
-    # the request's default tenant, else the default source, whatever tenant the inventory came from.
+    # the key whose tenant part is empty, whatever tenant the inventory came from.
     store: Store @splitQuery @reference(path: [{key: "inventory_store_id_fkey"}])
 }
 
@@ -113,11 +114,11 @@ type FilmBookmark @table(name: "film_bookmark") {
         @defaultOrder(primaryKey: true)
 }
 
-# Global-read arm: global reference data on the request's default tenant, else the default source.
+# Global-read arm: global reference data on the key whose tenant part is empty.
 type Language @table(name: "language") {
     name: String
-    # Default-source arm: a child service on a global parent runs on the default source whatever
-    # default tenant the request names, since its SQL is opaque to the build.
+    # Default-source arm: a child service on a global parent runs on the same empty key, since its
+    # SQL is opaque to the build.
     servedBy: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "languageServedBy"})
     # FanOut batched form: a fanned child of an untenanted parent. The marker itself forces the
@@ -181,8 +182,8 @@ type Query {
     # predicate. Compile-only: the authored method names a column film does not carry.
     filmsUnderOverride(filmId: Int! @field(name: "film_id")): [Film!]!
         @condition(condition: {className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures", method: "tilgangAdminOnly"}, override: true)
-    # FanOut arm: the query runs once per tenant in the request's fan-out domain (the factory's
-    # tenant collection intersected with the tenant map) and the results union in domain order;
+    # FanOut arm: the query runs once per tenant in the request's fan-out domain (the source's
+    # tenants()) and the results union in domain order;
     # each row carries its tenant as per-element localContext, so children (the @splitQuery
     # inventories child included) inherit and route with no extra machinery. Nullable elements:
     # a failed tenant contributes one null element plus a path-bearing error (partial success).
@@ -205,10 +206,10 @@ type Query {
     # divined tenant source as the page query instead of re-acquiring by environment.
     filmsConnectionScoped(filmId: Int! @field(name: "film_id"), first: Int, after: String):
         [Film!]! @asConnection @defaultOrder(primaryKey: true)
-    # Global-read root: acquires dslGlobal(), the request's default tenant when it names one,
-    # never the divined context.
+    # Global-read root: acquires dslDefault(), the key whose tenant part is empty, never the
+    # divined context.
     languages: [Language!]!
-    # Global-read connection: the page and its totalCount ride one carrier on the default tenant.
+    # Global-read connection: the page and its totalCount ride one carrier on the empty key.
     languagesConnection: [Language!]! @asConnection @defaultOrder(primaryKey: true)
     # Global-read multi-table polymorphic root.
     globalThings: [GlobalThing!]!
@@ -313,7 +314,7 @@ type RateFilmsPayload {
 }
 
 # The same beside a global row: language re-projects the service's record on its own coordinate,
-# a global read, so the request's default tenant answers it whatever tenant the service ran on.
+# a global read, so the empty key answers it whatever tenant the service ran on.
 # Typed GlobalLanguage rather than Language: Language.films is @tenantFanOut, and fan-out refuses a
 # field reachable below a tenant-bound ancestor on any path.
 type RatedFilmsLanguagePayload {
@@ -324,14 +325,14 @@ type RatedFilmsLanguagePayload {
 
 # The language table again, slim and with no fanned child, so it can sit below tenant-bound edges:
 # the tenant-routed payload above, and node dispatch, which divines a tenant for the tenant-scoped
-# node types. A node type, so node dispatch over a global type follows the default tenant too.
+# node types. A node type, so node dispatch over a global type reads the empty key too.
 type GlobalLanguage implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
     id: ID! @nodeId
     name: String
 }
 
 # A default-source producer's payload: servedBy is the database the @globalData service ran on,
-# and language is a global read like any other, so it reads the request's default tenant.
+# and language is a global read like any other, on the same empty key.
 type GlobalLanguagePayload {
     servedBy: String
     language: Language
@@ -340,8 +341,7 @@ type GlobalLanguagePayload {
 # A polymorphic root over global participants only.
 union GlobalThing = Language | Store
 
-# A global write: film_endorsement has no tenant column, so the insert runs on the default source
-# whatever default tenant the request names.
+# A global write: film_endorsement has no tenant column, so the insert runs on the empty key.
 input FilmEndorsementCreateInput {
     endorsedFilm: Int! @field(name: "endorsed_film")
     note: String! @field(name: "note")
@@ -379,7 +379,7 @@ union FilmWriteError = FilmWriteDbError
 
 # The same write claiming graphitron's own client errors as data: the GENERIC handler names the
 # client exception this run generates, so the build accepts it before the class has ever compiled.
-# A tenant outside the request's set then lands in the payload rather than as a top-level error.
+# A tenant the source refuses then lands in the payload rather than as a top-level error.
 type FilmsRetitledClaimedPayload {
     films: [Film]
     errors: [FilmWriteClaimedError]

@@ -10,7 +10,6 @@ import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.FetcherErrorResponse;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronClientException;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
-import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
 import no.sikt.graphitron.generated.multitenant.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -42,8 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the typed-key proof); the container's main database is the default source, serving the global
  * {@code language} reference data. Each tenant database also carries slim {@code language} and
  * {@code store} tables whose rows tell the databases apart (languages named after their database,
- * a different row count per database), so a request naming a default tenant can be seen reading
- * its global tables there.
+ * a different row count per database), so a source that picks a tenant's pool for the key whose
+ * tenant part is empty can be seen reading its global tables there.
  *
  * <p>The sibling {@code TenantRoutingExecutionTest} proved routing given a caller-known tenant
  * (test-supplied keys, no divination); this class proves the divined bindings: the tenant is
@@ -203,7 +202,7 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static ExecutionResult execute(String query) {
-        // The request tenant set admits both hosted tenants, so these tests see routing alone.
+        // The source permits both hosted tenants, so these tests see routing alone.
         return execute(query, List.of(1, 2));
     }
 
@@ -212,26 +211,33 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static ExecutionResult executeAs(String query, java.util.Collection<Integer> tenants, String sub) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"" + sub + "\"}"), tenants)
+        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"" + sub + "\"}", tenants))
             .query(query).build());
     }
 
-    /** Executes under a request tenant set that names {@code defaultTenant} as its default tenant. */
-    private static ExecutionResult executeWithDefault(String query, java.util.Collection<Integer> tenants,
-                                                      int defaultTenant) {
-        return executeWithDefaultAs(query, tenants, defaultTenant, "test-user");
-    }
-
-    private static ExecutionResult executeWithDefaultAs(String query, java.util.Collection<Integer> tenants,
-                                                        int defaultTenant, String sub) {
+    /**
+     * Executes under a source that picks {@code emptyKeyPool} for the key whose tenant part is empty,
+     * the one every global read and write runs on.
+     */
+    private static ExecutionResult executeWithEmptyKeyOn(String query, DataSource emptyKeyPool, String sub) {
         return graphql.execute(Graphitron.newOwnedExecutionInput(
-                source("{\"sub\":\"" + sub + "\"}"), RequestTenants.withDefault(tenants, defaultTenant))
+                Sources.multitenant("{\"sub\":\"" + sub + "\"}", emptyKeyPool, byTenant, List.of(1, 2)))
             .query(query).build());
     }
 
-    /** The request's connection source over the class's pools, mounting {@code claims}. */
+    /** The request's connection source over the class's pools, mounting {@code claims}, permitting both tenants. */
     private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(String claims) {
-        return Sources.multitenant(claims, defaultPool, byTenant);
+        return source(claims, List.of(1, 2));
+    }
+
+    /**
+     * The request's connection source over the class's pools, mounting {@code claims}: it names
+     * {@code tenants} and refuses any other tenant with {@link Sources#notPermitted}, the way a
+     * consumer's source refuses a tenant the caller's claims do not reach.
+     */
+    private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(
+            String claims, java.util.Collection<Integer> tenants) {
+        return Sources.multitenant(claims, defaultPool, byTenant, tenants);
     }
 
     private static Object data(ExecutionResult result, String field) {
@@ -676,7 +682,7 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
-    // ===== Global reads without a default tenant: the default source =====
+    // ===== Global reads: the empty key, here on the default source =====
 
     @Test
     void untenanted_readsTheDefaultSource_touchingNoTenantDatabase() {
@@ -701,12 +707,12 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
-    // ===== The request's default tenant: graphitron's global reads follow it =====
+    // ===== The empty key: every global read and write runs on the pool the source picks for it =====
 
     @Test
-    void defaultTenant_globalRoot_readsTheDefaultTenantsDatabase_mountedForIt() {
-        String sub = "default-tenant-" + java.util.UUID.randomUUID();
-        var result = executeWithDefaultAs("{ languages { name } }", List.of(1, 2), 2, sub);
+    void emptyKey_globalRoot_readsThePoolTheSourcePicks_mountedForTheEmptyKey() {
+        String sub = "empty-key-" + java.util.UUID.randomUUID();
+        var result = executeWithEmptyKeyOn("{ languages { name } }", byTenant.get(2), sub);
         assertThat((List<Map<String, Object>>) data(result, "languages"))
             .as("tenant 2's two language rows, not the default source's three")
             .extracting(m -> m.get("name"))
@@ -714,173 +720,59 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
         assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
         assertThat(mountedTenants(sub))
-            .as("the global read rides tenant 2's connection and mount")
-            .containsExactly(java.util.Optional.of(2));
+            .as("the global read rides the empty key's connection and mount")
+            .containsExactly(java.util.Optional.empty());
     }
 
     @Test
-    void defaultTenant_globalBatchedChildOfTheSameTenantsRow_sharesOneConnectionAndOneMount() {
-        String sub = "default-tenant-" + java.util.UUID.randomUUID();
-        var result = executeWithDefaultAs(
-            "{ films(filmId: 1) { inventories { store { storeId } } } }", List.of(1, 2), 1, sub);
-        var films = (List<Map<String, Object>>) data(result, "films");
-        assertThat((List<Map<String, Object>>) films.get(0).get("inventories"))
-            .extracting(i -> ((Map<String, Object>) i.get("store")).get("storeId"))
-            .containsExactlyInAnyOrder(1, 2);
-        assertThat(TENANT_1_OPENED.get()).as("one connection serves the films and the stores").isEqualTo(1);
-        assertThat(TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
-        assertThat(mountedTenants(sub)).containsExactly(java.util.Optional.of(1));
-    }
-
-    @Test
-    void defaultTenant_globalBatchedChildOfAnotherTenantsRow_readsTheDefaultTenant() {
-        var result = executeWithDefault(
-            "{ films(filmId: 1) { inventories { inventoryId store { storeId } } } }", List.of(1, 2), 2);
+    void emptyKey_globalBatchedChildOfATenantsRow_readsTheEmptyKey_notTheRowsTenant() {
+        String sub = "empty-key-" + java.util.UUID.randomUUID();
+        var result = executeWithEmptyKeyOn(
+            "{ films(filmId: 1) { inventories { inventoryId store { storeId } } } }", byTenant.get(2), sub);
         var inventories = (List<Map<String, Object>>)
             ((List<Map<String, Object>>) data(result, "films")).get(0).get("inventories");
         assertThat(inventories).as("the inventories come from tenant 1").hasSize(2);
         assertThat(inventories)
-            .as("the stores come from tenant 2, which holds store 1 only")
+            .as("the stores come from the empty key's pool, tenant 2's database, which holds store 1 only")
             .extracting(i -> i.get("store") == null ? null : ((Map<String, Object>) i.get("store")).get("storeId"))
             .containsExactlyInAnyOrder(1, null);
         assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
         assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
         assertThat(DEFAULT_OPENED.get()).isZero();
+        assertThat(mountedTenants(sub))
+            .as("the tenant's key and the empty key are two connections, even on one database's data")
+            .containsExactlyInAnyOrder(java.util.Optional.of(1), java.util.Optional.empty());
     }
 
     @Test
-    void defaultTenant_globalConnection_countsTheDefaultTenantsRows() {
-        var result = executeWithDefault("{ languagesConnection(first: 10) { totalCount } }", List.of(1, 2), 2);
-        assertThat(((Map<String, Object>) data(result, "languagesConnection")).get("totalCount"))
-            .as("tenant 2 holds two languages, the default source three")
-            .isEqualTo(2);
-        assertThat(DEFAULT_OPENED.get() + TENANT_1_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenant_globalPolymorphicRoot_readsTheDefaultTenantsDatabase() {
-        var result = executeWithDefault("{ globalThings { __typename"
-            + " ... on Language { name } ... on Store { storeId } } }", List.of(1, 2), 2);
-        assertThat((List<Map<String, Object>>) data(result, "globalThings"))
-            .as("tenant 2's two languages and one store")
-            .extracting(m -> m.get("__typename") + ":" + (m.containsKey("name") ? m.get("name") : m.get("storeId")))
-            .containsExactlyInAnyOrder("Language:tenant_2", "Language:tenant_2", "Store:1");
-        assertThat(DEFAULT_OPENED.get() + TENANT_1_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenant_nodeOfAGlobalType_resolvesInTheDefaultTenantsDatabase() {
-        var result = executeWithDefault("{ node(id: \"" + NodeIdEncoder.encodeGlobalLanguage(1)
-            + "\") { ... on GlobalLanguage { name } } }", List.of(1, 2), 2);
-        assertThat((Map<String, Object>) data(result, "node")).containsEntry("name", "tenant_2");
-        assertThat(DEFAULT_OPENED.get() + TENANT_1_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenant_servicesKeepTheDefaultSource() {
-        var result = executeWithDefault("{ languages { servedBy } globalServedBy }", List.of(1, 2), 2);
+    void emptyKey_servicesAndGlobalReadsShareOneConnection() {
+        var result = executeWithEmptyKeyOn("{ languages { name servedBy } globalServedBy }", byTenant.get(2),
+            "test-user");
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var data = (Map<String, Object>) result.getData();
         assertThat((List<Map<String, Object>>) data.get("languages"))
-            .as("the child service on a global parent is handed the default source")
+            .as("the child service on a global parent runs on the empty key, as its parent does")
             .isNotEmpty()
-            .allSatisfy(l -> assertThat(l.get("servedBy")).isEqualTo(defaultDatabase()));
+            .allSatisfy(l -> assertThat(l.get("servedBy")).isEqualTo(SakilaDatabase.tenantName("tenant_2")));
         assertThat(data.get("globalServedBy"))
-            .as("@globalData keeps the default source too")
-            .isEqualTo(defaultDatabase());
-        assertThat(TENANT_1_OPENED.get()).isZero();
-        assertThat(TENANT_2_OPENED.get()).as("only the languages themselves read tenant 2").isEqualTo(1);
+            .as("@globalData runs on the empty key too")
+            .isEqualTo(SakilaDatabase.tenantName("tenant_2"));
+        assertThat(TENANT_2_OPENED.get()).as("one connection for the empty key").isEqualTo(1);
+        assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
 
     @Test
-    void defaultTenant_aServiceReturningGlobalRows_isReReadOnItsOwnConnection() {
-        var result = executeWithDefault("{ languagesOnConnection { name } }", List.of(1, 2), 2);
-        assertThat((List<Map<String, Object>>) data(result, "languagesOnConnection"))
-            .as("the default source's languages, not tenant 2's")
-            .isNotEmpty()
-            .noneSatisfy(l -> assertThat((String) l.get("name")).startsWith("tenant_"));
-        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
-    }
+    void emptyKey_theSourceRefuses_answersAsAClientErrorBeforeAnyDatabaseIsOpened() {
+        // A source with no pool for the empty key refuses it, and the refusal's own message answers
+        // at the global field.
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(
+                Sources.multitenant("{\"sub\":\"test-user\"}", null, byTenant, List.of(1, 2)))
+            .query("{ languages { name } }").build());
 
-    @Test
-    void defaultTenant_payloadReprojectionUnderATenantRoutedService_readsTheDefaultTenant() {
-        var result = executeWithDefault("mutation { rateFilmsWithLanguage(in: [{ film: \""
-            + NodeIdEncoder.encodeFilm(1) + "\" }]) { ranOn films { title } language { name } } }",
-            List.of(1, 2), 2);
-        var payload = (Map<String, Object>) data(result, "rateFilmsWithLanguage");
-        assertThat(payload.get("ranOn")).as("the service runs on the tenant its ids name").isEqualTo(SakilaDatabase.tenantName("tenant_1"));
-        assertThat((List<Map<String, Object>>) payload.get("films"))
-            .extracting(f -> f.get("title")).containsExactly("Tenant One Film");
-        assertThat((Map<String, Object>) payload.get("language"))
-            .as("the payload's global row is its own coordinate, a global read")
-            .containsEntry("name", "tenant_2");
-        assertThat(DEFAULT_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenant_payloadReprojectionUnderADefaultSourceProducer_readsTheDefaultTenant() {
-        // The documented consequence, pinned so a change to it is deliberate: the producer runs on
-        // the default source, its payload's global row is read from the default tenant.
-        var result = executeWithDefault("{ globalLanguage { servedBy language { name } } }", List.of(1, 2), 2);
-        var payload = (Map<String, Object>) data(result, "globalLanguage");
-        assertThat(payload.get("servedBy")).isEqualTo(defaultDatabase());
-        assertThat((Map<String, Object>) payload.get("language")).containsEntry("name", "tenant_2");
-    }
-
-    @Test
-    void defaultTenant_aWriteToAGlobalTable_keepsTheDefaultSource() {
-        // The tenant databases hold no film_endorsement table, so a write routed there would fail.
-        var result = executeWithDefault("mutation { createEndorsement(in: { endorsedFilm: 1, note: \""
-            + WRITTEN_ENDORSEMENT_NOTE + "\" }) { note } }", List.of(1, 2), 2);
-        try {
-            assertThat((Map<String, Object>) data(result, "createEndorsement"))
-                .containsEntry("note", WRITTEN_ENDORSEMENT_NOTE);
-            assertThat(dsl.fetchCount(DSL.table("film_endorsement"),
-                    DSL.field("note").eq(WRITTEN_ENDORSEMENT_NOTE)))
-                .as("the row landed on the default source").isEqualTo(1);
-            assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
-        } finally {
-            dsl.execute("delete from film_endorsement where note = ?", WRITTEN_ENDORSEMENT_NOTE);
-        }
-    }
-
-    @Test
-    void defaultTenant_aRoutineWriteToAGlobalTable_keepsTheDefaultSource() {
-        // endorse_film exists only in the default database, and the tenant databases hold no
-        // film_endorsement table, so the call or its re-read routed to a tenant would fail.
-        var result = executeWithDefault("mutation { endorseFilm(endorsedFilm: 2, note: \""
-            + ROUTINE_ENDORSEMENT_NOTE + "\") { note } }", List.of(1, 2), 2);
-        try {
-            assertThat((List<Map<String, Object>>) data(result, "endorseFilm"))
-                .extracting(e -> e.get("note"))
-                .containsExactly(ROUTINE_ENDORSEMENT_NOTE);
-            assertThat(dsl.fetch("select endorsed_film from film_endorsement where note = ?",
-                    ROUTINE_ENDORSEMENT_NOTE).getValues(0, Integer.class))
-                .as("the row landed on the default source").containsExactly(2);
-            assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
-        } finally {
-            dsl.execute("delete from film_endorsement where note = ?", ROUTINE_ENDORSEMENT_NOTE);
-        }
-    }
-
-    @Test
-    void defaultTenant_theSourceRefuses_answersAsAClientErrorBeforeAnyDatabaseIsOpened() {
-        // Tenant 99 is the request's default tenant but the source hosts no pool for it: the
-        // global read asks for its key, the source refuses it, and the refusal's own message
-        // answers at the field.
-        var result = executeWithDefault("{ languages { name } }", List.of(1, 2, 99), 99);
-
-        assertThat(result.getErrors().toString()).contains("No pool hosts tenant '99'.");
+        assertThat(result.getErrors().toString()).contains("No pool hosts the default connection.");
         Map<String, Object> data = result.getData();
         assertThat(data == null ? null : data.get("languages")).isNull();
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenant_outsideTheSet_isRefusedWhereTheValueIsBuilt() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(() -> RequestTenants.withDefault(List.of(1), 2))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Default tenant '2' is not in the request tenant set");
     }
 
     // ===== ParentRowBound: the parent row names the tenant of the row it references =====
@@ -1124,7 +1016,7 @@ class TenantDivinedRoutingExecutionTest {
 
     @Test
     void entities_tenantSlotThatDoesNotDecode_nullsThatSlot_andTheRestResolves() {
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), List.of(1, 2))
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"))
             .query(INVENTORY_ENTITIES)
             .variables(Map.of("reps", List.of(
                 Map.of("__typename", "FilmActor", "id", TENANT_SLOT_ABC),
@@ -1151,14 +1043,14 @@ class TenantDivinedRoutingExecutionTest {
         }
     }
 
-    // ===== The request tenant set: routing only to tenants the request may touch =====
+    // ===== A tenant the source refuses: an error where it was named, null in a lookup =====
 
     @Test
     void argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened() {
         var result = execute("{ films(filmId: 2) { title } }", List.of(1));
         assertThat(result.getErrors())
-            .as("the caller named a tenant explicitly, so the refusal is an error, surfaced to the client"
-                + " at the field's path (films is [Film!]!, and the refusal at that path is its only error)")
+            .as("the caller named a tenant the source refuses, so the refusal is an error, surfaced to the"
+                + " client at the field's path (films is [Film!]!, and the refusal at that path is its only error)")
             .singleElement()
             .satisfies(e -> {
                 assertThat(e.getMessage()).contains("'2' is not permitted for this request");
@@ -1174,7 +1066,7 @@ class TenantDivinedRoutingExecutionTest {
     // ===== FetcherErrorResponse.clientErrorMessage rewords an unclaimed client error =====
 
     private static ExecutionResult executeReworded(String query, java.util.Collection<Integer> tenants) {
-        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), tenants)
+        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}", tenants))
             .query(query).build());
     }
 
@@ -1217,20 +1109,12 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
-    void unhostedTenantOutsideTheSet_getsTheSameRefusal_soHostingCannotBeProbed() {
-        var result = execute("{ films(filmId: 99) { title } }", List.of(1));
-        assertThat(result.getErrors())
-            .anySatisfy(e -> assertThat(e.getMessage()).contains("'99' is not permitted for this request"))
-            .noneSatisfy(e -> assertThat(e.getMessage()).contains("No pool hosts"));
-    }
-
-    @Test
     void nodeIdArgumentDecodedToATenantOutsideTheSet_isRefused() {
         var result = execute("mutation { updateFilmByNodeId(in: { id: \""
             + NodeIdEncoder.encodeFilm(2) + "\", title: \"Never Written\" }) { title } }", List.of(1));
         assertThat(result.getErrors())
-            .as("a decoded String key and the set's boxed Integer compare equal, so this is the refusal,"
-                + " not a silent pass")
+            .as("the decoded key reaches the source as the boxed Integer it permits by, so this is the"
+                + " source's refusal, not a silent pass")
             .singleElement()
             .satisfies(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
         assertThat(TENANT_2_OPENED.get()).isZero();
@@ -1305,29 +1189,6 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_2_OPENED.get()).as("the refused node's subtree takes no connection").isZero();
     }
 
-    @Test
-    void operationBuiltWithoutTheSet_failsBeforeAnyDatabaseIsOpened() {
-        // An ExecutionInput assembled by hand rather than through the generated factory: no
-        // request tenant set, and the set has no unrestricted meaning.
-        var input = ExecutionInput.newExecutionInput()
-            .query("{ films(filmId: 1) { title } }")
-            .graphQLContext(b -> b.put("claims", "{\"sub\":\"test-user\"}"))
-            .build();
-        Throwable failure = null;
-        ExecutionResult result = null;
-        try {
-            result = graphql.execute(input);
-        } catch (RuntimeException e) {
-            failure = e;
-        }
-        if (failure != null) {
-            assertThat(failure).hasStackTraceContaining("No request tenant set");
-        } else {
-            assertThat(result.getErrors().toString()).contains("No request tenant set");
-        }
-        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
-    }
-
     // ===== The tenant slot: each mount learns the tenant it is mounting for =====
 
     @Test
@@ -1347,7 +1208,7 @@ class TenantDivinedRoutingExecutionTest {
         String sub = "mount-probe-" + java.util.UUID.randomUUID();
         var source = Sources.multitenant("{\"sub\":\"" + sub + "\"}", countingDataSource(null, null), Map.of(1, shared, 2, shared));
 
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source, List.of(1, 2))
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source)
             .query("{ a: films(filmId: 1) { title } b: films(filmId: 2) { title } }").build());
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         assertThat(mountedTenants(sub))
@@ -1716,170 +1577,56 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(tenant2SceneParent(3)).isEqualTo(1);
     }
 
-    // ===== @defaultTenant: an entity whose key names no tenant resolves on the request's entity default =====
+    // ===== A keyed entity: each representation resolves on the tenant its key names =====
 
     private static final String INVENTORY_ENTITIES = "query Q($reps: [_Any!]!) {"
         + " _entities(representations: $reps) { __typename"
-        + " ... on Inventory { inventoryId film { title } }"
+        + " ... on Inventory { inventoryId film { title } store { storeId } }"
         + " ... on FilmActor { actorId } } }";
 
-    private static Map<String, Object> inventoryRep(int inventoryId) {
-        return Map.of("__typename", "Inventory", "inventoryId", inventoryId);
+    private static Map<String, Object> inventoryRep(int inventoryId, int filmId) {
+        return Map.of("__typename", "Inventory", "inventoryId", inventoryId, "filmId", filmId);
     }
 
-    private static List<Map<String, Object>> entities(RequestTenants tenants, List<Map<String, Object>> reps) {
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), tenants)
+    private static List<Map<String, Object>> entities(java.util.Collection<Integer> tenants,
+                                                      List<Map<String, Object>> reps) {
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}", tenants))
             .query(INVENTORY_ENTITIES).variables(Map.of("reps", reps)).build());
         return (List<Map<String, Object>>) data(result, "_entities");
     }
 
     @Test
-    void defaultTenantEntity_resolvesOnlyTheDefaultTenantsOwnRows_andItsSubtreeReadsThere() {
-        var entities = entities(RequestTenants.withDefault(List.of(1, 2), 1),
-            List.of(inventoryRep(1), inventoryRep(foreignInventoryId), inventoryRep(999)));
+    void keyedEntity_resolvesOnTheTenantItsKeyNames_andItsSubtreeReadsThere() {
+        var entities = entities(List.of(1, 2),
+            List.of(inventoryRep(1, 1), inventoryRep(foreignInventoryId, 1), inventoryRep(999, 1)));
         assertThat(entities).hasSize(3);
         assertThat(entities.get(0)).containsEntry("inventoryId", 1);
         assertThat((Map<String, Object>) entities.get(0).get("film"))
-            .as("the batched child reads tenant 1's film through the tenant the entity was resolved on")
+            .as("the batched child reads tenant 1's film through the tenant the key named")
             .containsEntry("title", "Tenant One Film");
+        assertThat((Map<String, Object>) entities.get(0).get("store"))
+            .as("the global child reads the empty key, the default source, which holds store 1")
+            .containsEntry("storeId", 1);
         assertThat(entities.get(1))
             .as("tenant 1's database holds the row, but it names film 2, so it is not tenant 1's")
             .isNull();
         assertThat(entities.get(2)).as("an unknown id").isNull();
         assertThat(TENANT_1_OPENED.get()).as("one connection serves the entities and the film").isEqualTo(1);
-        assertThat(TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenantEntity_withNoDefaultTenant_answersNull_andTheRestOfTheBatchResolves() {
-        var entities = entities(RequestTenants.of(List.of(1, 2)), List.of(
-            inventoryRep(1),
-            Map.of("__typename", "FilmActor", "id", NodeIdEncoder.encodeFilmActor(20, 2)),
-            inventoryRep(2)));
-        assertThat(entities).hasSize(3);
-        assertThat(entities.get(0)).as("no default tenant names a database to look in").isNull();
-        assertThat(entities.get(1))
-            .as("a key-routed representation resolves on the tenant its key names")
-            .containsEntry("actorId", 20);
-        assertThat(entities.get(2)).isNull();
-        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
-        assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get())
-            .as("no connection is taken for the unresolvable inventories")
-            .isZero();
-    }
-
-    @Test
-    void defaultTenantEntity_anotherTenantsIdUnderTheDefault_answersNull() {
-        var entities = entities(RequestTenants.withDefault(List.of(1, 2), 2), List.of(inventoryRep(1)));
-        assertThat(entities).singleElement().as("inventory 1 lives in tenant 1's database").isNull();
-        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
-        assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
-    }
-
-    // ===== The entity default tenant: named apart from the default tenant, or not at all =====
-
-    /** One operation reading a global root beside {@code _entities}, so both roles are visible. */
-    private static final String ENTITIES_AND_LANGUAGES = "query Q($reps: [_Any!]!) {"
-        + " languages { name }"
-        + " _entities(representations: $reps) { __typename"
-        + " ... on Inventory { inventoryId film { title } store { storeId } }"
-        + " ... on FilmActor { actorId } } }";
-
-    private static ExecutionResult entitiesAndLanguages(RequestTenants tenants, List<Map<String, Object>> reps) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), tenants)
-            .query(ENTITIES_AND_LANGUAGES).variables(Map.of("reps", reps)).build());
-    }
-
-    private static List<Object> languageNames(ExecutionResult result) {
-        return ((List<Map<String, Object>>) data(result, "languages")).stream()
-            .map(m -> m.get("name"))
-            .toList();
-    }
-
-    @Test
-    void defaultTenantEntity_withoutEntityDefault_answersNull_whileGlobalReadsKeepTheDefault() {
-        var result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2), 1).withoutEntityDefault(),
-            List.of(
-                inventoryRep(1),
-                Map.of("__typename", "FilmActor", "id", NodeIdEncoder.encodeFilmActor(20, 2)),
-                inventoryRep(2)));
-        var entities = (List<Map<String, Object>>) data(result, "_entities");
-        assertThat(entities).hasSize(3);
-        assertThat(entities.get(0)).as("no entity default tenant names a database to look in").isNull();
-        assertThat(entities.get(1))
-            .as("a key-routed representation resolves on the tenant its key names")
-            .containsEntry("actorId", 20);
-        assertThat(entities.get(2)).isNull();
-        assertThat(languageNames(result)).as("global reads still use the default tenant").containsExactly("tenant_1");
-        assertThat(TENANT_1_OPENED.get()).as("tenant 1 is opened for languages alone").isEqualTo(1);
-        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
-        assertThat(DEFAULT_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenantEntity_namedEntityDefault_resolvesThere_andItsGlobalChildReadsTheDefault() {
-        var result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2), 2).withEntityDefault(1),
-            List.of(inventoryRep(1), inventoryRep(foreignInventoryId)));
-        var entities = (List<Map<String, Object>>) data(result, "_entities");
-        assertThat(entities).hasSize(2);
-        assertThat(entities.get(0)).containsEntry("inventoryId", 1);
-        assertThat((Map<String, Object>) entities.get(0).get("film"))
-            .as("the tenant-scoped child reads the entity default tenant")
-            .containsEntry("title", "Tenant One Film");
-        assertThat((Map<String, Object>) entities.get(0).get("store"))
-            .as("the global child reads the default tenant, which holds store 1")
-            .containsEntry("storeId", 1);
-        assertThat(entities.get(1))
-            .as("tenant 1's database holds the row, but it names film 2, so it is not tenant 1's")
-            .isNull();
-        assertThat(languageNames(result)).containsExactly("tenant_2", "tenant_2");
-        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
-        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
-        assertThat(DEFAULT_OPENED.get()).isZero();
-    }
-
-    @Test
-    void entityDefaultTenant_outsideTheSet_isRefusedWhereTheValueIsBuilt() {
-        org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> RequestTenants.withDefault(List.of(1), 1).withEntityDefault(2))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("Entity default tenant '2' is not in the request tenant set");
-    }
-
-    @Test
-    void entityDefaultTenant_theSourceRefuses_answersAsAClientErrorAtTheEntities() {
-        // The entity default tenant 99 is in the request's set but the source hosts no pool for
-        // it: the lookup on its key is refused, with the refusal's own message at _entities, and
-        // no other database is opened for it.
-        var result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2, 99), 1).withEntityDefault(99),
-            List.of(inventoryRep(1)));
-
-        assertThat(result.getErrors())
-            .anySatisfy(e -> {
-                assertThat(e.getPath()).containsExactly("_entities");
-                assertThat(e.getMessage()).contains("No pool hosts tenant '99'.");
-            });
-        assertThat(TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
-    }
-
-    @Test
-    void defaultTenantEntity_entityDefaultWithoutADefaultTenant_globalReadsTakeTheDefaultSource() {
-        var result = entitiesAndLanguages(RequestTenants.of(List.of(1, 2)).withEntityDefault(1),
-            List.of(inventoryRep(1)));
-        var entities = (List<Map<String, Object>>) data(result, "_entities");
-        assertThat(entities).singleElement().satisfies(inventory -> {
-            assertThat(inventory).containsEntry("inventoryId", 1);
-            assertThat((Map<String, Object>) inventory.get("store"))
-                .as("the global child reads the default source, which holds store 1")
-                .containsEntry("storeId", 1);
-        });
-        assertThat(languageNames(result))
-            .as("the default source's languages, not a tenant database's")
-            .isNotEmpty()
-            .doesNotContain("tenant_1", "tenant_2");
-        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
-        assertThat(DEFAULT_OPENED.get()).isEqualTo(1);
         assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void keyedEntity_aTenantTheSourceRefuses_answersNull_andTheRestOfTheBatchResolves() {
+        var entities = entities(List.of(1), List.of(
+            inventoryRep(1, 1),
+            Map.of("__typename", "FilmActor", "id", NodeIdEncoder.encodeFilmActor(20, 2)),
+            inventoryRep(1, 2)));
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0)).containsEntry("inventoryId", 1);
+        assertThat(entities.get(1)).as("the refused tenant's representation reads like an unknown id").isNull();
+        assertThat(entities.get(2)).isNull();
+        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).as("no connection is taken for the refused tenant").isZero();
     }
 
     // ===== An empty list names no tenant: an empty answer, or a readable refusal =====

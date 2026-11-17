@@ -213,7 +213,7 @@ class MutationScopeMultiTenantExecutionTest {
     }
 
     private static Request renameInput() {
-        return on -> Graphitron.newOwnedExecutionInput(on.source("test-user"), List.of(1, 2))
+        return on -> Graphitron.newOwnedExecutionInput(on.source("test-user"))
             .query("mutation { renameLanguage(in: { languageId: " + LANGUAGE_ID + ", name: \"after-rename\" }) {"
                 + " name films { title } } }")
             .build();
@@ -258,7 +258,7 @@ class MutationScopeMultiTenantExecutionTest {
     }
 
     private static Request input(String note, String principal) {
-        return on -> Graphitron.newOwnedExecutionInput(on.source(principal), List.of(1, 2))
+        return on -> Graphitron.newOwnedExecutionInput(on.source(principal))
             .query("mutation { createEndorsement(in: { endorsedFilm: 2, note: \"" + note + "\" }) {"
                 + " note film { title } } }")
             .build();

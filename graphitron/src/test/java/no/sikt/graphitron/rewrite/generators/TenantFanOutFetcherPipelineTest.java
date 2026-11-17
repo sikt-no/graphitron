@@ -155,14 +155,13 @@ class TenantFanOutFetcherPipelineTest {
     }
 
     @Test
-    void factoriesCarryTheRequestTenantSetInEveryMultiTenantBuild() {
+    void factoriesAreTheSameInEveryMultiTenantBuild() {
         var fanned = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query { films: [Film] @tenantFanOut }
             """);
-        // A routed-only schema has no fanned field, and still carries the set: routing checks
-        // every divined tenant against it, and the gate is the build's tenant column, never an
-        // evolving schema property on a public factory signature.
+        // A routed-only schema has no fanned field: which tenants a request may reach is the
+        // connection source's to say in either, so neither factory takes a tenant parameter.
         var routedOnly = multiTenant("""
             type Film @table(name: "film") { title: String }
             type Query {
@@ -171,23 +170,18 @@ class TenantFanOutFetcherPipelineTest {
             """);
 
         for (var schema : java.util.List.of(fanned, routedOnly)) {
-            // Both factory forms carry the dedicated typed slot, so a missing or mis-typed set is
-            // a compile error at the call site. The owned form also takes the typed
-            // RequestTenants value, which can name a default tenant; the escape hatch, which has
-            // no carrier to read one, does not. The owned forms take the request's connection
-            // source first.
+            // The factories are the same as a single-tenant build's: the owned form takes the
+            // request's connection source, the escape hatch its DSLContext.
             var factories = factoryParameters(schema);
-            assertThat(factories.get("newExecutionInput")).containsExactly(java.util.List.of(
-                "org.jooq.DSLContext defaultDsl", "java.util.Collection<java.lang.Integer> tenants"));
-            String source = DEFAULT_OUTPUT_PACKAGE + ".schema.ConnectionSource source";
-            assertThat(factories.get("newOwnedExecutionInput")).containsExactlyInAnyOrder(
-                java.util.List.of(source, "java.util.Collection<java.lang.Integer> tenants"),
-                java.util.List.of(source, DEFAULT_OUTPUT_PACKAGE + ".schema.RequestTenants requestTenants"));
+            assertThat(factories.get("newExecutionInput"))
+                .containsExactly(java.util.List.of("org.jooq.DSLContext defaultDsl"));
+            assertThat(factories.get("newOwnedExecutionInput")).containsExactly(
+                java.util.List.of(DEFAULT_OUTPUT_PACKAGE + ".schema.ConnectionSource source"));
         }
     }
 
     @Test
-    void factoriesOmitTheRequestTenantSetInASingleTenantBuild() {
+    void factoriesTakeNoTenantsInASingleTenantBuild() {
         var singleTenant = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             type Query { allFilms: [Film!]! }

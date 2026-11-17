@@ -280,16 +280,10 @@ on fields whose arguments name a tenant or carry a tenant-scoped table's record,
 directive @globalData on FIELD_DEFINITION
 
 """
-Resolves a federation entity type on the request's entity default tenant, which is the default
-tenant unless the request names one separately, when its `@key` cannot name the tenant. Each
-`_entities` representation matched by a resolvable `@key` that does not include the tenant column
-is looked up on the entity default tenant, matching only rows whose tenant column holds it; the
-tenant-scoped fields below the entity read from the same tenant. A request that names no entity
-default tenant answers every such representation with `null`. A key that includes the tenant column keeps routing
-by its own value, and node ids keep routing by the tenant inside the id. Multi-tenant builds only
-(`<tenantColumn>` must be configured). Rejected at build time where it decides nothing: on a type
-whose table has no tenant column, on a type with no resolvable key, and on a type whose every
-resolvable `@key` includes the tenant column.
+No longer supported: every application is rejected at build time. A request names no default
+tenant, so a representation whose `@key` lacks the tenant column cannot name the tenant to fetch
+from. Remove the directive and add the tenant column to the key, or mark the alternative
+`resolvable: false`. Declared only so schemas that still apply it parse and get that message.
 """
 directive @defaultTenant on OBJECT
 

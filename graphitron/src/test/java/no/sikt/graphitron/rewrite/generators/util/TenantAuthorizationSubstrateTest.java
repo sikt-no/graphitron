@@ -25,20 +25,19 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Direct-carrier proofs for routed acquisition's two per-tenant guarantees, over the real emitted
- * multi-tenant runtime and fake JDBC (the {@link TenantScatterSubstrateTest} pattern): a key
- * outside the request tenant set is refused with the client-error type before any connection is
- * taken, ahead of the source's own refusal so an unauthorized caller cannot probe which tenants
- * the source hosts; and the source's mount receives the key it is mounting for, whose tenant is
- * {@code Optional.empty()} for the default source, one mount per key even when keys share a
- * {@code DataSource}. A request's default tenant serves {@code dslGlobal()} through the same
- * entry {@code dslFor} uses for that tenant, and leaves {@code dslDefault()} on the default source.
+ * Direct-carrier proofs for routed acquisition over the real emitted multi-tenant runtime and fake
+ * JDBC (the {@link TenantScatterSubstrateTest} pattern). Which tenants a request may reach is the
+ * source's to say: a key it refuses with {@code KeyNotPermitted} answers as a client error carrying
+ * the refusal's message, and the refusal is remembered, so the source is asked once per key;
+ * {@code dslForIfPermitted} answers such a key with {@code null} instead. The fan-out domain is the
+ * source's {@code tenants()}, read once per request, in its order. The source's mount receives the
+ * key it is mounting for, whose tenant is {@code Optional.empty()} for the empty key every global
+ * read and write runs on, one mount per key even when keys share a {@code DataSource}.
  */
 @UnitTier
 class TenantAuthorizationSubstrateTest {
@@ -49,7 +48,6 @@ class TenantAuthorizationSubstrateTest {
     private static EmittedCodeHarness harness;
     private static Class<?> runtimeClass;
     private static Class<?> ownedConnectionsClass;
-    private static Class<?> requestTenantsClass;
     private static Class<?> commitPolicyClass;
     private static Class<?> clientExceptionClass;
     private static Object commitPolicyCommit;
@@ -85,7 +83,6 @@ class TenantAuthorizationSubstrateTest {
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         ownedConnectionsClass = harness.load(SCHEMA_PACKAGE + ".OwnedConnections");
-        requestTenantsClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         clientExceptionClass = harness.load(SCHEMA_PACKAGE + "." + GraphitronClientExceptionClassGenerator.CLASS_NAME);
         Class<?> providerClass = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider");
         commitPolicyClass = java.util.Arrays.stream(providerClass.getDeclaredClasses())
@@ -110,45 +107,43 @@ class TenantAuthorizationSubstrateTest {
     }
 
     @Test
-    void keyOutsideTheRequestSet_isRefusedBeforeAnyConnectionIsTaken() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
-            Set.of("A"));
+    void aKeyTheSourceRefuses_answersWithTheSourcesRefusalAsAClientError_beforeAnyConnectionIsTaken()
+            throws Throwable {
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))));
 
-        assertThatThrownBy(() -> dslFor(tc, "B"))
+        assertThatThrownBy(() -> dslFor(tc, "Z"))
+            .as("the source's KeyNotPermitted reaches the field as a client error carrying its message")
             .isInstanceOf(clientExceptionClass)
-            .hasMessageContaining("'B'")
-            .hasMessageContaining("not permitted");
+            .hasMessage("Tenant 'Z' is not hosted here.");
         assertThat(events).as("no connection to a refused tenant is ever opened").isEmpty();
         assertThat(RecordingSource.mountedTenants(harness)).isEmpty();
         releaseAll(tc);
     }
 
     @Test
-    void unhostedKeyOutsideTheSet_getsTheSameRefusalAsAHostedOne_soHostingCannotBeProbed() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
+    void aRefusedKey_isRemembered_soTheSourceIsAskedOnce() throws Throwable {
+        var asks = new java.util.concurrent.atomic.AtomicInteger();
+        DataSource a = fakeDataSource("A");
+        Object source = RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", key -> {
+            if (RecordingSource.labelOf(key).equals("Z")) {
+                asks.incrementAndGet();
+            }
+            return RecordingSource.labelOf(key).equals("A") ? a : refuse("not yours");
+        }, List.of("A", "Z"));
+        Object tc = newOwnedConnections(new Hosted(newRuntimeOnly(), source));
 
-        assertThatThrownBy(() -> dslFor(tc, "Z"))
-            .as("the membership check runs ahead of the source's refusal")
-            .isInstanceOf(clientExceptionClass)
-            .hasMessageContaining("not permitted");
+        assertThatThrownBy(() -> dslFor(tc, "Z")).isInstanceOf(clientExceptionClass).hasMessage("not yours");
+        assertThatThrownBy(() -> dslFor(tc, "Z")).isInstanceOf(clientExceptionClass).hasMessage("not yours");
+        dslFor(tc, "A");
+
+        assertThat(asks).hasValue(1);
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.of("A"));
         releaseAll(tc);
     }
 
     @Test
-    void keyInsideTheSetTheSourceRefuses_answersWithTheSourcesRefusalAsAClientError() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A", "Z"));
-
-        assertThatThrownBy(() -> dslFor(tc, "Z"))
-            .as("the source's KeyNotPermitted reaches the field as a client error carrying its message")
-            .isInstanceOf(clientExceptionClass)
-            .hasMessage("Tenant 'Z' is not hosted here.");
-        assertThat(events).isEmpty();
-        releaseAll(tc);
-    }
-
-    @Test
-    void mountReceivesTheRoutedKey_andEmptyForTheDefaultSource() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
+    void mountReceivesTheRoutedKey_andEmptyForTheEmptyKey() throws Throwable {
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))));
 
         dslFor(tc, "A");
         invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
@@ -159,12 +154,23 @@ class TenantAuthorizationSubstrateTest {
     }
 
     @Test
+    void dslDefault_runsOnThePoolTheSourcePicksForTheEmptyKey() throws Throwable {
+        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))));
+
+        invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
+
+        assertThat(events).containsExactly("getConnection:default");
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.empty());
+        releaseAll(tc);
+    }
+
+    @Test
     void keysSharingOneDataSource_getOneConnectionAndOneMountEach_withTheirOwnKey() throws Throwable {
         DataSource shared = fakeDataSource("shared");
         var sources = new LinkedHashMap<String, DataSource>();
         sources.put("A", shared);
         sources.put("B", shared);
-        Object tc = newOwnedConnections(newRuntime(sources), Set.of("A", "B"));
+        Object tc = newOwnedConnections(newRuntime(sources));
 
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -177,63 +183,60 @@ class TenantAuthorizationSubstrateTest {
         releaseAll(tc);
     }
 
-    // --- the request's default tenant ------------------------------------------------------------
+    // --- dslForIfPermitted: the entity and node dispatch's acquisition ---------------------------
 
     @Test
-    void aDefaultTenantOutsideTheSet_isRefusedBeforeAnyCarrierExists() {
-        assertThatThrownBy(() -> withDefault(Set.of("A"), "B"))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("'B'")
-            .hasMessageContaining("not in the request tenant set");
-        assertThat(events).isEmpty();
-    }
+    void dslForIfPermitted_answersARefusedKeyWithNull_rememberedAcrossCalls() throws Throwable {
+        var asks = new java.util.concurrent.atomic.AtomicInteger();
+        DataSource a = fakeDataSource("A");
+        Object source = RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", key -> {
+            if (RecordingSource.labelOf(key).equals("Z")) {
+                asks.incrementAndGet();
+                return refuse("not yours");
+            }
+            return a;
+        }, List.of("A"));
+        Object tc = newOwnedConnections(new Hosted(newRuntimeOnly(), source));
+        var env = envOver(tc);
 
-    @Test
-    void dslGlobal_pinsTheDefaultTenantsSource_andMountsForIt() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B"))),
-            withDefault(Set.of("A", "B"), "B"));
+        assertThat(dslForIfPermitted(env, "Z")).isNull();
+        assertThat(dslForIfPermitted(env, "Z")).isNull();
+        assertThat(asks).as("the refusal is remembered").hasValue(1);
+        assertThatThrownBy(() -> dslFor(tc, "Z"))
+            .as("a routed field asking the same key still answers with the error")
+            .isInstanceOf(clientExceptionClass).hasMessage("not yours");
+        assertThat(asks).hasValue(1);
 
-        dslGlobal(tc);
-
-        assertThat(events).containsExactly("getConnection:B");
-        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.of("B"));
+        Object permitted = dslForIfPermitted(env, "A");
+        assertThat(permitted).isNotNull().isSameAs(dslFor(tc, "A"));
         releaseAll(tc);
     }
 
-    @Test
-    void dslGlobalThenDslForTheSameTenant_takesOneConnectionAndRunsOneMount() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
-            withDefault(Set.of("A"), "A"));
-
-        Object global = dslGlobal(tc);
-        Object routed = dslFor(tc, "A");
-
-        assertThat(routed).as("one entry per tenant key, shared by both acquisitions").isSameAs(global);
-        assertThat(events).containsExactly("getConnection:A");
-        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.of("A"));
-        releaseAll(tc);
-    }
+    // --- the fan-out domain ----------------------------------------------------------------------
 
     @Test
-    void dslDefault_staysOnTheDefaultSource_whenTheRequestNamesADefaultTenant() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))),
-            withDefault(Set.of("A"), "A"));
+    void fanOutDomain_isTheSourcesTenants_inItsOrder_readOncePerRequest() throws Throwable {
+        Hosted hosted = newRuntime(Map.of("A", fakeDataSource("A"), "B", fakeDataSource("B")));
+        var reads = new java.util.concurrent.atomic.AtomicInteger();
+        Object delegate = hosted.source();
+        Class<?> sourceInterface = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
+        Object counting = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{sourceInterface},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "tenants" -> {
+                    reads.incrementAndGet();
+                    yield new java.util.LinkedHashSet<>(List.of("B", "A"));
+                }
+                case "acquire" -> method.invoke(delegate, args);
+                case "hashCode" -> System.identityHashCode(proxy);
+                case "equals" -> proxy == args[0];
+                default -> "CountingSource";
+            });
+        Object tc = newOwnedConnections(new Hosted(hosted.runtime(), counting));
+        var env = envOver(tc);
 
-        invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
-
-        assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.empty());
-        releaseAll(tc);
-    }
-
-    @Test
-    void dslGlobal_withoutADefaultTenant_pinsTheDefaultSource() throws Throwable {
-        Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
-
-        dslGlobal(tc);
-
-        assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.empty());
+        assertThat(fanOutDomain(env)).containsExactly("B", "A");
+        assertThat(fanOutDomain(env)).containsExactly("B", "A");
+        assertThat(reads).as("tenants() is read once per request").hasValue(1);
         releaseAll(tc);
     }
 
@@ -241,33 +244,54 @@ class TenantAuthorizationSubstrateTest {
 
     /** A runtime, paired with the request source over {@code tenantPools} and a default pool. */
     private Hosted newRuntime(Map<String, DataSource> tenantPools) throws Throwable {
-        Object runtime = runtimeClass.getConstructor(SQLDialect.class, Settings.class, int.class, Duration.class)
-            .newInstance(SQLDialect.POSTGRES, new Settings(), 2, Duration.ofSeconds(10));
         var pools = new LinkedHashMap<String, DataSource>(tenantPools);
         pools.put(RecordingSource.DEFAULT, fakeDataSource(RecordingSource.DEFAULT));
-        return new Hosted(runtime, RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", pools));
+        return new Hosted(newRuntimeOnly(), RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", pools));
+    }
+
+    private static Object newRuntimeOnly() throws Throwable {
+        return runtimeClass.getConstructor(SQLDialect.class, Settings.class, int.class, Duration.class)
+            .newInstance(SQLDialect.POSTGRES, new Settings(), 2, Duration.ofSeconds(10));
     }
 
     private record Hosted(Object runtime, Object source) {}
 
-    private Object newOwnedConnections(Hosted hosted, Set<String> tenants) throws Throwable {
-        return newOwnedConnections(hosted,
-            invoke(() -> requestTenantsClass.getMethod("of", java.util.Collection.class).invoke(null, tenants)));
-    }
-
-    private Object newOwnedConnections(Hosted hosted, Object requestTenants) throws Throwable {
+    private Object newOwnedConnections(Hosted hosted) throws Throwable {
         Class<?> sourceClass = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sourceClass)
-            .newInstance(hosted.runtime(), commitPolicyCommit, requestTenants, hosted.source());
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sourceClass)
+            .newInstance(hosted.runtime(), commitPolicyCommit, hosted.source());
     }
 
-    private static Object withDefault(Set<String> tenants, String defaultTenant) throws Throwable {
-        return invoke(() -> requestTenantsClass.getMethod("withDefault", java.util.Collection.class, String.class)
-            .invoke(null, tenants, defaultTenant));
+    /** Throws the generated {@code KeyNotPermitted} with {@code message}, from inside a pool function. */
+    private static DataSource refuse(String message) {
+        try {
+            throw (RuntimeException) harness.load(SCHEMA_PACKAGE + ".KeyNotPermitted")
+                .getConstructor(String.class).newInstance(message);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
-    private Object dslGlobal(Object tc) throws Throwable {
-        return invoke(() -> ownedConnectionsClass.getMethod("dslGlobal").invoke(tc));
+    /** A field's environment whose GraphQL context holds {@code tc}, as the instrumentation publishes it. */
+    private static graphql.schema.DataFetchingEnvironment envOver(Object tc) {
+        return graphql.schema.DataFetchingEnvironmentImpl.newDataFetchingEnvironment()
+            .graphQLContext(graphql.GraphQLContext.of(Map.of(ownedConnectionsClass, tc)))
+            .build();
+    }
+
+    private static Object dslForIfPermitted(graphql.schema.DataFetchingEnvironment env, String tenant)
+            throws Throwable {
+        return invoke(() -> ownedConnectionsClass
+            .getMethod("dslForIfPermitted", graphql.schema.DataFetchingEnvironment.class, String.class)
+            .invoke(null, env, tenant));
+    }
+
+    private static List<Object> fanOutDomain(graphql.schema.DataFetchingEnvironment env) throws Throwable {
+        @SuppressWarnings("unchecked")
+        var domain = (List<Object>) invoke(() -> ownedConnectionsClass
+            .getMethod("fanOutDomain", graphql.schema.DataFetchingEnvironment.class)
+            .invoke(null, env));
+        return domain;
     }
 
     private Object dslFor(Object tc, Object key) throws Throwable {

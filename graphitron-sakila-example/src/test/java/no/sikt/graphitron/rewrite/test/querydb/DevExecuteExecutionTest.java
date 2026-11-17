@@ -191,6 +191,21 @@ class DevExecuteExecutionTest {
     }
 
     @Test
+    void aTenantedBuildWithoutASession_failsLoudNamingTheConfigKnob_ratherThanFanningOutOverNothing()
+            throws Exception {
+        // The converted-tenant package configures <tenantColumn> and no session identity: its
+        // source names the tenants a request may span, which the one dev connection cannot.
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
+            assertThatThrownBy(() -> no.sikt.graphitron.generated.convertedtenant.GraphitronDevExecutor.execute(
+                    connection, "POSTGRES", "{ __typename }", null, null, null))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("<tenantColumn>")
+                .hasMessageContaining("<devDatabase><session>")
+                .hasMessageContaining("GRAPHITRON_DEV_SESSION");
+        }
+    }
+
+    @Test
     void rejectedClaims_surfaceTheHooksOwnError() throws Exception {
         // The hook is the validator: the mount routine raises on an unentitled principal, and
         // the executor preflights the payload through the mount before execution, so the

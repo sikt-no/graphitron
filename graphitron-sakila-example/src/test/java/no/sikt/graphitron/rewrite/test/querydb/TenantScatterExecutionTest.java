@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronTransactionProvider.CommitPolicy;
-import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
 import no.sikt.graphitron.generated.multitenant.schema.OwnedConnections;
 import no.sikt.graphitron.generated.multitenant.schema.OwnedConnections.Outcome;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -75,7 +74,7 @@ class TenantScatterExecutionTest {
         var runtime = new GraphitronRuntime(SQLDialect.POSTGRES, null, 2, Duration.ofSeconds(10));
         var source = Sources.multitenant("{}", dataSource(null, null, null),
             Map.of(1, dataSource("scatter_t1", null, null), 2, dataSource("scatter_t2", null, null)));
-        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), source);
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
         try {
             long start = System.nanoTime();
             List<Outcome<String>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
@@ -102,7 +101,7 @@ class TenantScatterExecutionTest {
         var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
         var source = Sources.multitenant("{}", dataSource(null, null, null),
             Map.of(1, dataSource("scatter_t1", null, null), 2, dataSource("scatter_t2", null, null)));
-        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), source);
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
         try {
             List<Outcome<List<String>>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
                 perTenant.fetch("select title from film order by title").getValues("title", String.class));
@@ -126,7 +125,7 @@ class TenantScatterExecutionTest {
         var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
         var source = Sources.multitenant("{}", dataSource(null, opened, closed),
             Map.of(1, dataSource("scatter_t1", opened, closed), 2, dataSource("scatter_t2", opened, closed)));
-        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, RequestTenants.of(java.util.Set.of(1, 2)), source);
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
 
         List<Outcome<Integer>> outcomes = tenants.scatter(List.of(1, 2), perTenant ->
             perTenant.fetchOne("select 1").get(0, Integer.class));

@@ -283,10 +283,11 @@ a jOOQ `TransactionListener` if code must run as each transaction begins.
 
 For database-per-tenant deployments the connection source chooses each tenant's
 pool from the connection key's tenant part; Graphitron leases one connection
-per distinct divined tenant within an operation. Only tenants in the request
-tenant set (a factory parameter in a `<tenantColumn>` build) are ever asked of
-the source: the generated per-operation connection carrier refuses any other key
-with a client error before the source is called. The schema-side
+per distinct divined tenant within an operation. The source names the fan-out
+domain, its `tenants()`, read once per request, and refuses a key it will not
+serve by throwing the generated key-not-permitted refusal from `acquire`; the
+generated per-operation connection carrier remembers that refusal, so the source
+is asked once per key in a request. The schema-side
 inference that divines the tenant key is the tenant-column work; the runtime seam
 it rides is part of this path. The consumer-facing recipe is
 xref:../../manual/how-to/tenant-scoping.adoc[How-to: Tenant scoping].
@@ -304,8 +305,8 @@ which pool serves the key whose tenant part is empty is the source's decision, s
 of a global table runs on that key and there is no separate global-read route. `@defaultTenant` goes
 with it, since its lookup needs a tenant value the request no longer names.
 
-The contract that source takes (Alf, 2026-11-16). The runtime's own connection setup is gone; the
-request tenant set stays until the source names the fan-out domain:
+The contract that source takes (Alf, 2026-11-16). The runtime's own connection setup and the request
+tenant set are gone; the source names the fan-out domain:
 
 * The consumer hands each request a connection source, a generated functional interface whose one
   method, `acquire`, takes the connection key and returns a lease; it is given to

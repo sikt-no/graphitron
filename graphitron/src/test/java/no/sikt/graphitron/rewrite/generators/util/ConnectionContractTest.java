@@ -32,8 +32,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The connection contract as the carrier keeps it, driven on emitted code: a {@code ConnectionSource}
  * is asked once per distinct key, lazily; the lease's handle reaches {@code $session} reads; every
- * lease is released exactly once on every path; {@code KeyNotPermitted} answers as a field error; any
- * other throw rejects the request and nothing more is acquired; a throwing release orphans no other
+ * lease is released exactly once on every path; {@code KeyNotPermitted} answers as a field error and
+ * is remembered per key, so the source is asked once; any other throw rejects the request and
+ * nothing more is acquired; a tenanted build's {@code ConnectionSource.of} copies its tenants in
+ * order and refuses a {@code null}, and an untenanted source's {@code tenants()} throws; a throwing release orphans no other
  * lease; a lease with autocommit off is refused and released; an aborted lease is aborted before its
  * release.
  */
@@ -114,7 +116,7 @@ class ConnectionContractTest {
 
     @Test
     void distinctKeysAreAskedOnceEach() throws Throwable {
-        var carrier = tenantedCarrier(Set.of("A", "B"),
+        var carrier = tenantedCarrier(
             source(tenanted, key -> lease(tenanted, String.valueOf(tenantOf(key)), true, null)));
 
         dslFor(carrier, "A");
@@ -167,7 +169,7 @@ class ConnectionContractTest {
 
     @Test
     void aThrowingReleaseOrphansNoOtherLease_andSurfacesAfterAllAreAttempted() throws Throwable {
-        var carrier = tenantedCarrier(Set.of("A", "B"), source(tenanted, key -> {
+        var carrier = tenantedCarrier(source(tenanted, key -> {
             String tenant = String.valueOf(tenantOf(key));
             return lease(tenanted, tenant, true, null, tenant.equals("A") ? new IllegalStateException("A will not go") : null);
         }));
@@ -184,7 +186,7 @@ class ConnectionContractTest {
     @Test
     void keyNotPermitted_answersAsAClientErrorAtTheFieldThatAsked_andTheRequestRuns() throws Throwable {
         Class<?> refusal = tenanted.load(SCHEMA_PACKAGE + ".KeyNotPermitted");
-        var carrier = tenantedCarrier(Set.of("A", "B"), source(tenanted, key -> {
+        var carrier = tenantedCarrier(source(tenanted, key -> {
             String tenant = String.valueOf(tenantOf(key));
             if (tenant.equals("A")) {
                 throw (RuntimeException) refusal.getConstructor(String.class).newInstance("not yours");
@@ -203,10 +205,98 @@ class ConnectionContractTest {
     }
 
     @Test
+    void aRefusalIsRememberedPerKey_soTheSourceIsAskedOnce_andAnswersTheSameErrorAgain() throws Throwable {
+        Class<?> refusal = tenanted.load(SCHEMA_PACKAGE + ".KeyNotPermitted");
+        Class<?> clientError = tenanted.load(SCHEMA_PACKAGE + "." + GraphitronClientExceptionClassGenerator.CLASS_NAME);
+        var asked = new java.util.concurrent.atomic.AtomicInteger();
+        var carrier = tenantedCarrier(source(tenanted, key -> {
+            String tenant = String.valueOf(tenantOf(key));
+            if (tenant.equals("A")) {
+                asked.incrementAndGet();
+                throw (RuntimeException) refusal.getConstructor(String.class).newInstance("not yours");
+            }
+            return lease(tenanted, tenant, true, null);
+        }));
+
+        assertThatThrownBy(() -> dslFor(carrier, "A")).isInstanceOf(clientError).hasMessage("not yours");
+        assertThatThrownBy(() -> dslFor(carrier, "A")).isInstanceOf(clientError).hasMessage("not yours");
+        dslFor(carrier, "B");
+
+        assertThat(asked).as("the source is never asked twice for one key in one request").hasValue(1);
+        releaseAll(carrier);
+        assertThat(events).containsExactly("acquire:B", "release:B");
+    }
+
+    @Test
+    void anUntenantedSourcesTenants_throws_sinceNothingFansOut() throws Throwable {
+        Object source = RecordingSource.plain(untenanted, SCHEMA_PACKAGE, Map.of());
+
+        assertThatThrownBy(() -> invoke(() -> untenanted.load(SCHEMA_PACKAGE + ".ConnectionSource")
+            .getMethod("tenants").invoke(source)))
+            .isInstanceOf(UnsupportedOperationException.class)
+            .hasMessage("this build has no tenant column, so nothing fans out");
+    }
+
+    @Test
+    void aTenantedSourceOf_copiesTheTenantsInOrder_unmodifiably() throws Throwable {
+        var tenants = new ArrayList<>(List.of("B", "A", "C", "A"));
+        Object source = sourceOf(tenants);
+        tenants.add("D");
+
+        @SuppressWarnings("unchecked")
+        var named = (Set<Object>) invoke(() -> sourceInterface().getMethod("tenants").invoke(source));
+        assertThat(named).as("copied, in iteration order, duplicates dropped").containsExactly("B", "A", "C");
+        assertThatThrownBy(() -> named.add("E")).isInstanceOf(UnsupportedOperationException.class);
+    }
+
+    @Test
+    void aTenantedSourceOf_refusesANullTenant() {
+        var tenants = new ArrayList<String>();
+        tenants.add("A");
+        tenants.add(null);
+
+        assertThatThrownBy(() -> sourceOf(tenants)).isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> sourceOf(null)).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void aTenantedSourceOf_leasesThroughItsAcquire() throws Throwable {
+        Object source = sourceOf(List.of("A"));
+        var carrier = tenantedCarrier(source);
+
+        dslFor(carrier, "A");
+        releaseAll(carrier);
+
+        assertThat(events).containsExactly("acquire:A", "release:A");
+    }
+
+    private Class<?> sourceInterface() {
+        return tenanted.load(SCHEMA_PACKAGE + ".ConnectionSource");
+    }
+
+    /** {@code ConnectionSource.of(acquire, tenants)} in the tenanted build, leasing a fake per key. */
+    private Object sourceOf(java.util.Collection<String> tenants) throws Throwable {
+        Class<?> acquireInterface = tenanted.load(SCHEMA_PACKAGE + ".ConnectionSource$Acquire");
+        Object acquire = Proxy.newProxyInstance(tenanted.classLoader(), new Class<?>[]{acquireInterface},
+            (proxy, method, args) -> switch (method.getName()) {
+                case "acquire" -> {
+                    String tenant = String.valueOf(tenantOf(args[0]));
+                    events.add("acquire:" + tenant);
+                    yield lease(tenanted, tenant, true, null);
+                }
+                case "hashCode" -> System.identityHashCode(proxy);
+                case "equals" -> proxy == args[0];
+                default -> "Acquire";
+            });
+        return invoke(() -> sourceInterface().getMethod("of", acquireInterface, java.util.Collection.class)
+            .invoke(null, acquire, tenants));
+    }
+
+    @Test
     void aThrowingAcquire_rejectsTheRequest_andNothingMoreIsAcquired() throws Throwable {
         Class<?> failed = tenanted.load(SCHEMA_PACKAGE + ".AcquisitionFailedException");
         var cause = new SQLException("pool exhausted");
-        var carrier = tenantedCarrier(Set.of("A", "B"), source(tenanted, key -> {
+        var carrier = tenantedCarrier(source(tenanted, key -> {
             events.add("acquire:" + tenantOf(key));
             throw cause;
         }));
@@ -282,15 +372,8 @@ class ConnectionContractTest {
             .newInstance(runtime, commit(harness), source);
     }
 
-    private Object tenantedCarrier(Set<String> tenants, Object source) throws Throwable {
-        Class<?> runtimeClass = tenanted.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
-        Object runtime = runtimeClass.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
-        Class<?> requestTenants = tenanted.load(SCHEMA_PACKAGE + ".RequestTenants");
-        Object requestTenantsValue = requestTenants.getMethod("of", java.util.Collection.class).invoke(null, tenants);
-        return tenanted.load(SCHEMA_PACKAGE + ".OwnedConnections")
-            .getConstructor(runtimeClass, commitPolicyClass(tenanted), requestTenants,
-                tenanted.load(SCHEMA_PACKAGE + ".ConnectionSource"))
-            .newInstance(runtime, commit(tenanted), requestTenantsValue, source);
+    private Object tenantedCarrier(Object source) throws Throwable {
+        return carrier(tenanted, source);
     }
 
     private static Class<?> commitPolicyClass(EmittedCodeHarness harness) {

@@ -61,8 +61,8 @@ import static org.jooq.impl.DSL.val;
  * fields mean anything: GENERIC matches by class identity and DATABASE by vendor code or SQL
  * state, so each has one. VALIDATION carries nothing beyond its kind, so it is the supertype row
  * alone. Every GENERIC and DATABASE element is a row of its kind's relation whatever it carries.
- * {@code @defaultTenant} reaches this site too and gets no relation: it declares no argument, so its
- * applied-directive row is the whole fact.
+ * {@code @defaultTenant}, no longer supported and rejected by the classifier, reaches this site too
+ * and gets no relation: it declares no argument, so its applied-directive row is the whole fact.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */

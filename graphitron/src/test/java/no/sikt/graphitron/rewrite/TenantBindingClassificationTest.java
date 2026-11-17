@@ -3454,8 +3454,7 @@ class TenantBindingClassificationTest {
                     assertThat(r.coordinate()).isEqualTo("Film");
                     assertThat(r.detail()).contains("federation key alternative #0")
                         .endsWith("Add a field mapped to tenant column 'film_id' to the key's"
-                            + " fields, mark the alternative resolvable: false, or mark the type"
-                            + " @defaultTenant to resolve it on the request's entity default tenant.");
+                            + " fields, or mark the alternative resolvable: false.");
                 }));
         assertInherited(schema, "Film", "inventories");
     }
@@ -3538,107 +3537,34 @@ class TenantBindingClassificationTest {
         assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
     }
 
-    // ===== @defaultTenant: an entity whose key cannot name the tenant routes by the request =====
+    // ===== @defaultTenant: no longer supported, every application rejects =====
 
-    private static void assertDefaultTenantRejection(GraphitronSchema schema, String typeName,
-                                                     String detail) {
+    private static void assertDefaultTenantRejection(GraphitronSchema schema, String typeName) {
         assertThat(schema.tenantBindings().rejections())
             .anyMatch(e -> e.rejection() instanceof Rejection.InvalidSchema.DirectiveConflict conflict
                 && conflict.directives().equals(List.of("defaultTenant"))
                 && e.coordinate().equals(typeName)
-                && conflict.message().contains("'" + typeName + "' declares @defaultTenant")
-                && conflict.message().contains(detail));
-    }
-
-    private static TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault requestEntityDefault(
-            TenantBinding.EntityRepBound.AlternativeSlot slot) {
-        assertThat(slot.source())
-            .isInstanceOf(TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault.class);
-        return (TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault) slot.source();
+                && conflict.message().contains("'" + typeName + "' declares @defaultTenant, which is no"
+                    + " longer supported")
+                && conflict.message().contains("Remove the directive and add the tenant column to the key,"
+                    + " or mark the alternative resolvable: false."));
     }
 
     @Test
-    void aMarkedEntityRoutesItsTenantLessKeyByTheRequestEntityDefaultAndItsSubtreeInherits() {
+    void aMarkedEntityWhoseKeyLacksTheTenantColumnRejectsBesideTheMissingBinding() {
         var schema = build(KEY_DIRECTIVE + """
             type Film @table(name: "film") @key(fields: "title") @defaultTenant {
                 title: String
-                inventories: [Inventory!]! @splitQuery
-            }
-            type Inventory @table(name: "inventory") { inventoryId: Int }
-            type Query { x: String }
-            """);
-
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-        var slots = schema.tenantBindings().byEntityType().get("Film").alternatives();
-        assertThat(slots).singleElement().satisfies(slot -> {
-            assertThat(slot.alternativeIndex()).isZero();
-            assertThat(requestEntityDefault(slot).tenantColumn().sqlName()).isEqualToIgnoringCase("film_id");
-        });
-        assertInherited(schema, "Film", "inventories");
-    }
-
-    @Test
-    void aMarkedEntityWithOneKeyOfEachKindRoutesEachByItsOwnSource() {
-        var schema = build(KEY_DIRECTIVE + """
-            type Film @table(name: "film") @key(fields: "filmId") @key(fields: "title") @defaultTenant {
-                filmId: Int @field(name: "film_id")
-                title: String
             }
             type Query { x: String }
             """);
 
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-        var slots = schema.tenantBindings().byEntityType().get("Film").alternatives();
-        assertThat(slots).hasSize(2);
-        assertThat(slots.get(0)).isEqualTo(new TenantBinding.EntityRepBound.AlternativeSlot(0,
-            new TenantBinding.EntityRepBound.TenantSource.KeyColumn(0)));
-        assertThat(slots.get(1).alternativeIndex()).isEqualTo(1);
-        assertThat(requestEntityDefault(slots.get(1)).tenantColumn().sqlName()).isEqualToIgnoringCase("film_id");
-    }
-
-    @Test
-    void aMarkedNodeTypeRoutesItsNodeIdByTheIdAndItsKeyByTheRequestEntityDefault() {
-        var schema = build(KEY_DIRECTIVE + """
-            type FilmActor implements Node @table(name: "film_actor")
-                    @node(keyColumns: ["actor_id", "film_id"])
-                    @key(fields: "id") @key(fields: "actorId") @defaultTenant {
-                id: ID! @nodeId
-                actorId: Int @field(name: "actor_id")
-            }
-            type Query { node(id: ID!): Node }
-            """);
-
-        assertThat(schema.tenantBindings().rejections()).isEmpty();
-        var resolution = schema.entitiesByType().get("FilmActor");
-        var slots = schema.tenantBindings().byEntityType().get("FilmActor").alternatives();
-        assertThat(slots).hasSize(2).allSatisfy(slot -> {
-            var alt = resolution.alternatives().get(slot.alternativeIndex());
-            if (alt instanceof no.sikt.graphitron.rewrite.model.KeyAlternative.NodeId) {
-                assertThat(slot.source())
-                    .isEqualTo(new TenantBinding.EntityRepBound.TenantSource.KeyColumn(1));
-            } else {
-                requestEntityDefault(slot);
-            }
-        });
-        assertThat(schema.tenantBindingOf("Query", "node")).isEqualTo(TenantBinding.NodeIdBound.INSTANCE);
-    }
-
-    @Test
-    void aMarkedNodeTypeWhoseOnlyTenantLessKeyIsItsNodeIdRejectsBesideTheNodeKeyRejection() {
-        var schema = build("""
-            type Inventory implements Node @table(name: "inventory")
-                    @node(keyColumns: ["inventory_id"]) @defaultTenant {
-                id: ID! @nodeId
-            }
-            type Query { node(id: ID!): Node }
-            """);
-
-        assertDefaultTenantRejection(schema, "Inventory", "every key names its tenant");
+        assertDefaultTenantRejection(schema, "Film");
         assertThat(schema.tenantBindings().rejections())
             .filteredOn(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding)
             .singleElement()
             .satisfies(e -> assertThat(((Rejection.AuthorError.NoTenantBinding) e.rejection()).detail())
-                .contains("node id key").doesNotContain("@defaultTenant"));
+                .contains("federation key alternative #0").doesNotContain("@defaultTenant"));
         assertThat(schema.tenantBindings().rejections()).hasSize(2);
     }
 
@@ -3649,48 +3575,22 @@ class TenantBindingClassificationTest {
             type Query { x: String }
             """);
 
-        assertDefaultTenantRejection(schema, "Film", "no <tenantColumn>");
+        assertDefaultTenantRejection(schema, "Film");
     }
 
     @Test
-    void aMarkedGlobalEntityRejects() {
-        var schema = build(KEY_DIRECTIVE + """
-            type Language @table(name: "language") @key(fields: "languageId") @defaultTenant {
-                languageId: Int @field(name: "language_id")
-            }
-            type Query { x: String }
-            """);
-
-        assertDefaultTenantRejection(schema, "Language", "has no tenant column 'film_id'");
-        assertThat(schema.tenantBindings().rejections()).hasSize(1);
-    }
-
-    @Test
-    void aMarkedTypeWithNoKeyRejectsThroughTheSweep() {
+    void aMarkedTypeWithNoKeyRejects() {
         var schema = build("""
             type Film @table(name: "film") @defaultTenant { title: String }
             type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
             """);
 
-        assertDefaultTenantRejection(schema, "Film", "has no resolvable key");
+        assertDefaultTenantRejection(schema, "Film");
         assertThat(schema.tenantBindings().rejections()).hasSize(1);
     }
 
     @Test
-    void aMarkedTypeWhoseEveryKeyIsNotResolvableRejectsThroughTheSweep() {
-        var schema = build(KEY_DIRECTIVE + """
-            type Film @table(name: "film") @key(fields: "title", resolvable: false) @defaultTenant {
-                title: String
-            }
-            type Query { films(filmId: Int! @field(name: "film_id")): [Film!]! }
-            """);
-
-        assertDefaultTenantRejection(schema, "Film", "has no resolvable key");
-        assertThat(schema.tenantBindings().rejections()).hasSize(1);
-    }
-
-    @Test
-    void aMarkedTypeWhoseEveryKeyNamesItsTenantRejects() {
+    void aMarkedTypeWhoseEveryKeyNamesItsTenantRejectsAndRoutesByItsKey() {
         var schema = build(KEY_DIRECTIVE + """
             type Film @table(name: "film") @key(fields: "filmId") @defaultTenant {
                 filmId: Int @field(name: "film_id")
@@ -3698,9 +3598,8 @@ class TenantBindingClassificationTest {
             type Query { x: String }
             """);
 
-        assertDefaultTenantRejection(schema, "Film", "every key names its tenant");
+        assertDefaultTenantRejection(schema, "Film");
         assertThat(schema.tenantBindings().rejections()).hasSize(1);
-        // Rejected, the type classifies as if unmarked: its key routes by its own value.
         assertThat(schema.tenantBindings().byEntityType().get("Film").alternatives())
             .containsExactly(new TenantBinding.EntityRepBound.AlternativeSlot(0,
                 new TenantBinding.EntityRepBound.TenantSource.KeyColumn(0)));

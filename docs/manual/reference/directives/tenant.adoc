@@ -29,7 +29,7 @@ The directive carries no arguments. Put it on a scalar argument of the service f
 
 The marker is your statement that the service uses the value as its tenant, which graphitron cannot see, since the service's own SQL is opaque. Everything around that statement is checked.
 
-The value is read as the client sent it, so its GraphQL type must arrive as your tenant key's Java type: `String` or `ID` for a `String` key, `Int` for an `Integer` key, a custom scalar whose Java type is the key type. Graphitron does not convert or normalise the value; one the request's tenant set does not contain fails the field with a client error. Every value in one call must name the same tenant, across the elements of a list and beside any id that carries a tenant, or the call is refused before the service runs.
+The value is read as the client sent it, so its GraphQL type must arrive as your tenant key's Java type: `String` or `ID` for a `String` key, `Int` for an `Integer` key, a custom scalar whose Java type is the key type. Graphitron does not convert or normalise the value; one your connection source refuses fails the field with a client error. Every value in one call must name the same tenant, across the elements of a list and beside any id that carries a tenant, or the call is refused before the service runs.
 
 == Build-time rejections
 

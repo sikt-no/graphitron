@@ -460,7 +460,7 @@ class SessionIdentityPoolIsolationExecutionTest {
 
         var result = tenantEngine.execute(no.sikt.graphitron.generated.multitenant.Graphitron
             .newOwnedExecutionInput(Sources.multitenant("{\"sub\":\"" + ALICE + "\"}", defaultPool,
-                Map.of(1, tenant1Pool, 2, tenant2Pool)), List.of(1, 2))
+                Map.of(1, tenant1Pool, 2, tenant2Pool)))
             .query("{ filmsEverywhere { title mountedPrincipal } }")
             .build());
 

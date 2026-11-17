@@ -5,7 +5,6 @@ import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.convertedtenant.Graphitron;
 import no.sikt.graphitron.generated.convertedtenant.schema.GraphitronRuntime;
-import no.sikt.graphitron.generated.convertedtenant.schema.RequestTenants;
 import no.sikt.graphitron.rewrite.test.services.OrgTenantSessionIdentity;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
@@ -22,7 +21,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -99,14 +97,14 @@ class ConvertedTenantRoutingExecutionTest {
     }
 
     private static ExecutionResult execute(GraphQL on, Map<String, DataSource> byTenant, String query,
-                                           RequestTenants tenants, String sub) {
-        var source = Sources.convertedTenant("{\"sub\":\"" + sub + "\"}", defaultPool, byTenant);
-        return on.execute(Graphitron.newOwnedExecutionInput(source, tenants).query(query).build());
+                                           List<String> tenants, String sub) {
+        var source = Sources.convertedTenant("{\"sub\":\"" + sub + "\"}", defaultPool, byTenant, tenants);
+        return on.execute(Graphitron.newOwnedExecutionInput(source).query(query).build());
     }
 
-    /** Executes under a request tenant set admitting tenant 186 only. */
+    /** Executes under a source whose fan-out domain is tenant 186 alone. */
     private static ExecutionResult execute(String query) {
-        return execute(graphql, BY_TENANT, query, RequestTenants.of(Set.of("186")), "converted-tenant");
+        return execute(graphql, BY_TENANT, query, List.of("186"), "converted-tenant");
     }
 
     private static List<Object> siteNames(ExecutionResult result, String field) {
@@ -130,9 +128,9 @@ class ConvertedTenantRoutingExecutionTest {
 
     @Test
     void aNarrowedFanOutAsksTheTenantTheSpellingNames() {
-        // Both hosted tenants are permitted, so a fan-out left un-narrowed would ask both.
+        // Both hosted tenants are in the domain, so a fan-out left un-narrowed would ask both.
         var result = execute(graphql, BY_TENANT, "{ sitesNarrowable(ownerOrg: \"0186\") { siteName } }",
-            RequestTenants.of(Set.of("186", "1120")), "converted-tenant");
+            List.of("186", "1120"), "converted-tenant");
 
         assertThat(siteNames(result, "sitesNarrowable")).containsExactlyInAnyOrder("Tromsø main", "Tromsø annex");
         assertThat(OPENED_186.get()).isPositive();
@@ -149,16 +147,14 @@ class ConvertedTenantRoutingExecutionTest {
 
     @Test
     void theSourceReceivesTheTenantInTheColumnsForm() {
-        // The consumer spells the request's tenant "0186"; the key the source is asked for, and so
-        // the pool it looks up and the tenant its mount receives, is the column's "186".
+        // The consumer spells the fan-out domain's tenant "0186"; the key the source is asked for,
+        // and so the pool it looks up and the tenant its mount receives, is the column's "186".
         var opened = new AtomicInteger();
-        var tenants = RequestTenants.of(Set.of("0186"));
-        assertThat(tenants.tenants()).containsExactly("186");
 
         var result = execute(graphql, Map.of("186", countingDataSource(DB_186, opened)),
-            "{ sites(ownerOrg: \"186\") { siteName } }", tenants, "consumer-spelled");
+            "{ sitesNarrowable { siteName } }", List.of("0186"), "consumer-spelled");
 
-        assertThat(siteNames(result, "sites")).containsExactlyInAnyOrder("Tromsø main", "Tromsø annex");
+        assertThat(siteNames(result, "sitesNarrowable")).containsExactlyInAnyOrder("Tromsø main", "Tromsø annex");
         assertThat(opened.get()).isPositive();
         assertThat(OrgTenantSessionIdentity.MOUNTS.stream()
                 .filter(m -> "consumer-spelled".equals(m.sub()))

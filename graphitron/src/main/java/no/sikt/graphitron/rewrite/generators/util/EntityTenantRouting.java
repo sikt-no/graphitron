@@ -28,9 +28,6 @@ public final class EntityTenantRouting {
     public sealed interface Source {
         /** The tenant is the value the representation carries for this key column of the entity's table. */
         record KeyColumn(String columnName) implements Source {}
-
-        /** The tenant is the request's entity default tenant, matched against {@code tenantColumn}. */
-        record RequestEntityDefault(ColumnRef tenantColumn) implements Source {}
     }
 
     private static final EntityTenantRouting NONE = new EntityTenantRouting(Map.of());
@@ -74,8 +71,6 @@ public final class EntityTenantRouting {
                 Source source = switch (slot.source()) {
                     case TenantBinding.EntityRepBound.TenantSource.KeyColumn key ->
                         new Source.KeyColumn(walkAlternative.columns().get(key.decodedPosition()).sqlName());
-                    case TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault entityDefault ->
-                        new Source.RequestEntityDefault(entityDefault.tenantColumn());
                 };
                 sources.put(partner.identity(), source);
             }

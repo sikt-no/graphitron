@@ -144,7 +144,7 @@ For a request carrying an unknown type between two it resolves:
 
 == Keys without the tenant column
 
-In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. When the key cannot carry it, mark the type xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] to resolve its representations on the request's entity default tenant instead, which is the default tenant unless the request names one separately.
+In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. A request names no tenant of its own, so a key that cannot carry the column is a build error: add a field mapped to the tenant column to the key, or mark that key `resolvable: false`. The xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] marker that once resolved such keys is no longer supported.
 
 == Wiring federation: `@link`, `<schemaInput tag>`, custom fetchers
 

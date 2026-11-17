@@ -37,11 +37,11 @@ import java.util.List;
  *       the rows method re-reads the same column off its batch's environment
  *       ({@link #resolve}), which the partitioned loader makes agree across the batch.</li>
  *   <li>{@link TenantBinding.Untenanted.GlobalRead}: graphitron's own read of global reference
- *       data; acquires via {@code dslGlobal()}, the request's default tenant when it names one and
- *       the default source otherwise, and deliberately never consults {@code localContext} (a
- *       global table under a bound ancestor reads the default tenant, not the ancestor's).</li>
+ *       data; acquires via {@code dslDefault()}, the key whose tenant part is empty, whose pool the
+ *       source picks, and deliberately never consults {@code localContext} (a global table under a
+ *       bound ancestor reads the empty key, not the ancestor's tenant).</li>
  *   <li>{@link TenantBinding.Untenanted.DefaultSource}: a global statement that writes or calls a
- *       service; acquires the fixed default source via {@code dslDefault()} in every request.</li>
+ *       service; acquires the same empty key via {@code dslDefault()}.</li>
  * </ul>
  *
  * <p>An {@link TenantBinding.ArgumentBound} field's {@link TenantBinding.WhenNoTenant} arm says what
@@ -139,8 +139,8 @@ final class TenantDslEmitter {
      * method whose {@code env} parameter is the field's own {@code DataFetchingEnvironment}.
      * Falls back to the single-tenant form whenever the emission context carries no classified
      * schema or no tenant scopes are configured; the fallback reads {@code getDslContext(env)},
-     * which under owned multi-tenant acquisition is the fixed default source, never a routed
-     * tenant nor the request's default tenant. Under configured scopes a coordinate with no
+     * which under owned multi-tenant acquisition is the empty key, never a routed tenant. Under
+     * configured scopes a coordinate with no
      * binding is a generator bug ({@link #requireBinding}), never a fallback.
      */
     static Resolution resolve(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {
@@ -166,7 +166,7 @@ final class TenantDslEmitter {
         return switch (binding) {
             case TenantBinding.Untenanted.GlobalRead ignored -> new Resolution(
                 CodeBlock.builder()
-                    .addStatement("$T dsl = $T.dslGlobal(env)", DSL_CONTEXT, ownedConnections)
+                    .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, ownedConnections)
                     .build());
             case TenantBinding.Untenanted.DefaultSource ignored -> new Resolution(
                 CodeBlock.builder()
@@ -252,7 +252,7 @@ final class TenantDslEmitter {
         var ownedConnections = ownedConnectionsClass(outputPackage);
         return switch (binding) {
             case TenantBinding.Untenanted.GlobalRead ignored ->
-                CodeBlock.of("$T.dslGlobal(env)", ownedConnections);
+                CodeBlock.of("$T.dslDefault(env)", ownedConnections);
             case TenantBinding.Untenanted.DefaultSource ignored ->
                 CodeBlock.of("$T.dslDefault(env)", ownedConnections);
             case TenantBinding.ArgumentBound ignored -> throw new IllegalStateException(

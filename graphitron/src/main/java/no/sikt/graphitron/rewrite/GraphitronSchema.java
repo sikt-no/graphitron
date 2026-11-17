@@ -106,13 +106,12 @@ public record GraphitronSchema(
     }
 
     /**
-     * The element type of the request tenant set, the tenants a request may touch in this
-     * deployment: present exactly when {@code <tenantColumn>} is configured
-     * ({@link TenantScopes.Configured}), whatever the schema's tenant bindings, carrying the
-     * tenant column's Java type boxed. The one fact the factory, the connection instrumentation,
-     * the carrier and the dev executor read to decide whether the set exists and how it is typed,
-     * so they cannot disagree. Deliberately not gated on the schema having a routed or fanned
-     * field: that would put an evolving schema property on a public factory signature.
+     * The tenant key type, the element type of the connection source's {@code tenants()}: present
+     * exactly when {@code <tenantColumn>} is configured ({@link TenantScopes.Configured}), whatever
+     * the schema's tenant bindings, carrying the tenant column's Java type boxed. The one fact the
+     * dev executor reads to decide whether the build is tenanted, so it and the runtime cannot
+     * disagree. Deliberately not gated on the schema having a routed or fanned field: that would
+     * put an evolving schema property on a public surface.
      */
     public java.util.Optional<com.palantir.javapoet.TypeName> requestTenantKeyType() {
         if (!(tenantScopes instanceof TenantScopes.Configured configured)) {

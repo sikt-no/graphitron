@@ -1,8 +1,8 @@
 = @defaultTenant
-:description: Resolve a federation entity on the request's entity default tenant when its key cannot name a tenant.
+:description: No longer supported: a federation key that cannot name its tenant is a build error.
 :!toc:
 
-*`@defaultTenant`* resolves a federation entity on the request's entity default tenant when its key cannot name a tenant, in a build with database-per-tenant routing (`<tenantColumn>`).
+*`@defaultTenant`* is no longer supported. The directive is still declared, so a schema that applies it parses, but every application is a build error.
 
 == SDL signature
 
@@ -11,29 +11,24 @@
 directive @defaultTenant on OBJECT
 ----
 
-The directive carries no arguments.
+== Why it went
 
-== What it does
+The marker resolved a federation entity whose `@key` lacks the tenant column on a tenant the request named, its entity default tenant. A request no longer names any tenant: which tenants a request may reach is the connection source's to say, and global tables are read on the connection the source picks for a key with no tenant (see xref:../../how-to/tenant-scoping.adoc[How-to: Tenant scoping]). With no tenant named, a representation without the tenant column cannot name the tenant to fetch from.
 
-In a database-per-tenant build, `_entities` normally reads the tenant out of each representation: a key that includes the tenant column names the database to look in. Some keys cannot include it. A username that is unique only within one institution, sent by a router that knows nothing of institutions, is the typical case, and such a type is a build error unless you mark it:
+== What to do instead
 
+Remove the directive, then either:
+
+* add a field mapped to the tenant column to the key, so each representation names its own tenant:
++
 [source,graphql]
 ----
-type FeideBruker @table(name: "PERSON") @key(fields: "brukernavn") @defaultTenant {
+type FeideBruker @table(name: "PERSON") @key(fields: "brukernavn institusjon") {
   brukernavn: String
-  personProfil: PersonProfil @splitQuery
+  institusjon: Int @field(name: "INSTITUSJONSNR")
 }
 ----
-
-Each representation of the type is then looked up on the request's entity default tenant, which is its default tenant unless the request names one separately (see xref:../../how-to/tenant-scoping.adoc[Tenant scoping], "Naming the tenant for `@defaultTenant` entities"). The lookup matches only rows whose tenant column holds the entity default tenant, so `{__typename: "FeideBruker", brukernavn: "ola"}` resolves to Ola's row in that tenant, or to `null` when that tenant has no such row. Tenant-scoped fields below the entity read from the same tenant, as they do below an entity whose key names its tenant.
-
-A request that names no entity default tenant, either because it names no default tenant or because it said `withoutEntityDefault()`, answers every representation of a marked type with `null`, without an error, and resolves the rest of the batch normally; no tenant connection is opened for the type. A request whose entity default tenant this runtime has no `DataSource` for fails before any field runs.
-
-The marker applies to each resolvable `@key` of the type that does not include the tenant column; a key that does include it keeps routing by its own value. It does not apply to node ids: on a `@node` type, `node`, `nodes` and the id key of `_entities` still route by the tenant inside the id, so the node key must still include the tenant column.
-
-== Build-time rejections
-
-The build rejects the marker where it decides nothing: in a build without `<tenantColumn>`, on a type whose table has no tenant column (`_entities` already reads such types from the default tenant), on a type with no resolvable key, and on a type whose every resolvable `@key` includes the tenant column.
+* or mark that key `resolvable: false`, so `_entities` does not resolve it.
 
 See xref:../../how-to/federation-keys.adoc[How-to: Federation key fields] for keys in general.
 

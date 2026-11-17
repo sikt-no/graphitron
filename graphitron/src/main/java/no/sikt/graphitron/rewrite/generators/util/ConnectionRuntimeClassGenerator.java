@@ -111,11 +111,6 @@ public final class ConnectionRuntimeClassGenerator {
      */
     public static final String HAND_DOWN_METHOD = "handDown";
     /**
-     * The request-tenancy value the factory takes in {@code <tenantColumn>} builds: the request
-     * tenant set and an optional default tenant that is a member of it.
-     */
-    public static final String REQUEST_TENANTS_CLASS_NAME = "RequestTenants";
-    /**
      * The consumer-implemented callback that decides how a fetcher exception is logged, both one no
      * {@code @error} mapping claims and one a handler caught; held by the runtime and read by
      * {@code ErrorRouter.toConfiguredLog}.
@@ -183,10 +178,6 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName UUID_CLASS = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    /** The graphQLContext key the request tenant set is published under. */
-    public static final String TENANTS_KEY_FIELD = "TENANTS_KEY";
-    /** The literal value of the emitted {@code TENANTS_KEY} constant (also written by the factory). */
-    public static final String TENANTS_KEY_VALUE = "no.sikt.graphitron.request.tenants";
     /**
      * The client-facing {@code extensions.classification} vocabulary for per-tenant fan-out
      * failures: one value per non-success {@code Outcome} arm, emitted as named constants on the
@@ -279,7 +270,6 @@ public final class ConnectionRuntimeClassGenerator {
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
         var ownedConnections = ClassName.get(schemaPackage, OWNED_CONNECTIONS_CLASS_NAME);
-        var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
         var batchSizeLimit = ErrorRouterClassGenerator.batchSizeLimitClass(outputPackage);
@@ -299,11 +289,13 @@ public final class ConnectionRuntimeClassGenerator {
 
         var units = new ArrayList<TypeSpec>();
         units.add(connectionKey(connectionKey, tenantKey));
-        units.add(connectionSource(connectionSource, lease, connectionKey, keyNotPermitted));
+        units.add(connectionSource(connectionSource, lease, connectionKey, keyNotPermitted,
+            multiTenant ? tenantKey : null));
         units.add(lease(lease, handleType));
         units.add(keyNotPermitted(keyNotPermitted));
         units.add(acquisitionFailed(acquisitionFailed));
-        units.add(connectionSources(connectionSources, connectionSource, lease, connectionKey, handleType));
+        units.add(connectionSources(connectionSources, connectionSource, lease, connectionKey, handleType,
+            multiTenant ? tenantKey : null));
         units.add(pinnedConnection(pinnedConnection, connectionSource, lease, connectionKey, keyNotPermitted,
             acquisitionFailed, handleType));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
@@ -311,11 +303,8 @@ public final class ConnectionRuntimeClassGenerator {
             vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null,
             failureMessages, connectionKey, connectionSource));
         units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, acquisitionFailed,
+            multiTenant, identity, tenantColumn, errorRouter, columnValues, acquisitionFailed,
             keyNotPermitted, connectionSource, keyType, connectionKey, failureMessages));
-        if (multiTenant) {
-            units.add(requestTenants(requestTenants, ownedConnections, tenantKey));
-        }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
         units.add(batchSizeLimit(batchSizeLimit));
@@ -1183,7 +1172,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static TypeSpec ownedConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionIdentityRows identity,
-                                              ClassName requestTenants, CodeBlock tenantColumn,
+                                              CodeBlock tenantColumn,
                                               ClassName errorRouter, ClassName columnValues,
                                               ClassName acquisitionFailed, ClassName keyNotPermitted,
                                               ClassName connectionSource, TypeName keyType,
@@ -1192,7 +1181,6 @@ public final class ConnectionRuntimeClassGenerator {
         boolean handled = handleType != null;
         var clientException = ClassName.get(self.packageName(),
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
-        var optionalKey = ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), tenantKey);
         var entryType = self.nestedClass("Entry");
         var entryMapType = ParameterizedTypeName.get(MAP, keyType, entryType);
 
@@ -1245,42 +1233,26 @@ public final class ConnectionRuntimeClassGenerator {
                 + "violation throws immediately instead.\n")
             .build();
 
-        var tenantSetType = ParameterizedTypeName.get(SET, tenantKey);
-        var tenantsField = FieldSpec.builder(tenantSetType, "tenants", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The request tenant set: the tenants this request may touch in this deployment,\n"
-                + "decoded once from the factory's parameter by the instrumentation. Every keyed\n"
-                + "acquisition is checked against it in {@link #entryFor} before a connection is taken,\n"
-                + "and it bounds {@link #fanOutDomain}, so routing and fan-out read one fact.\n")
+        var refusedField = FieldSpec.builder(ParameterizedTypeName.get(MAP, keyType, ClassName.get(String.class)),
+                "refusedKeys", Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("new $T<>()", CONCURRENT_HASH_MAP)
+            .addJavadoc("The keys the source refused in this request, each with the refusal's message. A refused\n"
+                + "key is answered from here with the same client error, so the source is never asked twice\n"
+                + "for one key in one request.\n")
             .build();
-        var defaultTenantField = FieldSpec.builder(optionalKey, "defaultTenant", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The request's default tenant, the member of {@link #tenants} that serves global reads\n"
-                + "({@link #dslGlobal()}), or empty when the request names none and global reads take the\n"
-                + "default source.\n")
-            .build();
-        var entityDefaultTenantField = FieldSpec.builder(optionalKey, "entityDefaultTenant",
-                Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The request's entity default tenant, the member of {@link #tenants} on which the\n"
-                + "entity dispatcher looks up a {@code @defaultTenant} type's representations, or empty when\n"
-                + "the request names none and every such representation answers {@code null}.\n")
+        var domainField = FieldSpec.builder(ParameterizedTypeName.get(LIST, tenantKey), "domain",
+                Modifier.PRIVATE, Modifier.VOLATILE)
+            .addJavadoc("The request's fan-out domain, read from the source's {@code tenants()} on the first\n"
+                + "fan-out and kept for the rest of the request; {@code null} until then.\n")
             .build();
         var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(runtime, "runtime")
             .addParameter(commitPolicy, "commitPolicy");
-        if (multiTenant) {
-            constructorBuilder.addParameter(requestTenants, "requestTenants");
-        }
         constructorBuilder.addParameter(connectionSource, SOURCE_SLOT);
         constructorBuilder
             .addStatement("this.runtime = runtime")
             .addStatement("this.commitPolicy = commitPolicy");
-        if (multiTenant) {
-            constructorBuilder
-                .addStatement("$T.requireNonNull(requestTenants, $S)", OBJECTS, "requestTenants")
-                .addStatement("this.tenants = requestTenants.tenants()")
-                .addStatement("this.defaultTenant = requestTenants.defaultTenant()")
-                .addStatement("this.entityDefaultTenant = requestTenants.entityDefaultTenant()");
-        }
         constructorBuilder.addStatement("this.$L = $T.requireNonNull($L, $S)", SOURCE_SLOT, OBJECTS, SOURCE_SLOT,
             SOURCE_SLOT);
         var constructor = constructorBuilder
@@ -1289,10 +1261,8 @@ public final class ConnectionRuntimeClassGenerator {
                     + "operation. Concurrency is confined to {@link #scatter}'s bounded workers, each owning\n"
                     + "one keyed connection single-threaded through {@link #dslFor}, with the dispatch thread\n"
                     + "blocked on the join for the scatter's whole duration; every other access runs serially\n"
-                    + "on the dispatch thread. {@code requestTenants} carries the request tenant set, the\n"
-                    + "only tenants this carrier will acquire a connection for, the default tenant that\n"
-                    + "serves global reads when the request names one, and the entity default tenant the\n"
-                    + "entity dispatcher resolves {@code @defaultTenant} types on.\n"
+                    + "on the dispatch thread. Which tenants a request may reach is the source's to say: it\n"
+                    + "names the fan-out domain in {@code tenants()} and refuses a key from {@code acquire}.\n"
                 : "Builds a per-operation carrier over {@code runtime} for one request. One instance per\n"
                     + "operation; entries are pinned on first demand.\n")
                 + "{@code source} is the request's connection source, held for the life of the request:\n"
@@ -1312,17 +1282,16 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw new $T($S + key + $S)", IllegalStateException.class,
                 brokenMessage.get(0), brokenMessage.get(1))
             .endControlFlow();
+        entryForBuilder
+            .addComment("A key the source refused earlier in this request answers with the same client error;")
+            .addComment("the source is never asked twice for one key. Every keyed acquisition funnels through")
+            .addComment("here, so the memory holds for every caller.")
+            .addStatement("$T refusal = refusedKeys.get(key)", String.class)
+            .beginControlFlow("if (refusal != null)")
+            .addStatement("throw new $T(refusal)", clientException)
+            .endControlFlow();
         if (multiTenant) {
             entryForBuilder
-                .addComment("Authorization before anything else: only a key in the request tenant set ever")
-                .addComment("reaches the entry map, and the refusal runs ahead of the runtime's hosting check,")
-                .addComment("so an unauthorized caller cannot probe which tenants this deployment hosts. Every")
-                .addComment("keyed acquisition funnels through here (the static and instance dslFor, and the")
-                .addComment("scatter worker); nothing calls runtime.acquire directly.")
-                .beginControlFlow("if (key.tenant().isPresent() && !tenants.contains(key.tenant().get()))")
-                .addStatement("throw new $T($S + key.tenant().get() + $S)", clientException,
-                    "Tenant '", "' is not permitted for this request.")
-                .endControlFlow()
                 .beginControlFlow("if (key.tenant().isPresent() && timedOutTenants.contains(key.tenant().get()))")
                 .addComment("The key's scatter worker missed the join deadline; its connection may still be")
                 .addComment("executing, so it is never reused within the operation.")
@@ -1332,7 +1301,7 @@ public final class ConnectionRuntimeClassGenerator {
         }
         entryForBuilder
             .addComment("A failed acquisition is remembered for the operation: answer every later one with it,")
-            .addComment("after the tenant refusals above so their order is unchanged.")
+            .addComment("after the remembered refusals above so their order is unchanged.")
             .addStatement("$T rejected = firstAcquisitionFailure.get()", acquisitionFailed)
             .beginControlFlow("if (rejected != null)")
             .addStatement("throw rejected")
@@ -1367,9 +1336,12 @@ public final class ConnectionRuntimeClassGenerator {
             .addCode("    return new Entry(pinned, dsl, provider);\n")
             .addCode("});\n")
             .nextControlFlow("catch ($T refused)", keyNotPermitted)
-            .addComment("The source refused the key: the field that asked answers with an error, as a refused")
-            .addComment("tenant does, and the rest of the request runs.")
-            .addStatement("throw new $T(refused.getMessage())", clientException)
+            .addComment("The source refused the key: the field that asked answers with an error, and the rest")
+            .addComment("of the request runs. Remember the refusal, so a later ask of the key answers the same.")
+            .addStatement("$T message = refused.getMessage()", String.class)
+            .addStatement("refusedKeys.putIfAbsent(key, message == null ? $S : message)",
+                "This request may not use that connection.")
+            .addStatement("throw new $T(refusedKeys.get(key))", clientException)
             .nextControlFlow("catch ($T e)", acquisitionFailed)
             .addStatement("firstAcquisitionFailure.compareAndSet(null, e)")
             .addStatement("throw firstAcquisitionFailure.get()")
@@ -1397,13 +1369,10 @@ public final class ConnectionRuntimeClassGenerator {
         var entryFor = entryForBuilder
             .addStatement("return entry")
             .addJavadoc("Resolves (minting on first demand) the carrier entry for {@code key}, leasing its\n"
-                + "connection from the request's source. A key the source refuses answers with a client error;\n"
-                + "any other failure to lease is remembered and rejects the request.\n"
-                + (multiTenant
-                    ? "A present key outside the request tenant set is refused with a client error before\n"
-                        + "any connection is taken. This is the one enforcer: every keyed acquisition in the\n"
-                        + "carrier resolves through this method.\n"
-                    : ""))
+                + "connection from the request's source. A key the source refuses answers with a client error,\n"
+                + "and the refusal is remembered, so the source is never asked for that key again in this\n"
+                + "request; any other failure to lease is remembered and rejects the request. Every keyed\n"
+                + "acquisition in the carrier resolves through this method.\n")
             .build();
 
         var dslFor = MethodSpec.methodBuilder("dslFor")
@@ -1416,7 +1385,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code tenantKey}, pinning and\n"
                 + "mounting one connection for the key on first use and reusing it thereafter. A drop-in for\n"
                 + "{@code getDslContext(env)} at a routed fetcher site.\n"
-                + "@param tenantKey the divined tenant value; an unknown key raises before any SQL\n")
+                + "@param tenantKey the divined tenant value; a key the source refuses raises before any SQL\n")
             .build();
 
         var dslDefault = MethodSpec.methodBuilder("dslDefault")
@@ -1425,24 +1394,11 @@ public final class ConnectionRuntimeClassGenerator {
             .addException(SQL_EXCEPTION)
             .addCode(CodeBlock.of("$T key = $T.defaultSource();\n", connectionKey, connectionKey))
             .addStatement("return enlist(key, entryFor(key))")
-            .addJavadoc("Returns the provider-bound {@code DSLContext} for the default source, pinning and\n"
-                + "mounting one connection on first use and reusing it thereafter. The untenanted\n"
-                + "sibling of {@link #dslFor}, and always the fixed default source, whatever default\n"
-                + "tenant the request names; the single-tenant path resolves every context through\n"
+            .addJavadoc("Returns the provider-bound {@code DSLContext} for the key whose tenant part is empty,\n"
+                + "pinning and mounting one connection on first use and reusing it thereafter. The untenanted\n"
+                + "sibling of {@link #dslFor}: every read and write of a global table runs here, on the pool\n"
+                + "the source picks for the empty key; the single-tenant path resolves every context through\n"
                 + "this, as the one-key case.\n")
-            .build();
-
-        var dslGlobal = MethodSpec.methodBuilder("dslGlobal")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(DSL_CONTEXT)
-            .addException(SQL_EXCEPTION)
-            .addStatement("$T key = new $T(defaultTenant)", connectionKey, connectionKey)
-            .addStatement("return enlist(key, entryFor(key))")
-            .addJavadoc("Returns the provider-bound {@code DSLContext} for graphitron's own reads of global\n"
-                + "tables: the request's default tenant when it names one, else the default source. A\n"
-                + "present default tenant resolves through {@link #entryFor} like any routed key, so it\n"
-                + "shares the entry {@link #dslFor} uses for that tenant: one connection and one mount.\n"
-                + "Writes and service calls keep {@link #dslDefault()}.\n")
             .build();
 
         var releaseAllBuilder = MethodSpec.methodBuilder("releaseAll")
@@ -1550,12 +1506,11 @@ public final class ConnectionRuntimeClassGenerator {
         }
         carrier.addField(runtimeField)
             .addField(policyField);
-        if (multiTenant) {
-            carrier.addField(tenantsField)
-                .addField(defaultTenantField)
-                .addField(entityDefaultTenantField);
-        }
         carrier.addField(sourceField);
+        if (multiTenant) {
+            carrier.addField(domainField);
+        }
+        carrier.addField(refusedField);
         carrier.addField(entriesField)
             .addField(MutationFieldScopeEmitter.activeField(self))
             .addField(MutationFieldScopeEmitter.brokenKeys(keyType));
@@ -1619,18 +1574,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addType(MutationFieldScopeEmitter.openingType(provider))
             .addType(MutationFieldScopeEmitter.nestedScopeFailedType());
         if (multiTenant) {
-            carrier.addField(FieldSpec.builder(String.class, TENANTS_KEY_FIELD,
-                    Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                .initializer("$S", TENANTS_KEY_VALUE)
-                .addJavadoc("The {@code graphQLContext} key the request tenant set is published under.\n"
-                    + "Written by the generated factory's dedicated tenant-set parameter; read once by the\n"
-                    + "execution instrumentation, which hands the decoded set to this carrier. One constant so\n"
-                    + "the two sites cannot drift, and a graphitron-owned name no contextArgument can collide\n"
-                    + "with.\n")
-                .build());
             carrier.addMethod(scatterMethod(self, tenantKey))
                 .addMethod(scatterWorkerMethod(self, tenantKey))
                 .addMethod(fanOutDomain(self, tenantKey))
+                .addMethod(readDomain(tenantKey))
                 .addMethod(narrowedFanOutDomain(tenantKey))
                 .addMethod(namedTenants())
                 .addMethod(handDown(tenantKey, connectionKey))
@@ -1642,16 +1589,13 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(keyedDslFor(connectionKey))
                 .addMethod(staticKeyedDslFor(self, connectionKey))
                 .addMethod(staticHandedDownDsl(self, connectionKey))
-                .addMethod(dslGlobal)
-                .addMethod(staticDslGlobal(self))
+                .addMethod(staticDslForIfPermitted(self, tenantKey, clientException, connectionKey))
                 .addMethod(namedTenant(tenantKey))
                 .addMethod(divinedTenant(tenantKey))
                 .addMethod(tenantKeyOrNull(tenantKey, columnValues))
                 .addMethod(canonicalTenantKey(tenantKey))
                 .addMethod(tenantKeyOf(tenantKey, clientException))
                 .addMethod(divinedTenantAgree(tenantKey, clientException))
-                .addMethod(permits(self, tenantKey))
-                .addMethod(staticEntityDefaultTenant(tenantKey))
                 .addMethod(tenantSlot())
                 .addMethod(mapTenantLeaves())
                 .addMethod(loaderName())
@@ -1666,7 +1610,7 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * {@code static List<K> fanOutDomain(DataFetchingEnvironment env)}: the request's fan-out domain,
-     * the request tenant set. Whether a tenant in it is served is the connection source's to say.
+     * the tenants the connection source names in {@code tenants()}, read once per request.
      */
     private static MethodSpec fanOutDomain(ClassName self, TypeName tenantKey) {
         return MethodSpec.methodBuilder("fanOutDomain")
@@ -1674,10 +1618,41 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(ParameterizedTypeName.get(LIST, tenantKey))
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addStatement("$T carrier = of(env)", self)
-            .addStatement("return new $T<>(carrier.tenants)", ARRAY_LIST)
-            .addJavadoc("The request's fan-out domain: the request tenant set, in its order. Each tenant in it\n"
-                + "is asked of the request's connection source, which may refuse it.\n"
+            .addStatement("return new $T<>(carrier.readDomain())", ARRAY_LIST)
+            .addJavadoc("The request's fan-out domain: the tenants the request's connection source names in\n"
+                + "{@code tenants()}, each in the tenant column's canonical form, in the order the source gave\n"
+                + "them. Each tenant in it is asked of the source, which may still refuse it; that tenant then\n"
+                + "answers at the fanned field as an error.\n"
                 + "@param env the fanned field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
+     * {@code private List<K> readDomain()}: the source's {@code tenants()}, read on the first fan-out
+     * and kept for the request, each member put through {@code canonicalTenantKey} with the order
+     * kept and duplicates in the canonical form dropped.
+     */
+    private static MethodSpec readDomain(TypeName tenantKey) {
+        var listType = ParameterizedTypeName.get(LIST, tenantKey);
+        return MethodSpec.methodBuilder("readDomain")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(listType)
+            .addStatement("$T read = domain", listType)
+            .beginControlFlow("if (read != null)")
+            .addStatement("return read")
+            .endControlFlow()
+            .beginControlFlow("synchronized (this)")
+            .beginControlFlow("if (domain == null)")
+            .addStatement("$T<$T> canonical = new $T<>()", SET, tenantKey, LINKED_HASH_SET)
+            .beginControlFlow("for ($T tenant : $T.requireNonNull($L.tenants(), $S))", tenantKey, OBJECTS,
+                SOURCE_SLOT, "the connection source's tenants()")
+            .addStatement("canonical.add(canonicalTenantKey(tenant))")
+            .endControlFlow()
+            .addStatement("domain = $T.copyOf(canonical)", LIST)
+            .endControlFlow()
+            .addStatement("return domain")
+            .endControlFlow()
+            .addJavadoc("The source's fan-out domain for this request, read once and kept.\n")
             .build();
     }
 
@@ -1688,8 +1663,8 @@ public final class ConnectionRuntimeClassGenerator {
      * yields names one: a null anywhere (an absent argument, a null element, a filter element
      * leaving the slot out) or an empty read contributes nothing, since an element that leaves the
      * slot out may match rows in any tenant. The domain is the request's ({@link #fanOutDomain})
-     * intersected with every contributed set; a named tenant outside the request set is silently
-     * not queried, exactly as a hosted tenant outside it is not. Narrowing never changes which
+     * intersected with every contributed set; a named tenant the source does not name is silently
+     * not queried. Narrowing never changes which
      * rows answer, only how many tenants are asked, because a tenant's database holds only rows
      * naming that tenant.
      */
@@ -1717,7 +1692,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("The request's fan-out domain narrowed to the tenants a fanned field's optional\n"
                 + "tenant slots name. A slot whose value is absent, holds a null anywhere, or is empty\n"
                 + "narrows nothing; the rest intersect, so only tenants every given slot names are\n"
-                + "queried. A named tenant the request may not see is never queried.\n"
+                + "queried. A named tenant the source does not name is never queried.\n"
                 + "@param env the fanned field's {@code DataFetchingEnvironment}\n"
                 + "@param narrowing each optional slot's runtime value (a value, a collection, or {@code null})\n")
             .build();
@@ -1752,42 +1727,40 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static boolean permits(DataFetchingEnvironment env, K tenantKey)}: whether the
-     * request tenant set admits {@code tenantKey}. The read side of the rule {@code entryFor}
-     * enforces, for surfaces that answer a refused tenant as presentation rather than an error
-     * (the per-row lookups skip a refused group so its positions stay {@code null}); the rule
-     * itself stays single-sourced on the carrier.
+     * {@code static DSLContext dslForIfPermitted(DataFetchingEnvironment env, K tenantKey)}: the
+     * routed acquisition for surfaces that answer a refused key as presentation rather than an error
+     * (the entity and node dispatch skip a refused group, so its positions stay {@code null}). It
+     * answers {@code null} when the source refuses the key, now or earlier in the request, and
+     * otherwise behaves as {@code dslFor}; the refusal itself stays single-sourced on the carrier.
      */
-    private static MethodSpec permits(ClassName self, TypeName tenantKey) {
-        return MethodSpec.methodBuilder("permits")
+    private static MethodSpec staticDslForIfPermitted(ClassName self, TypeName tenantKey, ClassName clientException,
+                                                      ClassName connectionKey) {
+        return MethodSpec.methodBuilder("dslForIfPermitted")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(boolean.class)
+            .returns(DSL_CONTEXT)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(tenantKey, "tenantKey")
-            .addStatement("return of(env).tenants.contains(tenantKey)")
-            .addJavadoc("Whether the request tenant set admits {@code tenantKey}. {@link #entryFor} stays the\n"
-                + "enforcer; this lets a per-row lookup skip a refused tenant's group, answering its ids\n"
-                + "with {@code null} exactly as it answers an id that does not exist.\n"
+            .addStatement("$T carrier = of(env)", self)
+            .addStatement("$T key = $T.forTenant(tenantKey)", connectionKey, connectionKey)
+            .beginControlFlow("try")
+            .addStatement("return carrier.dslFor(key)")
+            .nextControlFlow("catch ($T refused)", clientException)
+            .beginControlFlow("if (carrier.refusedKeys.containsKey(key))")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("throw refused")
+            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+            .addStatement("throw new $T($S + tenantKey, e)", DATA_ACCESS_EXCEPTION,
+                "Acquiring the routed connection failed for tenant key: ")
+            .endControlFlow()
+            .addJavadoc("Routed acquisition for a lookup that answers a refused key with {@code null}: as\n"
+                + "{@link #dslFor(DataFetchingEnvironment, Object)}, except that a key the request's source\n"
+                + "refuses, now or earlier in this request, gives {@code null} rather than an error. The\n"
+                + "caller leaves that key's positions {@code null}, exactly as it answers an id that does not\n"
+                + "exist.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
-                + "@param tenantKey the divined tenant value\n")
-            .build();
-    }
-
-    /**
-     * {@code static Optional<K> entityDefaultTenant(DataFetchingEnvironment env)}: the request's
-     * entity default tenant, as the carrier holds it. Read by the entity dispatcher for a
-     * {@code @defaultTenant} type, whose representations group on it; empty when the request names
-     * none, and then every such representation answers {@code null}.
-     */
-    private static MethodSpec staticEntityDefaultTenant(TypeName tenantKey) {
-        return MethodSpec.methodBuilder("entityDefaultTenant")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(OPTIONAL, tenantKey))
-            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("return of(env).entityDefaultTenant")
-            .addJavadoc("The request's entity default tenant, or empty when the request names none. The\n"
-                + "entity dispatcher resolves a {@code @defaultTenant} type's representations on it.\n"
-                + "@param env the field's {@code DataFetchingEnvironment}\n")
+                + "@param tenantKey the divined tenant value\n"
+                + "@return the key's {@code DSLContext}, or {@code null} when the source refuses the key\n")
             .build();
     }
 
@@ -2269,7 +2242,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addStatement("return error.getMessage()")
             .addJavadoc("The top-level error's message for a client error no handler caught, for example a\n"
-                + "tenant outside the request's tenant set. Called once per such error, with the client\n"
+                + "tenant the connection source refuses. Called once per such error, with the client\n"
                 + "exception found on the cause chain. All of Graphitron's client errors are one class,\n"
                 + "so tell them apart by message; that text is Graphitron's and may be reworded in a\n"
                 + "release, so match it loosely and return\n"
@@ -2716,214 +2689,6 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** The global-read sibling of {@link #staticDslDefault}, emitted in multi-tenant builds only. */
-    private static MethodSpec staticDslGlobal(ClassName self) {
-        return MethodSpec.methodBuilder("dslGlobal")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(DSL_CONTEXT)
-            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .beginControlFlow("try")
-            .addStatement("return of(env).dslGlobal()")
-            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
-            .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION,
-                "Acquiring the connection for a global read failed")
-            .endControlFlow()
-            .addJavadoc("Global-read acquisition for emitted fetcher sites: {@link #of} +\n"
-                + "{@link #dslGlobal()}, with the checked acquisition failure wrapped unchecked.\n"
-                + "@param env the field's {@code DataFetchingEnvironment}\n")
-            .build();
-    }
-
-    /**
-     * {@code RequestTenants}: the request tenant set, an optional default tenant and an optional
-     * entity default tenant, one value so the membership invariant lives in its constructor rather
-     * than spread over the factory, the instrumentation and the carrier. A final value class with
-     * record-style accessors rather than a Java record, because the project's JavaPoet fork does not
-     * expose a record builder; the consumer-facing surface (canonical constructor, {@code tenants()},
-     * {@code defaultTenant()}, {@code entityDefaultTenant()}, value equality) is the same. The entity
-     * default tenant is held resolved: the factories and withers decide what naming nothing
-     * separately means, so the stored value needs no "inherit" marker. {@code tenantKey} is the boxed
-     * tenant key type, so the class is not generic. Valid Java 17.
-     */
-    private static TypeSpec requestTenants(ClassName self, ClassName ownedConnections, TypeName tenantKey) {
-        var setType = ParameterizedTypeName.get(SET, tenantKey);
-        var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
-        var collectionType = ParameterizedTypeName.get(COLLECTION, tenantKey);
-        var constructor = MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(setType, "tenants")
-            .addParameter(optionalKey, "defaultTenant")
-            .addParameter(optionalKey, "entityDefaultTenant")
-            .addStatement("$T<$T> canonical = new $T<>()", LIST, tenantKey, ARRAY_LIST)
-            .beginControlFlow("for ($T tenant : $T.requireNonNull(tenants, $S))", tenantKey, OBJECTS, "tenants")
-            .addStatement("canonical.add($T.canonicalTenantKey($T.requireNonNull(tenant, $S)))",
-                ownedConnections, OBJECTS, "tenant")
-            .endControlFlow()
-            .addComment("In the order given: the fan-out domain asks the source for each tenant in this order.")
-            .addStatement("$T<$T> copy = $T.unmodifiableSet(new $T<>(canonical))", SET, tenantKey,
-                ClassName.get("java.util", "Collections"), LINKED_HASH_SET)
-            .addStatement("$T<$T> canonicalDefault = $T.requireNonNull(defaultTenant, $S)"
-                + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "defaultTenant", ownedConnections)
-            .beginControlFlow("if (canonicalDefault.isPresent() && !copy.contains(canonicalDefault.get()))")
-            .addStatement("throw new $T($S + defaultTenant.get() + $S)", IllegalArgumentException.class,
-                "Default tenant '", "' is not in the request tenant set.")
-            .endControlFlow()
-            .addStatement("$T<$T> canonicalEntityDefault = $T.requireNonNull(entityDefaultTenant, $S)"
-                + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "entityDefaultTenant",
-                ownedConnections)
-            .beginControlFlow("if (canonicalEntityDefault.isPresent() && !copy.contains(canonicalEntityDefault.get()))")
-            .addStatement("throw new $T($S + entityDefaultTenant.get() + $S)", IllegalArgumentException.class,
-                "Entity default tenant '", "' is not in the request tenant set.")
-            .endControlFlow()
-            .addStatement("this.tenants = copy")
-            .addStatement("this.defaultTenant = canonicalDefault")
-            .addStatement("this.entityDefaultTenant = canonicalEntityDefault")
-            .addJavadoc("Every tenant is reduced to the tenant column's form ({@link "
-                + ownedConnections.simpleName() + "#canonicalTenantKey})\n"
-                + "before the membership check, so two spellings the column stores as one value are one\n"
-                + "tenant, and {@link #tenants()}, {@link #defaultTenant()} and\n"
-                + "{@link #entityDefaultTenant()} report that form.\n"
-                + "@param tenants the tenants this request may touch in this deployment; copied\n"
-                + "@param defaultTenant the member of {@code tenants} that serves global reads, or empty\n"
-                + "@param entityDefaultTenant the member of {@code tenants} on which {@code _entities}\n"
-                + "looks up a {@code @defaultTenant} type's representations, or empty, in which case\n"
-                + "every such representation answers {@code null}\n"
-                + "@throws IllegalArgumentException when {@code defaultTenant} or\n"
-                + "{@code entityDefaultTenant} is present and not in {@code tenants}, or a tenant is not\n"
-                + "a value of the tenant column\n")
-            .build();
-        var twoRoleConstructor = MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(setType, "tenants")
-            .addParameter(optionalKey, "defaultTenant")
-            .addStatement("this(tenants, defaultTenant, defaultTenant)")
-            .addJavadoc("A request whose entity default tenant is its default tenant.\n"
-                + "@param tenants the tenants this request may touch in this deployment; copied\n"
-                + "@param defaultTenant the member of {@code tenants} that serves global reads and\n"
-                + "{@code @defaultTenant} entities, or empty\n"
-                + "@throws IllegalArgumentException when {@code defaultTenant} is present and not in\n"
-                + "{@code tenants}, or a tenant is not a value of the tenant column\n")
-            .build();
-        var of = MethodSpec.methodBuilder("of")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(self)
-            .addParameter(collectionType, "tenants")
-            .addStatement("return new $T(new $T<>($T.requireNonNull(tenants, $S)), $T.empty())",
-                self, LINKED_HASH_SET, OBJECTS, "tenants", OPTIONAL)
-            .addJavadoc("A request tenant set with no default tenant: global tables read the default\n"
-                + "source, and {@code @defaultTenant} entities answer {@code null} unless\n"
-                + "{@link #withEntityDefault} names a tenant for them.\n"
-                + "@param tenants the tenants this request may touch in this deployment\n")
-            .build();
-        var withDefault = MethodSpec.methodBuilder("withDefault")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(self)
-            .addParameter(collectionType, "tenants")
-            .addParameter(tenantKey, "defaultTenant")
-            .addStatement("return new $T(new $T<>($T.requireNonNull(tenants, $S)), $T.of(defaultTenant))",
-                self, LINKED_HASH_SET, OBJECTS, "tenants", OPTIONAL)
-            .addJavadoc("A request tenant set whose member {@code defaultTenant} serves graphitron's reads\n"
-                + "of global tables, on that tenant's connection and under its session mount, and is also\n"
-                + "the entity default tenant unless {@link #withEntityDefault} or\n"
-                + "{@link #withoutEntityDefault} says otherwise.\n"
-                + "@param tenants the tenants this request may touch in this deployment\n"
-                + "@param defaultTenant the tenant whose database answers global reads; must be in\n"
-                + "{@code tenants}\n"
-                + "@throws IllegalArgumentException when {@code defaultTenant} is not in {@code tenants}\n")
-            .build();
-        var withEntityDefault = MethodSpec.methodBuilder("withEntityDefault")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(self)
-            .addParameter(tenantKey, "tenant")
-            .addStatement("return new $T(tenants, defaultTenant, $T.of(tenant))", self, OPTIONAL)
-            .addJavadoc("This request with {@code tenant} as its entity default tenant: {@code _entities}\n"
-                + "looks up a {@code @defaultTenant} type's representations on it. The tenant set and the\n"
-                + "default tenant are unchanged.\n"
-                + "@param tenant the entity default tenant; must be in {@link #tenants()}\n"
-                + "@throws IllegalArgumentException when {@code tenant} is not in the tenant set\n")
-            .build();
-        var withoutEntityDefault = MethodSpec.methodBuilder("withoutEntityDefault")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(self)
-            .addStatement("return new $T(tenants, defaultTenant, $T.empty())", self, OPTIONAL)
-            .addJavadoc("This request with no entity default tenant: every representation of a\n"
-                + "{@code @defaultTenant} type answers {@code null}, without an error and without opening a\n"
-                + "connection for it. The tenant set and the default tenant are unchanged, so global reads\n"
-                + "still use the default tenant.\n")
-            .build();
-        var tenantsAccessor = MethodSpec.methodBuilder("tenants")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(setType)
-            .addStatement("return tenants")
-            .addJavadoc("The request tenant set, immutable.\n")
-            .build();
-        var defaultTenantAccessor = MethodSpec.methodBuilder("defaultTenant")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(optionalKey)
-            .addStatement("return defaultTenant")
-            .addJavadoc("The default tenant, or empty when the request names none.\n")
-            .build();
-        var entityDefaultTenantAccessor = MethodSpec.methodBuilder("entityDefaultTenant")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(optionalKey)
-            .addStatement("return entityDefaultTenant")
-            .addJavadoc("The entity default tenant, on which {@code _entities} looks up a\n"
-                + "{@code @defaultTenant} type's representations, or empty when the request names none.\n")
-            .build();
-        var equals = MethodSpec.methodBuilder("equals")
-            .addAnnotation(Override.class)
-            .addModifiers(Modifier.PUBLIC)
-            .returns(boolean.class)
-            .addParameter(Object.class, "other")
-            .addStatement("return other instanceof $T that && tenants.equals(that.tenants)"
-                + " && defaultTenant.equals(that.defaultTenant)"
-                + " && entityDefaultTenant.equals(that.entityDefaultTenant)", self)
-            .build();
-        var hashCode = MethodSpec.methodBuilder("hashCode")
-            .addAnnotation(Override.class)
-            .addModifiers(Modifier.PUBLIC)
-            .returns(int.class)
-            .addStatement("return $T.hash(tenants, defaultTenant, entityDefaultTenant)", OBJECTS)
-            .build();
-        var toString = MethodSpec.methodBuilder("toString")
-            .addAnnotation(Override.class)
-            .addModifiers(Modifier.PUBLIC)
-            .returns(String.class)
-            .addStatement("return $S + tenants + $S + defaultTenant + $S + entityDefaultTenant + $S",
-                REQUEST_TENANTS_CLASS_NAME + "[tenants=", ", defaultTenant=", ", entityDefaultTenant=", "]")
-            .build();
-        return TypeSpec.classBuilder(self)
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("The request's tenancy, passed to {@code Graphitron.newOwnedExecutionInput}: the request\n"
-                + "tenant set, the tenants the request may touch in this deployment, and optionally a\n"
-                + "<em>default tenant</em>, one member of the set whose database answers graphitron's reads\n"
-                + "of global tables (tables without the tenant column) on that tenant's connection and\n"
-                + "under its session mount. Writes to global tables and {@code @service} calls keep the\n"
-                + "runtime's default source either way. A second role, the <em>entity default tenant</em>,\n"
-                + "is the optional member on which {@code _entities} looks up the representations of a\n"
-                + "{@code @defaultTenant} type; it is the default tenant unless {@link #withEntityDefault}\n"
-                + "or {@link #withoutEntityDefault} names another or none, and with none every such\n"
-                + "representation answers {@code null}. Build one with {@link #of} or\n"
-                + "{@link #withDefault}; a default or entity default tenant outside the set is refused\n"
-                + "here.\n")
-            .addField(FieldSpec.builder(setType, "tenants", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(optionalKey, "defaultTenant", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(optionalKey, "entityDefaultTenant", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addMethod(constructor)
-            .addMethod(twoRoleConstructor)
-            .addMethod(of)
-            .addMethod(withDefault)
-            .addMethod(withEntityDefault)
-            .addMethod(withoutEntityDefault)
-            .addMethod(tenantsAccessor)
-            .addMethod(defaultTenantAccessor)
-            .addMethod(entityDefaultTenantAccessor)
-            .addMethod(equals)
-            .addMethod(hashCode)
-            .addMethod(toString)
-            .build();
-    }
-
     /** The default-source sibling of {@link #staticDslFor}. */
     private static MethodSpec staticDslDefault(ClassName self) {
         return MethodSpec.methodBuilder("dslDefault")
@@ -3249,8 +3014,8 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code private static K tenantKeyOf(Object value)}: one client-sourced tenant value reduced
      * to its canonical key, shared by the routing fold and the fan-out narrowing so a value names
      * the same tenant whichever reads it. A value the tenant column cannot store is the client's
-     * mistake, raised as the generated client-error type before the request tenant set is
-     * consulted, so it reveals nothing about which tenants exist, and before a narrowed domain is
+     * mistake, raised as the generated client-error type before the connection source is asked,
+     * so it reveals nothing about which tenants exist, and before a narrowed domain is
      * intersected, so it cannot empty one.
      */
     private static MethodSpec tenantKeyOf(TypeName tenantKey, ClassName clientException) {
@@ -3385,12 +3150,30 @@ public final class ConnectionRuntimeClassGenerator {
      * field needs the connection for a key, never twice for one key in one request, and releases the
      * lease it returns exactly once. A source is built when the request is, so it captures what the
      * consumer needs of the request, and acquires nothing until called.
+     *
+     * <p>In a build with a tenant column ({@code tenantKey} present) the source also names its
+     * fan-out domain, {@code tenants()}, and is built with {@code ConnectionSource.of(acquire, tenants)},
+     * so a source without a domain does not compile. Without one it stays a functional interface whose
+     * {@code tenants()} is a default that throws, never called since nothing fans out there.
      */
     private static TypeSpec connectionSource(ClassName self, ClassName lease, ClassName connectionKey,
-                                             ClassName keyNotPermitted) {
-        return TypeSpec.interfaceBuilder(self)
+                                             ClassName keyNotPermitted, TypeName tenantKey) {
+        var acquireDoc = CodeBlock.of("Leases the connection {@code key} runs on, with any session state the request needs\n"
+            + "already set on it and autocommit on. Throw {@link $T} to refuse the key: the field\n"
+            + "that asked answers with an error, and an entity or node lookup with {@code null}. A\n"
+            + "refusal is remembered for the request, so the source is not asked for that key again. Any\n"
+            + "other throw rejects the request as a whole, before or instead of its result.\n"
+            + "@param key what the connection is for\n"
+            + "@return the lease, released by Graphitron exactly once\n", keyNotPermitted);
+        var acquire = MethodSpec.methodBuilder("acquire")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .returns(lease)
+            .addParameter(connectionKey, "key")
+            .addException(Exception.class)
+            .addJavadoc(acquireDoc)
+            .build();
+        var builder = TypeSpec.interfaceBuilder(self)
             .addModifiers(Modifier.PUBLIC)
-            .addAnnotation(FunctionalInterface.class)
             .addJavadoc("Where a request's connections come from: one {@link $T} per distinct {@link $T}.\n"
                 + "Given with each request to {@code Graphitron.newOwnedExecutionInput(source, ...)}, so it\n"
                 + "captures what it needs of the request (a token, a principal) when it is built and acquires\n"
@@ -3401,17 +3184,86 @@ public final class ConnectionRuntimeClassGenerator {
                 + "{@code $T.mounting} build one over a pool.\n",
                 lease, connectionKey, self.peerClass(CONNECTION_SOURCES_CLASS_NAME),
                 self.peerClass(CONNECTION_SOURCES_CLASS_NAME))
+            .addMethod(acquire);
+        if (tenantKey == null) {
+            return builder
+                .addAnnotation(FunctionalInterface.class)
+                .addMethod(MethodSpec.methodBuilder("tenants")
+                    .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+                    .returns(ParameterizedTypeName.get(SET, OBJECT_KEY))
+                    .addStatement("throw new $T($S)", UnsupportedOperationException.class,
+                        "this build has no tenant column, so nothing fans out")
+                    .addJavadoc("The tenants a request may span. This build has no tenant column, so nothing fans out\n"
+                        + "and Graphitron never calls this; the default throws.\n"
+                        + "@return never\n"
+                        + "@throws UnsupportedOperationException always\n")
+                    .build())
+                .build();
+        }
+        var acquireType = self.nestedClass("Acquire");
+        var setType = ParameterizedTypeName.get(SET, tenantKey);
+        var tenantsType = ParameterizedTypeName.get(COLLECTION, WildcardTypeName.subtypeOf(tenantKey));
+        var anonymous = TypeSpec.anonymousClassBuilder("")
+            .addSuperinterface(self)
             .addMethod(MethodSpec.methodBuilder("acquire")
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
                 .returns(lease)
                 .addParameter(connectionKey, "key")
                 .addException(Exception.class)
-                .addJavadoc("Leases the connection {@code key} runs on, with any session state the request needs\n"
-                    + "already set on it and autocommit on. Throw {@link $T} to refuse the key: the field\n"
-                    + "that asked answers with an error, and an entity or node lookup with {@code null}. Any\n"
-                    + "other throw rejects the request as a whole, before or instead of its result.\n"
-                    + "@param key what the connection is for\n"
-                    + "@return the lease, released by Graphitron exactly once\n", keyNotPermitted)
+                .addStatement("return acquire.acquire(key)")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("tenants")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(setType)
+                .addStatement("return domain")
+                .build())
+            .build();
+        return builder
+            .addMethod(MethodSpec.methodBuilder("tenants")
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(setType)
+                .addJavadoc("The tenants this request may span: the domain a {@code @tenantFanOut} field fans out\n"
+                    + "over, one key and one lease per tenant. Graphitron reads it once per request, on the first\n"
+                    + "fan-out, puts each member in the tenant column's canonical form and keeps the order given. A\n"
+                    + "tenant the request may not see is simply not named; one named here and refused by\n"
+                    + "{@link #acquire} answers at the fanned field as an error.\n"
+                    + "@return the request's fan-out domain\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("of")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(self)
+                .addParameter(acquireType, "acquire")
+                .addParameter(tenantsType, "tenants")
+                .addStatement("$T.requireNonNull(acquire, $S)", OBJECTS, "acquire")
+                .addStatement("$T<$T> copy = new $T<>()", SET, tenantKey, LINKED_HASH_SET)
+                .beginControlFlow("for ($T tenant : $T.requireNonNull(tenants, $S))", tenantKey, OBJECTS, "tenants")
+                .addStatement("copy.add($T.requireNonNull(tenant, $S))", OBJECTS, "a tenant in tenants")
+                .endControlFlow()
+                .addStatement("$T domain = $T.unmodifiableSet(copy)", setType, ClassName.get("java.util", "Collections"))
+                .addStatement("return $L", anonymous)
+                .addJavadoc("A source that leases through {@code acquire} and names {@code tenants} as its fan-out\n"
+                    + "domain.\n"
+                    + "@param acquire leases a key's connection, as {@link #acquire} does\n"
+                    + "@param tenants the tenants this request may span; copied, in iteration order, and\n"
+                    + "must hold no {@code null}\n"
+                    + "@return the source\n"
+                    + "@throws NullPointerException when {@code acquire} or {@code tenants} is {@code null}, or\n"
+                    + "{@code tenants} holds a {@code null}\n")
+                .build())
+            .addType(TypeSpec.interfaceBuilder("Acquire")
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addAnnotation(FunctionalInterface.class)
+                .addJavadoc("Leases a key's connection: the {@code acquire} half of a source built\n"
+                    + "with {@code ConnectionSource.of}.\n")
+                .addMethod(MethodSpec.methodBuilder("acquire")
+                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                    .returns(lease)
+                    .addParameter(connectionKey, "key")
+                    .addException(Exception.class)
+                    .addJavadoc(acquireDoc)
+                    .build())
                 .build())
             .build();
     }
@@ -3601,37 +3453,60 @@ public final class ConnectionRuntimeClassGenerator {
      * connection evicted rather than pooled when either callback or the reset fails.
      */
     private static TypeSpec connectionSources(ClassName self, ClassName source, ClassName lease,
-                                              ClassName connectionKey, TypeName handleType) {
+                                              ClassName connectionKey, TypeName handleType, TypeName tenantKey) {
         var pool = ParameterizedTypeName.get(FUNCTION, connectionKey, DATA_SOURCE);
+        var tenantsType = tenantKey == null ? null
+            : ParameterizedTypeName.get(COLLECTION, WildcardTypeName.subtypeOf(tenantKey));
+        // A build with a tenant column names the fan-out domain with every source it builds.
+        String tenantsDoc = tenantKey == null ? ""
+            : "@param tenants the tenants this request may span, the source's {@code tenants()}; copied\n"
+                + "in iteration order, and must hold no {@code null}\n";
         var mount = self.nestedClass("Mount");
         var unmount = self.nestedClass("Unmount");
         String handleArg = handleType == null ? "" : "handle, ";
         String nullHandle = handleType == null ? "" : "null, ";
 
-        var of = MethodSpec.methodBuilder("of")
+        var ofBuilder = MethodSpec.methodBuilder("of")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(source)
-            .addParameter(pool, "pool")
-            .addStatement("$T.requireNonNull(pool, $S)", OBJECTS, "pool")
-            .addCode("return key -> {\n$>")
+            .addParameter(pool, "pool");
+        if (tenantKey != null) {
+            ofBuilder.addParameter(tenantsType, "tenants");
+        }
+        ofBuilder.addStatement("$T.requireNonNull(pool, $S)", OBJECTS, "pool");
+        if (tenantKey != null) {
+            ofBuilder.addCode("return $T.of(key -> {\n$>", source);
+        } else {
+            ofBuilder.addCode("return key -> {\n$>");
+        }
+        var of = ofBuilder
             .addStatement("$T connection = pool.apply(key).getConnection()", CONNECTION)
             .addStatement("return $T.of(connection, $Lconnection::close)", lease, nullHandle)
-            .addCode("$<};\n")
+            .addCode(tenantKey != null ? "$<}, tenants);\n" : "$<};\n")
             .addJavadoc("A source leasing each key's connection from the pool {@code pool} names for it, with no\n"
                 + "session state set and none to clear: the release returns it to the pool.\n"
-                + "@param pool the pool for a key; called once per distinct key per request\n")
+                + "@param pool the pool for a key; called once per distinct key per request\n"
+                + tenantsDoc
+                + "@return the source\n")
             .build();
 
-        var mounting = MethodSpec.methodBuilder("mounting")
+        var mountingBuilder = MethodSpec.methodBuilder("mounting")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(source)
-            .addParameter(pool, "pool")
+            .addParameter(pool, "pool");
+        if (tenantKey != null) {
+            mountingBuilder.addParameter(tenantsType, "tenants");
+        }
+        var mounting = mountingBuilder
             .addParameter(mount, "mount")
             .addParameter(unmount, "unmount")
             .addStatement("$T.requireNonNull(pool, $S)", OBJECTS, "pool")
             .addStatement("$T.requireNonNull(mount, $S)", OBJECTS, "mount")
             .addStatement("$T.requireNonNull(unmount, $S)", OBJECTS, "unmount")
-            .addStatement("return key -> acquireMounted(pool.apply(key).getConnection(), key, mount, unmount)")
+            .addStatement(tenantKey != null
+                ? CodeBlock.of("return $T.of(key -> acquireMounted(pool.apply(key).getConnection(), key, mount, unmount),"
+                    + " tenants)", source)
+                : CodeBlock.of("return key -> acquireMounted(pool.apply(key).getConnection(), key, mount, unmount)"))
             .addJavadoc("A source leasing each key's connection from the pool {@code pool} names for it, with the\n"
                 + "request's session state mounted by {@code mount} and cleared at release by {@code unmount}.\n"
                 + "Autocommit is forced on before the mount (rolling back what the pool left open), so the\n"
@@ -3642,8 +3517,10 @@ public final class ConnectionRuntimeClassGenerator {
                 + "so a role switch is the unmount's to undo. A throwing mount, unmount or reset evicts the\n"
                 + "physical connection rather than returning it to the pool.\n"
                 + "@param pool the pool for a key; called once per distinct key per request\n"
+                + tenantsDoc
                 + "@param mount sets the request's session state on a freshly taken connection\n"
-                + "@param unmount clears what the mount set, at release\n")
+                + "@param unmount clears what the mount set, at release\n"
+                + "@return the source\n")
             .build();
 
         var acquireMounted = MethodSpec.methodBuilder("acquireMounted")

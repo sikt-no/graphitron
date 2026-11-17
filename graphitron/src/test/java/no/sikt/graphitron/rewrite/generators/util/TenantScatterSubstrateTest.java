@@ -771,8 +771,6 @@ class TenantScatterSubstrateTest {
             new SynchronousAbortDriver.AbortAt("c", abort));
         Map<Object, Object> context = new java.util.HashMap<>();
         context.put(no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY, ((Hosted) runtime).source());
-        context.put(ownedConnectionsClass.getField(ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD).get(null),
-            requestTenantsOf((Hosted) runtime));
         return SynchronousAbortDriver.execute(engine, "query", fields, context);
     }
 
@@ -830,23 +828,11 @@ class TenantScatterSubstrateTest {
     /** A runtime, the request's source, and the tenants that source hosts, in the order given. */
     private record Hosted(Object runtime, Object source, List<String> tenants) {}
 
-    /**
-     * A request tenant set admitting every tenant the source hosts: these proofs are about
-     * concurrency and release, and authorization has its own harness test.
-     */
-    private static Object requestTenantsOf(Hosted hosted) throws Throwable {
-        return requestTenantsClass().getMethod("of", java.util.Collection.class).invoke(null, hosted.tenants());
-    }
-
-    private static Class<?> requestTenantsClass() {
-        return harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
-    }
-
     private Object newOwnedConnections(Object runtime) throws Throwable {
         Hosted hosted = (Hosted) runtime;
         Class<?> sourceClass = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass(), sourceClass)
-            .newInstance(hosted.runtime(), commitPolicyCommit, requestTenantsOf(hosted), hosted.source());
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sourceClass)
+            .newInstance(hosted.runtime(), commitPolicyCommit, hosted.source());
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {

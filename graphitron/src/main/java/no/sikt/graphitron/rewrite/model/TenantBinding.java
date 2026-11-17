@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
-import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
@@ -12,15 +11,16 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * absent (an empty index), not "everything {@link Untenanted}".
  *
  * <p>{@link Untenanted} is the one arm with a sub-axis: both of its leaves touch only global
- * tables, and they differ only in whether the request's default tenant may serve them.
+ * tables and run on the key whose tenant part is empty; they differ only in whether the statement
+ * is graphitron's own read or a write or service call.
  *
  * <p>{@link NodeIdBound} and {@link EntityRepBound} form the per-row family: a single batch
  * spans tenants, so their consumers partition per tenant rather than hand one value down. Where a
  * representation names its tenant, the model carries the tenant column's position in the decoded
  * key, never a reference into the raw id string or representation map (wire format stays a
  * boundary concern): node ids and federation representations both decode at the DataFetcher
- * boundary. An entity alternative whose key cannot name the tenant reads it from the request
- * instead ({@link EntityRepBound.TenantSource.RequestEntityDefault}).
+ * boundary. An entity alternative whose key cannot name the tenant is refused at classification:
+ * a request names no tenant to fetch it from.
  *
  * <p>{@link ParentRowBound} reads the tenant off the parent row: the field's first join hop
  * lands on the tenant column, so the paired parent column names the tenant that holds the child
@@ -345,20 +345,6 @@ public sealed interface TenantBinding {
              * of the alternative's decoded column tuple, so each representation names its own.
              */
             record KeyColumn(int decodedPosition) implements TenantSource {}
-
-            /**
-             * The key cannot carry the tenant column and the type is marked
-             * {@code @defaultTenant}: every representation resolves on the request's entity
-             * default tenant, and the lookup also matches {@code tenantColumn} (the tenant column
-             * of the type's table) against it, so a representation resolves exactly as if its key
-             * had named that tenant. A request naming no entity default tenant resolves none of
-             * them.
-             */
-            record RequestEntityDefault(ColumnRef tenantColumn) implements TenantSource {
-                public RequestEntityDefault {
-                    java.util.Objects.requireNonNull(tenantColumn, "tenantColumn");
-                }
-            }
         }
     }
 
@@ -390,15 +376,14 @@ public sealed interface TenantBinding {
     }
 
     /**
-     * The field touches only global tables. The two leaves differ only in which connection
-     * serves it: {@link GlobalRead} follows the request's default tenant when one is named,
-     * {@link DefaultSource} stays on the default DataSource whatever the request names.
+     * The field touches only global tables, so both leaves run on the key whose tenant part is
+     * empty, whose pool the connection source picks: {@link GlobalRead} is graphitron's own read,
+     * {@link DefaultSource} a write or a service call.
      */
     sealed interface Untenanted extends TenantBinding permits Untenanted.GlobalRead, Untenanted.DefaultSource {
 
         /**
-         * Graphitron's own SQL over global tables: acquired from the request's default tenant
-         * when one is named, else from the default DataSource.
+         * Graphitron's own SQL over global tables, acquired on the key whose tenant part is empty.
          */
         record GlobalRead() implements Untenanted {
             public static final GlobalRead INSTANCE = new GlobalRead();
@@ -406,7 +391,7 @@ public sealed interface TenantBinding {
 
         /**
          * The statement writes or calls a service, whose SQL the build cannot see, so it runs on
-         * the default DataSource in every request.
+         * the key whose tenant part is empty in every request.
          */
         record DefaultSource() implements Untenanted {
             public static final DefaultSource INSTANCE = new DefaultSource();
@@ -416,8 +401,8 @@ public sealed interface TenantBinding {
     /**
      * The deliberate no-binding arm: the field carries {@code @tenantFanOut}, so its query runs
      * once per tenant in the request's fan-out domain and the results union. The domain is a
-     * request-level fact (the factory-supplied request tenant set intersected with the configured
-     * tenant map), narrowed by {@code narrowing}: the field's optional slots naming the tenant
+     * request-level fact (the tenants the request's connection source names in {@code tenants()}),
+     * narrowed by {@code narrowing}: the field's optional slots naming the tenant
      * column. A slot whose runtime value names tenants restricts the domain to them; one the
      * request leaves out restricts nothing, and an empty list is the plain fan-out. Narrowing never
      * changes which rows the field answers, only how many tenants it asks, since a tenant's

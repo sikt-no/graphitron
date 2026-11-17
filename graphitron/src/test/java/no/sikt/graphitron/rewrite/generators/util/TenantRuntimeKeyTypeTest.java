@@ -63,7 +63,7 @@ class TenantRuntimeKeyTypeTest {
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
-            .contains("java.util.Optional<java.lang.Integer>")
+            .contains("java.util.List<java.lang.Integer> domain")
             .contains("dslFor(java.lang.Integer tenantKey");
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
@@ -109,22 +109,15 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
-    void multiTenantCarrierHoldsTheRequestTenantSet() {
+    void multiTenantCarrierTakesOnlyTheSource_andAsksItForTheDomain() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
-        // The shape of the set the carrier owns. What entryFor does with it (refusal before any
-        // getConnection and ahead of the source's own refusal) is pinned where it runs, in
-        // TenantAuthorizationSubstrateTest and TenantDivinedRoutingExecutionTest.
-        var tenants = carrier.fieldSpecs().stream()
-            .filter(f -> "tenants".equals(f.name()))
-            .findFirst()
-            .orElseThrow();
-        assertThat(tenants.type().toString()).isEqualTo("java.util.Set<java.lang.Integer>");
-        assertThat(tenants.modifiers()).containsExactlyInAnyOrder(Modifier.PRIVATE, Modifier.FINAL);
-
+        // The constructor is the same in every build: which tenants a request may reach is the
+        // source's to say. What the carrier does with a refusal and the domain is pinned where it
+        // runs, in TenantAuthorizationSubstrateTest and ConnectionContractTest.
         var constructor = carrier.methodSpecs().stream()
             .filter(MethodSpec::isConstructor)
             .findFirst()
@@ -132,133 +125,81 @@ class TenantRuntimeKeyTypeTest {
         assertThat(parameters(constructor)).containsExactly(
             "fake.code.generated.schema.GraphitronRuntime runtime",
             "fake.code.generated.schema.GraphitronTransactionProvider.CommitPolicy commitPolicy",
-            "fake.code.generated.schema.RequestTenants requestTenants",
             "fake.code.generated.schema.ConnectionSource source");
+        assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name)
+            .doesNotContain("tenants", "defaultTenant", "entityDefaultTenant", "TENANTS_KEY")
+            .contains("refusedKeys", "domain");
+        assertThat(carrier.fieldSpecs().stream().filter(f -> "domain".equals(f.name())).findFirst().orElseThrow()
+            .type().toString()).isEqualTo("java.util.List<java.lang.Integer>");
+        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name)
+            .doesNotContain("permits", "entityDefaultTenant", "dslGlobal");
 
         // The read side for the per-row lookups' null-not-error skip.
-        var permits = method(carrier, "permits");
-        assertThat(permits.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(permits.returnType()).isEqualTo(TypeName.BOOLEAN);
-        assertThat(parameters(permits)).containsExactly(
+        var ifPermitted = method(carrier, "dslForIfPermitted");
+        assertThat(ifPermitted.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(ifPermitted.returnType().toString()).isEqualTo("org.jooq.DSLContext");
+        assertThat(parameters(ifPermitted)).containsExactly(
             "graphql.schema.DataFetchingEnvironment env",
             "java.lang.Integer tenantKey");
+        assertThat(units).extracting(TypeSpec::name).doesNotContain("RequestTenants");
     }
 
     @Test
-    void multiTenantBuildEmitsTheRequestTenancyValue() {
+    void multiTenantSourceNamesItsDomain_andIsBuiltWithOf() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
-        var requestTenants = type(units, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
+        var source = type(units, ConnectionRuntimeClassGenerator.CONNECTION_SOURCE_CLASS_NAME);
 
-        // Record-shaped: the three components, the canonical constructor over them, the
-        // two-role constructor that names the default for both roles, and accessors. The
-        // membership refusals are pinned where they run, in TenantAuthorizationSubstrateTest and
-        // TenantDivinedRoutingExecutionTest.
-        assertThat(requestTenants.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
-        assertThat(requestTenants.fieldSpecs())
-            .extracting(f -> f.type() + " " + f.name())
-            .containsExactly(
-                "java.util.Set<java.lang.Integer> tenants",
-                "java.util.Optional<java.lang.Integer> defaultTenant",
-                "java.util.Optional<java.lang.Integer> entityDefaultTenant");
-        var constructors = requestTenants.methodSpecs().stream()
-            .filter(MethodSpec::isConstructor)
-            .toList();
-        assertThat(constructors).allSatisfy(c -> assertThat(c.modifiers()).contains(Modifier.PUBLIC));
-        assertThat(constructors).extracting(TenantRuntimeKeyTypeTest::parameters).containsExactlyInAnyOrder(
-            List.of(
-                "java.util.Set<java.lang.Integer> tenants",
-                "java.util.Optional<java.lang.Integer> defaultTenant",
-                "java.util.Optional<java.lang.Integer> entityDefaultTenant"),
-            List.of(
-                "java.util.Set<java.lang.Integer> tenants",
-                "java.util.Optional<java.lang.Integer> defaultTenant"));
-        assertThat(method(requestTenants, "tenants").returnType().toString())
-            .isEqualTo("java.util.Set<java.lang.Integer>");
-        assertThat(method(requestTenants, "defaultTenant").returnType().toString())
-            .isEqualTo("java.util.Optional<java.lang.Integer>");
-        assertThat(method(requestTenants, "entityDefaultTenant").returnType().toString())
-            .isEqualTo("java.util.Optional<java.lang.Integer>");
-
-        var of = method(requestTenants, "of");
+        assertThat(source.annotations()).isEmpty();
+        var tenants = method(source, "tenants");
+        assertThat(tenants.modifiers()).contains(Modifier.PUBLIC, Modifier.ABSTRACT);
+        assertThat(tenants.returnType().toString()).isEqualTo("java.util.Set<java.lang.Integer>");
+        var of = method(source, "of");
         assertThat(of.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(parameters(of)).containsExactly("java.util.Collection<java.lang.Integer> tenants");
-        var withDefault = method(requestTenants, "withDefault");
-        assertThat(withDefault.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(parameters(withDefault)).containsExactly(
-            "java.util.Collection<java.lang.Integer> tenants",
-            "java.lang.Integer defaultTenant");
+        assertThat(parameters(of)).containsExactly(
+            "fake.code.generated.schema.ConnectionSource.Acquire acquire",
+            "java.util.Collection<? extends java.lang.Integer> tenants");
+        assertThat(source.typeSpecs()).extracting(TypeSpec::name).containsExactly("Acquire");
 
-        // The entity role's withers: instance methods that keep the set and the default tenant.
-        var withEntityDefault = method(requestTenants, "withEntityDefault");
-        assertThat(withEntityDefault.modifiers()).contains(Modifier.PUBLIC).doesNotContain(Modifier.STATIC);
-        assertThat(withEntityDefault.returnType().toString()).isEqualTo("fake.code.generated.schema.RequestTenants");
-        assertThat(parameters(withEntityDefault)).containsExactly("java.lang.Integer tenant");
-        var withoutEntityDefault = method(requestTenants, "withoutEntityDefault");
-        assertThat(withoutEntityDefault.modifiers()).contains(Modifier.PUBLIC).doesNotContain(Modifier.STATIC);
-        assertThat(withoutEntityDefault.returnType().toString())
-            .isEqualTo("fake.code.generated.schema.RequestTenants");
-        assertThat(parameters(withoutEntityDefault)).isEmpty();
+        var sources = type(units, ConnectionRuntimeClassGenerator.CONNECTION_SOURCES_CLASS_NAME);
+        assertThat(parameters(method(sources, "of"))).containsExactly(
+            "java.util.function.Function<fake.code.generated.schema.ConnectionKey, javax.sql.DataSource> pool",
+            "java.util.Collection<? extends java.lang.Integer> tenants");
+        assertThat(parameters(method(sources, "mounting"))).containsExactly(
+            "java.util.function.Function<fake.code.generated.schema.ConnectionKey, javax.sql.DataSource> pool",
+            "java.util.Collection<? extends java.lang.Integer> tenants",
+            "fake.code.generated.schema.ConnectionSources.Mount mount",
+            "fake.code.generated.schema.ConnectionSources.Unmount unmount");
     }
 
     @Test
-    void multiTenantCarrierShipsTheGlobalReadAcquisition() {
+    void singleTenantSourceStaysFunctional_withADefaultTenantsThatThrows() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
-            TenantColumnFixtures.INTEGER_KEY_COLUMN);
-        var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
+            "fake.code.generated", SessionIdentityRows.empty());
+        var source = type(units, ConnectionRuntimeClassGenerator.CONNECTION_SOURCE_CLASS_NAME);
 
-        var defaultTenant = carrier.fieldSpecs().stream()
-            .filter(f -> "defaultTenant".equals(f.name()))
-            .findFirst()
-            .orElseThrow();
-        assertThat(defaultTenant.type().toString()).isEqualTo("java.util.Optional<java.lang.Integer>");
-        var entityDefaultTenant = carrier.fieldSpecs().stream()
-            .filter(f -> "entityDefaultTenant".equals(f.name()))
-            .findFirst()
-            .orElseThrow();
-        assertThat(entityDefaultTenant.type().toString()).isEqualTo("java.util.Optional<java.lang.Integer>");
+        assertThat(source.annotations()).extracting(Object::toString)
+            .containsExactly("@java.lang.FunctionalInterface");
+        var tenants = method(source, "tenants");
+        assertThat(tenants.modifiers()).contains(Modifier.PUBLIC, Modifier.DEFAULT);
+        assertThat(tenants.returnType().toString()).isEqualTo("java.util.Set<java.lang.Object>");
+        assertThat(source.methodSpecs()).extracting(MethodSpec::name).doesNotContain("of");
 
-        // The entity dispatcher reads the entity role; the default tenant has no static reader.
-        var entityDefaultReader = method(carrier, "entityDefaultTenant");
-        assertThat(entityDefaultReader.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(parameters(entityDefaultReader)).containsExactly("graphql.schema.DataFetchingEnvironment env");
-        assertThat(entityDefaultReader.returnType().toString()).isEqualTo("java.util.Optional<java.lang.Integer>");
-        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("defaultTenant");
-
-        var globals = carrier.methodSpecs().stream().filter(m -> "dslGlobal".equals(m.name())).toList();
-        assertThat(globals).hasSize(2);
-        var instance = globals.stream().filter(m -> !m.modifiers().contains(Modifier.STATIC)).findFirst().orElseThrow();
-        assertThat(instance.modifiers()).contains(Modifier.PUBLIC);
-        assertThat(parameters(instance)).isEmpty();
-        assertThat(instance.returnType().toString()).isEqualTo("org.jooq.DSLContext");
-        var statik = globals.stream().filter(m -> m.modifiers().contains(Modifier.STATIC)).findFirst().orElseThrow();
-        assertThat(statik.modifiers()).contains(Modifier.PUBLIC);
-        assertThat(parameters(statik)).containsExactly("graphql.schema.DataFetchingEnvironment env");
-        assertThat(statik.returnType().toString()).isEqualTo("org.jooq.DSLContext");
+        var sources = type(units, ConnectionRuntimeClassGenerator.CONNECTION_SOURCES_CLASS_NAME);
+        assertThat(parameters(method(sources, "of"))).containsExactly(
+            "java.util.function.Function<fake.code.generated.schema.ConnectionKey, javax.sql.DataSource> pool");
     }
 
     @Test
-    void singleTenantBuildEmitsNoRequestTenancyValueAndNoGlobalReadAcquisition() {
+    void singleTenantCarrierHoldsNoDomain() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
         var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
-        assertThat(units).extracting(TypeSpec::name)
-            .doesNotContain(ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
-        assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("defaultTenant");
-        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("dslGlobal");
-    }
-
-    @Test
-    void singleTenantCarrierHoldsNoTenantSet() {
-        var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionIdentityRows.empty());
-        var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
-
-        assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("tenants");
-        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("permits");
+        assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("domain");
+        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name)
+            .doesNotContain("dslForIfPermitted", "fanOutDomain");
     }
 
     @Test
@@ -366,11 +307,10 @@ class TenantRuntimeKeyTypeTest {
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
-            // The graphitron-owned request key the factory writes and the instrumentation reads.
-            .contains("String TENANTS_KEY = \"no.sikt.graphitron.request.tenants\"")
-            // Domain: the request tenant set, in its given order.
+            // Domain: the source's tenants(), read once per request, in its given order.
             .contains("static java.util.List<java.lang.Integer> fanOutDomain(")
-            .contains("new java.util.ArrayList<>(carrier.tenants)")
+            .contains("new java.util.ArrayList<>(carrier.readDomain())")
+            .contains("canonical.add(canonicalTenantKey(tenant))")
             // Union with per-element tenant stamping, failures appended after successful rows.
             .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
             // The batched sibling: per-key merge across tenants, one scatter per parent batch.
@@ -394,7 +334,7 @@ class TenantRuntimeKeyTypeTest {
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
-            .as("the domain is the request's, not a set of keys the runtime hosts")
+            .as("the domain is the source's, not a set of keys the runtime hosts")
             .doesNotContain("tenantKeys");
     }
 

@@ -23,10 +23,6 @@ import java.util.List;
  *
  * <h2>Per-operation sequence ({@code beginExecuteOperation})</h2>
  * <ol>
- *   <li>In a {@code <tenantColumn>} build, read the {@code RequestTenants} value the factory
- *       wrote under {@code OwnedConnections.TENANTS_KEY}, failing the operation before any
- *       fetcher runs when it is absent (an {@code ExecutionInput} built without the generated
- *       factory), since the set has no "unrestricted" meaning.</li>
  *   <li>Read the request's {@code ConnectionSource} off the {@code graphQLContext}, where the
  *       {@code Graphitron.newOwnedExecutionInput(source, ...)} factory writes it, failing the
  *       operation before any fetcher runs when it is absent.</li>
@@ -36,8 +32,7 @@ import java.util.List;
  *       options for.</li>
  *   <li>Publish the per-operation {@code OwnedConnections} carrier under its own class key, on
  *       both topologies. Acquisition is lazy on every path: fetchers resolve contexts through
- *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault} /
- *       {@code dslGlobal}), which
+ *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault}), which
  *       pins and mounts one connection per key on first demand, so an operation that touches no
  *       database never pins and never mounts. Nothing is published under the typed
  *       {@code DSLContext.class} key: that key belongs to the escape-hatch factory alone, so the
@@ -145,8 +140,8 @@ public final class GraphitronConnectionInstrumentationGenerator {
 
     /**
      * Canonical form. {@code tenantKeyType} is the tenant column's Java type when
-     * {@code <tenantColumn>} is configured, {@code null} otherwise (the carrier then additionally
-     * carries the request tenant set and the fan-out machinery); acquisition is lazy on both
+     * {@code <tenantColumn>} is configured, {@code null} otherwise; the instrumentation reads nothing
+     * tenant-shaped, since the carrier asks the source for its fan-out domain. Acquisition is lazy on both
      * topologies, so this instrumentation publishes the per-operation carrier and pins nothing
      * itself. {@code sessionHooks} says whether the graph supplies session identity, whose state is read here off
      * the {@code graphQLContext} and retained by the carrier for the life of the request.
@@ -168,7 +163,6 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var self = ClassName.get(schemaPackage, CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         var ownedConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
-        var requestTenants = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
         var batchSizeLimit = ErrorRouterClassGenerator.batchSizeLimitClass(outputPackage);
@@ -176,14 +170,14 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
-        return List.of(instrumentation(self, runtime, ownedConnections, requestTenants, fetcherErrorLog,
+        return List.of(instrumentation(self, runtime, ownedConnections, fetcherErrorLog,
             fetcherErrorResponse, batchSizeLimit, commitPolicy, state, tenantKey, sessionHooks, errorRouter,
             vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)
                 .nestedClass(no.sikt.graphitron.emit.VoucherRuntime.ISSUERS) : null));
     }
 
     private static TypeSpec instrumentation(
-            ClassName self, ClassName runtime, ClassName ownedConnections, ClassName requestTenants,
+            ClassName self, ClassName runtime, ClassName ownedConnections,
             ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName batchSizeLimit,
             ClassName commitPolicy, ClassName state,
             TypeName tenantKey, SessionIdentityRows sessionHooks, ClassName errorRouter, ClassName issuers) {
@@ -253,23 +247,6 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .endControlFlow()
             .addStatement("state.executionContext = executionContext")
             .addCode("\n");
-        if (tenantKey != null) {
-            beginExecuteOperationBuilder
-                .addComment("The request's tenancy, written by the generated factory as one RequestTenants value,")
-                .addComment("whose constructor already copied the set and checked that a default tenant and an")
-                .addComment("entity default tenant are members; the carrier owns it from here on. Absent means the ExecutionInput was not")
-                .addComment("built by the generated factory, and the set has no unrestricted meaning, so fail")
-                .addComment("before any fetcher runs.")
-                .addStatement("$T requestTenants = graphQLContext.get($T.$L)", requestTenants,
-                    ownedConnections, ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD)
-                .beginControlFlow("if (requestTenants == null)")
-                .addStatement("throw new $T($S)", IllegalStateException.class,
-                    "No request tenant set in the GraphQL context: a <tenantColumn> build's generated"
-                        + " factories (newOwnedExecutionInput / newExecutionInput) take the set of tenants"
-                        + " the request may touch; build the request through one of them.")
-                .endControlFlow()
-                .addCode("\n");
-        }
         beginExecuteOperationBuilder
             .addComment("The request's connection source, written by newOwnedExecutionInput; the carrier retains")
             .addComment("it for the request, since any fetcher may trigger an acquisition. An input built without")
@@ -290,9 +267,6 @@ public final class GraphitronConnectionInstrumentationGenerator {
                     issuers, issuers, java.time.Instant.class);
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
-        if (tenantKey != null) {
-            carrierArgs.append(", requestTenants");
-        }
         carrierArgs.append(", ").append(ConnectionRuntimeClassGenerator.SOURCE_SLOT);
         var beginExecuteOperation = beginExecuteOperationBuilder
             .addComment("The consumer's log and response for fetcher exceptions and its batch size limit,")

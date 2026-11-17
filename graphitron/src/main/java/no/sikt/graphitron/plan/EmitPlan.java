@@ -197,7 +197,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.TABLE_ALIASES, units.tableAliases()));
         globals.add(one(GlobalUnitKind.NESTING_COORDINATES, units.nestingCoordinates()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
-        globals.add(connectionRuntime(units, sessionIdentity, schema.requestTenantKeyType().isPresent()));
+        globals.add(connectionRuntime(units, sessionIdentity));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
@@ -339,22 +339,16 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * log's surface varies with the tenant key), the connection contract in every build
      * ({@code ConnectionSource}, {@code Lease}, {@code KeyNotPermitted}, the
      * {@code AcquisitionFailedException} any other throwing source becomes, and the ready-made
-     * {@code ConnectionSources}), plus the {@code ConnectionKey} the carrier is keyed by in every build, and the
-     * {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
-     * ({@link GraphitronSchema#requestTenantKeyType()}, the fact the generator's tenant key type
-     * is read from).
+     * {@code ConnectionSources}), plus the {@code ConnectionKey} the carrier is keyed by in every build.
+     * The set is the same in every build.
      */
-    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks,
-                                                   boolean multiTenant) {
+    private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks) {
         var refs = new ArrayList<UnitRef>();
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "PinnedConnection"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronRuntime"));
         refs.add(units.ownedConnections());
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA,
             no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME));
-        if (multiTenant) {
-            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "RequestTenants"));
-        }
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorLog"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorResponse"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "BatchSizeLimit"));

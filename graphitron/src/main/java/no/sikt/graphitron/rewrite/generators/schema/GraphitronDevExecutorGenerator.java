@@ -71,8 +71,8 @@ public final class GraphitronDevExecutorGenerator {
             ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         List<ResolvedContextArg> contextArgs = schema.contextArguments().resolved().values().stream().toList();
-        // The facade's factory signatures fork on the same fact; reading the one schema seam
-        // keeps this call and the emitted parameter list from drifting.
+        // A build with a tenant column has a source that names its fan-out domain, which the one
+        // dev connection cannot: such a build needs the consumer's dev source.
         boolean multiTenant = schema.requestTenantKeyType().isPresent();
 
         // Whether the graph supplies identity is read off the store's rows, never re-derived here.
@@ -98,7 +98,7 @@ public final class GraphitronDevExecutorGenerator {
             .addParameter(sessionFunction, "session")
             .addException(Exception.class)
             .addParameter(mapStringObject, "contextArgs")
-            .addJavadoc(executeJavadoc(mountsIdentity, contextArgs));
+            .addJavadoc(executeJavadoc(mountsIdentity, multiTenant, contextArgs));
         if (contextArgs.stream().anyMatch(arg -> arg.javaType() instanceof ParameterizedTypeName)) {
             execute.addAnnotation(com.palantir.javapoet.AnnotationSpec
                 .builder(SuppressWarnings.class).addMember("value", "$S", "unchecked").build());
@@ -107,7 +107,18 @@ public final class GraphitronDevExecutorGenerator {
             .addStatement("$T.requireNonNull(connection, $S)", Objects.class, "connection")
             .addStatement("$T.requireNonNull(dialect, $S)", Objects.class, "dialect")
             .addStatement("$T.requireNonNull(query, $S)", Objects.class, "query");
-        if (mountsIdentity) {
+        if (multiTenant) {
+            // Fail loud rather than fan out over nothing: a tenanted build's source names the
+            // tenants a request may span, and only the consumer's source knows them. Checked
+            // first, since it holds whether or not the build also mounts identity.
+            execute.beginControlFlow("if (session == null)")
+                .addStatement("throw new $T($S)", IllegalStateException.class,
+                    "This schema configures <tenantColumn>, so dev execution needs your connection source, "
+                        + "which names the tenants a request may span: name the method that builds it from a "
+                        + "DataSource in the graphitron-maven-plugin dev database configuration "
+                        + "(<devDatabase><session>fqcn#method</session>, or GRAPHITRON_DEV_SESSION).")
+                .endControlFlow();
+        } else if (mountsIdentity) {
             // Fail loud, never skip: running without the identity a production caller supplies
             // would execute under a different security posture (seeing nothing under RLS, or
             // everything on a convention-fence setup).
@@ -120,14 +131,21 @@ public final class GraphitronDevExecutorGenerator {
                         + "GRAPHITRON_DEV_SESSION), next to the claims payload.")
                 .endControlFlow();
         }
-        execute
-            .addComment("The request's connections: the consumer's dev source over the one connection, or, without")
-            .addComment("one, a lease of that connection as it is, which the host closes.")
-            .addStatement("$T source = session != null\n"
-                    + "    ? ($T) session.apply(new $N(connection))\n"
-                    + "    : key -> $T.of(connection, $L() -> { })",
-                connectionSource, connectionSource, DATA_SOURCE_WRAPPER, lease,
-                identity.handleType().isPresent() ? "null, " : "");
+        if (mountsIdentity || multiTenant) {
+            execute
+                .addComment("The request's connections: the consumer's dev source over the one connection.")
+                .addStatement("$T source = ($T) session.apply(new $N(connection))",
+                    connectionSource, connectionSource, DATA_SOURCE_WRAPPER);
+        } else {
+            execute
+                .addComment("The request's connections: the consumer's dev source over the one connection, or, without")
+                .addComment("one, a lease of that connection as it is, which the host closes.")
+                .addStatement("$T source = session != null\n"
+                        + "    ? ($T) session.apply(new $N(connection))\n"
+                        + "    : key -> $T.of(connection, $L() -> { })",
+                    connectionSource, connectionSource, DATA_SOURCE_WRAPPER, lease,
+                    identity.handleType().isPresent() ? "null, " : "");
+        }
         if (vouches) {
             var keys = ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS);
             execute
@@ -149,7 +167,7 @@ public final class GraphitronDevExecutorGenerator {
                     + "    .variables(variables == null ? $T.of() : variables)\n"
                     + "    .build()",
                 executionInput, facade, "newOwnedExecutionInput",
-                ownedFactoryArgs(contextArgs, multiTenant),
+                ownedFactoryArgs(contextArgs),
                 ClassName.get(Map.class))
             .addStatement("$T result", executionResult)
             .beginControlFlow("try")
@@ -178,16 +196,8 @@ public final class GraphitronDevExecutorGenerator {
      * the facade's factory parameters use, so the two cannot disagree on position), after the
      * request's connection source.
      */
-    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs, boolean multiTenant) {
+    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs) {
         var args = CodeBlock.builder().add("(source");
-        if (multiTenant) {
-            args.add(", ");
-            // The dev executor runs single-connection with no tenant map, so no tenant can be
-            // served: an empty request tenant set satisfies the factory slot, a fanned field
-            // resolves to an empty union, and a routed field fails with the refusal rather than
-            // a missing-parameter or unhosted-tenant failure.
-            args.add("$T.of()", ClassName.get("java.util", "Set"));
-        }
         for (ResolvedContextArg arg : contextArgs) {
             args.add(",\n        ");
             args.add("($T) $N(contextArgs, $S, $T.class)",
@@ -325,7 +335,8 @@ public final class GraphitronDevExecutorGenerator {
             + "release (dev exploration never persists a write).\n";
     }
 
-    private static String executeJavadoc(boolean mountsIdentity, List<ResolvedContextArg> contextArgs) {
+    private static String executeJavadoc(boolean mountsIdentity, boolean multiTenant,
+                                         List<ResolvedContextArg> contextArgs) {
         var sb = new StringBuilder();
         sb.append("Executes one GraphQL operation against the generated schema on {@code connection}\n");
         sb.append("and returns the JSON-serialized {@code ExecutionResult.toSpecification()} (data plus\n");
@@ -341,6 +352,12 @@ public final class GraphitronDevExecutorGenerator {
             sb.append("sets identity exactly as a production caller's would, and a missing one fails\n");
             sb.append("loudly rather than running unsecured.\n");
         }
+        if (multiTenant) {
+            sb.append("\n");
+            sb.append("<p>This schema configures {@code <tenantColumn>}: the request's connection source\n");
+            sb.append("names the tenants a request may span, so a missing one fails loudly rather than\n");
+            sb.append("fanning out over nothing.\n");
+        }
         sb.append("@param connection the open JDBC connection to execute on; the caller owns it, but\n");
         sb.append("release may close it (idempotent with the caller's own close)\n");
         sb.append("@param dialect the jOOQ {@code SQLDialect} name for this database, e.g. {@code POSTGRES}\n");
@@ -349,7 +366,7 @@ public final class GraphitronDevExecutorGenerator {
         sb.append("@param variables the operation's variables; {@code null} means none\n");
         sb.append("@param session builds the request's {@code ConnectionSource} over a one-connection\n");
         sb.append("{@code DataSource}, from the dev host's configured session method and claims; "
-            + (mountsIdentity ? "must not be\n{@code null}\n" : "{@code null}\nleases the connection as it is\n"));
+            + (mountsIdentity || multiTenant ? "must not be\n{@code null}\n" : "{@code null}\nleases the connection as it is\n"));
         if (contextArgs.isEmpty()) {
             sb.append("@param contextArgs unused by this schema (no {@code contextArguments} declared); may\n");
             sb.append("be {@code null}\n");
