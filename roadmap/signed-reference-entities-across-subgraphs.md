@@ -309,6 +309,11 @@ Decisions the user made on this item; each is stated where it applies below.
   `tenants()` is a default that throws, never called since nothing fans out there. Graphitron fans out
   over the domain, one key and one lease per tenant, and a tenant the request may not see is simply not
   named (2026-11-16).
+* No default tenant and no `@defaultTenant` (2026-11-17): `RequestTenants.withDefault` and the entity
+  default tenant go with the request tenant set. Every read and write of a global table runs on the key
+  whose tenant part is empty, whose pool the source picks, so `dslGlobal` folds into `dslDefault`.
+  `@defaultTenant` is dropped, since its lookup binds a tenant value the request no longer names; a schema
+  that still applies it is refused with a message naming the change.
 * The dialect and jOOQ `Settings` a lease's connection is used with are the runtime's, application-wide,
   with an optional overload per lease (2026-11-16): today's per-source dialect and settings stay
   expressible without every lease naming them.
@@ -735,7 +740,13 @@ acquires through the request's source by the whole key. In three steps, each gre
   `Object`-typed tenant part in an untenanted build until slice 8d.2 adds the vouched-for parts, where it
   narrows to the parts the schema has.
 * 8c.3, tenants to the source: the request tenant set goes, a tenanted build's source names its fan-out
-  domain through `ConnectionSource.of(acquire, tenants)`. Breaking for tenanted consumers.
+  domain through `ConnectionSource.of(acquire, tenants)`. Breaking for tenanted consumers. With it go
+  the default tenant and `@defaultTenant` (*Rulings*, 2026-11-17). The entity and node dispatch's
+  pre-check against the set becomes catching `KeyNotPermitted` per key, which leaves that group `null`;
+  the carrier remembers a refusal per key, so the source is never asked twice for one key. The carrier
+  reads `tenants()` once per request, in the tenant column's form and in the order given; a tenant the
+  source names there and then refuses answers at the fanned field as an error. The dev executor in a
+  tenanted build fails naming `<devDatabase><session>` rather than fanning out over nothing.
 
 * The generated runtime: `ConnectionKey` in every build, `ConnectionSource`, `Lease` and its factory, the
   carrier keyed by `ConnectionKey` in every build, `PinnedConnection`, `MountedSession`, `SessionState`
@@ -972,7 +983,9 @@ want to see the plan.
   single-tenant carrier: every build keys by a `ConnectionKey` whose parts its schema decides.
 * The request tenant set (`RequestTenants`, the factories' leading tenant-set parameter, the carrier's
   check against it, the fan-out domain as tenant map intersected with it), and the default tenant and
-  entity default tenant the request names (slice 8c): the source decides tenants.
+  entity default tenant the request names (slice 8c): the source decides tenants. With them
+  `dslGlobal` and the global-read route, and the `@defaultTenant` directive, its classification marker,
+  its dispatch arm and its reference page (2026-11-17).
 * R1185, "The consumer chooses a query's connection in a hook that takes the whole connection key":
   absorbed here and discarded.
 
