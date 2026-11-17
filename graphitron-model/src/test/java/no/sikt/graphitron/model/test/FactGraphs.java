@@ -173,6 +173,37 @@ public final class FactGraphs implements AutoCloseable {
     /** The JVM's population, while it is open. */
     private static FactGraphs shared;
 
+    /**
+     * Runs {@code body} over each store holding documents, with the statements its captures ran and
+     * the binds each first ran with, every document captured first and the store held while the
+     * body runs. A text an earlier store handed over is not handed over again.
+     */
+    public static void eachCaptureStatement(CaptureStatements body) {
+        var population = shared();
+        population.warm(population.paths());
+        var handed = new java.util.HashSet<String>();
+        for (var shard : population.shards.values()) {
+            synchronized (shard) {
+                if (shard.store == null || shard.graphs.isEmpty()) {
+                    continue;
+                }
+                var fresh = new java.util.TreeMap<String, List<Object>>();
+                shard.statements.forEach((sql, binds) -> {
+                    if (handed.add(sql)) {
+                        fresh.put(sql, binds);
+                    }
+                });
+                body.accept(shard.store.dsl(), fresh);
+            }
+        }
+    }
+
+    /** What {@link #eachCaptureStatement} runs over one store. */
+    @FunctionalInterface
+    public interface CaptureStatements {
+        void accept(DSLContext dsl, Map<String, List<Object>> statements);
+    }
+
     /** The JVM's population, opened by the first class or helper that asks for it. */
     private static synchronized FactGraphs shared() {
         if (shared == null) {
@@ -511,6 +542,22 @@ public final class FactGraphs implements AutoCloseable {
         private final Map<String, Verification> verifications = new LinkedHashMap<>();
         private final Map<String, Integer> captures = new LinkedHashMap<>();
 
+        /** Each statement text this store's document captures ran, with the binds it first ran with. */
+        private final Map<String, List<Object>> statements = new ConcurrentHashMap<>();
+
+        /** {@code dsl}, recording into {@link #statements} what it executes. */
+        private DSLContext recording(DSLContext dsl) {
+            var listener = new org.jooq.ExecuteListener() {
+                @Override
+                public void executeEnd(org.jooq.ExecuteContext ctx) {
+                    if (ctx.sql() != null && ctx.query() != null) {
+                        statements.putIfAbsent(ctx.sql(), new ArrayList<>(ctx.query().getBindValues()));
+                    }
+                }
+            };
+            return dsl.configuration().deriveAppending(new org.jooq.impl.DefaultExecuteListenerProvider(listener)).dsl();
+        }
+
         synchronized CapturedSchema ensure(String path, CorpusDocuments.Document document) {
             var schema = graphs.get(path);
             if (schema != null) {
@@ -524,7 +571,7 @@ public final class FactGraphs implements AutoCloseable {
             var keyedClasspath = FactDocuments.classpathFixture(document);
             var verification = new Verification(path);
             var built = new CapturedSchema[1];
-            var dsl = store.dsl();
+            var dsl = recording(store.dsl());
             scenario.run(directory.resolve(path), (folder, at, first, stated) -> {
                     var texts = stated.isEmpty() ? List.<String>of() : List.of(stated);
                     var catalog = FactDocuments.StatedConfiguration.catalog(texts, fixture);
@@ -537,7 +584,9 @@ public final class FactGraphs implements AutoCloseable {
                         FactDocuments.StatedConfiguration.of(texts),
                         FactDocuments.StatedConfiguration.fileAnnotations(texts), at, !first);
                 },
-                claim -> verification.check(dsl, claim));
+                // A claim's own statements are the check's rather than the capture's, so they go
+                // unrecorded.
+                claim -> verification.check(store.dsl(), claim));
             if (built[0] == null) {
                 throw new IllegalStateException(path + " renders nothing to capture");
             }

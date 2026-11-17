@@ -265,7 +265,7 @@ class WarmStartRefreshTest {
             }
         });
         try (var store = GraphitronModelStore.openAt(tmp.resolve("graphitron-model"))) {
-            var dsl = store.dsl().configuration().derive(counting).dsl();
+            var dsl = store.dsl().configuration().deriveAppending(counting).dsl();
             java.util.function.IntSupplier capture = () -> {
                 analyzed.set(0);
                 ModelCapture.capture(dsl, graph(tmp), withOutput(corpus, current[0]), classpath,
