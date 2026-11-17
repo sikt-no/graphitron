@@ -205,6 +205,9 @@ built-in directive means what graphql-java executes.
 census it replaced is gone.
 
 * **A class's supertypes are one code fact** `open`. Every type a class is, transitively, is one `code_` relation over every class the reading reads, and `code_throwable_supertype` and `sql_table_record_supertype` dissolve into it; the readers are `@error` handler matching, the node-id slot's supertype checks and `RESULT_SHAPES_CONFLICT`, which asks whether an object is an `org.jooq.Record` and today only recognises a table's own record class.
+* **The client exception resolves through the code family, as a class the run is about to write** `open`, off the critical path.
+  `graphitron_error_handler_source_rule` builds the class's name from the output package, which is the emitter's naming held in a rule (Alf, 2026-11-17: the model names no class the generator emits); the generating run hands its own classes to the code capture instead, so the handler resolves as any class does and the rule's special case goes,
+  which first needs a ruling on whether the code family may hold a class a run has not yet compiled, and `scenarios/error-handler-client-exception` pins what must not change.
 * **A graph's `code_` and `sql_` answers are a function of its own sources, whatever else the store holds** `open`.
   A classpath entry or catalog source is shared by every graph that reads it, so what the store holds
   for it may depend on the source alone; of two entries declaring one class name, the first in the
