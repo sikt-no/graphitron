@@ -409,6 +409,9 @@ A harness carrying more helpers than any one reader needs is the cheap state; a 
 
 [source,bash]
 ----
+# The verification build: the whole reactor, module-parallel as CI runs it
+mvn install -Plocal-db -T 1C
+
 # Unit + pipeline (no database needed)
 mvn test -pl :graphitron -Plocal-db
 
@@ -424,6 +427,13 @@ mvn test -pl :graphitron -Plocal-db -DexcludedGroups=execution
 # LSP tests at a CI-sized heap (after installing its upstream: -DskipTests -pl graphitron-lsp -am)
 JDK_JAVA_OPTIONS=-Xmx2g mvn test -pl graphitron-lsp
 ----
+
+`-T 1C` runs graphitron-lsp, graphitron-mcp, roadmap-tool and docs beside `graphitron`, none of them
+depending on it. Measured on one quiet workstation on 2026-11-17, it took the full build from 1,483 s
+to 1,378 s; `graphitron` itself slows from 437 s to 545 s sharing the machine with them, so the gain
+is about half what the shorter chain alone would give. It is a flag rather than `.mvn/maven.config`
+because `.mvn/` is the contributor's own, and because maven-invoker-plugin's nested builds would
+inherit the file.
 
 Local builds often run with a large heap (`-Xmx6g` through `JDK_JAVA_OPTIONS` on agent machines),
 while CI's test JVMs take the default share of the runner's memory. A heap regression, typically in

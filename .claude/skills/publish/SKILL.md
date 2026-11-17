@@ -37,7 +37,7 @@ Any output fails the check. A `wip`, `draft` or `spike` subject means the work i
 
 Caller expectation: you rebased onto trunk *before* running your verification build (see CLAUDE.md "Building and testing"), so the build covered the exact tree you are about to push. Arriving here diverged from trunk should be the rare mid-build race, not the routine case.
 
-Which build counts as that verification depends on what your own commits touch. When they are entirely under `roadmap/`, the scoped `mvn verify -pl roadmap-tool,docs` is the verification build for this push, not a step you skipped; one file outside `roadmap/` and the full `mvn install -Plocal-db` is owed. Check with `git diff --name-only origin/claude/graphitron-rewrite...HEAD` rather than by memory of what you edited, since a rebase can add commits to the range. Either way the rule below is unchanged: do not push a tree no verification covers.
+Which build counts as that verification depends on what your own commits touch. When they are entirely under `roadmap/`, the scoped `mvn verify -pl roadmap-tool,docs` is the verification build for this push, not a step you skipped; one file outside `roadmap/` and the full `mvn install -Plocal-db -T 1C` is owed. Check with `git diff --name-only origin/claude/graphitron-rewrite...HEAD` rather than by memory of what you edited, since a rebase can add commits to the range. Either way the rule below is unchanged: do not push a tree no verification covers.
 
 1. **Inspect state.** Run `git status --porcelain` and `git branch --show-current`.
    - If the working tree is dirty, stop and ask the user whether to commit, stash, or abort.

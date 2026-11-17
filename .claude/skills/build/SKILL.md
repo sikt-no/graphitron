@@ -37,7 +37,11 @@ Four modules are 18 of the 21 minutes. Everything else is noise.
 
 By goal rather than by module, across one measured 22:26 reactor: tests 696 s (51.5%), the javadoc
 reference gate 190 s (14.0%, since moved into javac), `graphitron:generate` 113 s, compilation 98 s. The reactor is
-sequential, so a second saved on a goal is a second off the build.
+sequential unless run with `-T 1C`, which is how the verification build runs: graphitron-lsp,
+graphitron-mcp, roadmap-tool and docs then run beside `graphitron`, and the chain the build waits
+for is graphitron-model, graphitron, graphitron-maven-plugin and graphitron-sakila-example. A second
+saved on that chain is a second off the build; elsewhere it counts only if it frees the machine for
+the chain.
 
 The 190 s was the javadoc `{@link}` gate, measured when it was a `maven-javadoc-plugin` execution at
 `verify`. It now runs inside the main compile (javac's `-Xdoclint:reference/protected`) and costs
