@@ -269,6 +269,16 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <!-- The store's stamp reads Implementation-Version, so a release stamps its own
+                         version and an upgrade opens a fresh store rather than keeping rows the
+                         previous version's code derived. -->
+                    <archive>
+                        <manifest>
+                            <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
+                        </manifest>
+                    </archive>
+                </configuration>
                 <executions>
                     <execution>
                         <goals>
