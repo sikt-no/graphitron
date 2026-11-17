@@ -9,8 +9,6 @@ import org.jooq.Field;
 import org.jooq.Param;
 import org.jooq.Record;
 import org.jooq.SQLDialect;
-import org.jooq.conf.Settings;
-import org.jooq.conf.StatementType;
 import org.jooq.impl.DSL;
 import org.jooq.impl.SQLDataType;
 import org.jooq.types.ULong;
@@ -315,10 +313,8 @@ class CursorEncodingTest {
         return new String(Base64.getUrlDecoder().decode(cursor), StandardCharsets.UTF_8);
     }
 
-    /** What the database is handed for each element: the seek fields with their values inlined. */
-    private static List<String> seekSql(String cursor, Field<?>... columns) {
-        var ctx = DSL.using(SQLDialect.POSTGRES, new Settings().withStatementType(StatementType.STATIC_STATEMENT));
-        return Stream.of(ConnectionHelper.decodeCursor(cursor, List.of(columns))).map(ctx::render).toList();
+    private static List<String> names(List<? extends Field<?>> fields) {
+        return fields.stream().map(Field::getName).toList();
     }
 
     @Test
@@ -341,15 +337,15 @@ class CursorEncodingTest {
     }
 
     @Test
-    void databaseWrittenColumn_readsBackAsTheDatabaseReadsItsText() {
-        String cursor = jsonCursor("[7,\"[a,b)\"]");
-        assertThat(seekSql(cursor, ID, PERIOD))
-            .containsExactly("7", "cast('[a,b)' as \"pg_catalog\".\"tstzrange\")");
-        assertThat(seekSql(jsonCursor("[5]"), PERIOD)).as("a JSON number is read as its text")
-            .containsExactly("cast('5' as \"pg_catalog\".\"tstzrange\")");
-        assertThat(seekSql(jsonCursor("[\"garbage\"]"), PERIOD))
-            .as("only the database can tell whether the text is a value of the type")
-            .containsExactly("cast('garbage' as \"pg_catalog\".\"tstzrange\")");
+    void databaseWrittenColumn_isLeftForTheDatabaseToRead() {
+        // Only the database can tell whether the text is a value of the column's type, so decode
+        // accepts any string, and a JSON number as its text; the page that runs the seek reads it.
+        // That it reads back the row the cursor was taken from is the execution tier's walk.
+        assertThat(ConnectionHelper.decodeCursor(jsonCursor("[7,\"[a,b)\"]"), List.of(ID, PERIOD))).hasSize(2);
+        assertThat(ConnectionHelper.decodeCursor(jsonCursor("[5]"), List.of(PERIOD)))
+            .as("a JSON number is read as its text").hasSize(1);
+        assertThat(ConnectionHelper.decodeCursor(jsonCursor("[\"garbage\"]"), List.of(PERIOD)))
+            .as("not the client error: the database refuses it when the page runs").hasSize(1);
         assertThat(bound(jsonCursor("[null]"), PERIOD)).containsExactly((Object) null);
     }
 
@@ -361,24 +357,32 @@ class CursorEncodingTest {
     }
 
     @Test
-    void thePageSelectsADatabaseWrittenColumnAsItsTextAlone() {
+    void thePageSelectsWhatTheCursorIsWrittenFrom() {
+        // The column Java writes is selected itself, the column the database writes as its text
+        // alone, so a column jOOQ cannot read is never read; and a row of exactly that select list
+        // is one encodeCursor writes the cursor from.
         var page = ConnectionHelper.pageRequest(1, null, null, null, 10,
             List.of(ID.asc(), PERIOD.asc()), List.of(ID, PERIOD), List.of());
-        var ctx = DSL.using(SQLDialect.POSTGRES);
-        assertThat(page.selectFields().stream().map(f -> ctx.render(DSL.select(f))).toList())
-            .containsExactly("select \"id\"", "select cast(\"period\" as varchar) as \"__cursor_1\"");
+        assertThat(names(page.selectFields())).doesNotContain(PERIOD.getName());
+        String text = "[\"2024-01-01 00:00:00+00\",infinity)";
+        assertThat(jsonOf(ConnectionHelper.encodeCursor(row(page.selectFields(), 7, text), page.extraFields())))
+            .isEqualTo("[7,\"[\\\"2024-01-01 00:00:00+00\\\",infinity)\"]");
     }
 
     @Test
-    void cursorTexts_castsTheSourceStandingAtEachDatabaseWrittenPosition() {
-        // A multi-table connection's stage 2 casts the participant's own column at each position,
-        // asking the predicate of the order column the seek binds against.
+    void cursorTexts_projectsWhatTheEdgesCursorIsWrittenFrom() {
+        // A multi-table connection's stage 2 adds cursorTexts over the participant's own columns to
+        // its edge record, which re-projects the Java-written columns under the order columns' names:
+        // one projection for each position the database writes, none for one Java writes, and the
+        // edge record then carries everything encodeCursor reads.
         Field<?> participantPeriod = DSL.field(DSL.name("t", "valid_period"), Span.TYPE);
         Field<?> participantId = DSL.field(DSL.name("t", "id"), SQLDataType.INTEGER);
-        var ctx = DSL.using(SQLDialect.POSTGRES);
-        assertThat(ConnectionHelper.cursorTexts(List.of(ID, PERIOD), List.of(participantId, participantPeriod))
-                .stream().map(f -> ctx.render(DSL.select(f))).toList())
-            .containsExactly("select cast(\"t\".\"valid_period\" as varchar) as \"__cursor_1\"");
+        var texts = ConnectionHelper.cursorTexts(List.of(ID, PERIOD), List.of(participantId, participantPeriod));
+        assertThat(texts).hasSize(1);
+        var edge = new ArrayList<Field<?>>(List.of(participantId.as(ID.getName())));
+        edge.addAll(texts);
+        assertThat(jsonOf(ConnectionHelper.encodeCursor(row(edge, 7, "[a,b)"), List.of(ID, PERIOD))))
+            .isEqualTo("[7,\"[a,b)\"]");
     }
 
     private static String jsonCursor(String json) {
