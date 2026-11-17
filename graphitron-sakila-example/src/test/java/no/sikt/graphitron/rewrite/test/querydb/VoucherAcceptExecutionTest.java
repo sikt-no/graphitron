@@ -40,7 +40,8 @@ import static org.assertj.core.groups.Tuple.tuple;
 /**
  * The voucher handover end to end: the {@code issuing} package vouches for each result an application
  * references, and the {@code accepting} package verifies those vouchers and reads the vouched results,
- * and the details their SELECT nests, on the connection its source leases for the key carrying the
+ * the details their SELECT nests and the details a service below them reads, on the connection its
+ * source leases for the key carrying the
  * owner each voucher vouches for. The accepting side reads as a role the row-level security policies
  * apply to, which admit a result and its details only to a connection whose session set
  * {@code app.vouched_owner} to the result's owner; the test's source sets it from the key's vouched-for
@@ -209,6 +210,20 @@ class VoucherAcceptExecutionTest {
     @Test
     void anOwnersVouchersShareOneLeaseForAKeyCarryingTheOwnerReleasedAtTheEnd() {
         entities(present(ENTITIES, representations(vouchers(1))));
+        assertThat(LEASED).singleElement()
+            .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aChildServiceReadsOnTheConnectionTheVouchedEntityHandsDown() {
+        var found = new ArrayList<>(entities(present(ENTITIES.replace("details {", "servicedDetails { subject } details {"),
+            representations(vouchers(1)))));
+        found.sort(Comparator.comparing(e -> (String) e.get("id")));
+        assertThat(found).extracting(e -> ((List<Map<String, Object>>) e.get("servicedDetails")).stream()
+                .map(d -> d.get("subject")).toList())
+            .containsExactly(List.of("math", "norwegian"), List.of("english"));
         assertThat(LEASED).singleElement()
             .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
         assertThat(RELEASED).containsExactlyElementsOf(LEASED);

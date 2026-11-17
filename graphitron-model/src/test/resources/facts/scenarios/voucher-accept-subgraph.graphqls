@@ -10,6 +10,8 @@ type VgsResultat @table(name: "vouched_result") @key(fields: "id") {
   eierId: String! @field(name: "owner_id") @inaccessible
   grade: Int!
   details: [Detail!]! @reference(path: [{key: "vouched_result_detail_result_id_fkey"}])
+  servicedDetails: [Detail!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.VouchedResultService",
+    method: "servicedDetails"})
   voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
 }
 
@@ -29,4 +31,11 @@ extend schema @expectEquals(relation: "graphitron_minted_key", rows: """
 extend schema @expectEquals(relation: "graphitron_accept_vouched_for", rows: """
   type_name,   field_name
   VgsResultat, eierId
+  """)
+
+# The child service inherits the connection the vouched entity hands down; the root reads on the
+# request's own, so it has no row.
+extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: """
+  coordinate,                  outcome
+  VgsResultat.servicedDetails, INHERIT
   """)

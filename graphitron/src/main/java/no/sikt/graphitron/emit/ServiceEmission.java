@@ -122,17 +122,20 @@ public final class ServiceEmission {
     private final Map<String, DiscriminatedQuery.Row> discriminated;
     /** The services whose rows a column of one shared table tells apart, lifting or not. */
     private final Set<String> toldApart;
-    /** Each root call's connection in a database-per-tenant graph, by coordinate. */
+    /** Each producer's connection in a graph whose connection key has a part, by coordinate. */
     private final Map<String, ConnectionQuery.Row> connections;
     /** The tenant column's Java type, in a database-per-tenant graph whose tables agree on one. */
     private final Optional<String> tenantType;
+    /** Whether the graph accepts vouchers, which {@link #inheritingButNotEmitted} answers for alone. */
+    private final boolean accepts;
 
     private ServiceEmission(Set<String> services, Map<String, FrameQuery.Row> frames, Map<String, CallQuery.Row> calls,
                             Map<String, FillQuery.Row> fills, Map<String, Map<Integer, BuildQuery.Result>> builds,
                             Map<String, LiftQuery.Row> lifts, Map<String, PolymorphicLiftQuery.Row> polymorphic,
                             Set<String> validating, Map<String, DiscriminatedQuery.Row> discriminated,
                             Set<String> toldApart,
-                            Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType) {
+                            Map<String, ConnectionQuery.Row> connections, Optional<String> tenantType,
+                            boolean accepts) {
         this.services = services;
         this.frames = frames;
         this.calls = calls;
@@ -145,12 +148,13 @@ public final class ServiceEmission {
         this.toldApart = toldApart;
         this.connections = connections;
         this.tenantType = tenantType;
+        this.accepts = accepts;
     }
 
     /** Emits nothing: every service keeps its classified fetcher, for a caller with no store. */
     public static ServiceEmission none() {
         return new ServiceEmission(Set.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Map.of(), Set.of(), Map.of(),
-            Set.of(), Map.of(), Optional.empty());
+            Set.of(), Map.of(), Optional.empty(), false);
     }
 
     /** Reads every part's rows for the graph once. */
@@ -175,7 +179,8 @@ public final class ServiceEmission {
             DiscriminatedQuery.read(store, targets),
             toldApart(store),
             ConnectionQuery.read(store),
-            tenantType(store));
+            tenantType(store),
+            !AcceptVouchedForQuery.read(store).isEmpty());
     }
 
     /** The tenant column's Java type, where the graph's tenant columns agree on one. */
@@ -474,6 +479,26 @@ public final class ServiceEmission {
     }
 
     /**
+     * The services the store states run on the key their parent row hands down whose fetcher is not
+     * emitted here: in a build that accepts vouchers the classified emitter reads the request's own
+     * connection, so such a service below a vouched entity would read outside the vouched lease.
+     * Transitional, for the generator to refuse them, and untested, since no graph the store accepts is
+     * known to reach it: it is deleted in the commit that lands the last of two stored codes, a refused
+     * build under a service and a node-id argument of a service with no decode slot.
+     */
+    public List<String> inheritingButNotEmitted() {
+        if (!accepts) {
+            return List.of();
+        }
+        return connections.entrySet().stream()
+            .filter(e -> e.getValue().outcome() == ConnectionQuery.Outcome.INHERIT)
+            .map(Map.Entry::getKey)
+            .filter(c -> services.contains(c) && !EMITTED.equals(verdict(c)))
+            .sorted()
+            .toList();
+    }
+
+    /**
      * Whether the fetcher of the field at {@code fieldCoordinate} is emitted here: the field has
      * one occurrence with a frame, and its verdict is {@link #EMITTED}.
      */
@@ -515,8 +540,8 @@ public final class ServiceEmission {
 
     /**
      * The connection {@code coordinate}'s frame runs on, as the store states it: the request's own where
-     * the store states none, as in a graph with no tenant column, else the routed, inherited or unscoped
-     * key. An outcome the store gains later fails to compile here rather than falling into a known arm.
+     * the store states none, as in a graph whose connection key has no part, else the routed, inherited
+     * or unscoped key; an accepting graph's child services inherit the key the vouched entity hands down. An outcome the store gains later fails to compile here rather than falling into a known arm.
      */
     private FrameEmitter.Connection connection(String coordinate, String fieldCoordinate, Runtime runtime) {
         var row = connections.get(coordinate);

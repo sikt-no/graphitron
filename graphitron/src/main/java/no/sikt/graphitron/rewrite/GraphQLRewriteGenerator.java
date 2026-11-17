@@ -465,6 +465,7 @@ public class GraphQLRewriteGenerator {
         }
         var out = new ArrayList<>(unemittedOutboxes(services));
         out.addAll(unemittedProjections(services));
+        out.addAll(unvouchedServices(services));
         return List.copyOf(out);
     }
 
@@ -509,6 +510,25 @@ public class GraphQLRewriteGenerator {
                 return ValidationError.forField(coordinate, rejection,
                     new graphql.language.SourceLocation(row.at().line(), row.at().column(), row.at().sourceName()));
             })
+            .toList();
+    }
+
+    /**
+     * A {@code @service} below a vouched entity whose fetcher the store does not emit yet, in a build that
+     * accepts vouchers: the store states it runs on the key the entity row hands down, and the classified
+     * emitter reads the request's own connection, so it would read outside the vouched lease. Refused,
+     * naming why the fetcher is not emitted. Transitional and untested: it goes with
+     * {@link no.sikt.graphitron.emit.ServiceEmission#inheritingButNotEmitted}, in the commit that stores
+     * the last of the two verdicts that can still reach it.
+     */
+    private List<ValidationError> unvouchedServices(no.sikt.graphitron.emit.ServiceEmission services) {
+        return services.inheritingButNotEmitted().stream()
+            .map(coordinate -> ValidationError.forField(coordinate,
+                no.sikt.graphitron.model.diagnostics.Rejection.deferred(
+                    "A @service below a vouched entity reads on the vouched connection only through the fetcher"
+                    + " the store emits, and this field's is not emitted from the store yet ("
+                    + services.verdict(coordinate) + ")."),
+                null))
             .toList();
     }
 

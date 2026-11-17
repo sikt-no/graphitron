@@ -18329,12 +18329,14 @@ COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher sta
 -- @table did not resolve is that defect's, and is not judged again here. Reported at the @key. And
 -- an @accept's refusals that read which key its vouchers decode to and how its vouched-for fields bind,
 -- both decided here, reported at the @accept: the shape of what it vouches for against the graph's
--- other @accept fields, and a field below the accepting type that has a fetcher of its own.
+-- other @accept fields, and a field below the accepting type that runs a query of its own other than a
+-- @service.
 CREATE VIEW graphitron_entity_key_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- The object types an accepting type's SELECT reads, the accepting type first: an object type a field
--- of the reach targets, where no occurrence of that field has a producer, is read in the statement (a
--- table-bound one as a MULTISET nested in it). Walked type by type, each step one projected edge, a
+-- The object types an accepting type's subtree reads on the vouched connection, the accepting type
+-- first: an object type a field of the reach targets, where no occurrence of that field has a producer
+-- other than a @service, is read in the statement (a table-bound one as a MULTISET nested in it) or by
+-- a @service on the key the entity row hands down, which a service returning a connection is not. Walked type by type, each step one projected edge, a
 -- field's occurrences found by the element they use, so a field reached elsewhere with a fetcher of
 -- its own counts here too, erring toward refusal. The edges are deduplicated first, so two fields
 -- between one pair of types are one step, and UNION ALL with a path guard, as
@@ -18356,7 +18358,11 @@ WITH RECURSIVE accept_reach (graph_name, accept_type, type_name, path) AS (
                                JOIN graphitron_occurrence_producer p
                                  ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
                               WHERE o.graph_name = ft.graph_name
-                                AND o.element_coordinate = ft.type_name || '.' || ft.field_name)) e
+                                AND o.element_coordinate = ft.type_name || '.' || ft.field_name
+                                AND (p.kind <> 'SERVICE'
+                                     OR EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                                                 WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
+                                                   AND cc.field_name = ft.field_name)))) e
       ON e.graph_name = r.graph_name AND e.type_name = r.type_name
    WHERE POSITION('/' || e.target_type_name || '/' IN r.path) = 0
 ),
@@ -18583,9 +18589,11 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
                                      AND x.field_name = y.field_name
                                      AND x.binding_type IS NOT DISTINCT FROM y.binding_type))
 UNION ALL
--- A field below an accepting type that has a fetcher of its own, a producer at any of its occurrences,
--- at any depth through the types the entity's SELECT reads, does not yet read on the vouched
--- connection: refused at the @accept. A field the SELECT projects reads on it already.
+-- A field below an accepting type that runs a query of its own other than a @service, a producer at any
+-- of its occurrences that is a split query, a connection, a routine, or a @service returning a
+-- connection, at any depth through the types the entity's SELECT and its @service fields read, does not
+-- yet read on the vouched connection: refused at the @accept. A field the SELECT projects, and a
+-- @service handed the entity row's key, read on it already.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
        d.coordinate, 'entity-key-alternatives'
   FROM graphql_directive_application d
@@ -18597,7 +18605,11 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACC
                    ON o.graph_name = ft.graph_name AND o.element_coordinate = ft.type_name || '.' || ft.field_name
                  JOIN graphitron_occurrence_producer p
                    ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
-                WHERE r.graph_name = d.graph_name AND r.accept_type = i.type_name);
+                WHERE r.graph_name = d.graph_name AND r.accept_type = i.type_name
+                  AND (p.kind <> 'SERVICE'
+                                     OR EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                                                 WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
+                                                   AND cc.field_name = ft.field_name)));
 COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
@@ -21042,7 +21054,8 @@ SELECT r.graph_name, r.coordinate,
    AND m.result_erased_class IN ('java.util.List', 'java.util.Collection', 'java.util.Set', 'org.jooq.Result');
 COMMENT ON VIEW graphitron_occurrence_producer_empty_rule IS 'One row the empty answer rule computes, in the shape graphitron_occurrence_producer_empty stores: the rule itself, evaluated on demand rather than read off disk. For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_empty, which is the name every reader spells.';
 
--- The connection each root service call of a database-per-tenant graph runs on, and the parts of its key.
+-- The connection each producer of a graph whose ConnectionKey has a part runs on, a tenant column or an
+-- accepting type's vouched-for fields, and the parts of its key.
 CREATE TABLE graphitron_occurrence_connection (
   graph_name VARCHAR   NOT NULL,
   coordinate VARCHAR   NOT NULL,
@@ -21055,7 +21068,7 @@ CREATE TABLE graphitron_occurrence_connection (
     REFERENCES graphitron_occurrence_producer (graph_name, coordinate) ON DELETE CASCADE,
   CHECK (outcome IN ('ROUTED', 'INHERIT', 'UNSCOPED'))
 );
-COMMENT ON TABLE graphitron_occurrence_connection IS 'The connection one producer of a database-per-tenant graph runs on: one row per producer the generated code can say that for. For example Mutation.rateFilms runs on a connection keyed by the tenant its input''s film ids name, Film.servedBy on the key its parent handed down, and Language.servedBy on the key with an empty tenant part.';
+COMMENT ON TABLE graphitron_occurrence_connection IS 'The connection one producer of a graph whose ConnectionKey has a part runs on: one row per producer the generated code can say that for. For example Mutation.rateFilms runs on a connection keyed by the tenant its input''s film ids name, Film.servedBy on the key its parent handed down, and Language.servedBy on the key with an empty tenant part.';
 COMMENT ON COLUMN graphitron_occurrence_connection.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_occurrence_connection.coordinate IS 'the producer''s occurrence; with the graph, the key';
 COMMENT ON COLUMN graphitron_occurrence_connection.outcome IS 'ROUTED, a root''s connection keyed by the parts beneath it; INHERIT, a child''s run on the whole key its producer chain hands down; UNSCOPED, the key with an empty tenant part: a child whose rows lie in no tenant scope, or a root that reads global data, is marked @globalData, or names no tenant and needs none';
@@ -21233,8 +21246,20 @@ SELECT x.graph_name, x.coordinate, x.outcome,
             ON pc.source_name = dt.table_source_name AND pc.table_schema = dt.table_schema
            AND pc.table_name = dt.table_name AND pc.column_name = tf.parent_column
          WHERE p.start = 'CHILD') x
- WHERE x.outcome IS NOT NULL;
-COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer of a database-per-tenant graph: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none. For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.';
+ WHERE x.outcome IS NOT NULL
+UNION ALL
+-- A child producer of a graph that accepts vouchers, which has no tenant column, the two never meeting:
+-- on the key its parent row was handed, the vouched-for values' where the parent is a vouched entity
+-- read by _entities. Every child, an occurrence being kept per field rather than per path; one reached
+-- with no key handed down runs on the request's own connection, the rule for a field outside a vouched
+-- entity's subtree. Roots and _entities have no row: a root runs on the request's connection, and a
+-- vouched key is only ever handed down by _entities.
+SELECT p.graph_name, p.coordinate, 'INHERIT', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM graphitron_occurrence_producer p
+ WHERE p.start = 'CHILD'
+   AND EXISTS (SELECT 1 FROM graphitron_accept_vouched_for av WHERE av.graph_name = p.graph_name)
+   AND NOT EXISTS (SELECT 1 FROM store_graph_tenant_column t WHERE t.graph_name = p.graph_name);
+COMMENT ON VIEW graphitron_occurrence_connection_rule IS 'One row per producer of a graph whose ConnectionKey has a part: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none. For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.';
 
 -- The occurrence-routes stage's own defects: a call it cannot route, at the field making it. The detail
 -- is NULL; the code says why.
@@ -28937,7 +28962,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('VOUCHER_ISSUE_ON_ROOT_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_ROOT_TYPE',
    'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.'),
   ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
-   '@accept is on a type with a field below it, at any depth through the types its SELECT reads, that has a fetcher of its own, and such a field does not yet read on the vouched connection: read the subtree in the entity''s SELECT.'),
+   '@accept is on a type with a field below it, at any depth through the types its SELECT and its @service fields read, that runs a query of its own other than a @service (a split query, a connection, a routine, or a @service returning a connection), and such a field does not yet read on the vouched connection: read the subtree in the entity''s SELECT or through a @service.'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',
@@ -30118,7 +30143,7 @@ INSERT INTO meta_relation VALUES
    'For example the occurrence-producers stage inserts this view''s rows for one graph into graphitron_occurrence_producer_empty, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads.'),
   ('graphitron_occurrence_connection', 'graph-occurrence', 'graphitron',
-   'The connection one producer of a database-per-tenant graph runs on: one row per producer the generated code can say that for.',
+   'The connection one producer of a graph whose ConnectionKey has a part runs on: one row per producer the generated code can say that for.',
    'For example Mutation.rateFilms runs on a connection keyed by the tenant its input''s film ids name, Film.servedBy on the key its parent handed down, and Language.servedBy on the key with an empty tenant part.',
    'The connection key a producer runs on, made once: a root''s key with parts, each part a row beneath it, or its request connection; a child''s handed-down key, or the key with an empty tenant part where its rows lie in no tenant scope. A producer the stage cannot say this for has no row: a root has a defect instead, and a child routed by its row''s tenant waits on the store stating that. Keyed at the producer, so roots and children share it.'),
   ('graphitron_occurrence_connection_part', 'graph-occurrence-connection-part', 'graphitron',
@@ -30126,7 +30151,7 @@ INSERT INTO meta_relation VALUES
    'For example Mutation.rateFilms''s connection has a TENANT part, read from its tenant slots, which a call naming no tenant cannot reach.',
    'Each part of a connection key is read from sources of its own, at their own grain, the tenant''s being the call''s tenant slots; what a call whose sources name none gets is the part''s, so it sits here rather than on the connection.'),
   ('graphitron_occurrence_connection_rule', 'graph-occurrence', 'graphitron',
-   'One row per producer of a database-per-tenant graph: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none.',
+   'One row per producer of a graph whose ConnectionKey has a part: its connection in the shape graphitron_occurrence_connection stores, with a routed root''s tenant part''s when_empty, or the refusal standing where a root''s can be stated by none.',
    'For example the occurrence-routes stage inserts this view''s rows for one graph into graphitron_occurrence_connection and its routed rows into graphitron_occurrence_connection_part, and the stage''s defect rule reads its refused rows.',
    'The rule, stated once for all three: a producer is routed, inherits, runs unscoped or is refused by the same facts, so the connection, its part and its defect cannot disagree about which producers they cover.'),
   ('graphitron_occurrence_participant_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',

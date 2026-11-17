@@ -55,3 +55,7 @@ extend schema @assertContains(relation: "graphitron_occurrence_producer_result",
   Film.castMembers,       RECORD_LIST,   film_actor, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord,                               
   Query.filmCount,        SCALAR,                  ,                                                          ,
   """)
+
+# A graph whose connection key has no part states no connection: its child services read on the
+# request's own, as every producer here does.
+extend schema @assertEmpty(relation: "graphitron_occurrence_connection")

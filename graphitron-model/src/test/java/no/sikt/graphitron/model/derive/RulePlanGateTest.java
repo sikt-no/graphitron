@@ -61,7 +61,8 @@ class RulePlanGateTest {
         "GRAPHQL_ROOT_OPERATION", "at most one row per root operation, three a graph",
         "FEDERATION_WRITTEN_VERSION", "one row per federation library",
         "GRAPHITRON_FEDERATION_LINK_IMPORT", "the names one link imports, a handful",
-        "STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY", "one row per entry of the configured common payload, a handful");
+        "STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY", "one row per entry of the configured common payload, a handful",
+        "GRAPHITRON_ACCEPT_VOUCHED_FOR", "one row per field an @accept vouches for, a handful a graph");
 
     /**
      * Partition reads that are the rule's answer rather than a lookup, keyed as the known list is,

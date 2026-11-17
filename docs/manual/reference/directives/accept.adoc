@@ -4,7 +4,7 @@
 
 Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on the connection your connection source leases for a key carrying the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
 
-The entity and every field its SELECT reads, reference children nested in it included, are read on that connection. A type with a field below it, at any depth through the types its SELECT reads, that has a fetcher of its own (a split query, a service, a connection-typed field) is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`, since such a field does not yet read on the vouched connection.
+The entity and every field its SELECT reads, reference children nested in it included, are read on that connection, and so is a `@service` field below it, which runs on the connection key the entity row hands down, together with everything below the service. A type with a field below it, at any depth through the types its SELECT and its `@service` fields read, that runs a query of its own other than a `@service` (a split query, a connection-typed field, a routine read on its own, or a `@service` returning a connection) is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`, since such a field does not yet read on the vouched connection. The same `@service` field reached from outside a vouched entity's subtree runs on the request's own connection.
 
 == SDL signature
 
@@ -114,5 +114,5 @@ Each refusal below is reported at the `@accept`.
 | Every `@accept` in the graph vouches for values of one shape, the same vouched-for field names each reading a column of the same Java type, since the graph's vouched connections are keyed by one generated `ConnectionKey`. Refused at each `@accept` whose shape differs from the first accepting type's by name.
 
 | `VOUCHER_ACCEPT_NOT_GENERATED`
-| No field below the type, at any depth through the types its SELECT reads, has a fetcher of its own at any of its occurrences: such a field does not yet read on the vouched connection. Read the subtree in the entity's SELECT.
+| No field below the type, at any depth through the types its SELECT and its `@service` fields read, runs a query of its own other than a `@service` whose target is not a connection, at any of its occurrences: such a field does not yet read on the vouched connection. Read the subtree in the entity's SELECT, or through a `@service`.
 |===

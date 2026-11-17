@@ -672,8 +672,9 @@ on another subgraph's voucher. The field is the voucher a router hands over from
 voucher, beside the key the author wrote, and the voucher is `@inaccessible`. Graphitron verifies each
 voucher and reads the vouched row on the connection the request's connection source leases for a key
 carrying the voucher's vouched-for values, so the database's row-level security decides what they
-unlock. Requires a federation `@link`. The entity and every field its SELECT reads are read on that
-connection; a type with a field below it that has a fetcher of its own is refused for now.
+unlock. Requires a federation `@link`. The entity, every field its SELECT reads and a `@service` field
+below it are read on that connection; a type with a field below it that runs a query of its own other
+than a `@service` is refused for now.
 """
 directive @accept(
   """

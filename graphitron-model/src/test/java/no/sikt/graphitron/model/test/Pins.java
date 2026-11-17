@@ -113,6 +113,28 @@ final class Pins {
     }
 
     /**
+     * A detail relation whose rows are one behaviour per arm of its rule, where the anchor's kinds
+     * cannot tell the arms apart: its pins carry what the rule reads to choose the arm. A producer's
+     * connection is inherited for one of two reasons, a tenant column the parent row names or a
+     * voucher the entity it sits below was read on, and the occurrence alone says neither, so a
+     * connection's pin adds the graph's basis as the connection rule reads it.
+     */
+    private static final Map<String, String> ARM_SHAPES = Map.of(
+        "GRAPHITRON_OCCURRENCE_CONNECTION", """
+            SELECT DISTINCT CONCAT_WS('|', k.kind, COALESCE(p.kind, '-'),
+                                      CASE WHEN k.depth = 0 THEN 'ROOT' ELSE 'NESTED' END,
+                                      CASE WHEN EXISTS (SELECT 1 FROM store_graph_tenant_column t
+                                                         WHERE t.graph_name = k.graph_name) THEN 'TENANT'
+                                           WHEN EXISTS (SELECT 1 FROM graphitron_accept_vouched_for av
+                                                         WHERE av.graph_name = k.graph_name) THEN 'ACCEPT'
+                                           ELSE '-' END)
+              FROM graphitron_occurrence k
+              LEFT JOIN graphitron_occurrence_producer p
+                ON p.graph_name = k.graph_name AND p.coordinate = k.coordinate
+             WHERE (k.graph_name, k.coordinate) IN ({0})
+            """);
+
+    /**
      * One behaviour pinned: its family, the facet a claim on a detail relation reaches it through
      * (the anchor itself for the anchor and its projections), and its shape in the family's kinds.
      */
@@ -151,7 +173,7 @@ final class Pins {
                         || anchor.projections.stream().anyMatch(relation::equalsIgnoreCase)
                     ? anchor.anchor : block.relation().toLowerCase(Locale.ROOT);
                 CorpusExpectations.matched(dsl, block, anchor.key).ifPresent(matched ->
-                    dsl.resultQuery(anchor.shape, matched).fetch(0, String.class)
+                    dsl.resultQuery(anchor == Anchor.OCCURRENCE ? ARM_SHAPES.getOrDefault(relation, anchor.shape) : anchor.shape, matched).fetch(0, String.class)
                         .forEach(shape -> pins.computeIfAbsent(block.relation().toLowerCase(Locale.ROOT),
                             ignored -> new TreeSet<>()).add(new Pin(anchor.family, facet, shape))));
             }
