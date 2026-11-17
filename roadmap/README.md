@@ -52,7 +52,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-11-16 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R1131` | A clean build runs in under five minutes <sub>blocked by: [tests-read-shared-fact-stores](tests-read-shared-fact-stores.md)</sub> | In Progress | 2026-11-17 <sub>created 2026-10-30</sub> | [plan](clean-build-under-five-minutes.md) |
 | `R1160` | Every schema a test captures is a fact document, and the test strategy is rebuilt on them | In Progress | 2026-11-14 <sub>created 2026-11-06</sub> | [plan](tests-read-shared-fact-stores.md) |
-| `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -566,7 +565,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R72` [**Slim ServiceCatalog down to a lookup primitive**](slim-servicecatalog-to-lookup.md) — Backlog, architecture
 - `R1109` [**A @service result type that is a nested class renders as Outer$Inner in generated fetchers and fails to compile**](nested-record-class-renders-binary-name.md) — Backlog, bug
 - `R695` [**Lint an SDL input field that binds to no member on a JavaBean-target @service bean**](javabean-unbound-input-field-lint.md) — Backlog, cleanup
-- `R722` [**Opt-in @service(transactional:) wraps the generated service invocation in a transaction**](service-opt-in-transaction-wrap.md) — Spec, feature
 - `R11` [**`DSLContext` on `@condition` methods**](dslcontext-on-condition-tablemethod.md) — Backlog, architecture
 - `R71` [**@batchKeyLifter Record return-type symmetry**](recordn-key-parity-lifter-and-non-jooq-record-parents.md) — Backlog, architecture
 - `R193` [**Sealed UnresolvedParam classification for @service parameter rejection arms**](service-param-classification-sealed-hierarchy.md) — Backlog, architecture

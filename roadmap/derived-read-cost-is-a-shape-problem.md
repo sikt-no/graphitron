@@ -676,6 +676,9 @@ static method needs no holder.
   `graphitron_outbox_key` reads the landing, the node-id readers (`ResolvedKeyProjections`, the
   `intent_argmapping_` key-column chain and its projection defects) read the node-id binding at the
   landing's path end, and `graphitron_argmapping_candidate`, its stage and `graphitron_argmapping_match` go.
+* **A `@service` field may opt out of the field's transaction** `open`, off the critical path.
+  A service that opens its own transactions says so on the directive, the store states the choice, and its fetcher, emitted from the store, hands it a connection in autocommit rather than the field's transaction (Alf, 2026-11-17), the walk's service emitters refusing the choice rather than gaining it;
+  an `@outbox` on such a field is then written in a transaction of its own after the service returns, which the author has chosen, and `service.adoc`, `outbox.adoc` and the runtime extension points state what that gives up.
 * **`@tenant` is gone** `blocked`, on sis moving its ten uses to `$tenant`, which routes a root
   `@service` from the store. The directive, the tenant index's reading of it and its placement refusals go.
 * **A producer's fetcher parts are emitted from the store** `open`, E's. The frame, the fills, the
