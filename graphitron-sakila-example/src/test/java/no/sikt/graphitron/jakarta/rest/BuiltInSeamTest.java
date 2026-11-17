@@ -75,12 +75,12 @@ class BuiltInSeamTest {
     }
 
     @Test
-    @DisplayName("Without an acquisition-cause finder, no failure is an acquisition failure; with one, its answer is used.")
-    void acquisitionCauseFollowsTheFinder() {
+    @DisplayName("Without a request-rejection finder, no failure is a request rejection; with one, its answer is used.")
+    void requestRejectionFollowsTheFinder() {
         var failure = new RuntimeException("boom");
-        assertThat(new WithoutSeam().acquisitionCause(failure)).isEmpty();
+        assertThat(new WithoutSeam().requestRejection(failure)).isEmpty();
         var withFinder = new AbstractGraphitronApplication(() -> new WithoutSeam().schema(), s -> "",
             thrown -> java.util.Optional.of(failure)) { };
-        assertThat(withFinder.acquisitionCause(new IllegalStateException())).containsSame(failure);
+        assertThat(withFinder.requestRejection(new IllegalStateException())).containsSame(failure);
     }
 }

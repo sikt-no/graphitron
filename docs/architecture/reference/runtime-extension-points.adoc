@@ -155,37 +155,49 @@ borrower outside Graphitron, through one real connection pool of size one, and
 its class javadoc names the paths it does not yet cover.
 
 [#rejected-mount]
-==== A failed acquisition rejects the request
+==== A request rejection rejects the request
 
-When the source throws anything but `KeyNotPermitted` (the database rejects the
-caller's identity in your mount, say, or the pool is exhausted), no field can
-run on that connection, so Graphitron rejects the whole request once rather
-than answering each field with a redacted error. On the owned-connection path,
-`GraphQL.execute` throws the generated `AcquisitionFailedException` (in your
-`<outputPackage>.schema` package) in place of a result, and `executeAsync`
-completes exceptionally with it. What your source threw is its cause, so you
-can read its SQLState and choose the answer:
+Some faults mean no field of the request can be answered, so Graphitron rejects
+the whole request once rather than answering each field with a redacted error.
+On the owned-connection path, `GraphQL.execute` throws the generated
+`RequestRejectedException` (in your `<outputPackage>.schema` package) in place of
+a result, and `executeAsync` completes exceptionally with it. It is sealed, and
+its arms are the build's:
+
+* `AcquisitionFailedException`, in every build: the source threw anything but
+  `KeyNotPermitted` (the database rejects the caller's identity in your mount,
+  say, or the pool is exhausted). What your source threw is its cause, so you
+  can read its SQLState.
+* `VoucherRejectedException`, in a build that accepts vouchers: a voucher failed
+  a check. Its `reason()` names the check, and its message carries nothing from
+  the token.
+* `VouchedValueLimitExceededException`, in a build that accepts vouchers: the
+  request presented vouchers for more than one vouched-for value.
 
 [source,java]
 ----
 ExecutionResult result;
 try {
     result = engine.execute(input);
-} catch (AcquisitionFailedException failed) {
-    // failed.getCause() is what the source threw, for example the SQLException
-    // your identity routine raised: map it to 401, 400, 503 or whatever fits.
-    return answer(failed.getCause());
+} catch (RequestRejectedException rejected) {
+    // Graphitron.requestRejection(rejected) is the source's own exception for a
+    // failed acquisition (map an identity fault to 401, an outage to 503) and the
+    // rejection itself for a voucher check or the limit (usually 401 or 403).
+    return answer(Graphitron.requestRejection(rejected).orElseThrow());
 }
 ----
 
 What you can rely on:
 
-* *One attempt per request.* The first failure is remembered for the
-  operation; every later field that needs a connection, on any key, gets the
-  same exception without asking the source again.
-* *Nothing is logged per field.* The failure never reaches the
+* *One rejection per request.* The first rejection is remembered for the
+  operation, and once there is one Graphitron acquires nothing more: every
+  later field that needs a connection, on any key, gets the same exception
+  without asking the source again. A voucher is checked while the entity
+  dispatch registers its representations, before any connection is taken, so
+  a failed check takes none.
+* *Nothing is logged per field.* The rejection never reaches the
   `FetcherErrorLog`, mints no reference and is never claimed by an `@error`
-  channel, whatever its handlers match.
+  channel, whatever its handlers match, and a list slot does not redact it.
 * *Every throw of the source is a failed acquisition.* A pool fault and a
   rejected identity reach you the same way; tell them apart by the cause before
   mapping to 401, so an outage is not answered as an identity fault.
@@ -193,11 +205,12 @@ What you can rely on:
   the caller's identity.
 
 With `graphitron-jakarta-rest`, return the status from
-`GraphitronApplication.failedAcquisition(Throwable)`, which receives the source's
-own exception (the adapter hands the library `Graphitron::acquisitionFailure`,
-which recognises the generated exception so the library need not name it). It
-runs before `clientFault(Throwable)`, which still answers any other escape;
-without an answer the handler answers the reference-only 500.
+`GraphitronApplication.rejectedRequest(Throwable)`, which receives what rejected
+the request (the adapter hands the library `Graphitron::requestRejection`, which
+recognises the generated exception so the library need not name it): usually a
+401 or 403 for a voucher rejection and a 503 for an acquisition fault. It runs
+before `clientFault(Throwable)`, which still answers any other escape; without
+an answer the handler answers the reference-only 500.
 
 A mount that has to write (for example provisioning the caller's row) may open
 its own transaction on the connection, as long as it leaves it in autocommit

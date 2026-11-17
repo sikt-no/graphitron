@@ -33,13 +33,24 @@ import java.util.List;
  *       path, reads the rest through {@code loadSlot}, and combines the slots in representation
  *       order ({@code inOrder}) into a {@code CompletableFuture<DataFetcherResult<List<Object>>>}.</li>
  *   <li>{@code load(rep, env)}: dispatches on {@code __typename} to {@code load<TypeName>}, which
- *       selects the most-specific resolvable key alternative, decodes the rep into the
- *       alternative's key values (DIRECT: {@code ColumnValues.coerce}; NODE_ID:
+ *       selects the resolvable key alternative (a voucher first, then the most specific), decodes the
+ *       rep into the alternative's key values (DIRECT: {@code ColumnValues.coerce}; NODE_ID:
  *       {@code NodeIdEncoder.decodeColumns}) and loads them, with a per-rep environment, from the
  *       positional loader for (field path, type, alternative, connection key), named by
  *       {@code OwnedConnections.entityLoaderName} and built with the request's
- *       {@code DataLoaderOptions}, so a {@code BatchSizeLimit} bounds it. The connection key is the
- *       one with no parts.</li>
+ *       {@code DataLoaderOptions}, so a {@code BatchSizeLimit} bounds it. A plain key and a node id
+ *       give the connection key with no parts.</li>
+ *   <li>In a build that accepts vouchers, a representation carrying a voucher is verified: the codec
+ *       decodes and checks it ({@code VoucherCodec.Verifier.verify}: format, signature over the token
+ *       and the {@code __typename}, expiry, scope, and the fields each section names), the dispatcher
+ *       coerces each lookup and vouched-for value to its column through the column's {@code DataType},
+ *       builds the connection key from the vouched-for values, and loads the lookup columns into the
+ *       loader for the authored key the voucher decodes onto, under that key, reusing that key's batch
+ *       and SELECT. A voucher that fails any check, or carries a value no column takes, rejects the
+ *       request through the carrier's one rejection slot; registration happens before any loader
+ *       dispatches, so nothing is acquired after it. Every redemption and rejection is logged on
+ *       {@value #VOUCHER_AUDIT_LOGGER} at INFO by vouch id, scope and outcome, never the token, its
+ *       values or the connection key.</li>
  *   <li>{@code batch<TypeName>Alt<N>(keys, batchEnv, key)}: the loader's batch, acquiring through
  *       {@code OwnedConnections.dslForIfPermitted} (a key the source refuses answers every slot
  *       {@code null} with no error) and running {@code select<TypeName>Alt<N>}; a throw fails only
@@ -100,6 +111,11 @@ public final class EntityFetcherDispatchClassGenerator {
      * {@link no.sikt.graphitron.command.ReservedAliases#TYPENAME}.
      */
     public static final String TYPENAME_COLUMN = no.sikt.graphitron.command.ReservedAliases.TYPENAME;
+    /**
+     * The logger an accepting build's dispatch writes its voucher audit lines to, at INFO: the vouch id,
+     * scope and outcome of every redemption and rejection, never the token, its values or the key.
+     */
+    public static final String VOUCHER_AUDIT_LOGGER = "no.sikt.graphitron.voucher.audit";
 
     private static final ClassName ENV          = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName ENV_IMPL     = ClassName.get("graphql.schema", "DataFetchingEnvironmentImpl");
@@ -121,6 +137,9 @@ public final class EntityFetcherDispatchClassGenerator {
     private static final ClassName DATA_LOADER  = ClassName.get("org.dataloader", "DataLoader");
     private static final ClassName BATCH_LOADER_ENV = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName STEP_INFO    = ClassName.get("graphql.execution", "ExecutionStepInfo");
+    private static final ClassName SLF4J_LOGGER = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+    private static final ClassName UUID_CLASS   = ClassName.get("java.util", "UUID");
 
     private EntityFetcherDispatchClassGenerator() {}
 
@@ -139,7 +158,7 @@ public final class EntityFetcherDispatchClassGenerator {
 
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
-        boolean multiTenant = shape.writesSlot();
+        boolean multiTenant = shape.hasTenant();
         var ownedConnections = ClassName.get(outputPackage + ".schema",
             ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
@@ -153,6 +172,16 @@ public final class EntityFetcherDispatchClassGenerator {
 
         if (!multiTenant) {
             var loaders = new EntityLoaders(outputPackage, nodeIdEncoder, ownedConnections);
+            boolean accepts = entities.stream().flatMap(e -> e.alternatives().stream())
+                .anyMatch(EntityKeyQuery.Alternative.Voucher.class::isInstance);
+            if (accepts) {
+                spec.addField(FieldSpec.builder(SLF4J_LOGGER, "VOUCHER_AUDIT",
+                            Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                        .initializer("$T.getLogger($S)", SLF4J_LOGGER_FACTORY, VOUCHER_AUDIT_LOGGER)
+                        .addJavadoc("The voucher audit log: vouch id, scope and outcome, never the token or its values.\n")
+                        .build())
+                    .addMethod(loaders.rejectVoucher());
+            }
             spec.addMethod(loaders.fetchEntities())
                 .addMethod(loaders.load(entities))
                 .addMethod(loaders.loadSlot())
@@ -164,7 +193,9 @@ public final class EntityFetcherDispatchClassGenerator {
                 spec.addMethod(loaders.loadType(entity));
                 for (int i = 0; i < entity.alternatives().size(); i++) {
                     var alt = entity.alternatives().get(i);
-                    if (!alt.resolvable()) continue;
+                    // A voucher alternative loads through the authored key it decodes onto, with that
+                    // key's batch and SELECT, so it has none of its own.
+                    if (!alt.resolvable() || alt instanceof EntityKeyQuery.Alternative.Voucher) continue;
                     spec.addMethod(loaders.batch(entity, i));
                     spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage, null));
                 }
@@ -172,7 +203,7 @@ public final class EntityFetcherDispatchClassGenerator {
             return List.of(spec.build());
         }
 
-        var tenantKey = shape.tenantKey().orElseThrow();
+        var tenantKey = shape.tenant().orElseThrow();
         spec.addMethod(buildFetchEntitiesMethod(outputPackage))
             .addMethod(buildResolveByRepsMethod(entities))
             .addMethod(buildResolveTypeMethod())
@@ -539,17 +570,11 @@ public final class EntityFetcherDispatchClassGenerator {
         MethodSpec loadType(EntityKeyQuery.Entity entity) {
             var b = CodeBlock.builder();
             var skip = CodeBlock.of("return $T.completedFuture(null)", CF);
-            var loaderType = ParameterizedTypeName.get(DATA_LOADER, listOf(ClassName.get(Object.class)), RECORD);
             HandleMethodBody.emitAlternativeCascade(b, entity, nodeIdEncoder, skip, (arm, alt, altIndex) -> {
-                // Every representation's key has no parts in a build without a tenant column.
+                // A plain key's and a node id's connection key has no parts.
                 arm.addStatement("$T key = $T.defaultSource()", connectionKey, connectionKey);
-                var batchLambda = CodeBlock.of("($T keys, $T batchEnv) -> batch$LAlt$L(keys, batchEnv, key)",
-                    listOf(listOf(ClassName.get(Object.class))), BATCH_LOADER_ENV, entity.typeName(), altIndex);
-                arm.add("$T loader = repEnv.getDataLoaderRegistry().computeIfAbsent(\n", loaderType);
-                arm.add("    $T.entityLoaderName(repEnv, $S, $L, key),\n", ownedConnections, entity.typeName(), altIndex);
-                arm.add("    name -> $L);\n", LoaderConstruction.positional(batchLambda, "repEnv", errorRouter));
-                arm.addStatement("return loader.load($T.asList(cols), repEnv)", ARRAYS);
-            });
+                emitLoad(arm, entity, altIndex);
+            }, (arm, voucher) -> emitVoucherArm(arm, entity, voucher));
             b.addStatement("return $T.completedFuture(null)", CF);
             return MethodSpec.methodBuilder("load" + entity.typeName())
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -557,6 +582,125 @@ public final class EntityFetcherDispatchClassGenerator {
                 .addParameter(repType(), "rep")
                 .addParameter(ENV, "env")
                 .addCode(b.build())
+                .build();
+        }
+
+        /**
+         * Loads {@code cols}, with {@code repEnv} and {@code key} in scope, from the loader for (field
+         * path, type, alternative {@code altIndex}, {@code key}), whose batch runs on {@code key}'s lease.
+         */
+        private void emitLoad(CodeBlock.Builder arm, EntityKeyQuery.Entity entity, int altIndex) {
+            var loaderType = ParameterizedTypeName.get(DATA_LOADER, listOf(ClassName.get(Object.class)), RECORD);
+            var batchLambda = CodeBlock.of("($T keys, $T batchEnv) -> batch$LAlt$L(keys, batchEnv, key)",
+                listOf(listOf(ClassName.get(Object.class))), BATCH_LOADER_ENV, entity.typeName(), altIndex);
+            arm.add("$T loader = repEnv.getDataLoaderRegistry().computeIfAbsent(\n", loaderType);
+            arm.add("    $T.entityLoaderName(repEnv, $S, $L, key),\n", ownedConnections, entity.typeName(), altIndex);
+            arm.add("    name -> $L);\n", LoaderConstruction.positional(batchLambda, "repEnv", errorRouter));
+            arm.addStatement("return loader.load($T.asList(cols), repEnv)", ARRAYS);
+        }
+
+        /**
+         * A representation carrying a voucher, {@code rep} in scope: the codec decodes and checks it,
+         * each lookup and vouched-for value is coerced to its column through the column's
+         * {@code DataType}, the connection key is built from the vouched-for values, and the lookup
+         * columns load into the loader for the authored key the voucher decodes onto, under that key. A
+         * failed check, or a value no column takes, rejects the request ({@code rejectVoucher}). The
+         * per-type data (scope, the fields each section names, their columns) is read off the voucher
+         * alternative and the authored key it pairs with by identity, the one list the SELECT also reads.
+         */
+        private void emitVoucherArm(CodeBlock.Builder arm, EntityKeyQuery.Entity entity,
+                                    EntityKeyQuery.Alternative.Voucher voucher) {
+            var authored = entity.alternative(voucher.decodesOnto());
+            if (!(authored instanceof EntityKeyQuery.Alternative.Direct lookup)) {
+                throw new IllegalStateException("Entity '" + entity.typeName() + "' accepts vouchers decoding onto "
+                    + voucher.decodesOnto() + ", which is not a key over its columns");
+            }
+            int lookupIndex = entity.indexOf(voucher.decodesOnto());
+            var pkg = outputPackage + ".schema";
+            var codec = ClassName.get(pkg, no.sikt.graphitron.emit.VoucherRuntime.CODEC);
+            var rejected = ClassName.get(pkg, no.sikt.graphitron.emit.VoucherRuntime.REJECTED);
+            var reason = rejected.nestedClass("Reason");
+            var columnValues = ClassName.get(nodeIdEncoder.packageName(), ColumnValuesClassGenerator.CLASS_NAME);
+            var set = ClassName.get("java.util", "Set");
+            var vouchedForNames = voucher.vouchedFor().stream().map(f -> CodeBlock.of("$S", f.fieldName()))
+                .collect(CodeBlock.joining(", "));
+            var lookupNames = lookup.fields().stream().map(f -> CodeBlock.of("$S", f.fieldName()))
+                .collect(CodeBlock.joining(", "));
+            arm.add("// A voucher is verified, never matched: checked whole, or the request is rejected.\n");
+            arm.addStatement("Object presented = rep.get($S)", voucher.voucherField());
+            arm.addStatement("$T token", codec.nestedClass("Token"));
+            arm.beginControlFlow("try");
+            arm.beginControlFlow("if (!(presented instanceof String voucher))");
+            arm.addStatement("throw new $T($T.MALFORMED)", rejected, reason);
+            arm.endControlFlow();
+            arm.addStatement("token = $T.of(env).voucherVerifier().verify($S, voucher, $S, $T.of($L), $T.of($L))",
+                ownedConnections, entity.typeName(), voucher.scope(), set, vouchedForNames, set, lookupNames);
+            arm.nextControlFlow("catch ($T failed)", rejected);
+            arm.addStatement("return rejectVoucher(env, $S, null, failed)", voucher.scope());
+            arm.endControlFlow();
+            arm.add("// Each value takes its column's coercion, a representation's own; one no column takes is a\n");
+            arm.add("// failed check, not a row that does not exist.\n");
+            var fields = lookup.fields();
+            arm.addStatement("Object[] cols = new Object[$L]", fields.size());
+            for (int i = 0; i < fields.size(); i++) {
+                arm.addStatement("cols[$L] = $T.coerce($L.getDataType(), token.lookup().get($S))", i, columnValues,
+                    HandleMethodBody.columnRef(entity, EntityKeys.columnRef(fields.get(i).column())),
+                    fields.get(i).fieldName());
+                arm.beginControlFlow("if (cols[$L] == null)", i);
+                arm.addStatement("return rejectVoucher(env, $S, token.vouchId(), new $T($T.VALUE))",
+                    voucher.scope(), rejected, reason);
+                arm.endControlFlow();
+            }
+            var parts = new java.util.ArrayList<CodeBlock>();
+            for (int i = 0; i < voucher.vouchedFor().size(); i++) {
+                var field = voucher.vouchedFor().get(i);
+                var column = HandleMethodBody.columnRef(entity, EntityKeys.columnRef(field.column()));
+                String local = "vouched" + i;
+                var type = no.sikt.graphitron.render.CatalogRefs.decodeBindingType(field.column().bindingType());
+                if (type == null) {
+                    throw new IllegalStateException("The vouched-for field '" + field.fieldName() + "' of '"
+                        + entity.typeName() + "' reads a column whose binding type names no Java type");
+                }
+                arm.addStatement("$T $L = $T.coerce($L.getDataType(), token.vouchedFor().get($S))",
+                    type.isPrimitive() ? type.box() : type, local, columnValues, column, field.fieldName());
+                arm.beginControlFlow("if ($L == null)", local);
+                arm.addStatement("return rejectVoucher(env, $S, token.vouchId(), new $T($T.VALUE))",
+                    voucher.scope(), rejected, reason);
+                arm.endControlFlow();
+                parts.add(CodeBlock.of("$L", local));
+            }
+            arm.add("// The vouched-for values key the connection; the lookup part is navigation only.\n");
+            arm.addStatement("$T key = $T.forVouchedFor($L)", connectionKey, connectionKey,
+                CodeBlock.join(parts, ", "));
+            arm.addStatement("VOUCHER_AUDIT.info($S, token.vouchId(), $S)", "Voucher redeemed: vouch id {}, scope {}",
+                voucher.scope());
+            arm.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()", ENV, ENV_IMPL);
+            emitLoad(arm, entity, lookupIndex);
+        }
+
+        /**
+         * {@code rejectVoucher(env, scope, vouchId, failed)}: logs the rejection to the voucher audit log
+         * and rejects the request through the carrier's one slot, answering the representation's slot
+         * with the request's rejection, which the error router declines.
+         */
+        MethodSpec rejectVoucher() {
+            var pkg = outputPackage + ".schema";
+            var rejected = ClassName.get(pkg, no.sikt.graphitron.emit.VoucherRuntime.REJECTED);
+            return MethodSpec.methodBuilder("rejectVoucher")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, RECORD))
+                .addParameter(ENV, "env")
+                .addParameter(String.class, "scope")
+                .addParameter(UUID_CLASS, "vouchId")
+                .addParameter(rejected, "failed")
+                .addStatement("VOUCHER_AUDIT.info($S, vouchId == null ? $S : vouchId, scope, failed.reason())",
+                    "Voucher rejected: vouch id {}, scope {}, reason {}", "unknown")
+                .addStatement("return $T.failedFuture($T.of(env).reject(failed))", CF, ownedConnections)
+                .addJavadoc("Logs a failed voucher to the audit log, by vouch id (unknown where the token did not\n"
+                    + "decode), scope and the check it failed, and rejects the request with it: the carrier\n"
+                    + "remembers the first rejection and acquires nothing after it, and the instrumentation\n"
+                    + "throws it in place of the result. The slot answers with the request's rejection, which\n"
+                    + "the error router declines, so nothing is logged or redacted per slot.\n")
                 .build();
         }
 

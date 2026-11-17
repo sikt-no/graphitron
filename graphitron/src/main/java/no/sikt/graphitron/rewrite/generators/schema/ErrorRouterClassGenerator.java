@@ -148,8 +148,8 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
-     * The emitted {@code OwnedConnections} carrier, whose {@code isAcquisitionFailure} predicate the
-     * router asks so that it never names {@code AcquisitionFailedException} itself.
+     * The emitted {@code OwnedConnections} carrier, whose {@code isRequestRejection} predicate the
+     * router asks so that it never names {@code RequestRejectedException} itself.
      */
     static ClassName ownedConnectionsClass(String outputPackage) {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).ownedConnections();
@@ -606,14 +606,15 @@ public final class ErrorRouterClassGenerator {
                 + "source do neither, so a batch failure that reaches many fields logs once. A null\n"
                 + "{@code env} or context records nothing.\n"
                 + "\n"
-                + "<p>A rejected session mount is never claimed: it fails the request as a whole, so no\n"
+                + "<p>A request rejection (a failed acquisition, a failed voucher check, the\n"
+                + "one-vouched-value limit) is never claimed: it fails the request as a whole, so no\n"
                 + "mapping may turn it into payload data. Nor is a failed outbox emit: it is an\n"
                 + "infrastructure fault, not business data, so it takes the redacted path.\n"
                 + "@param thrown the exception the fetcher caught\n"
                 + "@param mappings the channel's dispatch table\n"
                 + "@param env the failing field's environment, or {@code null}\n"
                 + "@return the claimed link of {@code thrown}'s cause chain, or {@code null}\n")
-            .beginControlFlow("if ($T.isAcquisitionFailure(thrown) || isOutboxFailure(thrown))", ownedConnections)
+            .beginControlFlow("if ($T.isRequestRejection(thrown) || isOutboxFailure(thrown))", ownedConnections)
             .addStatement("return null")
             .endControlFlow()
             .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))
@@ -740,18 +741,18 @@ public final class ErrorRouterClassGenerator {
                 + "error reads the same with or without a channel, while an authored mapping that\n"
                 + "matches it still places it into the payload.\n"
                 + "\n"
-                + "<p>A rejected session mount answers a fixed placeholder error, unlogged and with no\n"
+                + "<p>A request rejection answers a fixed placeholder error, unlogged and with no\n"
                 + "reference: the operation throws it out of {@code GraphQL.execute} when it completes,\n"
                 + "so this result is discarded and the consumer decides what the request answers.\n",
                 clientException, DATA_FETCHER_RESULT, fetcherErrorResponse)
             .addCode(CodeBlock.builder()
                 .add("// Every arm below fails the field: its mutation transaction, if any, rolls back.\n")
                 .addStatement("$T.markFieldFailed(env, thrown)", ownedConnectionsClass(outputPackage))
-                .beginControlFlow("if ($T.isAcquisitionFailure(thrown))", ownedConnectionsClass(outputPackage))
+                .beginControlFlow("if ($T.isRequestRejection(thrown))", ownedConnectionsClass(outputPackage))
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
                 .add("    .error($T.newError(env).message($S).build())\n", GRAPHQL_ERROR_BUILDER,
-                    "The request's connection could not be acquired.")
+                    "The request was rejected.")
                 .addStatement("    .build()")
                 .endControlFlow()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)

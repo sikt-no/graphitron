@@ -575,12 +575,12 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void acquisitionCause_isTheSourcesOwnExceptionWhereverAFailedAcquisitionIsOnTheChain() throws Throwable {
+    void rejectionCause_isTheSourcesOwnExceptionWhereverAFailedAcquisitionIsOnTheChain() throws Throwable {
         assertAcquisitionCauseReadsTheChain(harness);
     }
 
     @Test
-    void acquisitionCause_readsTheChainTheSameWayWithoutSessionIdentity() throws Throwable {
+    void rejectionCause_readsTheChainTheSameWayWithoutSessionIdentity() throws Throwable {
         // AcquisitionFailedException is emitted in every build, session identity or not.
         try (var plain = compile(SessionIdentityRows.empty())) {
             assertAcquisitionCauseReadsTheChain(plain);
@@ -590,8 +590,8 @@ class ConnectionRuntimeClassGeneratorTest {
     private static void assertAcquisitionCauseReadsTheChain(EmittedCodeHarness h) throws Throwable {
         Class<?> ownedConnections = h.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         Class<?> failed = h.load(SCHEMA_PACKAGE + ".AcquisitionFailedException");
-        Method acquisitionCause = ownedConnections.getMethod("acquisitionCause", Throwable.class);
-        Method isAcquisitionFailure = ownedConnections.getMethod("isAcquisitionFailure", Throwable.class);
+        Method acquisitionCause = ownedConnections.getMethod("rejectionCause", Throwable.class);
+        Method isAcquisitionFailure = ownedConnections.getMethod("isRequestRejection", Throwable.class);
 
         var theSourcesOwn = new IllegalStateException("the routine said no");
         Throwable rejected = (Throwable) failed.getConstructor(Throwable.class).newInstance(theSourcesOwn);

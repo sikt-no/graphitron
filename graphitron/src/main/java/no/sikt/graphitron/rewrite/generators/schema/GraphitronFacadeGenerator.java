@@ -38,6 +38,9 @@ import java.util.function.Consumer;
  * </ul>
  * They are distinct names, not overloads, so a caller cannot silently opt out of the owned-path
  * guarantees by passing a {@code DSLContext}; the escape-hatch name is frozen by additive-by-construction.
+ * A build that accepts vouchers has no escape hatch: {@code _entities} acquires the vouched connection
+ * from the request's source, which a caller-supplied {@code DSLContext} cannot be, so the factory is not
+ * written at all and its absence is a compile error rather than a request-time refusal.
  *
  * <p>{@code schemaSdl(GraphQLSchema)} prints a built schema as the SDL to publish: on a federated
  * schema the way its {@code _service { sdl }} query answers, which is what Federation 2 composition
@@ -67,10 +70,15 @@ public final class GraphitronFacadeGenerator {
      *                       helper, the same gate {@link GraphitronSchemaClassGenerator} applies to
      *                       its federation build
      * @param identity the graph's session identity as the store states it
+     * @param vouches  whether the build writes the voucher runtime, so the runtime factories take the keys
+     * @param escapeHatch whether the escape-hatch factory {@code newExecutionInput(dsl, ...)} is written:
+     *                 false in a build that accepts vouchers, whose vouched connections come only from the
+     *                 request's source
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
                                           boolean federationLink, boolean usesOneOf,
-                                          no.sikt.graphitron.emit.SessionIdentityRows identity, boolean vouches) {
+                                          no.sikt.graphitron.emit.SessionIdentityRows identity, boolean vouches,
+                                          boolean escapeHatch) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
@@ -170,7 +178,7 @@ public final class GraphitronFacadeGenerator {
         }
         var runtime = runtimeBuilder
             .addStatement("return new $T(dialect$L)", graphitronRuntime, keysArg)
-            .addJavadoc(runtimeJavadoc().replace("@return", keysParamDoc + "@return"))
+            .addJavadoc(runtimeJavadoc(escapeHatch).replace("@return", keysParamDoc + "@return"))
             .build();
 
         var settings = ClassName.get("org.jooq.conf", "Settings");
@@ -195,18 +203,21 @@ public final class GraphitronFacadeGenerator {
             .build();
 
         var optional = ClassName.get("java.util", "Optional");
-        var acquisitionFailure = MethodSpec.methodBuilder("acquisitionFailure")
+        var requestRejection = MethodSpec.methodBuilder("requestRejection")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(optional, ClassName.get(Throwable.class)))
             .addParameter(Throwable.class, "thrown")
-            .addStatement("return $T.acquisitionCause(thrown)", ownedConnections)
-            .addJavadoc("What the request's connection source threw, when {@code thrown} is, or is caused by, a\n"
-                + "failed acquisition; empty otherwise. {@code execute} throws a failed acquisition in place\n"
-                + "of a result, so an application that serves over HTTP passes this to its adapter and\n"
-                + "answers the request from the source's own exception, without naming the generated\n"
-                + "exception.\n"
+            .addStatement("return $T.rejectionCause(thrown)", ownedConnections)
+            .addJavadoc("What rejected the request, when {@code thrown} is, or is caused by, the generated\n"
+                + "{@code RequestRejectedException}; empty otherwise. For a failed acquisition it is what the\n"
+                + "request's connection source threw; for a failed voucher check or a second vouched-for\n"
+                + "value it is the rejection itself, which names the check or the limit and carries nothing\n"
+                + "of any voucher. {@code execute} throws the rejection in place of a result, so an\n"
+                + "application that serves over HTTP passes this to its adapter and answers the request\n"
+                + "from what rejected it (a voucher rejection usually as 401 or 403, an acquisition fault\n"
+                + "usually as 503), without naming the generated exception.\n"
                 + "@param thrown what escaped execution\n"
-                + "@return the source's own exception, if a failed acquisition is on the cause chain\n")
+                + "@return what rejected the request, if a request rejection is on the cause chain\n")
             .build();
 
         var self = ClassName.get(outputPackage, CLASS_NAME);
@@ -230,14 +241,16 @@ public final class GraphitronFacadeGenerator {
             .addField(loggerField)
             .addField(escapeHatchNoticeField)
             .addMethod(buildSchema)
-            .addMethod(buildSchemaDefault)
-            .addMethod(newExecutionInput)
-            .addMethod(newOwnedExecutionInput)
+            .addMethod(buildSchemaDefault);
+        if (escapeHatch) {
+            classBuilder.addMethod(newExecutionInput);
+        }
+        classBuilder.addMethod(newOwnedExecutionInput)
             .addMethod(newGraphQL)
             .addMethod(runtime)
             .addMethod(runtimeWithSettings)
             .addMethod(schemaSdl(graphQLSchema, outputPackage, federationLink, usesOneOf))
-            .addMethod(acquisitionFailure);
+            .addMethod(requestRejection);
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
@@ -267,7 +280,7 @@ public final class GraphitronFacadeGenerator {
 
     /** Convenience overload for non-federation usage. */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, outputPackage, false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty(), false);
+        return generate(schema, outputPackage, false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty(), false, true);
     }
 
     /**
@@ -368,7 +381,7 @@ public final class GraphitronFacadeGenerator {
         return method.build();
     }
 
-    private static String runtimeJavadoc() {
+    private static String runtimeJavadoc(boolean escapeHatch) {
         return "Builds the application-scoped {@code GraphitronRuntime} that owns the connection\n"
             + "lifecycle: it leases each request's connections from the request's {@code ConnectionSource}\n"
             + "on first demand, demarcates operation-typed transactions, and releases every lease exactly\n"
@@ -377,9 +390,13 @@ public final class GraphitronFacadeGenerator {
             + "\n"
             + "<p>This is the opinionated path: per request you call\n"
             + "{@code Graphitron.newOwnedExecutionInput(source, ...)} and graphitron leases connections\n"
-            + "from {@code source} and releases them at completion. The lower-opinion escape\n"
-            + "hatch is the static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller\n"
-            + "owns the {@code DSLContext}, transaction demarcation, and identity state.\n"
+            + "from {@code source} and releases them at completion. "
+            + (escapeHatch
+                ? "The lower-opinion escape\n"
+                    + "hatch is the static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller\n"
+                    + "owns the {@code DSLContext}, transaction demarcation, and identity state.\n"
+                : "This build accepts vouchers, so it has no\n"
+                    + "escape hatch: a vouched connection comes only from the request's source.\n")
             + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
             + "@return the application-scoped runtime, to be held for the app's lifetime\n";
     }
@@ -453,7 +470,7 @@ public final class GraphitronFacadeGenerator {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
         sb.append("pass the request's {@code ConnectionSource} and then only the declared\n");
-        sb.append("{@code contextArguments}. Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
+        sb.append("{@code contextArguments}. Unlike the escape hatch, no {@code DSLContext} is supplied\n");
         sb.append("here; the execution instrumentation wired by\n");
         sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} leases connections from the source on\n");
         sb.append("first demand, produces every {@code DSLContext}, demarcates\n");

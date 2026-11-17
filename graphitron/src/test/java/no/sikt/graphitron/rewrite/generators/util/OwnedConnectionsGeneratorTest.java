@@ -39,7 +39,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * {@link RecordingSource}, so the real mount/unmount runs at acquisition/release, letting a fake
  * {@code Connection} observe both phases as the {@code prepareStatement} calls the fixture makes;
  * the fake {@code DataSource}s are keyed so "the right pool per key" and "one connection per distinct
- * key" read straight off the call log.
+ * key" read straight off the call log. Distinct keys are tenants, so the runtime is a build with a
+ * {@code String} tenant column: a build without one has a key with no parts, and so one key.
  */
 @UnitTier
 class OwnedConnectionsGeneratorTest {
@@ -59,14 +60,18 @@ class OwnedConnectionsGeneratorTest {
     static void compile() {
         var hooks = SessionIdentityFixtures.recording();
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, ClassName.get(String.class),
+                TenantColumnFixtures.STRING_KEY_COLUMN)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
-        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, null, hooks)) {
+        for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, ClassName.get(String.class), hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
+        for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
         }
         // The instrumentation reports a mutation field's settle failure through the router, which
         // raises the client-error type; a real build always emits both beside the runtime.
@@ -357,7 +362,7 @@ class OwnedConnectionsGeneratorTest {
     }
 
     private static Object tenantKey(Object tenant) throws Throwable {
-        return invoke(() -> harness.load(SCHEMA_PACKAGE + ".ConnectionKey").getMethod("forTenant", Object.class)
+        return invoke(() -> harness.load(SCHEMA_PACKAGE + ".ConnectionKey").getMethod("forTenant", String.class)
             .invoke(null, tenant));
     }
 
@@ -402,7 +407,7 @@ class OwnedConnectionsGeneratorTest {
     private Object acquire(Object runtime, String tenant, Object source) throws Throwable {
         Class<?> keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
         return invoke(() -> Accessible.method(runtimeClass, "acquire", keyClass, sourceClass())
-            .invoke(runtime, keyClass.getMethod("forTenant", Object.class).invoke(null, tenant), source));
+            .invoke(runtime, keyClass.getMethod("forTenant", String.class).invoke(null, tenant), source));
     }
 
     private static Class<?> sourceClass() {
@@ -415,7 +420,7 @@ class OwnedConnectionsGeneratorTest {
 
     private Object dslForReturning(Object tc, Object key) throws Throwable {
         try {
-            return ownedConnectionsClass.getMethod("dslFor", Object.class).invoke(tc, key);
+            return ownedConnectionsClass.getMethod("dslFor", String.class).invoke(tc, key);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }

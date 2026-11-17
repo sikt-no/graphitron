@@ -61,6 +61,9 @@ final class SelectMethodBody {
         EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
         String outputPackage, TenantBinding.EntityRepBound.TenantSource source
     ) {
+        if (alt instanceof EntityKeyQuery.Alternative.Voucher voucher) {
+            throw EntityKeys.voucherHasNoSelect(voucher);
+        }
         String methodName = "select" + entity.typeName() + "Alt" + altIndex;
         var listOfBindings = ParameterizedTypeName.get(LIST,
             ArrayTypeName.of(ClassName.get(Object.class)));

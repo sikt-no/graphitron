@@ -895,11 +895,11 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("if (own == null)")
             .addStatement("$T mount = null", Throwable.class);
         if (mounts) {
-            builder.addStatement("mount = firstAcquisitionFailure.get()");
+            builder.addStatement("mount = firstRejection.get()");
         }
         builder.beginControlFlow("synchronized (field.handled)")
             .beginControlFlow("for ($T handledThrowable : field.handled)", Throwable.class)
-            .beginControlFlow("if (mount == null && isAcquisitionFailure(handledThrowable))")
+            .beginControlFlow("if (mount == null && isRequestRejection(handledThrowable))")
             .addStatement("mount = handledThrowable")
             .endControlFlow()
             .endControlFlow()
@@ -1042,7 +1042,7 @@ final class MutationFieldScopeEmitter {
             .addStatement("return")
             .nextControlFlow("catch ($T e)", ClassName.get("java.util.concurrent", "ExecutionException"))
             .addStatement("$T failure = e.getCause()", Throwable.class)
-            .addStatement("dropped(field, events, isAcquisitionFailure(failure) ? $S : $S, failure)",
+            .addStatement("dropped(field, events, isRequestRejection(failure) ? $S : $S, failure)",
                 "the connection source failed to lease a fresh connection", "no fresh connection could be acquired")
             .addStatement("return")
             .nextControlFlow("catch ($T e)", InterruptedException.class)
@@ -1120,7 +1120,7 @@ final class MutationFieldScopeEmitter {
                 + "PostgreSQL, a killed session or a resource limit on Oracle. Anything else, a\n"
                 + "connection-class error, an I/O failure without a state, a server shutdown, is outside the\n"
                 + "transaction, and so is anything unrecognised, since writing nothing is the safer error.\n"
-                + "Read beside {@link #isAcquisitionFailure} when a field with failure messages settles.\n"
+                + "Read beside {@link #isRequestRejection} when a field with failure messages settles.\n"
                 + "@param thrown an exception settle holds\n"
                 + "@param dialect the dialect of the connection it came from\n")
             .build();

@@ -1,6 +1,6 @@
 extend schema @withConfiguration(sessionState: true)
 
-"A field marked @accept is the voucher field of an entity another subgraph vouches for: its application is captured as written, its vouchesFor parsed one selection per row, and it binds by the voucher kind, so the column rule never looks for a voucher column. Until the dispatch that verifies vouchers is generated, @accept is refused at the application."
+"A field marked @accept is the voucher field of an entity another subgraph vouches for: its application is captured as written, its vouchesFor parsed one selection per row, and it binds by the voucher kind, so the column rule never looks for a voucher column. A type whose subtree its SELECT reads whole is not refused for want of a dispatch."
 type Film @table(name: "film") @key(fields: "filmId") {
   filmId: ID! @field(name: "film_id")
   languageId: Int @field(name: "language_id")
@@ -66,13 +66,8 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   COLUMN_UNRESOLVED, Film.voucher
   """)
 
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
-  code = 'VOUCHER_ACCEPT_NOT_GENERATED'
-  """, rows: """
-  code,                         type_name, detail
-  VOUCHER_ACCEPT_NOT_GENERATED, Film,      Film.voucher
-  VOUCHER_ACCEPT_NOT_GENERATED, Store,     Store.voucher
-  """)
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site",
+    where: "code = 'VOUCHER_ACCEPT_NOT_GENERATED'")
 
 # The voucher keys its type as a key this subgraph resolves, beside the one its author wrote, and is
 # kept from clients.

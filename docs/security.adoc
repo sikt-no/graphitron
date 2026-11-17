@@ -29,3 +29,9 @@ How tamper-resistant the mounted identity is depends on what your mount routine 
 * *Signed token verified in-database* (cryptographic fence). Your mount's payload is the raw signed token, the routine verifies the signature inside the database, and policies read identity only through verified state. Even arbitrary SQL on the connection cannot forge another caller's identity.
 
 The fail-closed complement holds at every point on the gradient: an RLS policy must treat an absent identity and a cleared one identically and deny. On Postgres that means treating both `NULL` and the empty string as "no identity" (a touched session variable cannot return to unset, so a cleared connection reads `''` where a fresh one reads `NULL`).
+
+== Vouchers across subgraphs
+
+A subgraph that grants access on another subgraph's voucher (xref:manual/reference/directives/accept.adoc[`@accept`]) still enforces in the database: Graphitron checks the voucher and asks your connection source for a connection keyed by the values it vouches for, and your policies decide what those values unlock. A voucher is a credential, so Graphitron never logs it, its values, or the connection key built from them, and a rejection's message names the check that failed and nothing from the token. A voucher that fails any check rejects the whole request before any connection is taken; a voucher rejection is usually answered as 401 or 403.
+
+Every redemption and rejection is written to the audit logger `no.sikt.graphitron.voucher.audit` at `INFO`: the vouch id the issuing subgraph minted for the operation, the scope, and the outcome (redeemed, or rejected with the check that failed). Route that logger to your audit trail to trace a vouched read back to the operation that issued it.

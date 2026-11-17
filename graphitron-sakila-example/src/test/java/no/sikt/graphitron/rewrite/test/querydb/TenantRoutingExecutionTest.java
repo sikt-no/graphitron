@@ -1,9 +1,12 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
-import no.sikt.graphitron.generated.schema.GraphitronRuntime;
-import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider.CommitPolicy;
-import no.sikt.graphitron.generated.schema.OwnedConnections;
+import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
+import no.sikt.graphitron.generated.multitenant.schema.GraphitronTransactionProvider.CommitPolicy;
+import no.sikt.graphitron.generated.multitenant.schema.OwnedConnections;
+import no.sikt.graphitron.generated.multitenant.schema.ConnectionSource;
+import no.sikt.graphitron.generated.multitenant.schema.ConnectionSources;
+import no.sikt.graphitron.generated.multitenant.schema.KeyNotPermitted;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -23,8 +26,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Execution-tier coverage of the tenant-keyed acquisition seam against real PostgreSQL:
- * the request's connection source (a pool per tenant key) and the {@code OwnedConnections} carrier
+ * Execution-tier coverage of the tenant-keyed acquisition seam against real PostgreSQL, over the
+ * {@code multitenant} package, whose key has a tenant part (a build without a tenant column has one
+ * key): the request's connection source (a pool per tenant key) and the {@code OwnedConnections} carrier
  * route each divined key to its own {@code DataSource}, pinning one connection per distinct key.
  *
  * <p>Database-per-tenant is simulated with two schemas ({@code tenant_a}, {@code tenant_b}), each with a
@@ -39,8 +43,8 @@ class TenantRoutingExecutionTest {
     static DSLContext dsl;                 // superuser, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
-    static final Object KEY_A = "tenant-a";
-    static final Object KEY_B = "tenant-b";
+    static final Integer KEY_A = 1;
+    static final Integer KEY_B = 2;
 
     @BeforeAll
     static void startDatabase() {
@@ -71,7 +75,7 @@ class TenantRoutingExecutionTest {
     @Test
     void dslFor_routesEachKeyToItsOwnSource_seeingDisjointRows() {
         var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
-        var source = Sources.main("{}", searchPathDataSource("public", null),
+        var source = source(searchPathDataSource("public", null),
             Map.of(KEY_A, searchPathDataSource("tenant_a", null), KEY_B, searchPathDataSource("tenant_b", null)));
         var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
         try {
@@ -95,7 +99,7 @@ class TenantRoutingExecutionTest {
     void dslFor_pinsOneConnectionPerDistinctKey_acrossOneOperation() {
         AtomicInteger opened = new AtomicInteger();
         var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
-        var source = Sources.main("{}", searchPathDataSource("public", opened),
+        var source = source(searchPathDataSource("public", opened),
             Map.of(KEY_A, searchPathDataSource("tenant_a", opened), KEY_B, searchPathDataSource("tenant_b", opened)));
         var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
         try {
@@ -114,6 +118,13 @@ class TenantRoutingExecutionTest {
     }
 
     // ===== helpers =====
+
+    /** A source over a pool per tenant and a default pool, mounting nothing: routing is all it shows. */
+    private static ConnectionSource source(DataSource defaultPool, Map<Integer, DataSource> tenantPools) {
+        return ConnectionSources.of(
+            key -> Sources.pool(key.tenant(), defaultPool, tenantPools, KeyNotPermitted::new),
+            new java.util.TreeSet<>(tenantPools.keySet()));
+    }
 
     /** A DataSource whose connections set {@code search_path} to {@code schema}, optionally counting acquisitions. */
     private static DataSource searchPathDataSource(String schema, AtomicInteger counter) {

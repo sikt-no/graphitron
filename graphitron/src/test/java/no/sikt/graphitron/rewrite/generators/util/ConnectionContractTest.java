@@ -307,7 +307,7 @@ class ConnectionContractTest {
         assertThat(events).containsExactly("acquire:A");
         assertThat(acquisitionFailure(carrier)).isPresent();
         Throwable remembered = (Throwable) acquisitionFailure(carrier).get();
-        Object chain = invoke(() -> carrier.getClass().getMethod("acquisitionCause", Throwable.class)
+        Object chain = invoke(() -> carrier.getClass().getMethod("rejectionCause", Throwable.class)
             .invoke(null, new RuntimeException(remembered)));
         assertThat(chain).isEqualTo(Optional.of(cause));
         releaseAll(carrier);
@@ -397,10 +397,15 @@ class ConnectionContractTest {
     }
 
     private static Optional<?> acquisitionFailure(Object carrier) throws Throwable {
-        return (Optional<?>) invoke(() -> carrier.getClass().getMethod("acquisitionFailure").invoke(carrier));
+        return (Optional<?>) invoke(() -> carrier.getClass().getMethod("requestRejection").invoke(carrier));
     }
 
+    /** The key's tenant, or null for a key without one, which a build with no tenant column always is. */
     private static Object tenantOf(Object key) throws ReflectiveOperationException {
+        var components = key.getClass().getRecordComponents();
+        if (java.util.Arrays.stream(components).noneMatch(c -> c.getName().equals("tenant"))) {
+            return null;
+        }
         return ((Optional<?>) key.getClass().getMethod("tenant").invoke(key)).orElse(null);
     }
 

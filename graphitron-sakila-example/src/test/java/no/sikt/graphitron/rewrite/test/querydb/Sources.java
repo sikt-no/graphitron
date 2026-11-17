@@ -45,13 +45,13 @@ final class Sources {
     }
 
     /**
-     * The main package over a pool per tenant key, mounting as {@code SakilaSessions} does: for the
-     * tests that drive the carrier's keyed acquisition directly.
+     * The main package over {@code defaultPool}, mounting as {@code SakilaSessions} does, refusing the
+     * key with {@code KeyNotPermitted} where {@code defaultPool} is null. The main package has no tenant
+     * column, so its one key is the one with no parts.
      */
-    static no.sikt.graphitron.generated.schema.ConnectionSource main(
-            String claims, DataSource defaultPool, Map<Object, DataSource> tenantPools) {
+    static no.sikt.graphitron.generated.schema.ConnectionSource mainOrRefusing(String claims, DataSource defaultPool) {
         return no.sikt.graphitron.generated.schema.ConnectionSources.mounting(
-            key -> pool(key.tenant(), defaultPool, tenantPools,
+            key -> pool(Optional.empty(), defaultPool, Map.of(),
                 no.sikt.graphitron.generated.schema.KeyNotPermitted::new),
             (connection, key) -> SakilaSessionIdentity.mount(configuration(connection), claims),
             (connection, key, handle) -> SakilaSessionIdentity.unmount(configuration(connection), handle));

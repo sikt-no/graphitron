@@ -5414,7 +5414,7 @@ class GraphQLQueryTest {
         String f1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
         var engine = Graphitron.runtime(org.jooq.SQLDialect.POSTGRES)
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
-        var refusing = Sources.main("{}", null, Map.of());
+        var refusing = Sources.mainOrRefusing("{}", null);
         var result = engine.execute(Graphitron.newOwnedExecutionInput(refusing, "{}", "test-user")
             .query("{ node(id: \"" + c1 + "\") { __typename }"
                 + " nodes(ids: [\"" + f1 + "\", \"" + c1 + "\"]) { __typename } }")

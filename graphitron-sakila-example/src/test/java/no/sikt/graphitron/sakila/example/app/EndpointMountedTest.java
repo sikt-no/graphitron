@@ -224,8 +224,8 @@ class EndpointMountedTest {
     private static final String QUERY_TOUCHING_THE_DATABASE = "{\"query\":\"{ filmsOrdered { title } }\"}";
 
     @Test
-    @DisplayName("A rejected mount reaches failedAcquisition with the connection source's own exception, on POST and on GET, and its answer is unredacted.")
-    void failedAcquisitionReceivesTheSourcesOwnException() {
+    @DisplayName("A rejected mount reaches rejectedRequest with the connection source's own exception, on POST and on GET, and its answer is unredacted.")
+    void rejectedRequestReceivesTheSourcesOwnException() {
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)
@@ -238,7 +238,7 @@ class EndpointMountedTest {
             .post(path("frank"))
         .then()
             .statusCode(401)
-            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("failedAcquisition"))
+            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("rejectedRequest"))
             .header(FaultInjectingGraphitronApplication.CAUSE_CLASS_HEADER, notNullValue())
             .header(FaultInjectingGraphitronApplication.CAUSE_CLASS_HEADER, not(containsString("AcquisitionFailedException")));
 
@@ -253,13 +253,13 @@ class EndpointMountedTest {
             .get(path("frank"))
         .then()
             .statusCode(401)
-            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("failedAcquisition"));
+            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("rejectedRequest"));
     }
 
     @Test
-    @DisplayName("An adapter overriding both hooks gets failedAcquisition for a failed acquisition and clientFault for the rest; a declining failedAcquisition falls through to clientFault.")
-    void failedAcquisitionPrecedesClientFault() {
-        // Both hooks would answer here; the 401 is failedAcquisition's, clientFault's would be a 403.
+    @DisplayName("An adapter overriding both hooks gets rejectedRequest for a rejected request and clientFault for the rest; a declining rejectedRequest falls through to clientFault.")
+    void rejectedRequestPrecedesClientFault() {
+        // Both hooks would answer here; the 401 is rejectedRequest's, clientFault's would be a 403.
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)

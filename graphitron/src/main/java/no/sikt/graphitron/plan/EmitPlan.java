@@ -338,8 +338,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * {@code FetcherErrorResponse} and {@code BatchSizeLimit} interfaces (unconditional; only the
      * log's surface varies with the tenant key), the connection contract in every build
      * ({@code ConnectionSource}, {@code Lease}, {@code KeyNotPermitted}, the
-     * {@code AcquisitionFailedException} any other throwing source becomes, and the ready-made
-     * {@code ConnectionSources}), plus the {@code ConnectionKey} the carrier is keyed by in every build.
+     * {@code AcquisitionFailedException} any other throwing source becomes, the sealed
+     * {@code RequestRejectedException} it is an arm of, and the ready-made {@code ConnectionSources}),
+     * plus the {@code ConnectionKey} the carrier is keyed by in every build.
      * The set is the same in every build.
      */
     private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks) {
@@ -356,6 +357,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "Lease"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "KeyNotPermitted"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "AcquisitionFailedException"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "ConnectionSources"));
         return new GlobalCommand.Fixed(GlobalUnitKind.CONNECTION_RUNTIME, refs);
     }

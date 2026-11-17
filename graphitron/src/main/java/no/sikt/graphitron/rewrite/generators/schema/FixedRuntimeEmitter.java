@@ -21,7 +21,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
  * transaction provider, the constraint-violation helper, the client exception, the zero-rows-matched
  * exception, the error router and the outcome carrier. What they say depends on nothing but the package they are written under, so
  * there is nothing to plan: this reads the package off {@code store_graph_output} and renders. A graph
- * that vouches adds the voucher runtime ({@link no.sikt.graphitron.emit.VoucherRuntime}), whose gate is the store's.
+ * that issues or accepts vouchers adds the voucher runtime ({@link no.sikt.graphitron.emit.VoucherRuntime}),
+ * whose gate is the store's.
  *
  * <p>Beside them it writes the one runtime class rendered from the store's facts rather than from
  * the package alone, {@code Connections}, the connection and edge classes every connection
@@ -43,9 +44,10 @@ public final class FixedRuntimeEmitter {
 
     /**
      * The fixed runtime classes of the run the store captured, with the voucher runtime where
-     * {@code vouches}, the run's one reading of {@link no.sikt.graphitron.emit.VoucherRuntime#vouches}.
+     * {@code vouchers} says the graph issues or accepts, the run's one reading of
+     * {@link no.sikt.graphitron.emit.VoucherRuntime#roles}.
      */
-    public static List<Unit> render(StoreHandle store, boolean vouches) {
+    public static List<Unit> render(StoreHandle store, no.sikt.graphitron.emit.VoucherRuntime.Roles vouchers) {
         String outputPackage = store.dsl()
             .select(STORE_GRAPH_OUTPUT.OUTPUT_PACKAGE)
             .from(STORE_GRAPH_OUTPUT)
@@ -54,7 +56,7 @@ public final class FixedRuntimeEmitter {
             .orElseThrow(() -> new IllegalStateException("graph '" + store.graphName()
                 + "' has no output coordinates in the store; only a generating run writes classes"));
         var out = new ArrayList<>(render(outputPackage));
-        if (vouches) {
+        if (vouchers.any()) {
             out.addAll(renderVoucherRuntime(outputPackage));
         }
         var issues = no.sikt.graphitron.emit.VoucherIssueQuery.read(store);
@@ -76,7 +78,7 @@ public final class FixedRuntimeEmitter {
         return ClassName.get(ref.packageName(), ref.simpleName());
     }
 
-    /** The voucher runtime written under {@code outputPackage}, in a graph that vouches. */
+    /** The voucher runtime written under {@code outputPackage}, in a graph that issues or accepts. */
     public static List<Unit> renderVoucherRuntime(String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var specs = no.sikt.graphitron.emit.VoucherRuntime.render(outputPackage);
@@ -87,6 +89,8 @@ public final class FixedRuntimeEmitter {
             units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.KEYS), specs.subList(1, 2));
         add(out, GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.REJECTED), specs.subList(2, 3));
+        add(out, GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION,
+            units.singleton(GeneratedUnits.SUB_SCHEMA, no.sikt.graphitron.emit.VoucherRuntime.LIMIT), specs.subList(3, 4));
         return List.copyOf(out);
     }
 

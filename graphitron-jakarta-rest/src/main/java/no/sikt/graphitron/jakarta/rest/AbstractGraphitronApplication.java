@@ -10,8 +10,8 @@ import java.util.function.Supplier;
 /**
  * Boilerplate-removing base for a {@link GraphitronApplication} adapter. A concrete subgraph adapter
  * passes method references to the generated facade to the constructor and overrides only what is its
- * own: the engine's extra instrumentation and how a failed connection acquisition is answered. The schema, the
- * SDL and the recognition of a failed connection acquisition ride the inherited implementations.
+ * own: the engine's extra instrumentation and how a rejected request is answered. The schema, the
+ * SDL and the recognition of a rejected request ride the inherited implementations.
  *
  * <pre>{@code
  * @ApplicationScoped
@@ -21,7 +21,7 @@ import java.util.function.Supplier;
  *
  *     MySubgraphApplication(GraphQLTelemetry telemetry) {
  *         // only facade references, as method references
- *         super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::acquisitionFailure);
+ *         super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::requestRejection);
  *         this.runtime = Graphitron.runtime(SQLDialect.POSTGRES, new Settings());
  *         this.telemetry = telemetry;
  *     }
@@ -32,13 +32,13 @@ import java.util.function.Supplier;
  *     }
  *
  *     @Override
- *     public Optional<WebApplicationException> failedAcquisition(Throwable sourceCause) {
- *         return Optional.of(new NotAuthorizedException("identity rejected"));
+ *     public Optional<WebApplicationException> rejectedRequest(Throwable rejection) {
+ *         return Optional.of(new NotAuthorizedException("request rejected"));
  *     }
  * }
  * }</pre>
  *
- * <p>The schema supplier, SDL printer and mount-failure recogniser reach the static facade through
+ * <p>The schema supplier, SDL printer and request-rejection recogniser reach the static facade through
  * method references, so this base never names a per-subgraph type; the only generated-symbol
  * references live in the tiny subclass. Generating the adapter would couple every generated codebase
  * to a {@code graphitron-jakarta-rest} version, so it stays hand-written. The input of a request is
@@ -48,7 +48,7 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
 
     private final Supplier<GraphQLSchema> schemaSupplier;
     private final Function<GraphQLSchema, String> sdlPrinter;
-    private final Function<Throwable, Optional<Throwable>> acquisitionCauseFinder;
+    private final Function<Throwable, Optional<Throwable>> requestRejectionFinder;
     private volatile GraphQLSchema schema;
     private volatile String schemaSdl;
 
@@ -62,29 +62,29 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
                                             Function<GraphQLSchema, String> sdlPrinter) {
         this.schemaSupplier = Objects.requireNonNull(schemaSupplier, "schemaSupplier");
         this.sdlPrinter = Objects.requireNonNull(sdlPrinter, "sdlPrinter");
-        this.acquisitionCauseFinder = null;
+        this.requestRejectionFinder = null;
     }
 
     /**
-     * As the two-argument form, and {@link #acquisitionCause(Throwable)} answers through
-     * {@code acquisitionCauseFinder}, so {@link #failedAcquisition(Throwable)} is called with the connection
-     * source's own exception when it fails to lease the request's connection (for instance when the
-     * database rejects the caller's identity).
+     * As the two-argument form, and {@link #requestRejection(Throwable)} answers through
+     * {@code requestRejectionFinder}, so {@link #rejectedRequest(Throwable)} is called with what rejected
+     * the request: the connection source's own exception when it fails to lease the request's connection
+     * (for instance when the database rejects the caller's identity), the generated rejection itself for
+     * a failed voucher check or the one-vouched-value limit.
      *
      * @param schemaSupplier   builds the executable schema, typically {@code Graphitron::buildSchema};
      *                         invoked at most once, the result cached
      * @param sdlPrinter       prints the built schema as the SDL {@code /schema} serves, typically
      *                         {@code Graphitron::schemaSdl}; invoked at most once, the result cached
-     * @param acquisitionCauseFinder returns the connection source's own exception when its argument is, or
-     *                         is caused by, a failed acquisition, typically
-     *                         {@code Graphitron::acquisitionFailure}
+     * @param requestRejectionFinder returns what rejected the request when its argument is, or is caused
+     *                         by, a request rejection, typically {@code Graphitron::requestRejection}
      */
     protected AbstractGraphitronApplication(Supplier<GraphQLSchema> schemaSupplier,
                                             Function<GraphQLSchema, String> sdlPrinter,
-                                            Function<Throwable, Optional<Throwable>> acquisitionCauseFinder) {
+                                            Function<Throwable, Optional<Throwable>> requestRejectionFinder) {
         this.schemaSupplier = Objects.requireNonNull(schemaSupplier, "schemaSupplier");
         this.sdlPrinter = Objects.requireNonNull(sdlPrinter, "sdlPrinter");
-        this.acquisitionCauseFinder = Objects.requireNonNull(acquisitionCauseFinder, "acquisitionCauseFinder");
+        this.requestRejectionFinder = Objects.requireNonNull(requestRejectionFinder, "requestRejectionFinder");
     }
 
     /**
@@ -99,7 +99,7 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
     protected AbstractGraphitronApplication(Supplier<GraphQLSchema> schemaSupplier) {
         this.schemaSupplier = Objects.requireNonNull(schemaSupplier, "schemaSupplier");
         this.sdlPrinter = null;
-        this.acquisitionCauseFinder = null;
+        this.requestRejectionFinder = null;
     }
 
     /**
@@ -144,11 +144,11 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
     }
 
     /**
-     * The connection source's own exception through the constructor's finder; empty when the adapter was built
+     * What rejected the request, through the constructor's finder; empty when the adapter was built
      * without one.
      */
     @Override
-    public Optional<Throwable> acquisitionCause(Throwable thrown) {
-        return acquisitionCauseFinder == null ? Optional.empty() : acquisitionCauseFinder.apply(thrown);
+    public Optional<Throwable> requestRejection(Throwable thrown) {
+        return requestRejectionFinder == null ? Optional.empty() : requestRejectionFinder.apply(thrown);
     }
 }

@@ -432,6 +432,31 @@
                         </configuration>
                     </execution>
                     <!--
+                        Accepting fixture: the subgraph that verifies the issuing fixture's vouchers
+                        and reads the vouched results on a connection of their own, which the
+                        execution test's connection source sets up for the vouched-for owner the key
+                        carries. A graph of its own, since it declares VgsResultat as the issuing
+                        fixture does, the two being two subgraphs of one supergraph; no session
+                        handle, so its leases carry none.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-accepting</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/accepting.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>${jooqPackage}</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.accepting</outputPackage>
+                            <graphName>accepting</graphName>
+                            <sessionState combine.self="override"/>
+                        </configuration>
+                    </execution>
+                    <!--
                         Multi-schema fixture (R83). A schema over the multischema_a / multischema_b
                         tables of the fixture catalog in graphitron-sakila-db, writing generated
                         emission to its own disjoint subpackage. Compiling it is the compile-tier

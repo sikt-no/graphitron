@@ -66,7 +66,7 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
     /** {@code off} answers {@code 404} for the GraphiQL page and its assets, built-in or mounted. */
     static final String GRAPHIQL_HEADER = "X-Graphitron-Graphiql";
 
-    /** The failed-acquisition hook's modes; see {@link #failedAcquisition(Throwable)}. */
+    /** The rejected-request hook's modes; see {@link #rejectedRequest(Throwable)}. */
     static final String HOOK_ANSWERS = "hook";
     static final String HOOK_DECLINES = "hook-declines";
 
@@ -106,20 +106,20 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
     }
 
     /**
-     * With {@link #HOOK_ANSWERS} as the rejected-identity mode, answers a failed acquisition with a 401
+     * With {@link #HOOK_ANSWERS} as the rejected-identity mode, answers a rejected request with a 401
      * naming this hook and the class of the exception it was given; {@code clientFault} below would
      * answer the same failure with a 403, so which status arrives shows which hook ran. Any other
      * mode declines, leaving the decision to {@code clientFault}.
      */
     @Override
-    public Optional<WebApplicationException> failedAcquisition(Throwable acquisitionCause) {
+    public Optional<WebApplicationException> rejectedRequest(Throwable rejection) {
         if (HOOK_ANSWERS.equals(headers.getHeaderString(REJECTED_IDENTITY_HEADER))) {
             return Optional.of(new WebApplicationException(Response.status(401)
-                .header(ANSWERED_BY_HEADER, "failedAcquisition")
-                .header(CAUSE_CLASS_HEADER, acquisitionCause.getClass().getName())
+                .header(ANSWERED_BY_HEADER, "rejectedRequest")
+                .header(CAUSE_CLASS_HEADER, rejection.getClass().getName())
                 .build()));
         }
-        return super.failedAcquisition(acquisitionCause);
+        return super.rejectedRequest(rejection);
     }
 
     @Override
@@ -164,8 +164,8 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
             return null;
         }
         if (HOOK_ANSWERS.equals(mode) || HOOK_DECLINES.equals(mode)) {
-            // Reached for a failed acquisition only when failedAcquisition declined (or never ran); the 403
-            // distinguishes this hook's answer from failedAcquisition's 401.
+            // Reached for a rejected request only when rejectedRequest declined (or never ran); the 403
+            // distinguishes this hook's answer from rejectedRequest's 401.
             return Optional.of(new WebApplicationException(Response.status(403)
                 .header(ANSWERED_BY_HEADER, "clientFault")
                 .build()));

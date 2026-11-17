@@ -224,8 +224,8 @@ public final class FrameEmitter {
                 + ": a root frame has no parent to inherit a key from");
             case Connection.Unscoped unscoped -> {
                 if (needsContext) {
-                    method.addStatement("$T dsl = $T.dslFor(env, new $T($T.empty()))", DSL_CONTEXT,
-                        unscoped.ownedConnections(), unscoped.connectionKey(), OPTIONAL);
+                    method.addStatement("$T dsl = $T.dslFor(env, $T.defaultSource())", DSL_CONTEXT,
+                        unscoped.ownedConnections(), unscoped.connectionKey());
                 }
                 yield CodeBlock.of("");
             }
@@ -375,8 +375,8 @@ public final class FrameEmitter {
             case Connection.Request ignored -> runtime.dslContext().apply("first");
             case Connection.Inherited inherited -> CodeBlock.of("$T.dslHandedDown(first)",
                 inherited.ownedConnections());
-            case Connection.Unscoped unscoped -> CodeBlock.of("$T.dslFor(first, new $T($T.empty()))",
-                unscoped.ownedConnections(), unscoped.connectionKey(), OPTIONAL);
+            case Connection.Unscoped unscoped -> CodeBlock.of("$T.dslFor(first, $T.defaultSource())",
+                unscoped.ownedConnections(), unscoped.connectionKey());
             case Connection.Routed routed -> throw new IllegalArgumentException(
                 "a child frame is not routed by its own slots");
         };

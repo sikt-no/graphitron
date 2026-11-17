@@ -93,8 +93,9 @@ import java.util.function.Supplier;
  *       {@link GraphitronApplication#newExecutionInput()}, the built-in endpoint's seam.</li>
  *   <li><b>Client faults propagate.</b> A {@link WebApplicationException} thrown by the resource
  *       method, or by the supplier, reaches the container unredacted. That is the documented way to
- *       answer {@code 401} and {@code 403}. A failed acquisition (a rejected session identity) reaches
- *       {@link GraphitronApplication#failedAcquisition(Throwable)} with the source's own exception,
+ *       answer {@code 401} and {@code 403}. A rejected request (a rejected session identity, a failed
+ *       voucher check) reaches {@link GraphitronApplication#rejectedRequest(Throwable)} with what
+ *       rejected it,
  *       and {@link GraphitronApplication#clientFault(Throwable)} may answer any other escape the
  *       same way; the rest are redacted to a reference-only {@code 500}.</li>
  *   <li><b>Mounting under {@code /graphql/{...}} shadows the built-in sub-paths.</b> Jakarta REST
@@ -407,10 +408,10 @@ public class GraphqlHttpHandler {
             // propagates out. The seam, not a swallow, carries the 4xx.
             throw clientFault;
         } catch (Exception thrown) {
-            // A failed acquisition reaches the application's failedAcquisition first, with the
-            // connection source's own exception; then clientFault may answer any escape as a client fault, the
-            // shape the arm above passes through (a 401, say). Nothing is logged when either does.
-            Optional<WebApplicationException> rejected = failedAcquisition(thrown);
+            // A rejected request reaches the application's rejectedRequest first, with what rejected
+            // it; then clientFault may answer any escape as a client fault, the shape the arm above
+            // passes through (a 401, say). Nothing is logged when either does.
+            Optional<WebApplicationException> rejected = rejectedRequest(thrown);
             if (rejected.isPresent()) {
                 throw rejected.get();
             }
@@ -438,20 +439,20 @@ public class GraphqlHttpHandler {
     }
 
     /**
-     * {@link GraphitronApplication#acquisitionCause(Throwable)} then
-     * {@link GraphitronApplication#failedAcquisition(Throwable)}, contained: empty (so redaction or
-     * {@code clientFault}) when there is no mount failure or either override fails.
+     * {@link GraphitronApplication#requestRejection(Throwable)} then
+     * {@link GraphitronApplication#rejectedRequest(Throwable)}, contained: empty (so redaction or
+     * {@code clientFault}) when there is no request rejection or either override fails.
      */
-    private Optional<WebApplicationException> failedAcquisition(Throwable thrown) {
+    private Optional<WebApplicationException> rejectedRequest(Throwable thrown) {
         Optional<Throwable> cause;
         try {
-            cause = application.acquisitionCause(thrown);
+            cause = application.requestRejection(thrown);
         } catch (Throwable failure) {
-            logOverrideFailure("acquisitionCause", failure, "redacting");
+            logOverrideFailure("requestRejection", failure, "redacting");
             return Optional.empty();
         }
         if (cause == null) {
-            logOverrideFailure("acquisitionCause", null, "redacting");
+            logOverrideFailure("requestRejection", null, "redacting");
             return Optional.empty();
         }
         if (cause.isEmpty()) {
@@ -459,13 +460,13 @@ public class GraphqlHttpHandler {
         }
         Optional<WebApplicationException> answer;
         try {
-            answer = application.failedAcquisition(cause.get());
+            answer = application.rejectedRequest(cause.get());
         } catch (Throwable failure) {
-            logOverrideFailure("failedAcquisition", failure, "redacting");
+            logOverrideFailure("rejectedRequest", failure, "redacting");
             return Optional.empty();
         }
         if (answer == null) {
-            logOverrideFailure("failedAcquisition", null, "redacting");
+            logOverrideFailure("rejectedRequest", null, "redacting");
             return Optional.empty();
         }
         return answer;

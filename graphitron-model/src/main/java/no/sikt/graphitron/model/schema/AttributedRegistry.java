@@ -15,6 +15,10 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.TreeSet;
+
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_BINDING;
 
 /**
  * The walk's input: the schema capture composed as written, less the fields a voucher absorbs, with
@@ -30,15 +34,28 @@ import java.util.Set;
  * <p>{@code read} is what the parser and the reduce refused on the way. It rides along because the
  * registry alone cannot say what is missing from it: a type absent here may be one nobody declared
  * or one whose file did not parse, and only the refusals tell them apart.
+ *
+ * <p>{@code storeOwned} are the fields the store owns whole, each voucher field on either side, the
+ * ones whose occurrence binds by the {@code VOUCHER} kind: the walk's verdict on them stands down, the
+ * store's defects being the only refusals they have. Read here, at the one point the walk is handed its
+ * registry, as the membership removal is, so no consumer of the walk decides it for itself.
  */
 public record AttributedRegistry(TypeDefinitionRegistry registry,
                                  Set<String> injectedNames,
-                                 SchemaLoader.PerSourceParse read) {
+                                 SchemaLoader.PerSourceParse read,
+                                 Set<String> storeOwned) {
 
     public AttributedRegistry {
         Objects.requireNonNull(registry, "registry");
         Objects.requireNonNull(read, "read");
         injectedNames = Set.copyOf(injectedNames);
+        storeOwned = Set.copyOf(storeOwned);
+    }
+
+    /** A registry the store owns no field of. */
+    public AttributedRegistry(TypeDefinitionRegistry registry, Set<String> injectedNames,
+                              SchemaLoader.PerSourceParse read) {
+        this(registry, injectedNames, read, Set.of());
     }
 
     /**
@@ -98,6 +115,21 @@ public record AttributedRegistry(TypeDefinitionRegistry registry,
         if (!composed.injectedNames().isEmpty()) {
             KeyNodeSynthesiser.apply(registry, new NodeDeclaration(jooq));
         }
-        return new AttributedRegistry(registry, composed.injectedNames(), reading.read());
+        return new AttributedRegistry(registry, composed.injectedNames(), reading.read(), voucherFields(store));
+    }
+
+    /**
+     * Every voucher field's coordinate, {@code Type.field}, on either side: each field whose occurrence
+     * binds by the {@code VOUCHER} kind, an issuing field and an accepting one alike. The binding alone
+     * decides it, so an accepting field, which absorbs no member, is found as an issuing one is.
+     */
+    static Set<String> voucherFields(StoreHandle store) {
+        var b = GRAPHITRON_OCCURRENCE_BINDING;
+        var o = GRAPHITRON_OCCURRENCE;
+        return new TreeSet<>(store.dsl().selectDistinct(o.ELEMENT_COORDINATE)
+            .from(b)
+            .join(o).on(o.GRAPH_NAME.eq(b.GRAPH_NAME), o.COORDINATE.eq(b.COORDINATE))
+            .where(b.GRAPH_NAME.eq(store.graphName()), b.KIND.eq("VOUCHER"))
+            .fetch(o.ELEMENT_COORDINATE));
     }
 }

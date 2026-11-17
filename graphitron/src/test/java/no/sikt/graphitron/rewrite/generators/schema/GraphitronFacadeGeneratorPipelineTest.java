@@ -113,7 +113,7 @@ class GraphitronFacadeGeneratorPipelineTest {
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example", false, false,
-            no.sikt.graphitron.rewrite.session.SessionIdentityFixtures.handleLess(), false).get(0);
+            no.sikt.graphitron.rewrite.session.SessionIdentityFixtures.handleLess(), false, true).get(0);
 
         MethodSpec owned = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newOwnedExecutionInput"))
@@ -151,7 +151,7 @@ class GraphitronFacadeGeneratorPipelineTest {
         var schema = TestSchemaHelper.buildSchema(sdl);
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example", false, false,
             no.sikt.graphitron.rewrite.session.SessionIdentityFixtures.handled(
-                com.palantir.javapoet.ClassName.get(String.class)), false).get(0);
+                com.palantir.javapoet.ClassName.get(String.class)), false, true).get(0);
 
         MethodSpec owned = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newOwnedExecutionInput"))

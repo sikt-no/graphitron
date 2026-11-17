@@ -96,7 +96,7 @@ public class QueryNodeFetcherClassGenerator {
      * loaders.
      */
     public static List<TypeSpec> generate(String outputPackage, no.sikt.graphitron.emit.ConnectionKeyShape shape) {
-        if (!shape.writesSlot()) {
+        if (!shape.hasTenant()) {
             return List.of(untenanted(outputPackage));
         }
 

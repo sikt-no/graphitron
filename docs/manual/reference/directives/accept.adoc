@@ -2,9 +2,9 @@
 :description: Mark the voucher field of a table-bound entity, so this subgraph grants access to its rows on another subgraph's voucher.
 :!toc:
 
-Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on a connection of its own, told the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
+Marks the *voucher* field of a table-bound entity in a federated subgraph that owns the data another subgraph vouches for. The router hands the voucher over from the issuing subgraph's xref:issue.adoc[`@issue`] field; Graphitron verifies it and reads the vouched row on the connection your connection source leases for a key carrying the voucher's *vouched-for values*, so your database's row-level security decides what the vouched-for values unlock. The voucher is not a column and is never selected.
 
-NOTE: Generation does not verify vouchers yet, so a schema using `@accept` is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`.
+The entity and every field its SELECT reads, reference children nested in it included, are read on that connection. A type with a field below it, at any depth through the types its SELECT reads, that has a fetcher of its own (a split query, a service, a connection-typed field) is refused for now with `VOUCHER_ACCEPT_NOT_GENERATED`, since such a field does not yet read on the vouched connection.
 
 == SDL signature
 
@@ -44,6 +44,20 @@ type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
 ----
 
 The voucher's lookup part decodes to `id`, the type's one authored key, and its vouched-for values parse into `eierId`. Name and type both exactly as the issuing subgraph's absorbed fields.
+
+== How a voucher is read
+
+For each `_entities` representation carrying the voucher, before any type is resolved:
+
+. The voucher is decoded and checked: its format, its signature over the token and the representation's `__typename` against your verification keys, its expiry (with 30 seconds of tolerance for clock skew), its scope, and that its sections name exactly this field's `vouchesFor` fields and the fields of the key it decodes to. A representation that carries the voucher is always read through it, never past it by plain key fields.
+. Each value is coerced to its field's column, as a plain representation's key values are; a value no column takes is a failed check, not a missing row.
+. The vouched-for values become the parts of the generated `ConnectionKey`, one `Optional` per vouched-for field typed by its column (`key.eierId()` in the example), and the lookup values are read through the authored key's own SELECT on the connection your source leases for that key. Vouchers carrying the same value share one connection.
+
+Your `ConnectionSource` reads the vouched-for values off the key and returns a connection whose session sets them where your policies read them; for the key whose parts are empty it returns the request's own connection. A build that accepts vouchers has no escape hatch: `Graphitron.newExecutionInput(dsl, ...)` is not generated, since a vouched connection can only come from the request's source.
+
+A voucher that fails any check rejects the request as a whole, before any connection is taken: `GraphQL.execute` throws the generated `VoucherRejectedException` in place of a result, its message naming the check that failed and nothing from the token. A request presenting vouchers for more than one vouched-for value is rejected the same way with `VouchedValueLimitExceededException`, an error naming the limit rather than a `null` that would read as a denial. Both are arms of the generated `RequestRejectedException`, which the facade's `Graphitron.requestRejection(thrown)` answers; see xref:../../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A request rejection rejects the request]. A plain representation of the type's authored key resolves on the request's own connection, under the caller's own access: a voucher only ever adds access.
+
+Every redemption and rejection is logged at `INFO` on the logger `no.sikt.graphitron.voucher.audit`, by vouch id, scope and outcome (redeemed, or rejected with the check that failed); never the token, its values or the connection key.
 
 == What the subgraph publishes
 
@@ -94,6 +108,9 @@ Each refusal below is reported at the `@accept`.
 | `VOUCHER_ACCEPT_KEY_UNKNOWN`
 | `key` names the fields of an authored resolvable key of the type, in any order.
 
+| `VOUCHER_ACCEPT_VOUCHED_FOR_DIFFERS`
+| Every `@accept` in the graph vouches for values of one shape, the same vouched-for field names each reading a column of the same Java type, since the graph's vouched connections are keyed by one generated `ConnectionKey`. Refused at each `@accept` whose shape differs from the first accepting type's by name.
+
 | `VOUCHER_ACCEPT_NOT_GENERATED`
-| Generation does not verify vouchers yet. Removed when it does.
+| No field below the type, at any depth through the types its SELECT reads, has a fetcher of its own at any of its occurrences: such a field does not yet read on the vouched connection. Read the subtree in the entity's SELECT.
 |===

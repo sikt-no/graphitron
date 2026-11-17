@@ -379,16 +379,18 @@ class TenantRuntimeKeyTypeTest {
     }
 
     @Test
-    void singleTenantKeepsTheErasedObjectShape() {
+    void aBuildWithoutATenantColumnHasAKeyWithNoPart_andNoTenantShapedMethod() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
 
         var key = render(units, "ConnectionKey");
         assertThat(key)
-            .contains("java.util.Optional<java.lang.Object> tenant")
-            .contains("forTenant(java.lang.Object tenant)");
+            .contains("record ConnectionKey()")
+            .contains("defaultSource()")
+            .doesNotContain("forTenant")
+            .doesNotContain("Optional<");
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
-        assertThat(carrier).contains("dslFor(java.lang.Object tenantKey");
+        assertThat(carrier).doesNotContain("tenantKey").doesNotContain("forTenant").doesNotContain("key.tenant()");
     }
 }

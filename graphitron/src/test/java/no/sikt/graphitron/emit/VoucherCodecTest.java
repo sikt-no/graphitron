@@ -58,6 +58,11 @@ class VoucherCodecTest {
         for (TypeSpec spec : VoucherRuntime.render(PACKAGE)) {
             units.put(PACKAGE + ".schema." + spec.name(), spec);
         }
+        // Both rejections are arms of the connection runtime's sealed request rejection.
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator
+                .requestRejection(PACKAGE, true)) {
+            units.put(PACKAGE + ".schema." + spec.name(), spec);
+        }
         harness = EmittedCodeHarness.compileStrictly(units);
         keysType = harness.load(PACKAGE + ".schema.VoucherKeys");
         var codec = harness.load(PACKAGE + ".schema.VoucherCodec");

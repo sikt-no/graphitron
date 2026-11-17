@@ -7,7 +7,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ACCEPT_VOUCHED_FOR;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ACCEPT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_KEY_FIELD_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
@@ -37,7 +41,9 @@ import static org.jooq.impl.DSL.selectOne;
  * ({@code graphitron_key_field_binding}, kind {@code COLUMN}) is {@link Alternative.Direct}, each
  * field's column read off {@code graphitron_occurrence_column}; a key whose one field binds the node's
  * own id ({@code NODE_ID}) is {@link Alternative.NodeId}, decoded with the node's type id and key
- * columns. The node key federation synthesises is no different: it is a key whose field binds as the
+ * columns; a key minted for an {@code @accept}, whose one field binds the voucher ({@code VOUCHER}), is
+ * {@link Alternative.Voucher}, verified and decoded onto the authored key {@code graphitron_accept_key}
+ * names for it. The node key federation synthesises is no different: it is a key whose field binds as the
  * node's {@code id} does, the node id, or the column where the {@code id} carries {@code @field}. A resolvable node none of whose keys is the node id alternative is
  * given one ahead of the rest, so {@code Query.node} resolves it, unless its {@code id} is a column
  * mapping: an {@code id} carrying {@code @field} reads that column and encodes no node id, so neither
@@ -95,6 +101,35 @@ public final class EntityKeyQuery {
             }
         }
 
+        /**
+         * A key minted for an {@code @accept}: its one field is the voucher, verified rather than matched,
+         * whose lookup part decodes onto the authored key {@code decodesOnto} names, paired by identity,
+         * and whose vouched-for values key the connection the entity is read on. The vouched-for values
+         * filter nothing: they are the access decision, and the database's policies test them. It selects
+         * by the authored key's columns, so it carries no column of its own for the lookup part.
+         *
+         * @param ordinal      the minted key's {@code @key} application ordinal, its identity
+         * @param voucherField the voucher field's name, the minted key's one field
+         * @param scope        the scope the {@code @accept} accepts
+         * @param decodesOnto  the authored key the lookup part decodes onto
+         * @param vouchedFor   the vouched-for fields, each with the column it reads, in name order
+         * @param resolvable   whether this subgraph resolves the entity by the voucher key
+         */
+        record Voucher(int ordinal, String voucherField, String scope, Identity.Key decodesOnto,
+                       List<KeyField> vouchedFor, boolean resolvable) implements Alternative {
+            public Voucher {
+                Objects.requireNonNull(voucherField, "voucherField");
+                Objects.requireNonNull(scope, "scope");
+                Objects.requireNonNull(decodesOnto, "decodesOnto");
+                vouchedFor = List.copyOf(vouchedFor);
+            }
+
+            @Override
+            public Identity identity() {
+                return new Identity.Key(ordinal);
+            }
+        }
+
         /** A key whose one field is the node's own id, decoded into the node's key columns. */
         record NodeId(String typeId, List<Column> keyColumns, boolean resolvable) implements Alternative {
             public NodeId {
@@ -122,6 +157,23 @@ public final class EntityKeyQuery {
         public boolean resolvable() {
             return alternatives.stream().anyMatch(Alternative::resolvable);
         }
+
+        /** The alternative {@code identity} names, which a voucher alternative decodes onto. */
+        public Alternative alternative(Identity identity) {
+            return alternatives.stream().filter(a -> a.identity().equals(identity)).findFirst()
+                .orElseThrow(() -> new IllegalStateException("Entity '" + typeName + "' has no key alternative "
+                    + identity));
+        }
+
+        /** The declaration index of the alternative {@code identity} names. */
+        public int indexOf(Identity identity) {
+            for (int i = 0; i < alternatives.size(); i++) {
+                if (alternatives.get(i).identity().equals(identity)) {
+                    return i;
+                }
+            }
+            throw new IllegalStateException("Entity '" + typeName + "' has no key alternative " + identity);
+        }
     }
 
     private record RawField(String fieldName, String kind, Column column) {}
@@ -129,6 +181,9 @@ public final class EntityKeyQuery {
     private record RawKey(int ordinal, boolean resolvable, List<RawField> fields) {}
 
     private record RawNode(String typeId, List<Column> keyColumns) {}
+
+    private record RawAccept(int ordinal, String voucherField, String scope, int decodesOnto,
+                             List<KeyField> vouchedFor) {}
 
     /** The graph's entities, in type name order. */
     public static List<Entity> read(StoreHandle store) {
@@ -177,6 +232,37 @@ public final class EntityKeyQuery {
                     a.DIRECTIVE_NAME.eq("key"))
                 .orderBy(a.ORDINAL))
             .convertFrom(r -> r.map(Records.mapping(RawKey::new)));
+        // The type's @accept: the minted key's ordinal and field, the scope, the authored key its vouchers
+        // decode onto, and its vouched-for fields with the columns they read, in name order.
+        var av = GRAPHITRON_ACCEPT_VOUCHED_FOR;
+        var vf = GRAPHITRON_FIELD;
+        var voc = GRAPHITRON_OCCURRENCE_COLUMN.as("voc");
+        var vc = SQL_COLUMN.as("vc");
+        var amk = GRAPHITRON_MINTED_KEY.as("amk");
+        var ak = GRAPHITRON_ACCEPT_KEY;
+        var ae = GRAPHITRON_AST_ACCEPT_ENTRY;
+        var vouchedFor = multiset(
+            select(av.FIELD_NAME, voc.COLUMN_NAME, vc.JOOQ_NAME, vc.BINDING_TYPE, vc.DATABASE_TYPE)
+                .from(av)
+                .join(vf).on(vf.GRAPH_NAME.eq(av.GRAPH_NAME), vf.TYPE_NAME.eq(av.TYPE_NAME),
+                    vf.FIELD_NAME.eq(av.FIELD_NAME))
+                .join(voc).on(voc.GRAPH_NAME.eq(vf.GRAPH_NAME), voc.COORDINATE.eq(vf.COORDINATE),
+                    voc.BOUND.eq(tt.TABLE_SCHEMA.concat(inline(".")).concat(tt.TABLE_NAME)))
+                .join(vc).on(vc.SOURCE_NAME.eq(voc.TABLE_SOURCE_NAME), vc.TABLE_SCHEMA.eq(voc.TABLE_SCHEMA),
+                    vc.TABLE_NAME.eq(voc.TABLE_NAME), vc.COLUMN_NAME.eq(voc.COLUMN_NAME))
+                .where(av.GRAPH_NAME.eq(ak.GRAPH_NAME), av.SOURCE_NAME.eq(ak.SOURCE_NAME),
+                    av.SOURCE_LINE.eq(ak.SOURCE_LINE), av.SOURCE_COLUMN.eq(ak.SOURCE_COLUMN))
+                .orderBy(av.FIELD_NAME))
+            .convertFrom(r -> r.map(f -> new KeyField(f.value1(),
+                new Column(f.value2(), f.value3(), f.value4(), f.value5()))));
+        var accept = multiset(
+            select(amk.ORDINAL, amk.FIELDS, ae.SCOPE, ak.ORDINAL, vouchedFor)
+                .from(amk)
+                .join(ak).on(ak.GRAPH_NAME.eq(amk.GRAPH_NAME), ak.TYPE_NAME.eq(amk.TYPE_NAME))
+                .join(ae).on(ae.GRAPH_NAME.eq(ak.GRAPH_NAME), ae.SOURCE_NAME.eq(ak.SOURCE_NAME),
+                    ae.SOURCE_LINE.eq(ak.SOURCE_LINE), ae.SOURCE_COLUMN.eq(ak.SOURCE_COLUMN))
+                .where(amk.GRAPH_NAME.eq(tt.GRAPH_NAME), amk.TYPE_NAME.eq(tt.TYPE_NAME), amk.ROLE.eq("ACCEPT")))
+            .convertFrom(r -> r.map(Records.mapping(RawAccept::new)));
         // The type as a node this subgraph resolves, with its type id and key columns in key order.
         var node = multiset(
             select(n.TYPE_ID, multiset(
@@ -194,7 +280,7 @@ public final class EntityKeyQuery {
         var out = new ArrayList<Entity>();
         store.dsl()
             .select(tt.TYPE_NAME, tt.TABLE_SCHEMA, tt.TABLE_NAME, t.CLASS_FQN, t.JOOQ_NAME, sc.TABLES_CLASS_FQN,
-                node, keys)
+                node, keys, accept)
             .from(tt)
             .join(t).on(t.SOURCE_NAME.eq(tt.TABLE_SOURCE_NAME), t.TABLE_SCHEMA.eq(tt.TABLE_SCHEMA),
                 t.TABLE_NAME.eq(tt.TABLE_NAME))
@@ -206,7 +292,8 @@ public final class EntityKeyQuery {
                     n.TYPE_NAME.eq(tt.TYPE_NAME), servedById))))
             .orderBy(tt.TYPE_NAME)
             .forEach(r -> entity(r.value1(), r.value2(), r.value3(), r.value4(), r.value5(), r.value6(),
-                r.value7().isEmpty() ? null : r.value7().getFirst(), r.value8()).ifPresent(out::add));
+                r.value7().isEmpty() ? null : r.value7().getFirst(), r.value8(),
+                r.value9().isEmpty() ? null : r.value9().getFirst()).ifPresent(out::add));
         return List.copyOf(out);
     }
 
@@ -216,15 +303,25 @@ public final class EntityKeyQuery {
      */
     private static java.util.Optional<Entity> entity(String typeName, String schema, String table,
                                                      String tableClass, String tableField, String tablesClass,
-                                                     RawNode node, List<RawKey> keys) {
+                                                     RawNode node, List<RawKey> keys, RawAccept accept) {
         var alternatives = new ArrayList<Alternative>();
         for (var key : keys) {
             if (key.fields().isEmpty()) {
                 continue;
             }
-            // A voucher key is resolved by verifying the voucher, not by matching columns, and no
-            // alternative here states that yet; a graph carrying one is refused before generation.
+            // A voucher key is resolved by verifying the voucher, not by matching columns: its lookup
+            // part decodes onto the authored key the store pairs the @accept with, by identity.
             if (key.fields().stream().anyMatch(field -> "VOUCHER".equals(field.kind()))) {
+                if (accept == null || accept.ordinal() != key.ordinal()) {
+                    throw new IllegalStateException("Entity '" + typeName + "' carries a voucher key #"
+                        + key.ordinal() + " the store states no @accept for");
+                }
+                if (keys.stream().noneMatch(k -> k.ordinal() == accept.decodesOnto())) {
+                    throw new IllegalStateException("Entity '" + typeName + "' accepts vouchers decoding onto"
+                        + " key #" + accept.decodesOnto() + ", which it does not carry");
+                }
+                alternatives.add(new Alternative.Voucher(key.ordinal(), accept.voucherField(), accept.scope(),
+                    new Identity.Key(accept.decodesOnto()), accept.vouchedFor(), key.resolvable()));
                 continue;
             }
             boolean nodeId = key.fields().size() == 1 && "NODE_ID".equals(key.fields().getFirst().kind());

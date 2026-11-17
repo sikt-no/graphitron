@@ -20,9 +20,11 @@ import java.util.Map;
  *
  * <p>The decode, per representation:
  * <ol>
- *   <li>Walk alternatives in most-specific-first order and pick the first resolvable alternative
- *       whose {@code requiredFields} are all present in the rep (excluding {@code __typename}). No
- *       match: the slot stays {@code null}.</li>
+ *   <li>Walk alternatives in priority order and pick the first resolvable alternative whose
+ *       {@code requiredFields} are all present in the rep (excluding {@code __typename}). A voucher
+ *       alternative comes first, so a representation carrying a voucher is verified or rejected and
+ *       never resolved past it by plain key fields; the rest go most-specific first. No match: the
+ *       slot stays {@code null}.</li>
  *   <li>Decode the rep into a column-value row: DIRECT coerces each rep field value through
  *       {@code ColumnValues.coerce}; NODE_ID passes {@code rep.id} through
  *       {@code NodeIdEncoder.decodeColumns}. A value that is not a value of its column skips the
@@ -128,16 +130,41 @@ final class HandleMethodBody {
     }
 
     /**
+     * What an arm of {@link #emitAlternativeCascade} does with a representation that carries a voucher:
+     * with {@code rep} in scope, the whole arm, its verification, decode and load included. Only the
+     * entity loaders read a voucher alternative.
+     */
+    @FunctionalInterface
+    interface VoucherArm {
+        void emit(CodeBlock.Builder b, EntityKeyQuery.Alternative.Voucher voucher);
+    }
+
+    /**
+     * The tenanted grouping's voucher arm, which is a generator fault: {@code @accept} in a
+     * {@code <tenantColumn>} build is refused, so the grouping never meets a voucher alternative.
+     */
+    private static final VoucherArm NO_VOUCHERS = (b, voucher) -> {
+        throw EntityKeys.voucherHasNoSelect(voucher);
+    };
+
+    /**
      * The one decode of a representation {@code rep} in scope, shared by the entity loaders and the
-     * tenanted grouping: the most-specific resolvable alternative whose required fields {@code rep}
-     * carries, as an if-else cascade in priority order; its key values decoded into {@code cols}
-     * (DIRECT through {@code ColumnValues.coerce}, NODE_ID through {@code NodeIdEncoder.decodeColumns});
-     * the per-representation {@code repEnv}; then {@code decoded}. A representation whose value is not
-     * a value of its column runs {@code skip}, a statement, and nothing reaches SQL for it. A
-     * representation no alternative matches falls out of the cascade.
+     * tenanted grouping: the resolvable alternative whose required fields {@code rep} carries, as an
+     * if-else cascade in priority order (a voucher alternative first, then most-specific first); its key
+     * values decoded into {@code cols} (DIRECT through {@code ColumnValues.coerce}, NODE_ID through
+     * {@code NodeIdEncoder.decodeColumns}); the per-representation {@code repEnv}; then {@code decoded}.
+     * A representation whose value is not a value of its column runs {@code skip}, a statement, and
+     * nothing reaches SQL for it. A representation no alternative matches falls out of the cascade. A
+     * voucher alternative's arm is {@code voucherArm}'s whole.
      */
     static void emitAlternativeCascade(CodeBlock.Builder b, EntityKeyQuery.Entity entity, ClassName nodeIdEncoder,
                                        CodeBlock skip, DecodedArm decoded) {
+        emitAlternativeCascade(b, entity, nodeIdEncoder, skip, decoded, NO_VOUCHERS);
+    }
+
+    /** {@link #emitAlternativeCascade(CodeBlock.Builder, EntityKeyQuery.Entity, ClassName, CodeBlock, DecodedArm)}, with the voucher arm. */
+    static void emitAlternativeCascade(CodeBlock.Builder b, EntityKeyQuery.Entity entity, ClassName nodeIdEncoder,
+                                       CodeBlock skip, DecodedArm decoded, VoucherArm voucherArm) {
         var prioritized = priorityOrder(entity.alternatives());
         boolean any = false;
         for (var p : prioritized) {
@@ -149,6 +176,10 @@ final class HandleMethodBody {
             } else {
                 b.beginControlFlow("if (" + cond + ")", matchArgs(alt));
                 any = true;
+            }
+            if (alt instanceof EntityKeyQuery.Alternative.Voucher voucher) {
+                voucherArm.emit(b, voucher);
+                continue;
             }
             emitDecode(b, entity, alt, nodeIdEncoder, skip);
             decoded.emit(b, alt, p.declarationIndex());
@@ -194,6 +225,7 @@ final class HandleMethodBody {
                     nodeIdEncoder, nodeId.typeId(), columnRefs(entity, EntityKeys.columns(nodeId)));
                 b.addStatement("if (cols == null) $L", skip);
             }
+            case EntityKeyQuery.Alternative.Voucher voucher -> throw EntityKeys.voucherHasNoSelect(voucher);
             case EntityKeyQuery.Alternative.Direct direct -> {
                 var bindings = direct.fields();
                 var bindingColumns = EntityKeys.columns(direct);
@@ -248,7 +280,7 @@ final class HandleMethodBody {
     }
 
     /** {@code Tables.<TABLE>.<COLUMN>} for one of the entity table's columns. */
-    private static CodeBlock columnRef(EntityKeyQuery.Entity entity, ColumnRef column) {
+    static CodeBlock columnRef(EntityKeyQuery.Entity entity, ColumnRef column) {
         return CodeBlock.of("$T.$L.$L", CatalogRefs.className(EntityKeys.tablesClass(entity)),
             entity.tableField(), column.javaName());
     }
@@ -372,9 +404,11 @@ final class HandleMethodBody {
         for (int i = 0; i < alternatives.size(); i++) {
             indexed.add(new Prioritized(alternatives.get(i), i));
         }
-        // Most required fields first; ties broken by declaration order.
+        // A voucher first, so a representation carrying one is verified or rejected and never resolved
+        // past it by plain key fields; then most required fields first; ties broken by declaration order.
         indexed.sort(Comparator
-            .comparingInt((Prioritized p) -> -EntityKeys.requiredFields(p.alt()).size())
+            .comparingInt((Prioritized p) -> p.alt() instanceof EntityKeyQuery.Alternative.Voucher ? 0 : 1)
+            .thenComparingInt((Prioritized p) -> -EntityKeys.requiredFields(p.alt()).size())
             .thenComparingInt(Prioritized::declarationIndex));
         return indexed;
     }

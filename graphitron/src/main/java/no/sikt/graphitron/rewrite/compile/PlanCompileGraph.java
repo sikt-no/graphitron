@@ -281,6 +281,10 @@ public final class PlanCompileGraph {
                         // error at its slot, built by the router.
                         precise(dispatch.unit(), require(GlobalUnitKind.ERROR_ROUTER));
                         precise(dispatch.unit(), require(GlobalUnitKind.CLIENT_EXCEPTION));
+                        // An accepting build's dispatch decodes vouchers through the codec and rejects a
+                        // failed check through the carrier.
+                        refOf(GlobalUnitKind.VOUCHER_CODEC).ifPresent(c -> declared(dispatch.unit(), c));
+                        refOf(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION).ifPresent(c -> declared(dispatch.unit(), c));
                     }
                     // The facets and facet value records reference nothing generated; their
                     // readers reach them by the precise edges in addBlanketEdges.
@@ -310,7 +314,12 @@ public final class PlanCompileGraph {
                      CONNECTION_HELPER, PAGE_INFO, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, TABLE_ALIASES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
-                     ERROR_MAPPINGS, VOUCHER_KEYS, VOUCHER_REJECTED_EXCEPTION -> { }
+                     ERROR_MAPPINGS, VOUCHER_KEYS -> { }
+                // Each arm of the request rejection extends the connection runtime's sealed base,
+                // which permits it.
+                case VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION ->
+                    runtimeUnit(no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED)
+                        .ifPresent(r -> declared(units.get(0), r));
                 // The codec signs with the keys and throws the rejection.
                 // The voucher fetchers sign through the codec's issuers.
                 case VOUCHER_FETCHERS -> precise(units.get(0), require(GlobalUnitKind.VOUCHER_CODEC));
@@ -352,6 +361,7 @@ public final class PlanCompileGraph {
                     var lease = runtimeUnit("Lease");
                     var keyNotPermitted = runtimeUnit("KeyNotPermitted");
                     var acquisitionFailed = runtimeUnit("AcquisitionFailedException");
+                    var requestRejected = runtimeUnit(no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED);
                     var sources = runtimeUnit("ConnectionSources");
                     var connectionKey = runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME);
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
@@ -377,6 +387,15 @@ public final class PlanCompileGraph {
                         lease.ifPresent(l -> declared(x, l));
                         connectionKey.ifPresent(ck -> declared(x, ck));
                     });
+                    // The sealed request rejection names every arm it permits, and each arm extends it.
+                    requestRejected.ifPresent(x -> {
+                        acquisitionFailed.ifPresent(a -> {
+                            declared(x, a);
+                            declared(a, x);
+                        });
+                        refOf(GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION).ifPresent(v -> declared(x, v));
+                        refOf(GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION).ifPresent(v -> declared(x, v));
+                    });
                     // The response's clientErrorMessage takes the client exception.
                     fetcherErrorResponse.ifPresent(l -> refOf(GlobalUnitKind.CLIENT_EXCEPTION)
                         .ifPresent(ce -> declared(l, ce)));
@@ -397,6 +416,9 @@ public final class PlanCompileGraph {
                         source.ifPresent(x -> declared(t, x));
                         keyNotPermitted.ifPresent(x -> declared(t, x));
                         acquisitionFailed.ifPresent(x -> declared(t, x));
+                        // The carrier's one slot holds the request rejection, the limit among its arms.
+                        requestRejected.ifPresent(x -> declared(t, x));
+                        refOf(GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION).ifPresent(x -> declared(t, x));
                         // The fan-out failure path hands its throw to the consumer's log through
                         // the router's shared guard.
                         fetcherErrorLog.ifPresent(l -> declared(t, l));
@@ -421,6 +443,8 @@ public final class PlanCompileGraph {
                     // acquisition out of execute.
                     runtimeUnit("ConnectionSource").ifPresent(x -> declared(instrumentation, x));
                     runtimeUnit("AcquisitionFailedException").ifPresent(x -> declared(instrumentation, x));
+                    runtimeUnit(no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED)
+                        .ifPresent(x -> declared(instrumentation, x));
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("BatchSizeLimit").ifPresent(l -> declared(instrumentation, l));

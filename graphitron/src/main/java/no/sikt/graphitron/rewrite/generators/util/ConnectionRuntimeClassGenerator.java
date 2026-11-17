@@ -40,8 +40,10 @@ import java.util.Optional;
  * connection, never twice for one key in one request, and releases every lease it got exactly once
  * on every completion path (success, error, cancellation). {@code KeyNotPermitted} refuses a key:
  * the field that asked answers with an error, and an entity or node lookup with {@code null}. Any
- * other throw becomes an {@code AcquisitionFailedException}, remembered by the carrier and thrown out
- * of {@code GraphQL.execute} in place of the result. What the lease's connection carries (identity,
+ * other throw becomes an {@code AcquisitionFailedException}, one arm of the sealed
+ * {@code RequestRejectedException}: the carrier remembers the first rejection in its one slot (a failed
+ * voucher check and a second vouched-for value are the other arms), acquires nothing after it, and the
+ * instrumentation throws it out of {@code GraphQL.execute} in place of the result. What the lease's connection carries (identity,
  * role, row-level security settings) is the source's business; the ready-made
  * {@code ConnectionSources.mounting} keeps the mount, unmount and PostgreSQL reset Graphitron used to
  * own.
@@ -94,6 +96,11 @@ public final class ConnectionRuntimeClassGenerator {
      * the first, and the instrumentation throws it out of {@code GraphQL.execute}.
      */
     public static final String ACQUISITION_FAILED_CLASS_NAME = "AcquisitionFailedException";
+    /**
+     * The sealed request rejection: a failed acquisition, and in a build with the voucher runtime a
+     * failed voucher check and a second vouched-for value. The carrier's one slot holds it.
+     */
+    public static final String REQUEST_REJECTED_CLASS_NAME = no.sikt.graphitron.emit.VoucherRuntime.REQUEST_REJECTED;
 
     /** The name the request's {@code ConnectionSource} travels under as a parameter and a field. */
     static final String SOURCE_SLOT = "source";
@@ -233,8 +240,9 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * As {@link #generate(String, SessionIdentityRows, ConnectionKeyShape, CodeBlock)}, for a build
-     * that may vouch: where {@code vouches}, every public runtime constructor takes the
-     * {@code VoucherKeys} last.
+     * that may issue or accept vouchers: where {@code vouches}, the build writes the voucher runtime,
+     * every public runtime constructor takes the {@code VoucherKeys} last, and the sealed request
+     * rejection permits the voucher arms.
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches) {
@@ -251,7 +259,7 @@ public final class ConnectionRuntimeClassGenerator {
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity,
                                           ConnectionKeyShape shape, CodeBlock tenantColumn, boolean vouches,
                                           boolean failureMessages) {
-        TypeName tenantKeyType = shape.tenantKey().orElse(null);
+        TypeName tenantKeyType = shape.tenant().orElse(null);
         if ((tenantKeyType == null) != (tenantColumn == null)) {
             throw new IllegalArgumentException("A multi-tenant runtime needs both the tenant key type and"
                 + " the representative tenant column; a single-tenant one neither (key type: "
@@ -265,6 +273,7 @@ public final class ConnectionRuntimeClassGenerator {
         var lease = ClassName.get(schemaPackage, LEASE_CLASS_NAME);
         var keyNotPermitted = ClassName.get(schemaPackage, KEY_NOT_PERMITTED_CLASS_NAME);
         var acquisitionFailed = ClassName.get(schemaPackage, ACQUISITION_FAILED_CLASS_NAME);
+        var requestRejected = ClassName.get(schemaPackage, REQUEST_REJECTED_CLASS_NAME);
         var connectionSources = ClassName.get(schemaPackage, CONNECTION_SOURCES_CLASS_NAME);
         TypeName handleType = identity.handleType().orElse(null);
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
@@ -281,19 +290,19 @@ public final class ConnectionRuntimeClassGenerator {
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var columnValues = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
 
-        boolean multiTenant = shape.writesSlot();
+        boolean multiTenant = shape.hasTenant();
         var connectionKey = ConnectionKeyShape.className(outputPackage);
         // Every build keys its connections by the ConnectionKey; an untenanted build's tenant part is never
         // present from a routed site, but the key is the same value either way.
         TypeName keyType = connectionKey;
 
         var units = new ArrayList<TypeSpec>();
-        units.add(connectionKey(connectionKey, tenantKey));
+        units.add(connectionKey(connectionKey, shape));
         units.add(connectionSource(connectionSource, lease, connectionKey, keyNotPermitted,
             multiTenant ? tenantKey : null));
         units.add(lease(lease, handleType));
         units.add(keyNotPermitted(keyNotPermitted));
-        units.add(acquisitionFailed(acquisitionFailed));
+        units.addAll(requestRejection(outputPackage, vouches));
         units.add(connectionSources(connectionSources, connectionSource, lease, connectionKey, handleType,
             multiTenant ? tenantKey : null));
         units.add(pinnedConnection(pinnedConnection, connectionSource, lease, connectionKey, keyNotPermitted,
@@ -304,11 +313,33 @@ public final class ConnectionRuntimeClassGenerator {
             failureMessages, connectionKey, connectionSource));
         units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, identity, tenantColumn, errorRouter, columnValues, acquisitionFailed,
-            keyNotPermitted, connectionSource, keyType, connectionKey, failureMessages));
+            keyNotPermitted, connectionSource, keyType, connectionKey, failureMessages, requestRejected,
+            shape.vouchedFor().isEmpty() ? null
+                : ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.LIMIT),
+            shape.vouchedFor().isEmpty() ? null
+                : ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)));
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
         units.add(batchSizeLimit(batchSizeLimit));
         return List.copyOf(units);
+    }
+
+    /**
+     * The sealed {@code RequestRejectedException} and its {@code AcquisitionFailedException} arm, as the
+     * connection runtime writes them into {@code <outputPackage>.schema}; where {@code voucherArms}, the
+     * base also permits the voucher runtime's two arms, which that runtime writes. For a harness that
+     * compiles the voucher runtime on its own.
+     */
+    public static List<TypeSpec> requestRejection(String outputPackage, boolean voucherArms) {
+        String schemaPackage = outputPackage + ".schema";
+        var requestRejected = ClassName.get(schemaPackage, REQUEST_REJECTED_CLASS_NAME);
+        var acquisitionFailed = ClassName.get(schemaPackage, ACQUISITION_FAILED_CLASS_NAME);
+        return List.of(
+            requestRejected(requestRejected, acquisitionFailed, voucherArms
+                ? List.of(ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.REJECTED),
+                    ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.LIMIT))
+                : List.of()),
+            acquisitionFailed(acquisitionFailed, requestRejected));
     }
 
     /** Back-compatible overload for callers that mount no identity (unit-tier drivers, no {@code <sessionState>}). */
@@ -1130,10 +1161,14 @@ public final class ConnectionRuntimeClassGenerator {
      * multi-tenant refusal after a pin keeps naming the scatter deadline, which shares its check.
      */
     private static CodeBlock closedRefusal(boolean multiTenant, boolean pinned) {
-        // The carrier is keyed by the ConnectionKey; its message names the tenant part as the Optional key
-        // it replaced did.
+        // The carrier is keyed by the ConnectionKey; in a build whose key has a tenant part its message
+        // names the tenant as the Optional key it replaced did. A key with no tenant part has nothing
+        // to name, and a vouched-for value is never named.
+        if (!multiTenant) {
+            return CodeBlock.of("$S", "A connection was requested after the operation had released its connections.");
+        }
         String tenant = "key.tenant()";
-        if (multiTenant && pinned) {
+        if (pinned) {
             return CodeBlock.of("$S + $L + $S", "Key '", tenant,
                 "' was pinned after its scatter deadline or after the operation completed.");
         }
@@ -1176,7 +1211,9 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName errorRouter, ClassName columnValues,
                                               ClassName acquisitionFailed, ClassName keyNotPermitted,
                                               ClassName connectionSource, TypeName keyType,
-                                              ClassName connectionKey, boolean failureMessages) {
+                                              ClassName connectionKey, boolean failureMessages,
+                                              ClassName requestRejected, ClassName vouchedValueLimit,
+                                              ClassName voucherCodec) {
         TypeName handleType = identity.handleType().orElse(null);
         boolean handled = handleType != null;
         var clientException = ClassName.get(self.packageName(),
@@ -1208,12 +1245,27 @@ public final class ConnectionRuntimeClassGenerator {
                 + "again, and {@link #releaseAll} routes it through {@code PinnedConnection.abort()}\n"
                 + "instead of a close that would return a possibly-live connection to the pool.\n")
             .build();
-        var acquisitionFailureField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, acquisitionFailed),
-                "firstAcquisitionFailure", Modifier.PRIVATE, Modifier.FINAL)
+        var acquisitionFailureField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, requestRejected),
+                "firstRejection", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", ATOMIC_REFERENCE)
-            .addJavadoc("The operation's first failed acquisition, set once ({@code compareAndSet}, so concurrent\n"
-                + "acquisitions resolve to one winner). Every later acquisition on any key rethrows it\n"
-                + "rather than asking the source again: the request is rejected as a whole.\n")
+            .addJavadoc("The operation's first request rejection, set once ({@code compareAndSet}, so concurrent\n"
+                + "rejections resolve to one winner): a failed acquisition, a failed voucher check or a second\n"
+                + "vouched-for value. Once it is set the carrier acquires nothing more: every later acquisition\n"
+                + "on any key rethrows it rather than asking the source again, and the request is rejected as\n"
+                + "a whole.\n")
+            .build();
+        var vouchedKeyField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, keyType),
+                "vouchedKey", Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("new $T<>()", ATOMIC_REFERENCE)
+            .addJavadoc("The one key with vouched-for parts this request acquires by, set by the first such\n"
+                + "acquisition. A request reads on one vouched connection: another key with vouched-for parts\n"
+                + "rejects it ({@link #admitVouched}).\n")
+            .build();
+        var keyIndexesField = FieldSpec.builder(ParameterizedTypeName.get(MAP, keyType, ClassName.get(Integer.class)),
+                "keyIndexes", Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("new $T<>()", CONCURRENT_HASH_MAP)
+            .addJavadoc("Each distinct key this request named a loader by, numbered in order of first use: the\n"
+                + "loader name's key segment, so a key's parts never reach a name.\n")
             .build();
         var sourceField = FieldSpec.builder(connectionSource, SOURCE_SLOT, Modifier.PRIVATE, Modifier.FINAL)
             .addJavadoc("The request's connection source, held for the life of the request: any fetcher may\n"
@@ -1300,12 +1352,18 @@ public final class ConnectionRuntimeClassGenerator {
                 .endControlFlow();
         }
         entryForBuilder
-            .addComment("A failed acquisition is remembered for the operation: answer every later one with it,")
-            .addComment("after the remembered refusals above so their order is unchanged.")
-            .addStatement("$T rejected = firstAcquisitionFailure.get()", acquisitionFailed)
+            .addComment("A request rejection is remembered for the operation: once there is one, the carrier")
+            .addComment("acquires nothing more and answers every later acquisition with it, after the")
+            .addComment("remembered refusals above so their order is unchanged.")
+            .addStatement("$T rejected = firstRejection.get()", requestRejected)
             .beginControlFlow("if (rejected != null)")
             .addStatement("throw rejected")
             .endControlFlow();
+        if (vouchedValueLimit != null) {
+            entryForBuilder
+                .addComment("One vouched connection per request: a second key with vouched-for parts rejects it.")
+                .addStatement("admitVouched(key)");
+        }
         entryForBuilder
             .beginControlFlow("if (closed)")
             .addComment("The operation already released its connections. Refuse before borrowing: nothing")
@@ -1343,8 +1401,7 @@ public final class ConnectionRuntimeClassGenerator {
                 "This request may not use that connection.")
             .addStatement("throw new $T(refusedKeys.get(key))", clientException)
             .nextControlFlow("catch ($T e)", acquisitionFailed)
-            .addStatement("firstAcquisitionFailure.compareAndSet(null, e)")
-            .addStatement("throw firstAcquisitionFailure.get()")
+            .addStatement("throw reject(e)")
             .endControlFlow();
         entryForBuilder
             .beginControlFlow(multiTenant
@@ -1371,8 +1428,24 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("Resolves (minting on first demand) the carrier entry for {@code key}, leasing its\n"
                 + "connection from the request's source. A key the source refuses answers with a client error,\n"
                 + "and the refusal is remembered, so the source is never asked for that key again in this\n"
-                + "request; any other failure to lease is remembered and rejects the request. Every keyed\n"
-                + "acquisition in the carrier resolves through this method.\n")
+                + "request; any other failure to lease is remembered and rejects the request, and once the\n"
+                + "request is rejected nothing more is acquired. Every keyed acquisition in the carrier\n"
+                + "resolves through this method.\n")
+            .build();
+
+        var reject = MethodSpec.methodBuilder("reject")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(requestRejected)
+            .addParameter(requestRejected, "rejection")
+            .addStatement("firstRejection.compareAndSet(null, $T.requireNonNull(rejection, $S))", OBJECTS, "rejection")
+            .addStatement("return firstRejection.get()")
+            .addJavadoc("Rejects the request: remembers {@code rejection} in the carrier's one slot unless an\n"
+                + "earlier rejection holds it, and returns the one that does, for the caller to throw. From\n"
+                + "then on the carrier acquires nothing, and the instrumentation throws the remembered\n"
+                + "rejection in place of the result. The entity dispatch rejects a failed voucher check here,\n"
+                + "while it registers representations, so no connection is taken after it.\n"
+                + "@param rejection what rejects the request\n"
+                + "@return the request's rejection, the first remembered\n")
             .build();
 
         var dslFor = MethodSpec.methodBuilder("dslFor")
@@ -1524,7 +1597,40 @@ public final class ConnectionRuntimeClassGenerator {
         carrier.addField(closedField);
         carrier.addMethod(constructor)
             .addMethod(entryFor)
-            .addMethod(dslFor)
+            .addMethod(reject);
+        if (multiTenant) {
+            carrier.addMethod(dslFor);
+        }
+        if (vouchedValueLimit != null) {
+            carrier.addField(vouchedKeyField)
+                .addMethod(admitVouched(keyType, vouchedValueLimit));
+        }
+        if (voucherCodec != null) {
+            var verifier = voucherCodec.nestedClass("Verifier");
+            carrier.addField(FieldSpec.builder(verifier, "voucherVerifier", Modifier.PRIVATE, Modifier.VOLATILE)
+                    .addJavadoc("The request's voucher verifier, made on the first voucher it checks, against the\n"
+                        + "instant it was made; {@code null} until then.\n")
+                    .build())
+                .addMethod(MethodSpec.methodBuilder("voucherVerifier")
+                    .addModifiers(Modifier.PUBLIC)
+                    .returns(verifier)
+                    .addStatement("$T verifier = voucherVerifier", verifier)
+                    .beginControlFlow("if (verifier == null)")
+                    .addStatement("verifier = $T.verifier(runtime.voucherKeys(), $T.now())", voucherCodec,
+                        ClassName.get("java.time", "Instant"))
+                    .addStatement("voucherVerifier = verifier")
+                    .endControlFlow()
+                    .addStatement("return verifier")
+                    .addJavadoc("The verifier this request's vouchers are checked with: the runtime's verification\n"
+                        + "keys, and the instant of the request's first check, so every voucher of one request\n"
+                        + "is held to one clock. It needs no connection.\n")
+                    .build());
+        }
+        carrier.addField(keyIndexesField)
+            .addField(FieldSpec.builder(ATOMIC_INTEGER, "nextKeyIndex", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T()", ATOMIC_INTEGER)
+                .build())
+            .addMethod(keyIndex(keyType))
             .addMethod(dslDefault)
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
@@ -1532,9 +1638,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(keyedDslFor(connectionKey))
             .addMethod(staticKeyedDslFor(self, connectionKey))
             .addMethod(staticKeyedDslForIfPermitted(self, clientException, connectionKey))
-            .addMethod(entityLoaderName(connectionKey))
-            .addMethod(acquisitionCause(acquisitionFailed))
-            .addMethod(isAcquisitionFailure())
+            .addMethod(entityLoaderName(self, connectionKey))
+            .addMethod(rejectionCause(requestRejected, acquisitionFailed))
+            .addMethod(isRequestRejection())
             .addMethod(MutationFieldScopeEmitter.beginField(self))
             .addMethod(MutationFieldScopeEmitter.enlist(self, provider, keyType, multiTenant))
             .addMethod(MutationFieldScopeEmitter.await(self))
@@ -1555,12 +1661,12 @@ public final class ConnectionRuntimeClassGenerator {
                     freshAcquisition, handled))
                 .addMethod(MutationFieldScopeEmitter.endedOverTransaction());
         }
-        carrier.addMethod(MethodSpec.methodBuilder("acquisitionFailure")
+        carrier.addMethod(MethodSpec.methodBuilder("requestRejection")
             .addModifiers(Modifier.PUBLIC)
-            .returns(ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), acquisitionFailed))
-            .addStatement("return $T.ofNullable(firstAcquisitionFailure.get())", ClassName.get("java.util", "Optional"))
-            .addJavadoc("The operation's first failed acquisition, if any. Read by the instrumentation when the\n"
-                + "operation completes, to throw it in place of the result.\n")
+            .returns(ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), requestRejected))
+            .addStatement("return $T.ofNullable(firstRejection.get())", ClassName.get("java.util", "Optional"))
+            .addJavadoc("The operation's request rejection, if any: the first remembered. Read by the\n"
+                + "instrumentation when the operation completes, to throw it in place of the result.\n")
             .build());
         if (handled) {
             carrier.addMethod(sessionHandleAccessor(handleType));
@@ -1602,7 +1708,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(mapTenantLeaves())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName(connectionKey))
-                .addMethod(handedDownLoaderName(connectionKey))
+                .addMethod(handedDownLoaderName(self, connectionKey))
                 .addMethod(tenantLoaderNameFor())
                 .addType(outcomeType(self, tenantKey))
                 .addType(fanOutFailureType());
@@ -1767,46 +1873,125 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code record ConnectionKey(Optional<K> tenant)}: the value the carrier keys its connections by
-     * and the one value graphql-java's per-subtree {@code localContext} slot carries in generated code,
-     * so an inherited acquisition below a routed row takes the connection the row was read on. Its
-     * parts are the build's {@link ConnectionKeyShape}: the tenant, empty for the default source. Record
-     * equality is the map key's, and the named factories say which connection a site means; the one
-     * reader of the slot is {@code tenantIn}, so no site casts the slot's value itself.
+     * {@code record ConnectionKey(...)}: the value the carrier keys its connections by and the one value
+     * graphql-java's per-subtree {@code localContext} slot carries in generated code, so an inherited
+     * acquisition below a routed row takes the connection the row was read on. Its components are the
+     * build's {@link ConnectionKeyShape}: none in a build with neither a tenant column nor an accepting
+     * field, the tenant in a {@code <tenantColumn>} build, one per vouched-for field in an accepting one,
+     * each an {@code Optional} empty for the request's own connection. Record equality is the map key's,
+     * and the named factories say which connection a site means. {@code toString} names the parts
+     * present and never a value, since a vouched-for value is a credential's content.
      */
-    private static TypeSpec connectionKey(ClassName self, TypeName tenantKey) {
-        var optionalTenant = ParameterizedTypeName.get(OPTIONAL, tenantKey);
-        return TypeSpec.recordBuilder(self)
-            .addModifiers(Modifier.PUBLIC)
-            .addJavadoc("The key a connection is acquired and mounted under, and the value handed down a subtree in\n"
-                + "graphql-java's {@code localContext}: the tenant the connection serves, empty for the default\n"
-                + "source.\n"
-                + "@param tenant the tenant, or empty for the default source\n")
-            .recordConstructor(MethodSpec.constructorBuilder()
-                .addParameter(optionalTenant, "tenant")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("defaultSource")
+    private static TypeSpec connectionKey(ClassName self, ConnectionKeyShape shape) {
+        var builder = TypeSpec.recordBuilder(self)
+            .addModifiers(Modifier.PUBLIC);
+        var constructor = MethodSpec.constructorBuilder();
+        var toString = CodeBlock.builder();
+        if (shape.hasTenant()) {
+            TypeName tenantKey = shape.tenant().orElseThrow();
+            var optionalTenant = ParameterizedTypeName.get(OPTIONAL, tenantKey);
+            constructor.addParameter(optionalTenant, "tenant");
+            builder.addJavadoc("The key a connection is acquired under, and the value handed down a subtree in\n"
+                    + "graphql-java's {@code localContext}: the tenant the connection serves, empty for the key\n"
+                    + "with no parts.\n"
+                    + "@param tenant the tenant, or empty for the key with no parts\n")
+                .addMethod(MethodSpec.methodBuilder("defaultSource")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(self)
+                    .addStatement("return new $T($T.empty())", self, OPTIONAL)
+                    .addJavadoc("The key with no parts, which serves global tables.\n")
+                    .build())
+                .addMethod(MethodSpec.methodBuilder("forTenant")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(self)
+                    .addParameter(tenantKey, "tenant")
+                    .addStatement("return new $T($T.of(tenant))", self, OPTIONAL)
+                    .addJavadoc("The key of {@code tenant}'s connection.\n"
+                        + "@param tenant the tenant, never null\n")
+                    .build())
+                .addMethod(MethodSpec.methodBuilder("tenantIn")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(tenantKey)
+                    .addParameter(Object.class, "localContext")
+                    .addStatement("return localContext instanceof $T key ? key.tenant().orElse(null) : null", self)
+                    .addJavadoc("The tenant a subtree inherited, read off the {@code localContext} value graphql-java\n"
+                        + "handed the field, or {@code null} when it carries no key or the key with no parts.\n"
+                        + "@param localContext the field's {@code localContext}\n")
+                    .build());
+            toString.addStatement("return tenant.isPresent() ? $S : $S", "ConnectionKey[tenant]", "ConnectionKey[]");
+        } else if (!shape.vouchedFor().isEmpty()) {
+            var parts = shape.vouchedFor();
+            var javadoc = CodeBlock.builder()
+                .add("The key a connection is acquired under: the vouched-for values a voucher carried, each\n"
+                    + "typed by the column its field reads, all present for a vouched connection and all empty\n"
+                    + "for the request's own. The connection source reads them off the key and sets them where\n"
+                    + "the database's policies read them.\n");
+            var compact = MethodSpec.compactConstructorBuilder().addModifiers(Modifier.PUBLIC);
+            var factory = MethodSpec.methodBuilder("forVouchedFor")
                 .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
                 .returns(self)
-                .addStatement("return new $T($T.empty())", self, OPTIONAL)
-                .addJavadoc("The key of the default source, which serves global tables.\n")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("forTenant")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(self)
-                .addParameter(tenantKey, "tenant")
-                .addStatement("return new $T($T.of(tenant))", self, OPTIONAL)
-                .addJavadoc("The key of {@code tenant}'s connection.\n"
-                    + "@param tenant the tenant, never null\n")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("tenantIn")
-                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-                .returns(tenantKey)
-                .addParameter(Object.class, "localContext")
-                .addStatement("return localContext instanceof $T key ? key.tenant().orElse(null) : null", self)
-                .addJavadoc("The tenant a subtree inherited, read off the {@code localContext} value graphql-java\n"
-                    + "handed the field, or {@code null} when it carries no key or a key of the default source.\n"
-                    + "@param localContext the field's {@code localContext}\n")
+                .addJavadoc("The key of the vouched connection for these vouched-for values.\n");
+            var empties = new ArrayList<CodeBlock>();
+            var presents = new ArrayList<CodeBlock>();
+            var presence = new ArrayList<String>();
+            for (var part : parts) {
+                constructor.addParameter(ParameterizedTypeName.get(OPTIONAL, part.type()), part.name());
+                javadoc.add("@param $L the vouched-for value of {@code $L}, or empty for the request's own key\n",
+                    part.name(), part.name());
+                compact.addStatement("$T.requireNonNull($L, $S)", OBJECTS, part.name(), part.name());
+                factory.addParameter(part.type(), part.name())
+                    .addJavadoc("@param $L the vouched-for value of {@code $L}, never null\n", part.name(), part.name());
+                empties.add(CodeBlock.of("$T.empty()", OPTIONAL));
+                presents.add(CodeBlock.of("$T.of($L)", OPTIONAL, part.name()));
+                presence.add(part.name() + ".isPresent()");
+            }
+            String first = presence.get(0);
+            if (presence.size() > 1) {
+                compact.beginControlFlow("if ($L)", presence.stream().skip(1)
+                        .map(p -> "(" + p + " != " + first + ")").reduce((a, b) -> a + " || " + b).orElseThrow())
+                    .addStatement("throw new $T($S)", IllegalArgumentException.class,
+                        "A connection key carries every vouched-for value or none")
+                    .endControlFlow();
+            }
+            builder.addJavadoc(javadoc.build())
+                .addMethod(compact.build())
+                .addMethod(MethodSpec.methodBuilder("defaultSource")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(self)
+                    .addStatement("return new $T($L)", self, CodeBlock.join(empties, ", "))
+                    .addJavadoc("The key with no parts: the request's own connection.\n")
+                    .build())
+                .addMethod(factory
+                    .addStatement("return new $T($L)", self, CodeBlock.join(presents, ", "))
+                    .build())
+                .addMethod(MethodSpec.methodBuilder("hasVouchedFor")
+                    .addModifiers(Modifier.PUBLIC)
+                    .returns(boolean.class)
+                    .addStatement("return $L", first)
+                    .addJavadoc("Whether this is a vouched connection's key, carrying vouched-for values.\n")
+                    .build());
+            var names = parts.stream().map(ConnectionKeyShape.VouchedForPart::name).toList();
+            toString.addStatement("return $L ? $S : $S", first,
+                "ConnectionKey[" + String.join(", ", names) + "]", "ConnectionKey[]");
+        } else {
+            builder.addJavadoc("The key a connection is acquired under. A build with neither a tenant column nor an\n"
+                    + "accepting field has one connection per request, so the key has no parts.\n")
+                .addMethod(MethodSpec.methodBuilder("defaultSource")
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(self)
+                    .addStatement("return new $T()", self)
+                    .addJavadoc("The key with no parts: the request's own connection.\n")
+                    .build());
+            toString.addStatement("return $S", "ConnectionKey[]");
+        }
+        return builder.recordConstructor(constructor.build())
+            .addMethod(MethodSpec.methodBuilder("toString")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(String.class)
+                .addCode(toString.build())
+                .addJavadoc("Names the parts this key carries and never their values, so a key reaching a log or\n"
+                    + "a message carries nothing of the request's identity.\n")
                 .build())
             .build();
     }
@@ -2006,7 +2191,7 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)");
         if (mounts) {
             builder
-                .beginControlFlow("if (isAcquisitionFailure(failed.cause()))")
+                .beginControlFlow("if (isRequestRejection(failed.cause()))")
                 .addComment("A rejected mount fails the whole request when the operation completes; this marker")
                 .addComment("never reaches a client, so nothing is logged and no reference is minted.")
                 .addStatement("return new FanOutFailure($S, FanOutFailure.FAILED)", "")
@@ -2053,45 +2238,92 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static Optional<Throwable> acquisitionCause(Throwable thrown)}: what the connection source
-     * threw, when a failed acquisition is anywhere on {@code thrown}'s cause chain. The facade's
-     * {@code acquisitionFailure} and the fixed {@code ErrorRouter} ask through it.
+     * {@code static Optional<Throwable> rejectionCause(Throwable thrown)}: what rejected the request,
+     * when a request rejection is anywhere on {@code thrown}'s cause chain: the source's own exception
+     * for a failed acquisition, the rejection itself for any other arm. The facade's
+     * {@code requestRejection} and the fixed {@code ErrorRouter} ask through it.
      */
-    private static MethodSpec acquisitionCause(ClassName acquisitionFailed) {
+    private static MethodSpec rejectionCause(ClassName requestRejected, ClassName acquisitionFailed) {
         var optionalThrowable = ParameterizedTypeName.get(OPTIONAL, ClassName.get(Throwable.class));
-        return MethodSpec.methodBuilder("acquisitionCause")
+        return MethodSpec.methodBuilder("rejectionCause")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(optionalThrowable)
             .addParameter(Throwable.class, "thrown")
             .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", Throwable.class)
-            .beginControlFlow("if (t instanceof $T)", acquisitionFailed)
-            .addStatement("return $T.ofNullable(t.getCause())", OPTIONAL)
+            .beginControlFlow("if (t instanceof $T && t.getCause() != null)", acquisitionFailed)
+            .addStatement("return $T.of(t.getCause())", OPTIONAL)
+            .endControlFlow()
+            .beginControlFlow("if (t instanceof $T)", requestRejected)
+            .addStatement("return $T.of(t)", OPTIONAL)
             .endControlFlow()
             .endControlFlow()
             .addStatement("return $T.empty()", OPTIONAL)
-            .addJavadoc("What the request's connection source threw, when a failed acquisition is on\n"
-                + "{@code thrown}'s cause chain; empty otherwise. The facade's {@code acquisitionFailure}\n"
-                + "returns this, so an application can answer a rejected request from the source's own\n"
-                + "exception.\n"
+            .addJavadoc("What rejected the request, when a request rejection is on {@code thrown}'s cause chain:\n"
+                + "for a failed acquisition the request's connection source's own exception, for a failed\n"
+                + "voucher check or the one-vouched-value limit the rejection itself, which carries nothing\n"
+                + "of any voucher; empty otherwise. The facade's {@code requestRejection} returns this, so an\n"
+                + "application can answer a rejected request from what rejected it.\n"
                 + "@param thrown what was caught\n"
-                + "@return the source's own exception, if a failed acquisition is on the chain\n")
+                + "@return what rejected the request, if a request rejection is on the chain\n")
             .build();
     }
 
     /**
-     * {@code static boolean isAcquisitionFailure(Throwable thrown)}: whether a failed acquisition is
-     * anywhere on {@code thrown}'s cause chain, which is whether {@link #acquisitionCause} is present.
+     * {@code static boolean isRequestRejection(Throwable thrown)}: whether a request rejection is
+     * anywhere on {@code thrown}'s cause chain, which is whether {@link #rejectionCause} is present.
      */
-    private static MethodSpec isAcquisitionFailure() {
-        return MethodSpec.methodBuilder("isAcquisitionFailure")
+    private static MethodSpec isRequestRejection() {
+        return MethodSpec.methodBuilder("isRequestRejection")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(boolean.class)
             .addParameter(Throwable.class, "thrown")
-            .addStatement("return acquisitionCause(thrown).isPresent()")
-            .addJavadoc("Whether {@code thrown}'s cause chain carries a failed acquisition. The error router\n"
+            .addStatement("return rejectionCause(thrown).isPresent()")
+            .addJavadoc("Whether {@code thrown}'s cause chain carries a request rejection. The error router\n"
                 + "declines such a throw: the operation fails as a whole when it completes, so no field logs\n"
-                + "it, mints a reference for it, or places it in a payload.\n"
+                + "it, mints a reference for it, or places it in a payload, and a list slot does not redact\n"
+                + "it.\n"
                 + "@param thrown what a fetcher caught\n")
+            .build();
+    }
+
+    /**
+     * {@code private void admitVouched(ConnectionKey key)}: the one-vouched-value limit, in an accepting
+     * build. The first key with vouched-for parts a request acquires by is its vouched key; another
+     * rejects the request with the limit's rejection, whatever order the loaders dispatch in. The limit
+     * lives here and nowhere else, so raising it is one change.
+     */
+    private static MethodSpec admitVouched(TypeName keyType, ClassName vouchedValueLimit) {
+        return MethodSpec.methodBuilder("admitVouched")
+            .addModifiers(Modifier.PRIVATE)
+            .addParameter(keyType, "key")
+            .beginControlFlow("if (!key.hasVouchedFor())")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T admitted = vouchedKey.updateAndGet(current -> current == null ? key : current)", keyType)
+            .beginControlFlow("if (!admitted.equals(key))")
+            .addStatement("throw reject(new $T())", vouchedValueLimit)
+            .endControlFlow()
+            .addJavadoc("Admits {@code key}'s vouched-for value, or rejects the request: one request reads on one\n"
+                + "vouched connection, so a second distinct key with vouched-for parts rejects it with the\n"
+                + "limit's rejection. A key without vouched-for parts is admitted unchecked.\n"
+                + "@param key the key about to be acquired\n")
+            .build();
+    }
+
+    /**
+     * {@code int keyIndex(ConnectionKey key)}: the number of {@code key} among the keys this request
+     * named a loader by, in order of first use; the entity loader name's key segment.
+     */
+    private static MethodSpec keyIndex(TypeName keyType) {
+        return MethodSpec.methodBuilder("keyIndex")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(int.class)
+            .addParameter(keyType, "key")
+            .addStatement("return keyIndexes.computeIfAbsent(key, k -> nextKeyIndex.getAndIncrement())")
+            .addJavadoc("The number of {@code key} among the keys this request named a loader by, in order of\n"
+                + "first use: equal keys get one number, distinct keys distinct numbers, so a loader name\n"
+                + "tells keys apart without naming any part of one.\n"
+                + "@param key the connection key\n")
             .build();
     }
 
@@ -2752,10 +2984,11 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code static String entityLoaderName(env, typeName, alternative, key)}: the name of the entity
      * and node dispatch's loader for one (type, key alternative, connection key). The field's path keys
      * come first, as every loader name's do, so two aliased lookup fields with different selections
-     * never share a batch; the key is an opaque segment, never parsed back, and never part of the
+     * never share a batch; the key is an opaque segment, its number among the request's keys
+     * ({@code keyIndex}), so no part of a key reaches a name, never parsed back, and never part of the
      * loader's key type.
      */
-    private static MethodSpec entityLoaderName(ClassName connectionKey) {
+    private static MethodSpec entityLoaderName(ClassName self, ClassName connectionKey) {
         return MethodSpec.methodBuilder("entityLoaderName")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
@@ -2763,11 +2996,15 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(String.class, "typeName")
             .addParameter(int.class, "alternative")
             .addParameter(connectionKey, "key")
+            .addStatement("$T carrier = env.getGraphQlContext().get($T.class)", self, self)
+            .addComment("The escape hatch serves only the key with no parts, so it has one key to name.")
+            .addStatement("int keyIndex = carrier == null ? 0 : carrier.keyIndex(key)")
             .addStatement("return String.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S + typeName"
-                + " + $S + alternative + $S + key", "/", "@", " alt:", " key:")
+                + " + $S + alternative + $S + keyIndex", "/", "@", " alt:", " key:")
             .addJavadoc("The DataLoader name for the entity and node dispatch: the field's named path segments\n"
                 + "joined by {@code \"/\"}, {@code \"@\"} and the entity type, then the key alternative and the\n"
-                + "connection key as opaque segments, so each batch is one (field, type, alternative, key).\n"
+                + "connection key's number in the request as opaque segments, so each batch is one (field,\n"
+                + "type, alternative, key) and no part of a key reaches a name.\n"
                 + "@param env the dispatching field's {@code DataFetchingEnvironment}\n"
                 + "@param typeName the entity type\n"
                 + "@param alternative the key alternative's declaration index\n"
@@ -2860,20 +3097,23 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code static String handedDownLoaderName(DataFetchingEnvironment env, String parentType)}: the
      * loader name for a child running on the key its parent handed down, partitioned by the whole
      * key rather than one part of it, so each batch acquires on the key every one of its rows was
-     * handed. The key is an opaque segment, never parsed back.
+     * handed. The key is an opaque segment, its number among the request's keys ({@code keyIndex}), so
+     * no part of a key reaches a name, never parsed back.
      */
-    private static MethodSpec handedDownLoaderName(ClassName connectionKey) {
+    private static MethodSpec handedDownLoaderName(ClassName self, ClassName connectionKey) {
         return MethodSpec.methodBuilder("handedDownLoaderName")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(String.class, "parentType")
             .beginControlFlow("if (env.getLocalContext() instanceof $T key)", connectionKey)
-            .addStatement("return loaderName(env, parentType) + $S + key", " key:")
+            .addStatement("$T carrier = env.getGraphQlContext().get($T.class)", self, self)
+            .addStatement("return loaderName(env, parentType) + $S + (carrier == null ? 0 : carrier.keyIndex(key))",
+                " key:")
             .endControlFlow()
             .addStatement("throw new $T($S)", NO_SUCH_ELEMENT, NO_HANDED_DOWN_KEY)
             .addJavadoc("The DataLoader name for a child on the handed-down key: {@link #loaderName} plus\n"
-                + "the whole key as an opaque segment, so each batch runs on one key.\n"
+                + "the key's number in the request as an opaque segment, so each batch runs on one key.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
                 + "@param parentType the declaring parent type\n")
             .build();
@@ -3521,16 +3761,57 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * {@code RequestRejectedException}: the one sealed request rejection, abstract, whose arms are a
+     * failed acquisition in every build and, in a build that writes the voucher runtime, a failed voucher
+     * check and the one-vouched-value limit. The carrier's one slot, the error router's decline, the
+     * instrumentation's throw and the facade's {@code requestRejection} read this one type. Sealed, so a
+     * consumer's {@code switch} over it is exhaustive in its own build.
+     */
+    private static TypeSpec requestRejected(ClassName self, ClassName acquisitionFailed, List<ClassName> voucherArms) {
+        var builder = TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT, Modifier.SEALED)
+            .superclass(RuntimeException.class)
+            .addPermittedSubclass(acquisitionFailed);
+        voucherArms.forEach(builder::addPermittedSubclass);
+        return builder
+            .addJavadoc("The request was rejected as a whole: thrown out of {@code GraphQL.execute} on the\n"
+                + "owned-connection path in place of a result. The per-operation carrier remembers the first\n"
+                + "rejection and acquires nothing after it, the error router never logs or claims it per field,\n"
+                + "and {@code Graphitron.requestRejection} answers what rejected the request. Its arms are the\n"
+                + "build's: a failed acquisition always, and where the build issues or accepts vouchers a failed\n"
+                + "voucher check and a second vouched-for value in one request.\n")
+            .addField(FieldSpec.builder(long.class, "serialVersionUID",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("1L")
+                .build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PROTECTED)
+                .addParameter(String.class, "message")
+                .addStatement("super(message)")
+                .addJavadoc("@param message what rejected the request, in words\n")
+                .build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PROTECTED)
+                .addParameter(String.class, "message")
+                .addParameter(Throwable.class, "cause")
+                .addStatement("super(message, cause)")
+                .addJavadoc("@param message what rejected the request, in words\n"
+                    + "@param cause what was thrown\n")
+                .build())
+            .build();
+    }
+
+    /**
      * {@code AcquisitionFailedException}: what {@code PinnedConnection.acquire} turns any throw of the
      * source other than {@code KeyNotPermitted} into. A request-scoped fault, unlike the field-scoped
      * {@code GraphitronClientException}: the carrier remembers the first one per operation, and the
      * instrumentation throws it out of {@code GraphQL.execute} so the consumer can answer the request
      * as a whole.
      */
-    private static TypeSpec acquisitionFailed(ClassName self) {
+    private static TypeSpec acquisitionFailed(ClassName self, ClassName requestRejected) {
         return TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .superclass(RuntimeException.class)
+            .superclass(requestRejected)
             .addJavadoc("The request's connection source failed to lease a connection: its {@code acquire} threw\n"
                 + "something other than {@code KeyNotPermitted}, or leased a connection Graphitron could not\n"
                 + "use. Thrown out of {@code GraphQL.execute} on the owned-connection path in place of a\n"

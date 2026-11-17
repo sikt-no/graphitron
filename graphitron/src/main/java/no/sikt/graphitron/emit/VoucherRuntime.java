@@ -42,10 +42,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MINTED_KEY;
 
 /**
  * The voucher runtime a vouching build writes into its {@code schema} package: the codec that owns the
- * token format, the key provider it signs and verifies with, and the exception a rejected voucher fails
- * the request with. What the three classes say depends on nothing but the package they land in, so
- * they are rendered whole; whether a build writes them is the store's question, answered by
- * {@link #vouches}.
+ * token format, the key provider it signs and verifies with, and the two arms of the request rejection a
+ * voucher can fail the request with, a failed check and a second vouched-for value in one request. What
+ * the four classes say depends on nothing but the package they land in, so they are rendered whole;
+ * whether a build writes them is the store's question, answered by {@link #roles}: a build that issues or
+ * accepts writes them.
  *
  * <p>The format, version 2: base64url without padding over the version byte, the 16-byte vouch id, the
  * scope, the expiry in epoch seconds, the key id, the vouched-for section, the lookup section,
@@ -67,6 +68,13 @@ public final class VoucherRuntime {
     public static final String ISSUERS = "Issuers";
     /** The rejection's simple name. */
     public static final String REJECTED = "VoucherRejectedException";
+    /** The simple name of the rejection a second vouched-for value in one request fails it with. */
+    public static final String LIMIT = "VouchedValueLimitExceededException";
+    /** The simple name of the sealed request rejection both arms extend, in the connection runtime. */
+    public static final String REQUEST_REJECTED = "RequestRejectedException";
+    /** What the limit's rejection says: the limit, and nothing of any voucher. */
+    public static final String LIMIT_MESSAGE =
+        "The request presents vouchers for more than one vouched-for value; a request may carry vouchers for one";
 
     /** The token format version this runtime writes and the only one it reads. */
     public static final int VERSION = 2;
@@ -84,26 +92,69 @@ public final class VoucherRuntime {
     private VoucherRuntime() {}
 
     /**
-     * Whether the store's graph vouches, and so writes the voucher runtime: whether it mints a voucher
-     * key on any type. The minted key is the stored decision that a marker applies, made once by the
-     * {@code minted-keys} stage, and a marker it would not mint a key for (one in a graph with no
-     * federation link) is a defect that fails the build before anything is emitted.
+     * What a graph does with vouchers, read once per run and handed to every generator the answer
+     * changes. {@code issues}: the issuers and their per-operation wiring. {@code accepts}: the voucher
+     * alternative and its dispatch. Either: the codec, the keys, the rejection arms and the runtime's
+     * voucher keys.
      */
-    public static boolean vouches(StoreHandle store) {
-        return store.dsl().fetchExists(GRAPHITRON_MINTED_KEY,
-            GRAPHITRON_MINTED_KEY.GRAPH_NAME.eq(store.graphName()),
-            GRAPHITRON_MINTED_KEY.ROLE.eq("ISSUE"));
+    public record Roles(boolean issues, boolean accepts) {
+        /** A graph that neither issues nor accepts. */
+        public static Roles none() {
+            return new Roles(false, false);
+        }
+
+        /** Whether the build writes the voucher runtime: whether it issues or accepts. */
+        public boolean any() {
+            return issues || accepts;
+        }
     }
 
-    /** The three classes, each landing in {@code <outputPackage>.schema}. */
+    /**
+     * What the store's graph does with vouchers: whether it mints an {@code ISSUE} key on any type, and
+     * whether it mints an {@code ACCEPT} key. The minted key is the stored decision that a marker
+     * applies, made once by the {@code minted-keys} stage, and a marker it would not mint a key for (one
+     * in a graph with no federation link) is a defect that fails the build before anything is emitted.
+     */
+    public static Roles roles(StoreHandle store) {
+        var roles = store.dsl().selectDistinct(GRAPHITRON_MINTED_KEY.ROLE)
+            .from(GRAPHITRON_MINTED_KEY)
+            .where(GRAPHITRON_MINTED_KEY.GRAPH_NAME.eq(store.graphName()),
+                GRAPHITRON_MINTED_KEY.ROLE.in("ISSUE", "ACCEPT"))
+            .fetchSet(GRAPHITRON_MINTED_KEY.ROLE);
+        return new Roles(roles.contains("ISSUE"), roles.contains("ACCEPT"));
+    }
+
+    /**
+     * The four classes, each landing in {@code <outputPackage>.schema}: the codec, the keys, the failed
+     * check's rejection and the limit's. Both rejections extend the connection runtime's sealed
+     * {@code RequestRejectedException}, which permits them in a build that writes this runtime.
+     */
     public static List<TypeSpec> render(String outputPackage) {
         String pkg = outputPackage + ".schema";
         var keys = ClassName.get(pkg, KEYS);
         var rejected = ClassName.get(pkg, REJECTED);
-        return List.of(codec(ClassName.get(pkg, CODEC), keys, rejected), keys(keys), rejected(rejected));
+        var requestRejected = ClassName.get(pkg, REQUEST_REJECTED);
+        return List.of(codec(ClassName.get(pkg, CODEC), keys, rejected), keys(keys),
+            rejected(rejected, requestRejected), limit(ClassName.get(pkg, LIMIT), requestRejected));
     }
 
-    private static TypeSpec rejected(ClassName self) {
+    private static TypeSpec limit(ClassName self, ClassName requestRejected) {
+        return TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .superclass(requestRejected)
+            .addJavadoc("A request presented vouchers for more than one vouched-for value: one request reads on one\n"
+                + "vouched connection. It rejects the request as a whole, so the limit is never mistaken for\n"
+                + "a denial; the message names the limit and nothing of any voucher.\n")
+            .addField(FieldSpec.builder(long.class, "serialVersionUID", Modifier.PRIVATE, Modifier.STATIC,
+                Modifier.FINAL).initializer("1L").build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addStatement("super($S)", LIMIT_MESSAGE)
+                .build())
+            .build();
+    }
+
+    private static TypeSpec rejected(ClassName self, ClassName requestRejected) {
         var reason = self.nestedClass("Reason");
         var reasonEnum = TypeSpec.enumBuilder("Reason")
             .addModifiers(Modifier.PUBLIC)
@@ -116,7 +167,7 @@ public final class VoucherRuntime {
             .addEnumConstant("SCOPE", constant("the voucher was issued for another scope"))
             .addEnumConstant("VOUCHED_FOR", constant("the voucher's vouched-for section names other fields than the accepting field's vouchesFor"))
             .addEnumConstant("KEY", constant("the voucher's lookup part names other fields than the entity's key"))
-            .addEnumConstant("VALUE", constant("a value in the voucher does not parse as its field's scalar"))
+            .addEnumConstant("VALUE", constant("a value in the voucher is not a value of its field's column"))
             .addField(String.class, "check", Modifier.PRIVATE, Modifier.FINAL)
             .addMethod(MethodSpec.constructorBuilder()
                 .addParameter(String.class, "check")
@@ -131,10 +182,10 @@ public final class VoucherRuntime {
             .build();
         return TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .superclass(RuntimeException.class)
-            .addJavadoc("A voucher failed verification. It fails the request before any connection is taken. The\n"
-                + "message names the check that failed and nothing from the token, since a voucher is a\n"
-                + "credential.\n")
+            .superclass(requestRejected)
+            .addJavadoc("A voucher failed verification. It rejects the request as a whole before any connection is\n"
+                + "taken. The message names the check that failed and nothing from the token, since a voucher\n"
+                + "is a credential.\n")
             .addType(reasonEnum)
             .addField(FieldSpec.builder(long.class, "serialVersionUID", Modifier.PRIVATE, Modifier.STATIC,
                 Modifier.FINAL).initializer("1L").build())

@@ -38,7 +38,7 @@ public class SakilaGraphitronApplication extends AbstractGraphitronApplication {
     AgroalDataSource dataSource;
 
     public SakilaGraphitronApplication() {
-        super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::acquisitionFailure);
+        super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::requestRejection);
     }
 
     @Override

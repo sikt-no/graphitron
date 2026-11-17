@@ -21,7 +21,7 @@ import java.util.Optional;
  * the set of implementations is open by design, owned by each consuming subgraph rather than by the
  * generator. {@link AbstractGraphitronApplication} removes the boilerplate so a concrete adapter
  * passes the facade's schema builder and SDL printer and, optionally, overrides
- * {@link #engineBuilder()} and {@link #failedAcquisition(Throwable)}. A resource builds each request's
+ * {@link #engineBuilder()} and {@link #rejectedRequest(Throwable)}. A resource builds each request's
  * input itself and hands it to {@link GraphqlEndpoint}; {@link #newExecutionInput()} is only the
  * built-in {@code /graphql} endpoint's seam.
  *
@@ -110,28 +110,32 @@ public interface GraphitronApplication {
     }
 
     /**
-     * The exception the request's connection source threw, when {@code thrown} is, or is caused by,
-     * a failed acquisition; empty otherwise. On the owned-connection engine a source that fails to
-     * lease a connection (a mount the database rejects, say) makes {@code GraphQL.execute} throw the
-     * generated {@code AcquisitionFailedException} (in your {@code <outputPackage>.schema}), which
-     * this module cannot name; the generated facade's {@code acquisitionFailure} recognises it, and
-     * {@link AbstractGraphitronApplication} takes that method reference at construction. The default
-     * is empty, so {@link #failedAcquisition(Throwable)} is never called.
+     * What rejected the request, when {@code thrown} is, or is caused by, a request rejection; empty
+     * otherwise. On the owned-connection engine a request is rejected as a whole when its connection
+     * source fails to lease a connection (a mount the database rejects, say, or an exhausted pool), when
+     * a voucher it presents fails a check, or when it presents vouchers for more than one vouched-for
+     * value: {@code GraphQL.execute} throws the generated {@code RequestRejectedException} (in your
+     * {@code <outputPackage>.schema}), which this module cannot name. The generated facade's
+     * {@code requestRejection} recognises it and answers the source's own exception for a failed
+     * acquisition and the rejection itself otherwise, and {@link AbstractGraphitronApplication} takes
+     * that method reference at construction. The default is empty, so
+     * {@link #rejectedRequest(Throwable)} is never called.
      *
      * @param thrown the exception that escaped
-     * @return the source's own exception, or empty when {@code thrown} is not a failed acquisition
+     * @return what rejected the request, or empty when {@code thrown} is no request rejection
      */
-    default Optional<Throwable> acquisitionCause(Throwable thrown) {
+    default Optional<Throwable> requestRejection(Throwable thrown) {
         return Optional.empty();
     }
 
     /**
-     * Answers a failed acquisition (a rejected session identity, say) as a client fault, from the
-     * connection source's own exception:
-     * a rejected-identity {@code SQLState} to {@link jakarta.ws.rs.NotAuthorizedException}, say. Called
-     * only when {@link #acquisitionCause(Throwable)} found one, and before
-     * {@link #clientFault(Throwable)}, so an application that overrides both gets this one for a
-     * failed acquisition and {@code clientFault} for everything else.
+     * Answers a rejected request as a client fault, from what rejected it: for a failed acquisition the
+     * connection source's own exception (a rejected-identity {@code SQLState} to
+     * {@link jakarta.ws.rs.NotAuthorizedException}, a pool fault to a {@code 503}, say), for a failed
+     * voucher check or the one-vouched-value limit the generated rejection itself, usually a
+     * {@code 401} or {@code 403}. Called only when {@link #requestRejection(Throwable)} found one, and
+     * before {@link #clientFault(Throwable)}, so an application that overrides both gets this one for
+     * a rejected request and {@code clientFault} for everything else.
      *
      * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from the
      * input is, and the library logs nothing about the fault. Empty, the default, falls through to
@@ -139,18 +143,18 @@ public interface GraphitronApplication {
      * returns {@code null}, the fault is redacted and one ERROR line names your class and the class
      * of what it threw.
      *
-     * @param acquisitionCause what the connection source threw
+     * @param rejection what rejected the request
      * @return the client fault to answer with, or empty to leave the decision to
      *         {@link #clientFault(Throwable)}
      */
-    default Optional<WebApplicationException> failedAcquisition(Throwable acquisitionCause) {
+    default Optional<WebApplicationException> rejectedRequest(Throwable rejection) {
         return Optional.empty();
     }
 
     /**
      * Answers any other exception that escaped the input or execution as a client fault instead of
-     * redacting it. A failed acquisition is better answered by
-     * {@link #failedAcquisition(Throwable)}, which receives the source's own exception; this is for
+     * redacting it. A rejected request is better answered by
+     * {@link #rejectedRequest(Throwable)}, which receives what rejected it; this is for
      * everything else a subgraph wants mapped to a status.
      *
      * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from the

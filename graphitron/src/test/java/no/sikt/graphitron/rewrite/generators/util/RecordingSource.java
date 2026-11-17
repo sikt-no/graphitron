@@ -189,7 +189,11 @@ final class RecordingSource {
         }
     }
 
+    /** The key's tenant, empty for a key of a build with no tenant column, which has no tenant part. */
     private static Optional<?> tenantOf(Object key) {
+        if (java.util.Arrays.stream(key.getClass().getRecordComponents()).noneMatch(c -> c.getName().equals("tenant"))) {
+            return Optional.empty();
+        }
         try {
             return (Optional<?>) key.getClass().getMethod("tenant").invoke(key);
         } catch (ReflectiveOperationException e) {

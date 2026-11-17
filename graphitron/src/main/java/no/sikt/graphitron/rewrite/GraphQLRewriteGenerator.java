@@ -351,9 +351,10 @@ public class GraphQLRewriteGenerator {
                                   no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
         var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
         // The store owns validation, the walk's verdict being retired: where the store states a
-        // field's binding as one it owns whole, a voucher field, the walk's verdict on it is not
-        // asked, the store's defects being the only refusals that field has.
-        var storeOwned = no.sikt.graphitron.emit.VoucherBindingQuery.read(store).coordinates();
+        // field's binding as one it owns whole, a voucher field on either side, the walk's verdict on
+        // it is not asked, the store's defects being the only refusals that field has. Which fields
+        // those are was read where the walk was handed its registry.
+        var storeOwned = attributed.storeOwned();
         var walkErrors = new GraphitronSchemaValidator().validate(schema).stream()
             .filter(error -> !storeOwned.contains(error.coordinate()))
             .toList();
@@ -597,11 +598,13 @@ public class GraphQLRewriteGenerator {
                 representative.tenantTable().javaFieldName(), representative.tenantColumn().javaName())
             : null;
         // The connection key's shape, decided once here and handed to the generators that write, read
-        // or key by it: today its tenant part, from the tenant key type above.
-        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.ofTenantKey(tenantKeyType);
-        // Whether the graph vouches, read once off the stored voucher keys and handed to every generator
-        // the answer changes: the voucher runtime, the runtime's keys and the session state's caller.
-        boolean vouches = no.sikt.graphitron.emit.VoucherRuntime.vouches(store);
+        // or key by it: its tenant part from the tenant key type above, its vouched-for parts from what
+        // the store says the graph's @accept fields vouch for.
+        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.read(store, tenantKeyType);
+        // What the graph does with vouchers, read once off the stored voucher keys and handed to every
+        // generator the answer changes: the voucher runtime and the runtime's keys where it issues or
+        // accepts, the per-operation issuers where it issues.
+        var voucherRoles = no.sikt.graphitron.emit.VoucherRuntime.roles(store);
 
         // The global command relation: the core decided the family membership (the federation
         // @oneOf gate, the entity-dispatch, node-fetcher and dev-executor gates, the session-hook
@@ -610,7 +613,7 @@ public class GraphQLRewriteGenerator {
         // stays deliberately shell-side: per-family argument assembly (including tenantKeyType,
         // a javapoet TypeName the plan must not hold), and the generators' own model reads. The
         // per-type-emitting families below fold over the type-unit relation's rows the same way.
-        var fixedRuntime = FixedRuntimeEmitter.render(store, vouches);
+        var fixedRuntime = FixedRuntimeEmitter.render(store, voucherRoles);
         // The schema class calls the store-rendered connections' registration where the run
         // wrote them.
         var connections = fixedRuntime.stream()
@@ -626,7 +629,7 @@ public class GraphQLRewriteGenerator {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
                     connectionKeyShape, federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
-                    plan.sessionIdentity(), connections, vouchers, vouches,
+                    plan.sessionIdentity(), connections, vouchers, voucherRoles,
                     plan.outboxes().rows().stream().anyMatch(row -> !row.failureMessages().isEmpty())),
                 emittedThisRun);
         }
@@ -719,8 +722,10 @@ public class GraphQLRewriteGenerator {
                                         no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity,
                                         com.palantir.javapoet.ClassName connections,
                                         com.palantir.javapoet.ClassName vouchers,
-                                        boolean vouches, boolean failureMessages) {
+                                        no.sikt.graphitron.emit.VoucherRuntime.Roles voucherRoles,
+                                        boolean failureMessages) {
         String outputPackage = ctx.outputPackage();
+        boolean vouches = voucherRoles.any();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
             case LIGHT_FETCHER -> LightFetcherClassGenerator.generate(outputPackage);
@@ -745,17 +750,18 @@ public class GraphQLRewriteGenerator {
             case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, sessionIdentity, connectionKeyShape, tenantColumn,
                 vouches, failureMessages);
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, sessionIdentity,
-                vouches);
+                voucherRoles.issues());
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME, VOUCHER_CODEC, VOUCHER_KEYS,
-                 VOUCHER_REJECTED_EXCEPTION, VOUCHER_FETCHERS, CONNECTIONS -> throw new IllegalStateException(command.kind()
+                 VOUCHER_REJECTED_EXCEPTION, VOUCHED_VALUE_LIMIT_EXCEPTION, VOUCHER_FETCHERS, CONNECTIONS -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage,
                 federationLink, connections, vouchers);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, connectionKeyShape);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
-                no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches);
+                no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches,
+                connectionKeyShape.vouchedFor().isEmpty());
             case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity, vouches);
         };
     }

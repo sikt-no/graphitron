@@ -50,6 +50,7 @@ class EmitPlanTest {
         GlobalUnitKind.VOUCHER_CODEC,
         GlobalUnitKind.VOUCHER_KEYS,
         GlobalUnitKind.VOUCHER_REJECTED_EXCEPTION,
+        GlobalUnitKind.VOUCHED_VALUE_LIMIT_EXCEPTION,
         GlobalUnitKind.VOUCHER_FETCHERS,
         GlobalUnitKind.CONNECTIONS));
 
@@ -78,7 +79,7 @@ class EmitPlanTest {
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "ConnectionKey",
                 "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "ConnectionSource", "Lease",
-                "KeyNotPermitted", "AcquisitionFailedException", "ConnectionSources");
+                "KeyNotPermitted", "AcquisitionFailedException", "RequestRejectedException", "ConnectionSources");
     }
 
     @Test
@@ -91,7 +92,7 @@ class EmitPlanTest {
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "ConnectionKey",
                 "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "ConnectionSource", "Lease",
-                "KeyNotPermitted", "AcquisitionFailedException", "ConnectionSources");
+                "KeyNotPermitted", "AcquisitionFailedException", "RequestRejectedException", "ConnectionSources");
     }
 
     @Test

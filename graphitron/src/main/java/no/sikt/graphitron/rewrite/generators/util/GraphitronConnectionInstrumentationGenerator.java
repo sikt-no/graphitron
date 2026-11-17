@@ -81,17 +81,18 @@ import java.util.List;
  * reported by {@code instrumentExecutionResult}, which runs after the operation callback: its
  * value becomes {@code null}, with null propagation for a non-null field, and its redacted error,
  * logged under a reference through the consumer's {@code FetcherErrorLog}, is added at its path.
- * A failed acquisition still takes precedence and is thrown in place of the result.
+ * A request rejection still takes precedence and is thrown in place of the result.
  *
  * <p>A field that rolled back because of an error under its path has its value dropped too, with
  * no error added, and a field whose consumer-opened nested transaction failed gets the carrier's
  * nested-failure error beside whatever else it reported. An {@code @error} channel's payload
  * stays, since it describes the failure.
  *
- * <h2>A failed acquisition rejects the request ({@code instrumentExecutionResult})</h2>
+ * <h2>A request rejection rejects the request ({@code instrumentExecutionResult})</h2>
  * When the request's connection source threw (anything but {@code KeyNotPermitted}) during the
- * operation, the carrier remembers the first {@code AcquisitionFailedException}, and this override
- * throws it in place of the result, so it escapes {@code GraphQL.execute}.
+ * operation, a voucher failed its check, or the request presented a second vouched-for value, the
+ * carrier remembers the first {@code RequestRejectedException}, and this override throws it in place
+ * of the result, so it escapes {@code GraphQL.execute}.
  *
  * <h2>Incremental delivery is rejected</h2>
  * Connection-per-operation release closes the pinned connections at completion; a deferred fetcher
@@ -151,12 +152,12 @@ public final class GraphitronConnectionInstrumentationGenerator {
     }
 
     /**
-     * As {@link #generate(String, TypeName, SessionIdentityRows)}, for a build that may vouch: where
-     * {@code vouches}, each operation also gets the issuers its voucher fields sign with, bound to the
-     * runtime's keys and the operation's start.
+     * As {@link #generate(String, TypeName, SessionIdentityRows)}, for a build that may issue vouchers:
+     * where {@code issues}, each operation also gets the issuers its voucher fields sign with, bound to
+     * the runtime's keys and the operation's start.
      */
     public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionIdentityRows sessionHooks,
-                                          boolean vouches) {
+                                          boolean issues) {
         TypeName tenantKey = tenantKeyType == null ? null
             : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
@@ -172,7 +173,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
         return List.of(instrumentation(self, runtime, ownedConnections, fetcherErrorLog,
             fetcherErrorResponse, batchSizeLimit, commitPolicy, state, tenantKey, sessionHooks, errorRouter,
-            vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)
+            issues ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.CODEC)
                 .nestedClass(no.sikt.graphitron.emit.VoucherRuntime.ISSUERS) : null));
     }
 
@@ -335,11 +336,11 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addParameter(INSTRUMENTATION_STATE, "rawState")
             .addStatement("$T state = ($T) rawState", state, state);
         instrumentExecutionResultBuilder
-            .beginControlFlow("if (state != null && state.carrier != null && state.carrier.acquisitionFailure().isPresent())")
-            .addComment("The request's connection source failed: the failure replaces the result, escaping")
-            .addComment("GraphQL.execute for the consumer to answer the request as a whole. It takes")
-            .addComment("precedence over any field's settle failure.")
-            .addStatement("throw state.carrier.acquisitionFailure().get()")
+            .beginControlFlow("if (state != null && state.carrier != null && state.carrier.requestRejection().isPresent())")
+            .addComment("The request was rejected: the rejection replaces the result, escaping GraphQL.execute")
+            .addComment("for the consumer to answer the request as a whole. It takes precedence over any")
+            .addComment("field's settle failure.")
+            .addStatement("throw state.carrier.requestRejection().get()")
             .endControlFlow();
         var instrumentExecutionResult = instrumentExecutionResultBuilder
             .beginControlFlow("if (state == null || state.failedFields.isEmpty())")
@@ -367,8 +368,8 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("$T<$T, $T> finalData = rewritten", MAP, String.class, Object.class)
             .addStatement("return $T.completedFuture(executionResult.transform(b -> b.data(finalData).errors(errors)))",
                 COMPLETABLE_FUTURE)
-            .addJavadoc(("Throws the operation's failed acquisition, when there was one, in place of the\n"
-                    + "result, so {@code GraphQL.execute} throws {@code AcquisitionFailedException} (and\n"
+            .addJavadoc(("Throws the operation's request rejection, when there was one, in place of the\n"
+                    + "result, so {@code GraphQL.execute} throws {@code RequestRejectedException} (and\n"
                     + "{@code executeAsync} completes exceptionally with it). Otherwise rewrites")
                 + " the result for every top-level mutation field whose\n"
                 + "transaction failed to settle after the field resolved: its value becomes {@code null},\n"
