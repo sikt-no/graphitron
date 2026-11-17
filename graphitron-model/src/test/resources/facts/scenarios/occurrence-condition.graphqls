@@ -58,6 +58,11 @@ type Query {
   filmsByType(title: String): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
       method: "filmTitlePrefixCondition"}, override: true)
+  # By type on a connection, whose paging arguments are the page's and no slot of the condition's,
+  # so after, a String too, does not compete with title.
+  filmsByTypePaged(title: String): [Film!]! @asConnection @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+      method: "filmTitlePrefixCondition"}, override: true)
   # By type, one level into an input object by name and type.
   filmsByField(filter: FilmPrefixInput): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
@@ -83,6 +88,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_condition", rows: "
   Query.filmsByRentalRateBounds(filter.bounds:), public.film,    condition:public.film,     TRUE
   Query.filmsByRentalRateRange(filter.rentalRateRange:), public.film, condition:public.film, TRUE
   Query.filmsByType,                            public.film,     condition:public.film,     TRUE
+  Query.filmsByTypePaged,                       public.film,     condition:public.film,     TRUE
   Query.occupantsByMixedNamePrefix(firstName:), public.customer, condition:public.customer, FALSE
   Query.occupantsByMixedNamePrefix(firstName:), public.staff,    condition:public.staff,    FALSE
   Query.occupantsByTypedNamePrefix(firstName:), public.customer, condition:public.customer, TRUE
@@ -100,6 +106,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_method", where
   Query.filmsByRentalRateBounds(filter.bounds:), condition:public.film, rentalRateRange, (Lorg/jooq/Table;Ljava/math/BigDecimal;Ljava/math/BigDecimal;)Lorg/jooq/Condition;
   Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, rentalRateRange, (Lorg/jooq/Table;Ljava/math/BigDecimal;Ljava/math/BigDecimal;)Lorg/jooq/Condition;
   Query.filmsByType,                            condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
+  Query.filmsByTypePaged,                       condition:public.film,     filmTitlePrefixCondition,  (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.customer, occupantMixedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.staff,    occupantMixedNamePrefix,   (Lorg/jooq/Table;Ljava/lang/String;)Lorg/jooq/Condition;
   Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, occupantTypedNamePrefix,   (Lno/sikt/graphitron/rewrite/test/jooq/public_/tables/Customer;Ljava/lang/String;)Lorg/jooq/Condition;
@@ -129,6 +136,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_call_parameter",
   Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, 1, ARGUMENT, Query.filmsByRentalRateRange(filter.rentalRateRange.fra:),
   Query.filmsByRentalRateRange(filter.rentalRateRange:), condition:public.film, 2, ARGUMENT, Query.filmsByRentalRateRange(filter.rentalRateRange.til:),
   Query.filmsByType,                            condition:public.film,     1,        ARGUMENT,    Query.filmsByType(title:),
+  Query.filmsByTypePaged,                       condition:public.film,     1,        ARGUMENT,    Query.filmsByTypePaged(title:),
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.customer, 1,        ARGUMENT,    Query.occupantsByMixedNamePrefix(firstName:),
   Query.occupantsByMixedNamePrefix(firstName:), condition:public.staff,    1,        ARGUMENT,    Query.occupantsByMixedNamePrefix(firstName:),
   Query.occupantsByTypedNamePrefix(firstName:), condition:public.customer, 1,        ARGUMENT,    Query.occupantsByTypedNamePrefix(firstName:),

@@ -23190,7 +23190,9 @@ cand (graph_name, coordinate, call, call_kind, method_source_name, method_class_
     JOIN graphitron_occurrence o ON o.graph_name = k.graph_name AND o.coordinate = k.coordinate
    WHERE k.call_kind = 'CONDITION'
 ),
--- The elements a condition sees: a field's arguments, or the argument or input field it is on.
+-- The elements a condition sees: a field's arguments, or the argument or input field it is on. A
+-- connection's paging arguments, which the connection mints for the page rather than the author for
+-- the condition, are none of them, as the tenant rule leaves them out.
 slot (graph_name, coordinate, slot_coordinate, name) AS (
   SELECT DISTINCT c.graph_name, c.coordinate, a.coordinate, a.name
     FROM cand c
@@ -23198,6 +23200,12 @@ slot (graph_name, coordinate, slot_coordinate, name) AS (
     JOIN graphitron_occurrence a
       ON a.graph_name = o.graph_name AND a.parent_coordinate = o.coordinate AND a.kind = 'FIELD_ARGUMENT'
    WHERE o.kind = 'FIELD'
+     AND NOT (a.name IN ('first', 'last', 'after', 'before')
+              AND EXISTS (SELECT 1 FROM graphitron_field f
+                            JOIN graphitron_connection_carrier cc
+                              ON cc.graph_name = f.graph_name AND cc.type_name = f.type_name
+                             AND cc.field_name = f.field_name
+                           WHERE f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate))
   UNION
   SELECT DISTINCT c.graph_name, c.coordinate, o.coordinate, o.name
     FROM cand c
