@@ -1,0 +1,65 @@
+# The entry relations hold what a directive's definition admits, and only that. Each application below
+# parses and is one the definition does not admit, so assembly refuses it and its decode is withheld
+# whole; the generic application census still holds it, so an empty decode is the rule rather than a
+# corpus that never arrived. @table beside the misplaced @order is legal and decodes, and so does a
+# bare @nodeId, which has no required argument. An @error element without its handler is
+# error-handler-without-kind's.
+
+type Query {
+  films(order: FilmOrder, titleFilter: String @field, actorId: ID @nodeId): [Film!]
+}
+
+type Film @table(name: "film") @order(fields: [{name: "title"}]) {
+  title: String
+}
+
+enum FilmOrder {
+  WRONG_SHAPE @order(fields: ["title"])
+  UNKNOWN_ARG @order(bogus: 1)
+  WRONG_SCALAR @order(index: 7)
+  BARE @field
+}
+
+# The argument the definition does not declare, which assembly calls unknown. The other refusals here
+# are kinds other documents pin: a missing required argument, an illegal location, an argument of the
+# wrong type.
+extend schema @expectEquals(relation: "graphql_schema_problem",
+    where: "error_class = 'DirectiveUnknownArgumentError'", rows: """
+  stage,    source_line
+  ASSEMBLY, 18
+  """)
+
+# The census holds every application, refused or not.
+extend schema @expectEquals(relation: "graphql_ast_directive_application_entry",
+    where: "name IN ('field', 'nodeId', 'table', 'order')", rows: """
+  name,   source_line
+  field,  9
+  nodeId, 9
+  table,  12
+  order,  12
+  order,  17
+  order,  18
+  order,  19
+  field,  20
+  """)
+
+# No refused application decodes: no @order wherever it was written, whatever is wrong with it, and no
+# @field without its name.
+extend schema @assertEmpty(relation: "graphitron_ast_order_entry")
+
+extend schema @assertEmpty(relation: "graphitron_ast_order_field_entry")
+
+extend schema @assertEmpty(relation: "graphitron_ast_binding_entry")
+
+# The legal neighbours decode.
+extend schema @expectEquals(relation: "graphitron_ast_table_entry", rows: """
+  table_ref
+  film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_node_id_entry", where: "node_type_ref IS NULL", rows: """
+  source_line
+  9
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_ast_node_id_entry", where: "node_type_ref IS NOT NULL")

@@ -50,9 +50,9 @@ import static org.assertj.core.api.Assertions.tuple;
  * <p>What the decode writes for a schema the generator accepts is stated by fact documents:
  * {@code @order}'s three surfaces by {@code scenarios/order-by-argument} and
  * {@code scenarios/order-by-index}, and a field list in written order, each element's own fields
- * beside it, by {@code defects/inline-list-choice}. The cases here hold what no document does: an
- * application the generator refuses, or an enum value carrying {@code @field}, which no document
- * writes.
+ * beside it, by {@code defects/inline-list-choice}. An application the definition does not admit,
+ * withheld whole, is {@code defects/entry-legality}'s. The cases here hold what no document does: an
+ * enum value carrying {@code @field}, and an {@code @index} naming nothing.
  */
 class GraphitronEnumValueEntriesTest {
 
@@ -88,43 +88,6 @@ class GraphitronEnumValueEntriesTest {
                 .as("the enum value's binding and the output field's, side by side")
                 .extracting(row -> row.get(GRAPHITRON_AST_BINDING_ENTRY.NAME_REF))
                 .containsExactlyInAnyOrder("rating_code", "title");
-        });
-    }
-
-    /**
-     * An element the definition does not admit withdraws the whole application, so no position of
-     * the list is written at all.
-     *
-     * <p>This case used to pin the opposite, that such an element spent its index and left the ones
-     * after it where the author would count them. That was the reading before the entry relations
-     * judged an application against its definition, when a list could be part legal and part not
-     * and the numbering had to say which. It cannot be now: {@code FieldSort} declares
-     * {@code name} as {@code String!}, so a list carrying a bare string is not a list of
-     * {@code FieldSort} and the application is not one {@code @order} admits. Its twin at the field
-     * site went the same way in the commit that made it unreachable, and the corpus here is that
-     * corpus: assembly refuses it, so nothing that reaches a generator can carry the shape the old
-     * case was about.
-     */
-    @Test
-    @DisplayName("an element the definition does not admit withdraws the whole application")
-    void anElementTheDefinitionDoesNotAdmitWithdrawsTheApplication(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query { films: [Film!] }
-            type Film { title: String }
-            enum FilmOrder {
-              BY_TITLE @order(fields: ["title", {name: "release_year"}])
-            }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
-
-            assertThat(dsl.select(writtenAt(t), t.NAME_REF).from(t)
-                    .where(t.GRAPH_NAME.eq(graph)).fetch())
-                .as("the legal element is withheld with the illegal one, the application being the "
-                    + "unit the definition admits or does not")
-                .isEmpty();
         });
     }
 

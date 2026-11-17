@@ -56,8 +56,9 @@ import static org.assertj.core.api.Assertions.tuple;
  * {@code @field} on an output field, an argument and an input object's field in one relation by
  * {@code scenarios/argmapping-candidate-roots}, and two {@code @referenceFor} applications on one
  * input field, each with its own path, and a bare {@code @nodeId} as a row naming no type by
- * {@code scenarios/condition-participant}. The cases here hold what no document does: an
- * application the generator refuses, an edit between two readings, or a shape no document writes.
+ * {@code scenarios/condition-participant}; a {@code @field} with no name, withheld whole, by
+ * {@code defects/entry-legality}. The cases here hold what no document does: an edit between two
+ * readings, or a shape no document writes.
  */
 class GraphitronInputValueEntriesTest {
 
@@ -156,39 +157,6 @@ class GraphitronInputValueEntriesTest {
                     row -> row.value4())
                 .as("and only the second carries a condition, the one arm that reaches the classpath")
                 .containsExactly(tuple(1, "no.example.Conditions", "live", "a: b"));
-        });
-    }
-
-    /**
-     * A required argument the author omitted is a malformed application, not an intent. No decode
-     * row is written for it: the applied-directive row says the directive was applied, and what
-     * they wrote instead stands in the argument's own value.
-     */
-    @Test
-    @DisplayName("a malformed application is applied and decodes to nothing")
-    void aMalformedApplicationWritesNoDecode(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query { films(titleFilter: String @field, actorId: ID @nodeId): [Film!] }
-            type Film { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-
-            assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE,
-                    GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
-                .as("both were applied, which is what the applied-directive row is for")
-                .containsExactly("field", "nodeId");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_BINDING_ENTRY,
-                    GRAPHITRON_AST_BINDING_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("@field without its required name decodes to nothing rather than to a null")
-                .isZero();
-            assertThat(dsl.select(GRAPHITRON_AST_NODE_ID_ENTRY.NODE_TYPE_REF)
-                    .from(GRAPHITRON_AST_NODE_ID_ENTRY)
-                    .where(GRAPHITRON_AST_NODE_ID_ENTRY.GRAPH_NAME.eq(graph))
-                    .fetch(GRAPHITRON_AST_NODE_ID_ENTRY.NODE_TYPE_REF))
-                .as("while @nodeId has no required argument, so a bare one is a row naming no type")
-                .containsExactly((String) null);
         });
     }
 
