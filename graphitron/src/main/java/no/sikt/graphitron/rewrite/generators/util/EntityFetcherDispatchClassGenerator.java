@@ -12,6 +12,7 @@ import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.emit.ConnectionKeyShape;
 import no.sikt.graphitron.emit.EntityKeyQuery;
+import no.sikt.graphitron.render.ConnectionKeyHandDown;
 import no.sikt.graphitron.render.LoaderConstruction;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 
@@ -87,6 +88,8 @@ public final class EntityFetcherDispatchClassGenerator {
     public static final String RESOLVE_BY_REPS_METHOD = "resolveByReps";
     /** A build without a tenant column: one representation's entity, read through its loader. */
     public static final String LOAD_METHOD = "load";
+    /** The keyed sibling of {@link #LOAD_METHOD}, in a build that accepts vouchers. */
+    public static final String LOAD_KEYED_METHOD = "loadKeyed";
     /** A build without a tenant column: one list slot's answer, its failure routed at the slot. */
     public static final String LOAD_SLOT_METHOD = "loadSlot";
     /** A build without a tenant column: list slots combined, in order, into the list field's result. */
@@ -171,9 +174,9 @@ public final class EntityFetcherDispatchClassGenerator {
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
 
         if (!multiTenant) {
-            var loaders = new EntityLoaders(outputPackage, nodeIdEncoder, ownedConnections);
             boolean accepts = entities.stream().flatMap(e -> e.alternatives().stream())
                 .anyMatch(EntityKeyQuery.Alternative.Voucher.class::isInstance);
+            var loaders = new EntityLoaders(outputPackage, nodeIdEncoder, ownedConnections, accepts);
             if (accepts) {
                 spec.addField(FieldSpec.builder(SLF4J_LOGGER, "VOUCHER_AUDIT",
                             Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -183,7 +186,11 @@ public final class EntityFetcherDispatchClassGenerator {
                     .addMethod(loaders.rejectVoucher());
             }
             spec.addMethod(loaders.fetchEntities())
-                .addMethod(loaders.load(entities))
+                .addMethod(loaders.load(entities));
+            if (accepts) {
+                spec.addMethod(loaders.loadKeyed(entities));
+            }
+            spec
                 .addMethod(loaders.loadSlot())
                 .addMethod(loaders.inOrder())
                 .addMethod(loaders.slotEnv())
@@ -466,8 +473,14 @@ public final class EntityFetcherDispatchClassGenerator {
         final ClassName connectionKey;
         final ClassName errorRouter;
         final ClassName clientException;
+        /**
+         * Whether each entity row carries the connection key it was read on: in a build that accepts
+         * vouchers, so a field below a vouched entity runs on the vouched key.
+         */
+        final boolean keyed;
 
-        EntityLoaders(String outputPackage, ClassName nodeIdEncoder, ClassName ownedConnections) {
+        EntityLoaders(String outputPackage, ClassName nodeIdEncoder, ClassName ownedConnections, boolean keyed) {
+            this.keyed = keyed;
             this.outputPackage = outputPackage;
             this.nodeIdEncoder = nodeIdEncoder;
             this.ownedConnections = ownedConnections;
@@ -538,8 +551,34 @@ public final class EntityFetcherDispatchClassGenerator {
                 .build();
         }
 
+        /** The row an entity is read as together with the key it was read on, in a keyed build. */
+        private TypeName keyedRow() {
+            return ParameterizedTypeName.get(DATA_FETCHER_RESULT, RECORD);
+        }
+
+        /** What {@code load<Type>} completes with: the row, or the row with its key in a keyed build. */
+        private TypeName loaded() {
+            return keyed ? keyedRow() : RECORD;
+        }
+
         MethodSpec load(List<EntityKeyQuery.Entity> entities) {
             var b = CodeBlock.builder();
+            if (keyed) {
+                b.addStatement("return $L(rep, env).thenApply(keyed -> keyed == null ? null : keyed.getData())",
+                    LOAD_KEYED_METHOD);
+                return MethodSpec.methodBuilder(LOAD_METHOD)
+                    .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                    .returns(ParameterizedTypeName.get(CF, RECORD))
+                    .addParameter(repType(), "rep")
+                    .addParameter(ENV, "env")
+                    .addJavadoc("Reads one representation's entity, as {@link #$L} does, without the key it was\n"
+                        + "read on: {@code Query.node} hands no key down, so a field below the node runs on\n"
+                        + "the request's own connection.\n"
+                        + "@param rep the representation, {@code __typename} and the key fields\n"
+                        + "@param env the dispatching field's environment\n", LOAD_KEYED_METHOD)
+                    .addCode(b.build())
+                    .build();
+            }
             b.addStatement("Object tn = rep == null ? null : rep.get($S)", TYPENAME_COLUMN);
             b.beginControlFlow("if (!(tn instanceof String typeName))");
             b.addStatement("return $T.completedFuture(null)", CF);
@@ -567,6 +606,37 @@ public final class EntityFetcherDispatchClassGenerator {
                 .build();
         }
 
+        /**
+         * {@code loadKeyed(rep, env)}: the row one representation names together with the connection
+         * key it was read on, as its {@code localContext}, so a field below a vouched entity runs on
+         * the vouched key. In a build that accepts vouchers only.
+         */
+        MethodSpec loadKeyed(List<EntityKeyQuery.Entity> entities) {
+            var b = CodeBlock.builder();
+            b.addStatement("Object tn = rep == null ? null : rep.get($S)", TYPENAME_COLUMN);
+            b.beginControlFlow("if (!(tn instanceof String typeName))");
+            b.addStatement("return $T.completedFuture(null)", CF);
+            b.endControlFlow();
+            for (var entity : entities) {
+                b.beginControlFlow("if ($S.equals(typeName))", entity.typeName());
+                b.addStatement("return load$L(rep, env)", entity.typeName());
+                b.endControlFlow();
+            }
+            b.addStatement("return $T.completedFuture(null)", CF);
+            return MethodSpec.methodBuilder(LOAD_KEYED_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, keyedRow()))
+                .addParameter(repType(), "rep")
+                .addParameter(ENV, "env")
+                .addJavadoc("Reads one representation's entity as {@link #$L} does, completing with the row\n"
+                    + "and, as its {@code localContext}, the connection key it was read on, so the entity's\n"
+                    + "subtree reads on that key; {@code null} where the representation names no row.\n"
+                    + "@param rep the representation, {@code __typename} and the key fields\n"
+                    + "@param env the dispatching field's environment\n", LOAD_METHOD)
+                .addCode(b.build())
+                .build();
+        }
+
         MethodSpec loadType(EntityKeyQuery.Entity entity) {
             var b = CodeBlock.builder();
             var skip = CodeBlock.of("return $T.completedFuture(null)", CF);
@@ -578,7 +648,7 @@ public final class EntityFetcherDispatchClassGenerator {
             b.addStatement("return $T.completedFuture(null)", CF);
             return MethodSpec.methodBuilder("load" + entity.typeName())
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .returns(ParameterizedTypeName.get(CF, RECORD))
+                .returns(ParameterizedTypeName.get(CF, loaded()))
                 .addParameter(repType(), "rep")
                 .addParameter(ENV, "env")
                 .addCode(b.build())
@@ -596,7 +666,13 @@ public final class EntityFetcherDispatchClassGenerator {
             arm.add("$T loader = repEnv.getDataLoaderRegistry().computeIfAbsent(\n", loaderType);
             arm.add("    $T.entityLoaderName(repEnv, $S, $L, key),\n", ownedConnections, entity.typeName(), altIndex);
             arm.add("    name -> $L);\n", LoaderConstruction.positional(batchLambda, "repEnv", errorRouter));
-            arm.addStatement("return loader.load($T.asList(cols), repEnv)", ARRAYS);
+            if (keyed) {
+                arm.addStatement("return loader.load($T.asList(cols), repEnv)\n"
+                    + "    .thenApply(row -> row == null ? null : $T.<$T>newResult().data(row)$L.build())",
+                    ARRAYS, DATA_FETCHER_RESULT, RECORD, ConnectionKeyHandDown.ofKey("key").builderTail());
+            } else {
+                arm.addStatement("return loader.load($T.asList(cols), repEnv)", ARRAYS);
+            }
         }
 
         /**
@@ -688,7 +764,7 @@ public final class EntityFetcherDispatchClassGenerator {
             var rejected = ClassName.get(pkg, no.sikt.graphitron.emit.VoucherRuntime.REJECTED);
             return MethodSpec.methodBuilder("rejectVoucher")
                 .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-                .returns(ParameterizedTypeName.get(CF, RECORD))
+                .returns(ParameterizedTypeName.get(CF, loaded()))
                 .addParameter(ENV, "env")
                 .addParameter(String.class, "scope")
                 .addParameter(UUID_CLASS, "vouchId")
@@ -740,9 +816,11 @@ public final class EntityFetcherDispatchClassGenerator {
 
         MethodSpec loadSlot() {
             var b = CodeBlock.builder();
-            b.addStatement("$T<$T> loaded", CF, RECORD);
+            b.addStatement("$T<$T> loaded", CF, loaded());
             b.beginControlFlow("try");
-            b.addStatement("loaded = $L(rep, env)", LOAD_METHOD);
+            // In a keyed build the slot answers the row with its key, so each element of the list
+            // carries the key it was read on to the entity's subtree.
+            b.addStatement("loaded = $L(rep, env)", keyed ? LOAD_KEYED_METHOD : LOAD_METHOD);
             b.nextControlFlow("catch ($T thrown)", Exception.class);
             b.addStatement("loaded = $T.failedFuture(thrown)", CF);
             b.endControlFlow();

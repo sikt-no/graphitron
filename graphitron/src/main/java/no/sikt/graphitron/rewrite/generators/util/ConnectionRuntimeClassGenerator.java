@@ -1696,7 +1696,6 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(collapseFanOut(self))
                 .addMethod(logFanOutFailure(self, errorRouter, true))
                 .addMethod(staticDslFor(self, tenantKey))
-                .addMethod(staticHandedDownDsl(self, connectionKey))
                 .addMethod(staticDslForIfPermitted(self, tenantKey, clientException, connectionKey))
                 .addMethod(namedTenant(tenantKey))
                 .addMethod(divinedTenant(tenantKey))
@@ -1706,12 +1705,18 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(divinedTenantAgree(tenantKey, clientException))
                 .addMethod(tenantSlot())
                 .addMethod(mapTenantLeaves())
-                .addMethod(loaderName())
                 .addMethod(tenantLoaderName(connectionKey))
-                .addMethod(handedDownLoaderName(self, connectionKey))
                 .addMethod(tenantLoaderNameFor())
                 .addType(outcomeType(self, tenantKey))
                 .addType(fanOutFailureType());
+        }
+        // A key with a part is handed down to child fields: a tenant's in a database-per-tenant build, a
+        // vouched-for value's in a build that accepts vouchers.
+        if (multiTenant || voucherCodec != null) {
+            carrier.addMethod(handedDownKey(connectionKey, multiTenant))
+                .addMethod(staticHandedDownDsl(self, connectionKey))
+                .addMethod(loaderName())
+                .addMethod(handedDownLoaderName(self, connectionKey));
         }
         return carrier.build();
     }
@@ -3013,19 +3018,43 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
+     * {@code static ConnectionKey handedDownKey(DataFetchingEnvironment env)}: the key a child field runs
+     * on, the one its parent handed down in {@code localContext}. Where none was handed down, a
+     * database-per-tenant build refuses at the request, before any SQL, since every field there has a
+     * tenant to run under; a build that accepts vouchers runs it on the request's own connection, the
+     * rule for a field outside a vouched entity's subtree, which grants no access a vouched key would.
+     */
+    private static MethodSpec handedDownKey(ClassName connectionKey, boolean multiTenant) {
+        var method = MethodSpec.methodBuilder("handedDownKey")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(connectionKey)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("if (env.getLocalContext() instanceof $T key)", connectionKey)
+            .addStatement("return key")
+            .endControlFlow();
+        if (multiTenant) {
+            method.addStatement("throw new $T($S)", NO_SUCH_ELEMENT, NO_HANDED_DOWN_KEY);
+        } else {
+            method.addStatement("return $T.defaultSource()", connectionKey);
+        }
+        return method
+            .addJavadoc("The key the parent handed down"
+                + (multiTenant ? ", refused where none was" : ", or the request's own where none was")
+                + ".\n@param env the field's {@code DataFetchingEnvironment}\n")
+            .build();
+    }
+
+    /**
      * {@code static DSLContext dslHandedDown(DataFetchingEnvironment env)}: the acquisition a child
-     * call makes on the whole key its parent handed down in {@code localContext}, a request-level
-     * error before any SQL where none was handed down.
+     * call makes on the whole key its parent handed down in {@code localContext}, read by
+     * {@code handedDownKey}.
      */
     private static MethodSpec staticHandedDownDsl(ClassName self, ClassName connectionKey) {
         return MethodSpec.methodBuilder("dslHandedDown")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(DSL_CONTEXT)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .beginControlFlow("if (env.getLocalContext() instanceof $T key)", connectionKey)
-            .addStatement("return dslFor(env, key)")
-            .endControlFlow()
-            .addStatement("throw new $T($S)", NO_SUCH_ELEMENT, NO_HANDED_DOWN_KEY)
+            .addStatement("return dslFor(env, handedDownKey(env))")
             .addJavadoc("Acquisition on the key the parent handed down, every part of it.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n")
             .build();
@@ -3106,12 +3135,10 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(String.class)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(String.class, "parentType")
-            .beginControlFlow("if (env.getLocalContext() instanceof $T key)", connectionKey)
+            .addStatement("$T key = handedDownKey(env)", connectionKey)
             .addStatement("$T carrier = env.getGraphQlContext().get($T.class)", self, self)
             .addStatement("return loaderName(env, parentType) + $S + (carrier == null ? 0 : carrier.keyIndex(key))",
                 " key:")
-            .endControlFlow()
-            .addStatement("throw new $T($S)", NO_SUCH_ELEMENT, NO_HANDED_DOWN_KEY)
             .addJavadoc("The DataLoader name for a child on the handed-down key: {@link #loaderName} plus\n"
                 + "the key's number in the request as an opaque segment, so each batch runs on one key.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
