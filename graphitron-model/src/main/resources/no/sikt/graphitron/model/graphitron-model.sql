@@ -18985,7 +18985,102 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT (o.name IN ('first', 'last', 'after', 'before')
             AND EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
                          WHERE cc.graph_name = f.graph_name AND cc.type_name = f.type_name
-                           AND cc.field_name = f.field_name));
+                           AND cc.field_name = f.field_name))
+UNION ALL
+-- An input field nothing takes, under the class its input object is built into (Alf, 2026-11-17):
+-- it fills no member of that class by the name the class matches on, exactly, case included, and
+-- nothing inside it fills one, is a column a filter compares, a call's parameter or tenant, an
+-- @outbox message's key, or carries its own @condition. Its value would reach nothing. Reported once,
+-- at the outermost such field: a nested input object none of whose fields binds is the misspelt
+-- member, and its fields are not reported. A column binds only where a predicate compares it, so not
+-- under an overriding condition and not under a @service, which composes with no filter. A list of
+-- input objects is GROUPING_LIST's, and an input object closing a cycle INPUT_CYCLE_EXPANDED's. Here,
+-- the first stage holding every binder's facts, the tenant's last; at the input field, the detail the
+-- class.
+SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'MEMBER_UNKNOWN', MIN(pr.class_name), 'occurrence-tenants'
+  FROM graphitron_occurrence o
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
+  JOIN graphitron_occurrence_built_class pr
+    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE o.kind = 'INPUT_FIELD'
+   AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
+   AND pr.record_table IS NULL
+   AND pr.constructible
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence u
+                    WHERE u.graph_name = o.graph_name AND u.argument_coordinate = o.argument_coordinate
+                      AND (u.coordinate = o.coordinate
+                           OR SUBSTRING(u.coordinate, 1, CHAR_LENGTH(o.coordinate) - 1)
+                              = SUBSTRING(o.coordinate, 1, CHAR_LENGTH(o.coordinate) - 2) || '.')
+                      AND (EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member bm
+                                    WHERE bm.graph_name = u.graph_name AND bm.coordinate = u.coordinate
+                                      AND (u.coordinate <> o.coordinate OR bm.class_name = pr.class_name))
+                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_parameter bp
+                               WHERE bp.graph_name = u.graph_name AND bp.coordinate = u.coordinate)
+                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_tenant bt
+                               WHERE bt.graph_name = u.graph_name AND bt.coordinate = u.coordinate)
+                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot ts
+                               WHERE ts.graph_name = u.graph_name AND ts.coordinate = u.coordinate)
+                   OR EXISTS (SELECT 1 FROM graphitron_argmapping_landing ol
+                               WHERE ol.graph_name = u.graph_name AND ol.landing_coordinate = u.coordinate
+                                 AND ol.directive_name = 'outbox')
+                   OR EXISTS (SELECT 1 FROM graphitron_directive_application dc
+                               WHERE dc.graph_name = u.graph_name AND dc.coordinate = u.element_coordinate
+                                 AND dc.directive_name = 'condition')
+                   OR ((EXISTS (SELECT 1 FROM graphitron_occurrence_column cc
+                                 WHERE cc.graph_name = u.graph_name AND cc.coordinate = u.coordinate)
+                        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                                    WHERE ni.graph_name = u.graph_name AND ni.coordinate = u.coordinate))
+                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                                        WHERE ov.graph_name = u.graph_name AND ov.coordinate = u.coordinate)
+                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence ar
+                                         JOIN graphitron_occurrence_producer sp
+                                           ON sp.graph_name = ar.graph_name AND sp.coordinate = ar.parent_coordinate
+                                          AND sp.kind = 'SERVICE'
+                                        WHERE ar.graph_name = u.graph_name AND ar.coordinate = u.argument_coordinate))))
+   -- The outermost only: a field whose parent is itself a grouping nothing inside takes is reported
+   -- at that grouping.
+   AND NOT (pr.declared_via = 'GROUPING'
+            AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence po2
+                              JOIN graphitron_occurrence u
+                                ON u.graph_name = po2.graph_name AND u.argument_coordinate = po2.argument_coordinate
+                      AND (u.coordinate = po2.coordinate
+                           OR SUBSTRING(u.coordinate, 1, CHAR_LENGTH(po2.coordinate) - 1)
+                              = SUBSTRING(po2.coordinate, 1, CHAR_LENGTH(po2.coordinate) - 2) || '.')
+                             WHERE po2.graph_name = o.graph_name AND po2.coordinate = o.parent_coordinate
+                               AND (EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member bm
+                                    WHERE bm.graph_name = u.graph_name AND bm.coordinate = u.coordinate
+                                      AND (u.coordinate <> po2.coordinate OR bm.class_name = '-'))
+                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_parameter bp
+                               WHERE bp.graph_name = u.graph_name AND bp.coordinate = u.coordinate)
+                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_binding_tenant bt
+                               WHERE bt.graph_name = u.graph_name AND bt.coordinate = u.coordinate)
+                   OR EXISTS (SELECT 1 FROM graphitron_occurrence_tenant_slot ts
+                               WHERE ts.graph_name = u.graph_name AND ts.coordinate = u.coordinate)
+                   OR EXISTS (SELECT 1 FROM graphitron_argmapping_landing ol
+                               WHERE ol.graph_name = u.graph_name AND ol.landing_coordinate = u.coordinate
+                                 AND ol.directive_name = 'outbox')
+                   OR EXISTS (SELECT 1 FROM graphitron_directive_application dc
+                               WHERE dc.graph_name = u.graph_name AND dc.coordinate = u.element_coordinate
+                                 AND dc.directive_name = 'condition')
+                   OR ((EXISTS (SELECT 1 FROM graphitron_occurrence_column cc
+                                 WHERE cc.graph_name = u.graph_name AND cc.coordinate = u.coordinate)
+                        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                                    WHERE ni.graph_name = u.graph_name AND ni.coordinate = u.coordinate))
+                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                                        WHERE ov.graph_name = u.graph_name AND ov.coordinate = u.coordinate)
+                       AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence ar
+                                         JOIN graphitron_occurrence_producer sp
+                                           ON sp.graph_name = ar.graph_name AND sp.coordinate = ar.parent_coordinate
+                                          AND sp.kind = 'SERVICE'
+                                        WHERE ar.graph_name = u.graph_name AND ar.coordinate = u.argument_coordinate)))))
+   AND NOT (t.kind = 'INPUT_OBJECT'
+            AND EXISTS (SELECT 1 FROM graphitron_occurrence_chain ch
+                         WHERE ch.graph_name = o.graph_name AND ch.coordinate = o.coordinate
+                           AND ch.type_name = f.named_type))
+ GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
 
 CREATE VIEW graphitron_occurrence_build_entry_defect_rule
@@ -19108,29 +19203,6 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
                   AND s.call_kind = 'CONDITION'
                 WHERE cp.graph_name = b.graph_name AND cp.landing_coordinate = b.coordinate
                   AND cp.fill = 'ARGUMENT')
- GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
-UNION ALL
--- An input field under a class its parent is built into that fills no member of it, by the name the
--- built class matches on, and does not group onto it: the value would reach nothing. A list of input
--- objects is GROUPING_LIST's. At the input field, the detail the class.
-SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
-       'MEMBER_UNKNOWN', MIN(pr.class_name), 'occurrence-builds'
-  FROM graphitron_occurrence o
-  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
-  JOIN graphitron_type t ON t.graph_name = f.graph_name AND t.type_name = f.named_type
-  JOIN graphitron_occurrence_built_class pr
-    ON pr.graph_name = o.graph_name AND pr.coordinate = o.parent_coordinate
-  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
- WHERE o.kind = 'INPUT_FIELD'
-   AND NOT (t.kind = 'INPUT_OBJECT' AND f.is_list)
-   AND pr.record_table IS NULL
-   AND pr.constructible
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding_member m
-                    WHERE m.graph_name = o.graph_name AND m.coordinate = o.coordinate
-                      AND m.class_name = pr.class_name)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class g
-                    WHERE g.graph_name = o.graph_name AND g.coordinate = o.coordinate
-                      AND g.class_name = pr.class_name)
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column
 UNION ALL
 -- A list of input objects under a built class it fills no member of: a grouping's fields fill the
@@ -19545,7 +19617,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                              OR ar.arrival_kind = 'ANY_NON_JDK'
                                 AND POSITION('.', COALESCE(ws.element_class, ws.erased_class, ws.slot_type)) > 0
                                 AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) NOT LIKE 'java.%')));
-COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.';
+COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, a class an input object is built into that has no constructor graphitron can call giving one BUILT_CLASS_UNBUILDABLE row at the input object.';
 
 -- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:
 -- a child producer's lift and the key it takes, and the column a field reads or writes.
@@ -28531,7 +28603,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('CONDITION_PARAMETER_RECORD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_PARAMETER_RECORD',
    'A @condition method takes an input object as a jOOQ record, and a condition takes the input''s values as a bean or the delivered map, a record being a row to write: declare the parameter as a bean or a Map.'),
   ('MEMBER_UNKNOWN', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNKNOWN',
-   'An input field fills no member of the class its input object is built into, under the name it matches on, its @field(name:) for a @service and its own name for a @condition, and groups nothing onto it, so its value would reach nothing: name a member the class has, or give the class one.'),
+   'An input field nothing takes, under the class its input object is built into: it fills no member under the name it matches on, its @field(name:) for a @service and its own name for a @condition, matched exactly, case included, and nothing inside it fills one, is a column a filter compares, a call''s parameter or tenant, or carries its own @condition, so its value would reach nothing. Reported once, at the outermost such field: a nested input object none of whose fields binds is the misspelt member, and its fields are not reported. Name a member the class has, or give the class one.'),
   ('GROUPING_LIST', 'error', 'GRAPHITRON', 'GRAPHITRON_GROUPING_LIST',
    'A list of input objects fills no member of the class its parent is built into, or sits under a jOOQ record, and a grouping fills the enclosing object once, which a list has no one value for: give the class a member for the list, or make the field one input object.'),
   ('MEMBER_FILLED_TWICE', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_FILLED_TWICE',
@@ -30093,7 +30165,7 @@ INSERT INTO meta_relation VALUES
    'The defects of a node id inferred from the one node over a table where no node or several are, written by the occurrence-bindings stage that writes graphitron_occurrence_node_id, whose missing row they judge.'),
   ('graphitron_occurrence_build_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, an input field filling no member of the bean its input object is built into giving one MEMBER_UNKNOWN row at that field.',
+   'For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, a class an input object is built into that has no constructor graphitron can call giving one BUILT_CLASS_UNBUILDABLE row at the input object.',
    'The defects of what an input object is built into, written by the occurrence-builds stage that writes the built classes and member bindings they read, as the outbox''s are, so the gatherer''s one rule over every arm, which H2 parses whole wherever it is named, does not carry them.'),
   ('graphitron_occurrence_depth_entry_defect_rule', 'graphitron-entry-defect', 'graphitron',
    'One row the occurrence defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',

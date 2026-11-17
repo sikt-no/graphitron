@@ -241,6 +241,16 @@ rather than members. The input `in` that `Mutation.customerUpsert` takes is buil
 `CustomerRecord`, and so is its field `details`, which groups `firstName` and `lastName` onto the
 same record.
 
+An input field built into a bean or Java record has to bind (Alf, 2026-11-17): it, or a field inside
+it, fills a member of the class, is a call's parameter or tenant, is an `@outbox` message's key,
+carries its own `@condition`, or is a column a filter compares, which it is only where no
+overriding condition and no `@service` stands in the way. An input field nothing takes is
+`MEMBER_UNKNOWN`, reported once, at the outermost such field: a nested input object none of whose
+fields binds is the misspelt member, and its fields are not reported, while one some of whose fields
+fill the bean groups them and binds. Names match exactly, case included: `setAktivInnenForPeriode`
+is the member `aktivInnenForPeriode`, which `aktivInnenforPeriode` does not name. A jOOQ record's
+fields bind columns, and one naming none is `COLUMN_UNRESOLVED` at each such field.
+
 An input object reaches a call typed, never as the untyped map graphql-java delivers (Alf,
 2026-11-13). A parameter takes it whole as a class the store builds, a `@condition` on an input field
 included, or takes its fields one by one through `argMapping` paths into it, `fra:

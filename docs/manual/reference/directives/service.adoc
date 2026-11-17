@@ -149,7 +149,10 @@ its fields onto the enclosing object. The build fails at the field where it cann
 
 * a class nothing constructs, being abstract, not public, or without such a constructor
   (`BUILT_CLASS_UNBUILDABLE`);
-* a field filling no member, whose value would reach nothing (`MEMBER_UNKNOWN`);
+* a field nothing takes, whose value would reach nothing (`MEMBER_UNKNOWN`): it fills no member,
+  matched exactly, case included, and no field inside it fills one or is otherwise bound. A nested
+  input object none of whose fields fills a member is reported itself, at that field, and its fields
+  are not (Alf, 2026-11-17);
 * a list of input objects filling no member, which has no one object to group onto
   (`GROUPING_LIST`), and any list of input objects inside a jOOQ record;
 * two fields filling one member of one object (`MEMBER_FILLED_TWICE`); node ids decoding into one

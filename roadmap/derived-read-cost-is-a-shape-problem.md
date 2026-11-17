@@ -3265,6 +3265,14 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   or make the class a record. Refused as `MEMBER_UNRESOLVED` (new) or `ERROR_FIELD_UNREADABLE`.
   Unused in FS-plattform: at main 946fc4aa20, all 644 fields read off a backing class and all 1,761
   input fields matched to a bean read a record component or a getter.
+* **Breaking: an input field nothing takes is refused** ("an input field nothing takes is
+  MEMBER_UNKNOWN once, at the outermost such field"). An input field built into a bean or Java record
+  that fills no member, matched exactly, case included, and is bound no other way (a call's parameter
+  or tenant, an `@outbox` key, its own `@condition`, a column a non-overriding filter compares) fails
+  the build as `MEMBER_UNKNOWN`, once at the outermost such field: a misspelt nested input object is
+  reported itself, its fields not. A field a non-overriding filter compares as a column is no longer
+  refused for filling no member. In FS-plattform sis, the two `aktivInnenforPeriode` filter fields,
+  which Graphitron 9 drops silently today: rename the setter or the field to match.
 
 ## Retired vocabulary
 

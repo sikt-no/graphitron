@@ -992,8 +992,7 @@ final class InputBeanResolver {
      *       than as an under-arity constructor call in the generated code.</li>
      *   <li><b>Every SDL field must be consumed</b> (direction B). A field whose binding key names
      *       no component would have its value silently dropped (it never reaches the constructor);
-     *       for a record's total-mirror contract that is a hard fail, not the deliberate
-     *       partial-population the JavaBean arm tolerates.</li>
+     *       for a record's total-mirror contract that is a hard fail.</li>
      * </ul>
      * Bindings are produced in record-component (canonical-constructor) order.
      */
@@ -1051,17 +1050,15 @@ final class InputBeanResolver {
     }
 
     /**
-     * JavaBean arm: setters are applied independently, so binding is partial by design. Each SDL
-     * field whose binding key names a setter binds; a field whose key names no setter is skipped
-     * (the bean simply does not populate it). The empty-bindings rejection fires only when no field,
-     * by name or by {@code @field(name:)}, matches any setter — the genuine "this bean does not
-     * mirror this input" case.
+     * JavaBean arm: setters are applied independently. Each SDL field whose binding key names a
+     * setter binds. The empty-bindings rejection fires only when no field, by name or by
+     * {@code @field(name:)}, matches any setter, the "this bean does not mirror this input" case.
      *
-     * <p>That tolerance no longer extends to nested input-object fields: an unmatched one is a
-     * grouping input and either flattens or rejects, decided in the index walk above before this arm
-     * runs. Only an unmatched <em>scalar</em> field is still skipped in silence. The asymmetry is
-     * deliberate: flattening requires looking inside a nested field, so this arm cannot stay blind
-     * there, while diagnosing a dropped scalar needs machinery this arm does not have.
+     * <p>An input field nothing takes is a defect (Alf, 2026-11-17), but this arm does not judge
+     * it: the fact store refuses it as {@code MEMBER_UNKNOWN}, once at the outermost unbound field,
+     * and a graph the store refuses is never classified, so a field skipped here never reaches
+     * generation. A nested input-object field matching no setter is a grouping input, flattened or
+     * rejected in the index walk above.
      */
     private Built bindJavaBean(Class<?> beanClass, GraphQLInputObjectType iot,
             Map<String, JavaMember> settersByName,

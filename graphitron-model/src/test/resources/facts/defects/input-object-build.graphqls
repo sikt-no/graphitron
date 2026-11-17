@@ -3,6 +3,12 @@
 # class nothing constructs, a field filling no member, a list that cannot group, two fields on one
 # member, a @condition taking a jOOQ record, and a field naming no column of the record it writes. A
 # node id with no route onto the record is node-id-lands-on-table's.
+#
+# A field nothing takes is reported once, at the outermost such field (Alf, 2026-11-17): Length, a
+# nested input object whose own fields fill nothing of FilmSearchFilter, is the misspelt member
+# (the setter is setLength, matched exactly), and its min and max are not reported. A nested input
+# object some of whose fields fill the bean, naming, groups and binds; and a field a non-overriding
+# filter compares as a column, releaseYear, needs no member.
 
 interface Node { id: ID! }
 type Film implements Node @table(name: "film") @node { id: ID! title: String }
@@ -18,6 +24,12 @@ input FilmRecordDraftInput {
   filmId: ID @nodeId(typeName: "Film")
 }
 input FilmRecordExtraInput { title: String @field(name: "title"), subtitle: String }
+input FilmLengthBoundsInput { min: Int, max: Int }
+input FilmSearchMisspeltInput { title: String, Length: FilmLengthBoundsInput, subtitle: String }
+input FilmSearchNamingInput { title: String }
+input FilmLengthRangeInput { min: Int, max: Int }
+input FilmSearchGroupedInput { naming: FilmSearchNamingInput, length: FilmLengthRangeInput }
+input FilmSearchColumnInput { title: String, releaseYear: Int @field(name: "release_year") }
 
 type Query {
   # Every field fills a member of FilmDraft.
@@ -45,6 +57,19 @@ type Query {
   filmsByRecord(by: FilmRecordDraftInput): [Film!]! @condition(condition: {
       className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
       method: "filmByRecord", argMapping: "film: by"}, override: true)
+  # Length and subtitle fill nothing of FilmSearchFilter, on a connection whose paging arguments are
+  # the page's: one row each, none for Length's fields.
+  filmsBySearch(search: FilmSearchMisspeltInput): [Film!]! @asConnection @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmSearchBean"}, override: true)
+  # naming groups title onto FilmSearchFilter, and length fills its length.
+  filmsByGroupedSearch(search: FilmSearchGroupedInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmSearchBean"}, override: true)
+  # releaseYear fills no member, but the filter, not overridden, compares it as a column.
+  filmsByColumnSearch(search: FilmSearchColumnInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmSearchBean"})
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
@@ -55,6 +80,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.countAbstractDraft(in:),       BUILT_CLASS_UNBUILDABLE,    no.sikt.graphitron.rewrite.test.services.AbstractFilmDraft
   Query.filmsByRecord(by:),            CONDITION_PARAMETER_RECORD, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   FilmDraftExtraInput.subtitle,        MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.services.FilmDraft
+  FilmSearchMisspeltInput.Length,      MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.conditions.FilmSearchFilter
+  FilmSearchMisspeltInput.subtitle,    MEMBER_UNKNOWN,             no.sikt.graphitron.rewrite.test.conditions.FilmSearchFilter
   FilmBundleExtrasInput.extras,        GROUPING_LIST,              no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
   FilmDraftTwiceInput.title,           MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmDraft#title
   FilmRecordExtraInput.subtitle,       COLUMN_UNRESOLVED,          subtitle
