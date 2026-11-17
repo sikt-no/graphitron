@@ -4,27 +4,17 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.language.SourceLocation;
 import graphql.parser.InvalidSyntaxException;
 import graphql.parser.Parser;
-import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
-import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
-import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
-import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
-import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.run.GraphIdentity;
-import no.sikt.graphitron.model.run.ModelCapture;
-import no.sikt.graphitron.model.run.SubjectConfig;
-import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.test.ThreadConfinedStore;
-import org.jooq.DSLContext;
+import no.sikt.graphitron.model.test.FactGraphs;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -49,33 +39,23 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * the claim as the parser's verdict rather than as a sentence about grammar. Asserting only that no
  * fix is offered would pass just as well if somebody withheld it for the wrong reason, or withheld
  * every fix this rule has.
+ *
+ * <p>The declarations are the fact document {@code scenarios/description-placeholder}'s, which also
+ * states where each one is positioned; the findings are read off its graph, and the edits are applied
+ * to its text.
  */
 class DescriptionPlaceholderTest {
 
-    private static final String GRAPH = "description-placeholder";
+    @RegisterExtension
+    static final FactGraphs.Reader FACTS = FactGraphs.reader();
+
+    private static final String DOCUMENT = "scenarios/description-placeholder";
+
 
     private static final String RULE = "types-and-fields-have-descriptions";
 
-    /** The blank is written as a plain string of spaces, there being no way to spell one that is not. */
-    private static final String SDL = """
-        type Undescribed {
-          id: ID
-        }
-
-        "   "
-        type Blank {
-          id: ID
-        }
-
-        "A described type."
-        type Described {
-          id: ID
-        }
-
-        type Query {
-          widgets: String
-        }
-        """;
+    /** The document's text, which the edits below are applied to as an editor would. */
+    private static final String SDL = text();
 
     /**
      * The declaration nobody documented. The insert goes above it, and what it leaves behind is a
@@ -217,35 +197,13 @@ class DescriptionPlaceholderTest {
     }
 
     private static void withFindings(Consumer<List<BuildWarning.LintFinding>> body) {
-        ThreadConfinedStore.run(dsl -> {
-            capture(dsl);
-            body.accept(LintFindings.of(new StoreHandle(dsl, GRAPH)));
-        });
+        body.accept(FACTS.read(DOCUMENT, graph -> LintFindings.of(graph.handle())));
     }
 
-    /** One reading of a directory holding the fixture, which is what a run does. */
-    private static void capture(DSLContext dsl) {
-        Path directory = temporaryDirectory();
+    private static String text() {
         try {
-            Files.writeString(directory.resolve("schema.graphqls"), SDL, StandardCharsets.UTF_8);
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-        var graph = new GraphIdentity(GRAPH, directory);
-        var config = SubjectConfig.of(new SchemaRecipe(directory.resolve("pom.xml"),
-            List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls")));
-        var readAt = LocalDateTime.now();
-        ModelCapture.writeGraph(dsl, graph, readAt);
-        var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
-        var documents = reading.documents();
-        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
-        GraphitronAstCapture.capture(dsl, graph, documents, readAt);
-        GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
-    }
-
-    private static Path temporaryDirectory() {
-        try {
-            return Files.createTempDirectory("description-placeholder");
+            return Files.readString(Path.of("src", "test", "resources", "facts", DOCUMENT + ".graphqls"),
+                StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }

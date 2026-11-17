@@ -1,0 +1,39 @@
+# Where a declaration's position lands, and so where a description may be written. A described
+# declaration is positioned at its description, the parser treating the docstring as the first part
+# of the node, and a bare one at its own first token. So the description lint's placeholder goes
+# above an undocumented declaration, and a declaration documented with nothing, a blank docstring, is
+# reported at that docstring with no edit offered: an insert there would write a second string before
+# the first.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+type Undescribed {
+  id: ID
+}
+
+"   "
+type Blank {
+  id: ID
+}
+
+"A described type."
+type Described {
+  "Its name."
+  name: String
+  plain: String
+}
+
+# The described type at its docstring's line, not the line the word type is on.
+extend schema @expectEquals(relation: "graphql_ast_type_declaration_entry",
+    where: "name IN ('Undescribed', 'Blank', 'Described')", rows: """
+  name,        source_line
+  Undescribed, 9
+  Blank,       13
+  Described,   18
+  """)
+
+# A described field at its docstring, a bare one at its own name.
+extend schema @expectEquals(relation: "graphql_ast_field_definition_entry", where: "type_name = 'Described'", rows: """
+  name,  source_line
+  name,  20
+  plain, 22
+  """)
