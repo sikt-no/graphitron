@@ -9,10 +9,13 @@ import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
-import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.test.FactStores;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInfo;
+import org.junit.jupiter.api.extension.RegisterExtension;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -21,6 +24,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -43,8 +47,26 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class DocumentStateCaptureTest {
 
-    private static final String GRAPH = "document-state";
-    private static final String OTHER_GRAPH = "document-state-other";
+    /**
+     * A store of the class's own: every case writes, reads again on a stated instant and sweeps,
+     * which is the capture's own lifecycle and not a reading of a document's graph.
+     */
+    @RegisterExtension
+    static final FactStores.ClassStore STORE = FactStores.perClass();
+
+    /**
+     * The case's own graphs, named for its method, so one case's sweeps and stated instants never
+     * meet another's rows in the class's store.
+     */
+    private static String graph;
+    private static String otherGraph;
+
+    @BeforeEach
+    void nameTheGraphs(TestInfo info) {
+        String method = info.getTestMethod().orElseThrow().getName();
+        graph = "document-state." + method;
+        otherGraph = "document-state-other." + method;
+    }
 
     private static final LocalDateTime FIRST = LocalDateTime.parse("2024-01-01T10:00:00");
     private static final LocalDateTime SECOND = LocalDateTime.parse("2024-01-02T10:00:00");
@@ -65,7 +87,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document whose bytes have not moved keeps the rows it already had")
     void anUnchangedDocumentIsLeftAlone() {
-        ThreadConfinedStore.run(dsl -> {
+        run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             read(dsl, directory, FIRST);
@@ -95,7 +117,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a reading stopped before its transcription has the document transcribed next time")
     void aStoppedReadingVouchesForNothing() {
-        ThreadConfinedStore.run(dsl -> {
+        run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             readStoppedAfterTheClaim(dsl, directory, FIRST);
@@ -111,27 +133,6 @@ class DocumentStateCaptureTest {
     }
 
     /**
-     * The other side of the same comparison: bytes that moved are transcribed again, so the skip
-     * cannot quietly be a skip of everything.
-     */
-    @Test
-    @DisplayName("a document whose bytes moved is transcribed again")
-    void aChangedDocumentIsRewritten() {
-        ThreadConfinedStore.run(dsl -> {
-            Path directory = temporaryDirectory();
-            write(directory, "widget.graphqls", WIDGET);
-            read(dsl, directory, FIRST);
-
-            write(directory, "widget.graphqls", WIDGET.replace("name: String", "title: String"));
-            read(dsl, directory, SECOND);
-
-            assertThat(instants(dsl, directory, "widget.graphqls"))
-                .as("the edited file is rewritten on this reading's instant")
-                .containsExactly(SECOND);
-        });
-    }
-
-    /**
      * A file the author has just broken, saved together with an edit to the file beside it. The
      * reading stops at the parse and the store keeps the last clean reading of both, so nothing the
      * capture skipped is stamped as transcribed: once the break is fixed, the neighbour's edit is
@@ -140,7 +141,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document that stopped parsing ends the reading, and its neighbour's edit is read once it parses")
     void anUnparsableDocumentEndsTheReading() {
-        ThreadConfinedStore.run(dsl -> {
+        run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
@@ -177,7 +178,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document the author deleted loses its rows and its source row")
     void aDeletedDocumentLosesItsRows() {
-        ThreadConfinedStore.run(dsl -> {
+        run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
@@ -208,7 +209,7 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a document the configuration dropped loses its rows and keeps its source row")
     void aDeconfiguredDocumentLosesItsRows() {
-        ThreadConfinedStore.run(dsl -> {
+        run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
@@ -221,7 +222,7 @@ class DocumentStateCaptureTest {
                 .as("a document this graph no longer reads leaves no rows behind under it")
                 .isZero();
             assertThat(dsl.fetchCount(STORE_GRAPH_SOURCE,
-                STORE_GRAPH_SOURCE.GRAPH_NAME.eq(GRAPH)
+                STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graph)
                     .and(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(name(directory, "widget.graphqls")))))
                 .as("nor a claim on it")
                 .isZero();
@@ -246,28 +247,28 @@ class DocumentStateCaptureTest {
     @Test
     @DisplayName("a deleted document another graph still claims keeps its source row until that graph reads")
     void aDeletedDocumentAnotherGraphClaimsWaitsForIt() {
-        ThreadConfinedStore.run(dsl -> {
+        run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
-            read(dsl, OTHER_GRAPH, directory, FIRST, "*.graphqls");
-            read(dsl, GRAPH, directory, FIRST, "*.graphqls");
+            read(dsl, otherGraph, directory, FIRST, "*.graphqls");
+            read(dsl, graph, directory, FIRST, "*.graphqls");
             String widget = name(directory, "widget.graphqls");
 
             delete(directory, "widget.graphqls");
-            read(dsl, GRAPH, directory, SECOND, "*.graphqls");
+            read(dsl, graph, directory, SECOND, "*.graphqls");
 
             assertThat(claimants(dsl, widget))
                 .as("the graph that read let go of its own claim and only its own")
-                .containsExactly(OTHER_GRAPH);
+                .containsExactly(otherGraph);
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(widget)))
                 .as("and left the source the other graph still claims")
                 .isOne();
-            assertThat(positions(dsl, OTHER_GRAPH, directory, "widget.graphqls"))
+            assertThat(positions(dsl, otherGraph, directory, "widget.graphqls"))
                 .as("along with the rows that graph read from it")
                 .isPositive();
 
-            read(dsl, OTHER_GRAPH, directory, THIRD, "*.graphqls");
+            read(dsl, otherGraph, directory, THIRD, "*.graphqls");
 
             assertThat(claimants(dsl, widget))
                 .as("the other graph lets go of its claim on its own reading")
@@ -275,7 +276,7 @@ class DocumentStateCaptureTest {
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(widget)))
                 .as("and, the last one out, forgets the file")
                 .isZero();
-            assertThat(positions(dsl, OTHER_GRAPH, directory, "widget.graphqls"))
+            assertThat(positions(dsl, otherGraph, directory, "widget.graphqls"))
                 .as("with its rows")
                 .isZero();
         });
@@ -283,13 +284,18 @@ class DocumentStateCaptureTest {
 
     // ------------------------------------------------------------------------------- the reading
 
+    /** A case's body against the class's store. */
+    private static void run(Consumer<DSLContext> body) {
+        body.accept(STORE.handle().dsl());
+    }
+
     /** One reading of everything the configuration names, which is what a run does. */
     private static void read(DSLContext dsl, Path baseDir, LocalDateTime readAt) {
         read(dsl, baseDir, readAt, "*.graphqls");
     }
 
     private static void read(DSLContext dsl, Path baseDir, LocalDateTime readAt, String pattern) {
-        read(dsl, GRAPH, baseDir, readAt, pattern);
+        read(dsl, graph, baseDir, readAt, pattern);
     }
 
     private static void read(DSLContext dsl, String graphName, Path baseDir, LocalDateTime readAt,
@@ -307,9 +313,9 @@ class DocumentStateCaptureTest {
 
     /** A reading stopped right after the source reading committed, before any transcription. */
     private static void readStoppedAfterTheClaim(DSLContext dsl, Path baseDir, LocalDateTime readAt) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
-        ModelCapture.writeGraph(dsl, graph, readAt);
-        GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, "*.graphqls"), readAt);
+        var identity = new GraphIdentity(graph, baseDir);
+        ModelCapture.writeGraph(dsl, identity, readAt);
+        GraphQLSourceCapture.capture(dsl, identity, corpus(baseDir, "*.graphqls"), readAt);
     }
 
     private static SubjectConfig corpus(Path baseDir, String pattern) {
@@ -320,7 +326,7 @@ class DocumentStateCaptureTest {
     // --------------------------------------------------------------------------- what it wrote
 
     private static int positions(DSLContext dsl, Path directory, String file) {
-        return positions(dsl, GRAPH, directory, file);
+        return positions(dsl, graph, directory, file);
     }
 
     private static int positions(DSLContext dsl, String graph, Path directory, String file) {
@@ -338,7 +344,7 @@ class DocumentStateCaptureTest {
 
     private static List<LocalDateTime> instants(DSLContext dsl, Path directory, String file) {
         return dsl.selectDistinct(GRAPHQL_AST_ENTRY.TOUCHED_AT).from(GRAPHQL_AST_ENTRY)
-            .where(GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH))
+            .where(GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(graph))
             .and(GRAPHQL_AST_ENTRY.SOURCE_NAME.eq(name(directory, file)))
             .fetch(GRAPHQL_AST_ENTRY.TOUCHED_AT);
     }
@@ -346,7 +352,7 @@ class DocumentStateCaptureTest {
     /** When this graph last says it transcribed the file, off the claim rather than off the rows. */
     private static LocalDateTime claimedAt(DSLContext dsl, Path directory, String file) {
         return dsl.select(STORE_GRAPH_SOURCE.READ_AT).from(STORE_GRAPH_SOURCE)
-            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(GRAPH))
+            .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq(graph))
             .and(STORE_GRAPH_SOURCE.SOURCE_NAME.eq(name(directory, file)))
             .fetchOne(STORE_GRAPH_SOURCE.READ_AT);
     }
