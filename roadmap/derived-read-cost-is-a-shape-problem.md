@@ -1794,7 +1794,10 @@ someone to profile.
   inside `occurrence-depths`, `fetchers` and `occurrence-bindings`, the three costliest stages on sis,
   are looked at one by one; then the views that derive a chain again, the minting chain first; and
   the oversized rule views last, since on sis they cost heap and planning but little time, the stage
-  holding the 40k character rule running in 0.9 s. One rule view is
+  holding the 40k character rule running in 0.9 s. Over the fact documents it costs more: compared
+  per graph both ways by `StageAnswerAgreementTest` on 2026-11-17, the union of the rule views
+  `graphitron_entry_defect` is written from took 17.4 s of the class's 67 s, the most of any of the
+  145 stage tables (the next, `code_graph_class`, 3.6 s). One rule view is
   still read by another view, `graphitron_occurrence_connection_rule` (by
   `graphitron_occurrence_route_entry_defect_rule`), and one view named a rule no stage writes from,
   `graphitron_entry_defect_parameter_rule`: `StageRuleGateTest` lists both as debt, each to be stored
