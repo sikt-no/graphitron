@@ -476,6 +476,31 @@ more work for the same heap.
 - *Owed.* The `build-profile` skill still describes `MAVEN_OPTS` only. Adding the route above belongs
   with the next change that carries a full build, since the skill is outside `roadmap/`.
 
+**B7. Give the chain the machine while LSP, MCP and roadmap-tool run beside it.** Tried 2026-11-17
+and set aside; do not try ordering again.
+- *What was seen.* The build at a034cb5705 took 1,378 s against 1,316 s at 12a9c3a380, with
+  `graphitron`'s span 611 s against 494. Standalone `clean verify -pl :graphitron` at 12a9c3a380,
+  6f76a53544 and a034cb5705, interleaved, two runs each, gave 455, 460 and 457 s, tests 335, 335 and
+  337 s and `generate-test-schemas` 76, 80 and 72 s: no commit moved it. In the reactor
+  `generate-test-schemas` took 151 to 197 s, running beside LSP's and roadmap-tool's tests and MCP's
+  docs index.
+- *Order.* LSP, MCP and roadmap-tool depend on `graphitron-model` only; the plugin and docs depend on
+  them. Starting them after `graphitron` takes a dependency the modules do not have, and Maven 3.9's
+  builder has no priority to give instead.
+- *Priority and caps.* Their forks and MCP's docs index were pointed at a wrapper `java`, one
+  recorded `-T 1C` build per arm on one tree: control 1,360 s, `nice 19` 1,394 s, and
+  `-XX:ActiveProcessorCount=2` 1,535 s (that run drifted about 100 s in `graphitron-model`, which it
+  cannot touch). `generate-test-schemas` took 165, 161 and 171 s.
+- *Why.* Not memory: in the reactor the JVMs' resident sets peaked at 12.4 GB of 30, with 98 MB
+  swapped in over the step and none out, and GC paused 3.4 s. The step's own JVM did the same work
+  in about 350 CPU-seconds against 205 standalone. The workstation's eight cores carry two hardware
+  threads each and turbo above their all-core clock, so a sibling JVM on the paired thread, and the
+  clock falling, slow each instruction; nothing waits, so priority has nothing to hand over, and a
+  processor count only sizes pools.
+- *Why it stops here.* Pinning the siblings to cores (`taskset`) or a temporary dependency could
+  still win on this machine, but both tune one laptop's shape, which CI's four vCPUs and other
+  developers' machines do not share. The gain left in that window is cutting work, which is A3.
+
 ### Track C: smaller statements (R876)
 
 The planning that survives Track A is the cost of each statement's shape. H2 searches join orders
