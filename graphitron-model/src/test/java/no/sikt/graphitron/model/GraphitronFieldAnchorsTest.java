@@ -41,46 +41,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>What the cases are about is the same two things the type site's are. The choosing, which here
  * has to reach through two declarations to find merge order. And the absence, where a join's
  * polarity is the relation's own shape.
+ *
+ * <p>A bare request beside one with a page size is stated by the fact document
+ * {@code scenarios/connection-page-size-maximum-lowers-default}. The case here is a field declared
+ * twice, which no document writes.
  */
 class GraphitronFieldAnchorsTest {
 
     private static final String GRAPH = "field-anchors";
-
-    /**
-     * The polarity at a site where every column is optional because the directive deduces
-     * what the author leaves out. A bare application is still a request for a connection, so the
-     * row exists and says nothing, which is the difference between deducing a page size and not
-     * having been asked for a connection at all.
-     */
-    @Test
-    @DisplayName("a bare connection request is a row that states nothing")
-    void aBareConnectionRequestIsARowStatingNothing(@TempDir Path tmp) {
-        write(tmp, "corpus.graphqls", """
-            type Query {
-              films: [Film!] @asConnection
-              actors: [Film!] @asConnection(defaultFirstValue: 25)
-              plain: [Film!]
-            }
-            type Film { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var a = GRAPHQL_DIRECTIVE_APPLICATION;
-            var f = GRAPHQL_FIELD_ELEMENT;
-            var e = GRAPHITRON_AST_CONNECTION_ENTRY;
-            assertThat(dsl.select(f.FIELD_NAME, e.DEFAULT_FIRST_VALUE).from(a)
-                    .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME), f.COORDINATE.eq(a.COORDINATE))
-                    .leftJoin(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
-                        e.SOURCE_LINE.eq(a.SOURCE_LINE), e.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-                    .where(a.GRAPH_NAME.eq(GRAPH), a.DIRECTIVE_NAME.eq("asConnection"))
-                    .orderBy(f.FIELD_NAME).fetch()
-                    .map(Record::intoList))
-                .as("both applications are rows and the bare one carries no page size; the field "
-                    + "that applied nothing has no row, which is what tells the two apart")
-                .containsExactly(List.of("actors", 25), Arrays.asList("films", null));
-        });
-    }
 
     /**
      * The choosing, at the grain that makes it reachable. A field declared twice is retained by the

@@ -36,6 +36,12 @@ import static org.assertj.core.api.Assertions.tuple;
  * captured rather than recognised at read time, which is the difference these cases are about: a
  * consumer asks the store which directives are deprecated instead of matching a pattern against a
  * description it fetched for another reason.
+ *
+ * <p>What a single reading writes is stated by the fact document
+ * {@code scenarios/directive-deprecation}: the docstring marker deprecating a directive with its
+ * prose as the reason, a token inside a word marking nothing, an argument's own marker under its
+ * coordinate with an empty reason where none was written, and the bundled vocabulary's two. The cases
+ * here are the edits between two readings, which the sweep and the cascade answer.
  */
 class GraphitronAnchorTest {
 
@@ -47,96 +53,6 @@ class GraphitronAnchorTest {
 
     GraphitronAnchorTest(TestInfo info) {
         graph = "deprecations." + info.getTestMethod().orElseThrow().getName();
-    }
-
-    /**
-     * The docstring convention. The token marks the description as carrying the notice and the
-     * prose around it is the notice, so the whole text is the reason.
-     */
-    @Test
-    @DisplayName("a directive whose description carries the token is deprecated as a whole")
-    void theDocstringMarkerDeprecatesTheDirective(@TempDir Path tmp) {
-        write(tmp, "vocabulary.graphqls", """
-            "@deprecated use @sortBy(index:) instead"
-            directive @legacySort(name: String) on ENUM_VALUE
-
-            "Connect this enum value to a sorting specification."
-            directive @sortBy(index: String) on ENUM_VALUE
-
-            type Query { a: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_DEPRECATED;
-
-            assertThat(dsl.select(t.COORDINATE, t.REASON).from(t).where(t.GRAPH_NAME.eq(graph))
-                    .fetch())
-                .as("the marked directive and nothing else; the one beside it has a description "
-                    + "too, which is what makes this a decode rather than a presence test")
-                .extracting(r -> r.value1(), r -> r.value2())
-                .contains(tuple("@legacySort", "@deprecated use @sortBy(index:) instead"));
-            assertThat(marked(dsl, "sortBy"))
-                .as("and the directive beside it has a description too, which is what makes this a "
-                    + "decode rather than a presence test")
-                .isFalse();
-        });
-    }
-
-    /**
-     * The word boundary, which is the whole of what the token match has to get right: a description
-     * mentioning an address is not a deprecation notice.
-     */
-    @Test
-    @DisplayName("a token inside a word marks nothing")
-    void aMidWordOccurrenceIsNotAMarker(@TempDir Path tmp) {
-        write(tmp, "vocabulary.graphqls", """
-            "write to my@deprecated.example for the migration guide"
-            directive @keep(name: String) on ENUM_VALUE
-
-            type Query { a: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            assertThat(marked(dsl, "keep"))
-                .as("the token has to stand on its own to mark anything").isFalse();
-        });
-    }
-
-    /**
-     * The native marker, at the one place GraphQL admits it and the anchors do not reach. A
-     * directive applied to a directive definition's own argument has no applied-directive anchor,
-     * so this relation is the only thing that says the application happened at a coordinate.
-     */
-    @Test
-    @DisplayName("a directive argument carrying @deprecated resolves to its coordinate")
-    void theNativeMarkerResolvesToTheArgument(@TempDir Path tmp) {
-        write(tmp, "vocabulary.graphqls", """
-            directive @paged(
-              defaultFirstValue: Int
-              pagedName: String @deprecated(reason: "own your Connection type")
-            ) on FIELD_DEFINITION
-
-            directive @bare(legacy: String @deprecated) on FIELD_DEFINITION
-
-            type Query { a: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_DEPRECATED;
-
-            assertThat(dsl.select(t.COORDINATE, t.REASON).from(t)
-                    .where(t.GRAPH_NAME.eq(graph), t.COORDINATE.like("%(%")).fetch())
-                .as("each marked argument under the coordinate naming it, the two parent hops "
-                    + "having been resolved; a marker with no reason still deprecates, and stores "
-                    + "the empty string rather than a null a reader would have to test for")
-                .extracting(r -> r.value1(), r -> r.value2())
-                .contains(
-                    tuple("@paged(pagedName:)", "own your Connection type"),
-                    tuple("@bare(legacy:)", ""));
-        });
     }
 
     /**
@@ -172,30 +88,6 @@ class GraphitronAnchorTest {
             assertThat(markedArgument(dsl, "old", "legacy"))
                 .as("and the argument's own marker went with the edit that removed it")
                 .isFalse();
-        });
-    }
-
-    /**
-     * The bundled vocabulary graphitron ships is read by every capture, so its own markers are in
-     * the store beside a case's. That is worth a case rather than a workaround: the two directives
-     * it deprecates by docstring are exactly the two the convention exists for, GraphQL having no
-     * way to say either.
-     */
-    @Test
-    @DisplayName("graphitron's own vocabulary declares its deprecations, and the store holds them")
-    void theBundledVocabularyIsCaptured(@TempDir Path tmp) {
-        write(tmp, "schema.graphqls", "type Query { a: String }\n");
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_DEPRECATED;
-
-            assertThat(dsl.select(t.COORDINATE).from(t).where(t.GRAPH_NAME.eq(graph))
-                    .fetch(t.COORDINATE))
-                .as("@index is the deprecated alias of @order(index:) and @record no longer binds "
-                    + "anything, and both say so in prose because GraphQL gives them nowhere else "
-                    + "to say it")
-                .contains("@index", "@record");
         });
     }
 

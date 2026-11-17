@@ -20,3 +20,11 @@ extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
   """)
 
 extend schema @assertEmpty(relation: "graphitron_entry_defect")
+
+# Each @asConnection application is a row: the bare one carries no page size, which is the difference
+# between deducing one and not having been asked for a connection at all.
+extend schema @expectEquals(relation: "graphitron_ast_connection_entry", rows: """
+  source_line, default_first_value
+  10,
+  11,          20
+  """)
