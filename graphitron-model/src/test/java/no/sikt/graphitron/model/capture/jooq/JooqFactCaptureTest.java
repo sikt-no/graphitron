@@ -17,6 +17,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN_SPELLING;
+import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
@@ -226,6 +228,42 @@ class JooqFactCaptureTest {
                 .as("the first reading's rows stand, neither rewritten nor swept").isEqualTo(tables).isPositive();
             assertThat(claims(dsl, OTHER)).as("and the second graph claims the catalog")
                 .isEqualTo(claims(dsl, GRAPH)).isNotEmpty();
+        }
+    }
+
+    /**
+     * The name-matched keys and the column spellings read the {@code sql_} family and nothing else,
+     * and a catalog left alone moves no {@code sql_} row, so a vouched capture leaves both as the
+     * last reading derived them. Counted from the statements the second capture sends, so the rows
+     * standing is not merely a re-derivation that came out the same.
+     */
+    @Test
+    @DisplayName("a catalog left alone re-derives neither its name-matched keys nor its column spellings")
+    void anUnchangedCatalogReDerivesNothing() {
+        try (var store = GraphitronStore.inMemory()) {
+            var dsl = store.dsl();
+            SeededStore.seedGraph(dsl, GRAPH);
+            SeededStore.seedGraph(dsl, OTHER);
+            capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
+            int spellings = dsl.fetchCount(SQL_COLUMN_SPELLING);
+            int keys = dsl.fetchCount(SQL_NAME_MATCHED_KEY_COLUMN);
+            var touching = new java.util.concurrent.atomic.AtomicInteger();
+            var counting = dsl.configuration().derive(new org.jooq.impl.DefaultExecuteListenerProvider(
+                new org.jooq.ExecuteListener() {
+                    @Override
+                    public void executeStart(org.jooq.ExecuteContext ctx) {
+                        String sql = String.valueOf(ctx.sql()).toUpperCase();
+                        if (sql.contains("SQL_COLUMN_SPELLING") || sql.contains("SQL_NAME_MATCHED_KEY_COLUMN")) {
+                            touching.incrementAndGet();
+                        }
+                    }
+                })).dsl();
+
+            capture(counting, OTHER, loader(), List.of(ClasspathCorpus.catalog()), SECOND);
+
+            assertThat(touching.get()).as("statements the vouched capture sent to either relation").isZero();
+            assertThat(dsl.fetchCount(SQL_COLUMN_SPELLING)).as("the spellings stand").isEqualTo(spellings).isPositive();
+            assertThat(dsl.fetchCount(SQL_NAME_MATCHED_KEY_COLUMN)).as("and the name-matched keys").isEqualTo(keys);
         }
     }
 

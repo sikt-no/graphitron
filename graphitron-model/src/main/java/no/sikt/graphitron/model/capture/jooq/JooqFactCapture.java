@@ -121,11 +121,11 @@ public final class JooqFactCapture {
             return jooqPackage == null;
         }
         Progress.started(dsl, graphName, GATHERER);
+        // No catalog read, so no sql_ row moved: the name-matched keys and the column spellings,
+        // which read the sql_ family and nothing else, are what the last reading derived.
         dsl.transaction(tx -> {
             dropMembership(tx.dsl(), graphName, current);
             graphSources(tx.dsl(), graphName, List.copyOf(current), touchedAt, false);
-            NameMatchedKeys.derive(tx.dsl());
-            ColumnSpellings.derive(tx.dsl());
         });
         Progress.completed(dsl, graphName, GATHERER);
         return true;
