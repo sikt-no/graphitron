@@ -1,13 +1,13 @@
 ---
 id: R1184
 title: "Graphitron reads the database over a live connection: row-level security as facts, definitions on request"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: diagnostics
 depends-on: []
 created: 2026-11-13
-last-updated: 2026-11-16
+last-updated: 2026-11-17
 ---
 
 # Graphitron reads the database over a live connection: row-level security as facts, definitions on request
@@ -711,3 +711,40 @@ Non-blocking, for the implementer:
   that delete for `DATABASE` sources itself; the test list already demands the outcome.
 * § Configuration still says that with no url "the gatherer does not run", while § Who drops a claim
   has every capture call it. Read the former as "reads nothing".
+
+### Round 3: Spec → Ready, signed off (session_01WkW2JGfej6rwMoQpa9r7hy, 2026-11-17)
+
+Question 1 passes. When this lands, a consumer who configures `<database>` sees, in the editor's
+hover on a `@table` type and in `catalog.describe`, whether the bound table enforces row security
+(forced or not) and which policies it declares, with each one's command, mode and roles. In `dev`,
+they can also ask for the database's own definition of a table, view, routine, key or policy, through
+`database.definition` or by hovering the argument that names the object. Generated code does not
+change, and nothing is stored that only a person reads. The claims the spec makes about code hold:
+every class, test, relation, column comment, doc section and fixture it names exists as named.
+`sql_routine`'s name-only key and its overload hole are as described, and the stored resolutions the
+hover starts from exist (`graphitron_tabletype`, `graphitron_path_element_key`,
+`graphitron_path_element_routine`).
+
+Question 2 passes. The gatherer reuses the shape `JooqFactCapture` already has (`dropMembership`,
+`sweep`, `SourceClaims.unclaimed()`), the reading record fits the existing comments on
+`store_graph_source`, and the live interface is a single entry point rather than a second code path
+in the MCP server and the language server.
+
+Non-blocking, for the implementer:
+
+* `FactCapture.derive` is the derivation gatherer, and the `meta_gatherer_dependency` comment says it
+  depends on every crawler. So "after the graphitron gatherer" should mean after
+  `GraphitronAstCapture` (and the assembly) but before `FactCapture.derive`, with a
+  `('derivation', 'database')` edge beside the others.
+* `ModelCapture.capture` returns early when a document will not parse, before the graphitron
+  gatherer. A capture that stops there does not reach the database gatherer, so it neither reads nor
+  drops claims, and the store keeps its last state. Read § Who drops a claim's "every capture calls
+  it" with that exception.
+* In `DatabaseFactCaptureTest`, the gatherer reads over the connector's own connection, so a policy
+  dropped inside the test's uncommitted transaction is invisible to it unless the test's connector
+  hands out that same connection.
+* The guard on `no.sikt.graphitron.model.live` has to see the plugin, `graphitron-mcp` and
+  `graphitron-lsp` sources. `PackageImportDirectionTest` scans only its own module, so the guard
+  needs a home that reads across modules, as `RoadmapReferenceGuardTest` does.
+* The claim's `source_name` has to come from the connector, so `DatabaseConnector` names its
+  credential-free source as well as opening a connection.
