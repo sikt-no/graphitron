@@ -71,18 +71,6 @@ class PersistentStoreTest {
     private static final String GRAPH_NAME = "PersistentStoreTest";
 
     @Test
-    @DisplayName("a store written under a home is there for the next run")
-    void rowsSurviveTheRun(@TempDir Path tmp) {
-        Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
-
-        try (var reopened = GraphitronModelStore.openAt(directory)) {
-            assertThat(reopened.dsl().fetchCount(GRAPHQL_TYPE))
-                .as("the previous run's type census").isEqualTo(typeCount(directory, tmp));
-        }
-    }
-
-    @Test
     @DisplayName("an in-memory store reports no location")
     void inMemoryReportsNoLocation() {
         try (var store = GraphitronModelStore.open()) {
@@ -94,7 +82,7 @@ class PersistentStoreTest {
     @DisplayName("a stamp naming a different DDL is refused, and the file survives")
     void aStaleStampIsRefusedAndTheFileSurvives(@TempDir Path tmp) {
         Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
+        seedOneRow(directory);
 
         Path location;
         try (var store = GraphitronModelStore.openAt(directory)) {
@@ -145,23 +133,22 @@ class PersistentStoreTest {
     @DisplayName("a second opener in this JVM gets the file, reads it, and leaves it intact")
     void aSecondOpenerLeavesTheStoreIntact(@TempDir Path tmp) {
         Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
-        int types = typeCount(directory, tmp);
+        seedOneRow(directory);
 
         try (var held = GraphitronModelStore.openAt(directory)) {
             try (var second = GraphitronModelStore.openAt(directory)) {
                 assertThat(second.location())
                     .as("a second opener in the holding process gets the file, not the fallback")
                     .isPresent();
-                assertThat(second.dsl().fetchCount(GRAPHQL_TYPE)).isEqualTo(types);
+                assertThat(second.dsl().fetchCount(STORE_GRAPH)).isEqualTo(1);
             }
             try (var reader = held.reader(new ReadBudget.Unbounded())) {
-                int readerTypes = answered(reader.read(dsl -> dsl.fetchCount(GRAPHQL_TYPE)));
-                assertThat(readerTypes)
-                    .as("the reader surface the LSP and MCP answer from").isEqualTo(types);
+                int readerGraphs = answered(reader.read(dsl -> dsl.fetchCount(STORE_GRAPH)));
+                assertThat(readerGraphs)
+                    .as("the reader surface the LSP and MCP answer from").isEqualTo(1);
             }
-            assertThat(held.dsl().fetchCount(GRAPHQL_TYPE))
-                .as("the holder's database outlived the other handle's close").isEqualTo(types);
+            assertThat(held.dsl().fetchCount(STORE_GRAPH))
+                .as("the holder's database outlived the other handle's close").isEqualTo(1);
             assertThat(held.location()).isPresent();
         }
     }
@@ -179,7 +166,7 @@ class PersistentStoreTest {
     @DisplayName("a store another process holds fails this run rather than blocking its open")
     void aHeldFileFailsInsteadOfBlocking(@TempDir Path tmp) throws Exception {
         Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
+        seedOneRow(directory);
 
         Process holder = new ProcessBuilder(
             Path.of(System.getProperty("java.home"), "bin", "java").toString(),
@@ -237,12 +224,12 @@ class PersistentStoreTest {
                     System.out.println("fell back to the in-memory store instead of taking the file");
                     System.exit(2);
                 }
-                if (store.dsl().fetchCount(GRAPHQL_TYPE_ELEMENT) == 0) {
+                if (store.dsl().fetchCount(STORE_GRAPH) == 0) {
                     System.out.println("opened onto an empty store");
                     System.exit(3);
                 }
                 // The coordinate anchor and the supertype row above it, which is the shallowest
-                // pair this store admits: the probe's subject is that the holder's write survives,
+                // pair this store admits under the seeded graph row: the probe's subject is that the holder's write survives,
                 // so it writes the least that a coordinate needs and nothing else.
                 // Both rows carry the instant of the reading that wrote them, which every anchor a
                 // mark and sweep governs requires; a row with none would be a row no reading claims.
@@ -259,25 +246,46 @@ class PersistentStoreTest {
         }
     }
 
+    /**
+     * A run gets the store it asked for or it is told why not, and the second is an exception
+     * rather than a value hung off the store, because there is no store to hang it off any more.
+     * The one arm that is not trouble is a caller with no home to name: that caller asked for a
+     * private in-memory store, and asking for one is not losing one. A graph name recorded against
+     * a different directory is the trouble, and the refused run leaves the name and its partition
+     * where they were.
+     */
     @Test
-    @DisplayName("a graph name recorded against a different directory is not taken over")
-    void aClaimedGraphNameIsNotTakenOver(@TempDir Path tmp) throws IOException {
+    @DisplayName("a run gets the store it asked for, and a graph name another directory recorded is not taken over")
+    void aRunGetsTheStoreItAskedFor(@TempDir Path tmp) throws IOException {
         Path directory = tmp.resolve("graphitron-model");
         Path original = Files.createDirectories(tmp.resolve("original"));
-        CapturedStore.registryOf(original, SDL);
-        GraphitronStore.captured(directory, new GraphIdentity(GRAPH_NAME, original),
-            CapturedStore.corpusOf(original), List.of(), null).close();
+        try (var store = forRun(directory, original)) {
+            assertThat(store.location())
+                .as("a fresh home nobody holds is the file, not a private stand-in").isNotEmpty();
+        }
         List<String> before = typeNames(directory);
+        assertThat(before).as("the partition the colliding run must leave alone").isNotEmpty();
+
+        try (var store = forRun(null, original)) {
+            assertThat(store.location())
+                .as("no home to name is a private in-memory store, which is what was asked for")
+                .isEmpty();
+            assertThat(store.dsl().fetchCount(GRAPHQL_TYPE))
+                .as("and it captured the same facts the file would have").isPositive();
+        }
 
         Path impostor = Files.createDirectories(tmp.resolve("impostor"));
         CapturedStore.registryOf(impostor, "type Query { other: Int }");
         assertThatThrownBy(() -> GraphitronStore.captured(directory,
             new GraphIdentity(GRAPH_NAME, impostor), CapturedStore.corpusOf(impostor),
             List.of(), null))
-            .as("the colliding run is refused, and told which setting separates the two")
+            .as("the colliding run is refused, and told both directories and which setting "
+                + "separates the two")
             .isInstanceOf(StoreUnavailableException.class)
             .hasMessageContaining(GRAPH_NAME)
-            .hasMessageContaining("<graphName>");
+            .hasMessageContaining("<graphName>")
+            .hasMessageContaining(original.toAbsolutePath().normalize().toString())
+            .hasMessageContaining(impostor.toAbsolutePath().normalize().toString());
 
         assertThat(typeNames(directory))
             .as("the recorded partition, byte-identical after the colliding run")
@@ -291,72 +299,64 @@ class PersistentStoreTest {
     }
 
     /**
-     * A run gets the store it asked for or it is told why not, and the second is an exception
-     * rather than a value hung off the store, because there is no store to hang it off any more.
-     * The one arm that is not trouble is a caller with no home to name: that caller asked for a
-     * private in-memory store, and asking for one is not losing one.
-     */
-    @Test
-    @DisplayName("a run gets the store it asked for, or is told what to do about it")
-    void aRunGetsTheStoreItAskedFor(@TempDir Path tmp) throws IOException {
-        Path directory = tmp.resolve("graphitron-model");
-        Path original = Files.createDirectories(tmp.resolve("original"));
-        try (var store = forRun(directory, original)) {
-            assertThat(store.location())
-                .as("a fresh home nobody holds is the file, not a private stand-in").isNotEmpty();
-        }
-
-        try (var store = forRun(null, original)) {
-            assertThat(store.location())
-                .as("no home to name is a private in-memory store, which is what was asked for")
-                .isEmpty();
-            assertThat(store.dsl().fetchCount(GRAPHQL_TYPE))
-                .as("and it captured the same facts the file would have").isPositive();
-        }
-
-        Path impostor = Files.createDirectories(tmp.resolve("impostor"));
-        assertThatThrownBy(() -> forRun(directory, impostor))
-            .as("a name another checkout recorded names both directories and the setting between")
-            .isInstanceOf(StoreUnavailableException.class)
-            .hasMessageContaining(original.toAbsolutePath().normalize().toString())
-            .hasMessageContaining(impostor.toAbsolutePath().normalize().toString());
-    }
-
-    /**
      * A capture meets a held row and stops, on the anchor as anywhere else. The connection carries
      * no lock budget at all now, so what the elapsed bound pins is that nothing was waited out:
      * this row used to have a short budget of its own and everything after it a generous one, and
      * the argument between them was about which rows are worth waiting for. None are.
+     *
+     * <p>The same hold then meets a whole run, which is the behaviour a user meets: a build whose
+     * anchor row is held by a live session stops waiting and says which graph is contended, rather
+     * than spending the generous budget in silence or capturing where nobody asked. The file is
+     * what proves it never won the row, being byte-for-byte the other writer's.
      */
     @Test
-    @DisplayName("a held anchor row stops the capture at once rather than waiting")
+    @DisplayName("a held anchor row stops the capture at once, and the run on top of it leaves the file alone")
     void aHeldAnchorRowStopsTheCaptureAtOnce(@TempDir Path tmp) throws Exception {
         Path directory = tmp.resolve("graphitron-model");
         captureInto(directory, tmp);
+        List<String> before = typeNames(directory);
+        assertThat(before).as("the partition the refused run must leave alone").isNotEmpty();
 
-        try (var holder = GraphitronModelStore.openAt(directory);
-             var writer = GraphitronModelStore.openAt(directory)) {
+        long start;
+        try (var holder = GraphitronModelStore.openAt(directory)) {
             holdUncommitted(holder, () -> holder.dsl().update(STORE_GRAPH)
                 .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
                 .where(STORE_GRAPH.GRAPH_NAME.eq(GRAPH_NAME)).execute());
 
-            long start = System.nanoTime();
-            var thrown = catchThrowableOfType(DataAccessException.class, () ->
-                CapturedStore.capture(writer.dsl(), graph(tmp), corpus(tmp), null));
-            long elapsed = millisSince(start);
+            try (var writer = GraphitronModelStore.openAt(directory)) {
+                long captureStart = System.nanoTime();
+                var thrown = catchThrowableOfType(DataAccessException.class, () ->
+                    CapturedStore.capture(writer.dsl(), graph(tmp), corpus(tmp), null));
+                long elapsed = millisSince(captureStart);
 
-            assertThat(thrown).as("the capture gave up on the anchor row").isNotNull();
-            assertThat(GraphitronStore.contendedLock(thrown))
-                .as("it gave up on a lock, which is what turns this into a message rather than "
-                    + "the driver's own words")
-                .isTrue();
-            assertThat(elapsed)
-                .as("and it waited for none of it. The bound sits below H2's own 2000 ms default "
-                    + "on purpose: that default is what a connection gets when the lock budget is "
-                    + "absent or spelled as zero, so this is the case that fails if anybody tidies "
-                    + "the budget to the obvious wrong number")
-                .isLessThan(1_500);
+                assertThat(thrown).as("the capture gave up on the anchor row").isNotNull();
+                assertThat(GraphitronStore.contendedLock(thrown))
+                    .as("it gave up on a lock, which is what turns this into a message rather than "
+                        + "the driver's own words")
+                    .isTrue();
+                assertThat(elapsed)
+                    .as("and it waited for none of it. The bound sits below H2's own 2000 ms default "
+                        + "on purpose: that default is what a connection gets when the lock budget is "
+                        + "absent or spelled as zero, so this is the case that fails if anybody tidies "
+                        + "the budget to the obvious wrong number")
+                    .isLessThan(1_500);
+            }
+
+            start = System.nanoTime();
+            assertThatThrownBy(() -> captureInto(directory, tmp))
+                .as("a contended lock is named as another process writing the store, not handed "
+                    + "over as the driver's own words")
+                .isInstanceOf(StoreUnavailableException.class)
+                .hasMessageContaining(GRAPH_NAME)
+                .hasMessageContaining("let it finish and run again");
         }
+
+        assertThat(millisSince(start))
+            .as("the whole run stopped at once, where it used to spend two lock budgets in "
+                + "silence and then capture somewhere nobody asked")
+            .isLessThan(15_000);
+        assertThat(typeNames(directory))
+            .as("the refused run wrote nothing to the file").isEqualTo(before);
     }
 
     /**
@@ -385,9 +385,13 @@ class PersistentStoreTest {
             var release = new Thread(() -> {
                 try {
                     Thread.sleep(holdMillis);
+                } catch (InterruptedException captureReturned) {
+                    // The capture is over, so the hold has nothing left to catch.
+                }
+                try {
                     holder.connection().rollback();
                     holder.connection().setAutoCommit(true);
-                } catch (InterruptedException | SQLException e) {
+                } catch (SQLException e) {
                     throw new IllegalStateException(e);
                 }
             });
@@ -397,6 +401,7 @@ class PersistentStoreTest {
             var thrown = catchThrowableOfType(DataAccessException.class, () ->
                 CapturedStore.capture(writer.dsl(), graph(tmp), corpus(tmp), null));
             long elapsed = millisSince(start);
+            release.interrupt();
             release.join();
 
             assertThat(thrown).as("the held store-global row ended the capture").isNotNull();
@@ -407,41 +412,6 @@ class PersistentStoreTest {
                 .as("and none of the hold was waited out")
                 .isLessThan(holdMillis / 2);
         }
-    }
-
-    /**
-     * The refusal end to end, which is the behaviour a user meets: a build whose anchor row is held
-     * by a live session stops waiting and says which graph is contended, rather than spending the
-     * generous budget in silence or capturing where nobody asked. The file is what proves it never
-     * won the row, being byte-for-byte the other writer's.
-     */
-    @Test
-    @DisplayName("a run that meets a held anchor row fails fast and leaves the file alone")
-    void aRunThatMeetsAHeldAnchorFailsFast(@TempDir Path tmp) throws Exception {
-        Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
-        List<String> before = typeNames(directory);
-
-        long start;
-        try (var holder = GraphitronModelStore.openAt(directory)) {
-            holdUncommitted(holder, () -> holder.dsl().update(STORE_GRAPH)
-                .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
-                .where(STORE_GRAPH.GRAPH_NAME.eq(GRAPH_NAME)).execute());
-            start = System.nanoTime();
-            assertThatThrownBy(() -> captureInto(directory, tmp))
-                .as("a contended lock is named as another process writing the store, not handed "
-                    + "over as the driver's own words")
-                .isInstanceOf(StoreUnavailableException.class)
-                .hasMessageContaining(GRAPH_NAME)
-                .hasMessageContaining("let it finish and run again");
-        }
-
-        assertThat(millisSince(start))
-            .as("the whole run stopped at once, where it used to spend two lock budgets in "
-                + "silence and then capture somewhere nobody asked")
-            .isLessThan(15_000);
-        assertThat(typeNames(directory))
-            .as("the refused run wrote nothing to the file").isEqualTo(before);
     }
 
     /**
@@ -466,15 +436,6 @@ class PersistentStoreTest {
         assertThat(GraphitronStore.contendedLock(
             new DataAccessException("wrapped", new SQLException("Unique index violation"))))
             .as("a capture bug keeps the driver's own words, having nothing to advise").isFalse();
-    }
-
-
-    @Test
-    @DisplayName("no home means an in-memory capture, not a file")
-    void noHomeMeansInMemory(@TempDir Path tmp) {
-        forRun(null, tmp).close();
-        assertThat(Files.exists(tmp.resolve("graphitron-model")))
-            .as("nothing was written for a caller with no home to give").isFalse();
     }
 
     private static GraphIdentity graph(Path baseDir) {
@@ -603,7 +564,7 @@ class PersistentStoreTest {
     @DisplayName("the last handle compacts the file and an earlier one does not")
     void theLastHandleCompacts(@TempDir Path tmp) {
         Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
+        seedOneRow(directory);
 
         GraphitronModelStore held = GraphitronModelStore.openAt(directory);
         GraphitronModelStore second = GraphitronModelStore.openAt(directory);
@@ -627,15 +588,15 @@ class PersistentStoreTest {
     @DisplayName("closing a store twice releases one handle, not two")
     void closingTwiceReleasesOneHandle(@TempDir Path tmp) {
         Path directory = tmp.resolve("graphitron-model");
-        captureInto(directory, tmp);
+        seedOneRow(directory);
 
         GraphitronModelStore first = GraphitronModelStore.openAt(directory);
         try (var second = GraphitronModelStore.openAt(directory)) {
             first.close();
             first.close();
-            assertThat(second.dsl().fetchCount(GRAPHQL_TYPE))
+            assertThat(second.dsl().fetchCount(STORE_GRAPH))
                 .as("the surviving handle still has its database")
-                .isNotNegative();
+                .isEqualTo(1);
         }
     }
 
@@ -705,6 +666,20 @@ class PersistentStoreTest {
         forRun(directory, scratch).close();
     }
 
+    /**
+     * One committed graph row in the file at {@code directory}, for the cases that need a store
+     * holding something and nothing a capture would add.
+     */
+    private static void seedOneRow(Path directory) {
+        try (var store = GraphitronModelStore.openAt(directory)) {
+            store.dsl().insertInto(STORE_GRAPH)
+                .set(STORE_GRAPH.GRAPH_NAME, GRAPH_NAME)
+                .set(STORE_GRAPH.BASE_DIR, directory.toAbsolutePath().normalize().toString())
+                .set(STORE_GRAPH.LAST_CAPTURED, LocalDateTime.now())
+                .execute();
+        }
+    }
+
     private static List<String> typeNames(Path directory) {
         try (var store = GraphitronModelStore.openAt(directory)) {
             return store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
@@ -712,13 +687,6 @@ class PersistentStoreTest {
         }
     }
 
-    /** The same capture cold, so the warm expectation is a measurement rather than a magic number. */
-    private static int typeCount(Path directory, Path scratch) {
-        try (var cold = GraphitronModelStore.open()) {
-            CapturedStore.capture(cold.dsl(), graph(scratch), corpus(scratch), null);
-            return cold.dsl().fetchCount(GRAPHQL_TYPE);
-        }
-    }
     /** The fixture written to disk and named as the configuration a run would have had. */
     private static SubjectConfig corpus(Path directory) {
         CapturedStore.writeSource(directory, SDL);
