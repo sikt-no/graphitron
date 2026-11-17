@@ -29,8 +29,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * can lend its thread to another class's task, whose work then lands on the lender. The module
  * totals, written once as the JVM exits, are exact.
  *
- * <p>One tab-separated line per class, {@code module class captures boots millis}, and one
- * {@code module TOTAL captures boots -} line per JVM. The module is the working directory's name,
+ * <p>One tab-separated line per class, {@code module class captures boots millis cold}, and one
+ * {@code module TOTAL captures boots - cold} line per JVM, {@code cold} counting the captures that
+ * were the first through their connection, which plan every statement afresh. The module is the working directory's name,
  * which is the module directory under surefire, so several modules can append to one file.
  */
 public final class StoreCostExtension implements BeforeAllCallback, AfterAllCallback {
@@ -44,7 +45,7 @@ public final class StoreCostExtension implements BeforeAllCallback, AfterAllCall
     private static final AtomicBoolean TOTAL_HOOKED = new AtomicBoolean();
 
     /** What this thread had run when the class started. */
-    private record Start(long captures, long boots, long nanos) {}
+    private record Start(long captures, long boots, long nanos, long cold) {}
 
     @Override
     public void beforeAll(ExtensionContext context) {
@@ -54,10 +55,11 @@ public final class StoreCostExtension implements BeforeAllCallback, AfterAllCall
         }
         if (TOTAL_HOOKED.compareAndSet(false, true)) {
             Runtime.getRuntime().addShutdownHook(new Thread(() -> append(report,
-                line("TOTAL", FactStores.captures(), FactStores.boots(), "-"))));
+                line("TOTAL", FactStores.captures(), FactStores.boots(), "-", FactStores.coldCaptures()))));
         }
         context.getStore(NAMESPACE).put(context.getUniqueId(), new Start(
-            FactStores.capturesOnThisThread(), FactStores.bootsOnThisThread(), System.nanoTime()));
+            FactStores.capturesOnThisThread(), FactStores.bootsOnThisThread(), System.nanoTime(),
+            FactStores.coldCapturesOnThisThread()));
     }
 
     @Override
@@ -73,7 +75,8 @@ public final class StoreCostExtension implements BeforeAllCallback, AfterAllCall
         append(report, line(context.getRequiredTestClass().getName(),
             FactStores.capturesOnThisThread() - start.captures(),
             FactStores.bootsOnThisThread() - start.boots(),
-            Long.toString((System.nanoTime() - start.nanos()) / 1_000_000)));
+            Long.toString((System.nanoTime() - start.nanos()) / 1_000_000),
+            FactStores.coldCapturesOnThisThread() - start.cold()));
     }
 
     /** A nested class runs inside its outer class's window, which already charges it. */
@@ -86,9 +89,9 @@ public final class StoreCostExtension implements BeforeAllCallback, AfterAllCall
         return named == null || named.isBlank() ? null : Path.of(named);
     }
 
-    private static String line(String subject, long captures, long boots, String millis) {
+    private static String line(String subject, long captures, long boots, String millis, long cold) {
         return String.join("\t", Path.of("").toAbsolutePath().getFileName().toString(), subject,
-            Long.toString(captures), Long.toString(boots), millis) + "\n";
+            Long.toString(captures), Long.toString(boots), millis, Long.toString(cold)) + "\n";
     }
 
     /** One write per line, appended, so concurrent classes and JVMs interleave by whole lines. */

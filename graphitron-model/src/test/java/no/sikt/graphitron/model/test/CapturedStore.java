@@ -692,7 +692,7 @@ public final class CapturedStore implements AutoCloseable {
                                                 Path directory, String graphName, CatalogInput jooq,
                                                 List<ClasspathEntry> classpath, LocalDateTime readAt,
                                                 SubjectConfig configuration) {
-        FactStores.countCapture();
+        FactStores.countCapture(dsl);
         ModelCapture.writeGraph(dsl, new GraphIdentity(graphName, directory), readAt);
         // The pass, and the whole of the capture: it writes the graph row, the catalog, the
         // classpath families where there is a classpath, every document family, and runs the
@@ -776,7 +776,7 @@ public final class CapturedStore implements AutoCloseable {
     /** {@link #capture(DSLContext, GraphIdentity, SubjectConfig, CatalogInput)} with a classpath. */
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
                                          CatalogInput jooq, List<ClasspathEntry> classpath) {
-        FactStores.countCapture();
+        FactStores.countCapture(dsl);
         return ModelCapture.capture(dsl, graph, withCatalog(corpus, jooq), classpath, loaderOf(jooq),
             LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
     }

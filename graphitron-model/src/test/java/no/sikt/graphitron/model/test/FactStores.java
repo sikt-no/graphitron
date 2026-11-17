@@ -52,11 +52,22 @@ public final class FactStores {
 
     private static final AtomicLong CAPTURES = new AtomicLong();
 
+    /** The captures that were the first through their connection, which plan every statement cold. */
+    private static final AtomicLong COLD_CAPTURES = new AtomicLong();
+
     /**
-     * The same two counts per thread, {@code [boots, captures]}, for {@link StoreCostExtension}'s
-     * attribution. Only the owning thread writes its own array, so the pair needs no lock.
+     * The connections a capture has run through. H2 keeps a statement cache per session, so the
+     * first capture through a connection prepares every statement it runs, and a later one through
+     * the same connection reuses them. Held weakly, so a closed store's connection is not kept.
      */
-    private static final ThreadLocal<long[]> ON_THIS_THREAD = ThreadLocal.withInitial(() -> new long[2]);
+    private static final java.util.Map<java.sql.Connection, Boolean> CAPTURED_THROUGH =
+        java.util.Collections.synchronizedMap(new java.util.WeakHashMap<>());
+
+    /**
+     * The counts per thread, {@code [boots, captures, cold captures]}, for {@link StoreCostExtension}'s
+     * attribution. Only the owning thread writes its own array, so it needs no lock.
+     */
+    private static final ThreadLocal<long[]> ON_THIS_THREAD = ThreadLocal.withInitial(() -> new long[3]);
 
     private FactStores() {}
 
@@ -156,10 +167,28 @@ public final class FactStores {
         return ON_THIS_THREAD.get()[1];
     }
 
-    /** Called by {@link CapturedStore} where every capture it runs passes. */
-    static void countCapture() {
+    /** {@link #captures()} that were the first through their connection: a fresh session's. */
+    public static long coldCaptures() {
+        return COLD_CAPTURES.get();
+    }
+
+    /** {@link #coldCaptures()} restricted to the calling thread. */
+    static long coldCapturesOnThisThread() {
+        return ON_THIS_THREAD.get()[2];
+    }
+
+    /**
+     * Called by {@link CapturedStore} where every capture it runs passes, with the context it
+     * captures through, so a capture into a fresh session is told from one into a pooled store.
+     */
+    static void countCapture(org.jooq.DSLContext dsl) {
         CAPTURES.incrementAndGet();
         ON_THIS_THREAD.get()[1]++;
+        var connection = dsl.connectionResult(c -> c);
+        if (CAPTURED_THROUGH.put(connection, Boolean.TRUE) == null) {
+            COLD_CAPTURES.incrementAndGet();
+            ON_THIS_THREAD.get()[2]++;
+        }
     }
 
     /** The budget the running module states, if it states one. */
