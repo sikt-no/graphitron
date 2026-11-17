@@ -834,7 +834,17 @@ node: version 1 refuses `@accept` in a tenant-column graph.
   field outside the subtree, release.
 * Before Done: the composition check against the fixture's two served SDLs, recorded in the item (see
   *Tests*, Served SDL), and the first-client docs draft moved into `federation-keys.adoc` and the security
-  guide, with a how-to carrying a worked connection source and policies.
+  guide (the how-to with a worked connection source and policies shipped beside slice 8d.2, as
+  `voucher-handover.adoc`).
+* Before Done, the rest of what the rulings ask that slice 8d left open (folded back from R1194 and R1195,
+  2026-11-17):
+  * the issue-side audit line: an issuing subgraph logs one line per operation and scope it signs, with
+    the vouch id, scope and expiry, on the `no.sikt.graphitron.voucher.audit` logger the accepting side
+    already uses, so the two halves of a handover trace against each other by vouch id; never the token
+    or its values (*Audit logging*);
+  * a build whose `ConnectionKey` has a tenant part emits no `Graphitron.newExecutionInput(dsl, ...)`, as
+    an accepting build already does not, so every keyed build is owned connections only (*Rulings*,
+    2026-11-16). Taken with R876's tenant routing if that rewrites the tenanted dispatch first.
 
 ## Tests
 
