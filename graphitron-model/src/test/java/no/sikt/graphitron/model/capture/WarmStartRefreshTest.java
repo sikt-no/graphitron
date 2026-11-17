@@ -239,6 +239,57 @@ class WarmStartRefreshTest {
     }
 
     /**
+     * A reading every gatherer vouches unchanged derives the rows the statistics were last taken
+     * over, so it runs no ANALYZE; one whose configuration moved runs both again, an output package
+     * being configuration a derivation reads. The catalog's entry is on the classpath, as a build's
+     * is, since a catalog no entry holds is never vouched. Counted from the statements the capture sends, so
+     * the cold capture's two show the count can see them at all.
+     */
+    @Test
+    @DisplayName("a reading that changed nothing skips ANALYZE, and a changed output package runs it again")
+    void anUnchangedReadingSkipsAnalyze(@TempDir Path tmp) {
+        var jooq = new CatalogInput(JOOQ_PACKAGE, TestRunContext.of().codegenLoader());
+        CapturedStore.writeSource(tmp, SDL);
+        var corpus = CapturedStore.withCatalog(CapturedStore.corpusOf(tmp), jooq);
+        var analyzed = new java.util.concurrent.atomic.AtomicInteger();
+        var current = new String[1];
+        // The catalog's entry on the classpath, as a build's compile classpath carries it: a catalog
+        // no entry holds cannot be stamped, and reads as changed on every capture.
+        var classpath = List.of(no.sikt.graphitron.model.test.ClasspathCorpus.catalog());
+        var counting = new org.jooq.impl.DefaultExecuteListenerProvider(new org.jooq.ExecuteListener() {
+            @Override
+            public void executeStart(org.jooq.ExecuteContext ctx) {
+                if ("ANALYZE".equalsIgnoreCase(String.valueOf(ctx.sql()).strip())) {
+                    analyzed.incrementAndGet();
+                }
+            }
+        });
+        try (var store = GraphitronModelStore.openAt(tmp.resolve("graphitron-model"))) {
+            var dsl = store.dsl().configuration().derive(counting).dsl();
+            java.util.function.IntSupplier capture = () -> {
+                analyzed.set(0);
+                ModelCapture.capture(dsl, graph(tmp), withOutput(corpus, current[0]), classpath,
+                    CapturedStore.loaderOf(jooq), now());
+                return analyzed.get();
+            };
+            current[0] = "com.example.first";
+            assertThat(capture.getAsInt()).as("the cold capture analyses before and after deriving").isEqualTo(2);
+            assertThat(capture.getAsInt()).as("the same reading again analyses nothing").isZero();
+            current[0] = "com.example.second";
+            assertThat(capture.getAsInt()).as("a changed output package analyses again").isEqualTo(2);
+            assertThat(capture.getAsInt()).as("and its stamp is the one compared next time").isZero();
+        }
+    }
+
+    private static SubjectConfig withOutput(SubjectConfig config, String outputPackage) {
+        return new SubjectConfig(config.recipe(), config.jooqPackage(), config.supergraph(),
+            java.util.Optional.of(new no.sikt.graphitron.model.run.OutputCoordinates(outputPackage,
+                JOOQ_PACKAGE, Path.of("target", "generated"))),
+            config.tenantColumn(), config.lint(), config.sessionState(), config.maxAllowedPageSize(),
+            config.outbox());
+    }
+
+    /**
      * The stamp says what the bytes were; this says when reading them began. Both come from the
      * round, and the second is the half a later reader compares against its own watch coverage to
      * decide whether it may skip re-reading at all.

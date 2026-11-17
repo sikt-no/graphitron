@@ -106,17 +106,19 @@ public final class JooqFactCapture {
      *
      * @param classpath   the graph's entries, inherited ones included, one of which holds the catalog
      * @param observation what a dev session watches; null for a run watching nothing
+     * @return whether the catalog was left alone, or there is none; which package the graph names
+     *         is configuration, and {@code StoreEntries} vouches that
      */
-    public static void capture(DSLContext dsl, String graphName, String jooqPackage, ClassLoader loader,
-                               List<ClasspathEntry> classpath, Observation observation,
-                               LocalDateTime touchedAt) {
+    public static boolean capture(DSLContext dsl, String graphName, String jooqPackage, ClassLoader loader,
+                                  List<ClasspathEntry> classpath, Observation observation,
+                                  LocalDateTime touchedAt) {
         String stamp = jooqPackage == null ? null : stampOf(dsl, jooqPackage, loader, classpath, observation);
         Set<String> current = stamp == null ? Set.of() : vouched(dsl, jooqPackage, stamp);
         if (current.isEmpty()) {
             var read = capture(dsl, graphName,
                 jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader), touchedAt);
             vouch(dsl, read, stamp);
-            return;
+            return jooqPackage == null;
         }
         Progress.started(dsl, graphName, GATHERER);
         dsl.transaction(tx -> {
@@ -126,6 +128,7 @@ public final class JooqFactCapture {
             ColumnSpellings.derive(tx.dsl());
         });
         Progress.completed(dsl, graphName, GATHERER);
+        return true;
     }
 
     private static Set<String> capture(DSLContext dsl, String graphName, JooqCatalog jooq,

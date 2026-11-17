@@ -72,10 +72,10 @@ public final class ModelCapture {
                                          Observation observation) {
         writeGraph(dsl, graph, readAt);
         Progress.started(dsl, graph.name(), Progress.CAPTURE);
-        StoreEntries.write(dsl, graph.name(), config, classpath, readAt);
+        boolean configured = StoreEntries.write(dsl, graph.name(), config, classpath, readAt);
 
-        JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null), loader,
-            classpath, observation, readAt);
+        boolean catalogued = JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null),
+            loader, classpath, observation, readAt);
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
             config.jooqPackage().orElse(null), readAt, observation);
         CodeCapture.capture(dsl, classes, loader, readAt);
@@ -102,16 +102,46 @@ public final class ModelCapture {
         // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
         var schemas = schemas(dsl, graph, assembled);
         // The store does not analyse itself, and ANALYZE commits: it runs outside the
-        // derivations, never between a step's delete and its inserts.
-        dsl.execute("ANALYZE");
+        // derivations, never between a step's delete and its inserts. A reading every gatherer
+        // vouched unchanged derives the rows the store's statistics were last taken over, and H2
+        // keeps those statistics across a reopen, so it skips both.
+        boolean unchanged = configured && catalogued
+            && classes.sources().stream().allMatch(ModelCapture::unchanged)
+            && documents.stream().allMatch(ModelCapture::unchanged);
+        if (!unchanged) {
+            dsl.execute("ANALYZE");
+        }
         if (progress == null) {
             FactCapture.derive(dsl, graph, assembled.assembly());
         } else {
             FactCapture.derive(dsl, graph, assembled.assembly(), progress);
         }
-        dsl.execute("ANALYZE");
+        if (!unchanged) {
+            dsl.execute("ANALYZE");
+        }
         Progress.completed(dsl, graph.name(), Progress.CAPTURE);
         return schemas;
+    }
+
+    /**
+     * Whether no row comes from {@code source} that did not last time: unchanged, or skipped, which
+     * writes no row of its own on any reading.
+     */
+    private static boolean unchanged(ClasspathSourceCapture.ClasspathSource source) {
+        return switch (source) {
+            case ClasspathSourceCapture.ClasspathSource.Unchanged _,
+                 ClasspathSourceCapture.ClasspathSource.Skipped _ -> true;
+            case ClasspathSourceCapture.ClasspathSource.Read _ -> false;
+        };
+    }
+
+    /** Whether {@code document} is what this graph's rows were already derived from, in place. */
+    private static boolean unchanged(GraphQLSourceCapture.SourceDocument document) {
+        return switch (document) {
+            case GraphQLSourceCapture.SourceDocument.Unchanged same -> !same.moved();
+            case GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> true;
+            default -> false;
+        };
     }
 
     /**
