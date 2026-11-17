@@ -137,7 +137,15 @@ public final class QueryViewRenderer {
     static String render(Prelude prelude, String fixtureSdl, String selection) {
         Set<String> internal = prelude.directives();
         String full = prelude.text() + "\n" + fixtureSdl;
-        TypeDefinitionRegistry registry = TestSchemaHelper.parseRegistryWithPrelude(full);
+        TypeDefinitionRegistry parsed = TestSchemaHelper.parseRegistryWithPrelude(full);
+        // A federated fact document links the federation spec; the loading rewrites add its
+        // definitions, as a real build's loading does, so the walk sees @link and @key declared.
+        var rewritten = no.sikt.graphitron.model.schema.input.LoadingRewrites.apply(parsed, java.util.List.of(),
+            java.util.Optional.empty());
+        if (!(rewritten instanceof no.sikt.graphitron.model.schema.input.LoadingRewrites.Outcome.Applied applied)) {
+            throw new IllegalStateException("the fact document's loading rewrites refused it: " + rewritten);
+        }
+        TypeDefinitionRegistry registry = applied.registry();
         GraphQLSchema schema = GraphitronSchemaBuilder.buildBundle(registry, TestConfiguration.testContext()).assembled();
 
         Document doc = new Parser().parseDocument(selection);
