@@ -1,0 +1,38 @@
+# A @service that names no method to call is SERVICE_WITHOUT_METHOD at the @service as written. The
+# field's value is its method's, and the directive defaults neither the class nor the method, so a
+# service: with no className and one with no method each draw the defect; a service: left out
+# altogether is the schema's to refuse, the argument being required. Written at a root and under an
+# object, since a child service is the one a vouched entity hands its key down to. The *Complete
+# coordinates are the near miss: the same placement naming both draws nothing.
+
+type Film @table(name: "film") {
+  title: String
+  noClass: String @service(service: {method: "byId"})
+  noMethod: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService"})
+  languagesComplete: [Language!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesByFilm"})
+}
+
+type Language @table(name: "language") { name: String }
+
+type Query {
+  filmsNoClass(ids: [Int!]!): [Film!]! @service(service: {method: "filmsByIds"})
+  filmsNoMethod(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService"})
+  filmsComplete(ids: [Int!]!): [Film!]! @service(service: {
+      className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                   coordinate
+  SERVICE_WITHOUT_METHOD, Query.filmsNoClass
+  SERVICE_WITHOUT_METHOD, Query.filmsNoMethod
+  SERVICE_WITHOUT_METHOD, Film.noClass
+  SERVICE_WITHOUT_METHOD, Film.noMethod
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                   coordinate
+  SERVICE_WITHOUT_METHOD, Query.filmsComplete
+  SERVICE_WITHOUT_METHOD, Film.languagesComplete
+  """)

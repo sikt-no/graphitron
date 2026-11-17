@@ -1108,7 +1108,7 @@ static method needs no holder.
     `EMITTED` is a stored defect of basis `UNSUPPORTED` with a code of its own, raised by the first
     stage holding its facts: the row-tenant fan-out of a child service (`graphitron_field_tenant_fan_out`,
     at fetchers), a connection page (a branch of occurrence-producers' rule view), several occurrences,
-    a discriminated target, no call, incomplete fills, a refused build (each `BuildQuery.Result.Refused`
+    a discriminated target, incomplete fills, a refused build (each `BuildQuery.Result.Refused`
     site reachable under a service), a node-id argument of a service with no decode slot (no
     `graphitron_occurrence_node_id_slot_parameter` row), an argument path and a value still to be
     built, with `BuildQuery`'s two Java refusals and `DiscriminatedQuery.Row.refusal`.

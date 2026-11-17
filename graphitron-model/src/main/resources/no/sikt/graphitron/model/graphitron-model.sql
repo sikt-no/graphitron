@@ -20076,6 +20076,19 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
    AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference cr
                     WHERE cr.graph_name = da.graph_name AND cr.coordinate = da.coordinate
                       AND cr.directive_name = da.directive_name AND cr.ordinal = da.ordinal
+                      AND cr.named_method IS NOT NULL)
+UNION ALL
+-- A @service with no method to call, at the @service as written: a service: naming no className or
+-- no method. The field's value is the method's, and @service defaults neither name, so there is none;
+-- a service: left out altogether is the schema's to refuse, the argument being required. Read off
+-- the references code-references wrote, as for @condition.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+       'SERVICE_WITHOUT_METHOD', CAST(NULL AS VARCHAR), 'directive-applications'
+  FROM graphitron_directive_application da
+ WHERE da.directive_name = 'service' AND da.origin = 'AUTHORED'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference cr
+                    WHERE cr.graph_name = da.graph_name AND cr.coordinate = da.coordinate
+                      AND cr.directive_name = da.directive_name AND cr.ordinal = da.ordinal
                       AND cr.named_method IS NOT NULL);
 COMMENT ON VIEW graphitron_directive_application_entry_defect_rule IS 'One row the directive-applications stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @mutation written with no typeName gives one MUTATION_WITHOUT_VERB row at the @mutation.';
 
@@ -28931,6 +28944,8 @@ INSERT INTO graphitron_defect_type VALUES
    '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.'),
   ('CONDITION_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_WITHOUT_METHOD',
    '@condition adds the predicate of the method its condition: names by className and method, and defaults neither, so without both there is no predicate to add.'),
+  ('SERVICE_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_WITHOUT_METHOD',
+   '@service answers the field with the method its service: names by className and method, and defaults neither, so without both there is no method to call.'),
   ('MUTATION_UPSERT', 'error', 'UNSUPPORTED', 'GRAPHITRON_MUTATION_UPSERT',
    '@mutation(typeName: UPSERT) is a write graphitron does not generate yet: the conflict target''s uniqueness and the bulk upsert are not designed.'),
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
