@@ -676,7 +676,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8a. Rename and refusals | `claims:` renamed `vouchesFor:` through the store, codes and codec; the vouch-id agreement check gone; `@accept` in a `<tenantColumn>` build refused | `18c1a92`, `6521093` |
 | 8b. No caller | The voucher carries no caller; format version 2; `VOUCHER_WITHOUT_SESSION_STATE` gone | `71c0917` |
 | 8c.1. Keyed by `ConnectionKey` | Every build keys its connections by the generated `ConnectionKey`, its tenant part typed `Object` without a tenant column | `674c051` |
-| 8c.2. The contract | `ConnectionSource`, `Lease`, `KeyNotPermitted`, `AcquisitionFailedException` and `ConnectionSources`; the runtime on dialect and settings; the session units gone | pending publish |
+| 8c.2. The contract | `ConnectionSource`, `Lease`, `KeyNotPermitted`, `AcquisitionFailedException` and `ConnectionSources`; the runtime on dialect and settings; the session units gone | `e3a3ecf` |
 | 8c.3. Tenants to the source | Pending; below | |
 | 8d. Dispatch | Pending, in two steps; below | |
 | 8e. Fields with a fetcher of their own | Pending; below | |
