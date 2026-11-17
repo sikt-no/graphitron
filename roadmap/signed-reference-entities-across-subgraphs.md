@@ -691,7 +691,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8c.3. Tenants to the source | `ConnectionSource.of(acquire, tenants)` names the fan-out domain; the request tenant set, the default tenant and `@defaultTenant` gone | `abe204f` |
 | 8d.1. One way to read an entity | `_entities`, `node` and `nodes` load through DataLoaders per (type, alternative, connection key) in every build without a tenant column; `OwnedConnections.dslFor(env, key)` the one point, in every build | `a871d07` |
 | 8d.2. Vouchers on it | Pending; below | |
-| 8e. Fields with a fetcher of their own | Pending; below | |
+| 8e. Fields with a fetcher of their own | Pending, as 8e.1 and 8e.2; below | |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -811,23 +811,40 @@ which is enough to try the first client's shape if its documents read that way.
   subtree admitted nothing; a plain-key representation adding no access; the limit error; every
   verification failure with nothing acquired, also among plain-key and valid representations.
 
-**Slice 8e, fields with a fetcher of their own.** Taken up with or after R876's node "`TypeFetcherGenerator`
-reads the store, one family of field at a time", for the fields it covers. It waits on no tenant-routing
-node: version 1 refuses `@accept` in a tenant-column graph.
+**Slice 8e, fields with a fetcher of their own.** In two parts. Neither waits on a tenant-routing node:
+version 1 refuses `@accept` in a tenant-column graph.
+
+*8e.1, the connection relation's grain and a `@service` below a vouched entity.*
 
 * `graphitron_occurrence_connection`'s grain widens from "one producer of a database-per-tenant graph"
-  to "a producer of a graph whose generated code carries a `ConnectionKey`", so the fields below an
-  accepting entity get `INHERIT` rows in an untenanted graph too. A field inherits the whole key its
-  producer hands down, which is already what `INHERIT` means; no vouched-for part is restated on its
-  rows, and the part `CHECK` stays `'TENANT'`. `_entities` itself does not change and gets no row: it
-  runs as today, on the connection the dispatcher acquired for the vouched-for value, and hands that key
-  down as it hands down a tenant's (2026-11-16). R876 carries this as its node "The connection
-  relation's grain covers accepting graphs", so a rewrite of its rule does not narrow it back to
-  tenancy.
+  to "a producer of a graph whose `ConnectionKey` has a part": a tenant column, or an accepting type's
+  vouched-for fields. Every build has emitted a `ConnectionKey` since slice 8c.1, so "carries one" is
+  every graph; a part is what the generated code can hand down. The fields below an accepting entity
+  get `INHERIT` rows in an untenanted graph too. A field inherits the whole key its producer hands
+  down, which is already what `INHERIT` means; no vouched-for part is restated on its rows, and the
+  part `CHECK` stays `'TENANT'`. `_entities` itself does not change and gets no row: it runs as today,
+  on the connection the dispatcher acquired for the vouched-for value, and hands that key down as it
+  hands down a tenant's (2026-11-16). Occurrences are kept per field rather than per path, so a child
+  producer of an accepting graph is `INHERIT` wherever it is reached; a row reached with no key handed
+  down runs on the request's own connection, the rule for a field outside the subtree. R876 carries
+  this as its node "The connection relation's grain covers accepting graphs", so a rewrite of its rule
+  does not narrow it back to tenancy.
 * The `localContext` slot follows either part of the key (*Connection key*), so each resolved entity row
   is a `DataFetcherResult` carrying its group's key in an accepting build.
-* Store-side fetchers below the entity read it; a batched field, a `@service` field and a
-  connection-typed field under the entity acquire from the inherited key.
+* A `@service` field below the entity acquires from the inherited key, through the store-fed frame.
+* `VOUCHER_ACCEPT_NOT_GENERATED` narrows to an accepting type with a field below it, through the types
+  its SELECT and its `@service` fields read, that runs a query of its own other than a `@service`: a
+  split query, a connection-typed field, a routine read on its own. `accept.adoc` and the directive
+  definition say so.
+* Execution tests: the service under a voucher reads on the vouched lease, released once; the same
+  service reached from outside the subtree reads on the request's own connection.
+
+*8e.2, batched and connection-typed fields.* Waits on R876's nodes "A batched child's fetcher is emitted
+from the store, on its stated connection" and "A connection-typed field's fetcher is emitted from the
+store, on its stated connection", not on the whole of "`TypeFetcherGenerator` reads the store, one
+family of field at a time".
+
+* A batched field and a connection-typed field under the entity acquire from the inherited key.
 * `VOUCHER_ACCEPT_NOT_GENERATED` goes, with the "refused for now" sentence in `accept.adoc` and the
   directive definition.
 * The remaining execution tests under *Tests*: a nested read through fields with their own fetchers, a

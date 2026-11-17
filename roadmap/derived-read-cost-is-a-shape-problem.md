@@ -1108,11 +1108,17 @@ static method needs no holder.
     `EMITTED` is a stored defect of basis `UNSUPPORTED` with a code of its own, raised by the first
     stage holding its facts: the row-tenant fan-out of a child service (`graphitron_field_tenant_fan_out`,
     at fetchers), a connection page (a branch of occurrence-producers' rule view), several occurrences,
-    a discriminated target, no call, incomplete fills, a refused build, an argument path and a value
-    still to be built, with `BuildQuery`'s two Java refusals and `DiscriminatedQuery.Row.refusal`.
+    a discriminated target, no call, incomplete fills, a refused build (each `BuildQuery.Result.Refused`
+    site reachable under a service), a node-id argument of a service with no decode slot (no
+    `graphitron_occurrence_node_id_slot_parameter` row), an argument path and a value still to be
+    built, with `BuildQuery`'s two Java refusals and `DiscriminatedQuery.Row.refusal`.
     It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
-    `ServiceEmission.excluded` goes, and `GraphQLRewriteGenerator.unemittedProjections` and
-    `unemittedOutboxes` go in the same commit. Unused in FS-plattform for the two measured so far: sis
+    the walk's fallback for the fields `ServiceEmission.emits` refuses goes, and
+    `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes` go in the same commit.
+    `GraphQLRewriteGenerator.unvouchedServices` (with `ServiceEmission.inheritingButNotEmitted`)
+    refuses a service below a vouched entity whose fetcher is not emitted. It is untested, no graph the
+    store accepts being known to reach it, and goes in the commit that lands the last of two codes: a
+    refused build under a service, and a node-id argument of a service with no decode slot. Unused in FS-plattform for the two measured so far: sis
     73 and opptak 251 service producers, none returning a connection, none fanning out by row tenant.
     What of `ServiceCatalog` stays when the walk's service path goes, and who owns it, is named in the
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
@@ -1143,11 +1149,12 @@ static method needs no holder.
   `RoutineWriteEmitter.Tenancy` and its `Unrouted` and `DefaultSource` take the names E's rename gives
   the service side, after it lands; `DefaultSource` goes, an empty tenant part being a key like any
   other, which the request's connection source decides (Alf, 2026-11-14, 2026-11-16).
-* **The connection relation's grain covers accepting graphs** `open`, off the critical path, as R1119's
-  slice 8e. `graphitron_occurrence_connection` widens from a database-per-tenant graph's producers to
-  those of any graph whose generated code carries a `ConnectionKey`, so a field with a fetcher of its
-  own below a vouched entity inherits the whole key; a rewrite of the connection rule keeps that grain
-  rather than narrowing it back to tenancy.
+* **The connection relation's grain covers accepting graphs** `open`, E's, off the critical path, as
+  R1119's slice 8e.1. `graphitron_occurrence_connection` widens from a database-per-tenant graph's
+  producers to those of any graph whose `ConnectionKey` has a part, a tenant column or an accepting
+  type's vouched-for fields, so a field with a fetcher of its own below a vouched entity inherits the
+  whole key; a rewrite of the connection rule keeps that grain rather than narrowing it back to
+  tenancy.
 * **A tenant-routed build refuses a caller-supplied connection at the request** `open`, off the critical
   path. A tenant-routed build is owned connections only (`runtime-extension-points.adoc`, Alf,
   2026-11-14), so a request entered with `newExecutionInput(dsl, ...)` fails there, clearly, rather
@@ -1685,6 +1692,15 @@ output package they are written to are settled.
   fields, pivots and the errors field each render from a query at the grain they emit, the
   launcher's routine row reading the facts R704 captured, with
   `ConditionGlueRenderer` and `ProjectionUnitRenderer` folded into the families that use them.
+  * **A batched child's fetcher is emitted from the store, on its stated connection** `blocked`, G's,
+    on "The projection units are rendered from the store", "The filter conditions are emitted from the
+    store, claimed by F" and "The root query fetchers are emitted from the store, claimed by F". A
+    split-query child reads its DataLoader and its connection off the store; it releases R1119's slice
+    8e.2 for batched fields below a vouched entity.
+  * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
+    `blocked`, F's, on the same three nodes. A connection field and its count and facet siblings read
+    their query and connection off the store; it releases R1119's slice 8e.2 for connection-typed
+    fields below a vouched entity.
 * **The undecided fact documents are sorted** `open`. Each document under `undecided` becomes a
   scenario or states the defect it trips over, and the folder is gone; the ones the walk refuses with
   nothing stored wait on "Each rule the walk enforces is a located defect".
