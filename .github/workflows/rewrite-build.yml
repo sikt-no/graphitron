@@ -13,12 +13,15 @@ on:
 permissions:
   contents: read
 
-# A newer push to the same branch, or to the same pull request, supersedes the run in flight. A
-# trunk push lands every few minutes on a busy day and a run takes over an hour, so without this
-# the superseded runs pile up on the shared runner pool for a result nobody reads.
+# One run per branch or pull request at a time, and at most one waiting. A trunk push lands every
+# few minutes on a busy day and a run takes about an hour, so cancelling the run in flight would
+# leave trunk with no verdict at all: on a branch the run in flight finishes, a newer push waits as
+# the one pending run, and a push after that replaces the pending one. Each finished run still
+# covers every commit before its own. On a pull request only the latest push matters, so a newer
+# push cancels the run in flight.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
