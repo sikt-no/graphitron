@@ -6452,6 +6452,8 @@ CREATE TABLE graphitron_node_keycolumn (
   table_name        VARCHAR NOT NULL,
   column_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(column_name)),
   PRIMARY KEY (graph_name, type_name, position),
+  -- What a node id's key column references, so the column it unpacks is the one this position names.
+  UNIQUE (graph_name, type_name, position, table_source_name, table_schema, table_name, column_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node (graph_name, type_name)
     ON DELETE CASCADE,
   FOREIGN KEY (graph_name, type_name, table_source_name, table_schema, table_name)
@@ -13296,9 +13298,12 @@ CREATE TABLE graphitron_occurrence_node_id (
   FOREIGN KEY (graph_name, coordinate, bound, kind)
     REFERENCES graphitron_occurrence_binding (graph_name, coordinate, bound, kind) ON DELETE CASCADE,
   -- A derivation goes with what it was derived from: a node whose key changes takes the binding
-  -- with its key column, and the next reading writes it again.
-  FOREIGN KEY (graph_name, node_type_name, position)
-    REFERENCES graphitron_node_keycolumn (graph_name, type_name, position) ON DELETE CASCADE,
+  -- with its key column, and the next reading writes it again. The table and column are the key
+  -- column's own, which the catalog holds, so a node id never unpacks a column the catalog lacks.
+  FOREIGN KEY (graph_name, node_type_name, position, table_source_name, table_schema, table_name,
+               column_name)
+    REFERENCES graphitron_node_keycolumn (graph_name, type_name, position, table_source_name,
+                                          table_schema, table_name, column_name) ON DELETE CASCADE,
   CHECK (kind = 'NODE_ID'),
   CHECK (basis IN ('EXPLICIT_TYPE_NAME', 'CONTAINING_NODE_TYPE', 'TARGET_TABLE_NODE_TYPE',
                    'RECORD_TABLE_NODE_TYPE', 'OWN_ID_FIELD', 'TARGET_ID_NAME', 'WRITTEN_TABLE_NODE_TYPE')),
