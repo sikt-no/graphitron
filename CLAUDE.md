@@ -44,8 +44,8 @@ Without it the failure is easy to misread, because your tree is clean and your d
 ## Common commands
 
 ```bash
-# Build the rewrite (always include -Plocal-db; see footgun below)
-mvn install -Plocal-db
+# Build the rewrite (always include -Plocal-db; see footgun below). -T 1C builds independent modules side by side, as CI does
+mvn install -Plocal-db -T 1C
 
 # Regenerate roadmap/README.md from item front-matter
 mvn -pl roadmap-tool exec:java -q
@@ -178,7 +178,7 @@ git rebase origin/claude/graphitron-rewrite
 # ... work, commit ...
 git fetch origin claude/graphitron-rewrite
 git rebase origin/claude/graphitron-rewrite
-mvn install -Plocal-db  # verification build, on the exact tree the pushes ship
+mvn install -Plocal-db -T 1C  # verification build, on the exact tree the pushes ship
 git push -u origin <your-branch>
 git push origin <your-branch>:claude/graphitron-rewrite
 ```
