@@ -2,10 +2,16 @@
 # key them: FilmLookupPayload's class has no member returning a film record, so its film field
 # draws the defect. FilmKeySummary's film() returns one, so the same field there takes its keys
 # through it and draws nothing.
+#
+# A field read off the parent's object names a member its class offers: a record's component, any
+# other class's get or is getter. FilmKeySummary is a record with no component named missing, and
+# FilmTitleView answers title through a bare title() and note through a public field, neither read,
+# so missing, title and note are MEMBER_UNRESOLVED; its filmId reads getFilmId and draws nothing.
 
 type Film @table(name: "film") { title: String }
 type FilmLookupPayload { title: String, film: Film }
-type FilmKeySummary { label: String, film: Film }
+type FilmKeySummary { label: String, film: Film, missing: String }
+type FilmTitleView { filmId: Int, title: String, note: String }
 
 type Query {
   films: [Film]
@@ -13,6 +19,8 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
   summaries: [FilmKeySummary!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "summaries"})
+  titleView: FilmTitleView
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmKeySummaryService", method: "titleView"})
 }
 
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
@@ -23,4 +31,11 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,               coordinate
   NO_KEY_FROM_PARENT, FilmKeySummary.film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'MEMBER_UNRESOLVED'", rows: """
+  code,              coordinate,             detail
+  MEMBER_UNRESOLVED, FilmKeySummary.missing, no.sikt.graphitron.rewrite.test.services.FilmKeySummary
+  MEMBER_UNRESOLVED, FilmTitleView.note,     no.sikt.graphitron.rewrite.test.services.FilmTitleView
+  MEMBER_UNRESOLVED, FilmTitleView.title,    no.sikt.graphitron.rewrite.test.services.FilmTitleView
   """)

@@ -24643,6 +24643,50 @@ SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
  GROUP BY o.graph_name, COALESCE(da.source_name, gf.source_name),
           COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
 UNION ALL
+-- A field read off an object whose class offers no member of its name, its own or the one
+-- @field(name:) gives it: an object need no accessor path meets, on a class the graph resolves, with
+-- no read slot of that name. A record offers its components and any other class its get and is
+-- getters, so a bare accessor or a public field is no member. Only fields the parent's object is
+-- read for: an errors field is filled by the error channel, a field with arguments may read a getter
+-- taking them, which the slots do not hold, and a jOOQ record or tuple is read through the Record API.
+-- A declaration reached at several occurrences is one site, reported once, the detail the class.
+-- Reported at the @field where one is written, since that is the name to fix, and at the field
+-- otherwise.
+SELECT n.graph_name, COALESCE(da.source_name, gf.source_name),
+       COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
+       'MEMBER_UNRESOLVED', MIN(n.start_class), 'occurrence-depth-defects'
+  FROM graphitron_path_need_object n
+  JOIN graphitron_occurrence o ON o.graph_name = n.graph_name AND o.coordinate = n.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphitron_reader rd
+    ON rd.graph_name = f.graph_name AND rd.type_name = f.type_name AND rd.field_name = f.field_name
+   AND rd.reads = 'ACCESSOR'
+  JOIN code_graph_class gs ON gs.graph_name = n.graph_name AND gs.class_name = n.start_class
+  JOIN graphql_field_element fe
+    ON fe.graph_name = o.graph_name AND fe.coordinate = o.element_coordinate
+  JOIN graphql_field gf
+    ON gf.graph_name = fe.graph_name AND gf.type_name = fe.type_name AND gf.field_name = fe.field_name
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+ WHERE o.kind = 'FIELD' AND COALESCE(da.source_line, gf.source_line) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_accessor_path ap
+                    WHERE ap.graph_name = n.graph_name AND ap.coordinate = n.coordinate
+                      AND ap.target_type = n.target_type)
+   AND NOT EXISTS (SELECT 1 FROM code_read_slot s
+                    WHERE s.source_name = gs.source_name AND s.class_name = gs.class_name
+                      AND s.slot_name = f.bound_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field ef
+                    WHERE ef.graph_name = f.graph_name AND ef.type_name = f.type_name
+                      AND ef.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_argument a
+                    WHERE a.graph_name = f.graph_name AND a.type_name = f.type_name
+                      AND a.field_name = f.field_name)
+   AND NOT EXISTS (SELECT 1 FROM code_jooq_class j WHERE j.class_name = n.start_class)
+   AND NOT EXISTS (SELECT 1 FROM code_tuple_class t WHERE t.class_name = n.start_class)
+ GROUP BY n.graph_name, COALESCE(da.source_name, gf.source_name),
+          COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column)
+UNION ALL
 SELECT o.graph_name, COALESCE(da.source_name, gf.source_name),
        COALESCE(da.source_line, gf.source_line), COALESCE(da.source_column, gf.source_column),
        'COLUMN_AMBIGUOUS', MIN(COALESCE(cl.named, o.name)), 'occurrence-depth-defects'
@@ -28640,6 +28684,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A federation @key selects a field that is not a column of the entity''s own table, a nested selection or a field read some other way, and an entity is resolved by matching its key''s values against that table''s columns: key on fields that read the table''s columns, or on the node''s own id alone.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
    'A field reads a column the table it reads from does not have, its parent''s or the one its @reference path arrives at, or an input field writes one the table whose jOOQ record its input object is built into does not have, under its own name or the one @field(name:) gives it, or an ordering''s fields element names one, so there is nothing to select, write or sort by: the name is misspelt, or the column lives on another table.'),
+  ('MEMBER_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_MEMBER_UNRESOLVED',
+   'A field read off an object names a member its class does not offer, under its own name or the one @field(name:) gives it: a record offers its components and any other class its get and is getters, so a bare accessor or a public field is no member, and there is nothing to read. Name a member the class offers, or give the class one.'),
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
    'A field reads a column, or an input field writes one of the jOOQ record its input object is built into, by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select or write.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',

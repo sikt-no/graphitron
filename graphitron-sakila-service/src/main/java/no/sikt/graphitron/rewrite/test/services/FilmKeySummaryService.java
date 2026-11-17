@@ -32,6 +32,11 @@ public final class FilmKeySummaryService {
 
     private FilmKeySummaryService() {}
 
+    /** A view whose members are read through a getter, a bare accessor and a public field. */
+    public static FilmTitleView titleView() {
+        return new FilmTitleView();
+    }
+
     /**
      * Three summaries over two distinct films, so the child's batch has one duplicate to collapse.
      * The records are fully populated (a real {@code selectFrom}), which is what makes the sparse-key
