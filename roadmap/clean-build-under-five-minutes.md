@@ -214,14 +214,21 @@ parallelises a module's tests is priced against that before it is tried.
 4. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
    step 1 removes that cost; no other rule view costs more than a few milliseconds to compile again.
    Nothing to change unless the re-measure after step 1 shows another view paying it.
-5. **A fresh store opens cheaply** (A6). The DDL's 3,661 `COMMENT ON` statements, which capture
-   never reads, and the DDL hash taken twice on every open.
+5. **A fresh store opens cheaply** (A6). Set aside 2026-11-17, priced under A6: about 4 s of class
+   time at today's 142 boots.
 6. **A test's catalog is read once** (A7). The catalog skip needs the catalog's classpath entry, and
    tests pass none, so every capture re-reads it.
 7. **Planning per statement** (Track C: R876's view nodes and per-depth nodes), by `prepare_ms` on a
    cold capture.
 8. **Track B**, priced after the above, since it divides what is left.
-9. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
+9. **A test hands its run the classified classpath.** Done 2026-11-17. The two method-graph oracles
+   built their `RunContext` from the test classpath's paths, which reads every entry as the
+   project's own, so each capture read every jar on it whole: 25,862 classes and 151,409 methods,
+   about 44 s per `graphitron` JVM, one oracle paying and the other waiting (76 and 65 s in the
+   build). Handed the classified list instead, they run alone in 17 and 18 s against 48.5 and
+   51.8 s. Production was never affected: sis's capture store holds no class from its 42 transitive
+   dependencies.
+10. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
    ranked: a stage that runs with no input for the schema, the two store-wide `ANALYZE`s per capture.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
