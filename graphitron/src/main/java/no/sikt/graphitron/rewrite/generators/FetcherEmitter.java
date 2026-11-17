@@ -360,7 +360,6 @@ public final class FetcherEmitter {
             return false;
         }
         return switch (ja.accessor()) {
-            case AccessorResolution.FieldRead ignored -> false;
             case AccessorResolution.GetterPrefixed gp -> gp.method().getParameterTypes().length > 0;
             case AccessorResolution.BareName bn -> bn.method().getParameterTypes().length > 0;
         };
@@ -1014,17 +1013,15 @@ public final class FetcherEmitter {
      * The value expression reading a class-backed accessor off a source object. The
      * source is supplied as a {@link CodeBlock} ({@code env.getSource()} on the normal path,
      * {@code success.value()} on the outcome arm-switch), so this one helper serves both the
-     * normal {@link #recordReadBinding} lambda and the arm-switch ternary. Field reads emit
-     * {@code (($T) src).field}; method accessors delegate to {@link #methodCallValue} for the
-     * zero-arg / full-environment / per-argument injection forms.
+     * normal {@link #recordReadBinding} lambda and the arm-switch ternary. Both arms are method
+     * accessors, delegating to {@link #methodCallValue} for the zero-arg / full-environment /
+     * per-argument injection forms.
      */
     private static CodeBlock recordBackedAccessorRead(
             ClassName backingClass, AccessorResolution.Resolved accessor, CodeBlock sourceExpr) {
         return switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> methodCallValue(backingClass, gp.method(), sourceExpr);
             case AccessorResolution.BareName bn -> methodCallValue(backingClass, bn.method(), sourceExpr);
-            case AccessorResolution.FieldRead fr ->
-                CodeBlock.of("(($T) $L).$L", backingClass, sourceExpr, fr.field().getName());
         };
     }
 

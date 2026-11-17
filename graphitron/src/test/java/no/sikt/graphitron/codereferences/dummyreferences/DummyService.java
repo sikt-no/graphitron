@@ -58,7 +58,7 @@ public final class DummyService {
     public static AccessorPayloads.RemappedPayload makeAccessorRemappedPayload() { return unused(); }
     public static AccessorPayloads.SetPayload makeAccessorSetPayload() { return unused(); }
     public static AccessorPayloads.HeterogeneousElementPayload makeAccessorHeterogeneousElementPayload() { return unused(); }
-    public static AccessorPayloads.AmbiguousListPayload makeAccessorAmbiguousListPayload() { return unused(); }
+    public static AccessorPayloads.BareAndGetterListPayload makeAccessorBareAndGetterListPayload() { return unused(); }
     public static AccessorPayloads.SingleAccessorOnListField makeAccessorSingleAccessorOnListField() { return unused(); }
 
     // ===== ServiceKeyPayloads.* (author-declared @service batch key on a class-backed parent) =====
@@ -78,6 +78,8 @@ public final class DummyService {
     public static R88AccessorFixtures.ArgumentBearingPojo r88ArgumentBearingPojo() { return unused(); }
     public static R88AccessorFixtures.OverridePojo r88OverridePojo() { return unused(); }
     public static R88AccessorFixtures.PublicFieldPojo r88PublicFieldPojo() { return unused(); }
+    public static R88AccessorFixtures.BareAccessorPojo r88BareAccessorPojo() { return unused(); }
+    public static R88AccessorFixtures.ExtraGetterRecord r88ExtraGetterRecord() { return unused(); }
     public static R88AccessorFixtures.FullEnvPojo r88FullEnvPojo() { return unused(); }
     public static R88AccessorFixtures.BooleanPojo r88BooleanPojo() { return unused(); }
     public static R88AccessorFixtures.BareNameRecord r88BareNameRecord() { return unused(); }
@@ -93,6 +95,7 @@ public final class DummyService {
     public static R461AccessorFixtures.RenameParent r461RenameParent() { return unused(); }
     public static R461AccessorFixtures.NonBooleanIsParent r461NonBooleanIsParent() { return unused(); }
     public static R461AccessorFixtures.PublicFieldParent r461PublicFieldParent() { return unused(); }
+    public static R461AccessorFixtures.ZeroArgParentBare r461ZeroArgParentBare() { return unused(); }
     public static R461AccessorFixtures.CovariantParent r461CovariantParent() { return unused(); }
     public static R461AccessorFixtures.SubChildParent r461SubChildParent() { return unused(); }
 }

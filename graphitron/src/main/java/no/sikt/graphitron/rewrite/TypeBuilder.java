@@ -1712,13 +1712,11 @@ class TypeBuilder {
     /**
      * The {@link GraphitronType.ResultType} variant a backing class maps to, as a pure reflection
      * function (the {@code svc}-dependent table resolution in {@link #buildResultTypeFromClass} does
-     * not affect which variant is chosen). Single-sourced here so the order-bridge meta-test can pin
-     * {@link ClassAccessorResolver#forBackingClass} (the reflection walk's candidate-order derivation)
-     * against the same class-shape decision the emission side derives its order from: the walk uses
-     * {@code RECORD_FIRST} exactly when this returns {@link ResultVariantKind#JAVA_RECORD}, which is
-     * exactly when {@code buildResultTypeFromClass} produces a {@code JavaRecordType}. A future change
-     * to this classification breaks the meta-test rather than silently splitting walk and emission
-     * order.
+     * not affect which variant is chosen). Single-sourced here so the meta-test can pin it against
+     * {@link ClassAccessorResolver}'s fork on {@code Class.isRecord()}: the resolver reads a class's
+     * components exactly when this returns {@link ResultVariantKind#JAVA_RECORD}, which is exactly
+     * when {@code buildResultTypeFromClass} produces a {@code JavaRecordType}. A future change to
+     * this classification breaks the meta-test rather than silently splitting walk and emission.
      */
     enum ResultVariantKind { JAVA_RECORD, JOOQ_TABLE_RECORD, JOOQ_RECORD, POJO }
 

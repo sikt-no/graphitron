@@ -2664,12 +2664,11 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Fields on record-backed parents =====
 
-    /** The resolved accessor's own member name (method or field), for locator assertions. */
+    /** The resolved accessor's own method name, for locator assertions. */
     private static String accessorMemberName(AccessorResolution.Resolved accessor) {
         return switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> gp.method().getName();
             case AccessorResolution.BareName bn -> bn.method().getName();
-            case AccessorResolution.FieldRead fr -> fr.field().getName();
         };
     }
 
@@ -3272,27 +3271,25 @@ class GraphitronSchemaBuilderTest {
             @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
-        ACCESSOR_ROWKEYED_REJECTS_AMBIGUOUS(
-            "Two accessors returning List<FilmRecord> for the same @table → UnclassifiedField (ambiguous)",
+        ACCESSOR_ROWKEYED_BARE_ACCESSOR_DOES_NOT_COMPETE(
+            "A bare films() beside getFilms() on a class that is no record → the getter lifts the key alone",
             """
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Payload {
               films: [Film!]!
             }
             type Query {
-              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorAmbiguousListPayload"})
+              payload: Payload @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeAccessorBareAndGetterListPayload"})
             }
             """,
             schema -> {
-                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(UnclassifiedField.class, unc -> {
-                    assertThat(unc.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
-                    assertThat(unc.reason()).contains("more than one typed accessor");
-                    assertThat(unc.reason()).contains("films");
-                    assertThat(unc.reason()).contains("getFilms");
-                    assertThat(unc.reason()).contains("Leave exactly one");
-                });
+                assertThat(schema.field("Payload", "films")).isInstanceOfSatisfying(BatchedTableField.class, f ->
+                    assertThat(f.lift()).isInstanceOfSatisfying(KeyLift.Accessor.class, ac -> {
+                        assertThat(ac.arity()).isEqualTo(Arity.MANY);
+                        assertThat(ac.accessor().methodName()).isEqualTo("getFilms");
+                    }));
             }) {
-            @Override public Set<Class<?>> variants() { return Set.of(UnclassifiedField.class); }
+            @Override public Set<Class<?>> variants() { return Set.of(BatchedTableField.class); }
         },
 
         ACCESSOR_ROWKEYED_REJECTS_CARDINALITY_LIST_FIELD_SINGLE_ACCESSOR(

@@ -61,12 +61,13 @@ class R461WalkGroundingPipelineTest {
         return new GraphitronSchemaValidator().validate(schema);
     }
 
-    // ===== B1: walk candidate order =====
+    // ===== B1: the class's form decides what is read =====
 
     @Test
     void b1_pojoParent_groundsChildFromGetter() {
         var schema = build("OrderParentPojo", "film: Child", "tag: String");
-        // POJO_FIRST: getFilm() wins, so Child grounds to the bean child (a Java record).
+        // A class that is no record reads getFilm(); its bare film() is not read, so Child grounds
+        // to the bean child (a Java record).
         assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
         assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
             .isEqualTo(FIX + "BeanChild");
@@ -79,7 +80,8 @@ class R461WalkGroundingPipelineTest {
     @Test
     void b1_recordParent_groundsChildFromBareComponent() {
         var schema = build("OrderParentRecord", "film: Child", "tag: String");
-        // RECORD_FIRST: bare film() component wins, so Child grounds to the fluent child (a POJO).
+        // A record reads its film() component; its getFilm() is not read, so Child grounds to the
+        // component's class (a POJO).
         assertThat(schema.type("Child")).isInstanceOf(GraphitronType.PojoResultType.Backed.class);
         assertThat(((GraphitronType.PojoResultType.Backed) schema.type("Child")).fqClassName())
             .isEqualTo(FIX + "FluentChild");
@@ -154,22 +156,24 @@ class R461WalkGroundingPipelineTest {
         assertThat(((AccessorResolution.GetterPrefixed) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("getRenamed");
     }
 
-    // ===== B5: public-field fallback =====
+    // ===== B5: a public field is not read =====
 
     @Test
-    void b5_publicField_noArguments_grounds() {
-        var schema = build("PublicFieldParent", "child: Child", "tag: String");
-        assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
-        assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
-            .isEqualTo(FIX + "SimpleChild");
+    void b5_publicField_soleProducer_rejectionNamesTheGetterToWrite() {
+        var schema = buildNonCarrier("PublicFieldParent", "child: Child");
+        assertThat(schema.field("Parent", "child")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(validate(schema)).extracting(ValidationError::message).anyMatch(m ->
+            m.contains("Parent.child") && m.contains("public field") && m.contains("getChild()"));
     }
 
     @Test
-    void b5_publicField_withArguments_soleProducer_rejectionNamesFieldFallbackGate() {
-        var schema = buildNonCarrier("PublicFieldParent", "child(x: String): Child");
+    void b5_bareAccessorOnAPojo_soleProducer_rejectionNamesTheGetterToWrite() {
+        // ZeroArgParentBare's child() is a bare accessor on a class that is no record, which is not
+        // read, so the rejection names the getter to write.
+        var schema = buildNonCarrier("ZeroArgParentBare", "child: Child");
         assertThat(schema.field("Parent", "child")).isInstanceOf(GraphitronField.UnclassifiedField.class);
         assertThat(validate(schema)).extracting(ValidationError::message).anyMatch(m ->
-            m.contains("Parent.child") && m.contains("public field") && m.contains("argument"));
+            m.contains("Parent.child") && m.contains("child()") && m.contains("getChild()"));
     }
 
     // ===== B6: covariant-return bridge + inheritance (member filter) =====

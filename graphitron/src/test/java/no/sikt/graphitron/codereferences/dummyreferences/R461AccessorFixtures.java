@@ -9,7 +9,7 @@ package no.sikt.graphitron.codereferences.dummyreferences;
  * ground child SDL types through the walk's probe under the unified rule set.
  *
  * <p>Behavior changes exercised: walk candidate order (B1), field arguments (B2), {@code @field(name:)}
- * (B3), non-boolean {@code is<Name>} (B4), public-field fallback (B5), and bridge/covariant-return
+ * (B3), non-boolean {@code is<Name>} (B4), a public field and a bare accessor not read (B5), and bridge/covariant-return
  * filtering plus inheritance (B6 and the member filter).
  */
 public final class R461AccessorFixtures {
@@ -31,12 +31,12 @@ public final class R461AccessorFixtures {
     /** Child reached through a covariant-return override (a bridge method is generated). */
     public record DetailChild(String tag) {}
 
-    // ===== B1: walk candidate order =====
+    // ===== B1: the class's form decides what is read =====
 
     /**
      * POJO parent exposing both a fluent {@code film()} and a bean {@code getFilm()} with different
-     * return types. Under {@code POJO_FIRST} the walk grounds the child from {@code getFilm()}'s
-     * {@link BeanChild}, which is what emission resolves — the headline failure-scenario fix.
+     * return types. A class that is no record is read through its getters, so the walk grounds the
+     * child from {@code getFilm()}'s {@link BeanChild}, which is what emission resolves.
      */
     public static final class OrderParentPojo {
         public FluentChild film() { return null; }
@@ -45,7 +45,7 @@ public final class R461AccessorFixtures {
 
     /**
      * Java-record parent with a bare component {@code film()} and a hand-rolled {@code getFilm()}.
-     * Under {@code RECORD_FIRST} the walk grounds the child from the bare component's
+     * A record is read through its components, so the walk grounds the child from the component's
      * {@link FluentChild}.
      */
     public record OrderParentRecord(FluentChild film) {
@@ -89,11 +89,17 @@ public final class R461AccessorFixtures {
         public SimpleChild getSibling() { return null; }
     }
 
-    // ===== B5: public-field fallback =====
+    // ===== B5: what is not read =====
 
-    /** Public field of a bindable type; grounds a no-argument field, not an argument-bearing one. */
+    /** Public field of a bindable type: a public field is not read, so it grounds nothing. */
     public static final class PublicFieldParent {
         public SimpleChild child = null;
+        public SimpleChild getSibling() { return null; }
+    }
+
+    /** A bare accessor on a class that is no record: not read, so it grounds nothing. */
+    public static final class ZeroArgParentBare {
+        public SimpleChild child() { return null; }
         public SimpleChild getSibling() { return null; }
     }
 

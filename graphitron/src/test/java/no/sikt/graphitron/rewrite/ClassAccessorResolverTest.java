@@ -3,7 +3,6 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.rewrite.ClassAccessorResolver.ArgShape;
 import no.sikt.graphitron.rewrite.ClassAccessorResolver.Candidate;
 import no.sikt.graphitron.rewrite.ClassAccessorResolver.CandidateKind;
-import no.sikt.graphitron.rewrite.ClassAccessorResolver.CandidateOrder;
 import no.sikt.graphitron.rewrite.ClassAccessorResolver.PerArgument;
 import no.sikt.graphitron.rewrite.model.AccessorProbe;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
@@ -20,9 +19,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Unit-tier coverage for the shared candidate enumeration in {@link ClassAccessorResolver}: the
  * name rules, the {@code is}-gate, the member filter, and the per-kind parameter-shape rule, driven
- * directly against small synthetic classes (a pure reflection surface). Plus the order-bridge
- * meta-test pinning {@link ClassAccessorResolver#forBackingClass} against the class-shape decision
- * {@link TypeBuilder#buildResultTypeFromClass} derives its emission-side order from.
+ * directly against small synthetic classes (a pure reflection surface): a record reads its
+ * components, any other class its get and is getters. Plus the meta-test pinning the resolver's fork
+ * on {@code Class.isRecord()} against the class-shape decision {@link TypeBuilder#buildResultTypeFromClass}
+ * makes.
  */
 @UnitTier
 class ClassAccessorResolverTest {
@@ -50,7 +50,7 @@ class ClassAccessorResolverTest {
     }
 
     static class ArgPojo {
-        public String value(String x) { return x; }
+        public String getValue(String x) { return x; }
     }
 
     static class FieldPojo {
@@ -58,7 +58,7 @@ class ClassAccessorResolverTest {
     }
 
     static class BaseAccessor {
-        public String inherited() { return ""; }
+        public String getInherited() { return ""; }
     }
 
     static class SubAccessor extends BaseAccessor {}
@@ -67,14 +67,14 @@ class ClassAccessorResolverTest {
         public static String getThing() { return ""; }
     }
 
-    interface HasValue { Object value(); }
+    interface HasValue { Object getValue(); }
 
     static class CovariantValue implements HasValue {
-        @Override public String value() { return ""; }
+        @Override public String getValue() { return ""; }
     }
 
     record RecordImplementingInterface(String primary) implements HasValue {
-        @Override public String value() { return primary; }
+        @Override public String getValue() { return primary; }
     }
 
     // ---- helpers ----
@@ -91,26 +91,40 @@ class ClassAccessorResolverTest {
         return candidates.stream().anyMatch(c -> c instanceof Candidate.NearMiss);
     }
 
-    // ---- candidate order ----
+    // ---- the class's form ----
 
     @Test
-    void pojoOrder_prefersGetterOverBareName() {
-        var candidates = ClassAccessorResolver.enumerate(DualPojo.class, "primary",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
+    void pojo_readsTheGetter_bareNameIsANearMiss() {
+        var candidates = ClassAccessorResolver.enumerate(DualPojo.class, "primary", ALL_KINDS, NO_ARGS);
         var first = firstAccepted(candidates);
         assertThat(first).isNotNull();
         assertThat(first.memberName()).isEqualTo("getPrimary");
         assertThat(first.prefixed()).isTrue();
+        assertThat(candidates).filteredOn(c -> c instanceof Candidate.Accepted).hasSize(1);
+        assertThat(candidates).anySatisfy(c -> assertThat(c).isInstanceOfSatisfying(Candidate.NearMiss.class,
+            nm -> assertThat(nm.reason()).contains("primary()").contains("getPrimary()")));
     }
 
     @Test
-    void recordOrder_prefersBareNameOverGetter() {
-        var candidates = ClassAccessorResolver.enumerate(DualRecord.class, "primary",
-            CandidateOrder.RECORD_FIRST, ALL_KINDS, NO_ARGS);
+    void record_readsItsComponent_getterIsANearMiss() {
+        var candidates = ClassAccessorResolver.enumerate(DualRecord.class, "primary", ALL_KINDS, NO_ARGS);
         var first = firstAccepted(candidates);
         assertThat(first).isNotNull();
         assertThat(first.memberName()).isEqualTo("primary");
         assertThat(first.prefixed()).isFalse();
+        assertThat(candidates).filteredOn(c -> c instanceof Candidate.Accepted).hasSize(1);
+        assertThat(candidates).anySatisfy(c -> assertThat(c).isInstanceOfSatisfying(Candidate.NearMiss.class,
+            nm -> assertThat(nm.reason()).contains("getPrimary()").contains("components only")));
+    }
+
+    @Test
+    void record_methodThatIsNoComponent_isNotRead() {
+        // RecordImplementingInterface's getValue() is no component: a record is read through its
+        // components only.
+        var probe = ClassAccessorResolver.probe(RecordImplementingInterface.class, "value", NO_ARGS);
+        assertThat(probe).isInstanceOf(AccessorProbe.NoMatch.class);
+        assertThat(((AccessorProbe.NoMatch) probe).gatedNearMiss()).isTrue();
+        assertThat(((AccessorProbe.NoMatch) probe).reason()).contains("components only");
     }
 
     // ---- is-gate ----
@@ -118,7 +132,7 @@ class ClassAccessorResolverTest {
     @Test
     void isPrefix_matchesOnlyBooleanReturn() {
         var candidates = ClassAccessorResolver.enumerate(BoolPojo.class, "active",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
+            ALL_KINDS, NO_ARGS);
         var first = firstAccepted(candidates);
         assertThat(first).isNotNull();
         assertThat(first.memberName()).isEqualTo("isActive");
@@ -127,12 +141,12 @@ class ClassAccessorResolverTest {
     @Test
     void isPrefix_nonBooleanReturn_isGatedNearMissNotMatch() {
         var candidates = ClassAccessorResolver.enumerate(NonBooleanIsPojo.class, "active",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
+            ALL_KINDS, NO_ARGS);
         assertThat(firstAccepted(candidates)).isNull();
         assertThat(hasNearMiss(candidates)).isTrue();
 
         var probe = ClassAccessorResolver.probe(NonBooleanIsPojo.class, "active",
-            NO_ARGS, CandidateOrder.POJO_FIRST);
+            NO_ARGS);
         assertThat(probe).isInstanceOf(AccessorProbe.NoMatch.class);
         var noMatch = (AccessorProbe.NoMatch) probe;
         assertThat(noMatch.gatedNearMiss()).isTrue();
@@ -144,22 +158,22 @@ class ClassAccessorResolverTest {
     @Test
     void perArgument_arityAndTypeMatch() {
         var candidates = ClassAccessorResolver.enumerate(ArgPojo.class, "value",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, new PerArgument(List.of(new ArgShape("x", String.class))));
+            ALL_KINDS, new PerArgument(List.of(new ArgShape("x", String.class))));
         var first = firstAccepted(candidates);
         assertThat(first).isNotNull();
-        assertThat(first.memberName()).isEqualTo("value");
+        assertThat(first.memberName()).isEqualTo("getValue");
         assertThat(((Method) first.member()).getParameterCount()).isEqualTo(1);
     }
 
     @Test
     void perArgument_arityMismatch_isNearMissNotMatch() {
-        // value(String) probed with zero expected arguments: arity gate rejects it.
+        // getValue(String) probed with zero expected arguments: arity gate rejects it.
         var candidates = ClassAccessorResolver.enumerate(ArgPojo.class, "value",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
+            ALL_KINDS, NO_ARGS);
         assertThat(firstAccepted(candidates)).isNull();
         assertThat(hasNearMiss(candidates)).isTrue();
 
-        var probe = ClassAccessorResolver.probe(ArgPojo.class, "value", NO_ARGS, CandidateOrder.POJO_FIRST);
+        var probe = ClassAccessorResolver.probe(ArgPojo.class, "value", NO_ARGS);
         assertThat(probe).isInstanceOf(AccessorProbe.NoMatch.class);
         assertThat(((AccessorProbe.NoMatch) probe).gatedNearMiss()).isTrue();
     }
@@ -169,33 +183,21 @@ class ClassAccessorResolverTest {
         // An Object arg type (unresolvable at the walk phase) matches any single-parameter method by
         // arity; per-parameter type assignability is skipped for that position.
         var candidates = ClassAccessorResolver.enumerate(ArgPojo.class, "value",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, new PerArgument(List.of(new ArgShape("x", Object.class))));
+            ALL_KINDS, new PerArgument(List.of(new ArgShape("x", Object.class))));
         assertThat(firstAccepted(candidates)).isNotNull();
     }
 
-    // ---- public-field fallback ----
+    // ---- a public field is not read ----
 
     @Test
-    void publicField_matchesOnlyWhenNoArguments() {
-        var noArg = ClassAccessorResolver.enumerate(FieldPojo.class, "label",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
-        var first = firstAccepted(noArg);
-        assertThat(first).isNotNull();
-        assertThat(first.member()).isInstanceOf(java.lang.reflect.Field.class);
+    void publicField_isNeverAccepted_andNamesTheGetterToWrite() {
+        var noArg = ClassAccessorResolver.enumerate(FieldPojo.class, "label", ALL_KINDS, NO_ARGS);
+        assertThat(firstAccepted(noArg)).isNull();
+        assertThat(noArg).anySatisfy(c -> assertThat(c).isInstanceOfSatisfying(Candidate.NearMiss.class,
+            nm -> assertThat(nm.reason()).contains("public field `label`").contains("getLabel()")));
 
-        var withArgs = ClassAccessorResolver.enumerate(FieldPojo.class, "label",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, new PerArgument(List.of(new ArgShape("x", String.class))));
-        assertThat(firstAccepted(withArgs)).isNull();
-        assertThat(hasNearMiss(withArgs)).isTrue();
-    }
-
-    @Test
-    void recordSourceKinds_excludeFieldAndEnvAndPerArgumentBeyondZero() {
-        // The record-source reduction requests PER_ARGUMENT_METHOD only with a zero-arg shape: the
-        // public field is unrepresentable, so it is never produced (not merely filtered downstream).
-        var candidates = ClassAccessorResolver.enumerate(FieldPojo.class, "label",
-            CandidateOrder.POJO_FIRST, EnumSet.of(CandidateKind.PER_ARGUMENT_METHOD), NO_ARGS);
-        assertThat(firstAccepted(candidates)).isNull();
+        var resolution = ClassAccessorResolver.resolve(FieldPojo.class, "label", String.class, NO_ARGS);
+        assertThat(resolution).isInstanceOf(AccessorResolution.Rejected.class);
     }
 
     // ---- member filter ----
@@ -203,14 +205,14 @@ class ClassAccessorResolverTest {
     @Test
     void inheritedAccessor_isMatched() {
         var candidates = ClassAccessorResolver.enumerate(SubAccessor.class, "inherited",
-            CandidateOrder.RECORD_FIRST, ALL_KINDS, NO_ARGS);
+            ALL_KINDS, NO_ARGS);
         assertThat(firstAccepted(candidates)).isNotNull();
     }
 
     @Test
     void staticMethod_isNotMatched() {
         var candidates = ClassAccessorResolver.enumerate(StaticPojo.class, "thing",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
+            ALL_KINDS, NO_ARGS);
         assertThat(firstAccepted(candidates)).isNull();
     }
 
@@ -219,21 +221,20 @@ class ClassAccessorResolverTest {
         // getClass() is declared by Object; the member filter excludes it, so base name "class" finds
         // no accessor.
         var candidates = ClassAccessorResolver.enumerate(SubAccessor.class, "class",
-            CandidateOrder.POJO_FIRST, ALL_KINDS, NO_ARGS);
+            ALL_KINDS, NO_ARGS);
         assertThat(firstAccepted(candidates)).isNull();
     }
 
     @Test
     void covariantBridgeMethod_isSkipped_realOverrideWins() {
-        // CovariantValue.value() returns String, overriding HasValue.value():Object; the compiler
-        // generates a bridge value():Object. The bridge is skipped, so resolve picks the real method.
+        // CovariantValue.getValue() returns String, overriding HasValue.getValue():Object; the compiler
+        // generates a bridge getValue():Object. The bridge is skipped, so resolve picks the real method.
         var resolution = ClassAccessorResolver.resolve(CovariantValue.class, "value",
-            String.class, NO_ARGS, CandidateOrder.RECORD_FIRST);
+            String.class, NO_ARGS);
         assertThat(resolution).isInstanceOf(AccessorResolution.Resolved.class);
         var method = switch ((AccessorResolution.Resolved) resolution) {
             case AccessorResolution.BareName bn -> bn.method();
             case AccessorResolution.GetterPrefixed gp -> gp.method();
-            case AccessorResolution.FieldRead fr -> null;
         };
         assertThat(method).isNotNull();
         assertThat(method.getReturnType()).isEqualTo(String.class);
@@ -244,7 +245,7 @@ class ClassAccessorResolverTest {
 
     @Test
     void probe_groundsOnFirstMatchWithReturnType() {
-        var probe = ClassAccessorResolver.probe(DualPojo.class, "primary", NO_ARGS, CandidateOrder.POJO_FIRST);
+        var probe = ClassAccessorResolver.probe(DualPojo.class, "primary", NO_ARGS);
         assertThat(probe).isInstanceOf(AccessorProbe.Grounded.class);
         var grounded = (AccessorProbe.Grounded) probe;
         assertThat(grounded.memberName()).isEqualTo("getPrimary");
@@ -253,18 +254,18 @@ class ClassAccessorResolverTest {
 
     @Test
     void probe_plainAbsence_isNotGatedNearMiss() {
-        var probe = ClassAccessorResolver.probe(DualPojo.class, "missing", NO_ARGS, CandidateOrder.POJO_FIRST);
+        var probe = ClassAccessorResolver.probe(DualPojo.class, "missing", NO_ARGS);
         assertThat(probe).isInstanceOf(AccessorProbe.NoMatch.class);
         assertThat(((AccessorProbe.NoMatch) probe).gatedNearMiss()).isFalse();
     }
 
-    // ---- order-bridge meta-test ----
+    // ---- the record fork meta-test ----
 
     @Test
-    void forBackingClass_equalsRecordFirst_exactlyForJavaRecordVariant() {
-        // Matrix of backing-class shapes: the binding walk's candidate-order derivation
-        // (forBackingClass) must select RECORD_FIRST exactly when buildResultTypeFromClass would
-        // produce a JavaRecordType, so walk and emission never split their candidate order.
+    void readsComponents_exactlyForJavaRecordVariant() {
+        // The resolver reads a class's components exactly when the class is a record, and
+        // buildResultTypeFromClass produces a JavaRecordType exactly then too, so walk and emission
+        // never split on which members a class offers.
         List<Class<?>> matrix = List.of(
             DualRecord.class,                                                   // Java record
             DualPojo.class,                                                     // plain POJO
@@ -272,11 +273,11 @@ class ClassAccessorResolverTest {
             no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord.class // jOOQ Record subclass
         );
         for (Class<?> cls : matrix) {
-            boolean recordFirst = ClassAccessorResolver.forBackingClass(cls) == CandidateOrder.RECORD_FIRST;
+            boolean readsComponents = cls.isRecord();
             boolean javaRecordVariant =
                 TypeBuilder.resultVariantKindFor(cls) == TypeBuilder.ResultVariantKind.JAVA_RECORD;
-            assertThat(recordFirst)
-                .as("candidate order for %s must be RECORD_FIRST iff its result variant is JAVA_RECORD", cls.getName())
+            assertThat(readsComponents)
+                .as("%s reads its components iff its result variant is JAVA_RECORD", cls.getName())
                 .isEqualTo(javaRecordVariant);
         }
     }

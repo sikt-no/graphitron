@@ -105,7 +105,7 @@ type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
 [#extra-fields]
 == Extra fields
 
-Beyond the required `path` and `message`, an `@error` type may declare extra fields. Each extra field is read from the matched exception (or, for `VALIDATION`, the `GraphQLError`) through an accessor matching the field name: `code: String` reads `getCode()`, `code()`, or a public `code` field. When the Java accessor name diverges from the GraphQL field name, xref:field.adoc[`@field(name:)`] names the accessor to use instead:
+Beyond the required `path` and `message`, an `@error` type may declare extra fields. Each extra field is read from the matched exception (or, for `VALIDATION`, the `GraphQLError`) through a getter matching the field name: `code: String` reads `getCode()`, or `isCode()` for a `Boolean`. A bare `code()` method and a public `code` field are not read; see xref:../../how-to/result-types.adoc#how-a-class-backed-field-is-read[how a class-backed field is read]. When the Java accessor name diverges from the GraphQL field name, xref:field.adoc[`@field(name:)`] names the accessor to use instead:
 
 [source,graphql]
 ----

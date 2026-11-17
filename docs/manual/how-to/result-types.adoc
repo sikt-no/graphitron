@@ -13,11 +13,24 @@ The sealed `GraphitronType.ResultType` hierarchy has four permits (`GraphitronTy
 * *`JooqTableRecordType`*: backing class extends `org.jooq.TableRecord`. The catalog supplies FK metadata; child `@table` fields use xref:../reference/directives/reference.adoc[`@reference`] paths driven by the catalog.
 * *`JooqRecordType`*: backing class extends `org.jooq.Record` but not `TableRecord`. Same FK availability as table-records via the carried row type; the variant exists because a generic `Record` isn't bound to one canonical table.
 * *`JavaRecordType`*: backing class is a Java `record` (`cls.isRecord()`). The catalog has no FK metadata for the hand-written class. Child `@table` fields fall back to accessor inference (a record component returning a typed jOOQ `TableRecord`).
-* *`PojoResultType`*: anything else (plain POJO, DTO, hand-rolled class with setters). Same accessor contract as `JavaRecordType`.
+* *`PojoResultType`*: anything else (plain POJO, DTO, hand-rolled class with setters). Its fields are read through its getters; see <<how-a-class-backed-field-is-read>>.
 
 The classification check order is `isRecord` → `TableRecord` → `Record` → fallback to `PojoResultType`. `TableRecord` is checked before `Record` because every `TableRecord` is also a `Record`; the more specific match wins.
 
 Input-side class-backed types follow the same shape with parallel permits on `InputType` (`GraphitronType.java:282-340`): `JavaRecordInputType`, `PojoInputType`, `JooqRecordInputType`, `JooqTableRecordInputType`. The backing class is reflected from the `@service` method parameter the input flows into; a `@condition` parameter typed as a bean gets one built for it without backing the type. The Maven plugin can scaffold a Java record matching the input's field shape; binding flows through setters or the canonical constructor.
+
+[#how-a-class-backed-field-is-read]
+=== How a class-backed field is read
+
+A field of a class-backed type is read from a member of its class, found by the field's name or the one xref:../reference/directives/field.adoc[`@field(name:)`] gives it, and the class's form decides which members count:
+
+* A Java `record` is read through its components: `title: String` reads the component `title()`. A method on the record that is no component, a hand-written `getTitle()` among them, is not read.
+* Any other class is read through its getters: `title: String` reads `getTitle()`, or `isTitle()` where it returns `boolean` or `Boolean`. An inherited getter counts. A field with arguments reads a getter taking those arguments in order, `getTitle(String locale)`, or one taking the `DataFetchingEnvironment`.
+* A bare `title()` on a class that is no record, and a public `title` field, are not read.
+
+The same holds for an input type built into a class: a record is built through its canonical constructor and any other class through its setters, so an input field fills a component or a `set` setter of its name. An xref:../reference/directives/error.adoc[`@error`] type's extra field reads a getter on the exception its handler matches the same way.
+
+A field whose class offers no such member is refused at build time (`MEMBER_UNRESOLVED`, or `ERROR_FIELD_UNREADABLE` for an `@error` type's field), naming the getter to write. To fix it, rename the member to `getTitle()`, point `@field(name:)` at the member the class has, or make the class a record. This is Alf's ruling of 2026-11-17, input beans included: one rule for every class-backed read. A record is read by its components only in this version; reading a record's other methods may be added later, as an addition to this rule rather than a change of it (Alf, 2026-11-17).
 
 === Class-backed payloads with an `errors:` field
 

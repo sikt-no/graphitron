@@ -436,8 +436,7 @@ final class RecordBindingResolver {
         // BindsWrapper / ServiceEmitted grounding).
         GraphQLFieldDefinition dataField = singleNonTableObjectDataField(resultSdl);
         if (dataField != null && ClassAccessorResolver.probe(reflectedElement,
-                accessorBaseName(dataField.getName(), dataField), paramShapeFor(dataField),
-                ClassAccessorResolver.forBackingClass(reflectedElement))
+                accessorBaseName(dataField.getName(), dataField), paramShapeFor(dataField))
                     instanceof AccessorProbe.NoMatch) {
             // The reflected element feeds the data field, not the wrapper. Bind regardless of
             // cardinality agreement; a single-vs-list near-miss is named at the producing @service
@@ -954,8 +953,7 @@ final class RecordBindingResolver {
             // shape (both emission-side values), so walk and emission agree on which member reads the
             // field.
             AccessorProbe probe = ClassAccessorResolver.probe(parentClass,
-                accessorBaseName(field.getName(), field), paramShapeFor(field),
-                ClassAccessorResolver.forBackingClass(parentClass));
+                accessorBaseName(field.getName(), field), paramShapeFor(field));
             if (probe instanceof AccessorProbe.NoMatch nm) {
                 recordAccessorGate(childSdl, parentSdlType, field.getName(), nm, locationOf(field));
                 continue;
@@ -985,8 +983,7 @@ final class RecordBindingResolver {
             // base name still honours @field(name:) for symmetry with the result axis.
             AccessorProbe probe = ClassAccessorResolver.probe(parentClass,
                 accessorBaseName(field.getName(), field),
-                new ClassAccessorResolver.PerArgument(List.of()),
-                ClassAccessorResolver.forBackingClass(parentClass));
+                new ClassAccessorResolver.PerArgument(List.of()));
             if (probe instanceof AccessorProbe.NoMatch nm) {
                 recordAccessorGate(childSdl, parentSdlType, field.getName(), nm, locationOf(field));
                 continue;

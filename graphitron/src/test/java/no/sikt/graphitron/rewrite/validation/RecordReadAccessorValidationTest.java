@@ -111,7 +111,6 @@ class RecordReadAccessorValidationTest {
         var resolved = switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> gp.method();
             case AccessorResolution.BareName bn -> bn.method();
-            case AccessorResolution.FieldRead fr -> null;
         };
         assertThat(resolved).isNotNull();
         assertThat(resolved.getName()).isEqualTo("getFooBar");
@@ -143,15 +142,39 @@ class RecordReadAccessorValidationTest {
     }
 
     @Test
-    void pojoParent_publicFieldFallback_resolvesAsFieldRead() {
+    void pojoParent_publicField_isNotRead_validatorNamesTheGetterToWrite() {
         var schema = buildWithRecord("PublicFieldPojo", "title: String");
         var errors = validate(schema);
-        assertThat(errors).extracting(ValidationError::message)
-            .noneMatch(m -> m.contains("TestType.title"));
-        var accessor = accessorOf(schema.field("TestType", "title"));
-        assertThat(accessor).isInstanceOf(AccessorResolution.FieldRead.class);
-        var fr = (AccessorResolution.FieldRead) accessor;
-        assertThat(fr.field().getName()).isEqualTo("title");
+        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
+            m.contains("TestType.title")
+                && m.contains("public field `title`")
+                && m.contains("getTitle()"));
+        assertThat(schema.field("TestType", "title"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
+    }
+
+    @Test
+    void pojoParent_bareAccessor_isNotRead_validatorNamesTheGetterToWrite() {
+        var schema = buildWithRecord("BareAccessorPojo", "title: String");
+        var errors = validate(schema);
+        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
+            m.contains("TestType.title")
+                && m.contains("title()")
+                && m.contains("getTitle()"));
+        assertThat(schema.field("TestType", "title"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
+    }
+
+    @Test
+    void recordParent_getterThatIsNoComponent_isNotRead() {
+        var schema = buildWithRecord("ExtraGetterRecord", "title: String");
+        var errors = validate(schema);
+        assertThat(errors).extracting(ValidationError::message).anyMatch(m ->
+            m.contains("TestType.title")
+                && m.contains("getTitle()")
+                && m.contains("components only"));
+        assertThat(schema.field("TestType", "title"))
+            .isInstanceOf(GraphitronField.UnclassifiedField.class);
     }
 
     @Test
@@ -165,7 +188,6 @@ class RecordReadAccessorValidationTest {
         var method = switch (accessor) {
             case AccessorResolution.GetterPrefixed gp -> gp.method();
             case AccessorResolution.BareName bn -> bn.method();
-            case AccessorResolution.FieldRead fr -> null;
         };
         assertThat(method).isNotNull();
         assertThat(method.getParameterCount()).isEqualTo(1);

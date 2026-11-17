@@ -53,9 +53,18 @@ public final class R88AccessorFixtures {
     }
 
     /**
-     * Public-field fallback: no method named {@code title} or {@code getTitle}, but a public
-     * field of the right name and type. Resolver returns {@code FieldRead}.
+     * A public field of the right name and type and no getter: a public field is not read, so the
+     * field is rejected and the message names {@code getTitle()} to write.
      */
+    public static final class BareAccessorPojo {
+        public String title() { return ""; }
+    }
+
+    /** A record with no component of the field's name and a hand-written getter, not read. */
+    public record ExtraGetterRecord(String other) {
+        public String getTitle() { return ""; }
+    }
+
     public static final class PublicFieldPojo {
         public String title;
     }
@@ -80,7 +89,7 @@ public final class R88AccessorFixtures {
 
     /**
      * Java record canonical component accessor: {@code sakId()} is the auto-generated bare-name
-     * accessor. Under {@code RECORD_FIRST} candidate ordering this matches first.
+     * accessor, which is how a record is read.
      */
     public record BareNameRecord(String sakId) {}
 

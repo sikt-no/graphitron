@@ -61,8 +61,7 @@ public final class HandlerAccessorCheck {
                         sourceClass,
                         accessorBase,
                         expectedReturn,
-                        new ClassAccessorResolver.PerArgument(List.of()),
-                        ClassAccessorResolver.CandidateOrder.POJO_FIRST);
+                        new ClassAccessorResolver.PerArgument(List.of()));
                     if (resolution instanceof AccessorResolution.Rejected) {
                         failures.add(new ErrorChannelWalkerError.HandlerSourceAccessorMissing(
                             outcomeTypeName,
@@ -101,7 +100,10 @@ public final class HandlerAccessorCheck {
      * so the diagnostic can suggest what the source class does expose.
      */
     private static List<String> availableAccessors(Class<?> sourceClass) {
+        // The getters the class offers, the only members an extra field reads (a handler's class is
+        // no record), so the hint never offers a bare accessor.
         return java.util.Arrays.stream(sourceClass.getMethods())
+            .filter(m -> m.getName().startsWith("get") || m.getName().startsWith("is"))
             .filter(m -> m.getParameterCount() == 0)
             .filter(m -> m.getReturnType() != void.class)
             .filter(m -> m.getDeclaringClass() != Object.class)

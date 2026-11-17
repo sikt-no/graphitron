@@ -40,15 +40,14 @@ public final class AccessorPayloads {
     public record SetPayload(Set<FilmRecord> films) {}
 
     /**
-     * Ambiguous case: two zero-arg accessors with the same name (one direct, one prefixed
-     * {@code get...}) returning {@code List<FilmRecord>}; the field name {@code films} matches
-     * both, exercising the {@code AccessorDerivation.Ambiguous} arm.
+     * A bare {@code films()} beside {@code getFilms()}, both returning {@code List<FilmRecord>}, on
+     * a class that is no record: only the getter is read, so the bare one does not compete.
      */
-    public static final class AmbiguousListPayload {
+    public static final class BareAndGetterListPayload {
         private final List<FilmRecord> a;
         private final List<FilmRecord> b;
 
-        public AmbiguousListPayload(List<FilmRecord> a, List<FilmRecord> b) {
+        public BareAndGetterListPayload(List<FilmRecord> a, List<FilmRecord> b) {
             this.a = a;
             this.b = b;
         }

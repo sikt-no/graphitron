@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.AccessorResolution;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Member;
+import java.lang.reflect.RecordComponent;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Type;
@@ -19,11 +20,13 @@ import java.util.Set;
  * per-kind parameter-shape rules: every consumer shares the {@link #enumerate} candidate model, so
  * a fix to a rule lands once.
  *
- * <p>Mirrors graphql-java's {@code PropertyDataFetcher} candidate-name lookup so a consumer
- * migrating to graphitron's class-backed fetcher gets matching name resolution. Candidate order:
- * {@code get<Camel>} (POJO bean getter), {@code is<Camel>} (only when the candidate member's own
- * return type is {@code boolean} / {@code Boolean}), bare {@code <camel>} (Java record component /
- * fluent accessor), and finally a public field read on {@code <camel>}.
+ * <p>The rule is the class's form, as the fact store's read slots state it ({@code CodeCapture}'s
+ * slot reading): a Java record is read through its components, {@code <camel>()}, and any other
+ * class through its getters, {@code get<Camel>} and then {@code is<Camel>} (only when the candidate
+ * member's own return type is {@code boolean} / {@code Boolean}). A bare {@code <camel>()} on a class
+ * that is no record, a public field, and a method on a record that is no component are not read;
+ * each is reported as a near miss naming what would be (Alf, 2026-11-17). On a record the
+ * components are what is read in this version; a getter on a record may be admitted later.
  *
  * <p>Two reductions consume one candidate model:
  * <ul>
@@ -58,36 +61,10 @@ public final class ClassAccessorResolver {
     private ClassAccessorResolver() {}
 
     /**
-     * Candidate-list ordering. {@code POJO_FIRST} tries {@code get<Camel>} / {@code is<Camel>}
-     * before bare-name, matching graphql-java's POJO-bean conventions; {@code RECORD_FIRST} tries
-     * bare-name first (the canonical Java record component accessor), with the bean forms as
-     * fallback for hand-rolled methods on the record body. The classifier picks the order from the
-     * parent's {@code ResultType} variant; the resolver does not introspect
-     * {@code backingClass.isRecord()} itself, so the type variant remains the single source of
-     * truth for the candidate-order fork. The binding walk, which runs before any
-     * {@code ResultType} exists, derives the order from {@link #forBackingClass} instead;
-     * {@code ClassAccessorResolverTest.forBackingClass_equalsRecordFirst_exactlyForJavaRecordVariant}
-     * pins the two derivations equal.
-     */
-    public enum CandidateOrder { POJO_FIRST, RECORD_FIRST }
-
-    /**
-     * The single place the class-shape-to-candidate-order rule lives for the binding walk, which
-     * has a backing {@link Class} but no {@code ResultType} variant to read the order from.
-     * {@code TypeBuilder.buildResultTypeFromClass} produces a {@code JavaRecordType} exactly when
-     * {@code cls.isRecord()}, so this equals the emission-side order derived from the variant;
-     * {@code ClassAccessorResolverTest.forBackingClass_equalsRecordFirst_exactlyForJavaRecordVariant}
-     * pins the equivalence.
-     */
-    public static CandidateOrder forBackingClass(Class<?> cls) {
-        return cls.isRecord() ? CandidateOrder.RECORD_FIRST : CandidateOrder.POJO_FIRST;
-    }
-
-    /**
      * The candidate kinds a consumer of {@link #enumerate} accepts. The enumeration is parametric in
      * this set so each reduction sees only the arms it can consume: the property-read reduction and
-     * the probe accept all three, while the record-source reduction accepts
-     * {@link #PER_ARGUMENT_METHOD} only (a field, env-taking, or per-argument candidate is
+     * the probe accept both, while the record-source reduction accepts
+     * {@link #PER_ARGUMENT_METHOD} only (an env-taking or per-argument candidate is
      * unrepresentable in its view: {@code KeyLift.Accessor} emits {@code parent.method()}
      * with no environment or arguments), so a candidate it structurally cannot emit is never produced
      * rather than filtered out by a local rule that could drift.
@@ -97,10 +74,7 @@ public final class ClassAccessorResolver {
          *  assignability). A zero-argument method is the empty case of this kind. */
         PER_ARGUMENT_METHOD,
         /** A method taking a single {@code DataFetchingEnvironment}. */
-        FULL_ENVIRONMENT_METHOD,
-        /** A public-field read (graphql-java's {@code PropertyDataFetcher} last-resort fallback);
-         *  offered only when the SDL field has no arguments. */
-        PUBLIC_FIELD
+        FULL_ENVIRONMENT_METHOD
     }
 
     /**
@@ -139,10 +113,10 @@ public final class ClassAccessorResolver {
      */
     public sealed interface Candidate permits Candidate.Accepted, Candidate.NearMiss, Candidate.Absent {
         /**
-         * {@code member} is the resolved {@link Method} or {@link Field}; {@code memberName} its name;
+         * {@code member} is the resolved {@link Method}; {@code memberName} its name;
          * {@code prefixed} is {@code true} for a {@code get}/{@code is} bean accessor and {@code false}
-         * for a bare accessor or field (drives the {@link AccessorResolution} arm); {@code genericReturnType}
-         * is the member's generic return / field type.
+         * for a record component (drives the {@link AccessorResolution} arm); {@code genericReturnType}
+         * is the member's generic return type.
          */
         record Accepted(Member member, String memberName, boolean prefixed, Type genericReturnType) implements Candidate {}
         record NearMiss(String reason) implements Candidate {}
@@ -150,19 +124,25 @@ public final class ClassAccessorResolver {
     }
 
     /**
-     * The shared candidate enumeration: given a backing class, an accessor base name, the candidate
-     * order, the accepted kinds, and the expected argument shape, produces the ordered stream of
-     * candidates under the unified rule set. The name rules, the {@code is}-gate (an {@code is<Name>}
+     * The shared candidate enumeration: given a backing class, an accessor base name, the accepted
+     * kinds, and the expected argument shape, produces the ordered stream of candidates under the
+     * class's rule: a record's component, or another class's {@code get} and {@code is} getters. The
+     * name rules, the {@code is}-gate (an {@code is<Name>}
      * member is a candidate only when its own return type is {@code boolean}/{@code Boolean}), the
      * member filter (public, non-static, non-bridge, non-synthetic, not declared by {@code Object}),
      * and the per-kind parameter-shape rule are single-sourced here; each consumer's only per-call
      * input is its accepted kind set. Return-type assignability is <em>not</em> applied here (it is
      * {@link #resolve}'s expectation-checked concern).
+     *
+     * <p>A name has at most one zero-argument candidate accepted returning anything but a boolean: a
+     * record has one component of a name, and on any other class {@code is<Name>} is accepted only
+     * where it returns a boolean, leaving {@code get<Name>} alone. A reduction collecting every
+     * zero-argument match of a non-boolean type, as the record-source reduction does for a table's
+     * records, finds one or none.
      */
     public static List<Candidate> enumerate(
             Class<?> backingClass,
             String accessorBaseName,
-            CandidateOrder order,
             Set<CandidateKind> kinds,
             ParamShape expectedArgs) {
 
@@ -178,9 +158,14 @@ public final class ClassAccessorResolver {
         // One name slot: the candidate name, whether it is a bean-prefixed accessor, and whether it
         // is the is<Name> slot (which the is-gate applies to).
         record Slot(String name, boolean prefixed, boolean isSlot) {}
-        List<Slot> slots = order == CandidateOrder.RECORD_FIRST
-            ? List.of(new Slot(camel, false, false), new Slot(getterName, true, false), new Slot(isName, true, true))
-            : List.of(new Slot(getterName, true, false), new Slot(isName, true, true), new Slot(camel, false, false));
+        boolean record = backingClass.isRecord();
+        List<Slot> slots = record
+            ? List.of(new Slot(camel, false, false))
+            : List.of(new Slot(getterName, true, false), new Slot(isName, true, true));
+        var components = record
+            ? java.util.Arrays.stream(backingClass.getRecordComponents()).map(RecordComponent::getName)
+                .collect(java.util.stream.Collectors.toSet())
+            : Set.<String>of();
 
         var out = new ArrayList<Candidate>();
         for (Slot slot : slots) {
@@ -188,6 +173,11 @@ public final class ClassAccessorResolver {
             for (Method m : backingClass.getMethods()) {
                 if (!passesMemberFilter(m)) continue;
                 if (!m.getName().equals(slot.name())) continue;
+                if (record && !components.contains(m.getName())) {
+                    out.add(new Candidate.NearMiss("found `" + describeMethod(m)
+                        + "`, but a record is read through its components only"));
+                    continue;
+                }
                 if (slot.isSlot() && !isBooleanType(m.getGenericReturnType())) {
                     // is-gate: a non-boolean is<Name> is a gated near-miss, recorded so a walk
                     // tightening that drops such a grounding surfaces the boolean gate as the reason.
@@ -214,22 +204,24 @@ public final class ClassAccessorResolver {
             }
         }
 
-        // Public-field fallback: last-resort, and only when the SDL field has no arguments (a public
-        // field cannot accept arguments). A same-named field on an argument-bearing SDL field is a
-        // gated near-miss, not a match.
-        if (kinds.contains(CandidateKind.PUBLIC_FIELD)) {
-            boolean noArgs = expectedArgs instanceof PerArgument pa && pa.args().isEmpty();
-            for (Field f : backingClass.getFields()) {
-                if (Modifier.isStatic(f.getModifiers())) continue;
-                if (!f.getName().equals(camel)) continue;
-                if (noArgs) {
-                    out.add(new Candidate.Accepted(f, f.getName(), false, f.getGenericType()));
-                } else {
-                    out.add(new Candidate.NearMiss("public field `" + camel
-                        + "` exists but the SDL field declares arguments; public-field fallback "
-                        + "applies only to no-argument fields"));
-                }
+        // What the class's form does not read, named so the rejection says what to write instead: a
+        // getter on a record, a bare accessor on any other class, and a public field anywhere.
+        for (Method m : backingClass.getMethods()) {
+            if (!passesMemberFilter(m)) continue;
+            if (record && (m.getName().equals(getterName) || m.getName().equals(isName))) {
+                out.add(new Candidate.NearMiss("found `" + describeMethod(m)
+                    + "`, but a record is read through its components only"));
+            } else if (!record && m.getName().equals(camel)) {
+                out.add(new Candidate.NearMiss("found `" + describeMethod(m)
+                    + "`, but a class that is no record is read through its get and is getters only ("
+                    + getterName + "())"));
             }
+        }
+        for (Field f : backingClass.getFields()) {
+            if (Modifier.isStatic(f.getModifiers())) continue;
+            if (!f.getName().equals(camel)) continue;
+            out.add(new Candidate.NearMiss("public field `" + camel + "` is not read; "
+                + (record ? "make it a component of the record" : "give the class " + getterName + "()")));
         }
         return out;
     }
@@ -240,8 +232,8 @@ public final class ClassAccessorResolver {
      * by method name so a reduction's diagnostics are stable across JVM runs.
      *
      * <p>Deliberately separate from {@link #enumerate} rather than a mode on it. Everything
-     * {@code enumerate} single-sources is about <em>names</em>: the candidate-name set, the
-     * {@code is}-prefix gate, the candidate order. A reduction that has no SDL field name to match
+     * {@code enumerate} single-sources is about <em>names</em>: the candidate-name set and the
+     * {@code is}-prefix gate. A reduction that has no SDL field name to match
      * against (the {@code @service} batch key is named by the {@code Sources} element type, not by
      * the field) has no use for any of that, and asking for it through a name-based entry point
      * would mean inventing a base name to discard. What the two do share is the member filter, and
@@ -263,19 +255,17 @@ public final class ClassAccessorResolver {
      * candidate-name set, parameter shape, and return type. First name+shape+return match wins.
      *
      * @return a {@link AccessorResolution.Resolved} arm carrying the resolved
-     *     {@link Method} / {@link Field}, or {@link AccessorResolution.Rejected} with an
+     *     {@link Method}, or {@link AccessorResolution.Rejected} with an
      *     actionable diagnostic listing each candidate tried and why it was rejected.
      */
     public static AccessorResolution resolve(
             Class<?> backingClass,
             String accessorBaseName,
             Type expectedReturnJavaType,
-            ParamShape expectedArgs,
-            CandidateOrder order) {
+            ParamShape expectedArgs) {
 
-        var candidates = enumerate(backingClass, accessorBaseName, order,
-            EnumSet.of(CandidateKind.PER_ARGUMENT_METHOD, CandidateKind.FULL_ENVIRONMENT_METHOD,
-                CandidateKind.PUBLIC_FIELD),
+        var candidates = enumerate(backingClass, accessorBaseName,
+            EnumSet.of(CandidateKind.PER_ARGUMENT_METHOD, CandidateKind.FULL_ENVIRONMENT_METHOD),
             expectedArgs);
 
         String returnMismatch = null;
@@ -283,25 +273,16 @@ public final class ClassAccessorResolver {
         for (Candidate c : candidates) {
             switch (c) {
                 case Candidate.Accepted a -> {
-                    if (a.member() instanceof Field f) {
-                        if (isAssignable(expectedReturnJavaType, f.getGenericType())) {
-                            return new AccessorResolution.FieldRead(f);
-                        }
-                        otherReasons.add("public field `" + f.getName() + "` of type "
-                            + simpleTypeName(f.getGenericType()) + " is not assignable to "
-                            + simpleTypeName(expectedReturnJavaType));
-                    } else {
-                        Method m = (Method) a.member();
-                        if (isAssignable(expectedReturnJavaType, m.getGenericReturnType())) {
-                            return a.prefixed()
-                                ? new AccessorResolution.GetterPrefixed(m)
-                                : new AccessorResolution.BareName(m);
-                        }
-                        if (returnMismatch == null) {
-                            returnMismatch = "found `" + describeMethod(m) + "`, but return type "
-                                + simpleTypeName(m.getGenericReturnType())
-                                + " is not assignable to " + simpleTypeName(expectedReturnJavaType);
-                        }
+                    Method m = (Method) a.member();
+                    if (isAssignable(expectedReturnJavaType, m.getGenericReturnType())) {
+                        return a.prefixed()
+                            ? new AccessorResolution.GetterPrefixed(m)
+                            : new AccessorResolution.BareName(m);
+                    }
+                    if (returnMismatch == null) {
+                        returnMismatch = "found `" + describeMethod(m) + "`, but return type "
+                            + simpleTypeName(m.getGenericReturnType())
+                            + " is not assignable to " + simpleTypeName(expectedReturnJavaType);
                     }
                 }
                 case Candidate.NearMiss nm -> otherReasons.add(nm.reason());
@@ -325,17 +306,15 @@ public final class ClassAccessorResolver {
      *
      * @return {@link AccessorProbe.Grounded} carrying the resolved member and its generic return
      *     type, or {@link AccessorProbe.NoMatch} whose reason names the closest gated near-miss
-     *     (arity, boolean-{@code is}, field-fallback-with-arguments) when one exists.
+     *     (arity, boolean-{@code is}, a member the class's form does not read) when one exists.
      */
     public static AccessorProbe probe(
             Class<?> backingClass,
             String accessorBaseName,
-            ParamShape expectedArgs,
-            CandidateOrder order) {
+            ParamShape expectedArgs) {
 
-        var candidates = enumerate(backingClass, accessorBaseName, order,
-            EnumSet.of(CandidateKind.PER_ARGUMENT_METHOD, CandidateKind.FULL_ENVIRONMENT_METHOD,
-                CandidateKind.PUBLIC_FIELD),
+        var candidates = enumerate(backingClass, accessorBaseName,
+            EnumSet.of(CandidateKind.PER_ARGUMENT_METHOD, CandidateKind.FULL_ENVIRONMENT_METHOD),
             expectedArgs);
 
         var nearMisses = new ArrayList<String>();

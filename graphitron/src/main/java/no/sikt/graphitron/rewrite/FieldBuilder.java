@@ -7809,15 +7809,12 @@ class FieldBuilder {
             java.lang.reflect.Type expectedReturnOverride) {
         if (parentBackingClass == null) return null;
         if (parentResultType instanceof GraphitronType.JooqRecordCarrier) return null;
-        var order = parentResultType instanceof GraphitronType.JavaRecordType
-            ? ClassAccessorResolver.CandidateOrder.RECORD_FIRST
-            : ClassAccessorResolver.CandidateOrder.POJO_FIRST;
         java.lang.reflect.Type expectedReturn = expectedReturnOverride != null
             ? expectedReturnOverride
             : mapGraphQLTypeToReflectType(fieldDef.getType());
         ClassAccessorResolver.ParamShape expectedArgs = mapArgsToParamShape(fieldDef);
         return ClassAccessorResolver.resolve(parentBackingClass, accessorBaseName,
-            expectedReturn, expectedArgs, order);
+            expectedReturn, expectedArgs);
     }
 
     /**
@@ -8279,8 +8276,6 @@ class FieldBuilder {
         return switch (derived) {
             case AccessorDerivation.Ok ok -> new RecordParentSourceResolution.Resolved(
                 ok.sourceKey(), ok.lift(), ok.loaderRegistration(), List.of(), ok.lifted());
-            case AccessorDerivation.Ambiguous a -> new RecordParentSourceResolution.Rejected(
-                Rejection.structural(a.message()));
             case AccessorDerivation.CardinalityMismatch m -> new RecordParentSourceResolution.Rejected(
                 Rejection.structural(m.message()));
             case AccessorDerivation.None _ -> new RecordParentSourceResolution.Rejected(
@@ -8289,11 +8284,10 @@ class FieldBuilder {
     }
 
     /**
-     * Outcome of {@link #deriveAccessorRecordParentSource}. Four arms, all builder-internal:
+     * Outcome of {@link #deriveAccessorRecordParentSource}. Three arms, all builder-internal:
      * {@link Ok} when reflection finds exactly one matching accessor with aligned cardinality;
      * {@link None} when no matching accessor exists at all (callers fall through to the existing
-     * three-option AUTHOR_ERROR); {@link Ambiguous} when two or more accessors match the
-     * name-and-shape rule; {@link CardinalityMismatch} when at least one accessor matches name
+     * three-option AUTHOR_ERROR); {@link CardinalityMismatch} when at least one accessor matches name
      * + element table but the field/accessor cardinalities don't align (and no other accessor
      * matched cleanly). The {@link Ok} arm carries the resolved {@link SourceKey} +
      * {@link LoaderRegistration} pair plus the hop-less {@link ParentCorrelation.OnLiftedSlots}
@@ -8304,7 +8298,6 @@ class FieldBuilder {
         record Ok(SourceKey sourceKey, KeyLift lift, LoaderRegistration loaderRegistration,
                   ParentCorrelation.OnLiftedSlots lifted) implements AccessorDerivation {}
         record None() implements AccessorDerivation {}
-        record Ambiguous(String message) implements AccessorDerivation {}
         record CardinalityMismatch(String message) implements AccessorDerivation {}
     }
 
@@ -8353,19 +8346,6 @@ class FieldBuilder {
         List<AccessorMatch> resolvable = matches.stream()
             .filter(am -> am instanceof AccessorMatch.Single || am instanceof AccessorMatch.Many)
             .toList();
-        if (resolvable.size() > 1) {
-            String candidates = resolvable.stream()
-                .map(am -> switch (am) {
-                    case AccessorMatch.Single s -> s.method().getName();
-                    case AccessorMatch.Many mm -> mm.method().getName();
-                    case AccessorMatch.CardinalityMismatch _ -> ""; // filtered above
-                })
-                .collect(Collectors.joining(", "));
-            return new AccessorDerivation.Ambiguous(
-                "record-backed parent '" + parentFqClassName + "' exposes more than one typed accessor "
-                + "returning '" + expectedTable.tableName() + "' records: [" + candidates + "]. Leave "
-                + "exactly one.");
-        }
         if (resolvable.isEmpty()) {
             List<AccessorMatch.CardinalityMismatch> cmms = matches.stream()
                 .filter(am -> am instanceof AccessorMatch.CardinalityMismatch)
@@ -8377,7 +8357,8 @@ class FieldBuilder {
             return new AccessorDerivation.CardinalityMismatch(joined);
         }
 
-        // Exactly one resolvable match; build the corresponding SourceKey + LoaderRegistration
+        // Exactly one resolvable match, the resolver offering at most one zero-argument candidate of
+        // a non-boolean type per name (ClassAccessorResolver#enumerate); build the corresponding SourceKey + LoaderRegistration
         // pair. The accessor's DataLoader key tuple equals the element table's PK tuple by
         // classifier construction — the hop-less OnLiftedSlots correlation. Wrap is Record (the
         // accessor returns a TableRecord, projected as RecordN<...> keys at emit time); the
@@ -8438,12 +8419,11 @@ class FieldBuilder {
         List<AccessorMatch> matches = new ArrayList<>();
         // The per-member name matching, is-gate, and member filter come from the shared
         // candidate enumeration so the name rules cannot drift from the other reductions. The
-        // record-source reduction accepts zero-arg methods only (an env-taking / per-argument /
-        // public-field candidate cannot back a KeyLift.Accessor lift), expressed by requesting the
-        // PER_ARGUMENT_METHOD kind with a zero-argument expected shape. Candidate order is irrelevant
-        // here (all matches are collected, then reduced by identity), so it derives from the class.
+        // record-source reduction accepts zero-arg methods only (an env-taking or per-argument
+        // candidate cannot back a KeyLift.Accessor lift), expressed by requesting the
+        // PER_ARGUMENT_METHOD kind with a zero-argument expected shape. All matches are collected,
+        // then reduced by identity.
         var candidates = ClassAccessorResolver.enumerate(parentClass, accessorBaseName,
-            ClassAccessorResolver.forBackingClass(parentClass),
             java.util.EnumSet.of(ClassAccessorResolver.CandidateKind.PER_ARGUMENT_METHOD),
             new ClassAccessorResolver.PerArgument(List.of()));
         for (var candidate : candidates) {
