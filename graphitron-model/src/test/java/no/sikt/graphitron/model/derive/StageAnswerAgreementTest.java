@@ -356,17 +356,23 @@ public class StageAnswerAgreementTest {
      */
     public static org.jooq.Condition projection(DSLContext dsl, String target,
                                                 List<org.jooq.Field<Object>> columns) {
-        var required = new TreeSet<>(dsl.select(field(name("COLUMN_NAME"), String.class))
+        var required = REQUIRED.computeIfAbsent(target, ignored -> new TreeSet<>(dsl.select(field(name("COLUMN_NAME"), String.class))
             .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
             .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
             .and(field(name("TABLE_NAME"), String.class).eq(target.toUpperCase()))
             .and(field(name("IS_NULLABLE"), String.class).eq("NO"))
-            .fetch(0, String.class));
+            .fetch(0, String.class)));
         return columns.stream()
             .filter(column -> required.contains(column.getName()))
             .map(org.jooq.Field::isNotNull)
             .reduce(org.jooq.impl.DSL.noCondition(), org.jooq.Condition::and);
     }
+
+    /**
+     * Each table's {@code NOT NULL} columns, asked of the schema once: every store carries the one
+     * fact schema, and a comparison asks per graph and per rule view.
+     */
+    private static final Map<String, Set<String>> REQUIRED = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * The relation's rows of {@code graph}, where it is partitioned by graph; a relation of a corpus
