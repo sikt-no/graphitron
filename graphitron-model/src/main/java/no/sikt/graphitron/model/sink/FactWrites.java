@@ -165,8 +165,9 @@ final class FactWrites {
                          t.DEFAULTED,
                          t.DECLARED_LENGTH,
                          t.DESCRIPTION,
+                         t.KIND,
                          t.TOUCHED_AT)
-                .values(markers(14)))
+                .values(markers(15)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -182,6 +183,7 @@ final class FactWrites {
                                row.get(t.DEFAULTED),
                                row.get(t.DECLARED_LENGTH),
                                row.get(t.DESCRIPTION),
+                               row.get(t.KIND),
                                row.get(t.TOUCHED_AT));
         }
         batch.execute();

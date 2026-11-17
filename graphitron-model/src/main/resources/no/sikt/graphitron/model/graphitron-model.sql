@@ -5825,6 +5825,37 @@ COMMENT ON COLUMN sql_table_record_supertype.table_schema IS 'the table''s SQL s
 COMMENT ON COLUMN sql_table_record_supertype.table_name IS 'the table''s SQL name, as on sql_table; with the two columns above, the table whose record class this row is about. Keyed on the table rather than on the record class, so the row is deleted with its table and no reader has to reconcile two spellings of one identity';
 COMMENT ON COLUMN sql_table_record_supertype.supertype_name IS 'the fully-qualified binary name of one type the record class is, a nested one spelled with the $ the JVM uses, and spelled the way the reading spells a class name so a declared parameter type compares to it exactly. Every element of the closure and not only the declared parents, the relation holding a closure for the reason its own comment gives; the record class itself is deliberately not a row, a reader asking about it holding sql_table.record_class_fqn already. Frequently not a class the reading reached and never a foreign key: jOOQ''s runtime classes are not scanned, which is what makes capturing this necessary rather than derivable';
 
+CREATE TABLE sql_table_field (
+  source_name     VARCHAR NOT NULL,
+  table_schema    VARCHAR NOT NULL,
+  table_name      VARCHAR NOT NULL,
+  field_name      VARCHAR NOT NULL,
+  kind            VARCHAR NOT NULL,
+  jooq_name       VARCHAR NOT NULL,
+  binding_type    VARCHAR NOT NULL,
+  field_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(field_name)),
+  jooq_name_upper  VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
+  touched_at      TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name, field_name),
+  -- What a subtype references: its kind, and for a column the generated name and value class it
+  -- carries too, so the two copies cannot differ.
+  UNIQUE (source_name, table_schema, table_name, field_name, kind),
+  UNIQUE (source_name, table_schema, table_name, field_name, kind, jooq_name, binding_type),
+  FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name),
+  CHECK (kind IN ('COLUMN', 'EMBEDDABLE'))
+);
+COMMENT ON TABLE sql_table_field IS 'One field one table''s generated class declares, a column or an embeddable, which jOOQ reads and writes as one typed value. For example film.title, a column whose value is a String, and period on public.embedded_period, an embeddable whose value is its record.';
+COMMENT ON COLUMN sql_table_field.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_table_field.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_table_field.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_table_field.field_name IS 'the field''s name: a column''s SQL name, or the embeddable''s name, which names no column of the table. A field of the generated table class, a jOOQ TableField, not a GraphQL field';
+COMMENT ON COLUMN sql_table_field.kind IS 'COLUMN, one database column, its SQL facts on sql_column; or EMBEDDABLE, a group of columns jOOQ''s code generator was configured to read and write as one record, its columns on sql_embeddable_column';
+COMMENT ON COLUMN sql_table_field.jooq_name IS 'the generated table class''s field for it, the name an author''s spelling is read against where no SQL name answers';
+COMMENT ON COLUMN sql_table_field.binding_type IS 'the Java class of the field''s value: a column''s bound type, or an embeddable''s generated record class, which a comparison or an assignment on the field is typed by';
+COMMENT ON COLUMN sql_table_field.field_name_upper IS 'the field name upper-cased, the fold an authored spelling meets it under';
+COMMENT ON COLUMN sql_table_field.jooq_name_upper IS 'the generated field''s name upper-cased, the fold an authored spelling meets it under';
+COMMENT ON COLUMN sql_table_field.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+
 CREATE TABLE sql_column (
   source_name  VARCHAR NOT NULL,
   table_schema VARCHAR NOT NULL,
@@ -5841,11 +5872,18 @@ CREATE TABLE sql_column (
   description  VARCHAR,
   column_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(column_name)),
   jooq_name_upper   VARCHAR GENERATED ALWAYS AS (UPPER(jooq_name)),
+  kind              VARCHAR NOT NULL DEFAULT 'COLUMN',
   touched_at        TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, column_name),
-  FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
+  FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name),
+  -- The COLUMN subtype of sql_table_field, holding the same generated name and value class.
+  FOREIGN KEY (source_name, table_schema, table_name, column_name, kind, jooq_name, binding_type)
+    REFERENCES sql_table_field (source_name, table_schema, table_name, field_name, kind, jooq_name, binding_type)
+    ON DELETE CASCADE ON UPDATE CASCADE,
+  CHECK (kind = 'COLUMN')
 );
 COMMENT ON TABLE sql_column IS 'One column of one table the consumer''s catalog declares. For example film.title, a varchar the generated model binds to java.lang.String.';
+COMMENT ON COLUMN sql_column.kind IS 'always COLUMN: a column is the COLUMN subtype of sql_table_field, holding the facts a database column has and an embeddable does not, and the kind is carried so the foreign key into it holds the kind as well as the field';
 COMMENT ON COLUMN sql_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_column.table_name IS 'SQL table name';
@@ -6185,6 +6223,33 @@ COMMENT ON COLUMN sql_index_column.index_name IS 'SQL index name';
 COMMENT ON COLUMN sql_index_column.position IS '0-based position in the index''s column list';
 COMMENT ON COLUMN sql_index_column.column_name IS 'SQL column name';
 COMMENT ON COLUMN sql_index_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+
+CREATE TABLE sql_embeddable_column (
+  source_name     VARCHAR NOT NULL,
+  table_schema    VARCHAR NOT NULL,
+  table_name      VARCHAR NOT NULL,
+  embeddable_name VARCHAR NOT NULL,
+  kind            VARCHAR NOT NULL DEFAULT 'EMBEDDABLE',
+  position        INT     NOT NULL,
+  column_name     VARCHAR NOT NULL,
+  touched_at      TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name, embeddable_name, position),
+  FOREIGN KEY (source_name, table_schema, table_name, embeddable_name, kind)
+    REFERENCES sql_table_field (source_name, table_schema, table_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (kind = 'EMBEDDABLE'),
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE sql_embeddable_column IS 'One column one embeddable covers, at its position. For example position 0 of period on public.embedded_period, naming starts_on.';
+COMMENT ON COLUMN sql_embeddable_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_embeddable_column.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_embeddable_column.table_name IS 'SQL table name';
+COMMENT ON COLUMN sql_embeddable_column.embeddable_name IS 'the embeddable covering the column, an EMBEDDABLE field of sql_table_field';
+COMMENT ON COLUMN sql_embeddable_column.kind IS 'always EMBEDDABLE, carried so the foreign key into sql_table_field holds the kind as well as the field';
+COMMENT ON COLUMN sql_embeddable_column.position IS '0-based position in the embeddable''s column list, the order its record holds them in';
+COMMENT ON COLUMN sql_embeddable_column.column_name IS 'SQL column name, a column of the table';
+COMMENT ON COLUMN sql_embeddable_column.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_routine (
   source_name          VARCHAR NOT NULL,
@@ -28588,6 +28653,12 @@ INSERT INTO meta_grain VALUES
   ('index-column',
    'one position in one index''s column list',
    'source_name, table_schema, table_name, index_name, position', 'catalog'),
+  ('table-field',
+   'one field one table''s generated class declares',
+   'source_name, table_schema, table_name, field_name', 'catalog'),
+  ('embeddable-column',
+   'one column one embeddable covers, at its position',
+   'source_name, table_schema, table_name, embeddable_name, position', 'catalog'),
   ('database-routine',
    'one callable of one schema, in one generated catalog source',
    'source_name, table_schema, routine_name', 'catalog'),
@@ -31270,6 +31341,14 @@ INSERT INTO meta_relation VALUES
    'One position in one index''s column list, naming the column that sits there.',
    'For example position 0 of idx_actor_last_name, naming last_name.',
    'An index is ordered, and a reader that knew only which columns it covered could not tell a leading column from a trailing one, which is the difference between an index a predicate can seek on and one it cannot. Its own relation keyed by position for that reason, as sql_constraint_column is to sql_constraint.'),
+  ('sql_table_field', 'table-field', 'jooq',
+   'One field one table''s generated class declares, a column or an embeddable, which jOOQ reads and writes as one typed value.',
+   'For example film.title, a column whose value is a String, and period on public.embedded_period, an embeddable whose value is its record.',
+   'Alf, 2026-11-18: a jOOQ embeddable is a field of its table whose value is a record. A comparison on one is a typed row-value comparison over its columns, and a composite key generated as one is one typed field, so the catalog states it among the table''s fields rather than as a relation the column readers step around. The supertype of sql_column, which keeps the facts only a database column has, so a reader asking for a database column reads sql_column alone. Read today by COLUMN_UNRESOLVED''s detail naming an embeddable an unresolved leaf''s nested input is named like.'),
+  ('sql_embeddable_column', 'embeddable-column', 'jooq',
+   'One column one embeddable covers, at its position.',
+   'For example position 0 of period on public.embedded_period, naming starts_on.',
+   'An embeddable is an ordered group of columns, its record holding them in that order. Its own relation keyed by position, as sql_index_column is to sql_index.'),
   ('sql_routine', 'database-routine', 'jooq',
    'One callable the consumer''s catalog declares.',
    'For example the table-valued function public.films_for_actor, whose generated call surface is the Routines method filmsForActor.',

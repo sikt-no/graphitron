@@ -73,7 +73,7 @@ class RelationRegistrationGateTest {
             "sql_constraint", "sql_constraint_column",
             "sql_primary_key", "sql_referential_constraint", "sql_referential_constraint_column",
             "sql_index",
-            "sql_index_column", "sql_routine", "sql_routine_parameter",
+            "sql_index_column", "sql_table_field", "sql_embeddable_column", "sql_routine", "sql_routine_parameter",
             "sql_node_metadata", "sql_node_key_column", "sql_node_metadata_unreadable",
             "sql_node_legacy_key_column", "sql_node_legacy_key_unreadable",
             "sql_table_record_supertype", "sql_column_record_accessor",

@@ -1,0 +1,37 @@
+# A table's fields as the catalog reading writes them, an embeddable among them, and the column it is
+# not.
+#
+# jOOQ's code generator can group columns into an embeddable, read and written as one record, and
+# generates it as a field of the table class beside the columns it covers. The catalog states it
+# among the table's fields, its value its record (Alf, 2026-11-18), with its columns in that record's
+# order, and keeps it out of the columns: it has no SQL type of its own and stands for several.
+# embedded_period's starts_on and ends_on are the fixture catalog's one embeddable, period, its
+# columns staying columns of their own.
+extend schema @withFacts(docs: [{path: "layouts/anchor"}])
+
+extend schema @assertContains(relation: "sql_table_field", rows: """
+  table_schema, table_name,      field_name, kind,       jooq_name
+  public,       embedded_period, period_id,  COLUMN,     PERIOD_ID
+  public,       embedded_period, label,      COLUMN,     LABEL
+  public,       embedded_period, starts_on,  COLUMN,     STARTS_ON
+  public,       embedded_period, ends_on,    COLUMN,     ENDS_ON
+  public,       embedded_period, period,     EMBEDDABLE, PERIOD
+  """)
+
+extend schema @assertContains(relation: "sql_embeddable_column", rows: """
+  table_schema, table_name,      embeddable_name, position, column_name
+  public,       embedded_period, period,          0,        starts_on
+  public,       embedded_period, period,          1,        ends_on
+  """)
+
+# The columns it covers are columns; the embeddable is not.
+extend schema @assertContains(relation: "sql_column", rows: """
+  table_schema, table_name,      column_name
+  public,       embedded_period, starts_on
+  public,       embedded_period, ends_on
+  """)
+
+extend schema @assertAbsent(relation: "sql_column", rows: """
+  table_schema, table_name,      column_name
+  public,       embedded_period, period
+  """)

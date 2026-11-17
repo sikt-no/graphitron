@@ -36,6 +36,8 @@ import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING_LITERAL;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_EMBEDDABLE_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_TABLE_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_LEGACY_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_LEGACY_KEY_UNREADABLE;
@@ -226,6 +228,8 @@ public final class JooqFactCapture {
         tableReferences(dsl, sourceNames(tables), touchedAt);
         indexes(dsl, jooq, tables, touchedAt);
         indexColumns(dsl, jooq, tables, touchedAt);
+        embeddables(dsl, jooq, tables, touchedAt);
+        embeddableColumns(dsl, jooq, tables, touchedAt);
         List<NodeMetadataAt> nodeMetadata = nodeMetadataOf(jooq, tables);
         nodeMetadata(dsl, nodeMetadata, touchedAt);
         nodeKeyColumns(dsl, nodeMetadata, touchedAt);
@@ -359,6 +363,10 @@ public final class JooqFactCapture {
             return;
         }
         var indexes = indices(named.size());
+        // The supertype row first, holding the generated name and value class the column's row
+        // repeats under its foreign key.
+        tableFields(dsl, indexes.stream().map(i -> new FieldRow(named.get(i).parent(), named.get(i).value(),
+            "COLUMN", facts.get(i).javaName(), facts.get(i).bindingType())).toList(), touchedAt);
         var rows = indexes.stream().collect(Rows.toRowList(
             i -> val(named.get(i).parent().source(), t.SOURCE_NAME),
             i -> val(named.get(i).parent().schema(), t.TABLE_SCHEMA),
@@ -373,11 +381,12 @@ public final class JooqFactCapture {
             i -> val(facts.get(i).defaulted(), t.DEFAULTED),
             i -> val(facts.get(i).declaredLength(), t.DECLARED_LENGTH),
             i -> val(nullIfBlank(facts.get(i).comment()), t.DESCRIPTION),
+            i -> val("COLUMN", t.KIND),
             i -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.COLUMN_NAME, t.ORDINAL,
                     t.JOOQ_NAME, t.SQL_TYPE, t.BINDING_TYPE, t.DATABASE_TYPE, t.NULLABLE, t.DEFAULTED,
-                    t.DECLARED_LENGTH, t.DESCRIPTION, t.TOUCHED_AT)
+                    t.DECLARED_LENGTH, t.DESCRIPTION, t.KIND, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.ORDINAL, excluded(t.ORDINAL))
@@ -662,6 +671,83 @@ public final class JooqFactCapture {
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.INDEX_NAME, t.POSITION,
                     t.COLUMN_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /** One row of sql_table_field: a field of a table, its kind, generated name and value class. */
+    private record FieldRow(TableAt table, String name, String kind, String jooqName, String bindingType) {}
+
+    private static void tableFields(DSLContext dsl, List<FieldRow> fields, LocalDateTime touchedAt) {
+        if (fields.isEmpty()) {
+            return;
+        }
+        var t = SQL_TABLE_FIELD;
+        var rows = indices(fields.size()).stream().collect(Rows.toRowList(
+            i -> val(fields.get(i).table().source(), t.SOURCE_NAME),
+            i -> val(fields.get(i).table().schema(), t.TABLE_SCHEMA),
+            i -> val(fields.get(i).table().name(), t.TABLE_NAME),
+            i -> val(fields.get(i).name(), t.FIELD_NAME),
+            i -> val(fields.get(i).kind(), t.KIND),
+            i -> val(fields.get(i).jooqName(), t.JOOQ_NAME),
+            i -> val(fields.get(i).bindingType(), t.BINDING_TYPE),
+            i -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.FIELD_NAME, t.KIND, t.JOOQ_NAME,
+                    t.BINDING_TYPE, t.TOUCHED_AT)
+                .values(markers)
+                .onConflict(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.FIELD_NAME)
+                .doUpdate()
+                .set(t.KIND, excluded(t.KIND))
+                .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
+                .set(t.BINDING_TYPE, excluded(t.BINDING_TYPE))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /** The EMBEDDABLE rows of sql_table_field, one per embeddable a table's generated class declares. */
+    private static void embeddables(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
+                                    LocalDateTime touchedAt) {
+        List<FieldRow> fields = new ArrayList<>();
+        for (TableAt at : tables) {
+            for (JooqCatalog.EmbeddableFacts embeddable : jooq.embeddableFactsOf(at.table())) {
+                fields.add(new FieldRow(at, embeddable.name(), "EMBEDDABLE", embeddable.jooqName(),
+                    embeddable.recordClass()));
+            }
+        }
+        tableFields(dsl, fields, touchedAt);
+    }
+
+    private static void embeddableColumns(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
+                                          LocalDateTime touchedAt) {
+        var t = SQL_EMBEDDABLE_COLUMN;
+        List<PositionAt<TableAt>> named = new ArrayList<>();
+        List<String> embeddableNames = new ArrayList<>();
+        for (TableAt at : tables) {
+            for (JooqCatalog.EmbeddableFacts embeddable : jooq.embeddableFactsOf(at.table())) {
+                for (int i = 0; i < embeddable.columns().size(); i++) {
+                    named.add(new PositionAt<>(at, i, embeddable.columns().get(i)));
+                    embeddableNames.add(embeddable.name());
+                }
+            }
+        }
+        if (named.isEmpty()) {
+            return;
+        }
+        var indexes = indices(named.size());
+        var rows = indexes.stream().collect(Rows.toRowList(
+            i -> val(named.get(i).parent().source(), t.SOURCE_NAME),
+            i -> val(named.get(i).parent().schema(), t.TABLE_SCHEMA),
+            i -> val(named.get(i).parent().name(), t.TABLE_NAME),
+            i -> val(embeddableNames.get(i), t.EMBEDDABLE_NAME),
+            i -> val(named.get(i).position(), t.POSITION),
+            i -> val(named.get(i).value(), t.COLUMN_NAME),
+            i -> val("EMBEDDABLE", t.KIND),
+            i -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.EMBEDDABLE_NAME, t.POSITION,
+                    t.COLUMN_NAME, t.KIND, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
@@ -1269,9 +1355,9 @@ public final class JooqFactCapture {
      * relation added above and not here would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_COLUMN_RECORD_ACCESSOR, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
+        SQL_SCHEMA, SQL_TABLE, SQL_TABLE_FIELD, SQL_COLUMN, SQL_COLUMN_RECORD_ACCESSOR, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_REFERENTIAL_CONSTRAINT_COLUMN, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
-        SQL_NODE_METADATA,
+        SQL_EMBEDDABLE_COLUMN, SQL_NODE_METADATA,
         SQL_NODE_KEY_COLUMN, SQL_NODE_LEGACY_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE,
         SQL_NODE_LEGACY_KEY_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING, SQL_ENUM_BINDING_LITERAL);
 

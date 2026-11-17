@@ -171,6 +171,27 @@ class JooqCatalogLayoutTest {
         });
     }
 
+    /**
+     * An embeddable is a field of the generated table class beside the columns it covers, and no
+     * column: every column reader leaves it out, and the embeddable reader states it with its columns
+     * in its record's order.
+     */
+    @Test
+    void anEmbeddableIsNoColumnAndIsReadAsAnEmbeddable() {
+        var catalog = new JooqCatalog(COMBINED);
+        assertThat(catalog.findColumn("embedded_period", "period")).isEmpty();
+        assertThat(catalog.findColumn("embedded_period", "starts_on")).isPresent();
+        var table = table(catalog, "embedded_period");
+        assertThat(catalog.columnFactsOf(table)).extracting(JooqCatalog.ColumnFacts::sqlName)
+            .contains("starts_on", "ends_on").doesNotContain("period");
+        assertThat(catalog.embeddableFactsOf(table)).singleElement().satisfies(embeddable -> {
+            assertThat(embeddable.name()).isEqualTo("period");
+            assertThat(embeddable.jooqName()).isEqualTo("PERIOD");
+            assertThat(embeddable.recordClass()).endsWith("PeriodRecord");
+            assertThat(embeddable.columns()).containsExactly("starts_on", "ends_on");
+        });
+    }
+
     private static org.jooq.Table<?> table(JooqCatalog catalog, String name) {
         var resolution = catalog.findTable(name);
         assertThat(resolution).as(name).isInstanceOf(JooqCatalog.TableResolution.Resolved.class);

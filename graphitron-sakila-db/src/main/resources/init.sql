@@ -2386,6 +2386,18 @@ CREATE TABLE recordless_note (
     body    varchar(100) NOT NULL
 );
 
+-- A table with a jOOQ embeddable: this module's codegen groups starts_on and ends_on into period,
+-- generated as a field of the table class beside the columns it covers, which is a configuration a
+-- consumer's codegen can have. Here so a capture meets an embeddable the way it meets every other
+-- table, and the catalog's column readers can be seen to leave it out. Named for that; no other
+-- example reads it.
+CREATE TABLE embedded_period (
+    period_id integer PRIMARY KEY,
+    label     varchar(100) NOT NULL,
+    starts_on date NOT NULL,
+    ends_on   date
+);
+
 -- Execution-tier fixture for the null contract of a single-object child with its own table, and
 -- of nested objects holding references and lists. presence_detail holds at most one row per host
 -- (the UNIQUE host_id), every mapped column nullable, so a row can exist with nothing in it. The

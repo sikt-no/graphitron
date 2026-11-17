@@ -1322,8 +1322,7 @@ public class JooqCatalog {
                 && !tableField.getTable().getQualifiedName().equals(table.getQualifiedName())) {
             return Optional.empty();
         }
-        var columns = Arrays.stream(table.getClass().getFields())
-            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+        var columns = columnFields(table)
             .filter(f -> !java.lang.reflect.Modifier.isStatic(f.getModifiers()))
             .map(f -> Map.entry(f.getName(), (org.jooq.Field<?>) instanceFieldValue(f, table)))
             .toList();
@@ -1499,8 +1498,7 @@ public class JooqCatalog {
      */
     public java.util.List<String> columnSqlNamesOf(String tableSqlName) {
         return findTable(tableSqlName).asEntry()
-            .map(te -> Arrays.stream(te.table().getClass().getFields())
-                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            .map(te -> columnFields(te.table())
                 .map(f -> ((org.jooq.Field<?>) instanceFieldValue(f, te.table())).getName())
                 .toList())
             .orElse(java.util.List.of());
@@ -1514,8 +1512,7 @@ public class JooqCatalog {
      */
     public java.util.List<String> columnJavaNamesOf(String tableSqlName) {
         return findTable(tableSqlName).asEntry()
-            .map(te -> Arrays.stream(te.table().getClass().getFields())
-                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            .map(te -> columnFields(te.table())
                 .map(f -> f.getName())
                 .toList())
             .orElse(java.util.List.of());
@@ -1528,8 +1525,7 @@ public class JooqCatalog {
      */
     public java.util.List<ColumnEntry> allColumnsOf(String tableSqlName) {
         return findTable(tableSqlName).asEntry()
-            .map(te -> Arrays.stream(te.table().getClass().getFields())
-                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            .map(te -> columnFields(te.table())
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, te.table());
                     return columnEntry(f.getName(), col);
@@ -1557,8 +1553,7 @@ public class JooqCatalog {
      * declares a length.
      */
     public java.util.List<ColumnFacts> columnFactsOf(Table<?> table) {
-        return Arrays.stream(table.getClass().getFields())
-            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+        return columnFields(table)
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
                 String comment = col.getComment();
@@ -1646,6 +1641,35 @@ public class JooqCatalog {
                               Integer declaredLength) {}
 
     /**
+     * One embeddable a table declares: its name, the generated table class's field for it, the record
+     * class its value is, and the columns it covers in that record's order.
+     */
+    public record EmbeddableFacts(String name, String jooqName, String recordClass, java.util.List<String> columns) {}
+
+
+    /**
+     * The embeddables {@code table}'s generated class declares, each a public field jOOQ's code
+     * generator builds with {@code Internal.createEmbeddable} beside the columns it covers, which
+     * {@code Internal.fieldsRow} reads back. jOOQ marks that reader for removal and offers no other: the
+     * embeddable's columns are held by a package-private class, so this is the one public way to them
+     * until jOOQ gives another.
+     */
+    @SuppressWarnings({"unchecked", "rawtypes", "removal"})
+    public java.util.List<EmbeddableFacts> embeddableFactsOf(Table<?> table) {
+        return tableFields(table)
+            .filter(f -> !java.lang.reflect.Modifier.isStatic(f.getModifiers()))
+            .filter(f -> isEmbeddable(instanceFieldValue(f, table)))
+            .map(f -> {
+                var embeddable = (org.jooq.TableField) instanceFieldValue(f, table);
+                var covered = Arrays.stream(org.jooq.impl.Internal.fieldsRow(embeddable).fields())
+                    .map(c -> ((org.jooq.Field<?>) c).getName())
+                    .toList();
+                return new EmbeddableFacts(embeddable.getName(), f.getName(), embeddable.getType().getName(), covered);
+            })
+            .toList();
+    }
+
+    /**
      * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.
      */
     public record IndexFacts(String name, java.util.List<String> columns) {
@@ -1694,8 +1718,7 @@ public class JooqCatalog {
      * strategies where {@code javaName} is not a simple {@code toUpperCase(sqlName)}.
      */
     public Optional<ColumnEntry> findColumn(Table<?> table, String columnName) {
-        var entries = Arrays.stream(table.getClass().getFields())
-            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+        var entries = columnFields(table)
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
                 return columnEntry(f.getName(), col);
@@ -1729,6 +1752,33 @@ public class JooqCatalog {
         } catch (IllegalAccessException e) {
             throw new RuntimeException(e);
         }
+    }
+
+    /**
+     * The public fields of a generated table class that are its fields: each an {@code org.jooq.Field},
+     * a column or an embeddable.
+     */
+    private static java.util.stream.Stream<Field> tableFields(Table<?> table) {
+        return Arrays.stream(table.getClass().getFields())
+            .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()));
+    }
+
+    /**
+     * The table's fields that are database columns: every one but the embeddables jOOQ generates
+     * beside the columns they cover, which have no SQL type of their own and stand for several
+     * columns (see {@link #embeddableFactsOf}).
+     */
+    private static java.util.stream.Stream<Field> columnFields(Table<?> table) {
+        return tableFields(table).filter(f -> !isEmbeddable(instanceFieldValue(f, table)));
+    }
+
+    /**
+     * Whether a generated table class's field holds an embeddable: a {@code TableField} whose value type
+     * is an {@code EmbeddableRecord}. Read off the value, the field's declared type being the erased
+     * {@code TableField} either way.
+     */
+    private static boolean isEmbeddable(Object value) {
+        return value instanceof org.jooq.Field<?> field && org.jooq.EmbeddableRecord.class.isAssignableFrom(field.getType());
     }
 
     private static Object instanceFieldValue(Field f, Object instance) {
@@ -1884,8 +1934,7 @@ public class JooqCatalog {
          * reflection but keyed off this entry's already-resolved {@code table()}.
          */
         public List<ColumnRef> allColumnRefs() {
-            return Arrays.stream(table.getClass().getFields())
-                .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
+            return columnFields(table)
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
                     return new ColumnRef(col.getName(), f.getName(), col.getType().getName(),

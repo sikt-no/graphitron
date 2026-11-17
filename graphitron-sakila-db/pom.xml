@@ -157,6 +157,21 @@
                                             <includeTypes>change_instant_domain</includeTypes>
                                         </forcedType>
                                     </forcedTypes>
+                                    <!-- embedded_period's starts_on and ends_on as one embeddable, the
+                                         case init.sql's comment on the table explains. The columns
+                                         stay fields of their own (replacesFields false), so no
+                                         generated record but this table's changes. -->
+                                    <embeddables>
+                                        <embeddable>
+                                            <name>period</name>
+                                            <tables>public\.embedded_period</tables>
+                                            <fields>
+                                                <field><expression>starts_on</expression></field>
+                                                <field><expression>ends_on</expression></field>
+                                            </fields>
+                                            <replacesFields>false</replacesFields>
+                                        </embeddable>
+                                    </embeddables>
                                 </database>
                                 <generate>
                                     <!-- Turn off to-many implicit-join-path methods. Sakila's
