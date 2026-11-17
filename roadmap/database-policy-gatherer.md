@@ -16,16 +16,19 @@ last-updated: 2026-11-16
 
 A schema author sees what the database's row-level security says about the tables their schema
 binds. Hovering a `@table` type in the editor, or asking `catalog.describe` over MCP, answers whether
-the table secures its rows, whether that is forced, and each policy's command, mode, roles and
-`USING` / `WITH CHECK` text. The facts come from a new optional gatherer that reads the database's own
-catalog over a live connection, configured by a new `<database>` block that replaces `<devDatabase>`.
-In a `dev` session the same connection also answers, when asked, the database's own definition of
-one object the schema names: a table with its keys, indexes, triggers and policies, a view, a routine,
-a trigger and the function it runs. Those definitions are read live and never stored (§ Definitions on
-request). Without connection settings nothing changes, and generated code is the same whether the
-gatherer ran or not. The warnings the policy facts make possible are follow-up items (§ Follow-ups);
-this item lands the facts, their reading record, the readers named above, the definitions on request,
-and the gates that keep the facts out of generation.
+the table secures its rows, whether that is forced, and which policies it declares, with each one's
+command, mode and roles. In a `dev` session the same connection also answers, when asked, the
+database's own definition of an object the schema names: a table with its keys, indexes, triggers and
+policies (their `USING` and `WITH CHECK` expressions included), a view, a routine, a key.
+
+The store records only what graphitron reasons over: that a table is secured, which policies exist,
+and their command, mode and roles. Everything shown only for a person or an agent to read is fetched
+live on request and never stored (§ Definitions on request). The facts come from a new optional
+gatherer that reads the database's own catalog over a live connection, configured by a new
+`<database>` block that replaces `<devDatabase>`. Without connection settings nothing changes, and
+generated code is the same whether the gatherer ran or not. The warnings the policy facts make
+possible are follow-up items (§ Follow-ups); this item lands the facts, their reading record, the
+readers named above, the definitions on request, and the gates that keep the facts out of generation.
 
 ## Why a live connection
 
@@ -38,6 +41,13 @@ sidecar written at jOOQ codegen time and a parse of migration scripts. The rulin
 On 2026-11-16 Alf ruled that the database's own definitions, fetched one object at a time on request,
 belong to this item too, since they need the same connection. They were R1050, now discarded as
 absorbed; § Definitions on request carries its scope.
+
+On 2026-11-17 Alf ruled the line between the two: the store records what exists and what graphitron
+reasons over, and anything else is looked up when needed. Start simple and capture only what is
+necessary. That moved the policies' expression text and comments out of the store, dropped a stored
+row of server identity, and needs no new existence relations, because every object the schema can
+name is already in the store through the jOOQ reading (§ The live interface). He also ruled that what
+can only be found by connecting is a reading outcome, never a failed goal (§ Configuration).
 
 ## Configuration
 
@@ -61,12 +71,15 @@ A new shared parameter on `AbstractRewriteMojo`, so every goal that captures (`g
 * No url from either source means no database: the gatherer reads nothing (it still drops the graph's
   claims, § Who drops a claim) and `execute` is absent.
 * A url with a missing or unknown dialect fails the goal, as `<devDatabase>` does today.
-* The declared dialect is checked against the connection. On connecting, the connector asks jOOQ's
-  `JDBCUtils.dialect(Connection)`, which reads the connection's metadata, and a declared dialect the
-  connection disagrees with fails the goal, naming both: that is a misconfiguration, the same on
-  every machine, like a url no driver accepts. `<dialect>` stays required while `<devDatabase>` is
-  accepted, since `<devDatabase>` requires it explicitly; whether it becomes optional, detected from
-  the connection, is decided when `<devDatabase>` is removed.
+* The declared dialect is checked against the connection, on connecting, through jOOQ's
+  `JDBCUtils.dialect(Connection)`. A disagreement is a reading outcome, not a failed goal: the rule is
+  that what can be decided without connecting (no url, no dialect, an unknown dialect, no driver that
+  accepts the url) fails the goal, and what can only be found by connecting does not, so the same POM
+  never passes where the database is down and fails where it is up. In capture a mismatch is a failed
+  reading whose cause names both dialects (§ Unreachable database); in `execute` and
+  `database.definition` it is a refusal with that cause. `<dialect>` stays required while
+  `<devDatabase>` is accepted, since `<devDatabase>` requires it explicitly; whether it becomes
+  optional, detected from the connection, is decided when `<devDatabase>` is removed.
 * The block holds the connection only. `execute`'s request fields stay with `execute` (next section).
 
 ### `<execute>`, the dev tool's request fields
@@ -136,33 +149,24 @@ collects its policies and sweeping a policy collects its roles.
   read, not only the secured ones, so the readers ask one row rather than evaluating absence, and a
   table one side has and the other lacks is an anti-join over stored rows (see Matching `sql_table`).
 * `database_policy`: one row per policy a table declares, with a foreign key to its `database_table`
-  row. Columns: command (`ALL`, `SELECT`, `INSERT`, `UPDATE`, `DELETE`), mode (`PERMISSIVE`,
-  `RESTRICTIVE`), the `USING` and `WITH CHECK` text as the database renders it, and the policy's
-  comment. Each of those three columns is display material, never a dimension, and the DDL says so in
-  the same words; no reader string-searches it. A table may declare policies while its row security is
+  row. Columns: command (`ALL`, `SELECT`, `INSERT`, `UPDATE`, `DELETE`) and mode (`PERMISSIVE`,
+  `RESTRICTIVE`). The `USING` and `WITH CHECK` expressions and the policy's comment are display text
+  nothing reasons over, so they are not stored; the editor and MCP fetch them live as part of the
+  table's definition (§ Definitions on request). A table may declare policies while its row security is
   off, and the database then does not apply them: such policies are stored under their table's row,
   whose flag says they are not in force.
 * `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row.
-* `database_server`: one row per source, saying what the database reported about itself in the
-  reading the source's other `database_` rows came from: product and version (`server_version_num` and the version string), the database
-  name (`current_database()`), and the role the reading connected as (`current_user`). Keyed on
-  `source_name` alone, a foreign key to `store_source` with `ON DELETE CASCADE`, swept with the rest of
-  the family. The url-derived `source_name` stays the key, because it is stable, credential-free and
-  what the author wrote; this row is the database's own answer beside it. Two urls naming one
-  database (`localhost` and `127.0.0.1`, or through a pooler and directly) remain two sources, and
-  their `database_server` rows show they are the same database. It is written in the reading's
-  transaction only when the reading succeeds, and it is part of what the claim's stamp hashes, so the
-  stamp vouches for it as for the rest; a failed reading never overwrites the provenance of rows it
-  keeps from an earlier one. The role is a name `source_name` was built to keep out; whether it may be
-  stored is part of the open question on what configuration may enter the store.
+
+Command, mode and roles are stored because the follow-up warnings reason over them; in this item they
+are only displayed, but they are not display text in the store.
 
 A follow-up that needs structure from an expression extracts the direct facts during the reading and
-stores them as rows beside the text: a policy reads a setting, a policy calls a function, a function
+stores them as rows: a policy reads a setting, a policy calls a function, a function
 reads a setting, a function calls a function. The parse happens once, at capture, over what the
 database returns: the expression's node tree where the database exposes one, a function's source text
 where it does not. That passes the recompute test in `docs/architecture/explanation/fact-model.adoc`
-§ "Gatherers build the model in a declared order", because the store holds neither the node tree nor
-the function source; the stored `pg_get_expr` text is display only and no reader parses it. Which
+§ "Gatherers build the model in a declared order", because the store holds neither the node tree,
+the function source nor the expression text. Which
 functions a policy reaches transitively is recomputable from those rows, so that closure is anchor-phase
 work, not capture.
 
@@ -272,20 +276,18 @@ that.
 
 One read-only transaction, three statements:
 
-* First, what the database is: `server_version_num`, `version()`, `current_database()` and
-  `current_user`, held until the reading succeeds and then written to `database_server` with the rest.
-  The reading needs PostgreSQL 10 or later, because
+* First, the version: `server_version_num`. The reading needs PostgreSQL 10 or later, because
   `pg_policy.polpermissive` first exists there. Below that, the reading stops before reading any
   policy and is recorded as a failed reading whose cause names the version and the minimum, so the
-  readers say why (§ Reader arms), rather than failing on a missing column.
-  Version-dependent catalog columns a follow-up needs (`security_invoker` on views needs 15) are that
-  follow-up's to gate the same way.
+  readers say why (§ Reader arms), rather than failing on a missing column. The version is checked,
+  not stored. Version-dependent catalog columns a follow-up needs (`security_invoker` on views needs
+  15) are that follow-up's to gate the same way.
 * `pg_class` joined to `pg_namespace` where `relkind` is `r` or `p`, outside `pg_catalog`,
   `information_schema` and `pg_toast`: schema, table, `relrowsecurity`, `relforcerowsecurity`.
 * `pg_policy` joined to `pg_class` and `pg_namespace`: the policy name; `polcmd` and
   `polpermissive` decoded at capture into the words the table holds; `polroles` resolved to names
-  through `pg_roles`, which the connecting role can read, with the `{0}` entry read as `PUBLIC`;
-  `polqual` and `polwithcheck` rendered by `pg_get_expr`; and the policy's comment. The catalog is read
+  through `pg_roles`, which the connecting role can read, with the `{0}` entry read as `PUBLIC`. The
+  catalog is read
   directly rather than through the `pg_policies` view, which derives from the same catalog with a fixed
   layout, so the reading keeps the raw codes and decodes them itself.
 
@@ -317,54 +319,116 @@ stage lands without moving the call.
 * read, not secured: `Row security: off`, followed by any policies the table declares, marked as not
   in force;
 * read, secured: `Row security: on` (`forced` when it is), then one line per policy: name, command,
-  mode, roles, `USING`, `WITH CHECK`;
+  mode, roles. The expressions are in the table's definition, which the hover on the `@table`
+  argument shows live in `dev` (§ Definitions on request);
 * stale (claim stamp cleared, `read_at` kept): the same, marked as from the reading at `read_at`;
 * never read successfully (neither): `Row security: the database could not be read`, with the cause
   from `store_graph_source_failure`; the stale arm shows that cause too.
 
-Every arm that shows facts names where they came from, from the stored `database_server` row:
-`read from postgres://localhost:5432/sakila (PostgreSQL 16.4, database sakila, as dev)`.
+Every arm that shows facts names where they came from, from the claim: `read from
+postgres://localhost:5432/sakila at <read_at>`. What the server reports about itself is display, so it
+is shown live with a definition, not stored.
 
 ### MCP
 
 `catalog.describe` gains a `rowSecurity` member with the same arms and the same provenance, read
-through `CatalogQueries`. The `docs/manual/how-to/mcp-agent-context.adoc` description of `catalog.describe` says so.
+through `CatalogQueries`. The `docs/manual/how-to/mcp-agent-context.adoc` description of
+`catalog.describe` says so.
 
 ## Definitions on request
 
 What graphitron reasons over is a stored fact; what only a person or an agent reads is fetched when
-asked. Policies are small and the follow-ups reason over them, so they are captured (§ The store).
-Definitions are large text nothing reasons over: capturing every routine and trigger body on every
-round costs in proportion to the schema for an answer wanted one object at a time. So they are read
-live, through the same `<database>` connector, and never enter the store. A live read may render; it
-never decodes, stores or reasons over what it reads.
+asked. The store knows that an object exists and what the follow-ups reason over; looking at it is done
+on need. Definitions are large text nothing reasons over: capturing every routine and trigger body on
+every round costs in proportion to the schema for an answer wanted one object at a time. So they are
+read live, through the same `<database>` connector, and never enter the store. A live read may render;
+it never decodes, stores or reasons over what it reads.
+
+### The live interface
+
+Two interfaces in `graphitron-model`, which both `graphitron-mcp` and `graphitron-lsp` already depend
+on:
+
+* `DatabaseConnector` opens a connection. The model module declares it and gains no driver
+  dependency; the plugin implements it from `<database>`, loading the driver from the consumer's
+  classpath as `DevQueryExecutor` does today, with the connect timeout, read-only mode and the dialect
+  check. The gatherer reads through it, and `execute` moves onto it, so there is one connection path.
+* `LiveDatabase`, in a package of its own (`no.sikt.graphitron.model.live`), is the one entry point
+  for anything fetched on demand. One method in this item, `definition(ObjectRef)`, answering a sealed
+  `Found` (the SQL, the provenance the server reports, and whether part of it is a reconstruction) or
+  `Refused` (the cause). The model module holds only the interface, `ObjectRef` and the two answers;
+  it is the fact tier, and a reader of a foreign corpus is not a resident there. The PostgreSQL
+  implementation, with the `pg_get_*` calls and the jOOQ `Meta` composition, lives in
+  `graphitron-maven-plugin` beside the connector it reads through, and `DevMojo` builds it. The MCP
+  tool and the editor hover are thin adapters over the interface and write no SQL. A later
+  on-demand need is another method here, not another code path in two consumers.
+
+`ObjectRef` is a kind, a schema and a name. A consumer never builds one from an authored string: it
+takes it from what the store already holds, through the jOOQ reading, each consumer with its own
+query, as every use of the store owns its own (`fact-model.adoc` § "One base, many views"), so
+`LiveDatabase` holds no name-to-ref helper. Tables and views are `sql_table` rows (`table_type` tells
+them apart), routines are `sql_routine` rows, keys are `sql_constraint` rows, and a policy is a
+`database_policy` row.
+
+Overloaded routines are not resolved in this item. `sql_routine` is keyed on the routine's name, and
+its parameters carry Java binding types, not SQL types, so the store cannot name one member of an
+overload set. A routine name that matches more than one function in the database is refused with that
+cause. Keying the jOOQ reading on a signature is that reading's own change, not this item's.
+
+`ObjectRef` assumes `sql_table.table_schema` is the database's own spelling of the schema. A jOOQ
+configuration that renames schemas (`outputSchemaToDefault`, named in the `sql_table.source_name`
+comment) breaks that, for the live lookup and for the `database_` join alike, and shows as a refusal
+or as a table with no row-security facts.
+
+The two corpora can disagree. An object the database has and the store lacks is never asked about,
+since the schema can only name what the jOOQ classes know. An object the store knows and the database
+no longer has is refused with a cause that says the jOOQ classes look stale against the database; that
+is the same finding as the anti-join in § Matching `sql_table`, worded alike, with no relation or report
+of its own. So the store needs no new existence relations for this item: knowing that the
+object exists is already there, and an object the store does not know gets no definition and costs no
+round-trip.
+
+Wiring: `DevMojo` builds one `LiveDatabase` when `<database>` is set, passes it to
+`GraphitronMcpServer`, which registers `database.definition` only when it has one, and to `DevServer`,
+which hands it to `GraphitronLanguageServer` as an optional constructor argument beside
+`onSchemaSaved`. The standalone `Launcher` and every goal other than `dev` pass none.
+
+Connection handling: `LiveDatabase` holds one connection, opened on first use, checked with `isValid`
+before each read and reopened after a failure, used by one request at a time, each read in a read-only
+transaction with a statement timeout, and closed when `dev` stops. No definition is cached: definitions
+change while an author works, and a cache would mostly show stale text. A cache is added only if hover
+latency shows a need.
 
 ### Where it is available
 
-In `dev`, where the MCP server and the language server run. `DevMojo` already hands `execute` its
-connection and constructs the language server in `DevServer`; it hands both the `<database>` connector.
-With no `<database>` (or `<devDatabase>` during the window), the MCP tool is not registered and the
+In `dev`, where the MCP server and the language server run (§ The live interface). With no
+`<database>` (or `<devDatabase>` during the window), the MCP tool is not registered and the
 editor shows no definition, as `execute` is absent today. The standalone language server (`Launcher`)
 has no connector and shows none. `generate`, `validate`, `capture` and CI never fetch a definition.
+A policy's definition is available only after a successful reading, because its `ObjectRef` comes
+from `database_policy`; a table's definition, which includes its policies, needs no reading.
 
 ### MCP
 
-A read-only tool `database.definition` taking an object kind and a qualified name, and answering that
-object's definition as the database renders it. The split the prefixes state is stored versus fetched
-live: `catalog.` tools answer from the store, which includes the `database_` facts that
-`catalog.describe` reports, and `database.` answers from the live database. Its answer opens with the
-same provenance line, read from the live connection it answers on. It refuses with its cause where
-the session has no database, where the object does not exist there, where the dialect is not read
-yet, and where the declared dialect disagrees with the connection. Each call opens a connection, reads in a read-only transaction under the bounded
-connect timeout, and closes it, as `execute` does.
+A read-only tool `database.definition` taking an object kind (table, view, routine, key, policy) and a
+qualified name, and answering that object's definition through `LiveDatabase`. The tool resolves the
+name against the store first, which turns an unknown name into a cheap refusal. The split the prefixes state is stored versus fetched live: `catalog.` tools
+answer from the store, which includes the `database_` facts that `catalog.describe` reports, and
+`database.` answers from the live database. Its answer opens with a provenance line read live from the
+connection it answers on (product, version, database name, connected role). It refuses with its cause
+where the session has no database, where the store does not know the object, where the database no
+longer has it (the jOOQ classes look stale), where a routine name is overloaded, where the dialect is
+not read yet, and where the declared dialect disagrees with the
+connection.
 
 ### Editor
 
 On hover of the argument that names a database object: a `@table`'s table, a `@reference` key, a
 `@routine`'s routine. The hover starts from the object the store already resolved that argument to
 (`graphitron_tabletype`'s table triple, the resolved key, the resolved routine), never by resolving the
-authored string again; an argument the store did not resolve shows no definition. The answer is fetched when that hover is asked for, shown as a SQL block, and
-bounded by the connect timeout; a failure shows its cause in the hover instead. The type and field
+authored string again; an argument the store did not resolve shows no definition. The answer is
+fetched through `LiveDatabase` when that hover is asked for, shown as a SQL block, and bounded by the
+statement timeout; a failure shows its cause in the hover instead. The type and field
 hovers that read the store stay as they are, one statement and no view (`DeclarationHoverStatementCountTest`,
 `EditorReadsNoViewTest`), so a live read never slows an ordinary hover.
 
@@ -374,7 +438,8 @@ PostgreSQL first, because sakila tests it:
 
 * routine: `pg_get_functiondef`;
 * view: `pg_get_viewdef`, wrapped as `CREATE VIEW`;
-* trigger: `pg_get_triggerdef`, followed by its function's `pg_get_functiondef`;
+* policy: rendered as `CREATE POLICY` from `pg_policy`, with `pg_get_expr` for its `USING` and
+  `WITH CHECK` expressions and its comment;
 * key (what a `@reference` names): `pg_get_constraintdef`, wrapped as `ALTER TABLE ... ADD CONSTRAINT`;
 * table: PostgreSQL has no single statement for a table, so any table definition is a reconstruction,
   and the answer labels that part as one: it can leave out what jOOQ's `Meta` does not model (identity
@@ -383,10 +448,10 @@ PostgreSQL first, because sakila tests it:
   `DSLContext.meta().filterTables(...).ddl()` filtered to the table the store resolved: columns,
   primary key, unique, foreign key and check constraints, indexes and comments, in jOOQ's normalized
   rendering. jOOQ's `Meta` has no triggers, routines or policies, so the definition then appends
-  `pg_get_triggerdef` for each trigger and the table's row-security statements and policies, read live
-  in the same transaction. Not from the stored `database_policy` rows, which would put a possibly stale
-  reading beside live DDL in one answer, and not through the gatherer's code, whose job is to decode
-  facts into the store's words.
+  `pg_get_triggerdef` for each trigger and its function's `pg_get_functiondef`, and the table's
+  row-security statements and policies rendered as the policy kind is, read live in the same
+  transaction. Triggers have no kind of their own: the schema names none, so the store knows none, and
+  they are shown with their table.
 
 Every kind other than the table uses the database's own rendering. jOOQ's `meta().ddl()` is also
 dialect-neutral, so the table part works on Oracle as written; Oracle's other kinds would come from
@@ -398,8 +463,8 @@ as the gatherer logs it, so Oracle lands as one change.
 Generated output must be identical whether the gatherer ran or not. Three gates make that structural:
 
 * A guard in the style of `PackageImportDirectionTest`: no class in the generator's emit path refers
-  to a `database_` table's generated jOOQ class, and the definition reader is referenced only from the
-  `dev` goal and the MCP and language-server packages, so `generate`, `validate`, `capture` and CI
+  to a `database_` table's generated jOOQ class, and `no.sikt.graphitron.model.live` is referenced
+  only from the `dev` goal and the MCP and language-server packages, so `generate`, `validate`, `capture` and CI
   cannot fetch a definition.
 * A differential capture test modelled on `CaptureCorpusIsolationTest`: capture sakila with and
   without a connector, and require identical rows in every relation outside the `database_` family,
@@ -412,12 +477,16 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * The ruling, as `docs` text in this item's commits:
   `docs/architecture/explanation/modeling-discipline.adoc` § "Provenance is the only question that
   matters first" admits a live database as a corpus, only through an optional gatherer that runs when
-  connection settings are given; `docs/architecture/explanation/fact-model.adoc` § "One base, many
-  views" states that its facts never change generated output.
+  connection settings are given, records only what graphitron reasons over, and turns anything found
+  only by connecting into a reading outcome rather than a failed goal;
+  `docs/architecture/explanation/fact-model.adoc` § "One base, many views" states that its facts never
+  change generated output.
 * `docs/architecture/explanation/fact-model.adoc` § "One base, many views" also gains the limit of the
   live read beside it: display text from a live corpus may be fetched and rendered on request, is
-  never decoded, stored, joined or reasoned over, and is fetched only in `dev`. Without it, the next consumer wanting a live
-  answer has a precedent and no limit.
+  never decoded, stored, joined or reasoned over, and is fetched only in `dev`, through
+  `LiveDatabase`. Without it, the next consumer wanting a live answer has a precedent and no limit.
+* `docs/architecture/reference/modules.adoc`: `graphitron-model` holds the `LiveDatabase` interface
+  and `DatabaseConnector`, and `graphitron-maven-plugin` holds their implementations.
 * `docs/manual/reference/mojo-configuration.adoc`: `<database>` under shared parameters, `<execute>`
   under `dev`-goal parameters, the migration from `<devDatabase>`, the driver-scope rule. The sentence
   that the store holds nothing "that cannot be rebuilt from your sources" gains the database as a
@@ -453,11 +522,11 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * The connect timeout bounds an unreachable reading: a url pointing at a port nothing answers on
   fails within the timeout.
 * `source_name` never contains the user, the password or the url's query parameters.
-* `database_server` holds sakila's version, database name and connecting role after a reading, and
-  hover and `catalog.describe` show them; a failed reading after a successful one leaves that row as
-  it was and writes a `store_graph_source_failure` row with the cause, which a later successful
-  reading deletes.
-* A declared dialect the connection disagrees with fails the goal, naming both.
+* A failed reading after a successful one writes a `store_graph_source_failure` row with the cause,
+  which a later successful reading deletes.
+* A declared dialect the connection disagrees with is a failed reading in capture, naming both, and a
+  refusal from `database.definition`; the goal does not fail.
+* `database_policy` holds no expression text or comment.
 * The version gate: a server version below 10, stubbed at the version check, records a failed reading
   whose cause names the version and the minimum, and reads no policy.
 * `polroles` entries resolve to role names through `pg_roles`, and `{0}` reads as `PUBLIC`.
@@ -469,13 +538,15 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * MCP: `catalog.describe` on `secure_note` with and without a reading.
 * The two generation gates above.
 * `database.definition` (`@ExecutionTier`): each kind against sakila, including the composed table
-  definition of `secure_note` with its policy; the three refusals (no database, no such object, an
-  unread dialect).
+  definition of `secure_note` with its policy and expressions; the refusals (no database, a name the
+  store does not know, an object the database no longer has, with its stale-classes cause, an
+  overloaded routine name, an unread dialect, a dialect mismatch).
+* `LiveDatabase` holds one connection across calls and reopens it after the database restarts.
 * Editor: the definition hover on a `@table`, a `@reference` key and a `@routine` argument with a
   connector; no definition without one; an unreachable database shows its cause; an argument the store
   did not resolve shows none. The new hover target gets its row in `TriggerDispatchMatrixTest`.
-* `graphitron-sakila-db/src/main/resources/init.sql` also gains a view and a trigger, so every kind
-  has something to show.
+* `graphitron-sakila-db/src/main/resources/init.sql` also gains a view and a trigger, so every kind,
+  and a table's triggers, have something to show.
 
 ## Follow-ups, filed when this reaches Ready
 
@@ -487,7 +558,9 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream. The c
   a policy hides the target row, even where the foreign key is `NOT NULL`;
 * a DML mutation whose `WITH CHECK` admits a row its read policy hides, so the payload's re-read
   returns nothing (the `secure_note` case), and a row-secured table with no policy for the mutation's
-  command, which the database denies by default;
+  command, which the database denies by default. Comparing the two expressions needs structure this
+  item does not store, so this follow-up captures what it reasons over at capture, as the
+  setting-read follow-up does;
 * a policy reading a session setting without treating `NULL` and `''` alike as no identity, the
   fail-closed rule in `docs/security.adoc`. This one captures the direct facts § Relations names
   (setting reads and function calls, of policies and of functions) and derives which functions a policy
@@ -507,14 +580,13 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream. The c
 * An unreachable database: keep the last reading's rows marked stale (this spec's default), or sweep
   them?
 * What configuration may enter the store. Nothing under `docs/architecture/` says; this spec stores
-  only a credential-free rendering of the connection, and the role the reading connected as
-  (`database_server`), which is a name `source_name` deliberately keeps out.
+  only a credential-free rendering of the connection.
 * Where a table the database has and the jOOQ classes lack, or the reverse, should be reported, given
   that it has no SDL position.
 * The application role. Policies apply `TO` roles, and without knowing which role the runtime
   connects as, the follow-up diagnostics must assume any policy may apply. A `<database>` field
-  naming the runtime role(s) is the obvious home; it is left to the follow-ups. In `dev`, the role the
-  reading connected as (`database_server`) is a first answer, when the dev database is reached as the
+  naming the runtime role(s) is the obvious home; it is left to the follow-ups. In `dev`, the role a
+  live definition reports it connected as is a first answer, when the dev database is reached as the
   application's role.
 * Views and their options. Some of the candidate rules (a view without `security_invoker`, a view
   reading an `app.` setting) reach past policies, and this item stores no view facts. Whether they join
@@ -567,7 +639,19 @@ What it raised, and what this spec did:
   a second reading, but its table answer is a reconstruction and is labelled one; the limit sentence
   says a live read may render but never decode: adopted. The failure cause had no home: adopted, as
   `store_graph_source_failure` on the `store_` side. The reclaim through `SourceClaims.unclaimed()`
-  matches the existing gatherers. Its point on a dialect mismatch is with Alf (§ Configuration).
+  matches the existing gatherers. Its point on a dialect mismatch went to Alf, who adopted it: what
+  needs a connection is a reading outcome (§ Configuration).
+* After Alf's ruling that the store records only what is reasoned over: `database_server` was removed
+  rather than kept (its contents are display, now reported live with a definition), the expression
+  text and comment left `database_policy`, and the live interface (`DatabaseConnector`,
+  `LiveDatabase`, `ObjectRef` taken from the store's existing rows) was specified. Consulted on it:
+  the overload claim was false against `sql_routine`'s name-only key: corrected, overloads are refused.
+  A disagreement between the jOOQ classes and the database is refused with a stale-classes cause,
+  worded like the anti-join: adopted. The schema-spelling assumption is stated: adopted. The
+  implementation moves to the plugin and the model module keeps only the interfaces, with
+  `modules.adoc` updated: adopted. Each consumer writes its own store query for its `ObjectRef`:
+  adopted. Why command, mode and roles are stored is stated, and a policy's definition needs a
+  reading: adopted. It found no remaining reader of stored policy text.
 
 ## Reviewer findings
 
