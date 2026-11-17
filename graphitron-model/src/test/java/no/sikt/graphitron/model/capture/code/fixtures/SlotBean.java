@@ -9,7 +9,7 @@ public final class SlotBean {
         return "";
     }
 
-    /** A second spelling of one property, which is two rows for one slot name. */
+    /** An is getter of a String: no slot, the is prefix being a boolean's. */
     public String isTitle() {
         return "";
     }
@@ -21,6 +21,11 @@ public final class SlotBean {
 
     /** The second prefix over a primitive: slot {@code restricted}. */
     public boolean isRestricted() {
+        return false;
+    }
+
+    /** A second spelling of one property, which is two rows for one slot name. */
+    public boolean getRestricted() {
         return false;
     }
 

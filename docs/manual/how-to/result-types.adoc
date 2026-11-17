@@ -25,7 +25,7 @@ Input-side class-backed types follow the same shape with parallel permits on `In
 A field of a class-backed type is read from a member of its class, found by the field's name or the one xref:../reference/directives/field.adoc[`@field(name:)`] gives it, and the class's form decides which members count:
 
 * A Java `record` is read through its components: `title: String` reads the component `title()`. A method on the record that is no component, a hand-written `getTitle()` among them, is not read.
-* Any other class is read through its getters: `title: String` reads `getTitle()`, or `isTitle()` where it returns `boolean` or `Boolean`. An inherited getter counts. A field with arguments reads a getter taking those arguments in order, `getTitle(String locale)`, or one taking the `DataFetchingEnvironment`.
+* Any other class is read through its getters: `title: String` reads `getTitle()`, or `isTitle()` where it returns `boolean` or `Boolean`; an `isTitle()` returning anything else is not read, the `is` prefix being a boolean's (Alf, 2026-11-17). An inherited getter counts. A field with arguments reads a getter taking those arguments in order, `getTitle(String locale)`, or one taking the `DataFetchingEnvironment`.
 * A bare `title()` on a class that is no record, and a public `title` field, are not read.
 
 The same holds for an input type built into a class: a record is built through its canonical constructor and any other class through its setters, so an input field fills a component or a `set` setter of its name. An xref:../reference/directives/error.adoc[`@error`] type's extra field reads a getter on the exception its handler matches the same way.

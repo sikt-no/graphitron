@@ -776,23 +776,24 @@ class CodeCaptureTest {
      * spellings of one property are two rows, which is what the key being the accessor buys.
      */
     @Test
-    @DisplayName("a class that is no record offers what its getters name, twice where spelled twice")
+    @DisplayName("a class that is no record offers what its getters name, twice where spelled twice, an is getter only of a boolean")
     void aBeanOffersItsProperties() {
         withReactorCapture(dsl -> {
             assertThat(slotsOn(dsl, SLOT_BEAN))
-                .as("both spellings of title, and the three the other names offer; not the"
-                    + " prefixless one, not the one that takes an argument, not a bare get, and"
-                    + " not the one whose prefix is followed by a lower-case letter")
-                .containsExactlyInAnyOrder("title", "title", "tags", "restricted", "uRL");
+                .as("both spellings of restricted, and title, tags and uRL; not isTitle, an is"
+                    + " getter of a String, not the prefixless one, not the one that takes an"
+                    + " argument, not a bare get, and not the one whose prefix is followed by a"
+                    + " lower-case letter")
+                .containsExactlyInAnyOrder("title", "tags", "restricted", "restricted", "uRL");
             assertThat(originsOn(dsl, SLOT_BEAN)).containsOnly("BEAN_ACCESSOR");
             assertThat(dsl.select(CODE_READ_SLOT.METHOD_NAME)
                     .from(CODE_READ_SLOT)
                     .where(CODE_READ_SLOT.CLASS_NAME.eq(SLOT_BEAN))
-                    .and(CODE_READ_SLOT.SLOT_NAME.eq("title"))
+                    .and(CODE_READ_SLOT.SLOT_NAME.eq("restricted"))
                     .orderBy(CODE_READ_SLOT.METHOD_NAME)
                     .fetch(CODE_READ_SLOT.METHOD_NAME))
                 .as("one slot name, two accessors, which is why the accessor is the key")
-                .containsExactly("getTitle", "isTitle");
+                .containsExactly("getRestricted", "isRestricted");
         });
     }
 
@@ -1366,7 +1367,8 @@ class CodeCaptureTest {
     /** How a slot's type renders, which is its accessor's result type's property. */
     private static String displayTypeOf(DSLContext dsl, String className, String slotName) {
         var t = CODE_TYPE;
-        return dsl.select(t.DISPLAY_NAME)
+        // Distinct: a slot name two accessors offer, getRestricted and isRestricted, yields one type.
+        return dsl.selectDistinct(t.DISPLAY_NAME)
             .from(CODE_READ_SLOT)
             .join(t).on(t.SOURCE_NAME.eq(CODE_READ_SLOT.SOURCE_NAME),
                 t.TYPE_NAME.eq(CODE_READ_SLOT.SLOT_TYPE))

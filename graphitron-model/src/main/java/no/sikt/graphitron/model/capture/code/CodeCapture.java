@@ -738,10 +738,10 @@ public final class CodeCapture {
      * author {@code toString} as a member. The {@code Record} attribute names the components, and
      * matching them to their accessors is what tells the two apart.
      *
-     * <p>The bean rule is the other arm's and is a rule about the name: {@code get} or {@code is}
-     * followed by an upper-case letter offers the remainder with its first letter lowered. No arm
-     * reads the return type, because an author who wrote {@code isTitle} returning a String meant
-     * that member and a rule that second-guessed the type would hide it.
+     * <p>The bean rule is the other arm's: {@code get} followed by an upper-case letter offers the
+     * remainder with its first letter lowered, and so does {@code is} where the method returns a
+     * {@code boolean} or {@code Boolean}. An {@code isTitle} returning a String offers nothing, the
+     * {@code is} prefix being a boolean's (Alf, 2026-11-17), so the slots read as the walk does.
      */
     private static void slots(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
                               List<ClassfileCensus.ClassAt> lookup,
@@ -927,16 +927,23 @@ public final class CodeCapture {
         return offered;
     }
 
-    /** The property a no-argument getter offers, or null where the method is not one. */
+    /**
+     * The property a no-argument getter offers, or null where the method is not one: a {@code get}
+     * getter of any type, an {@code is} getter of a {@code boolean} or {@code Boolean} only.
+     */
     private static String accessorProperty(ClassfileCensus.MethodAt method) {
-        return method.parameters().isEmpty() && !method.isStatic()
-            ? beanProperty(method.name()) : null;
+        if (!method.parameters().isEmpty() || method.isStatic()) {
+            return null;
+        }
+        String get = propertyAfter(method.name(), "get");
+        if (get != null) {
+            return get;
+        }
+        return returnsBoolean(method) ? propertyAfter(method.name(), "is") : null;
     }
 
-    /** The property a getter offers, or null where the name is not one. */
-    private static String beanProperty(String methodName) {
-        String get = propertyAfter(methodName, "get");
-        return get != null ? get : propertyAfter(methodName, "is");
+    private static boolean returnsBoolean(ClassfileCensus.MethodAt method) {
+        return method.descriptor().endsWith(")Z") || method.descriptor().endsWith(")Ljava/lang/Boolean;");
     }
 
     private static String propertyAfter(String methodName, String prefix) {
