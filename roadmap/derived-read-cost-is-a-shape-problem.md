@@ -1112,17 +1112,13 @@ static method needs no holder.
     `EMITTED` is a stored defect of basis `UNSUPPORTED` with a code of its own, raised by the first
     stage holding its facts: the row-tenant fan-out of a child service (`graphitron_field_tenant_fan_out`,
     at fetchers), a connection page (a branch of occurrence-producers' rule view), several occurrences,
-    a discriminated target, incomplete fills, a refused build (each `BuildQuery.Result.Refused`
-    site reachable under a service), a node-id argument of a service with no decode slot (no
-    `graphitron_occurrence_node_id_slot_parameter` row), an argument path and a value still to be
-    built, with `BuildQuery`'s two Java refusals and `DiscriminatedQuery.Row.refusal`.
+    a discriminated target, incomplete fills, an argument path and a value still to be built, with
+    `DiscriminatedQuery.Row.refusal`. A refused build under a service is stored, or impossible on what
+    the store writes and thrown as a generator bug, and an inferred node id is slotted as a written one.
     It closes when, on any graph the store's verdict accepts, the verdict can only be `EMITTED`; then
     the walk's fallback for the fields `ServiceEmission.emits` refuses goes, and
     `GraphQLRewriteGenerator.unemittedProjections` and `unemittedOutboxes` go in the same commit.
-    `GraphQLRewriteGenerator.unvouchedServices` (with `ServiceEmission.inheritingButNotEmitted`)
-    refuses a service below a vouched entity whose fetcher is not emitted. It is untested, no graph the
-    store accepts being known to reach it, and goes in the commit that lands the last of two codes: a
-    refused build under a service, and a node-id argument of a service with no decode slot. Unused in FS-plattform for the two measured so far: sis
+    Unused in FS-plattform for the two measured so far: sis
     73 and opptak 251 service producers, none returning a connection, none fanning out by row tenant.
     What of `ServiceCatalog` stays when the walk's service path goes, and who owns it, is named in the
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
