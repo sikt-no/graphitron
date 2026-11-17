@@ -220,7 +220,9 @@ parallelises a module's tests is priced against that before it is tried.
    tests pass none, so every capture re-reads it.
 7. **Planning per statement** (Track C: R876's view nodes and per-depth nodes), by `prepare_ms` on a
    cold capture.
-8. **Track B**, priced after the above, since it divides what is left.
+8. **Track B**, priced after the above, since it divides what is left. B1 and B4 are done; B2 was tried
+   and set aside. For `graphitron`'s chain A3 comes first: `generate-test-schemas` is 151 s of it under
+   `-T 1C`, and only removing its captures shortens it.
 9. **A test hands its run the classified classpath.** Done 2026-11-17. The two method-graph oracles
    built their `RunContext` from the test classpath's paths, which reads every entry as the
    project's own, so each capture read every jar on it whole: 25,862 classes and 151,409 methods,
@@ -409,7 +411,11 @@ the machine. The release deploy needs no pin, nothing setting `-T` for it.
 **B2. Run `generate-test-schemas` in parallel.** `GenerateTestSchemas.main` loops over the
 scenarios in one thread: 144 scenarios in 59 s on 2026-11-17, plus about 6 s of JVM start. Give it a
 pool, or read the scenarios from A3's store. Most of the 59 s is the same capture A3 removes, so the
-two do not add: either takes most of it, and the estimate of about 200 s is withdrawn.
+two do not add: either takes most of it, and the estimate of about 200 s is withdrawn. Tried 2026-11-17 and set aside: a pool of four took the step from about 71 to about 32 s alone, its
+output byte for byte the serial run's, and under `-T 1C` from 151.3 to 101.5 s; but `graphitron`'s tests
+then started beside the LSP's and roadmap-tool's and took 332.2 s against 292.1, so the module's span
+went from 494.3 to 499.7 s and the build from 1,315 to 1,313 s. The work moved rather than left, and A3
+is what takes it out.
 
 **B3. Split the single-thread tails.**
 - `EmittedRegistryAgreementTest` becomes one dynamic test per document, so the pool can spread it.
@@ -420,8 +426,10 @@ two do not add: either takes most of it, and the estimate of about 200 s is with
 - `GeneratorDeterminismTest` and `GraphCountGrowthGateTest` are split by their inputs: about 40 to
   60 s together.
 
-**B4. Run the invoker in parallel.** Eight nested builds run one after another in
-`graphitron-maven-plugin`: about 50 s with `parallelThreads`.
+**B4. Run the invoker in parallel.** Done 2026-11-17: `parallelThreads` 4 on the invoker. Its thirteen
+ITs ran one after another, 76 s of the chain; at four threads, interleaved pairs of
+`verify -pl :graphitron-maven-plugin` went from 127.4 to 105.7 s, and under `-T 1C` the plugin's span
+went from 141.8 to 119.6 s. Four IT Mavens peaked at 2,633 MB together, which a 16 GB runner holds.
 
 **B5. Size the test pools to the machine once A has cut the work.** The pools are fixed at 4, and the
 two big forks already run at their 6 GB heap ceiling with 22% of `graphitron`'s CPU in GC. So the
