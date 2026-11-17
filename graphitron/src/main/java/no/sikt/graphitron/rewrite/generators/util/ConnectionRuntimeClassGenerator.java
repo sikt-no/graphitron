@@ -1529,6 +1529,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
             .addMethod(staticDslDefault(self))
+            .addMethod(keyedDslFor(connectionKey))
+            .addMethod(staticKeyedDslFor(self, connectionKey))
+            .addMethod(staticKeyedDslForIfPermitted(self, clientException, connectionKey))
+            .addMethod(entityLoaderName(connectionKey))
             .addMethod(acquisitionCause(acquisitionFailed))
             .addMethod(isAcquisitionFailure())
             .addMethod(MutationFieldScopeEmitter.beginField(self))
@@ -1586,8 +1590,6 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(collapseFanOut(self))
                 .addMethod(logFanOutFailure(self, errorRouter, true))
                 .addMethod(staticDslFor(self, tenantKey))
-                .addMethod(keyedDslFor(connectionKey))
-                .addMethod(staticKeyedDslFor(self, connectionKey))
                 .addMethod(staticHandedDownDsl(self, connectionKey))
                 .addMethod(staticDslForIfPermitted(self, tenantKey, clientException, connectionKey))
                 .addMethod(namedTenant(tenantKey))
@@ -2646,10 +2648,34 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
+    /** The refusal when an operation carries both the carrier and a caller-supplied {@code DSLContext}. */
+    static final String MISMATCHED_MODES =
+        "Both graphitron-owned acquisition and a caller-supplied DSLContext are present: the"
+            + " operation was built with Graphitron.newExecutionInput(dsl, ...) but executed"
+            + " through GraphitronRuntime.newGraphQL(...). Pick one mode: newOwnedExecutionInput"
+            + " with runtime.newGraphQL(schema), or newExecutionInput(dsl) with"
+            + " Graphitron.newGraphQL().";
+
+    /** The refusal when an operation carries neither the carrier nor a caller-supplied {@code DSLContext}. */
+    static final String NO_DSL_CONTEXT =
+        "No DSLContext available: the operation ran through neither graphitron-owned"
+            + " acquisition (Graphitron.newOwnedExecutionInput(...) with"
+            + " GraphitronRuntime.newGraphQL(schema)) nor the escape hatch"
+            + " (Graphitron.newExecutionInput(dsl, ...) with Graphitron.newGraphQL()).";
+
+    /** The refusal when the escape hatch is asked for a key with parts, which only a source can serve. */
+    static final String KEYED_NEEDS_OWNED =
+        "A connection key with parts needs graphitron's owned connections"
+            + " (Graphitron.newOwnedExecutionInput(...) with GraphitronRuntime.newGraphQL(schema)); the caller-supplied"
+            + " DSLContext of Graphitron.newExecutionInput(dsl, ...) serves only the key with no parts. Key: ";
+
     /**
-     * {@code static DSLContext dslFor(DataFetchingEnvironment env, ConnectionKey key)}: the routed
-     * acquisition an emitted fetcher site makes with the key it built, the checked acquisition failure
-     * wrapped as the tenant-keyed sibling wraps it.
+     * {@code static DSLContext dslFor(DataFetchingEnvironment env, ConnectionKey key)}: the one point a
+     * fetcher reaches a connection by, in every build. With the carrier in the GraphQL context it is the
+     * carrier's entry for {@code key}, the checked acquisition failure wrapped unchecked; on the escape
+     * hatch it is the caller-supplied {@code DSLContext} for the key with no parts and a refusal for any
+     * other; both present, or neither, is refused, as {@code GraphitronContext.getDslContext} (which
+     * delegates here with the empty key) always refused them.
      */
     private static MethodSpec staticKeyedDslFor(ClassName self, ClassName connectionKey) {
         return MethodSpec.methodBuilder("dslFor")
@@ -2657,16 +2683,95 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(DSL_CONTEXT)
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(connectionKey, "key")
+            .addStatement("$T carrier = env.getGraphQlContext().get($T.class)", self, self)
+            .addStatement("$T supplied = env.getGraphQlContext().get($T.class)", DSL_CONTEXT, DSL_CONTEXT)
+            .beginControlFlow("if (carrier != null && supplied != null)")
+            .addComment("The mismatched pair, named as such: the operation was built with the escape-hatch")
+            .addComment("factory (which published the typed DSLContext key) but executed through the")
+            .addComment("owned-connection engine (which published the carrier). One mode, one factory.")
+            .addStatement("throw new $T($S)", IllegalStateException.class, MISMATCHED_MODES)
+            .endControlFlow()
+            .beginControlFlow("if (carrier != null)")
             .beginControlFlow("try")
-            .addStatement("return of(env).dslFor(key)")
+            .addStatement("return carrier.dslFor(key)")
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
             .addStatement("throw new $T($S + key, e)", DATA_ACCESS_EXCEPTION,
                 "Acquiring the routed connection failed for connection key: ")
             .endControlFlow()
-            .addJavadoc("Routed acquisition for emitted fetcher sites, by the key the site built: {@link #of} and\n"
-                + "the carrier's keyed {@code dslFor}, with the checked acquisition failure wrapped unchecked.\n"
+            .endControlFlow()
+            .beginControlFlow("if (supplied != null)")
+            .beginControlFlow("if (key.equals($T.defaultSource()))", connectionKey)
+            .addStatement("return supplied")
+            .endControlFlow()
+            .addStatement("throw new $T($S + key)", IllegalStateException.class, KEYED_NEEDS_OWNED)
+            .endControlFlow()
+            .addStatement("throw new $T($S)", IllegalStateException.class, NO_DSL_CONTEXT)
+            .addJavadoc("The one point a fetcher reaches a connection by. On the owned path it is the carrier's\n"
+                + "entry for {@code key}, pinned on first demand, the checked acquisition failure wrapped\n"
+                + "unchecked; on the escape hatch it is the caller-supplied {@code DSLContext}, which serves\n"
+                + "only the key with no parts. Both present, or neither, is refused.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n"
                 + "@param key the connection key\n")
+            .build();
+    }
+
+    /**
+     * {@code static DSLContext dslForIfPermitted(DataFetchingEnvironment env, ConnectionKey key)}: the
+     * keyed acquisition for the entity and node dispatch, which answer a refused key as presentation
+     * rather than an error. {@code null} when the source refuses the key, now or earlier in the request,
+     * and otherwise {@code dslFor(env, key)}; the refusal itself stays single-sourced on the carrier.
+     */
+    private static MethodSpec staticKeyedDslForIfPermitted(ClassName self, ClassName clientException,
+                                                           ClassName connectionKey) {
+        return MethodSpec.methodBuilder("dslForIfPermitted")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(DSL_CONTEXT)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(connectionKey, "key")
+            .addStatement("$T carrier = env.getGraphQlContext().get($T.class)", self, self)
+            .beginControlFlow("try")
+            .addStatement("return dslFor(env, key)")
+            .nextControlFlow("catch ($T refused)", clientException)
+            .beginControlFlow("if (carrier != null && carrier.refusedKeys.containsKey(key))")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("throw refused")
+            .endControlFlow()
+            .addJavadoc("Acquisition for a lookup that answers a refused key with {@code null}: as\n"
+                + "{@link #dslFor(DataFetchingEnvironment, $T)}, except that a key the request's source refuses,\n"
+                + "now or earlier in this request, gives {@code null} rather than an error. The caller leaves\n"
+                + "that key's positions {@code null}, exactly as it answers an id that does not exist.\n"
+                + "@param env the field's {@code DataFetchingEnvironment}\n"
+                + "@param key the connection key\n"
+                + "@return the key's {@code DSLContext}, or {@code null} when the source refuses the key\n",
+                connectionKey)
+            .build();
+    }
+
+    /**
+     * {@code static String entityLoaderName(env, typeName, alternative, key)}: the name of the entity
+     * and node dispatch's loader for one (type, key alternative, connection key). The field's path keys
+     * come first, as every loader name's do, so two aliased lookup fields with different selections
+     * never share a batch; the key is an opaque segment, never parsed back, and never part of the
+     * loader's key type.
+     */
+    private static MethodSpec entityLoaderName(ClassName connectionKey) {
+        return MethodSpec.methodBuilder("entityLoaderName")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(String.class, "typeName")
+            .addParameter(int.class, "alternative")
+            .addParameter(connectionKey, "key")
+            .addStatement("return String.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S + typeName"
+                + " + $S + alternative + $S + key", "/", "@", " alt:", " key:")
+            .addJavadoc("The DataLoader name for the entity and node dispatch: the field's named path segments\n"
+                + "joined by {@code \"/\"}, {@code \"@\"} and the entity type, then the key alternative and the\n"
+                + "connection key as opaque segments, so each batch is one (field, type, alternative, key).\n"
+                + "@param env the dispatching field's {@code DataFetchingEnvironment}\n"
+                + "@param typeName the entity type\n"
+                + "@param alternative the key alternative's declaration index\n"
+                + "@param key the connection key the batch acquires on\n")
             .build();
     }
 

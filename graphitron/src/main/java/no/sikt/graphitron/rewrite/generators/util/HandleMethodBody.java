@@ -14,38 +14,41 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Emits the per-type {@code handle<TypeName>} method body for
- * {@link EntityFetcherDispatchClassGenerator}.
+ * Emits the decode of one federation representation for {@link EntityFetcherDispatchClassGenerator},
+ * shared by both of its read paths ({@link #emitAlternativeCascade}), and the per-type
+ * {@code handle<TypeName>} grouping body a multi-tenant build reads entities through.
  *
- * <p>Per-rep flow within the body:
+ * <p>The decode, per representation:
  * <ol>
- *   <li>For each rep, walk alternatives in most-specific-first order and pick the first
- *       resolvable alternative whose {@code requiredFields} are all present in the rep
- *       (excluding {@code __typename}). No match → result slot stays {@code null}.</li>
- *   <li>Build a per-rep DFE (rebinding {@code arguments} to the rep's contents) so any
- *       in-rep argument reads inside the dispatched alternative resolve against the
- *       individual rep.</li>
+ *   <li>Walk alternatives in most-specific-first order and pick the first resolvable alternative
+ *       whose {@code requiredFields} are all present in the rep (excluding {@code __typename}). No
+ *       match: the slot stays {@code null}.</li>
  *   <li>Decode the rep into a column-value row: DIRECT coerces each rep field value through
  *       {@code ColumnValues.coerce}; NODE_ID passes {@code rep.id} through
- *       {@code NodeIdEncoder.decodeColumns}. A value that is not a value of its column leaves the
- *       rep ungrouped, so its slot stays {@code null} and nothing reaches SQL for it.</li>
- *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}. In a
- *       multi-tenant build over a tenant-scoped entity ({@link TenantRouting#bound()}), the
- *       grouping widens to {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's
- *       tenant is read from its alternative's classified source, the decoded key at the tenant
- *       column's position (canonicalised through {@code OwnedConnections.tenantKeyOrNull}, a
- *       value that names no tenant leaving the rep ungrouped), so one batch spanning tenants
- *       splits into tenant-homogeneous groups instead of erroring or leaking.</li>
+ *       {@code NodeIdEncoder.decodeColumns}. A value that is not a value of its column skips the
+ *       rep, so its slot stays {@code null} and nothing reaches SQL for it.</li>
+ *   <li>Build a per-rep DFE (rebinding {@code arguments} to the rep's contents) so any in-rep
+ *       argument reads inside the dispatched alternative resolve against the individual rep.</li>
+ * </ol>
+ *
+ * <p>A build without a tenant column hands the decoded row to the loader for its (type,
+ * alternative, connection key). A multi-tenant build groups it instead:
+ * <ol>
+ *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}. Over a
+ *       tenant-scoped entity ({@link TenantRouting#bound()}), the grouping widens to
+ *       {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's tenant is read from its
+ *       alternative's classified source, the decoded key at the tenant column's position
+ *       (canonicalised through {@code OwnedConnections.tenantKeyOrNull}, a value that names no
+ *       tenant leaving the rep ungrouped), so one batch spanning tenants splits into
+ *       tenant-homogeneous groups instead of erroring or leaking.</li>
  *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}
  *       with the group's own {@code DSLContext}: per-tenant acquisition through
  *       {@code OwnedConnections.dslForIfPermitted} for a bound entity (a tenant the source
- *       refuses leaves its group's slots {@code null}), the key whose tenant part is empty for a
- *       global entity in a multi-tenant build, and the escape-hatch context read in single-tenant
- *       builds.</li>
- *   <li>In a multi-tenant build, wrap each filled slot as a {@code DataFetcherResult<Record>}:
- *       a per-tenant group's rows carry the tenant the group was routed on as
- *       {@code localContext}, so the subtree below each row inherits it; a global entity's rows
- *       carry none. Single-tenant builds leave bare {@code Record}s.</li>
+ *       refuses leaves its group's slots {@code null}), and the key whose tenant part is empty for
+ *       a global entity.</li>
+ *   <li>Wrap each filled slot as a {@code DataFetcherResult<Record>}: a per-tenant group's rows
+ *       carry the tenant the group was routed on as {@code localContext}, so the subtree below
+ *       each row inherits it; a global entity's rows carry none.</li>
  * </ol>
  *
  * <p>Order preservation: result positions come from the rep's original index in the outer
@@ -67,23 +70,25 @@ final class HandleMethodBody {
     private HandleMethodBody() {}
 
     /**
-     * The dispatch surface's tenant routing for one entity type. {@code null} for a
-     * single-tenant build. {@code bound} carries the per-alternative tenant sources for a
-     * tenant-scoped entity, or {@code null} for a global entity (a global read, acquired through
-     * {@code dslDefault}, the key whose tenant part is empty). {@code tenantKey} is the boxed tenant column type, the type each tenant
-     * group's key is held in.
+     * The dispatch surface's tenant routing for one entity type, in a multi-tenant build (the only
+     * build this grouping is emitted in; a build without a tenant column reads entities through
+     * loaders). {@code bound} carries the per-alternative tenant sources for a tenant-scoped entity,
+     * or {@code null} for a global entity (a global read, acquired through {@code dslDefault}, the
+     * key whose tenant part is empty). {@code tenantKey} is the boxed tenant column type, the type
+     * each tenant group's key is held in.
      */
     record TenantRouting(ClassName ownedConnections, Map<EntityKeyQuery.Identity, EntityTenantRouting.Source> bound,
-                         TypeName tenantKey) {}
-
-    /** Single-tenant emission: no tenant routing. */
-    static CodeBlock emit(EntityKeyQuery.Entity entity, ClassName nodeIdEncoder) {
-        return emit(entity, nodeIdEncoder, null);
+                         TypeName tenantKey) {
+        TenantRouting {
+            java.util.Objects.requireNonNull(ownedConnections, "ownedConnections");
+            java.util.Objects.requireNonNull(tenantKey, "tenantKey");
+        }
     }
 
     static CodeBlock emit(EntityKeyQuery.Entity entity, ClassName nodeIdEncoder, TenantRouting routing) {
+        java.util.Objects.requireNonNull(routing, "routing");
         var b = CodeBlock.builder();
-        boolean perTenant = routing != null && routing.bound() != null;
+        boolean perTenant = routing.bound() != null;
         emitGroupingMaps(b, perTenant);
         emitPerRepLoop(b, entity, nodeIdEncoder, routing);
         emitGroupDispatch(b, entity, routing);
@@ -107,7 +112,32 @@ final class HandleMethodBody {
                                        ClassName nodeIdEncoder, TenantRouting routing) {
         b.beginControlFlow("for (int idx : indices)");
         b.addStatement("$T<String, Object> rep = reps.get(idx)", MAP);
-        // Most-specific resolvable alternative: emitted as an if-else cascade in priority order.
+        emitAlternativeCascade(b, entity, nodeIdEncoder, CodeBlock.of("continue"),
+            (arm, alt, altIndex) -> emitGroup(arm, entity, alt, altIndex, routing));
+        b.endControlFlow();
+    }
+
+    /**
+     * What an arm of {@link #emitAlternativeCascade} does with a representation it decoded: with
+     * {@code rep}, {@code cols} (the alternative's key values in key order) and {@code repEnv} (the
+     * per-representation environment) in scope.
+     */
+    @FunctionalInterface
+    interface DecodedArm {
+        void emit(CodeBlock.Builder b, EntityKeyQuery.Alternative alt, int altIndex);
+    }
+
+    /**
+     * The one decode of a representation {@code rep} in scope, shared by the entity loaders and the
+     * tenanted grouping: the most-specific resolvable alternative whose required fields {@code rep}
+     * carries, as an if-else cascade in priority order; its key values decoded into {@code cols}
+     * (DIRECT through {@code ColumnValues.coerce}, NODE_ID through {@code NodeIdEncoder.decodeColumns});
+     * the per-representation {@code repEnv}; then {@code decoded}. A representation whose value is not
+     * a value of its column runs {@code skip}, a statement, and nothing reaches SQL for it. A
+     * representation no alternative matches falls out of the cascade.
+     */
+    static void emitAlternativeCascade(CodeBlock.Builder b, EntityKeyQuery.Entity entity, ClassName nodeIdEncoder,
+                                       CodeBlock skip, DecodedArm decoded) {
         var prioritized = priorityOrder(entity.alternatives());
         boolean any = false;
         for (var p : prioritized) {
@@ -120,12 +150,12 @@ final class HandleMethodBody {
                 b.beginControlFlow("if (" + cond + ")", matchArgs(alt));
                 any = true;
             }
-            emitDecodeAndGroup(b, entity, alt, p.declarationIndex(), nodeIdEncoder, routing);
+            emitDecode(b, entity, alt, nodeIdEncoder, skip);
+            decoded.emit(b, alt, p.declarationIndex());
         }
         if (any) {
             b.endControlFlow();
         }
-        b.endControlFlow();
     }
 
     private static String matchCondition(EntityKeyQuery.Alternative alt) {
@@ -141,13 +171,10 @@ final class HandleMethodBody {
         return EntityKeys.requiredFields(alt).toArray();
     }
 
-    private static void emitDecodeAndGroup(
-        CodeBlock.Builder b, EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt, int altIndex,
-        ClassName nodeIdEncoder, TenantRouting routing
+    private static void emitDecode(
+        CodeBlock.Builder b, EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt,
+        ClassName nodeIdEncoder, CodeBlock skip
     ) {
-        TenantBinding.EntityRepBound.TenantSource source = routing != null && routing.bound() != null
-            ? tenantSource(entity, routing.bound(), alt, altIndex)
-            : null;
         // Exhaustive sealed switch with no default arm: a future third key shape is a compile
         // error at this fork rather than a silent runtime gap.
         switch (alt) {
@@ -157,7 +184,7 @@ final class HandleMethodBody {
                 // typeId). The builder resolved it; passing the raw typename here would silently
                 // fail decode for typeId-overridden types.
                 b.addStatement("Object idObj = rep.get($S)", "id");
-                b.addStatement("if (!(idObj instanceof String idStr)) continue");
+                b.addStatement("if (!(idObj instanceof String idStr)) $L", skip);
                 // decodeColumns refuses a malformed id, a wrong arity (an under-arity id would trip
                 // AIOOBE inside select<Type>Alt<N>, an over-arity one resolve the wrong row) and a
                 // key value that is not a value of its column (a wrapped number would resolve
@@ -165,7 +192,7 @@ final class HandleMethodBody {
                 // null-not-error contract.
                 b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L)",
                     nodeIdEncoder, nodeId.typeId(), columnRefs(entity, EntityKeys.columns(nodeId)));
-                b.addStatement("if (cols == null) continue");
+                b.addStatement("if (cols == null) $L", skip);
             }
             case EntityKeyQuery.Alternative.Direct direct -> {
                 var bindings = direct.fields();
@@ -178,7 +205,7 @@ final class HandleMethodBody {
                 for (int i = 0; i < bindings.size(); i++) {
                     b.addStatement("cols[$L] = $T.coerce($L.getDataType(), rep.get($S))", i, columnValues,
                         columnRef(entity, bindingColumns.get(i)), bindings.get(i).fieldName());
-                    b.addStatement("if (cols[$L] == null) continue", i);
+                    b.addStatement("if (cols[$L] == null) $L", i, skip);
                 }
             }
         }
@@ -187,6 +214,13 @@ final class HandleMethodBody {
         // rep map is the one the dispatched fetcher's env sees.
         b.addStatement("$T repEnv = $T.newDataFetchingEnvironment(env).arguments(rep).build()",
             ENV, ENV_IMPL);
+    }
+
+    private static void emitGroup(CodeBlock.Builder b, EntityKeyQuery.Entity entity, EntityKeyQuery.Alternative alt,
+                                  int altIndex, TenantRouting routing) {
+        TenantBinding.EntityRepBound.TenantSource source = routing.bound() != null
+            ? tenantSource(entity, routing.bound(), alt, altIndex)
+            : null;
         if (source != null) {
             // Each rep's tenant comes from the alternative's classified source, its own decoded
             // key. Grouping per (alternative, tenant) keeps every dispatched SELECT
@@ -245,7 +279,7 @@ final class HandleMethodBody {
     private static void emitGroupDispatch(CodeBlock.Builder b, EntityKeyQuery.Entity entity, TenantRouting routing) {
         var listOfBindings = ParameterizedTypeName.get(LIST,
             com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
-        boolean perTenant = routing != null && routing.bound() != null;
+        boolean perTenant = routing.bound() != null;
         if (perTenant) {
             var byTenant = ParameterizedTypeName.get(MAP, ClassName.get(Object.class), listOfBindings);
             var outerEntry = ParameterizedTypeName.get(
@@ -291,22 +325,15 @@ final class HandleMethodBody {
         b.addStatement("$T bindings = altEntry.getValue()", listOfBindings);
         b.addStatement("Object[] first = bindings.get(0)");
         b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
-        if (routing != null) {
-            // Multi-tenant build, global entity table: every group is a global read, served on the
-            // key whose tenant part is empty.
-            b.addStatement("$T dsl = $T.dslDefault(groupEnv)",
-                DSL_CONTEXT, routing.ownedConnections());
-        } else {
-            b.addStatement("$T dsl = graphitronContext(groupEnv).getDslContext(groupEnv)", DSL_CONTEXT);
-        }
+        // Global entity table: every group is a global read, served on the key whose tenant part is
+        // empty.
+        b.addStatement("$T dsl = $T.dslDefault(groupEnv)",
+            DSL_CONTEXT, routing.ownedConnections());
         emitAltSwitch(b, entity);
-        if (routing != null) {
-            // One slot shape per build mode: a multi-tenant build's slots are all envelopes. A
-            // global entity hands no tenant down; the classifier seeds it no-context, so nothing
-            // below reads one.
-            emitSlotWrap(b, CodeBlock.of("$T.<$T>newResult().data(($T) result[slot]).build()",
-                DATA_FETCHER_RESULT, RECORD, RECORD));
-        }
+        // One slot shape per build: every slot is an envelope. A global entity hands no tenant
+        // down; the classifier seeds it no-context, so nothing below reads one.
+        emitSlotWrap(b, CodeBlock.of("$T.<$T>newResult().data(($T) result[slot]).build()",
+            DATA_FETCHER_RESULT, RECORD, RECORD));
         b.endControlFlow();
     }
 

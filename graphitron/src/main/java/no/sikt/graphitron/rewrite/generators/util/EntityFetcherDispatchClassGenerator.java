@@ -10,7 +10,9 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
+import no.sikt.graphitron.emit.ConnectionKeyShape;
 import no.sikt.graphitron.emit.EntityKeyQuery;
+import no.sikt.graphitron.render.LoaderConstruction;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 
 import javax.lang.model.element.Modifier;
@@ -18,37 +20,49 @@ import java.util.List;
 
 /**
  * Generates the {@code EntityFetcherDispatch} class, the runtime dispatcher for the
- * Apollo Federation {@code Query._entities(representations:)} field.
+ * Apollo Federation {@code Query._entities(representations:)} field, and the one way
+ * {@code Query.node} and {@code Query.nodes} read an entity too.
  *
  * <p>Rendered from the store's entities ({@link no.sikt.graphitron.emit.EntityKeyQuery}), and
- * nothing when there are none. The generated class:
+ * nothing when there are none. In a build without a tenant column the generated class reads every
+ * entity through DataLoaders:
  * <ol>
  *   <li>{@code fetchEntities(env)}: reads {@code representations}, answers every one this
  *       subgraph cannot resolve (no {@code __typename}, or one outside
  *       {@code RESOLVABLE_TYPENAMES}) with a {@code null} slot and a client error at that slot's
- *       path, dispatches the rest per {@code __typename} to a per-type handler, and returns
- *       {@code CompletableFuture<DataFetcherResult<List<Object>>>} preserving exact rep order.</li>
- *   <li>{@code handle<TypeName>(reps, indices, env, result)}: for each rep, selects the
- *       most-specific resolvable key alternative, decodes the rep into a column-value
- *       row (DIRECT: {@code ColumnValues.coerce}; NODE_ID: {@code NodeIdEncoder.decodeColumns}), and groups
- *       by alternative-index for batching.</li>
+ *       path, reads the rest through {@code loadSlot}, and combines the slots in representation
+ *       order ({@code inOrder}) into a {@code CompletableFuture<DataFetcherResult<List<Object>>>}.</li>
+ *   <li>{@code load(rep, env)}: dispatches on {@code __typename} to {@code load<TypeName>}, which
+ *       selects the most-specific resolvable key alternative, decodes the rep into the
+ *       alternative's key values (DIRECT: {@code ColumnValues.coerce}; NODE_ID:
+ *       {@code NodeIdEncoder.decodeColumns}) and loads them, with a per-rep environment, from the
+ *       positional loader for (field path, type, alternative, connection key), named by
+ *       {@code OwnedConnections.entityLoaderName} and built with the request's
+ *       {@code DataLoaderOptions}, so a {@code BatchSizeLimit} bounds it. The connection key is the
+ *       one with no parts.</li>
+ *   <li>{@code batch<TypeName>Alt<N>(keys, batchEnv, key)}: the loader's batch, acquiring through
+ *       {@code OwnedConnections.dslForIfPermitted} (a key the source refuses answers every slot
+ *       {@code null} with no error) and running {@code select<TypeName>Alt<N>}; a throw fails only
+ *       the batch's own slots.</li>
  *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)}: issues one SELECT per
- *       group via a {@code VALUES (idx, col1, col2, ...)} derived table joined to the type's
+ *       batch via a {@code VALUES (idx, col1, col2, ...)} derived table joined to the type's
  *       jOOQ table, projecting {@code <TypeName>.$project(...)} plus the literal
  *       {@code __typename} column. Result rows scatter back to original positions via the
  *       {@code idx} column.</li>
  * </ol>
  *
- * <p>Each rep gets a per-rep DFE (with {@code arguments(rep)}) so any in-rep argument reads
- * inside the dispatched alternative resolve against the individual rep, not the outer
- * representations list.
- *
- * <p>Slot contract of {@code resolveByReps}, one shape per build mode: a single-tenant build's
- * resolved entries are jOOQ {@code Record}s; a multi-tenant build's are
+ * <p>A multi-tenant build keeps the synchronous dispatch: {@code fetchEntities} hands the
+ * representations to {@code resolveByReps}, which groups them per type in
+ * {@code handle<TypeName>} ({@link HandleMethodBody}), per alternative and per decoded tenant,
+ * and runs the same {@code select<TypeName>Alt<N>} per group. Its resolved slots are
  * {@code DataFetcherResult<Record>}s, stamped with the tenant their group was routed on for a
  * tenant-scoped entity (so an inherited child below the entity reads that tenant) and unstamped
  * for a global one. {@code fetchEntities}, {@code Query.node} and {@code Query.nodes} pass the
  * entries through as field values or list elements, which graphql-java unwraps one level each.
+ *
+ * <p>Each rep gets a per-rep DFE (with {@code arguments(rep)}) so any in-rep argument reads
+ * inside the dispatched alternative resolve against the individual rep, not the outer
+ * representations list.
  *
  * <p>{@code resolveType} is a separate static helper reading the synthetic {@code __typename}
  * column projected on every entity row (graphql-java has unwrapped any {@code DataFetcherResult}
@@ -60,6 +74,12 @@ public final class EntityFetcherDispatchClassGenerator {
     public static final String CLASS_NAME = "EntityFetcherDispatch";
     public static final String FETCH_ENTITIES_METHOD = "fetchEntities";
     public static final String RESOLVE_BY_REPS_METHOD = "resolveByReps";
+    /** A build without a tenant column: one representation's entity, read through its loader. */
+    public static final String LOAD_METHOD = "load";
+    /** A build without a tenant column: one list slot's answer, its failure routed at the slot. */
+    public static final String LOAD_SLOT_METHOD = "loadSlot";
+    /** A build without a tenant column: list slots combined, in order, into the list field's result. */
+    public static final String IN_ORDER_METHOD = "inOrder";
     public static final String RESOLVE_TYPE_METHOD = "resolveType";
     public static final String TYPENAME_FOR_TYPE_ID_METHOD = "typenameForTypeId";
     /** The emitted set of the entity typenames this subgraph resolves: the {@code fetchEntities} gate. */
@@ -98,27 +118,28 @@ public final class EntityFetcherDispatchClassGenerator {
     private static final ClassName FIELD        = ClassName.get("org.jooq", "Field");
     private static final ClassName DSL_CONTEXT  = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL          = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DATA_LOADER  = ClassName.get("org.dataloader", "DataLoader");
+    private static final ClassName BATCH_LOADER_ENV = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
+    private static final ClassName STEP_INFO    = ClassName.get("graphql.execution", "ExecutionStepInfo");
 
     private EntityFetcherDispatchClassGenerator() {}
 
     /**
-     * The dispatcher over {@code entities}, the store's entities in type name order. {@code tenantKey}
-     * is the tenant column's boxed Java type in a multi-tenant build and empty in a single-tenant
-     * one, and {@code tenantRouting} says which entities route per tenant, by what; a single-tenant
-     * build passes {@link EntityTenantRouting#none()}.
+     * The dispatcher over {@code entities}, the store's entities in type name order. {@code shape} is
+     * the build's connection key shape, whose tenant part decides the read path: a build without one
+     * reads every entity through loaders per (type, key alternative, connection key), and a multi-tenant
+     * build keeps the synchronous per-tenant grouping, with {@code tenantRouting} saying which entities
+     * route per tenant, by what. A build without a tenant part passes {@link EntityTenantRouting#none()}.
      */
     public static List<TypeSpec> generate(List<EntityKeyQuery.Entity> entities, EntityTenantRouting tenantRouting,
-                                          java.util.Optional<TypeName> tenantKey, String outputPackage) {
+                                          ConnectionKeyShape shape, String outputPackage) {
         if (entities.isEmpty()) {
             return List.of();
         }
 
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
-        // Multi-tenant routing for the dispatch surface: each tenant-scoped entity's grouping
-        // widens per tenant at its classified tenant sources; global entities read the
-        // default source. Null in single-tenant builds (byte-identical emission).
-        boolean multiTenant = tenantKey.isPresent();
+        boolean multiTenant = shape.writesSlot();
         var ownedConnections = ClassName.get(outputPackage + ".schema",
             ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
@@ -128,20 +149,43 @@ public final class EntityFetcherDispatchClassGenerator {
                 + "{@code Query._entities(representations:)} field. See\n"
                 + "{@link EntityFetcherDispatchClassGenerator} for emission semantics.\n")
             .addField(buildResolvableTypenamesField(entities))
-            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(buildFetchEntitiesMethod(outputPackage))
-            .addMethod(buildResolveByRepsMethod(entities, multiTenant))
+            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build());
+
+        if (!multiTenant) {
+            var loaders = new EntityLoaders(outputPackage, nodeIdEncoder, ownedConnections);
+            spec.addMethod(loaders.fetchEntities())
+                .addMethod(loaders.load(entities))
+                .addMethod(loaders.loadSlot())
+                .addMethod(loaders.inOrder())
+                .addMethod(loaders.slotEnv())
+                .addMethod(buildResolveTypeMethod())
+                .addMethod(buildTypenameForTypeIdMethod(entities, LOAD_METHOD));
+            for (var entity : entities) {
+                spec.addMethod(loaders.loadType(entity));
+                for (int i = 0; i < entity.alternatives().size(); i++) {
+                    var alt = entity.alternatives().get(i);
+                    if (!alt.resolvable()) continue;
+                    spec.addMethod(loaders.batch(entity, i));
+                    spec.addMethod(buildSelectMethod(entity, alt, i, outputPackage, null));
+                }
+            }
+            return List.of(spec.build());
+        }
+
+        var tenantKey = shape.tenantKey().orElseThrow();
+        spec.addMethod(buildFetchEntitiesMethod(outputPackage))
+            .addMethod(buildResolveByRepsMethod(entities))
             .addMethod(buildResolveTypeMethod())
-            .addMethod(buildTypenameForTypeIdMethod(entities))
+            .addMethod(buildTypenameForTypeIdMethod(entities, RESOLVE_BY_REPS_METHOD))
             .addMethod(buildContextHelper(graphitronContext));
 
         for (var entity : entities) {
-            HandleMethodBody.TenantRouting routing = multiTenant
-                ? new HandleMethodBody.TenantRouting(ownedConnections,
-                    tenantRouting.boundOf(entity.typeName()).orElse(null), tenantKey.orElseThrow())
-                : null;
+            // Each tenant-scoped entity's grouping widens per tenant at its classified tenant
+            // sources; global entities read the default source.
+            var routing = new HandleMethodBody.TenantRouting(ownedConnections,
+                tenantRouting.boundOf(entity.typeName()).orElse(null), tenantKey);
             spec.addMethod(buildHandleMethod(entity, outputPackage, nodeIdEncoder, routing));
-            var bound = routing == null ? null : routing.bound();
+            var bound = routing.bound();
             for (int i = 0; i < entity.alternatives().size(); i++) {
                 var alt = entity.alternatives().get(i);
                 if (!alt.resolvable()) continue;
@@ -223,7 +267,7 @@ public final class EntityFetcherDispatchClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildResolveByRepsMethod(List<EntityKeyQuery.Entity> entities, boolean multiTenant) {
+    private static MethodSpec buildResolveByRepsMethod(List<EntityKeyQuery.Entity> entities) {
         var listOfMap = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class)));
         return MethodSpec.methodBuilder(RESOLVE_BY_REPS_METHOD)
@@ -231,28 +275,24 @@ public final class EntityFetcherDispatchClassGenerator {
             .returns(com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class)))
             .addParameter(listOfMap, "reps")
             .addParameter(ENV, "env")
-            .addJavadoc("Synchronous dispatch core. Takes a representations list directly\n"
-                + "(not via {@code DataFetchingEnvironment.getArgument}) so callers like\n"
+            .addJavadoc("Synchronous dispatch core of a multi-tenant build. Takes a representations list\n"
+                + "directly (not via {@code DataFetchingEnvironment.getArgument}) so callers like\n"
                 + "{@code QueryNodeFetcher.rowsNodes} can synthesise reps from a list of\n"
                 + "Relay node ids and reuse the same SELECT path.\n"
-                + "Returns an {@code Object[]} sized to {@code reps.size()}; "
-                + (multiTenant
-                    ? "entries are\n"
-                        + "{@code DataFetcherResult<Record>}s for resolved reps or {@code null} for unresolved.\n"
-                        + "Each is the field value graphql-java completes for its rep: a tenant-scoped\n"
-                        + "entity's carries the tenant its rep names as {@code localContext}, so the\n"
-                        + "entity's subtree reads that tenant; a global entity's carries none. Return\n"
-                        + "entries as received; wrapping one again hides its row from type resolution.\n"
-                    : "entries are\n"
-                        + "jOOQ {@code Record}s for resolved reps or {@code null} for unresolved.\n"))
+                + "Returns an {@code Object[]} sized to {@code reps.size()}; entries are\n"
+                + "{@code DataFetcherResult<Record>}s for resolved reps or {@code null} for unresolved.\n"
+                + "Each is the field value graphql-java completes for its rep: a tenant-scoped\n"
+                + "entity's carries the tenant its rep names as {@code localContext}, so the\n"
+                + "entity's subtree reads that tenant; a global entity's carries none. Return\n"
+                + "entries as received; wrapping one again hides its row from type resolution.\n")
             .addCode(resolveByRepsBody(entities))
             .build();
     }
 
-    private static MethodSpec buildTypenameForTypeIdMethod(List<EntityKeyQuery.Entity> entities) {
+    private static MethodSpec buildTypenameForTypeIdMethod(List<EntityKeyQuery.Entity> entities, String dispatch) {
         // Map keyed by each @node entity's NodeId expectedTypeId (differs from the typename when
-        // the consumer sets @node(typeId: ...)). Used by QueryNodeFetcher.rowsNodes after
-        // peekTypeId to recover the GraphQL typename for synthesising reps.
+        // the consumer sets @node(typeId: ...)). Used by QueryNodeFetcher after peekTypeId to
+        // recover the GraphQL typename for synthesising reps.
         var b = CodeBlock.builder();
         b.add("$T<String, String> $L = $T.ofEntries(",
             MAP, "MAP", MAP);
@@ -281,8 +321,8 @@ public final class EntityFetcherDispatchClassGenerator {
             .addParameter(String.class, "typeId")
             .addJavadoc("Returns the GraphQL typename for a given NodeId typeId prefix, or\n"
                 + "{@code null} when no {@code @node} type matches. Used by\n"
-                + "{@code QueryNodeFetcher.rowsNodes} to synthesise representations from\n"
-                + "Relay ids before dispatching to {@link #" + RESOLVE_BY_REPS_METHOD + "}.\n")
+                + "{@code QueryNodeFetcher} to synthesise representations from\n"
+                + "Relay ids before dispatching to {@link #" + dispatch + "}.\n")
             .addStatement("if (typeId == null) return null")
             .addCode(fieldInit)
             .addStatement("return MAP.get(typeId)")
@@ -379,6 +419,249 @@ public final class EntityFetcherDispatchClassGenerator {
 
         CodeBlock body() {
             return HandleMethodBody.emit(entity, nodeIdEncoder, routing);
+        }
+    }
+
+    /**
+     * The read path of a build without a tenant column: every representation's entity is read through
+     * the loader for its (type, key alternative, connection key), so {@code _entities},
+     * {@code Query.node} and {@code Query.nodes} read an entity one way and batch per type and
+     * alternative under the request's {@code DataLoaderOptions}.
+     */
+    private static final class EntityLoaders {
+        final String outputPackage;
+        final ClassName nodeIdEncoder;
+        final ClassName ownedConnections;
+        final ClassName connectionKey;
+        final ClassName errorRouter;
+        final ClassName clientException;
+
+        EntityLoaders(String outputPackage, ClassName nodeIdEncoder, ClassName ownedConnections) {
+            this.outputPackage = outputPackage;
+            this.nodeIdEncoder = nodeIdEncoder;
+            this.ownedConnections = ownedConnections;
+            this.connectionKey = ConnectionKeyShape.className(outputPackage);
+            this.errorRouter = no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.routerClass(outputPackage);
+            var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
+            this.clientException = ClassName.get(clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
+        }
+
+        private static TypeName listOf(TypeName element) {
+            return ParameterizedTypeName.get(LIST, element);
+        }
+
+        private static TypeName slotResult() {
+            return ParameterizedTypeName.get(DATA_FETCHER_RESULT, ClassName.get(Object.class));
+        }
+
+        private static TypeName listResult() {
+            return ParameterizedTypeName.get(DATA_FETCHER_RESULT, listOf(ClassName.get(Object.class)));
+        }
+
+        private static TypeName repType() {
+            return ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class));
+        }
+
+        MethodSpec fetchEntities() {
+            var listOfObject = listOf(ClassName.get(Object.class));
+            var b = CodeBlock.builder();
+            b.addStatement("$T<?> received = env.getArgument($S)", LIST, "representations");
+            b.beginControlFlow("if (received == null || received.isEmpty())");
+            b.addStatement("return $T.completedFuture($T.<$T>newResult().data($T.of()).build())",
+                CF, DATA_FETCHER_RESULT, listOfObject, LIST);
+            b.endControlFlow();
+            b.addStatement("$T<$T<$T>> slots = new $T<>(received.size())", LIST, CF, slotResult(), ARRAY_LIST);
+            b.beginControlFlow("for (int i = 0; i < received.size(); i++)");
+            b.addStatement("Object rep = received.get(i)");
+            b.addStatement("Object tn = rep instanceof $T<?, ?> fields ? fields.get($S) : null", MAP, TYPENAME_COLUMN);
+            b.beginControlFlow("if (tn instanceof String typeName && $L.contains(typeName))", RESOLVABLE_TYPENAMES_FIELD);
+            b.addStatement("slots.add($L(($T) rep, env, i))", LOAD_SLOT_METHOD, repType());
+            b.addStatement("continue");
+            b.endControlFlow();
+            b.add("// A representation this subgraph does not resolve keeps its slot null and gets an error\n");
+            b.add("// there; it reaches no loader, so it takes no connection and fires no SQL.\n");
+            b.addStatement("String message = tn instanceof String named ? String.format($S, named) : $S",
+                UNRESOLVABLE_TYPENAME_MESSAGE, MISSING_TYPENAME_MESSAGE);
+            b.addStatement("slots.add($T.completedFuture($T.<Object>newResult()"
+                + ".error($T.clientErrorAt(new $T(message), env, i)).build()))",
+                CF, DATA_FETCHER_RESULT, errorRouter, clientException);
+            b.endControlFlow();
+            b.addStatement("return $L(slots)", IN_ORDER_METHOD);
+            return MethodSpec.methodBuilder(FETCH_ENTITIES_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class).addMember("value", "$S", "unchecked").build())
+                .returns(ParameterizedTypeName.get(CF, listResult()))
+                .addParameter(ENV, "env")
+                .addJavadoc("The {@code _entities} data fetcher. Answers one slot per representation, in the\n"
+                    + "order received. A representation that is not an object with a string\n"
+                    + "{@code __typename}, or whose {@code __typename} is not in {@link #$L} (a type this\n"
+                    + "schema does not declare, or an entity whose every key is {@code resolvable: false}),\n"
+                    + "gets {@code null} and a client error located at its slot\n"
+                    + "({@code [\"_entities\", <index>]}); the router only sends a subgraph the types it\n"
+                    + "declared resolvable, so either means the supergraph and this subgraph disagree. Every\n"
+                    + "other representation is read through {@link #$L}, which answers {@code null} with no\n"
+                    + "error for one that names no row; a batch that fails answers {@code null} and an error\n"
+                    + "at each of its own slots, and no other.\n",
+                    RESOLVABLE_TYPENAMES_FIELD, LOAD_METHOD)
+                .addCode(b.build())
+                .build();
+        }
+
+        MethodSpec load(List<EntityKeyQuery.Entity> entities) {
+            var b = CodeBlock.builder();
+            b.addStatement("Object tn = rep == null ? null : rep.get($S)", TYPENAME_COLUMN);
+            b.beginControlFlow("if (!(tn instanceof String typeName))");
+            b.addStatement("return $T.completedFuture(null)", CF);
+            b.endControlFlow();
+            for (var entity : entities) {
+                b.beginControlFlow("if ($S.equals(typeName))", entity.typeName());
+                b.addStatement("return load$L(rep, env)", entity.typeName());
+                b.endControlFlow();
+            }
+            b.addStatement("return $T.completedFuture(null)", CF);
+            return MethodSpec.methodBuilder(LOAD_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, RECORD))
+                .addParameter(repType(), "rep")
+                .addParameter(ENV, "env")
+                .addJavadoc("Reads one representation's entity through the loader for its type, its\n"
+                    + "most-specific key alternative and its connection key, the one way {@code _entities},\n"
+                    + "{@code Query.node} and {@code Query.nodes} read an entity. Completes with the row, or\n"
+                    + "{@code null} when the representation names no row: no known {@code __typename}, no\n"
+                    + "matching alternative, a key value that is not a value of its column, or a connection\n"
+                    + "key the request's source refuses.\n"
+                    + "@param rep the representation, {@code __typename} and the key fields\n"
+                    + "@param env the dispatching field's environment\n")
+                .addCode(b.build())
+                .build();
+        }
+
+        MethodSpec loadType(EntityKeyQuery.Entity entity) {
+            var b = CodeBlock.builder();
+            var skip = CodeBlock.of("return $T.completedFuture(null)", CF);
+            var loaderType = ParameterizedTypeName.get(DATA_LOADER, listOf(ClassName.get(Object.class)), RECORD);
+            HandleMethodBody.emitAlternativeCascade(b, entity, nodeIdEncoder, skip, (arm, alt, altIndex) -> {
+                // Every representation's key has no parts in a build without a tenant column.
+                arm.addStatement("$T key = $T.defaultSource()", connectionKey, connectionKey);
+                var batchLambda = CodeBlock.of("($T keys, $T batchEnv) -> batch$LAlt$L(keys, batchEnv, key)",
+                    listOf(listOf(ClassName.get(Object.class))), BATCH_LOADER_ENV, entity.typeName(), altIndex);
+                arm.add("$T loader = repEnv.getDataLoaderRegistry().computeIfAbsent(\n", loaderType);
+                arm.add("    $T.entityLoaderName(repEnv, $S, $L, key),\n", ownedConnections, entity.typeName(), altIndex);
+                arm.add("    name -> $L);\n", LoaderConstruction.positional(batchLambda, "repEnv", errorRouter));
+                arm.addStatement("return loader.load($T.asList(cols), repEnv)", ARRAYS);
+            });
+            b.addStatement("return $T.completedFuture(null)", CF);
+            return MethodSpec.methodBuilder("load" + entity.typeName())
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, RECORD))
+                .addParameter(repType(), "rep")
+                .addParameter(ENV, "env")
+                .addCode(b.build())
+                .build();
+        }
+
+        MethodSpec batch(EntityKeyQuery.Entity entity, int altIndex) {
+            var listOfObject = listOf(ClassName.get(Object.class));
+            var bindingsType = listOf(ArrayTypeName.of(ClassName.get(Object.class)));
+            var b = CodeBlock.builder();
+            b.beginControlFlow("try");
+            b.addStatement("$T contexts = batchEnv.getKeyContextsList()", listOfObject);
+            b.addStatement("$T firstEnv = ($T) contexts.get(0)", ENV, ENV);
+            b.addStatement("$T[] result = new $T[keys.size()]", RECORD, RECORD);
+            b.add("// A key the request's source refuses, now or earlier in the request, answers every slot\n");
+            b.add("// null with no error, exactly as an id that names no row; it cannot be used to probe.\n");
+            b.addStatement("$T dsl = $T.dslForIfPermitted(firstEnv, key)", DSL_CONTEXT, ownedConnections);
+            b.beginControlFlow("if (dsl != null)");
+            b.addStatement("$T bindings = new $T<>(keys.size())", bindingsType, ARRAY_LIST);
+            b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
+            b.addStatement("bindings.add(new Object[]{i, keys.get(i).toArray(), contexts.get(i)})");
+            b.endControlFlow();
+            b.addStatement("select$LAlt$L(bindings, firstEnv, dsl, result)", entity.typeName(), altIndex);
+            b.endControlFlow();
+            b.addStatement("return $T.completedFuture($T.asList(result))", CF, ARRAYS);
+            b.nextControlFlow("catch ($T thrown)", Exception.class);
+            b.add("// The loader's function may not throw: a throw becomes the batch's failed future, which\n");
+            b.add("// fails this batch's slots and no other.\n");
+            b.addStatement("return $T.failedFuture(thrown)", CF);
+            b.endControlFlow();
+            return MethodSpec.methodBuilder("batch" + entity.typeName() + "Alt" + altIndex)
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, listOf(RECORD)))
+                .addParameter(listOf(listOfObject), "keys")
+                .addParameter(BATCH_LOADER_ENV, "batchEnv")
+                .addParameter(connectionKey, "key")
+                .addCode(b.build())
+                .build();
+        }
+
+        MethodSpec loadSlot() {
+            var b = CodeBlock.builder();
+            b.addStatement("$T<$T> loaded", CF, RECORD);
+            b.beginControlFlow("try");
+            b.addStatement("loaded = $L(rep, env)", LOAD_METHOD);
+            b.nextControlFlow("catch ($T thrown)", Exception.class);
+            b.addStatement("loaded = $T.failedFuture(thrown)", CF);
+            b.endControlFlow();
+            b.addStatement("return loaded.handle((value, thrown) -> thrown == null\n"
+                + "    ? $T.<Object>newResult().data(value).build()\n"
+                + "    : $T.<Object>surfaceClientErrorOrRedact(thrown, slotEnv(env, index)))",
+                DATA_FETCHER_RESULT, errorRouter);
+            return MethodSpec.methodBuilder(LOAD_SLOT_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, slotResult()))
+                .addParameter(repType(), "rep")
+                .addParameter(ENV, "env")
+                .addParameter(int.class, "index")
+                .addJavadoc("One slot of a list field reading entities: {@link #$L}, its failure answered at\n"
+                    + "the slot, {@code null} plus the error surfaced or redacted at the slot's path, so a\n"
+                    + "failed batch takes down only its own slots.\n"
+                    + "@param rep the slot's representation\n"
+                    + "@param env the list field's environment\n"
+                    + "@param index the slot's index in the list\n", LOAD_METHOD)
+                .addCode(b.build())
+                .build();
+        }
+
+        MethodSpec inOrder() {
+            var slotsType = listOf(ParameterizedTypeName.get(CF, slotResult()));
+            var b = CodeBlock.builder();
+            b.add("return $T.allOf(slots.toArray(new $T<?>[0])).thenApply(done -> {\n", CF, CF);
+            b.indent();
+            b.addStatement("$T<Object> data = new $T<>(slots.size())", LIST, ARRAY_LIST);
+            b.addStatement("$T<$T> errors = new $T<>()", LIST, GRAPHQL_ERROR, ARRAY_LIST);
+            b.beginControlFlow("for ($T<$T> slot : slots)", CF, slotResult());
+            b.addStatement("$T answered = slot.join()", slotResult());
+            b.addStatement("data.add(answered.getData())");
+            b.addStatement("errors.addAll(answered.getErrors())");
+            b.endControlFlow();
+            b.addStatement("return $T.<$T>newResult().data(data).errors(errors).build()",
+                DATA_FETCHER_RESULT, listOf(ClassName.get(Object.class)));
+            b.unindent();
+            b.add("});\n");
+            return MethodSpec.methodBuilder(IN_ORDER_METHOD)
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(ParameterizedTypeName.get(CF, listResult()))
+                .addParameter(slotsType, "slots")
+                .addJavadoc("The list field's result from its slots, in order: each slot's value, and every\n"
+                    + "slot's errors appended. Every slot answers its own failure, so none fails here.\n"
+                    + "@param slots the slots, in list order\n")
+                .addCode(b.build())
+                .build();
+        }
+
+        MethodSpec slotEnv() {
+            return MethodSpec.methodBuilder("slotEnv")
+                .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+                .returns(ENV)
+                .addParameter(ENV, "env")
+                .addParameter(int.class, "index")
+                .addStatement("$T step = env.getExecutionStepInfo()", STEP_INFO)
+                .addStatement("return $T.newDataFetchingEnvironment(env)"
+                    + ".executionStepInfo(step.transform(b -> b.path(step.getPath().segment(index)))).build()",
+                    ENV_IMPL)
+                .addJavadoc("The list field's environment placed at slot {@code index}, so an error built from it\n"
+                    + "sits at that slot's path.\n")
+                .build();
         }
     }
 

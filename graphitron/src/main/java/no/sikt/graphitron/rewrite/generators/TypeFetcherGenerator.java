@@ -5792,23 +5792,30 @@ public class TypeFetcherGenerator {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
         TypeName valueType = RECORD;
+        if (!multiTenant(ctx)) {
+            // The node is read through the entity loader, so the field is asynchronous; a failed
+            // read is routed as any loader-backed field's is.
+            return MethodSpec.methodBuilder(field.name())
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(asyncResultType(valueType))
+                .addParameter(ENV, "env")
+                .addCode(CodeBlock.builder()
+                    .add("return $T.$L(env)\n", queryNodeFetcher,
+                        no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD)
+                    .add("    ").add(asyncWrapTail(valueType, outputPackage)).add(";\n")
+                    .build())
+                .build();
+        }
         var builder = MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
-        if (multiTenant(ctx)) {
-            // The dispatcher's envelope is the field value as is: it carries the node's tenant
-            // down to its subtree, and wrapping it again would nest one envelope in another,
-            // which graphql-java does not unwrap.
-            builder.addStatement("return $T.$L(env)", queryNodeFetcher,
-                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
-        } else {
-            builder.addStatement("$T payload = $T.$L(env)",
-                valueType, queryNodeFetcher,
-                no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
-            builder.addCode(returnSyncSuccess(valueType, "payload"));
-        }
+        // The dispatcher's envelope is the field value as is: it carries the node's tenant
+        // down to its subtree, and wrapping it again would nest one envelope in another,
+        // which graphql-java does not unwrap.
+        builder.addStatement("return $T.$L(env)", queryNodeFetcher,
+            no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_METHOD);
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
         builder.endControlFlow();
@@ -5818,10 +5825,24 @@ public class TypeFetcherGenerator {
     private static MethodSpec buildQueryNodesFetcher(TypeFetcherEmissionContext ctx, QueryField.QueryNodesField field, String outputPackage) {
         var queryNodeFetcher = ClassName.get(outputPackage + ".fetchers",
             no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.CLASS_NAME);
+        if (!multiTenant(ctx)) {
+            // The dispatcher answers the list's result itself, each element null with an error at
+            // its own path when its batch failed; only a throw outside every slot is routed here.
+            TypeName valueType = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
+            return MethodSpec.methodBuilder(field.name())
+                .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+                .returns(asyncResultType(valueType))
+                .addParameter(ENV, "env")
+                .addCode(CodeBlock.builder()
+                    .add("return $T.$L(env)\n", queryNodeFetcher,
+                        no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator.DISPATCH_NODES_METHOD)
+                    .add("    .exceptionally(t -> ").add(asyncRouterCall(outputPackage, "t")).add(");\n")
+                    .build())
+                .build();
+        }
         // Multi-tenant elements are the dispatcher's per-node envelopes, each handing its own
         // tenant down; the list itself is wrapped in the field's envelope as usual.
-        TypeName valueType = ParameterizedTypeName.get(LIST,
-            multiTenant(ctx) ? ClassName.get(Object.class) : RECORD);
+        TypeName valueType = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
         return MethodSpec.methodBuilder(field.name())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(asyncResultType(valueType))

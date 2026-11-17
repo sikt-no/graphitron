@@ -730,8 +730,7 @@ public class GraphQLRewriteGenerator {
             case ENTITY_FETCHER_DISPATCH -> {
                 var entities = no.sikt.graphitron.emit.EntityKeyQuery.read(store);
                 yield EntityFetcherDispatchClassGenerator.generate(entities,
-                    entityTenantRouting(schema, tenantKeyType, entities), Optional.ofNullable(tenantKeyType),
-                    outputPackage);
+                    entityTenantRouting(schema, tenantKeyType, entities), connectionKeyShape, outputPackage);
             }
             case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null,
                 ctx.maxAllowedPageSize());
@@ -754,7 +753,7 @@ public class GraphQLRewriteGenerator {
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage,
                 federationLink, connections, vouchers);
-            case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, tenantKeyType != null);
+            case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(outputPackage, connectionKeyShape);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
                 no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity, vouches);
             case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity, vouches);

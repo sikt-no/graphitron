@@ -286,6 +286,94 @@ class OwnedConnectionsGeneratorTest {
             .hasMessageContaining("Graphitron.newExecutionInput(dsl, ...)");
     }
 
+    @Test
+    void keyedDslFor_onTheEscapeHatch_answersTheKeyWithNoPartsWithTheSuppliedContext_andRefusesAKeyWithParts()
+            throws Throwable {
+        var supplied = org.jooq.impl.DSL.using(SQLDialect.POSTGRES);
+        var env = env(Map.of(org.jooq.DSLContext.class, supplied));
+
+        assertThat(keyedDslFor(env, defaultKey()))
+            .as("the escape hatch serves the key with no parts with the caller's own context")
+            .isSameAs(supplied);
+        assertThatThrownBy(() -> keyedDslFor(env, tenantKey("A")))
+            .as("a key with parts is a source's to serve, and the escape hatch has none")
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("needs graphitron's owned connections")
+            .hasMessageContaining("Graphitron.newOwnedExecutionInput");
+        assertThat(events).as("the escape hatch takes no connection of its own").isEmpty();
+    }
+
+    @Test
+    void keyedDslFor_refusesBothModesPresentAndNeither() throws Throwable {
+        Object tc = newOwnedConnections(Map.of());
+        var both = env(Map.of(ownedConnectionsClass, tc,
+            org.jooq.DSLContext.class, org.jooq.impl.DSL.using(SQLDialect.POSTGRES)));
+        assertThatThrownBy(() -> keyedDslFor(both, defaultKey()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("Both graphitron-owned acquisition and a caller-supplied DSLContext are present");
+        assertThatThrownBy(() -> keyedDslFor(env(Map.of()), defaultKey()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("No DSLContext available");
+        assertThat(events).as("neither refusal takes a connection").isEmpty();
+    }
+
+    @Test
+    void keyedDslFor_withTheCarrier_isTheCarriersEntryForTheKey() throws Throwable {
+        Object tc = newOwnedConnections(Map.of());
+        var env = env(Map.of(ownedConnectionsClass, tc));
+
+        Object first = keyedDslFor(env, defaultKey());
+        Object second = keyedDslFor(env, defaultKey());
+        assertThat(first).isNotNull().isSameAs(second);
+        assertThat(events)
+            .as("one connection for the key, pinned on first demand")
+            .containsExactly("getConnection:" + RecordingSource.DEFAULT, "connect:" + RecordingSource.DEFAULT);
+        releaseAll(tc);
+    }
+
+    @Test
+    void keyedDslForIfPermitted_aKeyTheSourceRefusesIsNull_nowAndRemembered() throws Throwable {
+        Object tc = newOwnedConnections(Map.of());
+        var env = env(Map.of(ownedConnectionsClass, tc));
+
+        assertThat(keyedDslForIfPermitted(env, tenantKey("Z"))).as("refused now").isNull();
+        assertThat(keyedDslForIfPermitted(env, tenantKey("Z"))).as("refused earlier in the request").isNull();
+        assertThat(keyedDslForIfPermitted(env, defaultKey())).as("a key the source serves").isNotNull();
+        releaseAll(tc);
+    }
+
+    // --- driving helpers -------------------------------------------------------------------------
+
+    private static graphql.schema.DataFetchingEnvironment env(Map<?, ?> context) {
+        var graphQLContext = graphql.GraphQLContext.newContext();
+        context.forEach(graphQLContext::of);
+        return graphql.schema.DataFetchingEnvironmentImpl.newDataFetchingEnvironment()
+            .graphQLContext(graphQLContext.build())
+            .build();
+    }
+
+    private static Object defaultKey() throws Throwable {
+        return invoke(() -> harness.load(SCHEMA_PACKAGE + ".ConnectionKey").getMethod("defaultSource").invoke(null));
+    }
+
+    private static Object tenantKey(Object tenant) throws Throwable {
+        return invoke(() -> harness.load(SCHEMA_PACKAGE + ".ConnectionKey").getMethod("forTenant", Object.class)
+            .invoke(null, tenant));
+    }
+
+    private static Object keyedDslFor(graphql.schema.DataFetchingEnvironment env, Object key) throws Throwable {
+        Class<?> keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
+        return invoke(() -> ownedConnectionsClass.getMethod("dslFor", graphql.schema.DataFetchingEnvironment.class, keyClass)
+            .invoke(null, env, key));
+    }
+
+    private static Object keyedDslForIfPermitted(graphql.schema.DataFetchingEnvironment env, Object key) throws Throwable {
+        Class<?> keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
+        return invoke(() -> ownedConnectionsClass.getMethod("dslForIfPermitted",
+                graphql.schema.DataFetchingEnvironment.class, keyClass)
+            .invoke(null, env, key));
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
 
     private static Object newRuntime() throws Throwable {

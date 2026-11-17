@@ -49,10 +49,11 @@ class GraphitronContextInterfaceGeneratorTest {
         assertThat(method.parameters()).hasSize(1);
         assertThat(method.parameters().get(0).type().toString())
             .isEqualTo("graphql.schema.DataFetchingEnvironment");
-        // GetDslContext is a default method now; the impl reads off the GraphQLContext.
+        // A default method delegating to the carrier's one acquisition point on the key with no
+        // parts, which tells the owned path from the escape hatch.
         assertThat(method.modifiers()).contains(Modifier.DEFAULT);
         assertThat(method.code().toString())
-            .contains("env.getGraphQlContext().get(org.jooq.DSLContext.class)");
+            .contains("OwnedConnections.dslFor(env, ConnectionKey.defaultSource())");
     }
 
     @Test

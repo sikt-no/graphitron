@@ -45,42 +45,17 @@ public class GraphitronContextInterfaceGenerator {
         // precedent below).
         var ownedConnections = ClassName.bestGuess(
             ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
+        var connectionKey = ClassName.bestGuess(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME);
         var getDslContext = MethodSpec.methodBuilder("getDslContext")
             .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
             .returns(DSL_CONTEXT)
             .addParameter(ENV, "env")
-            .addStatement("$T carrier = env.getGraphQlContext().get($T.class)",
-                ownedConnections, ownedConnections)
-            .addStatement("$T supplied = env.getGraphQlContext().get($T.class)", DSL_CONTEXT, DSL_CONTEXT)
-            .beginControlFlow("if (carrier != null && supplied != null)")
-            .addComment("The mismatched pair, named as such: the operation was built with the escape-hatch")
-            .addComment("factory (which published the typed DSLContext key) but executed through the")
-            .addComment("owned-connection engine (which published the carrier). One mode, one factory.")
-            .addStatement("throw new $T($S)", IllegalStateException.class,
-                "Both graphitron-owned acquisition and a caller-supplied DSLContext are present: the"
-                    + " operation was built with Graphitron.newExecutionInput(dsl, ...) but executed"
-                    + " through GraphitronRuntime.newGraphQL(...). Pick one mode: newOwnedExecutionInput"
-                    + " with runtime.newGraphQL(schema), or newExecutionInput(dsl) with"
-                    + " Graphitron.newGraphQL().")
-            .endControlFlow()
-            .beginControlFlow("if (carrier != null)")
-            .addComment("Owned path: a carrier resolution, pinning on first demand (lazy on every path).")
-            .addStatement("return $T.dslDefault(env)", ownedConnections)
-            .endControlFlow()
-            .beginControlFlow("if (supplied != null)")
-            .addStatement("return supplied")
-            .endControlFlow()
-            .addStatement("throw new $T($S)", IllegalStateException.class,
-                "No DSLContext available: the operation ran through neither graphitron-owned"
-                    + " acquisition (Graphitron.newOwnedExecutionInput(...) with"
-                    + " GraphitronRuntime.newGraphQL(schema)) nor the escape hatch"
-                    + " (Graphitron.newExecutionInput(dsl, ...) with Graphitron.newGraphQL()).")
-            .addJavadoc("Returns the per-request jOOQ {@code DSLContext}. On the owned path this is a\n"
-                + "carrier resolution (the connection pins on first demand); on the escape-hatch path it\n"
-                + "is the caller-supplied context under the typed {@code DSLContext.class} key, which\n"
-                + "belongs to that factory alone. The two modes are distinguished structurally: carrier\n"
-                + "present is owned, typed key present is the escape hatch, both present is the\n"
-                + "mismatched factory/engine pair and neither is a silent null.\n")
+            .addStatement("return $T.dslFor(env, $T.defaultSource())", ownedConnections, connectionKey)
+            .addJavadoc("Returns the per-request jOOQ {@code DSLContext} on the key with no parts: the carrier's\n"
+                + "one acquisition point, {@code OwnedConnections.dslFor(env, key)}, which tells the owned path\n"
+                + "(a carrier resolution, the connection pinning on first demand) from the escape hatch (the\n"
+                + "caller-supplied context under the typed {@code DSLContext.class} key) and refuses both\n"
+                + "present or neither.\n")
             .build();
 
         var getContextArgument = MethodSpec.methodBuilder("getContextArgument")

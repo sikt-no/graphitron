@@ -19,19 +19,24 @@ import java.util.List;
  * {@code Query.node(id: ID!): Node} and {@code Query.nodes(ids: [ID!]!)} fields.
  *
  * <p>The emitted class lives next to the per-type {@code *Fetchers} classes for discoverability.
- * The static {@code getNode(env)} method reads the {@code id} argument, extracts the
- * {@code typeId} prefix via {@code NodeIdEncoder.peekTypeId(id)} (the generated decode helper
- * next to {@link NodeIdEncoderClassGenerator}), and dispatches through
- * {@code EntityFetcherDispatch.resolveByReps} (see {@link EntityFetcherDispatchClassGenerator}),
- * which SELECTs the requested fields plus a synthetic {@code __typename} column read by the
- * {@code Node} {@code TypeResolver} at scatter time. Null arguments, base64 decoding errors,
- * and unknown {@code typeId}s all return {@code null} per the Relay "if no such object exists,
- * the field returns null" contract; opacity says we never leak decoding errors back to the
- * client.
+ * {@code getNode(env)} reads the {@code id} argument, extracts the {@code typeId} prefix via
+ * {@code NodeIdEncoder.peekTypeId(id)} (the generated decode helper next to
+ * {@link NodeIdEncoderClassGenerator}), recovers the typename through
+ * {@code EntityFetcherDispatch.typenameForTypeId} and reads the representation
+ * {@code {__typename, id}} the way {@code _entities} reads one (see
+ * {@link EntityFetcherDispatchClassGenerator}): in a build without a tenant column through
+ * {@code EntityFetcherDispatch.load}, the loader per (type, alternative, connection key), and
+ * {@code getNodes} does so per id, each slot answering its own failure. A multi-tenant build
+ * dispatches through {@code EntityFetcherDispatch.resolveByReps} instead, {@code nodes} batching
+ * the ids per path into {@code rowsNodes}. Every arm SELECTs the requested fields plus a synthetic
+ * {@code __typename} column read by the {@code Node} {@code TypeResolver}. Null arguments, base64
+ * decoding errors, and unknown {@code typeId}s all return {@code null} per the Relay "if no such
+ * object exists, the field returns null" contract; opacity says we never leak decoding errors back
+ * to the client.
  *
  * <p>Whether the class is emitted at all is the plan's to say; what it holds does not depend on which
  * types are nodes, those being {@code EntityFetcherDispatch}'s to know, so the only fact it takes is
- * whether the build is multi-tenant.
+ * the build's connection key shape, whose tenant part decides the read path.
  */
 public class QueryNodeFetcherClassGenerator {
 
@@ -85,10 +90,16 @@ public class QueryNodeFetcherClassGenerator {
     }
 
     /**
-     * The {@code QueryNodeFetcher} class. {@code multiTenant} says whether the build routes per tenant,
-     * which makes each resolved node a {@code DataFetcherResult} carrying its tenant.
+     * The {@code QueryNodeFetcher} class. {@code shape}'s tenant part says whether the build routes per
+     * tenant, which keeps the synchronous dispatch and makes each resolved node a
+     * {@code DataFetcherResult} carrying its tenant; without one, nodes are read through the entity
+     * loaders.
      */
-    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
+    public static List<TypeSpec> generate(String outputPackage, no.sikt.graphitron.emit.ConnectionKeyShape shape) {
+        if (!shape.writesSlot()) {
+            return List.of(untenanted(outputPackage));
+        }
+
         var fieldWildcard    = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
         var graphitronContext = ClassName.get(outputPackage + ".schema", "GraphitronContext");
@@ -100,13 +111,10 @@ public class QueryNodeFetcherClassGenerator {
         // A multi-tenant build's resolveByReps slots are DataFetcherResult<Record> envelopes, each
         // carrying its row's tenant when its group was routed per tenant. node hands the envelope
         // back as its field value and nodes keeps each one as a list element, so neither wraps a
-        // slot again (graphql-java unwraps one level per value). Single-tenant slots stay bare
-        // Records, and so does this emission.
-        TypeName nodeResult = multiTenant ? ParameterizedTypeName.get(DATA_FETCHER_RESULT, RECORD) : RECORD;
-        TypeName rowType = multiTenant ? ClassName.get(Object.class) : RECORD;
-        CodeBlock noNode = multiTenant
-            ? CodeBlock.of("$T.<$T>newResult().build()", DATA_FETCHER_RESULT, RECORD)
-            : CodeBlock.of("null");
+        // slot again (graphql-java unwraps one level per value).
+        TypeName nodeResult = ParameterizedTypeName.get(DATA_FETCHER_RESULT, RECORD);
+        TypeName rowType = ClassName.get(Object.class);
+        CodeBlock noNode = CodeBlock.of("$T.<$T>newResult().build()", DATA_FETCHER_RESULT, RECORD);
 
         // fetchById: synthesise a single rep from id, dispatch through the entity dispatcher,
         // return the resolved slot (or no node when typeId/decode/SELECT yields nothing, or the
@@ -125,15 +133,11 @@ public class QueryNodeFetcherClassGenerator {
             .addStatement("Object[] result = $T.$L($T.of($T.of($S, typename, $S, id)), env)",
                 entityDispatch, EntityFetcherDispatchClassGenerator.RESOLVE_BY_REPS_METHOD,
                 LIST, MAP, "__typename", "id");
-        if (multiTenant) {
-            fetchById
-                .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
-                    .addMember("value", "$S", "unchecked").build())
-                .addComment("Every non-null slot of a multi-tenant resolveByReps is a DataFetcherResult<Record>.")
-                .addStatement("return result[0] == null ? $L : ($T) result[0]", noNode, nodeResult);
-        } else {
-            fetchById.addStatement("return ($T) result[0]", RECORD);
-        }
+        fetchById
+            .addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                .addMember("value", "$S", "unchecked").build())
+            .addComment("Every non-null slot of a multi-tenant resolveByReps is a DataFetcherResult<Record>.")
+            .addStatement("return result[0] == null ? $L : ($T) result[0]", noNode, nodeResult);
 
         var dispatch = MethodSpec.methodBuilder(DISPATCH_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -142,10 +146,8 @@ public class QueryNodeFetcherClassGenerator {
             .addJavadoc("Dispatches a Relay {@code Query.node(id:)} call to the matching\n"
                 + "{@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType NodeType} table.\n"
                 + "Returns {@code null} for null/garbage/unknown IDs (Relay spec).\n"
-                + (multiTenant
-                    ? "In a multi-tenant build the node arrives as the field's {@code DataFetcherResult},\n"
-                        + "carrying the tenant its id names down to its subtree; no node is an empty one.\n"
-                    : ""))
+                + "In a multi-tenant build the node arrives as the field's {@code DataFetcherResult},\n"
+                + "carrying the tenant its id names down to its subtree; no node is an empty one.\n")
             .addStatement("$T id = env.getArgument($S)", String.class, "id")
             .addStatement("if (id == null) return $L", noNode)
             .addStatement("return fetchById(env, id)")
@@ -190,14 +192,10 @@ public class QueryNodeFetcherClassGenerator {
             // segment here: ids are undecoded at the loader boundary, and the dispatcher
             // partitions the batch per decoded tenant downstream, so the batch itself may span
             // tenants safely.
-            .addCode(multiTenant
-                ? CodeBlock.builder().addStatement("$T path = $T.loaderName(env, $S)",
-                    String.class,
-                    ClassName.get(outputPackage + ".schema",
-                        ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME), "Query").build()
-                : CodeBlock.builder().addStatement(
-                    "$T path = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly())",
-                    String.class, String.class, "/").build())
+            .addStatement("$T path = $T.loaderName(env, $S)",
+                String.class,
+                ClassName.get(outputPackage + ".schema",
+                    ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME), "Query")
             .addCode("$T futures = ids.stream()\n", listOfCfRecord)
             .addCode("    .map(id -> {\n")
             .addCode("        if (id == null) return $T.completedFuture(($T) null);\n", COMPLETABLE_FUTURE, rowType)
@@ -251,10 +249,8 @@ public class QueryNodeFetcherClassGenerator {
                 EntityFetcherDispatchClassGenerator.RESOLVE_BY_REPS_METHOD)
             .addStatement("$T<$T> out = new $T<>(result.length)", LIST, rowType, ARRAY_LIST)
             .beginControlFlow("for (Object o : result)")
-                .addCode(multiTenant
-                    // Each element keeps its slot's envelope, so it hands its own tenant down.
-                    ? CodeBlock.builder().addStatement("out.add(o)").build()
-                    : CodeBlock.builder().addStatement("out.add(($T) o)", RECORD).build())
+                // Each element keeps its slot's envelope, so it hands its own tenant down.
+                .addStatement("out.add(o)")
             .endControlFlow()
             .addStatement("return out");
 
@@ -265,18 +261,7 @@ public class QueryNodeFetcherClassGenerator {
             .addStatement("return env.getGraphQlContext().get($T.class)", graphitronContext)
             .build();
 
-        // Type resolver for the Relay Node interface. Reads the synthetic __typename column
-        // (projected by every dispatcher select arm) and routes the result to the matching
-        // concrete GraphQLObjectType. Registered on GraphQLCodeRegistry as
-        // .typeResolver("Node", ...) by GraphitronSchema.build().
-        var registerResolver = MethodSpec.methodBuilder(REGISTER_RESOLVER_METHOD)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addParameter(CODE_REGISTRY_BLDR, "codeRegistry")
-            .addJavadoc("Registers the {@code Node} interface's {@code TypeResolver} on the\n"
-                + "shared {@code GraphQLCodeRegistry.Builder}. Reads the synthetic\n"
-                + "{@code __typename} column projected by {@link #" + DISPATCH_METHOD + "}.\n")
-            .addStatement(nodeTypeResolverRegistration())
-            .build();
+        var registerResolver = registerResolver();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -292,5 +277,109 @@ public class QueryNodeFetcherClassGenerator {
             .addMethod(contextHelper)
             .build();
         return List.of(spec);
+    }
+    /**
+     * Type resolver for the Relay Node interface. Reads the synthetic {@code __typename} column
+     * (projected by every dispatcher select arm) and routes the result to the matching concrete
+     * {@code GraphQLObjectType}. Registered on {@code GraphQLCodeRegistry} as
+     * {@code .typeResolver("Node", ...)} by {@code GraphitronSchema.build()}.
+     */
+    private static MethodSpec registerResolver() {
+        return MethodSpec.methodBuilder(REGISTER_RESOLVER_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addParameter(CODE_REGISTRY_BLDR, "codeRegistry")
+            .addJavadoc("Registers the {@code Node} interface's {@code TypeResolver} on the\n"
+                + "shared {@code GraphQLCodeRegistry.Builder}. Reads the synthetic\n"
+                + "{@code __typename} column projected by {@link #" + DISPATCH_METHOD + "}.\n")
+            .addStatement(nodeTypeResolverRegistration())
+            .build();
+    }
+
+    /**
+     * The class in a build without a tenant column: {@code node} and {@code nodes} build the
+     * representation {@code {__typename, id}} from each id and read it through
+     * {@code EntityFetcherDispatch.load}, the loader per (type, alternative, connection key) that
+     * {@code _entities} reads through, so an entity is read one way.
+     */
+    private static TypeSpec untenanted(String outputPackage) {
+        var nodeIdEncoder = ClassName.get(outputPackage + ".util", NodeIdEncoderClassGenerator.CLASS_NAME);
+        var entityDispatch = ClassName.get(outputPackage + ".util", EntityFetcherDispatchClassGenerator.CLASS_NAME);
+        var stringClass = ClassName.get(String.class);
+        var objectClass = ClassName.get(Object.class);
+        var repType = ParameterizedTypeName.get(MAP, stringClass, objectClass);
+        var listOfObject = ParameterizedTypeName.get(LIST, objectClass);
+        var slotResult = ParameterizedTypeName.get(DATA_FETCHER_RESULT, objectClass);
+        var listResult = ParameterizedTypeName.get(DATA_FETCHER_RESULT, listOfObject);
+
+        var representation = MethodSpec.methodBuilder("representationOf")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(repType)
+            .addParameter(String.class, "id")
+            .addStatement("if (id == null) return null")
+            .addStatement("$T typeId = $T.peekTypeId(id)", String.class, nodeIdEncoder)
+            .addStatement("if (typeId == null) return null")
+            .addStatement("$T typename = $T.$L(typeId)", String.class, entityDispatch,
+                EntityFetcherDispatchClassGenerator.TYPENAME_FOR_TYPE_ID_METHOD)
+            .addStatement("if (typename == null) return null")
+            .addStatement("return $T.<String, Object>of($S, typename, $S, id)", MAP, "__typename", "id")
+            .addJavadoc("The representation a Relay id names, {@code {__typename, id}}, or {@code null} for a\n"
+                + "null id, one whose type prefix does not decode, or one naming no {@code @node} type.\n"
+                + "Non-canonical id inputs need no re-encode round-trip: {@code Base64.getUrlDecoder}\n"
+                + "accepts both padded and unpadded forms.\n")
+            .build();
+
+        var dispatch = MethodSpec.methodBuilder(DISPATCH_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE, RECORD))
+            .addParameter(ENV, "env")
+            .addJavadoc("Dispatches a Relay {@code Query.node(id:)} call to the matching\n"
+                + "{@link no.sikt.graphitron.rewrite.model.GraphitronType.NodeType NodeType} table, through\n"
+                + "the entity loader {@code _entities} reads the same type through.\n"
+                + "Completes with {@code null} for null/garbage/unknown IDs (Relay spec).\n")
+            .beginControlFlow("try")
+            .addStatement("$T rep = representationOf(env.getArgument($S))", repType, "id")
+            .addStatement("if (rep == null) return $T.completedFuture(null)", COMPLETABLE_FUTURE)
+            .addStatement("return $T.$L(rep, env)", entityDispatch, EntityFetcherDispatchClassGenerator.LOAD_METHOD)
+            .nextControlFlow("catch ($T thrown)", Exception.class)
+            .addStatement("return $T.failedFuture(thrown)", COMPLETABLE_FUTURE)
+            .endControlFlow()
+            .build();
+
+        var dispatchNodes = MethodSpec.methodBuilder(DISPATCH_NODES_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE, listResult))
+            .addParameter(ENV, "env")
+            .addJavadoc("Dispatches a Relay {@code Query.nodes(ids:)} call: each id is read through the entity\n"
+                + "loader for its type, so ids batch per (type, alternative) into one SELECT each, under\n"
+                + "the request's batch size limit. Answers in id order; an element is {@code null} for a\n"
+                + "null/garbage/unknown id (Relay spec), and {@code null} with an error at its own path when\n"
+                + "its batch failed.\n")
+            .addStatement("$T<$T> ids = env.getArgument($S)", LIST, stringClass, "ids")
+            .beginControlFlow("if (ids == null || ids.isEmpty())")
+            .addStatement("return $T.completedFuture($T.<$T>newResult().data($T.of()).build())",
+                COMPLETABLE_FUTURE, DATA_FETCHER_RESULT, listOfObject, LIST)
+            .endControlFlow()
+            .addStatement("$T<$T<$T>> slots = new $T<>(ids.size())", LIST, COMPLETABLE_FUTURE, slotResult, ARRAY_LIST)
+            .beginControlFlow("for (int i = 0; i < ids.size(); i++)")
+            .addStatement("$T rep = representationOf(ids.get(i))", repType)
+            .addStatement("slots.add(rep == null\n"
+                + "    ? $T.completedFuture($T.<Object>newResult().build())\n"
+                + "    : $T.$L(rep, env, i))", COMPLETABLE_FUTURE, DATA_FETCHER_RESULT, entityDispatch,
+                EntityFetcherDispatchClassGenerator.LOAD_SLOT_METHOD)
+            .endControlFlow()
+            .addStatement("return $T.$L(slots)", entityDispatch, EntityFetcherDispatchClassGenerator.IN_ORDER_METHOD)
+            .build();
+
+        return TypeSpec.classBuilder(CLASS_NAME)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addJavadoc("Runtime dispatcher for the Relay {@code Query.node(id:)} and\n"
+                + "{@code Query.nodes(ids:)} fields. See\n"
+                + "{@link QueryNodeFetcherClassGenerator} for emission semantics.\n")
+            .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .addMethod(dispatch)
+            .addMethod(dispatchNodes)
+            .addMethod(registerResolver())
+            .addMethod(representation)
+            .build();
     }
 }

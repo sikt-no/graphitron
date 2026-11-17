@@ -265,7 +265,14 @@ public final class PlanCompileGraph {
                             precise(dispatch.unit(), target);
                         }
                         precise(dispatch.unit(), require(GlobalUnitKind.NODE_ID_ENCODER));
-                        precise(dispatch.unit(), require(GlobalUnitKind.GRAPHITRON_CONTEXT));
+                        // Every build acquires through the carrier. A build without a tenant column
+                        // keys its entity loaders by the connection key; a multi-tenant build's
+                        // grouping reaches the context helper instead, so each is the other's
+                        // over-approximation.
+                        runtimeUnit("OwnedConnections").ifPresent(t -> precise(dispatch.unit(), t));
+                        runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME)
+                            .ifPresent(ck -> declared(dispatch.unit(), ck));
+                        declared(dispatch.unit(), require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                         // Only a federation @key alternative coerces through the column trip
                         // directly; a node-id-only dispatch reaches it through the encoder.
                         declared(dispatch.unit(), require(GlobalUnitKind.COLUMN_VALUES));
@@ -326,8 +333,12 @@ public final class PlanCompileGraph {
                     });
                 }
                 // The context interface always names the per-operation carrier.
-                case GRAPHITRON_CONTEXT -> runtimeUnit("OwnedConnections")
-                    .ifPresent(t -> precise(units.get(0), t));
+                case GRAPHITRON_CONTEXT -> {
+                    runtimeUnit("OwnedConnections").ifPresent(t -> precise(units.get(0), t));
+                    // getDslContext asks the carrier for the key with no parts.
+                    runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME)
+                        .ifPresent(ck -> precise(units.get(0), ck));
+                }
                 // Every decode<Type> refuses a key value through the column trip.
                 case NODE_ID_ENCODER -> precise(units.get(0), require(GlobalUnitKind.COLUMN_VALUES));
                 case ENTITY_FETCHER_DISPATCH -> throw new IllegalStateException(
@@ -430,11 +441,12 @@ public final class PlanCompileGraph {
                 case QUERY_NODE_FETCHER -> {
                     var nodeFetcher = units.get(0);
                     precise(nodeFetcher, require(GlobalUnitKind.NODE_ID_ENCODER));
-                    precise(nodeFetcher, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                     refOf(GlobalUnitKind.ENTITY_FETCHER_DISPATCH).ifPresent(d -> precise(nodeFetcher, d));
-                    // dispatchNodes, emitted in every build that has the unit, builds its loader
-                    // with the router's options.
-                    precise(nodeFetcher, require(GlobalUnitKind.ERROR_ROUTER));
+                    // A multi-tenant build's dispatchNodes builds its own loader with the router's
+                    // options and keeps the context helper; a build without a tenant column reads
+                    // through the entity dispatch's loaders and names neither.
+                    declared(nodeFetcher, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
+                    declared(nodeFetcher, require(GlobalUnitKind.ERROR_ROUTER));
                 }
                 case FACADE -> {
                     var facade = units.get(0);

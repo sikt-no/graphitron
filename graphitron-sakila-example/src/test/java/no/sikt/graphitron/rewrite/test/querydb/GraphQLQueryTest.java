@@ -5393,6 +5393,40 @@ class GraphQLQueryTest {
         assertThat(QUERY_COUNT.get()).isEqualTo(2);
     }
 
+    @Test
+    void node_twoAliasedFieldsWithDifferentSelections_eachAnswersItsOwnSelection() {
+        // Each node field reads through its own loader, named by the field's path: one batch
+        // projects from its first field's selection, so two aliases selecting different fields of
+        // the same node must never share one.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        Map<String, Object> data = execute(
+            "{ a: node(id: \"" + c1 + "\") { ... on Customer { firstName } }"
+            + " b: node(id: \"" + c1 + "\") { ... on Customer { lastName } } }");
+        assertThat(data).extractingByKey("a", as(MAP))
+            .containsExactly(Map.entry("firstName", "Mary"));
+        assertThat(data).extractingByKey("b", as(MAP))
+            .containsExactly(Map.entry("lastName", "Smith"));
+    }
+
+    @Test
+    void nodeAndNodes_aSourceRefusingTheKey_answerNullWithNoError() {
+        // On the owned path a source refusing the key with no parts reads like an id that names
+        // no row: null, no error, so a refused key cannot be told from an absent one.
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String f1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 1);
+        var engine = Graphitron.runtime(org.jooq.SQLDialect.POSTGRES)
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        var refusing = Sources.main("{}", null, Map.of());
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(refusing, "{}", "test-user")
+            .query("{ node(id: \"" + c1 + "\") { __typename }"
+                + " nodes(ids: [\"" + f1 + "\", \"" + c1 + "\"]) { __typename } }")
+            .build());
+        assertThat(result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("node", null);
+        assertThat(data).extractingByKey("nodes", as(LIST)).containsExactly(null, null);
+    }
+
     // The per-tenant partition proof lives with the multi-tenant fixture: a nodes(ids:) batch
     // spanning tenants issues one tenant-homogeneous group per decoded tenant, proven with inferred
     // bindings (no getTenantId override) in

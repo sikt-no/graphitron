@@ -33,10 +33,19 @@ class FederationEntitiesDispatchTest {
 
     static DSLContext dsl;
     static GraphQL graphql;
+    static final java.util.concurrent.atomic.AtomicInteger QUERY_COUNT = new java.util.concurrent.atomic.AtomicInteger();
 
     @BeforeAll
     static void startDatabase() throws Exception {
         dsl = SakilaDatabase.dsl();
+        // Counts JDBC round-trips: the tests that care reset it before executing.
+        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
+            new org.jooq.ExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ctx) {
+                    QUERY_COUNT.incrementAndGet();
+                }
+            }));
 
         graphql = Graphitron.newGraphQL().build();
     }
@@ -689,5 +698,104 @@ class FederationEntitiesDispatchTest {
                 org.assertj.core.groups.Tuple.tuple(1, 1),
                 org.assertj.core.groups.Tuple.tuple(1, 2),
                 org.assertj.core.groups.Tuple.tuple(2, 1));
+    }
+    /**
+     * Entities are read through a loader per (type, key alternative, connection key): representations
+     * of two types and two alternatives, interleaved, answer in representation order, and each
+     * (type, alternative) group is one statement however many representations it holds.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_twoTypesTwoAlternatives_answerInOrderWithOneStatementPerGroup() {
+        String film1 = NodeIdEncoder.encode("Film", 1);
+        String film3 = NodeIdEncoder.encode("Film", 3);
+        String customer1 = NodeIdEncoder.encode("Customer", 1);
+        String customer2 = NodeIdEncoder.encode("Customer", 2);
+
+        QUERY_COUNT.set(0);
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Film { filmId } ... on Customer { customerId } } }",
+            Map.of("reps", List.of(
+                Map.of("__typename", "Film", "id", film1),
+                Map.of("__typename", "Customer", "id", customer2),
+                Map.of("__typename", "Film", "filmId", 2),
+                Map.of("__typename", "Film", "id", film3),
+                Map.of("__typename", "Customer", "id", customer1),
+                Map.of("__typename", "Film", "filmId", 4))));
+
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).extracting(e -> e.get("__typename"), e -> e.get("filmId"), e -> e.get("customerId"))
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Film", 1, null),
+                org.assertj.core.groups.Tuple.tuple("Customer", null, 2),
+                org.assertj.core.groups.Tuple.tuple("Film", 2, null),
+                org.assertj.core.groups.Tuple.tuple("Film", 3, null),
+                org.assertj.core.groups.Tuple.tuple("Customer", null, 1),
+                org.assertj.core.groups.Tuple.tuple("Film", 4, null));
+        assertThat(QUERY_COUNT.get())
+            .as("one statement per (type, alternative): Film by id, Film by filmId, Customer by id")
+            .isEqualTo(3);
+    }
+
+    /**
+     * A failed batch nulls only its own slots: the Customer batch's statement fails (its listener
+     * throws), its two slots answer null with an error at each one's own path, and the Film slots
+     * between them still answer their rows.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_aFailingBatch_nullsOnlyItsOwnSlots() {
+        DSLContext failing = dsl.configuration().derive(new org.jooq.impl.DefaultExecuteListenerProvider(
+            new org.jooq.ExecuteListener() {
+                @Override
+                public void executeStart(org.jooq.ExecuteContext ctx) {
+                    if (ctx.sql() != null && ctx.sql().contains("\"customer\"")) {
+                        throw new IllegalStateException("customer batch failed on purpose");
+                    }
+                }
+            })).dsl();
+        var result = graphql.execute(Graphitron.newExecutionInput(failing)
+            .query("query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+                + " __typename ... on Film { filmId } ... on Customer { customerId } } }")
+            .variables(Map.of("reps", List.of(
+                Map.of("__typename", "Customer", "id", NodeIdEncoder.encode("Customer", 1)),
+                Map.of("__typename", "Film", "id", NodeIdEncoder.encode("Film", 1)),
+                Map.of("__typename", "Customer", "id", NodeIdEncoder.encode("Customer", 2)))))
+            .build());
+
+        List<Map<String, Object>> entities = entitiesOf(result);
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0)).isNull();
+        assertThat(entities.get(1)).containsEntry("filmId", 1);
+        assertThat(entities.get(2)).isNull();
+        assertThat(result.getErrors()).extracting(GraphQLError::getPath)
+            .containsExactlyInAnyOrder(List.of("_entities", 0), List.of("_entities", 2));
+    }
+
+    /**
+     * A source that refuses the key with no parts answers every representation null with no error
+     * on the owned path, exactly as a representation that names no row: a refused key cannot be
+     * told from an absent one.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_aSourceRefusingTheKey_answersNullWithNoError() {
+        var runtime = Graphitron.runtime(org.jooq.SQLDialect.POSTGRES);
+        var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        no.sikt.graphitron.generated.federated.schema.ConnectionSource refusing = key -> {
+            throw new no.sikt.graphitron.generated.federated.schema.KeyNotPermitted("not for this request");
+        };
+
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(refusing)
+            .query("query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+                + " __typename ... on Film { filmId } ... on Customer { customerId } } }")
+            .variables(Map.of("reps", List.of(
+                Map.of("__typename", "Film", "id", NodeIdEncoder.encode("Film", 1)),
+                Map.of("__typename", "Film", "filmId", 2),
+                Map.of("__typename", "Customer", "id", NodeIdEncoder.encode("Customer", 1))))));
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(entitiesOf(result)).containsExactly(null, null, null);
     }
 }

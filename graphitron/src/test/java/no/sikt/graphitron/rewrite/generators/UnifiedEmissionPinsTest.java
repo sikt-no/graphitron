@@ -95,12 +95,15 @@ class UnifiedEmissionPinsTest {
     void dataLoaderFactory_registrationHomes() throws IOException {
         // The DataLoader-regime census: every source file (recursively under generators/) that
         // builds a loader through LoaderConstruction is a registration home, and the homes are
-        // named exactly so a new hand-rolled regime cannot hide. The three:
+        // named exactly so a new hand-rolled regime cannot hide. The four:
         // DataLoaderFetcherEmitter (the unified seam; container-forked entry point),
         // MultiTablePolymorphicEmitter (the batched polymorphic family's list and connection
-        // fetchers; positional-list by the batched leaves' constructor entailment), and
-        // util/QueryNodeFetcherClassGenerator (the node-resolution batch loader). A fourth
-        // match means a fourth regime: fold it through the seam or name it here deliberately.
+        // fetchers; positional-list by the batched leaves' constructor entailment),
+        // util/EntityFetcherDispatchClassGenerator (the entity loader per type, key alternative
+        // and connection key that _entities, node and nodes read through), and
+        // util/QueryNodeFetcherClassGenerator (a multi-tenant build's node-resolution batch
+        // loader). A fifth match means a fifth regime: fold it through the seam or name it here
+        // deliberately.
         Pattern construction = Pattern.compile("LoaderConstruction\\s*\\.(positional|mapped)\\(");
         var homes = new java.util.TreeMap<String, Long>();
         try (var stream = Files.walk(GENERATORS_DIR)) {
@@ -120,6 +123,7 @@ class UnifiedEmissionPinsTest {
                 + "review point")
             .containsExactly(
                 java.util.Map.entry("DataLoaderFetcherEmitter.java", 2L),
+                java.util.Map.entry("EntityFetcherDispatchClassGenerator.java", 1L),
                 java.util.Map.entry("MultiTablePolymorphicEmitter.java", 2L),
                 java.util.Map.entry("QueryNodeFetcherClassGenerator.java", 1L));
     }

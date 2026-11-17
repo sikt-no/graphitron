@@ -57,6 +57,8 @@ var runtime = Graphitron.runtime(SQLDialect.ORACLE)
 
 A batch over the limit runs as several statements of at most that many keys, one after another, and each parent still gets its own rows. For a `@service` child it is your method that is called once per chunk of keys. A statement that fails takes down only the fields whose keys were in it, and the chunks after it still run, so a request whose every chunk times out waits for each in turn. Each failed chunk is its own log record, with its own reference (see xref:../how-to/error-channel.adoc#unmatched-exceptions[unmatched exceptions]).
 
+Entity and node lookups batch the same way in a build without a `<tenantColumn>`: `_entities`, `node` and `nodes` read every entity through a loader per type and key alternative, so the representations or ids of one type that share an alternative are one statement, and the `BatchSizeLimit` applies to them as to any other batch. A limit can change how many statements a lookup runs, never what it answers: each slot still gets its own row, in the order asked, and a failed chunk nulls only its own slots, each with an error at its own path.
+
 `BatchSizeLimit` is generated into your schema package next to `GraphitronRuntime`. The limit is asked once per batch with the first field's environment, so it can depend on the field; return 0 for no limit, which is also what you get without a `BatchSizeLimit`. If your limit throws, the batch is unbounded and Graphitron logs one ERROR line naming your limit's class, the class of what it threw and the field's path. On the escape-hatch engine (`Graphitron.newGraphQL()`), which has no runtime, put it into each request's context under `BatchSizeLimit.class`.
 
 == When you should care

@@ -60,7 +60,7 @@ Emitted by `GraphitronContextInterfaceGenerator` into `<outputPackage>.schema`. 
 public sealed interface GraphitronContext {
 
     default DSLContext getDslContext(DataFetchingEnvironment env) {
-        return env.getGraphQlContext().get(DSLContext.class);
+        return OwnedConnections.dslFor(env, ConnectionKey.defaultSource());
     }
 
     default Object getContextArgument(DataFetchingEnvironment env, String name) {
@@ -96,7 +96,7 @@ Generated fetchers retrieve the impl through a private helper emitted once per `
 
 === `getDslContext`
 
-Reads the per-request `DSLContext` from `env.getGraphQlContext().get(DSLContext.class)`, populated by the factory's `defaultDsl` parameter. The default impl is the only impl; this is not an override point. On the escape-hatch path, tenant-specific routing means building the right `DSLContext` at request entry and passing it to `Graphitron.newExecutionInput(dsl, ...)`; for generator-owned database-per-tenant routing (divined bindings, fan-out), see xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].
+Answers the per-request `DSLContext` for the connection key with no parts, through `OwnedConnections.dslFor(env, key)`, the one point every generated fetcher reaches a connection by. On the owned path (`Graphitron.newOwnedExecutionInput(...)` with `GraphitronRuntime.newGraphQL(schema)`) that is the connection the request's `ConnectionSource` leases for the key, pinned on first use. On the escape-hatch path it is the `DSLContext` the factory's `defaultDsl` parameter put into the request's `GraphQLContext`, which serves only the key with no parts. An operation carrying both, or neither, is refused. The default impl is the only impl; this is not an override point. On the escape-hatch path, tenant-specific routing means building the right `DSLContext` at request entry and passing it to `Graphitron.newExecutionInput(dsl, ...)`; for generator-owned database-per-tenant routing (divined bindings, fan-out), see xref:../how-to/tenant-scoping.adoc[How-to: Tenant scoping].
 
 === `getContextArgument`
 

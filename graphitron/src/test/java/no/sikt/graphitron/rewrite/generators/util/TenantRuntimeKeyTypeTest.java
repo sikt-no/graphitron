@@ -134,13 +134,20 @@ class TenantRuntimeKeyTypeTest {
         assertThat(carrier.methodSpecs()).extracting(MethodSpec::name)
             .doesNotContain("permits", "entityDefaultTenant", "dslGlobal");
 
-        // The read side for the per-row lookups' null-not-error skip.
-        var ifPermitted = method(carrier, "dslForIfPermitted");
-        assertThat(ifPermitted.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(ifPermitted.returnType().toString()).isEqualTo("org.jooq.DSLContext");
-        assertThat(parameters(ifPermitted)).containsExactly(
-            "graphql.schema.DataFetchingEnvironment env",
-            "java.lang.Integer tenantKey");
+        // The read side for the per-row lookups' null-not-error skip: the tenant-keyed form beside
+        // the connection-keyed one every build has.
+        assertThat(carrier.methodSpecs().stream()
+                .filter(m -> "dslForIfPermitted".equals(m.name()))
+                .map(TenantRuntimeKeyTypeTest::parameters))
+            .containsExactlyInAnyOrder(
+                List.of("graphql.schema.DataFetchingEnvironment env", "java.lang.Integer tenantKey"),
+                List.of("graphql.schema.DataFetchingEnvironment env",
+                    "fake.code.generated.schema.ConnectionKey key"));
+        assertThat(carrier.methodSpecs().stream().filter(m -> "dslForIfPermitted".equals(m.name())))
+            .allSatisfy(ifPermitted -> {
+                assertThat(ifPermitted.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+                assertThat(ifPermitted.returnType().toString()).isEqualTo("org.jooq.DSLContext");
+            });
         assertThat(units).extracting(TypeSpec::name).doesNotContain("RequestTenants");
     }
 
@@ -198,8 +205,13 @@ class TenantRuntimeKeyTypeTest {
         var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         assertThat(carrier.fieldSpecs()).extracting(FieldSpec::name).doesNotContain("domain");
-        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name)
-            .doesNotContain("dslForIfPermitted", "fanOutDomain");
+        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("fanOutDomain");
+        // The entity and node dispatch's acquisition is by connection key alone: no tenant form.
+        assertThat(carrier.methodSpecs().stream()
+                .filter(m -> "dslForIfPermitted".equals(m.name()))
+                .map(TenantRuntimeKeyTypeTest::parameters))
+            .containsExactly(List.of("graphql.schema.DataFetchingEnvironment env",
+                "fake.code.generated.schema.ConnectionKey key"));
     }
 
     @Test
