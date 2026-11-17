@@ -18,7 +18,7 @@ Database enforcement doesn't mean the UI can ignore security. Good usability req
 
 What we insist on: *the database is the enforcement point.* If the UI gets it wrong, the result is a confusing experience. If the database gets it wrong, data is exposed. These are not equivalent failures.
 
-The practical approach is PostgreSQL Row-Level Security with the caller's identity mounted per request. On the recommended owned-connection path Graphitron mounts it for you through the `SessionState` you build per request and pass to the generated factory (typically a callback around the jOOQ-generated executing method of your identity routine, switched on by `<sessionState>`); on the escape-hatch path you set it yourself on the `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`. See xref:architecture/reference/runtime-extension-points.adoc[Runtime Extension Points] for both paths and the fail-closed RLS policy shape.
+The practical approach is PostgreSQL Row-Level Security with the caller's identity mounted per request. On the recommended owned-connection path your `ConnectionSource`, built per request and passed to the generated factory, mounts it on each connection it leases (typically `ConnectionSources.mounting` with a mount around the jOOQ-generated executing method of your identity routine, declared by `<sessionState>`), and Graphitron releases every lease exactly once; on the escape-hatch path you set it yourself on the `DSLContext` you pass to `Graphitron.newExecutionInput(dsl, ...)`. See xref:architecture/reference/runtime-extension-points.adoc[Runtime Extension Points] for both paths and the fail-closed RLS policy shape.
 
 == The integrity gradient
 

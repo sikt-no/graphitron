@@ -674,8 +674,10 @@ every owned-connection build, as the connection contract is every build's.
 | 6. Issuing | `VoucherKeys` on the runtime, the caller on `SessionState.of`, the store-rendered `Vouchers` unit signing per row; the temporary `@issue` refusal removed | `a46e60a8`, `c2f16ab1`, `d24dc49c` |
 | 7. B's facts | `@accept`, its `VOUCHER` binding, vouched-for rows and refusals, the `ACCEPT` key and `@inaccessible`, `graphitron_accept_key`, the voucher alternative stated in the store; refused until generated | `f8ef399f`, `24b24899`, `6dadbfcd` |
 | 8a. Rename and refusals | `claims:` renamed `vouchesFor:` through the store, codes and codec; the vouch-id agreement check gone; `@accept` in a `<tenantColumn>` build refused | `18c1a92`, `6521093` |
-| 8b. No caller | Pending; below | |
-| 8c. The connection contract | Pending, in three steps; below | |
+| 8b. No caller | The voucher carries no caller; format version 2; `VOUCHER_WITHOUT_SESSION_STATE` gone | `71c0917` |
+| 8c.1. Keyed by `ConnectionKey` | Every build keys its connections by the generated `ConnectionKey`, its tenant part typed `Object` without a tenant column | `674c051` |
+| 8c.2. The contract | `ConnectionSource`, `Lease`, `KeyNotPermitted`, `AcquisitionFailedException` and `ConnectionSources`; the runtime on dialect and settings; the session units gone | pending publish |
+| 8c.3. Tenants to the source | Pending; below | |
 | 8d. Dispatch | Pending, in two steps; below | |
 | 8e. Fields with a fetcher of their own | Pending; below | |
 
@@ -722,10 +724,16 @@ acquires through the request's source by the whole key. In three steps, each gre
   typed `Object` where there is no tenant column, the same value the `Optional` key was. No consumer
   change.
 * 8c.2, the contract: `ConnectionSource`, `Lease`, `KeyNotPermitted` and the ready-made source; the
-  carrier acquires through the source; `PinnedConnection`, `MountedSession`, `SessionState` and
-  `GraphitronSessionHook` go; the record narrows to the parts the schema has. A `feat!` whose
-  `BREAKING-CHANGE:` footer names what a consumer changes: the runtime factory loses its `DataSource`
-  and tenant map, and `newOwnedExecutionInput` takes a source in place of a `SessionState`.
+  carrier acquires through the source; `MountedSession`, `SessionState` and `GraphitronSessionHook` go,
+  and `PinnedConnection` becomes the carrier's package-private wrapper of a lease (2026-11-17). A `feat!`
+  whose `BREAKING-CHANGE:` footer names what a consumer changes: the runtime factory loses its
+  `DataSource` and tenant map, and `newOwnedExecutionInput` takes a source in place of a `SessionState`.
+  As built (2026-11-17, agreed): `KeyNotPermitted` is a `RuntimeException` the carrier turns into the
+  field's client error, since the generated client exception is final; every throw of the source but
+  `KeyNotPermitted` is a failed acquisition, a pool fault included, so a consumer tells a rejected
+  identity from an outage by the cause; jakarta-rest's seam takes the new names; and the record keeps its
+  `Object`-typed tenant part in an untenanted build until slice 8d.2 adds the vouched-for parts, where it
+  narrows to the parts the schema has.
 * 8c.3, tenants to the source: the request tenant set goes, a tenanted build's source names its fan-out
   domain through `ConnectionSource.of(acquire, tenants)`. Breaking for tenanted consumers.
 
@@ -950,9 +958,16 @@ want to see the plan.
   of the issuers, the *Caller* term, and `VOUCHER_WITHOUT_SESSION_STATE` (slice 8b).
 * The runtime's connection setup (slice 8c): the default `DataSource` and the `Map<TenantId, DataSource>`
   of `Graphitron.runtime(...)`, `SessionState` and `SessionState.of(mount, unmount)`, `MountedSession`
-  and its `tenant()`, the generated `GraphitronSessionHook`, `PinnedConnection`, `SessionMountException`
-  as the name of a rejected acquisition, and the PostgreSQL `RESET ALL` backstop as Graphitron's duty;
-  "mount" and "unmount" as Graphitron vocabulary, the source's own business from then on.
+  and its `tenant()`, the generated `GraphitronSessionHook`, `PinnedConnection` as a public type (it stays
+  as the carrier's package-private wrapper of a lease), `SessionMountException` (now
+  `AcquisitionFailedException`), the runtime's `Source`, `tenantKeys()` and `acquireForTenant`, the
+  facade's `sessionMountFailure` (now `acquisitionFailure`), the carrier's `mountFailure()`,
+  `mountCause` and `isMountFailure` (now `acquisitionFailure()`, `acquisitionCause`,
+  `isAcquisitionFailure`), jakarta-rest's `GraphitronApplication.mountCause` and `rejectedIdentity` and
+  `AbstractGraphitronApplication`'s `mountCauseFinder` (now `acquisitionCause`, `failedAcquisition` and
+  `acquisitionCauseFinder`), and the PostgreSQL `RESET ALL` backstop as Graphitron's duty (it lives in
+  `ConnectionSources.mounting`); "mount" and "unmount" as Graphitron vocabulary, the source's own business
+  from then on.
 * "Multi-tenant build" and "single-tenant build" as runtime modes, and `Optional<tenantKey>` keying of a
   single-tenant carrier: every build keys by a `ConnectionKey` whose parts its schema decides.
 * The request tenant set (`RequestTenants`, the factories' leading tenant-set parameter, the carrier's

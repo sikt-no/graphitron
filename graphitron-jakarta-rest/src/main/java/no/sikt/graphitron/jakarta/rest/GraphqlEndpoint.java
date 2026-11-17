@@ -42,7 +42,7 @@ import java.util.function.Supplier;
  *     public GraphqlEndpoint.Request graphql(&#64;PathParam("callingEnvironment") String environment,
  *                                            &#64;Context HttpHeaders headers) {
  *         Supplier&lt;ExecutionInput.Builder&gt; input = () -&gt; Graphitron.newOwnedExecutionInput(
- *             sessionFor(authenticator.login(headers, environment), environment));
+ *             sourceFor(authenticator.login(headers, environment), environment));
  *         return "production".equals(environment)
  *             ? graphql.request(input)
  *             : graphql.request(input, QUERIES_ONLY);

@@ -61,7 +61,7 @@ class GraphitronDevExecutorGeneratorPipelineTest {
                 "java.lang.String",
                 "java.lang.String",
                 "java.util.Map<java.lang.String, java.lang.Object>",
-                "java.lang.String",
+                "java.util.function.Function<javax.sql.DataSource, java.lang.Object>",
                 "java.util.Map<java.lang.String, java.lang.Object>");
 
         // The classifier-resolved binding lands in the body helper, not the signature: the helper

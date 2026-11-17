@@ -336,15 +336,13 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     /**
      * The connection runtime's unit set: the three fixed units and the {@code FetcherErrorLog},
      * {@code FetcherErrorResponse} and {@code BatchSizeLimit} interfaces (unconditional; only the
-     * log's surface varies with the tenant key), plus the generated hook class and the {@code SessionMountException} a throwing
-     * mount becomes, plus the {@code MountedSession} and {@code SessionState} the consumer builds the
-     * input with, all exactly when the graph supplies session identity
-     * ({@link SessionIdentityRows#emitsHookImplementation()}, the same fact the generator gates on),
-     * plus the {@code ConnectionKey} the carrier is keyed by in every build, and the
+     * log's surface varies with the tenant key), the connection contract in every build
+     * ({@code ConnectionSource}, {@code Lease}, {@code KeyNotPermitted}, the
+     * {@code AcquisitionFailedException} any other throwing source becomes, and the ready-made
+     * {@code ConnectionSources}), plus the {@code ConnectionKey} the carrier is keyed by in every build, and the
      * {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
      * ({@link GraphitronSchema#requestTenantKeyType()}, the fact the generator's tenant key type
-     * is read from). A graph that supplies no session identity plans no hook unit at all:
-     * nothing is emitted and nothing is held.
+     * is read from).
      */
     private static GlobalCommand connectionRuntime(GeneratedUnits units, SessionIdentityRows sessionHooks,
                                                    boolean multiTenant) {
@@ -360,12 +358,11 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorLog"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorResponse"));
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "BatchSizeLimit"));
-        if (sessionHooks.emitsHookImplementation()) {
-            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
-            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "MountedSession"));
-            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionState"));
-            refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "SessionMountException"));
-        }
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "ConnectionSource"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "Lease"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "KeyNotPermitted"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "AcquisitionFailedException"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "ConnectionSources"));
         return new GlobalCommand.Fixed(GlobalUnitKind.CONNECTION_RUNTIME, refs);
     }
 }

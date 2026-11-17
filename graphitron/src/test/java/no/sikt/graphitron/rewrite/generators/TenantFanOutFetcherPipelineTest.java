@@ -174,13 +174,15 @@ class TenantFanOutFetcherPipelineTest {
             // Both factory forms carry the dedicated typed slot, so a missing or mis-typed set is
             // a compile error at the call site. The owned form also takes the typed
             // RequestTenants value, which can name a default tenant; the escape hatch, which has
-            // no carrier to read one, does not.
+            // no carrier to read one, does not. The owned forms take the request's connection
+            // source first.
             var factories = factoryParameters(schema);
             assertThat(factories.get("newExecutionInput")).containsExactly(java.util.List.of(
                 "org.jooq.DSLContext defaultDsl", "java.util.Collection<java.lang.Integer> tenants"));
+            String source = DEFAULT_OUTPUT_PACKAGE + ".schema.ConnectionSource source";
             assertThat(factories.get("newOwnedExecutionInput")).containsExactlyInAnyOrder(
-                java.util.List.of("java.util.Collection<java.lang.Integer> tenants"),
-                java.util.List.of(DEFAULT_OUTPUT_PACKAGE + ".schema.RequestTenants requestTenants"));
+                java.util.List.of(source, "java.util.Collection<java.lang.Integer> tenants"),
+                java.util.List.of(source, DEFAULT_OUTPUT_PACKAGE + ".schema.RequestTenants requestTenants"));
         }
     }
 
@@ -193,6 +195,7 @@ class TenantFanOutFetcherPipelineTest {
         var factories = factoryParameters(singleTenant);
         assertThat(factories.get("newExecutionInput"))
             .containsExactly(java.util.List.of("org.jooq.DSLContext defaultDsl"));
-        assertThat(factories.get("newOwnedExecutionInput")).containsExactly(java.util.List.of());
+        assertThat(factories.get("newOwnedExecutionInput"))
+            .containsExactly(java.util.List.of(DEFAULT_OUTPUT_PACKAGE + ".schema.ConnectionSource source"));
     }
 }

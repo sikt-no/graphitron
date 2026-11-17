@@ -10,8 +10,8 @@ import java.util.function.Supplier;
 /**
  * Boilerplate-removing base for a {@link GraphitronApplication} adapter. A concrete subgraph adapter
  * passes method references to the generated facade to the constructor and overrides only what is its
- * own: the engine's extra instrumentation and how a rejected identity is answered. The schema, the
- * SDL and the recognition of a rejected session mount ride the inherited implementations.
+ * own: the engine's extra instrumentation and how a failed connection acquisition is answered. The schema, the
+ * SDL and the recognition of a failed connection acquisition ride the inherited implementations.
  *
  * <pre>{@code
  * @ApplicationScoped
@@ -19,10 +19,10 @@ import java.util.function.Supplier;
  *     private final GraphitronRuntime runtime;
  *     private final GraphQLTelemetry telemetry;
  *
- *     MySubgraphApplication(@Named("my-db") DataSource dataSource, GraphQLTelemetry telemetry) {
+ *     MySubgraphApplication(GraphQLTelemetry telemetry) {
  *         // only facade references, as method references
- *         super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::sessionMountFailure);
- *         this.runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES, new Settings());
+ *         super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::acquisitionFailure);
+ *         this.runtime = Graphitron.runtime(SQLDialect.POSTGRES, new Settings());
  *         this.telemetry = telemetry;
  *     }
  *
@@ -32,7 +32,7 @@ import java.util.function.Supplier;
  *     }
  *
  *     @Override
- *     public Optional<WebApplicationException> rejectedIdentity(Throwable mountCause) {
+ *     public Optional<WebApplicationException> failedAcquisition(Throwable sourceCause) {
  *         return Optional.of(new NotAuthorizedException("identity rejected"));
  *     }
  * }
@@ -48,7 +48,7 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
 
     private final Supplier<GraphQLSchema> schemaSupplier;
     private final Function<GraphQLSchema, String> sdlPrinter;
-    private final Function<Throwable, Optional<Throwable>> mountCauseFinder;
+    private final Function<Throwable, Optional<Throwable>> acquisitionCauseFinder;
     private volatile GraphQLSchema schema;
     private volatile String schemaSdl;
 
@@ -62,28 +62,29 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
                                             Function<GraphQLSchema, String> sdlPrinter) {
         this.schemaSupplier = Objects.requireNonNull(schemaSupplier, "schemaSupplier");
         this.sdlPrinter = Objects.requireNonNull(sdlPrinter, "sdlPrinter");
-        this.mountCauseFinder = null;
+        this.acquisitionCauseFinder = null;
     }
 
     /**
-     * As the two-argument form, and {@link #mountCause(Throwable)} answers through
-     * {@code mountCauseFinder}, so {@link #rejectedIdentity(Throwable)} is called with the mount's
-     * own exception when the database rejects the caller's identity.
+     * As the two-argument form, and {@link #acquisitionCause(Throwable)} answers through
+     * {@code acquisitionCauseFinder}, so {@link #failedAcquisition(Throwable)} is called with the connection
+     * source's own exception when it fails to lease the request's connection (for instance when the
+     * database rejects the caller's identity).
      *
      * @param schemaSupplier   builds the executable schema, typically {@code Graphitron::buildSchema};
      *                         invoked at most once, the result cached
      * @param sdlPrinter       prints the built schema as the SDL {@code /schema} serves, typically
      *                         {@code Graphitron::schemaSdl}; invoked at most once, the result cached
-     * @param mountCauseFinder returns the mount's own exception when its argument is, or is caused
-     *                         by, a rejected session mount, typically
-     *                         {@code Graphitron::sessionMountFailure}
+     * @param acquisitionCauseFinder returns the connection source's own exception when its argument is, or
+     *                         is caused by, a failed acquisition, typically
+     *                         {@code Graphitron::acquisitionFailure}
      */
     protected AbstractGraphitronApplication(Supplier<GraphQLSchema> schemaSupplier,
                                             Function<GraphQLSchema, String> sdlPrinter,
-                                            Function<Throwable, Optional<Throwable>> mountCauseFinder) {
+                                            Function<Throwable, Optional<Throwable>> acquisitionCauseFinder) {
         this.schemaSupplier = Objects.requireNonNull(schemaSupplier, "schemaSupplier");
         this.sdlPrinter = Objects.requireNonNull(sdlPrinter, "sdlPrinter");
-        this.mountCauseFinder = Objects.requireNonNull(mountCauseFinder, "mountCauseFinder");
+        this.acquisitionCauseFinder = Objects.requireNonNull(acquisitionCauseFinder, "acquisitionCauseFinder");
     }
 
     /**
@@ -98,7 +99,7 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
     protected AbstractGraphitronApplication(Supplier<GraphQLSchema> schemaSupplier) {
         this.schemaSupplier = Objects.requireNonNull(schemaSupplier, "schemaSupplier");
         this.sdlPrinter = null;
-        this.mountCauseFinder = null;
+        this.acquisitionCauseFinder = null;
     }
 
     /**
@@ -143,11 +144,11 @@ public abstract class AbstractGraphitronApplication implements GraphitronApplica
     }
 
     /**
-     * The mount's own exception through the constructor's finder; empty when the adapter was built
+     * The connection source's own exception through the constructor's finder; empty when the adapter was built
      * without one.
      */
     @Override
-    public Optional<Throwable> mountCause(Throwable thrown) {
-        return mountCauseFinder == null ? Optional.empty() : mountCauseFinder.apply(thrown);
+    public Optional<Throwable> acquisitionCause(Throwable thrown) {
+        return acquisitionCauseFinder == null ? Optional.empty() : acquisitionCauseFinder.apply(thrown);
     }
 }

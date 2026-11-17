@@ -303,12 +303,12 @@ class FetcherErrorResponseExecutionTest {
     // ===== helpers =====
 
     private static GraphitronRuntime runtime() {
-        return Graphitron.runtime(dataSource, SQLDialect.POSTGRES);
+        return Graphitron.runtime(SQLDialect.POSTGRES);
     }
 
     private static ExecutionResult run(GraphitronRuntime runtime, String query, String traceId) {
         var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
-        var input = Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"), "{\"sub\":\"test-user\"}", "test-user").query(query);
+        var input = Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}", dataSource), "{\"sub\":\"test-user\"}", "test-user").query(query);
         if (traceId != null) {
             input.graphQLContext(b -> b.put(TRACE_ID, traceId));
         }

@@ -73,24 +73,25 @@ class EmitPlanTest {
     }
 
     @Test
-    void connectionRuntime_commitsTheFixedUnitsAndTheKeyWithoutSessionState() {
-        // A graph supplying no session identity plans no hook unit at all: no SessionHook interface exists any
-        // more, and nothing is emitted for the no-configuration case.
+    void connectionRuntime_commitsTheFixedUnitsTheKeyAndTheConnectionContract() {
         var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "ConnectionKey",
-                "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit");
+                "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "ConnectionSource", "Lease",
+                "KeyNotPermitted", "AcquisitionFailedException", "ConnectionSources");
     }
 
     @Test
-    void connectionRuntime_commitsTheHookClassItsRejectionAndTheSessionTypesWhenIdentityIsSupplied() {
+    void connectionRuntime_commitsTheSameUnitsWhenIdentityIsSupplied_andNoSessionUnit() {
+        // Session identity is the request's connection source's to set: a graph supplying it plans
+        // the same contract units, and no session state, hook or mount rejection of its own.
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
         var plan = EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             DEFAULT_OUTPUT_PACKAGE, SessionIdentityFixtures.handleLess());
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "OwnedConnections", "ConnectionKey",
-                "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "GraphitronSessionHook", "MountedSession",
-                "SessionState", "SessionMountException");
+                "FetcherErrorLog", "FetcherErrorResponse", "BatchSizeLimit", "ConnectionSource", "Lease",
+                "KeyNotPermitted", "AcquisitionFailedException", "ConnectionSources");
     }
 
     @Test

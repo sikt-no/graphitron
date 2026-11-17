@@ -53,6 +53,7 @@ class MutationScopeExecutionTest {
     static final AtomicInteger CONNECTIONS_OPENED = new AtomicInteger();
     /** What every connection the runtime pinned was asked to do about transactions, in order. */
     static final List<String> CONNECTION_EVENTS = java.util.Collections.synchronizedList(new ArrayList<>());
+    static DataSource pool;
     static GraphitronRuntime runtime;
     static GraphQL graphql;
 
@@ -66,7 +67,8 @@ class MutationScopeExecutionTest {
         jdbcPassword = SakilaDatabase.password();
 
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
-        runtime = Graphitron.runtime(countingDataSource(), SQLDialect.POSTGRES);
+        pool = countingDataSource();
+        runtime = Graphitron.runtime(SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
@@ -640,7 +642,7 @@ class MutationScopeExecutionTest {
     }
 
     private static ExecutionInput.Builder ownedInput(String query) {
-        return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"), "{\"sub\":\"test-user\"}", "test-user").query(query);
+        return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}", pool), "{\"sub\":\"test-user\"}", "test-user").query(query);
     }
 
     /** The real connection, recording each transaction call made on it into {@link #CONNECTION_EVENTS}. */

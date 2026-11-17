@@ -118,7 +118,7 @@ class PlanCompileGraphTest {
         // condition row, so neither phantom node of the retired model-sourced builder exists:
         // node membership is committed refs, not per-type possibility.
         assertThat(nodes()).doesNotContain(PKG + ".conditions.FilmConditions");
-        // The session hook implementation is committed only when session state is configured.
+        // The retired session units are never nodes: identity is the request's connection source's to set.
         assertThat(nodes()).doesNotContain(PKG + ".schema.GraphitronSessionHook");
         assertThat(nodes()).doesNotContain(PKG + ".schema.SessionMountException");
     }

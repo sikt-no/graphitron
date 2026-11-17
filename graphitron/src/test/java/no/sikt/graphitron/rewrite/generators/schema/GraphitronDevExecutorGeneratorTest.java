@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <ul>
  *   <li>ROLLBACK_ONLY engine wiring, the observable-write/no-trace mutation, variables binding,
- *       the fail-loud missing-claims arm, and verbatim mount errors:
+ *       the fail-loud missing-session arm, and verbatim mount errors:
  *       {@code DevExecuteExecutionTest} (execution tier, real Postgres).</li>
  *   <li>The deferred observe-then-discard transaction topology:
  *       {@code GraphitronTransactionProviderGeneratorTest} (compiled and driven).</li>
@@ -37,7 +37,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       sakila-example schemas (mis-ordering fails that compile only because the bound types
  *       are distinct); signature stability is pinned by the sibling
  *       {@code GraphitronDevExecutorGeneratorPipelineTest}.</li>
- *   <li>The no-sessionState arm (null claims accepted when no hook is configured):
+ *   <li>The no-sessionState arm (a null session accepted, leasing the connection as is):
  *       compiled by the same L5 gate via sakila-example's multischema variant, which configures
  *       no {@code <sessionState>}.</li>
  * </ul>
@@ -90,15 +90,16 @@ class GraphitronDevExecutorGeneratorTest {
         assertThat(execute.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(execute.returnType().toString()).isEqualTo("java.lang.String");
         assertThat(execute.parameters()).extracting(p -> p.name())
-            .containsExactly("connection", "dialect", "query", "variables", "claims", "contextArgs");
+            .containsExactly("connection", "dialect", "query", "variables", "session", "contextArgs");
         assertThat(execute.parameters()).extracting(p -> p.type().toString())
             .containsExactly(
                 "java.sql.Connection",
                 "java.lang.String",
                 "java.lang.String",
                 "java.util.Map<java.lang.String, java.lang.Object>",
-                "java.lang.String",
+                "java.util.function.Function<javax.sql.DataSource, java.lang.Object>",
                 "java.util.Map<java.lang.String, java.lang.Object>");
+        assertThat(execute.exceptions()).extracting(Object::toString).contains("java.lang.Exception");
     }
 
     @Test
@@ -121,15 +122,18 @@ class GraphitronDevExecutorGeneratorTest {
     }
 
     @Test
-    void aSchemaSupplyingIdentity_takesTheSessionStateWhereTheOtherTakesClaims() {
-        // The fifth parameter is the one that forks: the claims string where nothing is mounted,
-        // the generated SessionState where identity is supplied, which the dev host builds from
-        // <devDatabase><session>. The method may throw, since the callbacks' own exceptions
-        // propagate verbatim; every other parameter is unchanged.
+    void aSchemaSupplyingIdentity_takesTheSameJdkOnlySignature() {
+        // The session parameter no longer forks: in every build it is a function from the
+        // single-connection DataSource to the generated ConnectionSource the dev host builds from
+        // <devDatabase><session>, typed Object so the boundary stays JDK-only. The method may throw,
+        // since the callbacks' own exceptions propagate verbatim.
+        var plain = executeMethod(generate(emptySchema(), SessionIdentityRows.empty()));
         var identity = executeMethod(generate(emptySchema(), SessionIdentityFixtures.handleLess()));
         assertThat(identity.parameters()).extracting(p -> p.name())
-            .containsExactly("connection", "dialect", "query", "variables", "session", "contextArgs");
-        assertThat(identity.parameters().get(4).type().toString()).isEqualTo("com.example.schema.SessionState");
+            .isEqualTo(plain.parameters().stream().map(p -> p.name()).toList());
+        assertThat(identity.parameters()).extracting(p -> p.type().toString())
+            .isEqualTo(plain.parameters().stream().map(p -> p.type().toString()).toList());
+        assertThat(identity.parameters().get(4).type().toString()).isEqualTo("java.util.function.Function<javax.sql.DataSource, java.lang.Object>");
         assertThat(identity.exceptions()).extracting(Object::toString).contains("java.lang.Exception");
         assertThat(identity.returnType().toString()).isEqualTo("java.lang.String");
     }

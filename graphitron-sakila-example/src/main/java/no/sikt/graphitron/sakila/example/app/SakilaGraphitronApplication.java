@@ -19,13 +19,13 @@ import org.jooq.conf.Settings;
  *
  * <p>This is the SPI seam in practice, wired to the owned-connection path. The adapter reaches the
  * generated {@code Graphitron} facade only through method references (the schema, its SDL printer
- * for {@code /schema}, and the recogniser of a rejected session mount), which is why the library
+ * for {@code /schema}, and the recogniser of a failed connection acquisition), which is why the library
  * never names a generated symbol. {@link #engineBuilder()} builds the engine from the
- * application-scoped {@code GraphitronRuntime} over the Quarkus-managed datasource and the jOOQ
- * {@code Settings} of the application, so graphitron takes one connection per operation, mounts the
- * caller's identity through the {@code SessionState} each input carries, and demarcates
- * transactions. {@link #newExecutionInput()} is the built-in endpoint's seam and carries only
- * per-request data: the session state, the claims it mounts and the schema's {@code userId}
+ * application-scoped {@code GraphitronRuntime} over the jOOQ {@code Settings} of the application, so
+ * graphitron leases connections from the {@code ConnectionSource} each input carries, over the
+ * Quarkus-managed datasource with the caller's identity mounted, and demarcates transactions.
+ * {@link #newExecutionInput()} is the built-in endpoint's seam and carries only per-request data:
+ * the connection source, the claims it mounts and the schema's {@code userId}
  * {@code contextArgument}. A real subgraph would pass the authenticated request's token (e.g.
  * {@code jwt.getRawToken()}) and resolve {@code userId} from it rather than hard-coding both, and
  * one that serves GraphQL from a resource of its own would build that input there and hand it to
@@ -38,7 +38,7 @@ public class SakilaGraphitronApplication extends AbstractGraphitronApplication {
     AgroalDataSource dataSource;
 
     public SakilaGraphitronApplication() {
-        super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::sessionMountFailure);
+        super(Graphitron::buildSchema, Graphitron::schemaSdl, Graphitron::acquisitionFailure);
     }
 
     @Override
@@ -53,12 +53,12 @@ public class SakilaGraphitronApplication extends AbstractGraphitronApplication {
      * inside the cached engine's instrumentation.
      */
     protected GraphQL.Builder engine(Instrumentation... extra) {
-        return Graphitron.runtime(dataSource, SQLDialect.POSTGRES, new Settings()).newGraphQL(schema(), extra);
+        return Graphitron.runtime(SQLDialect.POSTGRES, new Settings()).newGraphQL(schema(), extra);
     }
 
     @Override
     public ExecutionInput.Builder newExecutionInput() {
         String claims = "{\"sub\":\"test-user\"}";
-        return Graphitron.newOwnedExecutionInput(SakilaSessions.of(claims), claims, "test-user");
+        return Graphitron.newOwnedExecutionInput(SakilaSessions.of(claims, dataSource), claims, "test-user");
     }
 }

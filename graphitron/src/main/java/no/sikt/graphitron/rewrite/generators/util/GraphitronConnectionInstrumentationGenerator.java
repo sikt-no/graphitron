@@ -26,11 +26,10 @@ import java.util.List;
  *   <li>In a {@code <tenantColumn>} build, read the {@code RequestTenants} value the factory
  *       wrote under {@code OwnedConnections.TENANTS_KEY}, failing the operation before any
  *       fetcher runs when it is absent (an {@code ExecutionInput} built without the generated
- *       factory), since the set has no "unrestricted" meaning, and when it names a default
- *       tenant this runtime has no {@code DataSource} for.</li>
- *   <li>Read the request's {@code SessionState} off the {@code graphQLContext} (the key
- *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
- *       per-request extraction {@code @service} call sites use).</li>
+ *       factory), since the set has no "unrestricted" meaning.</li>
+ *   <li>Read the request's {@code ConnectionSource} off the {@code graphQLContext}, where the
+ *       {@code Graphitron.newOwnedExecutionInput(source, ...)} factory writes it, failing the
+ *       operation before any fetcher runs when it is absent.</li>
  *   <li>Publish the runtime's {@code FetcherErrorLog}, {@code FetcherErrorResponse} and
  *       {@code BatchSizeLimit}, each when one is set, under its class key, where {@code ErrorRouter}
  *       reads the first two for every fetcher exception and the third for every loader it builds
@@ -87,17 +86,17 @@ import java.util.List;
  * reported by {@code instrumentExecutionResult}, which runs after the operation callback: its
  * value becomes {@code null}, with null propagation for a non-null field, and its redacted error,
  * logged under a reference through the consumer's {@code FetcherErrorLog}, is added at its path.
- * A rejected session mount still takes precedence and is thrown in place of the result.
+ * A failed acquisition still takes precedence and is thrown in place of the result.
  *
  * <p>A field that rolled back because of an error under its path has its value dropped too, with
  * no error added, and a field whose consumer-opened nested transaction failed gets the carrier's
  * nested-failure error beside whatever else it reported. An {@code @error} channel's payload
  * stays, since it describes the failure.
  *
- * <h2>A rejected mount rejects the request ({@code instrumentExecutionResult})</h2>
- * When {@code <sessionState>} configures a mount and it threw during the operation, the carrier
- * remembers the first {@code SessionMountException}, and this override throws it in place of the
- * result, so it escapes {@code GraphQL.execute}. Emitted only with a mount.
+ * <h2>A failed acquisition rejects the request ({@code instrumentExecutionResult})</h2>
+ * When the request's connection source threw (anything but {@code KeyNotPermitted}) during the
+ * operation, the carrier remembers the first {@code AcquisitionFailedException}, and this override
+ * throws it in place of the result, so it escapes {@code GraphQL.execute}.
  *
  * <h2>Incremental delivery is rejected</h2>
  * Connection-per-operation release closes the pinned connections at completion; a deferred fetcher
@@ -224,9 +223,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
 
         var resultContext = ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, EXECUTION_RESULT);
 
-        var sessionStateType = ClassName.get(errorRouter.packageName(), ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME);
-        var payload = sessionHooks.emitsHookImplementation()
-            ? java.util.List.of(ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT) : java.util.List.<String>of();
+        var sourceType = ClassName.get(errorRouter.packageName(), ConnectionRuntimeClassGenerator.CONNECTION_SOURCE_CLASS_NAME);
         var beginExecuteOperationBuilder = MethodSpec.methodBuilder("beginExecuteOperation")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
@@ -271,40 +268,20 @@ public final class GraphitronConnectionInstrumentationGenerator {
                         + " factories (newOwnedExecutionInput / newExecutionInput) take the set of tenants"
                         + " the request may touch; build the request through one of them.")
                 .endControlFlow()
-                .addComment("The default and entity default tenants are the consumer's choice, never the")
-                .addComment("client's, so there is no hosting probe to hide: refuse an unhosted one before any")
-                .addComment("fetcher runs rather than fail every read in the request that routes on it one by one.")
-                .beginControlFlow("if (requestTenants.defaultTenant().isPresent()"
-                    + " && !runtime.tenantKeys().contains(requestTenants.defaultTenant().get()))")
-                .addStatement("throw new $T($S + requestTenants.defaultTenant().get() + $S)",
-                    IllegalStateException.class, "Default tenant '",
-                    "' has no DataSource in this runtime; name a default tenant this runtime hosts.")
-                .endControlFlow()
-                .beginControlFlow("if (requestTenants.entityDefaultTenant().isPresent()"
-                    + " && !runtime.tenantKeys().contains(requestTenants.entityDefaultTenant().get()))")
-                .addStatement("throw new $T($S + requestTenants.entityDefaultTenant().get() + $S)",
-                    IllegalStateException.class, "Entity default tenant '",
-                    "' has no DataSource in this runtime; name an entity default tenant this runtime hosts.")
-                .endControlFlow()
                 .addCode("\n");
         }
-        if (!payload.isEmpty()) {
-            beginExecuteOperationBuilder.addComment(
-                "The request's session state, written by newOwnedExecutionInput; the carrier retains it");
-            beginExecuteOperationBuilder.addComment(
-                "for the request, since any fetcher may trigger a mount. An input built without the");
-            beginExecuteOperationBuilder.addComment(
-                "factory carries none, and no operation can run without identity: fail before any SQL.");
-            beginExecuteOperationBuilder
-                .addStatement("$T $L = graphQLContext.get($S)", sessionStateType,
-                    ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT, SessionIdentityRows.CONTEXT_KEY)
-                .beginControlFlow("if ($L == null)", ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT)
-                .addStatement("throw new $T($S)", IllegalStateException.class,
-                    "This operation's input carries no session state: build it with "
-                        + "Graphitron.newOwnedExecutionInput(SessionState.of(...), ...) so graphitron can "
-                        + "mount the request's identity on each connection it acquires.")
-                .endControlFlow();
-        }
+        beginExecuteOperationBuilder
+            .addComment("The request's connection source, written by newOwnedExecutionInput; the carrier retains")
+            .addComment("it for the request, since any fetcher may trigger an acquisition. An input built without")
+            .addComment("the factory carries none, and no operation can run without connections: fail before any SQL.")
+            .addStatement("$T $L = graphQLContext.get($S)", sourceType,
+                ConnectionRuntimeClassGenerator.SOURCE_SLOT, SessionIdentityRows.CONTEXT_KEY)
+            .beginControlFlow("if ($L == null)", ConnectionRuntimeClassGenerator.SOURCE_SLOT)
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "This operation's input carries no connection source: build it with "
+                    + "Graphitron.newOwnedExecutionInput(source, ...) so graphitron can lease the "
+                    + "request's connections from it.")
+            .endControlFlow();
         if (issuers != null) {
             beginExecuteOperationBuilder
                 .addComment("The operation's voucher issuers: one vouch id per scope, every voucher expiring a fixed")
@@ -316,9 +293,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
         if (tenantKey != null) {
             carrierArgs.append(", requestTenants");
         }
-        for (var p : payload) {
-            carrierArgs.append(", ").append(p);
-        }
+        carrierArgs.append(", ").append(ConnectionRuntimeClassGenerator.SOURCE_SLOT);
         var beginExecuteOperation = beginExecuteOperationBuilder
             .addComment("The consumer's log and response for fetcher exceptions and its batch size limit,")
             .addComment("application-scoped on the runtime; ErrorRouter reads them from here for every field")
@@ -385,15 +360,13 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addParameter(EXECUTION_PARAMS, "parameters")
             .addParameter(INSTRUMENTATION_STATE, "rawState")
             .addStatement("$T state = ($T) rawState", state, state);
-        if (sessionHooks.emitsHookImplementation()) {
-            instrumentExecutionResultBuilder
-                .beginControlFlow("if (state != null && state.carrier != null && state.carrier.mountFailure().isPresent())")
-                .addComment("No field can run without identity: the rejected mount replaces the result, escaping")
-                .addComment("GraphQL.execute for the consumer to answer the request as a whole. It takes")
-                .addComment("precedence over any field's settle failure.")
-                .addStatement("throw state.carrier.mountFailure().get()")
-                .endControlFlow();
-        }
+        instrumentExecutionResultBuilder
+            .beginControlFlow("if (state != null && state.carrier != null && state.carrier.acquisitionFailure().isPresent())")
+            .addComment("The request's connection source failed: the failure replaces the result, escaping")
+            .addComment("GraphQL.execute for the consumer to answer the request as a whole. It takes")
+            .addComment("precedence over any field's settle failure.")
+            .addStatement("throw state.carrier.acquisitionFailure().get()")
+            .endControlFlow();
         var instrumentExecutionResult = instrumentExecutionResultBuilder
             .beginControlFlow("if (state == null || state.failedFields.isEmpty())")
             .addStatement("return $T.completedFuture(executionResult)", COMPLETABLE_FUTURE)
@@ -420,12 +393,9 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("$T<$T, $T> finalData = rewritten", MAP, String.class, Object.class)
             .addStatement("return $T.completedFuture(executionResult.transform(b -> b.data(finalData).errors(errors)))",
                 COMPLETABLE_FUTURE)
-            .addJavadoc((sessionHooks.emitsHookImplementation()
-                    ? "Throws the operation's rejected session mount, when there was one, in place of the\n"
-                        + "result, so {@code GraphQL.execute} throws {@code SessionMountException} (and\n"
-                        + "{@code executeAsync} completes exceptionally with it). The connection it was mounted on\n"
-                        + "was already evicted at acquisition. Otherwise rewrites"
-                    : "Rewrites")
+            .addJavadoc(("Throws the operation's failed acquisition, when there was one, in place of the\n"
+                    + "result, so {@code GraphQL.execute} throws {@code AcquisitionFailedException} (and\n"
+                    + "{@code executeAsync} completes exceptionally with it). Otherwise rewrites")
                 + " the result for every top-level mutation field whose\n"
                 + "transaction failed to settle after the field resolved: its value becomes {@code null},\n"
                 + "with null propagation for a non-null field, and its redacted error is added.\n")

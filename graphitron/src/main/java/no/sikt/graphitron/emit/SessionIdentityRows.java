@@ -50,10 +50,10 @@ public record SessionIdentityRows(boolean supplied, Optional<Handle> handle) {
     public static final String HANDLE_DATA_KEY = "no.sikt.graphitron.session.handle";
 
     /**
-     * The {@code GraphQLContext} key the owned factory writes the request's {@code SessionState}
+     * The {@code GraphQLContext} key the owned factory writes the request's {@code ConnectionSource}
      * under and the execution instrumentation reads it from.
      */
-    public static final String CONTEXT_KEY = "no.sikt.graphitron.session.state";
+    public static final String CONTEXT_KEY = "no.sikt.graphitron.connection.source";
 
     public SessionIdentityRows {
         Objects.requireNonNull(handle, "handle");

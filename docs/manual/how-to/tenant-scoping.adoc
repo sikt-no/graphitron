@@ -1,5 +1,5 @@
 = How-to: Tenant scoping
-:description: Database-per-tenant routing: configure the tenant column, wire per-tenant DataSources, and fan a field out across every tenant a request may see.
+:description: Database-per-tenant routing: configure the tenant column, choose each tenant's pool in your connection source, and fan a field out across every tenant a request may see.
 :!toc:
 
 Graphitron's multi-tenant model is database-per-tenant: every tenant-scoped table carries a tenant column, each tenant's rows live in that tenant's own database, and the generator routes every statement to the right database from what the operation itself says. This page is the wiring recipe; the classification rules (which fields route how, and which schemas are rejected as unroutable) are enforced at build time.
@@ -17,62 +17,54 @@ Point the plugin at the column that scopes your tables:
 
 Tables carrying the column are tenant-scoped; tables without it are global reference data served from the default source, or from a request's default tenant (see §2). The tenant key's Java type is read off the catalog, and it types every tenant-keyed runtime surface, so wiring a map keyed with the wrong type is a compile error. All tables carrying the column must agree on its Java type and on the Java type of the database value behind it, so a column a converter maps to `String` on one table cannot be a plain `varchar` on another. Graphitron compares keys through the converter of the first table carrying the column, so map the column through one converter everywhere: two different converters between the same types cannot be told apart at build time, and the first table's then decides for both.
 
-Tenant keys are compared by the value the column stores. When a converter maps the column, graphitron puts every key through it and back before comparing: with an `INTEGER` column mapped to `String`, a client sending `"0194"` reaches the same tenant as one sending `"194"`, exactly as the SQL does. The keys you supply get the same treatment. Register your `DataSource` map and build `RequestTenants` with whichever spelling you have, and graphitron reduces them to the column's form; your mount, `tenantKeys()` and `RequestTenants.tenants()` report that form. To key your own state the same way, call `OwnedConnections.canonicalTenantKey`. Two map keys that name one tenant are refused when the runtime is built.
+Tenant keys are compared by the value the column stores. When a converter maps the column, graphitron puts every key through it and back before comparing: with an `INTEGER` column mapped to `String`, a client sending `"0194"` reaches the same tenant as one sending `"194"`, exactly as the SQL does. The keys you supply get the same treatment. Build `RequestTenants` with whichever spelling you have, and graphitron reduces them to the column's form; the connection key your source receives and `RequestTenants.tenants()` report that form, so key your pools by it. To key your own state the same way, call `OwnedConnections.canonicalTenantKey`. Two map keys that name one tenant are refused when the runtime is built.
 
-A tenant value the column cannot store, such as `"abc"` on a numeric column, is a client error. So is a number outside the column's range or precision: `"4294967297"` on an `INTEGER` column is refused, not wrapped onto another tenant. On any numeric column, a number with more than 1000 fraction digits, or text longer than 2016 characters, is refused too. The same holds for the keys you configure, which are refused when the runtime is built. A value the column stores by coercion names the tenant the query itself reads: on an integer column `"1.5"` is bound as `1` in the SQL, so it reaches tenant 1, and only if the request may read tenant 1.
+A tenant value the column cannot store, such as `"abc"` on a numeric column, is a client error. So is a number outside the column's range or precision: `"4294967297"` on an `INTEGER` column is refused, not wrapped onto another tenant. On any numeric column, a number with more than 1000 fraction digits, or text longer than 2016 characters, is refused too.. A value the column stores by coercion names the tenant the query itself reads: on an integer column `"1.5"` is bound as `1` in the SQL, so it reaches tenant 1, and only if the request may read tenant 1.
 
-== 2. Wire one DataSource per tenant
+== 2. Choose each tenant's connection in your source
 
-Construct the generated runtime with the default source plus the per-tenant map:
+The runtime holds no pools. Each request's connections come from the `ConnectionSource` you pass with it, and in a tenant build the `ConnectionKey` it receives carries the tenant: `key.tenant()` is an `Optional` of your tenant key type, the routed tenant, or `Optional.empty()` for the connection that serves global tables. Choose the pool from it:
 
 [source,java]
 ----
 Map<Integer, DataSource> byTenant = Map.of(
     1, tenantOnePool,
     2, tenantTwoPool);
-var runtime = new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES);
+var runtime = Graphitron.runtime(SQLDialect.POSTGRES);              // once, at wiring time
 var graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+
+var source = ConnectionSources.mounting(
+    key -> key.tenant().map(byTenant::get).orElse(defaultPool),
+    (connection, key) -> Routines.connect(DSL.using(connection, SQLDialect.POSTGRES).configuration(),
+        key.tenant().orElse(null), claims),
+    (connection, key, handle) -> Routines.disconnect(DSL.using(connection, SQLDialect.POSTGRES).configuration(), handle));
 ----
 
-Every request states which tenants it may touch. The generated factories take the set as a parameter ahead of your `SessionState`, typed as a collection of your tenant key type, so leaving it out is a compile error:
+Every request also states which tenants it may touch. The generated factories take the set after your source, typed as a collection of your tenant key type, so leaving it out is a compile error:
 
 [source,java]
 ----
 Set<Long> permitted = permittedInstitutions(jwt);   // from the caller's claims, narrowed to this deployment
-ExecutionInput input = Graphitron.newOwnedExecutionInput(permitted, session)
+ExecutionInput input = Graphitron.newOwnedExecutionInput(source, permitted)
     .query(query).build();
 ----
 
-Graphitron checks every tenant an operation routes to against this set before it takes a connection, and no connection to a tenant outside it is ever opened. A field whose tenant is outside the set, whether named by an argument, decoded from a node-id argument or handed down from a parent, fails with a client error. The lookups `node`, `nodes` and `_entities` instead answer an id whose tenant is outside the set with `null`, exactly as they answer an id that does not exist, and resolve the rest of the batch normally; a client cannot tell the two apart, by design. An id whose tenant slot does not decode as a value of the tenant column is malformed and answers `null` on the lookups the same way, without opening a connection; on an argument it gets the malformed-id client error, since the slot is part of the id. The same set bounds `@tenantFanOut` fields (see §3). A caller entitled to everything passes the hosted set, `runtime.tenantKeys()`; there is no "unrestricted" value, and an `ExecutionInput` built without the generated factory fails before any field runs.
+Graphitron checks every tenant an operation routes to against this set before it asks your source, and no connection to a tenant outside it is ever opened. A field whose tenant is outside the set, whether named by an argument, decoded from a node-id argument or handed down from a parent, fails with a client error. The lookups `node`, `nodes` and `_entities` instead answer an id whose tenant is outside the set with `null`, exactly as they answer an id that does not exist, and resolve the rest of the batch normally; a client cannot tell the two apart, by design. An id whose tenant slot does not decode as a value of the tenant column is malformed and answers `null` on the lookups the same way, without opening a connection; on an argument it gets the malformed-id client error, since the slot is part of the id. The same set is the domain of `@tenantFanOut` fields (see §3). There is no "unrestricted" value, and an `ExecutionInput` built without the generated factory fails before any field runs.
 
-The set means the tenants this request may touch _in this deployment_. If a user's permissions can include tenants another deployment serves, narrow the set before passing it: a tenant in the set that this deployment has no `DataSource` for fails every `@tenantFanOut` field, because graphitron cannot tell a tenant served elsewhere from a `DataSource` that was never wired. Narrow against your own list of this deployment's tenants to keep that check; narrowing against `runtime.tenantKeys()` also works, but turns the check off.
+Your source can refuse a tenant too: throw `KeyNotPermitted` from `acquire`, and the field that asked answers with a client error carrying its message, while `node`, `nodes` and `_entities` answer `null`, as for a tenant outside the set. This is the place for any per-tenant check the set cannot express, and for a tenant this deployment does not serve. Any other throw fails the request as a whole (see the end of §3).
 
-Your `SessionState` follows the set on the same factory, and any declared `contextArguments` follow it. Connections are taken lazily, one per distinct tenant the operation actually touches, and your mount runs on each, so sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant. A `$session`-bound service parameter likewise receives the handle of the tenant connection its call runs on, never a neighbor's.
-
-Your mount can learn which tenant it is mounting for: the `MountedSession` it receives answers `tenant()`, an `Optional` of your tenant key type:
-
-[source,java]
-----
-var session = SessionState.of(
-    s -> {
-        long institution = s.tenant().orElseThrow();   // or handle the default source
-        return Routines.connect(s.configuration(), institution, claims);
-    },
-    (s, handle) -> Routines.disconnect(s.configuration(), handle));
-----
-
-A connection routed to a tenant receives that tenant; a connection to the default source receives `Optional.empty()`. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. A mount that throws fails the request closed and evicts the connection, so it is also the place for any per-tenant check the tenant set cannot express. The unmount does not receive the tenant separately; if it needs it, put it in the handle your mount returns.
+Connections are taken lazily, one per distinct tenant the operation actually touches, and your mount runs on each, so sessions, row-level security, and transaction boundaries behave exactly as in single-tenant operation, per tenant. A `$session`-bound service parameter likewise receives the handle of the tenant connection its call runs on, never a neighbor's. Tenant keys that share one `DataSource` still get one connection and one mount each, each with its own key. The unmount receives the key as the mount did.
 
 *Reading global tables from a tenant database.* If your global tables are present in every tenant database (for example as views over shared reference data), a request can name one of its tenants as its _default tenant_, and graphitron then reads global tables for that request from that tenant's database instead of from the default source:
 
 [source,java]
 ----
 ExecutionInput input = Graphitron.newOwnedExecutionInput(
-        RequestTenants.withDefault(permitted, lowestInstitution(permitted)), claims)
+        source, RequestTenants.withDefault(permitted, lowestInstitution(permitted)))
     .query(query).build();
 ----
 
-The default tenant must be in the request's tenant set, or `RequestTenants.withDefault` throws, and it must be one this runtime has a `DataSource` for, or the request fails before any field runs. Global reads then use the same connection, and the same session mount, as any field routed to that tenant, so your mount receives the tenant rather than `Optional.empty()`, and a request that routes to its default tenant anyway takes no extra connection. This covers root fields over global tables, `@splitQuery` fields over global tables (also below a tenant row: they read the default tenant, not the row's), and `node`, `nodes` and `_entities` for global types. Fields that name a tenant are routed exactly as before.
+The default tenant must be in the request's tenant set, or `RequestTenants.withDefault` throws. Global reads then use the same connection, and the same session mount, as any field routed to that tenant, so your source receives the tenant rather than `Optional.empty()`, and a request that routes to its default tenant anyway takes no extra connection. This covers root fields over global tables, `@splitQuery` fields over global tables (also below a tenant row: they read the default tenant, not the row's), and `node`, `nodes` and `_entities` for global types. Fields that name a tenant are routed exactly as before.
 
 Writes to global tables and `@service` fields, `@globalData` among them, still run on the default source, because graphitron cannot see what their SQL touches. A global read therefore sees a global write made earlier in the same request only if your tenant databases show the default source's committed data. This shows up in the payload of such a write or service: the field's own columns are read with the write and see it, but every field below it that graphitron fetches separately over a global table, whether a `@splitQuery` field or a `@table` field filled from the records your service returned, reads the default tenant's database. The same holds for a payload returned by a service that runs on a tenant, which is what lets its global fields resolve at all. Which tenant to name is your policy; graphitron never picks one. A request built without a default tenant, through the `Collection` form of the factory or `RequestTenants.of(permitted)`, reads global tables from the default source, as before.
 
@@ -135,9 +127,9 @@ When no single tenant is named ("all results for this student", wherever they li
 
 A fanned field can take optional arguments that name the tenant, such as a filter on student ids whose keys carry the institution. When the request gives one, only the tenants its values name are queried; when it gives none, the field fans out over every tenant the request may see. Either way the rows answered are the same ones, because a tenant's database holds only rows naming that tenant: narrowing saves the connections to tenants that cannot answer.
 
-The tenants a fanned field runs over come from the same request tenant set every routed field is checked against (§2), derived from your request's claims and any other request-level policy (operational exclusions, residency, product rules; the seam is source-agnostic). Which tenants actually run is the intersection of that set with the configured tenant map: a hosted tenant outside the set is never queried (the authorization pre-filter), and a tenant in the set that the deployment has no `DataSource` for fails the field by design, before any SQL runs, because skipping it would return incomplete results presented as complete.
+The tenants a fanned field runs over are the request tenant set every routed field is checked against (§2), in the order you gave it, derived from your request's claims and any other request-level policy (operational exclusions, residency, product rules). Each tenant in it is asked of your source, which may refuse it with `KeyNotPermitted`; that tenant then contributes a failed element, as any failing tenant does.
 
-If your claims can name tenants this deployment does not serve, narrow the set at the factory; the narrowing is your explicit statement, not a silent runtime drop. There are two ways to narrow, and they cost different things. Intersecting with your own list of this deployment's tenants keeps the check meaningful: a tenant you meant to serve but whose `DataSource` was never wired still fails loudly. Intersecting with `runtime.tenantKeys()` is accepted too, but it removes exactly the tenants the check exists to catch, so it turns the check off.
+If your claims can name tenants this deployment does not serve, narrow the set at the factory; the narrowing is your explicit statement, not a silent runtime drop.
 
 === Tuning fan-out
 
@@ -146,13 +138,13 @@ Fan-out parallelism is bounded and configurable on the generated runtime: a conc
 [source,java]
 ----
 // Explicit cap and deadline over the runtime-owned bounded pool:
-new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES, 16, Duration.ofSeconds(5));
+new GraphitronRuntime(SQLDialect.POSTGRES, settings, 16, Duration.ofSeconds(5));
 // Or bring your own executor; you own the concurrency bound, the deadline stays enforced:
-new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES, myExecutor, Duration.ofSeconds(5));
+new GraphitronRuntime(SQLDialect.POSTGRES, settings, myExecutor, Duration.ofSeconds(5));
 ----
 
 A tenant that fails or misses the deadline contributes one `null` element and a path-bearing entry in the response's `errors` array; the field's element nullability chooses whether that stays partial data (`[Thing]`) or nulls the whole field (`[Thing!]`). See the xref:../reference/directives/tenantFanOut.adoc[directive reference].
 
-The one exception is a rejected identity. When your `<sessionState>` mount throws on any tenant, the request fails as a whole instead of returning partial data: `GraphQL.execute` throws `SessionMountException`, as described in xref:../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A rejected identity rejects the request]. The session state is one identity for every tenant, so the first rejection answers every later acquisition in the operation. On a mutation, the top-level field during which a mount is rejected fails and rolls back on every tenant it touched, but an earlier top-level field has already committed by then, and the rejection does not undo it (xref:../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path]).
+The one exception is a failed acquisition. When your source throws anything but `KeyNotPermitted` on any tenant (a mount the database rejects, say), the request fails as a whole instead of returning partial data: `GraphQL.execute` throws `AcquisitionFailedException`, as described in xref:../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A failed acquisition rejects the request]. The first failure answers every later acquisition in the operation. On a mutation, the top-level field during which an acquisition fails fails and rolls back on every tenant it touched, but an earlier top-level field has already committed by then, and the rejection does not undo it (xref:../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path]).
 
 xref:index.adoc[← How-to index]

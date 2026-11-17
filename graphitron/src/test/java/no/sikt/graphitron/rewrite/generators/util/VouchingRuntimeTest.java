@@ -10,7 +10,6 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
-import javax.sql.DataSource;
 import java.lang.reflect.Modifier;
 import java.lang.reflect.Proxy;
 import java.security.KeyPairGenerator;
@@ -26,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /**
  * The runtime of a build that vouches, compiled at Java 17: every public constructor of the runtime
  * takes the voucher keys last, so a runtime without them does not compile, and the withers keep them;
- * the session state takes no caller, a voucher being bound to none.
+ * the connection source is asked with the key alone, no caller, a voucher being bound to none.
  */
 @UnitTier
 class VouchingRuntimeTest {
@@ -37,7 +36,6 @@ class VouchingRuntimeTest {
     private static EmittedCodeHarness harness;
     private static Class<?> runtime;
     private static Class<?> keys;
-    private static Class<?> sessionState;
 
     @BeforeAll
     static void compile() {
@@ -64,7 +62,6 @@ class VouchingRuntimeTest {
         harness = EmittedCodeHarness.compile(units);
         runtime = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         keys = harness.load(SCHEMA_PACKAGE + "." + VoucherRuntime.KEYS);
-        sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
     }
 
     @AfterAll
@@ -89,29 +86,36 @@ class VouchingRuntimeTest {
         var pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
         var voucherKeys = keys.getMethod("ed25519", String.class, PrivateKey.class, Map.class)
             .invoke(null, "k1", pair.getPrivate(), Map.<String, PublicKey>of("k1", pair.getPublic()));
-        var dataSource = (DataSource) Proxy.newProxyInstance(getClass().getClassLoader(),
-            new Class<?>[] {DataSource.class}, (proxy, method, args) -> null);
-        var built = runtime.getConstructor(DataSource.class, org.jooq.SQLDialect.class, keys)
-            .newInstance(dataSource, org.jooq.SQLDialect.POSTGRES, voucherKeys);
+        var built = runtime.getConstructor(org.jooq.SQLDialect.class, keys)
+            .newInstance(org.jooq.SQLDialect.POSTGRES, voucherKeys);
         var limit = harness.load(SCHEMA_PACKAGE + ".BatchSizeLimit");
         var limited = runtime.getMethod("withBatchSizeLimit", limit)
             .invoke(built, Proxy.newProxyInstance(harness.classLoader(), new Class<?>[] {limit},
                 (proxy, method, args) -> 1));
         assertThat(runtime.getMethod("voucherKeys").invoke(limited)).isSameAs(voucherKeys);
-        assertThatThrownBy(() -> runtime.getConstructor(DataSource.class, org.jooq.SQLDialect.class, keys)
-                .newInstance(dataSource, org.jooq.SQLDialect.POSTGRES, null))
+        assertThatThrownBy(() -> runtime.getConstructor(org.jooq.SQLDialect.class, keys)
+                .newInstance(org.jooq.SQLDialect.POSTGRES, null))
             .hasRootCauseInstanceOf(NullPointerException.class);
     }
 
     @Test
-    void theSessionStateTakesNoCaller() throws Exception {
-        var mount = harness.load(SCHEMA_PACKAGE + ".SessionState$Mount");
-        var unmount = harness.load(SCHEMA_PACKAGE + ".SessionState$Unmount");
-        sessionState.getMethod("of", mount, unmount);
-        assertThat(Arrays.stream(sessionState.getMethods()).map(java.lang.reflect.Method::getName))
-            .doesNotContain("caller");
-        assertThat(Arrays.stream(sessionState.getMethods()).filter(m -> m.getName().equals("of")))
-            .as("one of form per build").hasSize(1);
+    void theDialectConstructorsTakeTheKeysLast_andTheSourceIsAskedWithTheKeyAlone() throws Exception {
+        runtime.getConstructor(org.jooq.SQLDialect.class, keys);
+        runtime.getConstructor(org.jooq.SQLDialect.class, org.jooq.conf.Settings.class, keys);
+        var source = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
+        assertThat(Arrays.stream(source.getMethods()).filter(m -> Modifier.isAbstract(m.getModifiers())))
+            .as("one abstract method, taking the key and no caller")
+            .singleElement()
+            .satisfies(m -> assertThat(m.getParameterTypes())
+                .containsExactly(harness.load(SCHEMA_PACKAGE + ".ConnectionKey")));
+    }
+
+    @Test
+    void noSessionStateUnitIsEmitted() {
+        var units = ConnectionRuntimeClassGenerator.generate(PACKAGE, SessionIdentityRows.handleLess(),
+            ConnectionKeyShape.none(), null, true);
+        assertThat(units).extracting(TypeSpec::name)
+            .doesNotContain("SessionState", "MountedSession", "GraphitronSessionHook", "SessionMountException");
     }
 
     @Test

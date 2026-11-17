@@ -75,13 +75,18 @@ public final class GraphitronDevExecutorGenerator {
         // keeps this call and the emitted parameter list from drifting.
         boolean multiTenant = schema.requestTenantKeyType().isPresent();
 
-        // Whether identity is mounted is read off the store's rows, never re-derived here. When it
-        // is, the executor takes the request's SessionState where it would take claims: the dev
-        // host builds it from <devDatabase><session>, which keeps the generated code free of
-        // reflection and the host free of any generated type.
+        // Whether the graph supplies identity is read off the store's rows, never re-derived here.
+        // When it does, a dev run needs the consumer's dev session method: the dev host builds a
+        // function from it that turns the executor's one-connection DataSource into the request's
+        // ConnectionSource, which keeps the generated code free of reflection and the host free of
+        // any generated type.
         boolean mountsIdentity = identity.emitsHookImplementation();
-        var sessionStateType = ClassName.get(schemaPackage,
-            ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME);
+        var connectionSource = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.CONNECTION_SOURCE_CLASS_NAME);
+        var lease = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.LEASE_CLASS_NAME);
+        var acquisitionFailed = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.ACQUISITION_FAILED_CLASS_NAME);
+        var dataSource = ClassName.get("javax.sql", "DataSource");
+        var sessionFunction = ParameterizedTypeName.get(ClassName.get(java.util.function.Function.class),
+            dataSource, ClassName.get(Object.class));
 
         var execute = MethodSpec.methodBuilder(EXECUTE_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -89,13 +94,9 @@ public final class GraphitronDevExecutorGenerator {
             .addParameter(connection, "connection")
             .addParameter(ClassName.get(String.class), "dialect")
             .addParameter(ClassName.get(String.class), "query")
-            .addParameter(mapStringObject, "variables");
-        if (mountsIdentity) {
-            execute.addParameter(sessionStateType, "session").addException(Exception.class);
-        } else {
-            execute.addParameter(ClassName.get(String.class), "claims");
-        }
-        execute
+            .addParameter(mapStringObject, "variables")
+            .addParameter(sessionFunction, "session")
+            .addException(Exception.class)
             .addParameter(mapStringObject, "contextArgs")
             .addJavadoc(executeJavadoc(mountsIdentity, contextArgs));
         if (contextArgs.stream().anyMatch(arg -> arg.javaType() instanceof ParameterizedTypeName)) {
@@ -112,41 +113,21 @@ public final class GraphitronDevExecutorGenerator {
             // everything on a convention-fence setup).
             execute.beginControlFlow("if (session == null)")
                 .addStatement("throw new $T($S)", IllegalStateException.class,
-                    "This schema configures <sessionState>, so dev execution mounts identity through "
-                        + "your SessionState and needs one: name the method that builds it from the "
-                        + "claims payload in the graphitron-maven-plugin dev database configuration "
-                        + "(<devDatabase><session>fqcn#method</session>, or GRAPHITRON_DEV_SESSION), "
-                        + "next to the claims payload.")
+                    "This schema configures <sessionState>, so dev execution leases its connection through "
+                        + "your connection source and needs one: name the method that builds it from the "
+                        + "claims payload and a DataSource in the graphitron-maven-plugin dev database "
+                        + "configuration (<devDatabase><session>fqcn#method</session>, or "
+                        + "GRAPHITRON_DEV_SESSION), next to the claims payload.")
                 .endControlFlow();
-            // Fail fast with the callback's own error: inside execution the error router redacts
-            // fetcher failures behind a correlation id, but a rejected dev payload is the caller's
-            // to fix, so the executor runs the pair once up front and lets the callback's exception
-            // propagate verbatim. Execution's own mount then overwrites this one on the same
-            // connection (mount establishes identity wholesale).
-            var hookImpl = ClassName.get(schemaPackage,
-                ConnectionRuntimeClassGenerator.SESSION_HOOK_IMPL_CLASS_NAME);
-            var settings = ClassName.get("org.jooq.conf", "Settings");
-            execute
-                .addComment("Preflight: surface a rejected payload as the mount callback's own exception.")
-                .addStatement("$T devDialect = $T.valueOf(dialect)", sqlDialect, sqlDialect)
-                .addStatement("$T devSettings = new $T()", settings, settings);
-            // A multi-tenant mount also takes the tenant it mounts for; the dev executor's one
-            // connection is the default source, so it mounts for none.
-            String tenantArg = multiTenant ? ", " + "java.util.Optional.empty()" : "";
-            if (identity.handleType().isPresent()) {
-                execute.addStatement(
-                    "$T preflightHandle = $T.mount(session, connection, devDialect, devSettings$L)",
-                    identity.handleType().get(), hookImpl, tenantArg);
-                execute.addStatement(
-                    "$T.unmount(session, connection, devDialect, devSettings$L, preflightHandle)",
-                    hookImpl, tenantArg);
-            } else {
-                execute.addStatement("$T.mount(session, connection, devDialect, devSettings$L)",
-                    hookImpl, tenantArg);
-                execute.addStatement("$T.unmount(session, connection, devDialect, devSettings$L)",
-                    hookImpl, tenantArg);
-            }
         }
+        execute
+            .addComment("The request's connections: the consumer's dev source over the one connection, or, without")
+            .addComment("one, a lease of that connection as it is, which the host closes.")
+            .addStatement("$T source = session != null\n"
+                    + "    ? ($T) session.apply(new $N(connection))\n"
+                    + "    : key -> $T.of(connection, $L() -> { })",
+                connectionSource, connectionSource, DATA_SOURCE_WRAPPER, lease,
+                identity.handleType().isPresent() ? "null, " : "");
         if (vouches) {
             var keys = ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS);
             execute
@@ -157,8 +138,8 @@ public final class GraphitronDevExecutorGenerator {
                     keys, keys, "dev", java.util.Map.class, "dev");
         }
         execute
-            .addStatement("$T runtime = new $T(new $N(connection), $T.valueOf(dialect)$L)",
-                runtime, runtime, DATA_SOURCE_WRAPPER, sqlDialect, vouches ? ", voucherKeys" : "")
+            .addStatement("$T runtime = new $T($T.valueOf(dialect)$L)",
+                runtime, runtime, sqlDialect, vouches ? ", voucherKeys" : "")
             .addStatement("$T engine = $T.newGraphQL($T.buildSchema(builder -> {}))\n"
                     + "    .instrumentation(new $T(runtime, $T.ROLLBACK_ONLY))\n"
                     + "    .build()",
@@ -168,9 +149,15 @@ public final class GraphitronDevExecutorGenerator {
                     + "    .variables(variables == null ? $T.of() : variables)\n"
                     + "    .build()",
                 executionInput, facade, "newOwnedExecutionInput",
-                ownedFactoryArgs(contextArgs, multiTenant, mountsIdentity),
+                ownedFactoryArgs(contextArgs, multiTenant),
                 ClassName.get(Map.class))
-            .addStatement("$T result = engine.execute(input)", executionResult)
+            .addStatement("$T result", executionResult)
+            .beginControlFlow("try")
+            .addStatement("result = engine.execute(input)")
+            .nextControlFlow("catch ($T failed)", acquisitionFailed)
+            .addComment("A rejected dev payload is the caller's to fix: surface the source's own exception.")
+            .addStatement("throw failed.getCause() instanceof Exception cause ? cause : failed")
+            .endControlFlow()
             .addStatement("return $T.toJSONString(result.toSpecification())", jsonValue);
 
         var classBuilder = TypeSpec.classBuilder(CLASS_NAME)
@@ -188,33 +175,21 @@ public final class GraphitronDevExecutorGenerator {
     /**
      * The argument list for the {@code newOwnedExecutionInput} call: one typed extraction per
      * contextArgument in the classifier's alphabetical order (the same {@code resolved()} order
-     * the facade's factory parameters use, so the two cannot disagree on position). The request's
-     * {@code SessionState}, when the graph supplies identity, is the executor's own parameter.
+     * the facade's factory parameters use, so the two cannot disagree on position), after the
+     * request's connection source.
      */
-    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs, boolean multiTenant,
-            boolean mountsIdentity) {
-        var args = CodeBlock.builder().add("(");
-        boolean first = true;
+    private static CodeBlock ownedFactoryArgs(List<ResolvedContextArg> contextArgs, boolean multiTenant) {
+        var args = CodeBlock.builder().add("(source");
         if (multiTenant) {
+            args.add(", ");
             // The dev executor runs single-connection with no tenant map, so no tenant can be
             // served: an empty request tenant set satisfies the factory slot, a fanned field
             // resolves to an empty union, and a routed field fails with the refusal rather than
             // a missing-parameter or unhosted-tenant failure.
             args.add("$T.of()", ClassName.get("java.util", "Set"));
-            first = false;
-        }
-        if (mountsIdentity) {
-            if (!first) {
-                args.add(",\n        ");
-            }
-            args.add("session");
-            first = false;
         }
         for (ResolvedContextArg arg : contextArgs) {
-            if (!first) {
-                args.add(",\n        ");
-            }
-            first = false;
+            args.add(",\n        ");
             args.add("($T) $N(contextArgs, $S, $T.class)",
                 arg.javaType(), CONTEXT_ARG_HELPER, arg.name(), rawType(arg.javaType()));
         }
@@ -260,11 +235,9 @@ public final class GraphitronDevExecutorGenerator {
     }
 
     /**
-     * The one-connection {@code DataSource} the executor hands the runtime: the owned-connection
-     * acquisition path asks a {@code DataSource} for its per-operation connection, and in the dev loop that
-     * connection is the single host-opened one. Release closes it (the runtime treats close as
-     * return-to-pool), which is fine: the host's own {@code close()} in its {@code finally} is
-     * then an idempotent no-op.
+     * The one-connection {@code DataSource} the executor hands the consumer's dev session method,
+     * whose source leases from it. A ready-made source's release closes the connection, which is
+     * fine: the host's own {@code close()} in its {@code finally} is then an idempotent no-op.
      */
     private static TypeSpec singleConnectionDataSource(ClassName connection) {
         var dataSource = ClassName.get("javax.sql", "DataSource");
@@ -364,11 +337,9 @@ public final class GraphitronDevExecutorGenerator {
         sb.append("but never persist.\n");
         if (mountsIdentity) {
             sb.append("\n");
-            sb.append("<p>This schema configures {@code <sessionState>}: the request's {@code SessionState}\n");
-            sb.append("mounts identity exactly as a production caller's would, and a missing one fails\n");
-            sb.append("loudly rather than running unsecured. It is preflighted before execution, so a\n");
-            sb.append("rejected payload propagates as the callback's own exception rather than a redacted\n");
-            sb.append("execution error.\n");
+            sb.append("<p>This schema configures {@code <sessionState>}: the request's connection source\n");
+            sb.append("sets identity exactly as a production caller's would, and a missing one fails\n");
+            sb.append("loudly rather than running unsecured.\n");
         }
         sb.append("@param connection the open JDBC connection to execute on; the caller owns it, but\n");
         sb.append("release may close it (idempotent with the caller's own close)\n");
@@ -376,12 +347,9 @@ public final class GraphitronDevExecutorGenerator {
         sb.append("or {@code ORACLE}; must not be {@code null}\n");
         sb.append("@param query the GraphQL operation to execute; must not be {@code null}\n");
         sb.append("@param variables the operation's variables; {@code null} means none\n");
-        if (mountsIdentity) {
-            sb.append("@param session the request's session state, built by the dev host from the\n");
-            sb.append("configured claims; must not be {@code null}\n");
-        } else {
-            sb.append("@param claims unused by this schema (it mounts no identity); may be {@code null}\n");
-        }
+        sb.append("@param session builds the request's {@code ConnectionSource} over a one-connection\n");
+        sb.append("{@code DataSource}, from the dev host's configured session method and claims; "
+            + (mountsIdentity ? "must not be\n{@code null}\n" : "{@code null}\nleases the connection as it is\n"));
         if (contextArgs.isEmpty()) {
             sb.append("@param contextArgs unused by this schema (no {@code contextArguments} declared); may\n");
             sb.append("be {@code null}\n");

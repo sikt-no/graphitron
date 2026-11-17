@@ -6,8 +6,8 @@ import java.sql.Statement;
 import java.util.List;
 
 /**
- * The PostgreSQL session-settings capture and reset as the emitted {@code PinnedConnection} issues
- * them, for the emitted-code harness tests' fake connections: the capture is a
+ * The PostgreSQL session-settings capture and reset as the emitted {@code ConnectionSources.mounting}
+ * issues them, for the emitted-code harness tests' fake connections: the capture is a
  * {@code Statement.executeQuery} over {@code pg_settings} at acquire, the reset a
  * {@code prepareStatement} whose SQL starts with {@code RESET ALL} at release. A fake connection
  * answers the capture with {@link #captureStatement} and recognises the reset with
@@ -16,6 +16,23 @@ import java.util.List;
 final class FakeSessionSettings {
 
     private FakeSessionSettings() {}
+
+    /**
+     * A {@code DatabaseMetaData} naming {@code product} as the database, what
+     * {@code ConnectionSources.mounting} reads to decide whether to capture and reset:
+     * {@code "PostgreSQL"} for a fake standing in for a PostgreSQL connection.
+     */
+    static java.sql.DatabaseMetaData metaData(ClassLoader loader, String product) {
+        return (java.sql.DatabaseMetaData) Proxy.newProxyInstance(loader, new Class<?>[]{java.sql.DatabaseMetaData.class},
+            (proxy, method, args) -> method.getName().equals("getDatabaseProductName")
+                ? product
+                : defaultFor(proxy, method, args, "fakeMetaData:" + product));
+    }
+
+    /** {@link #metaData} for PostgreSQL. */
+    static java.sql.DatabaseMetaData postgres(ClassLoader loader) {
+        return metaData(loader, "PostgreSQL");
+    }
 
     /** Whether {@code sql} is the reset release issues after the unmount. */
     static boolean isReset(String sql) {

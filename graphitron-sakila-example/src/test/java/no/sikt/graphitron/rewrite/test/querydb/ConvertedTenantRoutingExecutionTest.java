@@ -26,7 +26,6 @@ import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Execution-tier proof that tenant keys are compared by the tenant column's database value, over
@@ -35,7 +34,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * converter maps to {@code String}, so the SQL binds {@code "0186"} as {@code 186}; the router
  * must agree, whichever spelling the client or the consumer supplied. Two databases
  * ({@code org_tenant_186}, {@code org_tenant_1120}) each hold their own tenant's {@code org_site}
- * rows behind counting {@code DataSource}s keyed by the canonical spelling.
+ * rows behind counting {@code DataSource}s, which the request's connection source keys by the
+ * canonical spelling the runtime hands it.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -50,6 +50,8 @@ class ConvertedTenantRoutingExecutionTest {
     static final AtomicInteger OPENED_1120 = new AtomicInteger();
     static final AtomicInteger OPENED_DEFAULT = new AtomicInteger();
     static GraphQL graphql;
+    static DataSource defaultPool;
+    static final Map<String, DataSource> BY_TENANT = new LinkedHashMap<>();
 
     @BeforeAll
     static void startDatabase() {
@@ -75,12 +77,10 @@ class ConvertedTenantRoutingExecutionTest {
             t.execute("insert into org_site values (3, 1120, 1120, 'Trondheim main')");
         }
 
-        Map<String, DataSource> byTenant = new LinkedHashMap<>();
-        byTenant.put("186", countingDataSource(DB_186, OPENED_186));
-        byTenant.put("1120", countingDataSource(DB_1120, OPENED_1120));
-        var runtime = new GraphitronRuntime(
-            countingDataSource(null, OPENED_DEFAULT), byTenant, SQLDialect.POSTGRES);
-        graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        BY_TENANT.put("186", countingDataSource(DB_186, OPENED_186));
+        BY_TENANT.put("1120", countingDataSource(DB_1120, OPENED_1120));
+        defaultPool = countingDataSource(null, OPENED_DEFAULT);
+        graphql = new GraphitronRuntime(SQLDialect.POSTGRES).newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
     @AfterAll
@@ -98,14 +98,15 @@ class ConvertedTenantRoutingExecutionTest {
         OPENED_DEFAULT.set(0);
     }
 
-    private static ExecutionResult execute(GraphQL on, String query, RequestTenants tenants, String sub) {
-        return on.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.convertedTenant("{\"sub\":\"" + sub + "\"}"))
-            .query(query).build());
+    private static ExecutionResult execute(GraphQL on, Map<String, DataSource> byTenant, String query,
+                                           RequestTenants tenants, String sub) {
+        var source = Sources.convertedTenant("{\"sub\":\"" + sub + "\"}", defaultPool, byTenant);
+        return on.execute(Graphitron.newOwnedExecutionInput(source, tenants).query(query).build());
     }
 
     /** Executes under a request tenant set admitting tenant 186 only. */
     private static ExecutionResult execute(String query) {
-        return execute(graphql, query, RequestTenants.of(Set.of("186")), "converted-tenant");
+        return execute(graphql, BY_TENANT, query, RequestTenants.of(Set.of("186")), "converted-tenant");
     }
 
     private static List<Object> siteNames(ExecutionResult result, String field) {
@@ -130,7 +131,7 @@ class ConvertedTenantRoutingExecutionTest {
     @Test
     void aNarrowedFanOutAsksTheTenantTheSpellingNames() {
         // Both hosted tenants are permitted, so a fan-out left un-narrowed would ask both.
-        var result = execute(graphql, "{ sitesNarrowable(ownerOrg: \"0186\") { siteName } }",
+        var result = execute(graphql, BY_TENANT, "{ sitesNarrowable(ownerOrg: \"0186\") { siteName } }",
             RequestTenants.of(Set.of("186", "1120")), "converted-tenant");
 
         assertThat(siteNames(result, "sitesNarrowable")).containsExactlyInAnyOrder("Tromsø main", "Tromsø annex");
@@ -147,17 +148,15 @@ class ConvertedTenantRoutingExecutionTest {
     }
 
     @Test
-    void theConsumersKeysTakeTheColumnsForm() {
+    void theSourceReceivesTheTenantInTheColumnsForm() {
+        // The consumer spells the request's tenant "0186"; the key the source is asked for, and so
+        // the pool it looks up and the tenant its mount receives, is the column's "186".
         var opened = new AtomicInteger();
-        var runtime = new GraphitronRuntime(countingDataSource(null, new AtomicInteger()),
-            Map.of("0186", countingDataSource(DB_186, opened)), SQLDialect.POSTGRES);
-        assertThat(runtime.tenantKeys()).containsExactly("186");
-        var consumerSpelled = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
         var tenants = RequestTenants.of(Set.of("0186"));
         assertThat(tenants.tenants()).containsExactly("186");
 
-        var result = execute(consumerSpelled, "{ sites(ownerOrg: \"186\") { siteName } }", tenants,
-            "consumer-spelled");
+        var result = execute(graphql, Map.of("186", countingDataSource(DB_186, opened)),
+            "{ sites(ownerOrg: \"186\") { siteName } }", tenants, "consumer-spelled");
 
         assertThat(siteNames(result, "sites")).containsExactlyInAnyOrder("Tromsø main", "Tromsø annex");
         assertThat(opened.get()).isPositive();
@@ -198,19 +197,6 @@ class ConvertedTenantRoutingExecutionTest {
             .as("an error, not an empty list presented as complete")
             .isNull();
         assertThat(openedAnywhere()).isZero();
-    }
-
-    @Test
-    void twoConsumerKeysNamingOneTenantAreRefusedAtConstruction() {
-        Map<String, DataSource> byTenant = new LinkedHashMap<>();
-        byTenant.put("0186", countingDataSource(DB_186, new AtomicInteger()));
-        byTenant.put("186", countingDataSource(DB_186, new AtomicInteger()));
-
-        assertThatThrownBy(() -> new GraphitronRuntime(
-                countingDataSource(null, new AtomicInteger()), byTenant, SQLDialect.POSTGRES))
-            .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("'0186'")
-            .hasMessageContaining("'186'");
     }
 
     /** A DataSource over one database counting acquisitions; {@code database} null is the main one. */

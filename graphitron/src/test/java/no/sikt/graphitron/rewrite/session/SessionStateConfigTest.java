@@ -53,7 +53,8 @@ class SessionStateConfigTest {
         assertThatIllegalArgumentException()
             .isThrownBy(() -> SessionStateConfig.from(null, "com.example.Hooks#mount", null))
             .withMessageContaining("<mount>")
-            .withMessageContaining("SessionState")
+            .withMessageContaining("ConnectionSource")
+            .withMessageContaining("ConnectionSources.mounting")
             .withMessageContaining("newOwnedExecutionInput");
         assertThatIllegalArgumentException()
             .isThrownBy(() -> SessionStateConfig.from(null, null, "com.example.Hooks#unmount"))

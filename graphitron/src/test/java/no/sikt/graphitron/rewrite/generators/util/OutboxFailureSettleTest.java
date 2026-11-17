@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -474,23 +475,28 @@ class OutboxFailureSettleTest {
 
     // --- helpers -----------------------------------------------------------------------------------
 
+    /** A runtime with the given outbox bound, paired with the request source over tenant A and a default pool. */
     private Object newRuntime(Duration outboxBound) throws Throwable {
-        var tenants = new LinkedHashMap<String, DataSource>();
-        tenants.put("A", fakeDataSource("A"));
-        Object runtime = runtimeClass.getConstructor(DataSource.class, Map.class, SQLDialect.class, int.class, Duration.class)
-            .newInstance(fakeDataSource("default"), tenants, SQLDialect.POSTGRES, 4, Duration.ofMillis(500));
-        return runtimeClass.getMethod("withOutboxAcquisitionTimeout", Duration.class).invoke(runtime, outboxBound);
+        var pools = new LinkedHashMap<String, DataSource>();
+        pools.put("A", fakeDataSource("A"));
+        pools.put(RecordingSource.DEFAULT, fakeDataSource(RecordingSource.DEFAULT));
+        Object runtime = runtimeClass.getConstructor(SQLDialect.class, Settings.class, int.class, Duration.class)
+            .newInstance(SQLDialect.POSTGRES, new Settings(), 4, Duration.ofMillis(500));
+        return new Hosted(runtimeClass.getMethod("withOutboxAcquisitionTimeout", Duration.class).invoke(runtime, outboxBound),
+            RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", pools));
     }
 
+    private record Hosted(Object runtime, Object source) {}
+
     private Object newOwnedConnections(Object runtime) throws Throwable {
+        Hosted hosted = (Hosted) runtime;
         Class<?> requestTenantsClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
-        Object hosted = runtimeClass.getMethod("tenantKeys").invoke(runtime);
-        Object requestTenants = requestTenantsClass.getMethod("of", Collection.class).invoke(null, hosted);
-        Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
+        Object requestTenants = requestTenantsClass.getMethod("of", Collection.class).invoke(null, List.of("A"));
+        Class<?> sourceClass = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
         @SuppressWarnings({"unchecked", "rawtypes"})
         Object commit = Enum.valueOf((Class) commitPolicyClass, "COMMIT");
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
-            .newInstance(runtime, commit, requestTenants, RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sourceClass)
+            .newInstance(hosted.runtime(), commit, requestTenants, hosted.source());
     }
 
     private static ExecutionStepInfo step() {
@@ -641,6 +647,7 @@ class OutboxFailureSettleTest {
 
     private Connection fakeConnection(String label, int nth) {
         boolean[] autoCommit = {true};
+        boolean[] closed = {false};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[] {Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 case "prepareStatement" -> {
@@ -667,11 +674,15 @@ class OutboxFailureSettleTest {
                     if (failure != null) throw failure;
                     yield null;
                 }
+                case "getMetaData" -> FakeSessionSettings.postgres(harness.classLoader());
+                case "isClosed" -> closed[0];
                 case "close" -> {
+                    closed[0] = true;
                     events.add("close:" + label);
                     yield null;
                 }
                 case "abort" -> {
+                    closed[0] = true;
                     events.add("abort:" + label);
                     yield null;
                 }

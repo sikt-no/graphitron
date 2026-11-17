@@ -24,7 +24,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Execution-tier coverage of the tenant-keyed acquisition seam against real PostgreSQL:
- * the runtime's {@code Map<TenantId, DataSource>} construction and the {@code OwnedConnections} carrier
+ * the request's connection source (a pool per tenant key) and the {@code OwnedConnections} carrier
  * route each divined key to its own {@code DataSource}, pinning one connection per distinct key.
  *
  * <p>Database-per-tenant is simulated with two schemas ({@code tenant_a}, {@code tenant_b}), each with a
@@ -70,11 +70,10 @@ class TenantRoutingExecutionTest {
 
     @Test
     void dslFor_routesEachKeyToItsOwnSource_seeingDisjointRows() {
-        var runtime = new GraphitronRuntime(
-            searchPathDataSource("public", null),
-            Map.of(KEY_A, searchPathDataSource("tenant_a", null), KEY_B, searchPathDataSource("tenant_b", null)),
-            SQLDialect.POSTGRES);
-        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{}"));
+        var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
+        var source = Sources.main("{}", searchPathDataSource("public", null),
+            Map.of(KEY_A, searchPathDataSource("tenant_a", null), KEY_B, searchPathDataSource("tenant_b", null)));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
         try {
             DSLContext a = tenants.dslFor(KEY_A);
             DSLContext b = tenants.dslFor(KEY_B);
@@ -95,11 +94,10 @@ class TenantRoutingExecutionTest {
     @Test
     void dslFor_pinsOneConnectionPerDistinctKey_acrossOneOperation() {
         AtomicInteger opened = new AtomicInteger();
-        var runtime = new GraphitronRuntime(
-            searchPathDataSource("public", opened),
-            Map.of(KEY_A, searchPathDataSource("tenant_a", opened), KEY_B, searchPathDataSource("tenant_b", opened)),
-            SQLDialect.POSTGRES);
-        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{}"));
+        var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
+        var source = Sources.main("{}", searchPathDataSource("public", opened),
+            Map.of(KEY_A, searchPathDataSource("tenant_a", opened), KEY_B, searchPathDataSource("tenant_b", opened)));
+        var tenants = new OwnedConnections(runtime, CommitPolicy.COMMIT, source);
         try {
             tenants.dslFor(KEY_A);
             tenants.dslFor(KEY_B);

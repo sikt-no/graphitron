@@ -35,15 +35,16 @@ public class DevDatabaseBinding {
     /** The jOOQ dialect, explicit and enumerated: {@code POSTGRES} or {@code ORACLE}. */
     String dialect;
     /**
-     * The per-request claims payload handed to the method {@link #session} names, which builds the request's session state:
+     * The per-request claims payload handed to the method {@link #session} names, which builds the request's connection source:
      * inline, or {@code @/path/to/file} to keep tokens out of listings. Required when the schema
      * configures {@code <sessionState>} (enforced by the generated executor at call time).
      */
     String claims;
     /**
-     * The method that builds the request's session state from {@link #claims}, as
-     * {@code fqcn#method}: a public static method taking the claims {@code String} and returning
-     * the generated {@code SessionState}. Required when the schema configures
+     * The method that builds the request's connection source from {@link #claims}, as
+     * {@code fqcn#method}: a public static method taking the claims {@code String} and a
+     * {@code DataSource} over the dev connection, and returning the generated
+     * {@code ConnectionSource}. Required when the schema configures
      * {@code <sessionState>}; resolved against the project's compiled classes at dev run time, so
      * it may live in the consumer's own module, which generation never loads.
      */

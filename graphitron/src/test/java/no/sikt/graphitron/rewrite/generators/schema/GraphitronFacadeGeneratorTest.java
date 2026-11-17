@@ -38,7 +38,7 @@ class GraphitronFacadeGeneratorTest {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
             .containsExactly("buildSchema", "buildSchema", "newExecutionInput", "newOwnedExecutionInput", "newGraphQL",
-                "runtime", "runtime", "schemaSdl", "sessionMountFailure");
+                "runtime", "runtime", "schemaSdl", "acquisitionFailure");
     }
 
     // ===== what an adapter reaches by method reference =====
@@ -58,11 +58,11 @@ class GraphitronFacadeGeneratorTest {
     }
 
     @Test
-    void runtime_hasASettingsFormBesideTheDataSourceAndDialectForm() {
+    void runtime_hasASettingsFormBesideTheDialectForm() {
         assertThat(methodsNamed("runtime")).extracting(m -> m.parameters().stream().map(p -> p.type().toString()).toList())
             .containsExactlyInAnyOrder(
-                java.util.List.of("javax.sql.DataSource", "org.jooq.SQLDialect"),
-                java.util.List.of("javax.sql.DataSource", "org.jooq.SQLDialect", "org.jooq.conf.Settings"));
+                java.util.List.of("org.jooq.SQLDialect"),
+                java.util.List.of("org.jooq.SQLDialect", "org.jooq.conf.Settings"));
         assertThat(methodsNamed("runtime")).allSatisfy(m -> {
             assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
             assertThat(m.returnType().toString()).isEqualTo("com.example.schema.GraphitronRuntime");
@@ -70,10 +70,10 @@ class GraphitronFacadeGeneratorTest {
     }
 
     @Test
-    void sessionMountFailure_takesAThrowableAndAnswersTheMountsOwnExceptionInEveryBuild() {
-        // Present with no session identity too (the call is always empty there), so an adapter's
-        // constructor argument compiles whichever way the build is configured.
-        var method = methodsNamed("sessionMountFailure").get(0);
+    void acquisitionFailure_takesAThrowableAndAnswersTheSourcesOwnExceptionInEveryBuild() {
+        // Present in every build, session identity or not, so an adapter's constructor argument
+        // compiles whichever way the build is configured.
+        var method = methodsNamed("acquisitionFailure").get(0);
         assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(method.parameters()).extracting(p -> p.type().toString()).containsExactly("java.lang.Throwable");
         assertThat(method.returnType().toString()).isEqualTo("java.util.Optional<java.lang.Throwable>");
@@ -173,11 +173,13 @@ class GraphitronFacadeGeneratorTest {
     // ===== newOwnedExecutionInput (owned-connection path) =====
 
     @Test
-    void newOwnedExecutionInput_emptySchemaTakesNoParameters() {
-        // No leading claims parameter exists any more: a configured mount's payload parameters
-        // are ordinary contextArguments, so a schema declaring none takes nothing.
+    void newOwnedExecutionInput_emptySchemaTakesTheConnectionSourceAlone() {
+        // The request's connection source is the one leading parameter in every build; a mount's
+        // payload parameters are ordinary contextArguments, so a schema declaring none takes
+        // nothing else.
         var owned = ownedFactory(emptySchema());
-        assertThat(owned.parameters()).isEmpty();
+        assertThat(owned.parameters()).extracting(p -> p.type() + " " + p.name())
+            .containsExactly("com.example.schema.ConnectionSource source");
         assertThat(owned.returnType().toString()).isEqualTo("graphql.ExecutionInput.Builder");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }

@@ -141,13 +141,15 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("GraphitronContext", "emitted: per-app context interface");
         exempt.put("GraphitronContextImpl", "emitted: the consumer's own implementation of it");
         exempt.put("ConnectionKey", "emitted: per-app key a fetcher acquires its connection by");
-        exempt.put("MountedSession", "emitted: per-app view of the connection a mount callback receives");
-        exempt.put("SessionState", "emitted: per-app carrier of a request's mount and unmount callbacks");
+        exempt.put("ConnectionSource", "emitted: per-app source a request's connections are leased from");
+        exempt.put("ConnectionSources", "emitted: per-app ready-made connection sources");
+        exempt.put("Lease", "emitted: per-app leased connection a connection source returns");
+        exempt.put("KeyNotPermitted", "emitted: per-app refusal a connection source throws for a key");
         exempt.put("NodeIdStrategy", "emitted: per-app node-id strategy interface");
         exempt.put("OrderByResult", "emitted: per-app order-by result class");
         exempt.put("Outcome", "emitted: error-channel result type in generated output");
         exempt.put("Outcome.Success", "emitted: the success arm of that generated result type");
-        exempt.put("SessionMountException", "emitted: per-app rejection a throwing <sessionState> mount becomes");
+        exempt.put("AcquisitionFailedException", "emitted: per-app rejection a throwing connection source becomes");
 
         // module: a real reactor type in a module this test tier does not depend on.
         exempt.put("BundledLibraryLookup", "module: graphitron-lsp");

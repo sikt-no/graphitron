@@ -337,20 +337,43 @@ public final class PlanCompileGraph {
                     var pinned = runtimeUnit("PinnedConnection");
                     var runtime = runtimeUnit("GraphitronRuntime");
                     var ownedConnections = runtimeUnit("OwnedConnections");
-                    var hookImpl = runtimeUnit("GraphitronSessionHook");
-                    var mountException = runtimeUnit("SessionMountException");
+                    var source = runtimeUnit("ConnectionSource");
+                    var lease = runtimeUnit("Lease");
+                    var keyNotPermitted = runtimeUnit("KeyNotPermitted");
+                    var acquisitionFailed = runtimeUnit("AcquisitionFailedException");
+                    var sources = runtimeUnit("ConnectionSources");
                     var requestTenants = runtimeUnit("RequestTenants");
                     var connectionKey = runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME);
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
                     var batchSizeLimit = runtimeUnit("BatchSizeLimit");
-                    pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
-                    pinned.ifPresent(p -> mountException.ifPresent(m -> declared(p, m)));
+                    // The pinned connection wraps a lease from the request's source, keyed by the
+                    // connection key, and turns a failure into the request-level rejection.
+                    pinned.ifPresent(p -> {
+                        source.ifPresent(x -> declared(p, x));
+                        lease.ifPresent(x -> declared(p, x));
+                        keyNotPermitted.ifPresent(x -> declared(p, x));
+                        acquisitionFailed.ifPresent(x -> declared(p, x));
+                        connectionKey.ifPresent(x -> declared(p, x));
+                    });
+                    source.ifPresent(x -> {
+                        lease.ifPresent(l -> declared(x, l));
+                        connectionKey.ifPresent(ck -> declared(x, ck));
+                        keyNotPermitted.ifPresent(k -> declared(x, k));
+                        sources.ifPresent(cs -> declared(x, cs));
+                    });
+                    sources.ifPresent(x -> {
+                        source.ifPresent(cs -> declared(x, cs));
+                        lease.ifPresent(l -> declared(x, l));
+                        connectionKey.ifPresent(ck -> declared(x, ck));
+                    });
                     // The response's clientErrorMessage takes the client exception.
                     fetcherErrorResponse.ifPresent(l -> refOf(GlobalUnitKind.CLIENT_EXCEPTION)
                         .ifPresent(ce -> declared(l, ce)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
+                        source.ifPresent(x -> declared(r, x));
+                        connectionKey.ifPresent(ck -> declared(r, ck));
                         fetcherErrorLog.ifPresent(l -> declared(r, l));
                         fetcherErrorResponse.ifPresent(l -> declared(r, l));
                         batchSizeLimit.ifPresent(l -> declared(r, l));
@@ -362,7 +385,9 @@ public final class PlanCompileGraph {
                         requestTenants.ifPresent(rt -> declared(t, rt));
                         // The carrier is keyed by the connection key and hands it down.
                         connectionKey.ifPresent(ck -> declared(t, ck));
-                        mountException.ifPresent(m -> declared(t, m));
+                        source.ifPresent(x -> declared(t, x));
+                        keyNotPermitted.ifPresent(x -> declared(t, x));
+                        acquisitionFailed.ifPresent(x -> declared(t, x));
                         // The fan-out failure path hands its throw to the consumer's log through
                         // the router's shared guard.
                         fetcherErrorLog.ifPresent(l -> declared(t, l));
@@ -383,6 +408,10 @@ public final class PlanCompileGraph {
                     // Lazy acquisition on every path: the instrumentation publishes the
                     // per-operation carrier on both topologies.
                     runtimeUnit("OwnedConnections").ifPresent(t -> declared(instrumentation, t));
+                    // It reads the request's source off the context, and rethrows a failed
+                    // acquisition out of execute.
+                    runtimeUnit("ConnectionSource").ifPresent(x -> declared(instrumentation, x));
+                    runtimeUnit("AcquisitionFailedException").ifPresent(x -> declared(instrumentation, x));
                     runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
@@ -418,7 +447,9 @@ public final class PlanCompileGraph {
                     // contextArguments and the singleton, so the facade references the runtime
                     // (Graphitron.runtime(...)) but never the instrumentation class.
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(facade, r));
-                    // sessionMountFailure reads the cause chain through the carrier's static.
+                    // The owned factory takes the request's connection source first.
+                    runtimeUnit("ConnectionSource").ifPresent(x -> precise(facade, x));
+                    // acquisitionFailure reads the cause chain through the carrier's static.
                     runtimeUnit("OwnedConnections").ifPresent(t -> precise(facade, t));
                     // A <tenantColumn> build's factories take or wrap the RequestTenants value.
                     runtimeUnit("RequestTenants").ifPresent(rt -> precise(facade, rt));
@@ -429,6 +460,13 @@ public final class PlanCompileGraph {
                     var devExecutor = units.get(0);
                     precise(devExecutor, require(GlobalUnitKind.FACADE));
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(devExecutor, r));
+                    // It builds the request's source (a lease of the given connection, or the
+                    // consumer's), keyed by the connection key, and unwraps a failed acquisition.
+                    runtimeUnit("ConnectionSource").ifPresent(x -> precise(devExecutor, x));
+                    runtimeUnit("Lease").ifPresent(x -> precise(devExecutor, x));
+                    runtimeUnit(no.sikt.graphitron.emit.ConnectionKeyShape.CLASS_NAME)
+                        .ifPresent(x -> precise(devExecutor, x));
+                    runtimeUnit("AcquisitionFailedException").ifPresent(x -> precise(devExecutor, x));
                     refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> precise(devExecutor, i));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> precise(devExecutor, tp));
                 }

@@ -3,12 +3,11 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.issuing.Graphitron;
-import no.sikt.graphitron.generated.issuing.schema.SessionState;
+import no.sikt.graphitron.generated.issuing.schema.ConnectionSource;
 import no.sikt.graphitron.generated.issuing.schema.VoucherCodec;
 import no.sikt.graphitron.generated.issuing.schema.VoucherKeys;
 import no.sikt.graphitron.generated.issuing.schema.VoucherRejectedException;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
-import no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -47,6 +46,7 @@ class VoucherIssueExecutionTest {
     static KeyPair pair;
     static VoucherKeys keys;
     static GraphQL graphql;
+    static DataSource pool;
 
     @BeforeAll
     static void start() throws Exception {
@@ -54,7 +54,7 @@ class VoucherIssueExecutionTest {
         String user = SakilaDatabase.user();
         String password = SakilaDatabase.password();
         dsl = DSL.using(url, user, password);
-        var dataSource = (DataSource) Proxy.newProxyInstance(VoucherIssueExecutionTest.class.getClassLoader(),
+        pool = (DataSource) Proxy.newProxyInstance(VoucherIssueExecutionTest.class.getClassLoader(),
             new Class<?>[] {DataSource.class},
             (proxy, method, args) -> switch (method.getName()) {
                 case "getConnection" -> SakilaDatabase.connect(url, user, password);
@@ -65,15 +65,13 @@ class VoucherIssueExecutionTest {
             });
         pair = KeyPairGenerator.getInstance(VoucherKeys.ALGORITHM).generateKeyPair();
         keys = VoucherKeys.ed25519("k1", pair.getPrivate(), Map.of("k1", pair.getPublic()));
-        graphql = Graphitron.runtime(dataSource, SQLDialect.POSTGRES, keys)
+        graphql = Graphitron.runtime(SQLDialect.POSTGRES, keys)
             .newGraphQL(Graphitron.buildSchema(b -> {}))
             .build();
     }
 
-    private static SessionState session() {
-        return SessionState.of(
-            session -> SakilaSessionIdentity.mount(session.configuration(), CLAIMS),
-            (session, handle) -> SakilaSessionIdentity.unmount(session.configuration(), handle));
+    private static ConnectionSource session() {
+        return Sources.issuing(CLAIMS, pool);
     }
 
     @SuppressWarnings("unchecked")

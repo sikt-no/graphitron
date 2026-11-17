@@ -91,17 +91,18 @@ class GraphitronFacadeGeneratorPipelineTest {
             .orElseThrow();
 
         assertThat(owned.parameters()).extracting(p -> p.name())
-            .containsExactly("fnr", "userId");
+            .containsExactly("source", "fnr", "userId");
         assertThat(owned.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("java.lang.Long", "java.lang.String");
+            .containsExactly("com.example.schema.ConnectionSource", "java.lang.Long", "java.lang.String");
         assertThat(owned.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
     }
 
     @Test
-    void ownedFactory_takesTheSessionStateBeforeTheDeclaredContextArguments() {
+    void ownedFactory_takesTheConnectionSourceBeforeTheDeclaredContextArguments() {
         // Where the graph supplies session identity the owned factory takes the request's
-        // SessionState, and only the schema's declared contextArguments follow it, alphabetical as
-        // before: the mount contributes none, since its inputs are captured by the callbacks.
+        // ConnectionSource, as in every build, and only the schema's declared contextArguments
+        // follow it, alphabetical as before: identity contributes none, since its inputs are
+        // captured by the source.
         String sdl = """
             type Query {
                 rating: String @service(service: {
@@ -119,22 +120,22 @@ class GraphitronFacadeGeneratorPipelineTest {
             .findFirst()
             .orElseThrow();
         assertThat(owned.parameters()).extracting(p -> p.name())
-            .containsExactly("session", "userId");
+            .containsExactly("source", "userId");
         assertThat(owned.parameters()).extracting(p -> p.type().toString())
-            .containsExactly("com.example.schema.SessionState", "java.lang.String");
+            .containsExactly("com.example.schema.ConnectionSource", "java.lang.String");
         MethodSpec escapeHatch = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newExecutionInput"))
             .findFirst()
             .orElseThrow();
         assertThat(escapeHatch.parameters()).extracting(p -> p.name())
-            .as("the escape hatch's caller owns identity, so it takes no session state")
+            .as("the escape hatch's caller owns identity, so it takes no connection source")
             .containsExactly("defaultDsl", "userId");
     }
 
     @Test
     void sessionBoundParameter_growsNoFactorySlot() {
         // The $session binding is per-connection state read at the call site, never
-        // caller-supplied: the owned factory's parameter list carries the session state only,
+        // caller-supplied: the owned factory's parameter list carries the connection source only,
         // no slot for the bound `identity` parameter. (That the emitted read goes through the
         // resolved connection's configuration rather than graphQLContext is behavioral and
         // execution-pinned, per the no-code-string-assertion rule.)
@@ -158,6 +159,6 @@ class GraphitronFacadeGeneratorPipelineTest {
             .orElseThrow();
         assertThat(owned.parameters()).extracting(p -> p.name())
             .as("the handle is bound at the consuming site, not supplied by the caller")
-            .containsExactly("session");
+            .containsExactly("source");
     }
 }

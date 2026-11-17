@@ -215,7 +215,7 @@ To decide yourself what reaches your logs, give the runtime a `FetcherErrorLog`:
 
 [source,java]
 ----
-var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
+var runtime = Graphitron.runtime(SQLDialect.ORACLE)
     .withFetcherErrorLog((thrown, reference, env) ->
         LOG.error("Unmatched exception at {}; reference = {}; {}",
             env.getExecutionStepInfo().getPath(), reference, Sanitiser.describe(thrown)));
@@ -276,7 +276,7 @@ Graphitron calls `matched` once for each exception a handler catches in a reques
 
 [source,java]
 ----
-var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
+var runtime = Graphitron.runtime(SQLDialect.ORACLE)
     .withFetcherErrorLog(new FsErrorLog())
     .withFetcherErrorResponse(new FsErrorResponse());
 ----

@@ -148,8 +148,8 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
-     * The emitted {@code OwnedConnections} carrier, whose {@code isMountFailure} predicate the
-     * router asks so that it never names the mount-gated {@code SessionMountException} itself.
+     * The emitted {@code OwnedConnections} carrier, whose {@code isAcquisitionFailure} predicate the
+     * router asks so that it never names {@code AcquisitionFailedException} itself.
      */
     static ClassName ownedConnectionsClass(String outputPackage) {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).ownedConnections();
@@ -613,7 +613,7 @@ public final class ErrorRouterClassGenerator {
                 + "@param mappings the channel's dispatch table\n"
                 + "@param env the failing field's environment, or {@code null}\n"
                 + "@return the claimed link of {@code thrown}'s cause chain, or {@code null}\n")
-            .beginControlFlow("if ($T.isMountFailure(thrown) || isOutboxFailure(thrown))", ownedConnections)
+            .beginControlFlow("if ($T.isAcquisitionFailure(thrown) || isOutboxFailure(thrown))", ownedConnections)
             .addStatement("return null")
             .endControlFlow()
             .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))
@@ -747,11 +747,11 @@ public final class ErrorRouterClassGenerator {
             .addCode(CodeBlock.builder()
                 .add("// Every arm below fails the field: its mutation transaction, if any, rolls back.\n")
                 .addStatement("$T.markFieldFailed(env, thrown)", ownedConnectionsClass(outputPackage))
-                .beginControlFlow("if ($T.isMountFailure(thrown))", ownedConnectionsClass(outputPackage))
+                .beginControlFlow("if ($T.isAcquisitionFailure(thrown))", ownedConnectionsClass(outputPackage))
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
                 .add("    .error($T.newError(env).message($S).build())\n", GRAPHQL_ERROR_BUILDER,
-                    "The session identity was rejected.")
+                    "The request's connection could not be acquired.")
                 .addStatement("    .build()")
                 .endControlFlow()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)

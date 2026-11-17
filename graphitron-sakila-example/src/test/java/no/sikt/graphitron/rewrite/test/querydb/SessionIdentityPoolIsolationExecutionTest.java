@@ -18,7 +18,7 @@ import io.agroal.api.security.NamePrincipal;
 import io.agroal.api.security.SimplePassword;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.FetcherErrorLog;
-import no.sikt.graphitron.generated.schema.SessionMountException;
+import no.sikt.graphitron.generated.schema.AcquisitionFailedException;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import no.sikt.graphitron.sakila.example.app.SakilaSessions;
@@ -37,7 +37,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -140,7 +139,7 @@ class SessionIdentityPoolIsolationExecutionTest {
                 LOGGED.add(thrown);
             }
         };
-        var runtime = Graphitron.runtime(pool, SQLDialect.POSTGRES).withFetcherErrorLog(log);
+        var runtime = Graphitron.runtime(SQLDialect.POSTGRES).withFetcherErrorLog(log);
         var schema = Graphitron.buildSchema(b -> {});
         engine = runtime.newGraphQL(schema).build();
         cancellingEngine = runtime.newGraphQL(schema, new CancelAtFieldFetching("b")).build();
@@ -167,11 +166,7 @@ class SessionIdentityPoolIsolationExecutionTest {
         defaultPool = poolOfOne(SakilaDatabase.url(), SakilaDatabase.user(), SakilaDatabase.password());
         tenant1Pool = poolOfOne(SakilaDatabase.tenantUrl(TENANT_1), SakilaDatabase.user(), SakilaDatabase.password());
         tenant2Pool = poolOfOne(SakilaDatabase.tenantUrl(TENANT_2), SakilaDatabase.user(), SakilaDatabase.password());
-        Map<Integer, DataSource> byTenant = new LinkedHashMap<>();
-        byTenant.put(1, tenant1Pool);
-        byTenant.put(2, tenant2Pool);
-        var runtime = new no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime(
-            defaultPool, byTenant, SQLDialect.POSTGRES);
+        var runtime = new no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime(SQLDialect.POSTGRES);
         tenantEngine = runtime.newGraphQL(
             no.sikt.graphitron.generated.multitenant.Graphitron.buildSchema(b -> {})).build();
     }
@@ -230,9 +225,12 @@ class SessionIdentityPoolIsolationExecutionTest {
         // set_config(..., true) in autocommit reverts at the end of its own statement: this unmount
         // clears nothing, and only the reset graphitron runs after it keeps Alice off the connection.
         String claims = "{\"sub\":\"" + ALICE + "\"}";
-        var defective = no.sikt.graphitron.generated.schema.SessionState.of(
-            session -> no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity.mount(session.configuration(), claims),
-            (session, handle) -> session.configuration().dsl().execute("select set_config('app.user_id', '', true)"));
+        var defective = no.sikt.graphitron.generated.schema.ConnectionSources.mounting(
+            key -> pool,
+            (connection, key) -> no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity.mount(
+                Sources.configuration(connection), claims),
+            (connection, key, handle) -> Sources.configuration(connection).dsl()
+                .execute("select set_config('app.user_id', '', true)"));
         var before = Counts.of(pool);
 
         var result = engine.execute(Graphitron.newOwnedExecutionInput(defective, claims, ALICE)
@@ -325,13 +323,13 @@ class SessionIdentityPoolIsolationExecutionTest {
         // A pool of its own: what the pool does with the aborted connection afterwards is not
         // what this case pins (see the class javadoc), and it must not reach the other cases.
         try (AgroalDataSource own = poolOfOne(SakilaDatabase.url(), ROLE, ROLE_PASSWORD)) {
-            var ownEngine = Graphitron.runtime(own, SQLDialect.POSTGRES)
+            var ownEngine = Graphitron.runtime(SQLDialect.POSTGRES)
                 .newGraphQL(Graphitron.buildSchema(b -> {})).build();
             int backend = backendOnNextBorrow(own);
             var before = Counts.of(own);
 
-            assertThatThrownBy(() -> ownEngine.execute(ownedInput("reject-me", "{ secureNotes { note } }")))
-                .isInstanceOf(SessionMountException.class)
+            assertThatThrownBy(() -> ownEngine.execute(ownedInput("reject-me", "{ secureNotes { note } }", own)))
+                .isInstanceOf(AcquisitionFailedException.class)
                 .hasStackTraceContaining("unentitled principal")
                 .satisfies(thrown -> assertThat(chainHasSqlState(thrown, "42501"))
                     .as("the mount was refused by the routine, not by a missing grant").isFalse());
@@ -426,7 +424,7 @@ class SessionIdentityPoolIsolationExecutionTest {
         var proceed = new CountDownLatch(1);
         var refusal = new AtomicReference<Throwable>();
         var straggler = new CompletableFuture<Void>();
-        var stragglerEngine = Graphitron.runtime(pool, SQLDialect.POSTGRES)
+        var stragglerEngine = Graphitron.runtime(SQLDialect.POSTGRES)
             .newGraphQL(Graphitron.buildSchema(b -> {}), new StragglerThenCancel("late", "b", proceed, refusal, straggler))
             .build();
         var before = Counts.of(pool);
@@ -461,7 +459,8 @@ class SessionIdentityPoolIsolationExecutionTest {
         var t2Before = Counts.of(tenant2Pool);
 
         var result = tenantEngine.execute(no.sikt.graphitron.generated.multitenant.Graphitron
-            .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"" + ALICE + "\"}"))
+            .newOwnedExecutionInput(Sources.multitenant("{\"sub\":\"" + ALICE + "\"}", defaultPool,
+                Map.of(1, tenant1Pool, 2, tenant2Pool)), List.of(1, 2))
             .query("{ filmsEverywhere { title mountedPrincipal } }")
             .build());
 
@@ -573,8 +572,13 @@ class SessionIdentityPoolIsolationExecutionTest {
 
     /** An owned input whose claims carry {@code sub}; {@code null} is an anonymous request. */
     private static ExecutionInput ownedInput(String sub, String query) {
+        return ownedInput(sub, query, pool);
+    }
+
+    /** As {@link #ownedInput(String, String)}, leasing from {@code from}. */
+    private static ExecutionInput ownedInput(String sub, String query, DataSource from) {
         String claims = sub == null ? "{}" : "{\"sub\":\"" + sub + "\"}";
-        return Graphitron.newOwnedExecutionInput(SakilaSessions.of(claims), claims, sub == null ? "" : sub)
+        return Graphitron.newOwnedExecutionInput(SakilaSessions.of(claims, from), claims, sub == null ? "" : sub)
             .query(query)
             .build();
     }

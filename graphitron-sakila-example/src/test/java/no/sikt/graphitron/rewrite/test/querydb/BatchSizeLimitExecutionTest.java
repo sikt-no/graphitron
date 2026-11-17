@@ -221,13 +221,13 @@ class BatchSizeLimitExecutionTest {
     // ===== helpers =====
 
     private static GraphitronRuntime runtime() {
-        return Graphitron.runtime(dataSource, SQLDialect.POSTGRES);
+        return Graphitron.runtime(SQLDialect.POSTGRES);
     }
 
     private static ExecutionResult run(GraphitronRuntime runtime, String query) {
         var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
         var input = Graphitron.newOwnedExecutionInput(
-            no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"),
+            no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}", dataSource),
             "{\"sub\":\"test-user\"}", "test-user").query(query);
         return engine.execute(input.build());
     }

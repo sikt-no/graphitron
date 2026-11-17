@@ -24,7 +24,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -33,14 +32,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit-tier coverage of the runtime's tenant-keyed acquisition primitive
- * ({@code GraphitronRuntime.acquireForTenant}) and the per-operation {@code OwnedConnections} carrier.
- * Because these are emitted, the honest way to assert their behaviour is to compile the real emitted
- * {@code TypeSpec}s and drive them over fake JDBC. The units are generated with the
- * {@link RecordingSessionState} callback pair so the real mount/unmount runs at acquisition/release,
- * letting a fake {@code Connection} observe both phases as the {@code prepareStatement} calls the
- * fixture makes; the fake tenant {@code DataSource}s are keyed so "the right source per key" and
- * "one connection per distinct key" read straight off the call log.
+ * Unit-tier coverage of the runtime's keyed acquisition primitive
+ * ({@code GraphitronRuntime.acquire(key, source)}) and the per-operation {@code OwnedConnections}
+ * carrier. Because these are emitted, the honest way to assert their behaviour is to compile the real
+ * emitted {@code TypeSpec}s and drive them over fake JDBC. The request's source is a
+ * {@link RecordingSource}, so the real mount/unmount runs at acquisition/release, letting a fake
+ * {@code Connection} observe both phases as the {@code prepareStatement} calls the fixture makes;
+ * the fake {@code DataSource}s are keyed so "the right pool per key" and "one connection per distinct
+ * key" read straight off the call log.
  */
 @UnitTier
 class OwnedConnectionsGeneratorTest {
@@ -102,25 +101,24 @@ class OwnedConnectionsGeneratorTest {
     }
 
     @Test
-    void acquireForTenant_selectsTheKeysSource_andUnknownKeyRaisesBeforeAnySql() throws Throwable {
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
+    void acquire_leasesTheKeysPool_andAKeyTheSourceRefusesRaisesBeforeAnySql() throws Throwable {
+        Object source = source(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
 
-        acquireForTenant(runtime, "A", session());
+        acquire(newRuntime(), "A", source);
         assertThat(events)
-            .as("acquiring for key A pins A's source and mounts identity on it")
+            .as("acquiring for key A leases A's pool and mounts identity on it")
             .containsExactly("getConnection:A", "connect:A");
 
         events.clear();
-        assertThatThrownBy(() -> acquireForTenant(runtime, "Z", session()))
-            .as("an unknown tenant key is a request-level error, structurally distinct from acquisition failure")
-            .isInstanceOf(NoSuchElementException.class);
-        assertThat(events).as("no connection is acquired for an unknown key: the error precedes all SQL").isEmpty();
+        assertThatThrownBy(() -> acquire(newRuntime(), "Z", source))
+            .as("a key the source refuses passes through as its KeyNotPermitted, distinct from a failed acquisition")
+            .isInstanceOf(harness.load(SCHEMA_PACKAGE + ".KeyNotPermitted"));
+        assertThat(events).as("no connection is taken for a refused key: the refusal precedes all SQL").isEmpty();
     }
 
     @Test
     void dslFor_pinsOneConnectionPerDistinctKey_reusingWithinTheOperation() throws Throwable {
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
-        Object tc = newOwnedConnections(runtime, session());
+        Object tc = newOwnedConnections(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", false)));
 
         dslFor(tc, "A");
         dslFor(tc, "A"); // same key again within the operation
@@ -147,8 +145,7 @@ class OwnedConnectionsGeneratorTest {
     void releaseAll_evictsAFailedConnectionAndStillReleasesTheRest() throws Throwable {
         // B's disconnect fails; A's succeeds. releaseAll must release both (A returned, B evicted) and
         // rethrow, rather than let B's failed unmount orphan A or vice versa.
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", true)));
-        Object tc = newOwnedConnections(runtime, session());
+        Object tc = newOwnedConnections(Map.of("A", fakeDataSource("A", false), "B", fakeDataSource("B", true)));
 
         dslFor(tc, "A");
         dslFor(tc, "B");
@@ -167,8 +164,7 @@ class OwnedConnectionsGeneratorTest {
 
     @Test
     void releaseAll_twice_unmountsAndReturnsEachConnectionOnce() throws Throwable {
-        Object runtime = newRuntime(Map.of());
-        Object tc = newOwnedConnections(runtime, session());
+        Object tc = newOwnedConnections(Map.of());
         dslDefault(tc);
         events.clear();
 
@@ -182,8 +178,7 @@ class OwnedConnectionsGeneratorTest {
 
     @Test
     void acquisitionAfterRelease_isRefused_withoutBorrowingOrMounting() throws Throwable {
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object tc = newOwnedConnections(runtime, session());
+        Object tc = newOwnedConnections(Map.of("A", fakeDataSource("A", false)));
         dslDefault(tc);
         releaseAll(tc);
         events.clear();
@@ -204,8 +199,8 @@ class OwnedConnectionsGeneratorTest {
     void pinInFlightAcrossRelease_isAbortedAndRefused() throws Throwable {
         var entered = new CountDownLatch(1);
         var gate = new CountDownLatch(1);
-        Object runtime = newRuntime(gated(fakeDataSource("default", false), entered, gate), Map.of());
-        Object tc = newOwnedConnections(runtime, session());
+        Object tc = newOwnedConnections(newRuntime(),
+            source(Map.of("default", gated(fakeDataSource("default", false), entered, gate))));
 
         var late = CompletableFuture.runAsync(() -> {
             try {
@@ -240,12 +235,11 @@ class OwnedConnectionsGeneratorTest {
 
     @Test
     void pinnedConnection_releaseThenAbort_returnsOnceAndNeverEvicts() throws Throwable {
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object pinned = acquireForTenant(runtime, "A", session());
+        Object pinned = acquire(newRuntime(), "A", source(Map.of("A", fakeDataSource("A", false))));
         events.clear();
 
-        invoke(() -> pinned.getClass().getMethod("release").invoke(pinned));
-        invoke(() -> pinned.getClass().getMethod("abort").invoke(pinned));
+        invoke(() -> Accessible.method(pinned.getClass(), "release").invoke(pinned));
+        invoke(() -> Accessible.method(pinned.getClass(), "abort").invoke(pinned));
 
         assertThat(events)
             .as("release and abort share one flag: the abort after a release does nothing")
@@ -254,12 +248,11 @@ class OwnedConnectionsGeneratorTest {
 
     @Test
     void pinnedConnection_abortThenRelease_evictsOnceAndNeverUnmounts() throws Throwable {
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object pinned = acquireForTenant(runtime, "A", session());
+        Object pinned = acquire(newRuntime(), "A", source(Map.of("A", fakeDataSource("A", false))));
         events.clear();
 
-        invoke(() -> pinned.getClass().getMethod("abort").invoke(pinned));
-        invoke(() -> pinned.getClass().getMethod("release").invoke(pinned));
+        invoke(() -> Accessible.method(pinned.getClass(), "abort").invoke(pinned));
+        invoke(() -> Accessible.method(pinned.getClass(), "release").invoke(pinned));
 
         assertThat(events)
             .as("release and abort share one flag: the release after an abort does nothing")
@@ -268,8 +261,7 @@ class OwnedConnectionsGeneratorTest {
 
     @Test
     void sessionHandle_onAMountedConnection_returnsTheHandleWrittenAtMint() throws Throwable {
-        Object runtime = newRuntime(Map.of("A", fakeDataSource("A", false)));
-        Object tc = newOwnedConnections(runtime, session());
+        Object tc = newOwnedConnections(Map.of("A", fakeDataSource("A", false)));
 
         Object dsl = dslForReturning(tc, "A");
 
@@ -296,32 +288,37 @@ class OwnedConnectionsGeneratorTest {
 
     // --- driving helpers -------------------------------------------------------------------------
 
-    private Object newRuntime(Map<String, DataSource> tenantSources) throws Throwable {
-        return newRuntime(fakeDataSource("default", false), tenantSources);
+    private static Object newRuntime() throws Throwable {
+        return runtimeClass.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
     }
 
-    private Object newRuntime(DataSource defaultDs, Map<String, DataSource> tenantSources) throws Throwable {
-        return runtimeClass.getConstructor(DataSource.class, Map.class, SQLDialect.class)
-            .newInstance(defaultDs, new LinkedHashMap<Object, DataSource>(tenantSources), SQLDialect.POSTGRES);
+    /**
+     * The request's source: a recording mounting source over {@code tenantPools} plus a
+     * {@code "default"} pool for the default key, where the map does not name one.
+     */
+    private Object source(Map<String, DataSource> tenantPools) throws Exception {
+        var pools = new LinkedHashMap<String, DataSource>(tenantPools);
+        pools.putIfAbsent(RecordingSource.DEFAULT, fakeDataSource(RecordingSource.DEFAULT, false));
+        return RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", pools);
     }
 
-    /** The request's session state: callbacks that run the recording statements and return a handle. */
-    private static Object session() throws Exception {
-        return RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}");
+    private Object newOwnedConnections(Map<String, DataSource> tenantPools) throws Throwable {
+        return newOwnedConnections(newRuntime(), source(tenantPools));
     }
 
-    private Object newOwnedConnections(Object runtime, Object session) throws Throwable {
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sessionStateClass())
-            .newInstance(runtime, commitPolicyCommit, session);
+    private Object newOwnedConnections(Object runtime, Object source) throws Throwable {
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, sourceClass())
+            .newInstance(runtime, commitPolicyCommit, source);
     }
 
-    private Object acquireForTenant(Object runtime, Object key, Object session) throws Throwable {
-        return invoke(() -> runtimeClass.getMethod("acquireForTenant", Object.class, sessionStateClass())
-            .invoke(runtime, key, session));
+    private Object acquire(Object runtime, String tenant, Object source) throws Throwable {
+        Class<?> keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
+        return invoke(() -> Accessible.method(runtimeClass, "acquire", keyClass, sourceClass())
+            .invoke(runtime, keyClass.getMethod("forTenant", Object.class).invoke(null, tenant), source));
     }
 
-    private static Class<?> sessionStateClass() {
-        return harness.load(SCHEMA_PACKAGE + ".SessionState");
+    private static Class<?> sourceClass() {
+        return harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
     }
 
     private void dslFor(Object tc, Object key) throws Throwable {
@@ -398,9 +395,10 @@ class OwnedConnectionsGeneratorTest {
 
     private Connection fakeConnection(String label, boolean failDisconnect) {
         boolean[] autoCommit = {false};
+        boolean[] closed = {false};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
-                // The RecordingSessionState callbacks run prepareStatement for both mount and unmount;
+                // The RecordingSource callbacks run prepareStatement for both mount and unmount;
                 // the unmount SQL is the one that clears to the empty string. Label the phase off the SQL.
                 // The reset release issues after the unmount is the third prepareStatement.
                 case "prepareStatement" -> {
@@ -415,8 +413,10 @@ class OwnedConnectionsGeneratorTest {
                 case "createStatement" -> FakeSessionSettings.captureStatement(harness.classLoader(), List.of(), () -> {});
                 case "setAutoCommit" -> { autoCommit[0] = (Boolean) args[0]; yield null; }
                 case "getAutoCommit" -> autoCommit[0];
-                case "close" -> { events.add("close:" + label); yield null; }
-                case "abort" -> { events.add("abort:" + label); yield null; }
+                case "getMetaData" -> FakeSessionSettings.postgres(harness.classLoader());
+                case "isClosed" -> closed[0];
+                case "close" -> { closed[0] = true; events.add("close:" + label); yield null; }
+                case "abort" -> { closed[0] = true; events.add("abort:" + label); yield null; }
                 default -> objectMethodOrDefault(proxy, method, args, label);
             });
     }

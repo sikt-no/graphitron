@@ -13,7 +13,7 @@ import java.util.Locale;
  * (header order breaks a tie), drop {@code q=0} and the {@code *} wildcard.
  *
  * <pre>{@code
- * Graphitron.newOwnedExecutionInput(session, AcceptLanguage.parse(headers))
+ * Graphitron.newOwnedExecutionInput(source, AcceptLanguage.parse(headers))
  * }</pre>
  */
 public final class AcceptLanguage {

@@ -354,8 +354,8 @@
                     <!--
                         Session identity supplied per request as code: the block only switches the
                         feature on and names the class the mount callback returns, which is what
-                        `$session` bindings read members of. The tests build the SessionState from
-                        callbacks over the facade in graphitron-sakila-service (mount takes one
+                        `$session` bindings read members of. The tests build each request's connection
+                        source with ConnectionSources.mounting from callbacks over the facade in graphitron-sakila-service (mount takes one
                         String claims payload, reshapes it into the composite the session_connect
                         routine takes, and returns the routine's composite handle; unmount clears
                         through the paired routine). Inherited by every execution that does not
@@ -471,7 +471,7 @@
                             <outputPackage>no.sikt.graphitron.generated.multitenant</outputPackage>
                             <tenantColumn>film_id</tenantColumn>
                             <!--
-                                In a tenant build the MountedSession carries the tenant
+                                In a tenant build the mount's ConnectionKey carries the tenant
                                 (Optional<Integer>, the film_id type), so the execution tests can
                                 prove each connection's mount receives the tenant it is mounted for.
                             -->
@@ -501,7 +501,7 @@
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.convertedtenant</outputPackage>
                             <tenantColumn>owner_org</tenantColumn>
-                            <!-- A handle-less mount whose MountedSession carries the String tenant,
+                            <!-- A handle-less mount whose ConnectionKey carries the String tenant,
                                  so the execution tests can see the form a mounted tenant takes;
                                  combine.self keeps the plugin-level handle out of it. -->
                             <sessionState combine.self="override"/>

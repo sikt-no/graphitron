@@ -895,11 +895,11 @@ final class MutationFieldScopeEmitter {
             .beginControlFlow("if (own == null)")
             .addStatement("$T mount = null", Throwable.class);
         if (mounts) {
-            builder.addStatement("mount = firstMountFailure.get()");
+            builder.addStatement("mount = firstAcquisitionFailure.get()");
         }
         builder.beginControlFlow("synchronized (field.handled)")
             .beginControlFlow("for ($T handledThrowable : field.handled)", Throwable.class)
-            .beginControlFlow("if (mount == null && isMountFailure(handledThrowable))")
+            .beginControlFlow("if (mount == null && isAcquisitionFailure(handledThrowable))")
             .addStatement("mount = handledThrowable")
             .endControlFlow()
             .endControlFlow()
@@ -908,7 +908,7 @@ final class MutationFieldScopeEmitter {
             .addComment("Every owned statement runs on a mounted connection, and the mount may be what sets")
             .addComment("the role or the row-level security context: without one there is nothing they may be")
             .addComment("written on.")
-            .addStatement("dropped(field, events, $S, mount)", "the session mount failed")
+            .addStatement("dropped(field, events, $S, mount)", "the connection source failed to lease a connection")
             .nextControlFlow("else")
             .addStatement("dropped(field, events, $S, null)", "the field acquired no connection")
             .endControlFlow()
@@ -1038,12 +1038,12 @@ final class MutationFieldScopeEmitter {
             .addStatement("dropped(field, events, $S + bound.toMillis() + $S + queuedMillis + $S + acquiringMillis"
                 + " + $S, ended)",
                 "no fresh connection within outboxAcquisitionTimeout (", " ms: ",
-                " ms queued for the executor, ", " ms acquiring and mounting)")
+                " ms queued for the executor, ", " ms acquiring)")
             .addStatement("return")
             .nextControlFlow("catch ($T e)", ClassName.get("java.util.concurrent", "ExecutionException"))
             .addStatement("$T failure = e.getCause()", Throwable.class)
-            .addStatement("dropped(field, events, isMountFailure(failure) ? $S : $S, failure)",
-                "the session mount on a fresh connection failed", "no fresh connection could be acquired")
+            .addStatement("dropped(field, events, isAcquisitionFailure(failure) ? $S : $S, failure)",
+                "the connection source failed to lease a fresh connection", "no fresh connection could be acquired")
             .addStatement("return")
             .nextControlFlow("catch ($T e)", InterruptedException.class)
             .addStatement("Thread.currentThread().interrupt()")
@@ -1059,8 +1059,10 @@ final class MutationFieldScopeEmitter {
             .addStatement("dsl.configuration().set(new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin))",
                 provider);
         if (handled) {
-            builder.addStatement("dsl.configuration().data($S, pinned.handle())",
-                no.sikt.graphitron.emit.SessionIdentityRows.HANDLE_DATA_KEY);
+            builder.beginControlFlow("if (pinned.handle() != null)")
+                .addStatement("dsl.configuration().data($S, pinned.handle())",
+                    no.sikt.graphitron.emit.SessionIdentityRows.HANDLE_DATA_KEY)
+                .endControlFlow();
         }
         return builder
             .addStatement("write.write(dsl, claimed)")
@@ -1118,7 +1120,7 @@ final class MutationFieldScopeEmitter {
                 + "PostgreSQL, a killed session or a resource limit on Oracle. Anything else, a\n"
                 + "connection-class error, an I/O failure without a state, a server shutdown, is outside the\n"
                 + "transaction, and so is anything unrecognised, since writing nothing is the safer error.\n"
-                + "Read beside {@link #isMountFailure} when a field with failure messages settles.\n"
+                + "Read beside {@link #isAcquisitionFailure} when a field with failure messages settles.\n"
                 + "@param thrown an exception settle holds\n"
                 + "@param dialect the dialect of the connection it came from\n")
             .build();

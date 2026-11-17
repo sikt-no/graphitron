@@ -39,10 +39,11 @@ public final class SessionStateWarnings {
     public static List<BuildWarning> forConfig(SessionStateConfig config) {
         return switch (config) {
             case SessionStateConfig.None ignored -> List.of(BuildWarning.LintFinding.of(
-                "No <sessionState> is configured: the owned-connection runtime mounts no database identity "
-                    + "on the connection, so the database cannot enforce per-caller row access for the "
-                    + "generated API. Add <sessionState/> and pass a SessionState built from your mount "
-                    + "callback to Graphitron.newOwnedExecutionInput to mount identity: a definer-rights "
+                "No <sessionState> is configured: this build declares no per-request database identity, "
+                    + "so the database cannot enforce per-caller row access for the generated API unless "
+                    + "your connection source sets one. Add <sessionState/> and have the ConnectionSource "
+                    + "you pass to Graphitron.newOwnedExecutionInput set identity on each connection it "
+                    + "leases (ConnectionSources.mounting does this from a mount and an unmount): a definer-rights "
                     + "routine, a signed token verified in-database, or a session variable set by "
                     + "convention (see the security guide for the integrity gradient between them). "
                     + "Or silence this rule (no-session-state) if the API is intentionally "

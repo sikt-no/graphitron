@@ -344,7 +344,7 @@ class GraphQLOverHttpConformanceTest {
                 .body("errors", hasSize(1))
                 .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
                 .body(not(containsString("unentitled principal")))
-                .body(not(containsString("SessionMountException")));
+                .body(not(containsString("AcquisitionFailedException")));
         }
     }
 

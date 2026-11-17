@@ -4,7 +4,7 @@ import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
-import no.sikt.graphitron.generated.multitenant.schema.SessionMountException;
+import no.sikt.graphitron.generated.multitenant.schema.AcquisitionFailedException;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
@@ -183,7 +183,7 @@ class MutationScopeMultiTenantExecutionTest {
         var rejecting = engine(REJECTING_T2);
 
         assertThatThrownBy(() -> rejecting.execute(input(note, REJECTED_ON_TWO)))
-            .isInstanceOf(SessionMountException.class);
+            .isInstanceOf(AcquisitionFailedException.class);
 
         assertThat(endorsements(note))
             .as("the request was rejected, so the write on the default source must not stand").isZero();
@@ -212,8 +212,8 @@ class MutationScopeMultiTenantExecutionTest {
         Thread.sleep(2200);
     }
 
-    private static graphql.ExecutionInput renameInput() {
-        return Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"test-user\"}"))
+    private static Request renameInput() {
+        return on -> Graphitron.newOwnedExecutionInput(on.source("test-user"), List.of(1, 2))
             .query("mutation { renameLanguage(in: { languageId: " + LANGUAGE_ID + ", name: \"after-rename\" }) {"
                 + " name films { title } } }")
             .build();
@@ -230,13 +230,13 @@ class MutationScopeMultiTenantExecutionTest {
     }
 
     /** An owned engine fanning over {@code FAN_T1} and {@code FAN_T2}, the second slow to hand out a connection. */
-    private static GraphQL fanOutEngine(long tenant2DelayMillis) {
+    private static Engine fanOutEngine(long tenant2DelayMillis) {
         Map<Integer, DataSource> byTenant = Map.of(
             1, recording("tenant1", FAN_T1, 0),
             2, recording("tenant2", FAN_T2, tenant2DelayMillis));
-        var runtime = new GraphitronRuntime(recording("default", null, 0), byTenant, SQLDialect.POSTGRES,
-            4, java.time.Duration.ofMillis(300));
-        return runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        var runtime = new GraphitronRuntime(SQLDialect.POSTGRES, null, 4, java.time.Duration.ofMillis(300));
+        return new Engine(runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build(),
+            recording("default", null, 0), byTenant);
     }
 
     // ===== helpers =====
@@ -257,21 +257,38 @@ class MutationScopeMultiTenantExecutionTest {
         return (Map<String, Object>) payload.get("film");
     }
 
-    private static graphql.ExecutionInput input(String note, String principal) {
-        return Graphitron.newOwnedExecutionInput(List.of(1, 2),
-                SessionStates.multitenant("{\"sub\":\"" + principal + "\"}"))
+    private static Request input(String note, String principal) {
+        return on -> Graphitron.newOwnedExecutionInput(on.source(principal), List.of(1, 2))
             .query("mutation { createEndorsement(in: { endorsedFilm: 2, note: \"" + note + "\" }) {"
                 + " note film { title } } }")
             .build();
     }
 
     /** An owned engine whose tenant 1 is the healthy database and whose tenant 2 is {@code tenant2Database}. */
-    private static GraphQL engine(String tenant2Database) {
+    private static Engine engine(String tenant2Database) {
         Map<Integer, DataSource> byTenant = Map.of(
             1, recording("tenant1", HEALTHY_T1, 0),
             2, recording("tenant2", tenant2Database, 0));
-        var runtime = new GraphitronRuntime(recording("default", null, 0), byTenant, SQLDialect.POSTGRES);
-        return runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
+        return new Engine(runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build(),
+            recording("default", null, 0), byTenant);
+    }
+
+    /** An owned engine and the pools its requests' connection sources lease from. */
+    private record Engine(GraphQL graphql, DataSource defaultPool, Map<Integer, DataSource> byTenant) {
+        no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(String principal) {
+            return Sources.multitenant("{\"sub\":\"" + principal + "\"}", defaultPool, byTenant);
+        }
+
+        ExecutionResult execute(Request request) {
+            return graphql.execute(request.on(this));
+        }
+    }
+
+    /** A request's input, built over the engine's pools. */
+    @FunctionalInterface
+    private interface Request {
+        graphql.ExecutionInput on(Engine engine);
     }
 
     /** Real connections to {@code database} (the default database when {@code null}), each call recorded. */

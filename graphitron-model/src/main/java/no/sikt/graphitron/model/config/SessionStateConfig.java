@@ -27,10 +27,10 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
     }
 
     /**
-     * Session identity is supplied per request: the consumer passes a {@code SessionState} to the
-     * generated factory and graphitron calls its callbacks on each connection it acquires.
-     * {@code handleType} is the authored fully qualified name of the class the mount callback
-     * returns, when one is named; absent means the mount is handle-less.
+     * Session identity is supplied per request: the consumer's {@code ConnectionSource}, passed to
+     * the generated factory, sets it on each connection it leases. {@code handleType} is the
+     * authored fully qualified name of the class of the lease's handle, when one is named; absent
+     * means the leases carry none.
      */
     record Callbacks(Optional<String> handleType) implements SessionStateConfig {
         public Callbacks {
@@ -61,8 +61,9 @@ public sealed interface SessionStateConfig permits SessionStateConfig.None, Sess
             throw new IllegalArgumentException(
                 "<" + (mount != null ? "mount" : "unmount") + "> is no longer a <sessionState> element: "
                     + "session identity is supplied per request. Leave <sessionState/> in the POM "
-                    + "(optionally naming the handle class in <handle>) and pass a SessionState built "
-                    + "from your mount and unmount callbacks to Graphitron.newOwnedExecutionInput; see "
+                    + "(optionally naming the handle class in <handle>) and pass a ConnectionSource that "
+                    + "sets identity on each connection it leases (ConnectionSources.mounting builds one "
+                    + "from a mount and an unmount) to Graphitron.newOwnedExecutionInput; see "
                     + "the Session identity section of the plugin configuration reference");
         }
         if (handle != null && handle.isBlank()) {

@@ -224,8 +224,8 @@ class EndpointMountedTest {
     private static final String QUERY_TOUCHING_THE_DATABASE = "{\"query\":\"{ filmsOrdered { title } }\"}";
 
     @Test
-    @DisplayName("A rejected mount reaches rejectedIdentity with the mount's own exception, on POST and on GET, and its answer is unredacted.")
-    void rejectedIdentityReceivesTheMountsOwnException() {
+    @DisplayName("A rejected mount reaches failedAcquisition with the connection source's own exception, on POST and on GET, and its answer is unredacted.")
+    void failedAcquisitionReceivesTheSourcesOwnException() {
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)
@@ -238,9 +238,9 @@ class EndpointMountedTest {
             .post(path("frank"))
         .then()
             .statusCode(401)
-            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("rejectedIdentity"))
+            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("failedAcquisition"))
             .header(FaultInjectingGraphitronApplication.CAUSE_CLASS_HEADER, notNullValue())
-            .header(FaultInjectingGraphitronApplication.CAUSE_CLASS_HEADER, not(containsString("SessionMountException")));
+            .header(FaultInjectingGraphitronApplication.CAUSE_CLASS_HEADER, not(containsString("AcquisitionFailedException")));
 
         given()
             .accept(GRAPHQL_RESPONSE_JSON)
@@ -253,13 +253,13 @@ class EndpointMountedTest {
             .get(path("frank"))
         .then()
             .statusCode(401)
-            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("rejectedIdentity"));
+            .header(FaultInjectingGraphitronApplication.ANSWERED_BY_HEADER, equalTo("failedAcquisition"));
     }
 
     @Test
-    @DisplayName("An adapter overriding both hooks gets rejectedIdentity for a mount failure and clientFault for the rest; a declining rejectedIdentity falls through to clientFault.")
-    void rejectedIdentityPrecedesClientFault() {
-        // Both hooks would answer here; the 401 is rejectedIdentity's, clientFault's would be a 403.
+    @DisplayName("An adapter overriding both hooks gets failedAcquisition for a failed acquisition and clientFault for the rest; a declining failedAcquisition falls through to clientFault.")
+    void failedAcquisitionPrecedesClientFault() {
+        // Both hooks would answer here; the 401 is failedAcquisition's, clientFault's would be a 403.
         given()
             .contentType(APPLICATION_JSON)
             .accept(GRAPHQL_RESPONSE_JSON)
@@ -301,7 +301,7 @@ class EndpointMountedTest {
             .post(path("hank"))
         .then()
             .statusCode(500)
-            .body(not(containsString("SessionMountException")))
+            .body(not(containsString("AcquisitionFailedException")))
             .body(not(containsString("unentitled principal")));
     }
 }

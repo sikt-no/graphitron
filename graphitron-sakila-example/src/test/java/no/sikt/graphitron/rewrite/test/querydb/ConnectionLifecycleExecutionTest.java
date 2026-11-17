@@ -57,7 +57,7 @@ class ConnectionLifecycleExecutionTest {
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         countingDataSource = countingDataSource();
-        runtime = Graphitron.runtime(countingDataSource, SQLDialect.POSTGRES);
+        runtime = Graphitron.runtime(SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
@@ -132,7 +132,7 @@ class ConnectionLifecycleExecutionTest {
 
     /**
      * Assembles a per-request {@code ExecutionInput} for the owned-connection path via the emitted
-     * {@code Graphitron.newOwnedExecutionInput(claims, userId)} factory, the first client
+     * {@code Graphitron.newOwnedExecutionInput(source, claims, userId)} factory, the first client
      * of that factory. It stashes the claims payload under the instrumentation's key, the sealed
      * {@code GraphitronContext} singleton, and the {@code userId} contextArgument, plus a fresh
      * {@code DataLoaderRegistry}; the connection carrier resolves the pinned {@code DSLContext}
@@ -140,7 +140,7 @@ class ConnectionLifecycleExecutionTest {
      * the {@code sub} claim from the payload before binding it to the identity routine.
      */
     private ExecutionInput.Builder ownedInput(String query) {
-        return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"), "{\"sub\":\"test-user\"}", "test-user")
+        return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}", countingDataSource), "{\"sub\":\"test-user\"}", "test-user")
             .query(query);
     }
 

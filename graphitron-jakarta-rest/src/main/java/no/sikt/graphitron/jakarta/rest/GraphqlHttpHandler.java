@@ -58,7 +58,7 @@ import java.util.function.Supplier;
  *                          &#64;Context HttpHeaders headers) {
  *         Environment env = Environment.parse(environment);          // 404 on an unknown value
  *         Supplier&lt;ExecutionInput.Builder&gt; input = () -&gt;       // runs when an operation executes
- *             Graphitron.newOwnedExecutionInput(sessionFor(authenticator.login(headers, env), env));
+ *             Graphitron.newOwnedExecutionInput(sourceFor(authenticator.login(headers, env), env));
  *         return env.isProduction()
  *             ? handler.post(body, headers, input)                   // no policy: every operation
  *             : handler.post(body, headers, QUERIES_ONLY, input);    // 400 before execution
@@ -74,7 +74,7 @@ import java.util.function.Supplier;
  *                         &#64;Context HttpHeaders headers) {
  *         Environment env = Environment.parse(environment);
  *         Supplier&lt;ExecutionInput.Builder&gt; input = () -&gt;
- *             Graphitron.newOwnedExecutionInput(sessionFor(authenticator.login(headers, env), env));
+ *             Graphitron.newOwnedExecutionInput(sourceFor(authenticator.login(headers, env), env));
  *         // Parameter order matches the four &#64;QueryParam names directly above. GET carries the
  *         // specification's queries-only rule (405 + Allow: POST), with no policy argument to pass.
  *         return handler.get(query, operationName, variables, extensions, headers, input);
@@ -93,8 +93,8 @@ import java.util.function.Supplier;
  *       {@link GraphitronApplication#newExecutionInput()}, the built-in endpoint's seam.</li>
  *   <li><b>Client faults propagate.</b> A {@link WebApplicationException} thrown by the resource
  *       method, or by the supplier, reaches the container unredacted. That is the documented way to
- *       answer {@code 401} and {@code 403}. A rejected session identity reaches
- *       {@link GraphitronApplication#rejectedIdentity(Throwable)} with the mount's own exception,
+ *       answer {@code 401} and {@code 403}. A failed acquisition (a rejected session identity) reaches
+ *       {@link GraphitronApplication#failedAcquisition(Throwable)} with the source's own exception,
  *       and {@link GraphitronApplication#clientFault(Throwable)} may answer any other escape the
  *       same way; the rest are redacted to a reference-only {@code 500}.</li>
  *   <li><b>Mounting under {@code /graphql/{...}} shadows the built-in sub-paths.</b> Jakarta REST
@@ -407,10 +407,10 @@ public class GraphqlHttpHandler {
             // propagates out. The seam, not a swallow, carries the 4xx.
             throw clientFault;
         } catch (Exception thrown) {
-            // A rejected session mount reaches the application's rejectedIdentity first, with the
-            // mount's own exception; then clientFault may answer any escape as a client fault, the
+            // A failed acquisition reaches the application's failedAcquisition first, with the
+            // connection source's own exception; then clientFault may answer any escape as a client fault, the
             // shape the arm above passes through (a 401, say). Nothing is logged when either does.
-            Optional<WebApplicationException> rejected = rejectedIdentity(thrown);
+            Optional<WebApplicationException> rejected = failedAcquisition(thrown);
             if (rejected.isPresent()) {
                 throw rejected.get();
             }
@@ -438,20 +438,20 @@ public class GraphqlHttpHandler {
     }
 
     /**
-     * {@link GraphitronApplication#mountCause(Throwable)} then
-     * {@link GraphitronApplication#rejectedIdentity(Throwable)}, contained: empty (so redaction or
+     * {@link GraphitronApplication#acquisitionCause(Throwable)} then
+     * {@link GraphitronApplication#failedAcquisition(Throwable)}, contained: empty (so redaction or
      * {@code clientFault}) when there is no mount failure or either override fails.
      */
-    private Optional<WebApplicationException> rejectedIdentity(Throwable thrown) {
+    private Optional<WebApplicationException> failedAcquisition(Throwable thrown) {
         Optional<Throwable> cause;
         try {
-            cause = application.mountCause(thrown);
+            cause = application.acquisitionCause(thrown);
         } catch (Throwable failure) {
-            logOverrideFailure("mountCause", failure, "redacting");
+            logOverrideFailure("acquisitionCause", failure, "redacting");
             return Optional.empty();
         }
         if (cause == null) {
-            logOverrideFailure("mountCause", null, "redacting");
+            logOverrideFailure("acquisitionCause", null, "redacting");
             return Optional.empty();
         }
         if (cause.isEmpty()) {
@@ -459,13 +459,13 @@ public class GraphqlHttpHandler {
         }
         Optional<WebApplicationException> answer;
         try {
-            answer = application.rejectedIdentity(cause.get());
+            answer = application.failedAcquisition(cause.get());
         } catch (Throwable failure) {
-            logOverrideFailure("rejectedIdentity", failure, "redacting");
+            logOverrideFailure("failedAcquisition", failure, "redacting");
             return Optional.empty();
         }
         if (answer == null) {
-            logOverrideFailure("rejectedIdentity", null, "redacting");
+            logOverrideFailure("failedAcquisition", null, "redacting");
             return Optional.empty();
         }
         return answer;

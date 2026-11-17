@@ -5,17 +5,17 @@ package no.sikt.graphitron.rewrite.maven;
  * {@link no.sikt.graphitron.model.config.SessionStateConfig} on
  * {@link no.sikt.graphitron.model.config.RunContext}.
  *
- * <p>The block only switches session identity on for the owned-connection engine; the consumer
- * supplies the identity per request as code, a {@code SessionState} built from a mount callback
- * and an unmount callback that clears what the mount set, and passed to the generated
- * {@code Graphitron.newOwnedExecutionInput}. {@code <handle>} optionally names the class the mount
- * callback returns, which {@code $session} bindings in {@code argMapping} read members of:
+ * <p>The block declares that the build supplies session identity per request; the consumer sets it
+ * on each connection its {@code ConnectionSource} leases (the generated
+ * {@code ConnectionSources.mounting} does so from a mount and an unmount), passed to the generated
+ * {@code Graphitron.newOwnedExecutionInput}. {@code <handle>} optionally names the class of the
+ * lease's handle, which {@code $session} bindings in {@code argMapping} read members of:
  * <pre>{@code
  * <sessionState>
  *   <handle>com.example.Identity</handle>
  * </sessionState>
  * }</pre>
- * Omit {@code <handle>} for a handle-less mount. The retired {@code <mount>} and {@code <unmount>}
+ * Omit {@code <handle>} for leases without a handle. The retired {@code <mount>} and {@code <unmount>}
  * elements stay bound only so that a POM still naming one fails with the migration message
  * ({@code SessionStateConfig.from}) instead of Maven's generic unknown-parameter error.
  */

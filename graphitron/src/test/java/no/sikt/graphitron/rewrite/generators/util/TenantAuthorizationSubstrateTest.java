@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -23,7 +24,6 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.Set;
 
@@ -34,8 +34,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * Direct-carrier proofs for routed acquisition's two per-tenant guarantees, over the real emitted
  * multi-tenant runtime and fake JDBC (the {@link TenantScatterSubstrateTest} pattern): a key
  * outside the request tenant set is refused with the client-error type before any connection is
- * taken, ahead of the hosting check so an unauthorized caller cannot probe which tenants are
- * hosted; and a mount declaring the tenant slot receives the key it is mounting for, or
+ * taken, ahead of the source's own refusal so an unauthorized caller cannot probe which tenants
+ * the source hosts; and the source's mount receives the key it is mounting for, whose tenant is
  * {@code Optional.empty()} for the default source, one mount per key even when keys share a
  * {@code DataSource}. A request's default tenant serves {@code dslGlobal()} through the same
  * entry {@code dslFor} uses for that tenant, and leaves {@code dslDefault()} on the default source.
@@ -106,7 +106,7 @@ class TenantAuthorizationSubstrateTest {
     @BeforeEach
     void reset() {
         events.clear();
-        RecordingSessionState.mountedTenants(harness).clear();
+        RecordingSource.mountedTenants(harness).clear();
     }
 
     @Test
@@ -119,7 +119,7 @@ class TenantAuthorizationSubstrateTest {
             .hasMessageContaining("'B'")
             .hasMessageContaining("not permitted");
         assertThat(events).as("no connection to a refused tenant is ever opened").isEmpty();
-        assertThat(RecordingSessionState.mountedTenants(harness)).isEmpty();
+        assertThat(RecordingSource.mountedTenants(harness)).isEmpty();
         releaseAll(tc);
     }
 
@@ -128,17 +128,21 @@ class TenantAuthorizationSubstrateTest {
         Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A"));
 
         assertThatThrownBy(() -> dslFor(tc, "Z"))
-            .as("the membership check runs ahead of the runtime's hosting check")
+            .as("the membership check runs ahead of the source's refusal")
             .isInstanceOf(clientExceptionClass)
             .hasMessageContaining("not permitted");
         releaseAll(tc);
     }
 
     @Test
-    void unhostedKeyInsideTheSet_stillFailsTheHostingCheck() throws Throwable {
+    void keyInsideTheSetTheSourceRefuses_answersWithTheSourcesRefusalAsAClientError() throws Throwable {
         Object tc = newOwnedConnections(newRuntime(Map.of("A", fakeDataSource("A"))), Set.of("A", "Z"));
 
-        assertThatThrownBy(() -> dslFor(tc, "Z")).isInstanceOf(NoSuchElementException.class);
+        assertThatThrownBy(() -> dslFor(tc, "Z"))
+            .as("the source's KeyNotPermitted reaches the field as a client error carrying its message")
+            .isInstanceOf(clientExceptionClass)
+            .hasMessage("Tenant 'Z' is not hosted here.");
+        assertThat(events).isEmpty();
         releaseAll(tc);
     }
 
@@ -149,7 +153,7 @@ class TenantAuthorizationSubstrateTest {
         dslFor(tc, "A");
         invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
 
-        assertThat(RecordingSessionState.mountedTenants(harness))
+        assertThat(RecordingSource.mountedTenants(harness))
             .containsExactly(Optional.of("A"), Optional.empty());
         releaseAll(tc);
     }
@@ -169,7 +173,7 @@ class TenantAuthorizationSubstrateTest {
         assertThat(events.stream().filter(e -> e.equals("getConnection:shared")).count())
             .as("session identity is per (connection, tenant): one pin per key, reused within the key")
             .isEqualTo(2);
-        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("A"), Optional.of("B"));
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.of("A"), Optional.of("B"));
         releaseAll(tc);
     }
 
@@ -192,7 +196,7 @@ class TenantAuthorizationSubstrateTest {
         dslGlobal(tc);
 
         assertThat(events).containsExactly("getConnection:B");
-        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("B"));
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.of("B"));
         releaseAll(tc);
     }
 
@@ -206,7 +210,7 @@ class TenantAuthorizationSubstrateTest {
 
         assertThat(routed).as("one entry per tenant key, shared by both acquisitions").isSameAs(global);
         assertThat(events).containsExactly("getConnection:A");
-        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("A"));
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.of("A"));
         releaseAll(tc);
     }
 
@@ -218,7 +222,7 @@ class TenantAuthorizationSubstrateTest {
         invoke(() -> ownedConnectionsClass.getMethod("dslDefault").invoke(tc));
 
         assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.empty());
         releaseAll(tc);
     }
 
@@ -229,28 +233,32 @@ class TenantAuthorizationSubstrateTest {
         dslGlobal(tc);
 
         assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
+        assertThat(RecordingSource.mountedTenants(harness)).containsExactly(Optional.empty());
         releaseAll(tc);
     }
 
     // --- driving helpers -------------------------------------------------------------------------
 
-    private Object newRuntime(Map<String, DataSource> tenantSources) throws Throwable {
-        return runtimeClass.getConstructor(DataSource.class, Map.class, SQLDialect.class, int.class, Duration.class)
-            .newInstance(fakeDataSource("default"), new LinkedHashMap<>(tenantSources), SQLDialect.POSTGRES, 2,
-                Duration.ofSeconds(10));
+    /** A runtime, paired with the request source over {@code tenantPools} and a default pool. */
+    private Hosted newRuntime(Map<String, DataSource> tenantPools) throws Throwable {
+        Object runtime = runtimeClass.getConstructor(SQLDialect.class, Settings.class, int.class, Duration.class)
+            .newInstance(SQLDialect.POSTGRES, new Settings(), 2, Duration.ofSeconds(10));
+        var pools = new LinkedHashMap<String, DataSource>(tenantPools);
+        pools.put(RecordingSource.DEFAULT, fakeDataSource(RecordingSource.DEFAULT));
+        return new Hosted(runtime, RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", pools));
     }
 
-    private Object newOwnedConnections(Object runtime, Set<String> tenants) throws Throwable {
-        return newOwnedConnections(runtime,
+    private record Hosted(Object runtime, Object source) {}
+
+    private Object newOwnedConnections(Hosted hosted, Set<String> tenants) throws Throwable {
+        return newOwnedConnections(hosted,
             invoke(() -> requestTenantsClass.getMethod("of", java.util.Collection.class).invoke(null, tenants)));
     }
 
-    private Object newOwnedConnections(Object runtime, Object requestTenants) throws Throwable {
-        Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
-            .newInstance(runtime, commitPolicyCommit, requestTenants,
-                RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
+    private Object newOwnedConnections(Hosted hosted, Object requestTenants) throws Throwable {
+        Class<?> sourceClass = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sourceClass)
+            .newInstance(hosted.runtime(), commitPolicyCommit, requestTenants, hosted.source());
     }
 
     private static Object withDefault(Set<String> tenants, String defaultTenant) throws Throwable {
@@ -302,6 +310,7 @@ class TenantAuthorizationSubstrateTest {
                 case "prepareStatement" -> fakePreparedStatement();
                 case "createStatement" -> FakeSessionSettings.captureStatement(harness.classLoader(), List.of(), () -> {});
                 case "getAutoCommit" -> true;
+                case "getMetaData" -> FakeSessionSettings.postgres(harness.classLoader());
                 default -> objectMethodOrDefault(proxy, method, args, label + "-conn");
             });
     }

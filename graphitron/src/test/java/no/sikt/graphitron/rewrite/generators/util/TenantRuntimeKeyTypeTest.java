@@ -17,10 +17,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Pins the tenant-key typing of the generated runtime surfaces: with a configured
  * {@code <tenantColumn>} the catalog-read tenant type replaces the erased {@code Object} on
- * every tenant-keyed signature (constructor map, keyed acquisition, per-operation carrier), so
- * a consumer wiring a map keyed with the wrong type is a compile error rather than a
- * first-request lookup miss. Without the element the shipped {@code Object} shape is
- * unchanged.
+ * every tenant-keyed signature (the {@code ConnectionKey} a source is asked with, the request
+ * tenant set, the per-operation carrier), so a source reading a key's tenant as the wrong type is a
+ * compile error rather than a first-request lookup miss. Without the element the shipped
+ * {@code Object} shape is unchanged.
  */
 @UnitTier
 class TenantRuntimeKeyTypeTest {
@@ -55,44 +55,54 @@ class TenantRuntimeKeyTypeTest {
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
-        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
-        assertThat(runtime)
-            .contains("Source> sourcesByTenant")
-            .contains("java.util.Map<? extends java.lang.Integer, javax.sql.DataSource> dataSourcesByTenant")
-            .contains("acquireForTenant(java.lang.Integer tenantKey");
+        var key = render(units, "ConnectionKey");
+        assertThat(key)
+            .contains("java.util.Optional<java.lang.Integer> tenant")
+            .contains("forTenant(java.lang.Integer tenant)")
+            .contains("java.lang.Integer tenantIn(java.lang.Object localContext)");
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
             .contains("java.util.Optional<java.lang.Integer>")
             .contains("dslFor(java.lang.Integer tenantKey");
+
+        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        assertThat(runtime)
+            .as("the runtime holds no pool and no tenant map: a request's source supplies its connections")
+            .doesNotContain("javax.sql.DataSource")
+            .doesNotContain("acquireForTenant");
+        assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME), "acquire")))
+            .containsExactly(
+                "fake.code.generated.schema.ConnectionKey key",
+                "fake.code.generated.schema.ConnectionSource source");
     }
 
     @Test
-    void multiTenantAcquisitionTakesTheTenantItMountsFor() {
+    void multiTenantAcquisitionTakesTheSourceAndTheKeyItLeasesFor() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty(), ClassName.get(Integer.class),
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
-        // The tenant rides between the seam's settings and the abort executor; the runtime's
-        // Optional.of(key) / Optional.empty() arguments are pinned where they run, in
-        // TenantAuthorizationSubstrateTest.
+        // The tenant rides in the key the source is asked with; what a source does with it is
+        // pinned where it runs, in TenantAuthorizationSubstrateTest.
         assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME), "acquire")))
             .containsExactly(
-                "javax.sql.DataSource dataSource",
+                "fake.code.generated.schema.ConnectionSource source",
+                "fake.code.generated.schema.ConnectionKey key",
                 "org.jooq.SQLDialect dialect",
                 "org.jooq.conf.Settings settings",
-                "java.util.Optional<java.lang.Integer> mountedTenant",
                 "java.util.concurrent.Executor abortExecutor");
     }
 
     @Test
-    void singleTenantAcquisitionCarriesNoTenant() {
+    void singleTenantAcquisitionHasTheSameKeyedShape() {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
 
         assertThat(parameters(method(type(units, ConnectionRuntimeClassGenerator.PINNED_CONNECTION_CLASS_NAME), "acquire")))
             .containsExactly(
-                "javax.sql.DataSource dataSource",
+                "fake.code.generated.schema.ConnectionSource source",
+                "fake.code.generated.schema.ConnectionKey key",
                 "org.jooq.SQLDialect dialect",
                 "org.jooq.conf.Settings settings",
                 "java.util.concurrent.Executor abortExecutor");
@@ -106,7 +116,7 @@ class TenantRuntimeKeyTypeTest {
         var carrier = type(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
 
         // The shape of the set the carrier owns. What entryFor does with it (refusal before any
-        // getConnection and ahead of the hosting check) is pinned where it runs, in
+        // getConnection and ahead of the source's own refusal) is pinned where it runs, in
         // TenantAuthorizationSubstrateTest and TenantDivinedRoutingExecutionTest.
         var tenants = carrier.fieldSpecs().stream()
             .filter(f -> "tenants".equals(f.name()))
@@ -122,7 +132,8 @@ class TenantRuntimeKeyTypeTest {
         assertThat(parameters(constructor)).containsExactly(
             "fake.code.generated.schema.GraphitronRuntime runtime",
             "fake.code.generated.schema.GraphitronTransactionProvider.CommitPolicy commitPolicy",
-            "fake.code.generated.schema.RequestTenants requestTenants");
+            "fake.code.generated.schema.RequestTenants requestTenants",
+            "fake.code.generated.schema.ConnectionSource source");
 
         // The read side for the per-row lookups' null-not-error skip.
         var permits = method(carrier, "permits");
@@ -284,7 +295,8 @@ class TenantRuntimeKeyTypeTest {
             // Genuinely <tenantColumn>-only machinery stays absent in single-tenant builds.
             .doesNotContain("divinedTenant")
             .doesNotContain("tenantSlot")
-            .doesNotContain("scatter")
+            .doesNotContain("scatter(")
+            .doesNotContain("SCATTER_WORKER")
             .doesNotContain("timedOutTenants")
             // The unified per-key carrier is both topologies' one acquisition seam: the
             // single-tenant path resolves contexts through of(env) + dslDefault() (the one-key
@@ -356,9 +368,9 @@ class TenantRuntimeKeyTypeTest {
         assertThat(carrier)
             // The graphitron-owned request key the factory writes and the instrumentation reads.
             .contains("String TENANTS_KEY = \"no.sikt.graphitron.request.tenants\"")
-            // Domain: map-order intersection; named-but-unhosted is a pre-SQL request error.
+            // Domain: the request tenant set, in its given order.
             .contains("static java.util.List<java.lang.Integer> fanOutDomain(")
-            .contains("hosted.contains(claimed)")
+            .contains("new java.util.ArrayList<>(carrier.tenants)")
             // Union with per-element tenant stamping, failures appended after successful rows.
             .contains("static <R> java.util.List<java.lang.Object> fanOutRows(")
             // The batched sibling: per-key merge across tenants, one scatter per parent batch.
@@ -382,8 +394,8 @@ class TenantRuntimeKeyTypeTest {
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
-            .as("the domain reads the configured keys in map order off the runtime")
-            .contains("java.util.Set<java.lang.Integer> tenantKeys()");
+            .as("the domain is the request's, not a set of keys the runtime hosts")
+            .doesNotContain("tenantKeys");
     }
 
     @Test
@@ -403,7 +415,8 @@ class TenantRuntimeKeyTypeTest {
         // mechanism), so only the genuinely <tenantColumn>-gated machinery is asserted absent.
         var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
-            .doesNotContain("scatter")
+            .doesNotContain("scatter(")
+            .doesNotContain("SCATTER_WORKER")
             .doesNotContain("Outcome")
             .doesNotContain("timedOutTenants");
 
@@ -418,11 +431,10 @@ class TenantRuntimeKeyTypeTest {
         var units = ConnectionRuntimeClassGenerator.generate(
             "fake.code.generated", SessionIdentityRows.empty());
 
-        var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
-        assertThat(runtime)
-            .contains("Source> sourcesByTenant")
-            .contains("java.util.Map<?, javax.sql.DataSource> dataSourcesByTenant")
-            .contains("acquireForTenant(java.lang.Object tenantKey");
+        var key = render(units, "ConnectionKey");
+        assertThat(key)
+            .contains("java.util.Optional<java.lang.Object> tenant")
+            .contains("forTenant(java.lang.Object tenant)");
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         assertThat(carrier).contains("dslFor(java.lang.Object tenantKey");

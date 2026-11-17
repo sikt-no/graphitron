@@ -22,82 +22,42 @@ import java.util.Optional;
 
 /**
  * Emits the connection-lifecycle runtime substrate into the consumer's
- * {@code <outputPackage>.schema} package: an application-scoped {@code GraphitronRuntime} that owns
- * the sources ({@code DataSource} + dialect + jOOQ {@code Settings} triples), the
- * acquisition-scoped {@code PinnedConnection}, and, when {@code <sessionState>} names a method
- * pair, the generated hook class whose static {@code mount}/{@code unmount} call the consumer's
- * own methods directly.
+ * {@code <outputPackage>.schema} package: the connection contract ({@code ConnectionSource},
+ * {@code Lease}, {@code KeyNotPermitted}, the ready-made {@code ConnectionSources}), the
+ * application-scoped {@code GraphitronRuntime} holding the dialect and jOOQ {@code Settings}, the
+ * acquisition-scoped {@code PinnedConnection} that wraps one lease, and the per-operation
+ * {@code OwnedConnections} carrier.
  *
  * <p>Emitted (not shipped as a graphitron artifact), following the {@code GraphitronContext}
- * precedent: the bodies depend only on the JDK, jOOQ, and (for the hook class) the consumer's own
- * named classes; no auth-framework type and no graphitron type ever appears. The
- * {@code OwnedConnections} carrier additionally references graphql-java's
- * {@code DataFetchingEnvironment} (its routing statics resolve the carrier off the GraphQL
- * context), which every generated consumer already has on the classpath. The bodies must be valid
- * Java 17 (verified by the {@code graphitron-sakila-example} {@code <release>17</release>}
- * compile).
+ * precedent: the bodies depend only on the JDK, jOOQ, graphql-java and the consumer's own named
+ * classes. The bodies must be valid Java 17 (verified by the {@code graphitron-sakila-example}
+ * {@code <release>17</release>} compile).
  *
- * <h2>The two lifecycles</h2>
- * Connection setup is application-scoped ({@code GraphitronRuntime}, built once at wiring time via
- * {@code Graphitron.runtime(dataSource, dialect)}); identity is acquisition-scoped
- * ({@code PinnedConnection}, one per pinned connection). {@code PinnedConnection} carries
- * <em>no</em> transaction concept: the commit-policy axis (commit-vs-rollback) is the orthogonal
- * transaction concern that the {@code TransactionProvider} and execution instrumentation layer
- * over this seam. The mount's return value is the only thing called a "handle" here.
- *
- * <h2>The lifecycle contract (unit-pinned in {@code ConnectionRuntimeClassGeneratorTest})</h2>
- * <ul>
- *   <li><b>Acquire.</b> {@code DataSource.getConnection()}, then a rollback if autocommit is off,
- *       then {@code setAutoCommit(true)}, then (on PostgreSQL, when the build mounts) the capture
- *       of the built-in settings the connection carries session-set, then the mount method with
- *       the typed payload, capturing its returned handle. <b>Fail closed:</b> if mount throws (it may have partially mounted session state
- *       first), the connection is evicted, never returned, and the failure propagates before any
- *       operation SQL runs.</li>
- *   <li><b>Release.</b> Any transaction the operation left open is rolled back and autocommit
- *       asserted, then the unmount method (when configured) fires on <em>every</em> completion
- *       path (success, error, cancellation), bound to the captured handle when it takes one,
- *       then, on PostgreSQL, the reset: {@code RESET ALL} and a restore of the captured settings,
- *       before the connection goes back to the pool; release is idempotent. <b>Evict on unmount
- *       failure:</b> if unmount or the reset throws or cannot run, the physical connection is
- *       aborted and never returned to the pool, so a connection whose identity cannot be proven
- *       unmounted gets no next borrower, and the failure is rethrown. A rollback before the
- *       unmount that fails on a connection the driver no longer reports valid (the server ended
- *       the session, or the network dropped it) is the one failure not rethrown: the session that
- *       held the identity is gone, so the connection is evicted without its unmount, a warning is
- *       logged, and the operation's response stands.</li>
- * </ul>
- * The reset is a backstop to the consumer's unmount, not a replacement: an unmount that clears
- * nothing (a transaction-scoped {@code set_config(..., true)} in autocommit) leaves the next
- * borrower with no identity rather than the previous caller's. {@code RESET ALL} clears every
- * custom variable, which is where identity lives and which {@code pg_settings} cannot enumerate;
- * the restore puts back the built-in settings the pool configured after connecting, captured
- * before the mount so a mount's own change to one is undone too. The role is left alone, since
- * reverting an init-SQL {@code SET ROLE} would hand the next borrower the table owner.
- * Eviction uses {@link java.sql.Connection#abort(java.util.concurrent.Executor)} (JDBC, valid Java
- * 17): pool wrappers (Agroal/HikariCP) honour it as a true physical evict where {@code close()}
- * merely reclaims the connection to the pool. The runtime supplies a same-thread executor.
+ * <h2>The contract</h2>
+ * The consumer hands each request a {@code ConnectionSource} through
+ * {@code Graphitron.newOwnedExecutionInput(source, ...)}; Graphitron owns the lifecycle. The carrier
+ * calls {@code acquire(key)} the first time a field needs a {@link ConnectionKeyShape connection key}'s
+ * connection, never twice for one key in one request, and releases every lease it got exactly once
+ * on every completion path (success, error, cancellation). {@code KeyNotPermitted} refuses a key:
+ * the field that asked answers with an error, and an entity or node lookup with {@code null}. Any
+ * other throw becomes an {@code AcquisitionFailedException}, remembered by the carrier and thrown out
+ * of {@code GraphQL.execute} in place of the result. What the lease's connection carries (identity,
+ * role, row-level security settings) is the source's business; the ready-made
+ * {@code ConnectionSources.mounting} keeps the mount, unmount and PostgreSQL reset Graphitron used to
+ * own.
  *
  * <h3>Graphitron asserts the connection's transaction mode</h3>
- * Graphitron checks the connection out of the pool, holds it for the operation, and hands it
- * back, so its transaction mode is something graphitron <em>asserts</em>, never something it
- * inherits or preserves. Autocommit-on is the resting state every phase requires: the mount must
- * be its own committed transaction (session-scoped Postgres state such as {@code set_config} and
- * {@code SET ROLE} survives a {@code COMMIT} but is reverted when the transaction that issued it
- * rolls back, so a mount inside a lazily-opened transaction would be unwound by the first failing
- * mutation field, leaving the rest of the operation running unmounted, a wrong answer under RLS
- * rather than an error), queries want no transaction at all rather than an idle-in-transaction
- * snapshot, and the unmount at release must take effect immediately. Asserting the mode at
- * acquire excludes all of that before any SQL runs. The same fact read from the other end is why
- * {@code release} rolls back <em>before</em> switching the mode: JDBC commits an open transaction
- * when autocommit is turned on, so that order is load-bearing too. Acquire rolls back before
- * switching for the same reason: a pool may hand over a connection with autocommit off and a
- * transaction open, and that work must be discarded, not committed under the caller's request.
- * What the assertion asks of a consumer's mount is a documented precondition on the hook
- * contract: mount session-scoped state, in the database's own session vocabulary;
- * transaction-scoped storage ({@code SET LOCAL}, {@code ON COMMIT DELETE ROWS} rows) is gone by the mount's own implicit commit and never worked.
+ * A leased connection must be in autocommit: each mutation field's transaction opens from it, and a
+ * source that set its state inside an open transaction set it where the first rollback would revert
+ * it. {@code PinnedConnection.acquire} refuses such a lease rather than roll it back. At release any
+ * transaction the operation left open is rolled back before the lease's release, since JDBC commits
+ * an open transaction when autocommit is turned on. A connection Graphitron must stop (a fan-out
+ * worker past its deadline, a pin that completed after the operation released, a connection that
+ * cannot be settled) is aborted through {@link java.sql.Connection#abort(java.util.concurrent.Executor)}
+ * before its lease is released, so a release finding it closed has nothing to clean up.
  *
- * <h2>Load-bearing invariant: one connection per operation, one thread per connection</h2>
- * Pinning exactly one connection per distinct source within an operation is safe because generated
+ * <h2>Load-bearing invariant: one connection per key, one thread per connection</h2>
+ * Pinning exactly one connection per distinct key within an operation is safe because generated
  * batch loaders execute SQL synchronously on the dispatch thread
  * ({@code RowsMethodCall.batchLoaderLambda} emits
  * {@code CompletableFuture.completedFuture(rows(keys, dfe))}). That invariant is pinned at its
@@ -109,44 +69,34 @@ import java.util.Optional;
  * and it preserves both halves of the invariant for a revised reason: concurrency is confined to
  * scatter's bounded workers, each owning exactly one keyed connection single-threaded through
  * {@code dslFor(key)}, while the dispatch thread is blocked inside the join for the scatter's whole
- * duration (so it cannot race the workers, and the default connection stays dispatch-owned,
- * structurally: workers receive only the keyed {@code DSLContext}). Generated fetchers stay
- * synchronous; the fanned fetcher calls {@code scatter} and blocks, and concurrency never leaks
- * into fetcher bodies.
+ * duration. Generated fetchers stay synchronous; the fanned fetcher calls {@code scatter} and
+ * blocks, and concurrency never leaks into fetcher bodies.
  *
- * <h2>Session hooks</h2>
- * With no {@code <sessionState>} configured nothing is emitted and {@code acquire} carries no
- * mount call at all: no hook unit, no runtime field, no dispatch. A configured method pair
- * (a graph that supplies session identity per request) additionally emits
- * {@value #SESSION_HOOK_IMPL_CLASS_NAME}, one final class with static {@code mount} and
- * {@code unmount} methods that {@code PinnedConnection} calls directly: the choice between a
- * mount and no mount is known at generation time, so it is a choice about what to emit, never a
- * value the runtime holds or dispatches polymorphically. The hook class is where the
- * provider-free {@code Configuration} is built (from the connection and the resolved source's
- * dialect and settings, so a consumer's schema mapping reaches their own mount method) and where
- * the payload is spread into the mount's own declaration order; {@code PinnedConnection} stays
- * free of both.
+ * <h2>Session handles</h2>
+ * Where {@code <sessionState>} names a handle class, {@code Lease} carries a typed {@code handle()},
+ * which the carrier writes onto each key's {@code Configuration} for {@code $session}-bound
+ * parameters to read.
  */
 public final class ConnectionRuntimeClassGenerator {
 
     public static final String RUNTIME_CLASS_NAME = "GraphitronRuntime";
     public static final String PINNED_CONNECTION_CLASS_NAME = "PinnedConnection";
-    /** The generated hook class emitted from a configured {@code <sessionState>} method pair. */
-    public static final String SESSION_HOOK_IMPL_CLASS_NAME = "GraphitronSessionHook";
+    /** The consumer-implemented source of a request's connections, one lease per connection key. */
+    public static final String CONNECTION_SOURCE_CLASS_NAME = "ConnectionSource";
+    /** What a {@code ConnectionSource} hands back: a connection, its session handle, and its release. */
+    public static final String LEASE_CLASS_NAME = "Lease";
+    /** The one refusal a {@code ConnectionSource} may throw: this request may not have that key's connection. */
+    public static final String KEY_NOT_PERMITTED_CLASS_NAME = "KeyNotPermitted";
+    /** The ready-made connection sources: over a pool per key, with a mount and an unmount. */
+    public static final String CONNECTION_SOURCES_CLASS_NAME = "ConnectionSources";
     /**
-     * The request-scoped rejection a throwing mount becomes, emitted beside the hook class and
-     * only with it: a build that mounts nothing has nothing to reject.
+     * The request-scoped rejection any other throwing {@code acquire} becomes: the carrier remembers
+     * the first, and the instrumentation throws it out of {@code GraphQL.execute}.
      */
-    public static final String SESSION_MOUNT_EXCEPTION_CLASS_NAME = "SessionMountException";
+    public static final String ACQUISITION_FAILED_CLASS_NAME = "AcquisitionFailedException";
 
-    /** The per-request pair of mount and unmount callbacks the consumer builds the input with. */
-    public static final String SESSION_STATE_CLASS_NAME = "SessionState";
-
-    /** What graphitron knows about the connection being mounted, handed to each callback. */
-    public static final String MOUNTED_SESSION_CLASS_NAME = "MountedSession";
-
-    /** The name the request's {@code SessionState} travels under as a parameter and a field. */
-    static final String SESSION_STATE_SLOT = "sessionState";
+    /** The name the request's {@code ConnectionSource} travels under as a parameter and a field. */
+    static final String SOURCE_SLOT = "source";
     /**
      * What a field running on the key its parent hands down is refused with where none was handed
      * down: a request-level error before any SQL.
@@ -165,8 +115,6 @@ public final class ConnectionRuntimeClassGenerator {
      * tenant set and an optional default tenant that is a member of it.
      */
     public static final String REQUEST_TENANTS_CLASS_NAME = "RequestTenants";
-    /** The runtime's nested source triple ({@code DataSource}, dialect, jOOQ {@code Settings}). */
-    public static final String SOURCE_CLASS_NAME = "Source";
     /**
      * The consumer-implemented callback that decides how a fetcher exception is logged, both one no
      * {@code @error} mapping claims and one a handler caught; held by the runtime and read by
@@ -235,19 +183,6 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName SLF4J_LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName UUID_CLASS = ClassName.get("java.util", "UUID");
     private static final ClassName OPTIONAL = ClassName.get("java.util", "Optional");
-    /**
-     * The generated {@code mount}/{@code acquire} parameter carrying the tenant a connection is
-     * mounted for in multi-tenant builds. Not {@code tenant}: those methods also declare the
-     * consumer's payload parameters under their own names, and a payload named {@code tenant} is
-     * plausible in exactly these builds.
-     */
-    static final String MOUNTED_TENANT = "mountedTenant";
-    /**
-     * The {@code PinnedConnection} field (and {@code acquire} local) holding the built-in settings
-     * captured at acquire for release to restore after its reset.
-     */
-    static final String RESTORE = "restore";
-
     /** The graphQLContext key the request tenant set is published under. */
     public static final String TENANTS_KEY_FIELD = "TENANTS_KEY";
     /** The literal value of the emitted {@code TENANTS_KEY} constant (also written by the factory). */
@@ -266,9 +201,8 @@ public final class ConnectionRuntimeClassGenerator {
     /**
      * @param outputPackage the consumer's root output package; the classes are emitted into
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronContext})
-     * @param identity  the graph's session identity as the store states it: {@link SessionIdentityRows#empty()}
-     *                      emits no hook unit and no mount call; a configured arm additionally
-     *                      emits {@link #SESSION_HOOK_IMPL_CLASS_NAME}, called directly
+     * @param identity  the graph's session identity as the store states it: a handle class types
+     *                      the {@code Lease}'s {@code handle()} and the carrier's guarded reads
      */
     public static List<TypeSpec> generate(String outputPackage, SessionIdentityRows identity) {
         return generate(outputPackage, identity, ConnectionKeyShape.none(), null);
@@ -336,8 +270,12 @@ public final class ConnectionRuntimeClassGenerator {
             ? OBJECT_KEY
             : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
-        var sessionHookImpl = ClassName.get(schemaPackage, SESSION_HOOK_IMPL_CLASS_NAME);
-        var sessionMountException = ClassName.get(schemaPackage, SESSION_MOUNT_EXCEPTION_CLASS_NAME);
+        var connectionSource = ClassName.get(schemaPackage, CONNECTION_SOURCE_CLASS_NAME);
+        var lease = ClassName.get(schemaPackage, LEASE_CLASS_NAME);
+        var keyNotPermitted = ClassName.get(schemaPackage, KEY_NOT_PERMITTED_CLASS_NAME);
+        var acquisitionFailed = ClassName.get(schemaPackage, ACQUISITION_FAILED_CLASS_NAME);
+        var connectionSources = ClassName.get(schemaPackage, CONNECTION_SOURCES_CLASS_NAME);
+        TypeName handleType = identity.handleType().orElse(null);
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
         var ownedConnections = ClassName.get(schemaPackage, OWNED_CONNECTIONS_CLASS_NAME);
@@ -361,27 +299,26 @@ public final class ConnectionRuntimeClassGenerator {
 
         var units = new ArrayList<TypeSpec>();
         units.add(connectionKey(connectionKey, tenantKey));
-        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, identity,
-            tenantKey, multiTenant));
+        units.add(connectionSource(connectionSource, lease, connectionKey, keyNotPermitted));
+        units.add(lease(lease, handleType));
+        units.add(keyNotPermitted(keyNotPermitted));
+        units.add(acquisitionFailed(acquisitionFailed));
+        units.add(connectionSources(connectionSources, connectionSource, lease, connectionKey, handleType));
+        units.add(pinnedConnection(pinnedConnection, connectionSource, lease, connectionKey, keyNotPermitted,
+            acquisitionFailed, handleType));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
-            batchSizeLimit, identity, tenantKey, multiTenant, ownedConnections,
+            batchSizeLimit, multiTenant,
             vouches ? ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS) : null,
-            failureMessages));
+            failureMessages, connectionKey, connectionSource));
         units.add(ownedConnections(ownedConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException,
-            keyType, connectionKey, failureMessages));
+            multiTenant, identity, requestTenants, tenantColumn, errorRouter, columnValues, acquisitionFailed,
+            keyNotPermitted, connectionSource, keyType, connectionKey, failureMessages));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, ownedConnections, tenantKey));
         }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
         units.add(batchSizeLimit(batchSizeLimit));
-        if (identity.emitsHookImplementation()) {
-            units.add(mountedSession(schemaPackage, tenantKey, multiTenant));
-            units.add(sessionState(schemaPackage, identity));
-            units.add(sessionHookImpl(schemaPackage, identity, tenantKey, multiTenant));
-            units.add(sessionMountException(sessionMountException));
-        }
         return List.copyOf(units);
     }
 
@@ -391,295 +328,142 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * The acquisition-scoped pinned connection: acquire/release lifecycle with fail-closed + evict,
-     * plus {@code abort()}: evict without the unmount hook, safe against another thread that may
-     * still be executing on the connection (a scatter worker past its join deadline, or a pin that
-     * completed after the carrier released). {@code release()} and {@code abort()} share one
-     * compare-and-set flag, so whichever runs first is the only one that acts. The emitted shape follows the resolved
-     * session identity the store states: none configured means no mount call at all; a handle-less mount
-     * means no handle field; a handled mount adds the typed handle field {@code release} reads.
-     * Multi-tenant builds give {@code acquire} an {@code Optional<K>} parameter ({@value #MOUNTED_TENANT}) naming the
-     * tenant the connection is acquired for, handed on to the mount.
+     * The acquisition-scoped pinned connection: Graphitron's wrapper of one {@code Lease}. Acquire
+     * calls the request's source and asserts autocommit on what it leased; release settles any
+     * transaction the operation left open and then releases the lease; {@code abort()} aborts the
+     * connection through JDBC, for a connection another thread may still be executing on, and then
+     * releases the lease. {@code release()} and {@code abort()} share one compare-and-set flag, so
+     * whichever runs first is the only one that acts and the lease is released exactly once.
      */
-    private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName sessionHookImpl,
-            ClassName sessionMountException, SessionIdentityRows identity, TypeName tenantKey, boolean multiTenant) {
-        var payload = payloadParams(identity, pinnedConnection);
-        boolean mounts = identity.emitsHookImplementation();
-        boolean unmounts = identity.emitsHookImplementation();
-        TypeName handleType = identity.handleType().orElse(null);
-        boolean unmountTakesHandle = unmounts && handleType != null;
-
-        var connectionField = FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build();
-        var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The resolved source's dialect, carried with the connection it describes so the\n"
-                + "carrier's context minting and the unmount call read the entry's own source.\n")
-            .build();
-        var settingsField = FieldSpec.builder(SETTINGS, "settings", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The resolved source's jOOQ {@code Settings}, beside {@link #dialect}.\n")
-            .build();
-        var handleField = handleType == null ? null
-            : FieldSpec.builder(handleType, "handle", Modifier.PRIVATE, Modifier.FINAL)
-                .addJavadoc("The mount's returned handle: written once at acquisition, read by release\n"
-                    + "(to pass to unmount) and published on the carrier entry's {@code Configuration}\n"
-                    + "for {@code $$session}-bound service parameters.\n")
-                .build();
-        var abortExecutorField = FieldSpec.builder(EXECUTOR, "abortExecutor", Modifier.PRIVATE, Modifier.FINAL).build();
-        var sessionStateType = ClassName.get(pinnedConnection.packageName(), SESSION_STATE_CLASS_NAME);
-        var mountedTenantType = ParameterizedTypeName.get(OPTIONAL, tenantKey);
-        var sessionStateField = FieldSpec.builder(sessionStateType, SESSION_STATE_SLOT, Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The request's session state, kept so release unmounts through the same callbacks\n"
-                + "that mounted this connection.\n")
-            .build();
-        var mountedTenantField = FieldSpec.builder(mountedTenantType, MOUNTED_TENANT, Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The tenant this connection was mounted for, handed to the unmount callback as it\n"
-                + "was to the mount.\n")
-            .build();
-        var restoreField = FieldSpec.builder(STRING_TABLE, RESTORE, Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The built-in settings the connection carried session-set when it was taken, captured\n"
-                + "before the mount as {@code {names, values}}, for release to restore after its reset;\n"
-                + "{@code null} when the dialect is not PostgreSQL, which is what tells release not to reset.\n")
-            .build();
-        var releasedField = FieldSpec.builder(ATOMIC_BOOLEAN, "released", Modifier.PRIVATE, Modifier.FINAL)
-            .initializer("new $T()", ATOMIC_BOOLEAN)
-            .addJavadoc("Set by whichever of {@code release()} and {@code abort()} runs first; the other, and any\n"
-                + "repeat of either, then does nothing.\n")
-            .build();
-
+    private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName source, ClassName lease,
+            ClassName connectionKey, ClassName keyNotPermitted, ClassName acquisitionFailed, TypeName handleType) {
         var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
-            .addParameter(CONNECTION, "connection")
+            .addParameter(lease, "lease")
             .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings");
-        if (handleType != null) {
-            constructorBuilder.addParameter(handleType, "handle");
-        }
-        constructorBuilder.addParameter(EXECUTOR, "abortExecutor");
-        if (mounts) {
-            constructorBuilder.addParameter(sessionStateType, SESSION_STATE_SLOT);
-            if (multiTenant) {
-                constructorBuilder.addParameter(mountedTenantType, MOUNTED_TENANT);
-            }
-            constructorBuilder.addParameter(STRING_TABLE, RESTORE);
-        }
-        constructorBuilder
-            .addStatement("this.connection = connection")
+            .addParameter(SETTINGS, "settings")
+            .addParameter(EXECUTOR, "abortExecutor")
+            .addStatement("this.lease = lease")
+            .addStatement("this.connection = lease.connection()")
             .addStatement("this.dialect = dialect")
-            .addStatement("this.settings = settings");
-        if (handleType != null) {
-            constructorBuilder.addStatement("this.handle = handle");
-        }
-        constructorBuilder.addStatement("this.abortExecutor = abortExecutor");
-        if (mounts) {
-            constructorBuilder.addStatement("this.$L = $L", SESSION_STATE_SLOT, SESSION_STATE_SLOT);
-            if (multiTenant) {
-                constructorBuilder.addStatement("this.$L = $L", MOUNTED_TENANT, MOUNTED_TENANT);
-            }
-            constructorBuilder.addStatement("this.$L = $L", RESTORE, RESTORE);
-        }
-        var constructor = constructorBuilder.build();
+            .addStatement("this.settings = settings")
+            .addStatement("this.abortExecutor = abortExecutor");
 
-        var acquireBuilder = MethodSpec.methodBuilder("acquire")
+        var acquire = MethodSpec.methodBuilder("acquire")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(pinnedConnection)
-            .addParameter(DATA_SOURCE, "dataSource")
+            .addParameter(source, "source")
+            .addParameter(connectionKey, "key")
             .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings");
-        if (multiTenant) {
-            acquireBuilder.addParameter(ParameterizedTypeName.get(OPTIONAL, tenantKey), MOUNTED_TENANT);
-        }
-        acquireBuilder.addParameter(EXECUTOR, "abortExecutor");
-        for (var p : payload) {
-            acquireBuilder.addParameter(p.javaType(), p.name());
-        }
-        acquireBuilder
-            .addException(SQL_EXCEPTION)
-            .addStatement("$T connection = dataSource.getConnection()", CONNECTION);
-        if (handleType != null) {
-            acquireBuilder.addStatement("$T handle", handleType);
-        }
-        if (mounts) {
-            acquireBuilder.addStatement("$T $L", STRING_TABLE, RESTORE);
-        }
-        acquireBuilder
+            .addParameter(SETTINGS, "settings")
+            .addParameter(EXECUTOR, "abortExecutor")
+            .addStatement("$T lease", lease)
             .beginControlFlow("try")
-            .addComment("Graphitron asserts the connection's transaction mode: autocommit-on is the resting")
-            .addComment("state on a connection it owns, whatever the pool lent. The mount must be its own")
-            .addComment("committed transaction (session-scoped state set inside a lazily-opened transaction")
-            .addComment("would be reverted by the first failing mutation field's rollback), so the mode is")
-            .addComment("forced before any hook SQL. Roll back what the pool left open first: JDBC commits an")
-            .addComment("open transaction when autocommit is turned on, and work graphitron did not issue must")
-            .addComment("not be committed under this request.")
-            .beginControlFlow("if (!connection.getAutoCommit())")
-            .addStatement("connection.rollback()")
+            .addStatement("lease = source.acquire(key)")
+            .nextControlFlow("catch ($T refused)", keyNotPermitted)
+            .addStatement("throw refused")
+            .nextControlFlow("catch ($T failed)", Exception.class)
+            .addStatement("throw new $T(failed)", acquisitionFailed)
             .endControlFlow()
-            .addStatement("connection.setAutoCommit(true)");
-        if (mounts) {
-            String args = mountCallArgs(multiTenant);
-            acquireBuilder
-                .addComment("On PostgreSQL, capture the built-in settings the connection carries session-set (what")
-                .addComment("the pool configured after connecting) before the mount can change any, so release can")
-                .addComment("put them back after its RESET ALL. Outside the rejection mapping below: a failed")
-                .addComment("capture is a deployment fault, like a failure forcing autocommit.")
-                .addStatement("$L = dialect.family() == $T.POSTGRES ? captureSessionSettings(connection) : null",
-                    RESTORE, SQL_DIALECT)
-                .addComment("Only the mount itself is a rejected identity: a failure forcing autocommit above is")
-                .addComment("a deployment fault and must not reach a consumer's mapping of identity rejections.")
-                .beginControlFlow("try");
-            if (handleType != null) {
-                acquireBuilder.addStatement("handle = $T.mount($L)", sessionHookImpl, args);
-            } else {
-                acquireBuilder.addStatement("$T.mount($L)", sessionHookImpl, args);
-            }
-            acquireBuilder
-                .nextControlFlow("catch ($T rejected)", Exception.class)
-                .addStatement("throw new $T(rejected)", sessionMountException)
-                .endControlFlow();
-        }
-        acquireBuilder
-            .nextControlFlow("catch ($T mountFailure)", Throwable.class)
-            .addComment("Fail closed: the mount may have partially mounted session state before throwing.")
-            .addComment("Evict rather than return a half-mounted connection to the pool; reject before any SQL.")
-            .addStatement("evict(connection, abortExecutor)")
-            .addStatement("throw rethrow(mountFailure)")
-            .endControlFlow();
-        var constructed = new StringBuilder("connection, dialect, settings");
-        if (handleType != null) {
-            constructed.append(", handle");
-        }
-        constructed.append(", abortExecutor");
-        if (mounts) {
-            constructed.append(", ").append(SESSION_STATE_SLOT);
-            if (multiTenant) {
-                constructed.append(", ").append(MOUNTED_TENANT);
-            }
-            constructed.append(", ").append(RESTORE);
-        }
-        acquireBuilder.addStatement("return new $T($L)", pinnedConnection, constructed.toString());
-        var acquire = acquireBuilder
-            .addJavadoc(mounts
-                ? "Pins one connection, forces autocommit on it, first rolling back any transaction the\n"
-                    + "pool left open, on PostgreSQL captures the built-in settings it carries session-set\n"
-                    + "(for release to restore after its reset), and mounts identity through the generated\n"
-                    + "hook's static {@code mount}, with the typed payload. The mount therefore always runs\n"
-                    + "outside any transaction, as its own committed statement, whatever the pool's\n"
-                    + "configuration. Fail-closed: a throwing mount (or a failure forcing autocommit, or a\n"
-                    + "failed capture) evicts the connection and propagates before any operation SQL runs;\n"
-                    + "the mount's own throw propagates as {@code SessionMountException}, the others never\n"
-                    + "do (an unchecked failure as itself, a checked one wrapped unchecked).\n"
-                : "Pins one connection and forces autocommit on it, first rolling back any transaction the\n"
-                    + "pool left open (autocommit is the resting state graphitron holds an owned connection\n"
-                    + "in). No {@code <sessionState>} is configured, so no identity is mounted and no hook\n"
-                    + "runs. Fail-closed: a failure doing so evicts the connection.\n")
+            .beginControlFlow("if (lease == null)")
+            .addStatement("throw new $T(new $T($S))", acquisitionFailed, NullPointerException.class,
+                "the connection source returned no lease")
+            .endControlFlow()
+            .beginControlFlow("try")
+            .addComment("Graphitron asserts the connection's transaction mode rather than forcing it: autocommit")
+            .addComment("is the resting state each mutation field's transaction opens from, and a source that")
+            .addComment("leased a connection inside an open transaction set its state where a rollback would")
+            .addComment("revert it. Refuse the lease rather than roll its state back.")
+            .beginControlFlow("if (!lease.connection().getAutoCommit())")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "the connection source leased a connection with autocommit off")
+            .endControlFlow()
+            .nextControlFlow("catch ($T unusable)", Exception.class)
+            .addStatement("$T failure = new $T(unusable)", acquisitionFailed, acquisitionFailed)
+            .beginControlFlow("try")
+            .addStatement("lease.release()")
+            .nextControlFlow("catch ($T releaseFailure)", Exception.class)
+            .addStatement("failure.addSuppressed(releaseFailure)")
+            .endControlFlow()
+            .addStatement("throw failure")
+            .endControlFlow()
+            .beginControlFlow("if (lease.dialect() == null)")
+            .addStatement("return new $T(lease, dialect, settings, abortExecutor)", pinnedConnection)
+            .endControlFlow()
+            .addStatement("return new $T(lease, lease.dialect(),\n"
+                + "$>lease.settings() != null ? lease.settings() : new $T(), abortExecutor)$<", pinnedConnection, SETTINGS)
+            .addJavadoc("Leases the connection for {@code key} from {@code source} and asserts autocommit on it.\n"
+                + "A {@code KeyNotPermitted} passes through unchanged; any other throw, a missing lease, or a\n"
+                + "lease with autocommit off becomes an {@code AcquisitionFailedException}, the request-level\n"
+                + "rejection, and a lease refused that way is released before it is thrown. The lease's own\n"
+                + "dialect and settings win over the runtime's {@code dialect} and {@code settings}.\n")
             .build();
 
-        var connectionAccessor = MethodSpec.methodBuilder("connection")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(CONNECTION)
-            .addStatement("return connection")
-            .addJavadoc("The pinned connection every fetch of this operation runs on.\n")
-            .build();
-
-        var dialectAccessor = MethodSpec.methodBuilder("dialect")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(SQL_DIALECT)
-            .addStatement("return dialect")
-            .addJavadoc("The resolved source's dialect this connection was acquired under.\n")
-            .build();
-
-        var settingsAccessor = MethodSpec.methodBuilder("settings")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(SETTINGS)
-            .addStatement("return settings")
-            .addJavadoc("The resolved source's jOOQ {@code Settings} this connection was acquired under.\n")
-            .build();
-
-        var releaseBuilder = MethodSpec.methodBuilder("release")
+        var release = MethodSpec.methodBuilder("release")
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
             .beginControlFlow("if (!released.compareAndSet(false, true))")
             .addStatement("return")
             .endControlFlow()
+            .addStatement("$T failure = null", RuntimeException.class)
             .beginControlFlow("try")
-            .addComment("Graphitron asserts autocommit on a connection it owns: if the operation left a")
-            .addComment("transaction open (e.g. it died mid-mutation before the provider settled), roll it")
-            .addComment("back first, because JDBC commits an open transaction when autocommit is turned on;")
-            .addComment("only then assert the mode, so the unmount's clears take effect immediately rather")
-            .addComment("than sitting in an uncommitted transaction.")
-            .beginControlFlow("try")
+            .addComment("If the operation left a transaction open (it died mid-mutation before the provider")
+            .addComment("settled), roll it back before the release: JDBC commits an open transaction when")
+            .addComment("autocommit is turned on, and the source's release runs in autocommit.")
             .beginControlFlow("if (!connection.getAutoCommit())")
             .addStatement("connection.rollback()")
             .addStatement("connection.setAutoCommit(true)")
             .endControlFlow()
             .nextControlFlow("catch ($T settleFailure)", SQL_EXCEPTION)
             .beginControlFlow("if (isValid(connection))")
-            .addComment("A live connection that cannot be settled: identity cannot be proven unmounted.")
-            .addStatement("throw settleFailure")
-            .endControlFlow()
+            .addComment("A live connection that cannot be settled: what it holds cannot be proven cleared.")
+            .addStatement("failure = rethrow(settleFailure)")
+            .nextControlFlow("else")
             .addComment("The connection is gone (the server ended its session, or the network dropped it), and")
-            .addComment("with it every transaction and identity it held: evicted, nothing to unmount, and the")
-            .addComment("operation's response stands.")
+            .addComment("with it every transaction it held; the operation's response stands.")
             .addStatement("LOGGER.warn($S, settleFailure)",
-                "A pinned connection was no longer valid when released; it was evicted without its unmount.")
-            .addStatement("evict(connection, abortExecutor)")
-            .addStatement("return")
-            .endControlFlow();
-        if (unmounts) {
-            String tenantArg = multiTenant ? ", " + MOUNTED_TENANT : "";
-            String handleArg = unmountTakesHandle ? ", handle" : "";
-            releaseBuilder.addStatement("$T.unmount($L, connection, dialect, settings$L$L)", sessionHookImpl,
-                SESSION_STATE_SLOT, tenantArg, handleArg);
-            releaseBuilder
-                .addComment("The backstop to the unmount: on PostgreSQL clear every custom variable (where identity")
-                .addComment("lives) and put back the built-in settings captured before the mount, so a defective")
-                .addComment("unmount leaves the next borrower with no identity rather than this one's. The role is")
-                .addComment("left alone: reverting an init-SQL SET ROLE would hand the next borrower the owner.")
-                .beginControlFlow("if ($L != null)", RESTORE)
-                .addComment("RESET ALL is transactional: an unmount that switched autocommit off would leave it in a")
-                .addComment("transaction the pool's return-rollback reverts. Evict instead of settling.")
-                .beginControlFlow("if (!connection.getAutoCommit())")
-                .addStatement("throw new $T($S)", IllegalStateException.class,
-                    "the unmount left autocommit off; identity cannot be proven reset")
-                .endControlFlow()
-                .beginControlFlow("try ($T reset = connection.prepareStatement($S\n$>$>+ $S$<$<))", PREPARED_STATEMENT,
-                    "RESET ALL;", " select set_config(n, v, false) from unnest(?::text[], ?::text[]) as t(n, v)")
-                .addStatement("reset.setArray(1, connection.createArrayOf($S, $L[0]))", "text", RESTORE)
-                .addStatement("reset.setArray(2, connection.createArrayOf($S, $L[1]))", "text", RESTORE)
-                .addStatement("reset.execute()")
-                .endControlFlow()
-                .endControlFlow();
-        }
-        var release = releaseBuilder
-            .nextControlFlow("catch ($T releaseFailure)", Throwable.class)
-            .addComment("Identity cannot be proven unmounted: evict the physical connection, never return it.")
-            .addStatement("evict(connection, abortExecutor)")
-            .addStatement("throw rethrow(releaseFailure)")
+                "A pinned connection was no longer valid when released; it was aborted before its release.")
             .endControlFlow()
-            .addStatement("closeReturningToPool(connection)")
-            .addJavadoc((unmounts
-                ? "Unmounts identity and releases the connection, settling any transaction the operation\n"
-                    + "left open first so the unmount runs outside any transaction. Fires unmount on every\n"
-                    + "completion path (success, error, cancellation); idempotent, so a redundant\n"
-                    + "cancel-then-complete release unmounts exactly once. On PostgreSQL the unmount is\n"
-                    + "followed by a reset, {@code RESET ALL} and a restore of the built-in settings captured\n"
-                    + "at acquire, so the connection goes back to the pool as it arrived whatever the unmount\n"
-                    + "cleared. Evicts and rethrows on unmount or reset failure (and on an unmount that left\n"
-                    + "autocommit off, or a failed pre-unmount settle on a connection that is still valid,\n"
-                    + "which equally leave identity unprovable). A pre-unmount settle that fails on a\n"
-                    + "connection no longer valid ({@code isValid}) is not rethrown: the session that held\n"
-                    + "the identity is gone, so the connection is evicted, the failure logged as a warning,\n"
-                    + "and the operation's response stands.\n"
-                : "Releases the connection, settling any transaction the operation left open and asserting\n"
-                    + "autocommit (the resting state graphitron returns an owned connection in).\n"
-                    + "Idempotent; evicts on a failed settle, and rethrows unless the connection is no longer\n"
-                    + "valid ({@code isValid}), which is evicted and logged as a warning only.\n"))
+            .addStatement("evict(connection, abortExecutor)")
+            .endControlFlow()
+            .beginControlFlow("try")
+            .addStatement("lease.release()")
+            .nextControlFlow("catch ($T releaseFailure)", Exception.class)
+            .beginControlFlow("if (failure == null)")
+            .addStatement("failure = rethrow(releaseFailure)")
+            .nextControlFlow("else")
+            .addStatement("failure.addSuppressed(releaseFailure)")
+            .endControlFlow()
+            .endControlFlow()
+            .beginControlFlow("if (failure != null)")
+            .addStatement("throw failure")
+            .endControlFlow()
+            .addJavadoc("Settles any transaction the operation left open, then releases the lease. Idempotent,\n"
+                + "and a no-op after {@link #abort()}. A failed settle aborts the connection through JDBC\n"
+                + "before the lease is released, and is rethrown unless the connection is no longer valid\n"
+                + "({@code isValid}), which is logged as a warning only; a throwing release is rethrown, after\n"
+                + "the settle's failure where both fail.\n")
             .build();
 
-        var close = MethodSpec.methodBuilder("close")
-            .addAnnotation(Override.class)
+        var abort = MethodSpec.methodBuilder("abort")
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
-            .addStatement("release()")
-            .addJavadoc("{@link AutoCloseable} alias for {@link #release()}.\n")
+            .beginControlFlow("if (!released.compareAndSet(false, true))")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("evict(connection, abortExecutor)")
+            .beginControlFlow("try")
+            .addStatement("lease.release()")
+            .nextControlFlow("catch ($T releaseFailure)", Exception.class)
+            .addStatement("LOGGER.warn($S, releaseFailure)", "Releasing an aborted lease failed.")
+            .endControlFlow()
+            .addJavadoc("Aborts the connection through JDBC and then releases the lease, for a connection another\n"
+                + "thread may still be executing on: a fan-out worker past the join deadline, or a pin that\n"
+                + "completed after the operation released its connections. The connection cannot be proven\n"
+                + "idle, so it is aborted rather than settled; the other thread's eventual completion lands\n"
+                + "harmlessly on the dead connection, and the lease's release finds it closed. A failing\n"
+                + "release is logged, not thrown. Idempotent, and a no-op after {@link #release()}, as\n"
+                + "{@code release()} is after it: the two share one flag.\n")
             .build();
 
         var isValid = MethodSpec.methodBuilder("isValid")
@@ -693,11 +477,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return false")
             .endControlFlow()
             .addJavadoc("Whether {@code connection} is still valid after settling it at release failed, asked of\n"
-                + "the driver ({@code Connection.isValid}), bounded to $L second(s): a closed connection answers\n"
-                + "at once, a live one with one round trip. The driver's own answer, not a list of states,\n"
-                + "because what a dead session surfaces differs by driver and by timing (pgjdbc reports a\n"
-                + "closed connection, {@code 08003}, or an I/O failure, {@code 08006}, for one server-ended\n"
-                + "session), and a failure on a live connection must keep failing release whatever its state.\n",
+                + "the driver ({@code Connection.isValid}), bounded to $L second(s): the driver's own answer,\n"
+                + "because what a dead session surfaces differs by driver and by timing.\n",
                 RELEASE_VALIDITY_SECONDS)
             .build();
 
@@ -720,17 +501,6 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .build();
 
-        var closeReturningToPool = MethodSpec.methodBuilder("closeReturningToPool")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(void.class)
-            .addParameter(CONNECTION, "connection")
-            .beginControlFlow("try")
-            .addStatement("connection.close()")
-            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
-            .addStatement("throw new $T(e)", RuntimeException.class)
-            .endControlFlow()
-            .build();
-
         var rethrow = MethodSpec.methodBuilder("rethrow")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(RuntimeException.class)
@@ -744,62 +514,71 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return new $T(cause)", RuntimeException.class)
             .addJavadoc("Turns a caught {@code cause} into an unchecked throwable to rethrow: {@link Error}\n"
                 + "is rethrown as-is, a {@link RuntimeException} is returned unchanged, and the checked\n"
-                + "residue (a mount/unmount {@code SQLException}) is wrapped. Callers write\n"
-                + "{@code throw rethrow(cause)}.\n")
+                + "residue is wrapped.\n")
             .build();
 
         var builder = TypeSpec.classBuilder(PINNED_CONNECTION_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addModifiers(Modifier.FINAL)
             .addSuperinterface(AutoCloseable.class)
-            .addJavadoc("One pinned connection"
-                + (mounts ? " with per-request identity mounted" : "")
-                + " for its acquisition-scoped lifetime.\n"
-                + "Carries no transaction machinery (the {@code TransactionProvider} and execution\n"
-                + "instrumentation compose over this seam) and no payload: the per-key carrier holds the\n"
-                + "payload for the request and hands it to {@code acquire}. See\n"
-                + "{@code ConnectionRuntimeClassGenerator} for the full lifecycle contract.\n")
+            .addJavadoc("Graphitron's hold on one leased connection for its acquisition-scoped lifetime: the lease,\n"
+                + "the dialect and settings its contexts render with, and the flag that releases it exactly\n"
+                + "once. Carries no transaction machinery (the {@code TransactionProvider} and execution\n"
+                + "instrumentation compose over this seam). See {@code ConnectionRuntimeClassGenerator} for\n"
+                + "the full lifecycle contract.\n")
             .addField(FieldSpec.builder(SLF4J_LOGGER, "LOGGER", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                 .initializer("$T.getLogger($T.class)", SLF4J_LOGGER_FACTORY, pinnedConnection)
                 .build())
-            .addField(connectionField)
-            .addField(dialectField)
-            .addField(settingsField);
-        if (handleField != null) {
-            builder.addField(handleField);
-        }
-        builder.addField(abortExecutorField);
-        if (mounts) {
-            builder.addField(sessionStateField);
-            if (multiTenant) {
-                builder.addField(mountedTenantField);
-            }
-            builder.addField(restoreField);
-        }
-        builder.addField(releasedField)
-            .addMethod(constructor)
+            .addField(FieldSpec.builder(lease, "lease", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(SETTINGS, "settings", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(EXECUTOR, "abortExecutor", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(ATOMIC_BOOLEAN, "released", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T()", ATOMIC_BOOLEAN)
+                .addJavadoc("Set by whichever of {@code release()} and {@code abort()} runs first; the other, and any\n"
+                    + "repeat of either, then does nothing.\n")
+                .build())
+            .addMethod(constructorBuilder.build())
             .addMethod(acquire)
-            .addMethod(connectionAccessor)
-            .addMethod(dialectAccessor)
-            .addMethod(settingsAccessor);
+            .addMethod(MethodSpec.methodBuilder("connection")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(CONNECTION)
+                .addStatement("return connection")
+                .addJavadoc("The leased connection every fetch of this key runs on.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("dialect")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(SQL_DIALECT)
+                .addStatement("return dialect")
+                .addJavadoc("The dialect this connection's contexts render with.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("settings")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(SETTINGS)
+                .addStatement("return settings")
+                .addJavadoc("The jOOQ {@code Settings} this connection's contexts render with.\n")
+                .build());
         if (handleType != null) {
             builder.addMethod(MethodSpec.methodBuilder("handle")
                 .addModifiers(Modifier.PUBLIC)
                 .returns(handleType)
-                .addStatement("return handle")
-                .addJavadoc("The mount's returned handle for this connection.\n")
+                .addStatement("return lease.handle()")
+                .addJavadoc("The lease's session handle.\n")
                 .build());
         }
-        builder.addMethod(release)
+        return builder.addMethod(release)
+            .addMethod(abort)
+            .addMethod(MethodSpec.methodBuilder("close")
+                .addAnnotation(Override.class)
+                .addModifiers(Modifier.PUBLIC)
+                .returns(void.class)
+                .addStatement("release()")
+                .addJavadoc("{@link AutoCloseable} alias for {@link #release()}.\n")
+                .build())
             .addMethod(isValid)
-            .addMethod(abortMethod())
-            .addMethod(close)
             .addMethod(evict)
-            .addMethod(closeReturningToPool)
-            .addMethod(rethrow);
-        if (mounts) {
-            builder.addMethod(captureSessionSettings());
-        }
-        return builder.build();
+            .addMethod(rethrow)
+            .build();
     }
 
     /**
@@ -838,87 +617,20 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * One request-scoped value the carrier holds and hands to every acquisition: its Java type and
-     * the name it travels under as a parameter and a field.
-     */
-    private record Slot(TypeName javaType, String name) {}
-
-    /**
-     * The request's session state as the one payload slot: the {@code SessionState} the consumer
-     * built the input with, empty when the graph supplies no session identity. Every acquisition
-     * of the request mounts through it, so the carrier holds it for the life of the request.
-     */
-    private static List<Slot> payloadParams(SessionIdentityRows identity, ClassName sibling) {
-        return identity.emitsHookImplementation()
-            ? List.of(new Slot(ClassName.get(sibling.packageName(), SESSION_STATE_CLASS_NAME), SESSION_STATE_SLOT))
-            : List.of();
-    }
-
-    /**
-     * The argument list for the generated hook's static {@code mount}: the request's session state,
-     * the connection, the resolved source's dialect and settings, then the tenant in multi-tenant
-     * builds.
-     */
-    private static String mountCallArgs(boolean multiTenant) {
-        var args = new StringBuilder(SESSION_STATE_SLOT + ", connection, dialect, settings");
-        if (multiTenant) {
-            args.append(", ").append(MOUNTED_TENANT);
-        }
-        return args.toString();
-    }
-
-    /**
-     * {@code abort()}: the release path for a connection another thread may still be using. A
-     * scatter worker past its deadline, or a fetcher that received a pin which completed after the
-     * carrier released, may be mid-statement on this connection, so neither the unmount method (a
-     * second concurrent user of the connection) nor {@code close()} (returns a possibly-live
-     * connection to the pool) is safe; {@code Connection.abort} is the JDBC primitive designed for
-     * exactly this. The {@code released} compare-and-set decides which of {@code release()} and
-     * {@code abort()} acts on an instance, so concurrent or repeated calls in any combination evict
-     * or release exactly once. Inside the carrier the per-key remove already routes each entry to one
-     * processor; the shared flag makes the promise hold for any caller.
-     */
-    private static MethodSpec abortMethod() {
-        return MethodSpec.methodBuilder("abort")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(void.class)
-            .beginControlFlow("if (!released.compareAndSet(false, true))")
-            .addStatement("return")
-            .endControlFlow()
-            .addStatement("evict(connection, abortExecutor)")
-            .addJavadoc("Evicts the connection without running the unmount method, for a connection another\n"
-                + "thread may still be executing on: a scatter straggler past the join deadline, or a pin\n"
-                + "that completed after the operation released its connections. The identity cannot be\n"
-                + "proven unmounted and the connection cannot be proven idle, so it is aborted and never\n"
-                + "returned to the pool; the other thread's eventual completion lands harmlessly on the dead\n"
-                + "connection. Idempotent, and a no-op after {@link #release()}, as {@code release()} is\n"
-                + "after it: the two share one flag.\n")
-            .build();
-    }
-
-    /**
-     * The application-scoped runtime holding the sources: a default ({@code DataSource}, dialect,
-     * jOOQ {@code Settings}) triple plus a per-tenant map of them for database-per-tenant routing.
-     * The triple is what a context needs to render the consumer's SQL correctly (schema and render
-     * mapping above all), so no {@code DSLContext} graphitron produces is missing the consumer's
-     * jOOQ configuration; {@code Settings} is exactly the part of a {@code Configuration} that is
-     * safe to accept, since what graphitron must own (the connection provider, the transaction
-     * provider) is not in it. The plain {@code DataSource}-and-dialect constructor forms stay as
-     * delegating conveniences wrapping default settings, so no consumer call site breaks.
-     * Multi-tenant builds additionally carry the fan-out execution configuration (the bounded
-     * scatter executor and the scatter deadline); deployment-time values, so they never touch the
-     * Mojo. No hook state lives here: the mount/unmount choice is emitted, not held. The held
-     * callbacks are the consumer's optional {@code FetcherErrorLog} and {@code FetcherErrorResponse},
-     * each set through a wither rather than a constructor parameter so they compose with every
-     * constructor form instead of doubling them.
+     * The application-scoped runtime: the jOOQ dialect and {@code Settings} every context Graphitron
+     * mints over a leased connection renders with (unless the lease names its own), the same-thread
+     * executor {@code Connection.abort} runs on, and the consumer's application-scoped callbacks. It
+     * holds no connection and no pool: a request's connections come from the {@code ConnectionSource}
+     * given with it. Multi-tenant builds additionally carry the fan-out execution configuration (the
+     * bounded scatter executor and the scatter deadline). The held callbacks are the consumer's
+     * optional {@code FetcherErrorLog}, {@code FetcherErrorResponse} and {@code BatchSizeLimit}, each
+     * set through a wither rather than a constructor parameter so they compose with every constructor
+     * form instead of doubling them.
      */
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
                                     ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
-                                    ClassName batchSizeLimit,
-                                    SessionIdentityRows identity, TypeName tenantKey,
-                                    boolean multiTenant, ClassName ownedConnections, ClassName voucherKeys,
-                                    boolean failureMessages) {
-        var payload = payloadParams(identity, runtime);
+                                    ClassName batchSizeLimit, boolean multiTenant, ClassName voucherKeys,
+                                    boolean failureMessages, ClassName connectionKey, ClassName connectionSource) {
         // In a graph with failure messages the copy constructor carries the outbox acquisition bound
         // after the batch size limit, so every wither hands it on.
         String outboxArg = failureMessages ? ", outboxAcquisitionTimeout" : "";
@@ -928,17 +640,14 @@ public final class ConnectionRuntimeClassGenerator {
         java.util.function.UnaryOperator<String> delegating = call -> call.substring(0, call.length() - 1) + keysArg + ")";
         java.util.function.UnaryOperator<MethodSpec.Builder> takesKeys = b -> voucherKeys == null ? b
             : b.addParameter(voucherKeys, "voucherKeys");
-        var source = runtime.nestedClass(SOURCE_CLASS_NAME);
+        String head = "dialect, settings" + (multiTenant ? ", fanOutExecutor, fanOutTimeout" : "");
 
-        var defaultSourceField = FieldSpec.builder(source, "defaultSource", Modifier.PRIVATE, Modifier.FINAL).build();
-        var tenantSourcesField = FieldSpec.builder(
-                ParameterizedTypeName.get(MAP, tenantKey, source),
-                "sourcesByTenant", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("Per-tenant sources for database-per-tenant routing; empty for the single-tenant\n"
-                + "runtime. Keyed by the divined tenant value; the key type is read off the catalog's\n"
-                + "tenant column when {@code <tenantColumn>} is configured, {@code Object} otherwise\n"
-                + "(the key type is a classification concern, not the lifecycle's). Each entry carries\n"
-                + "its own dialect, so a database-per-tenant deployment may mix dialects.\n")
+        var dialectField = FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The dialect every context over a leased connection renders with, unless the lease\n"
+                + "names its own.\n")
+            .build();
+        var settingsField = FieldSpec.builder(SETTINGS, "settings", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The jOOQ {@code Settings} beside {@link #dialect}; never {@code null}.\n")
             .build();
         // Same-thread executor for Connection.abort(); the abort work is trivial and must complete before
         // the borrow returns, so there is no reason to hand it to another thread.
@@ -968,60 +677,31 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
         var fetcherErrorLogField = FieldSpec.builder(fetcherErrorLog, "fetcherErrorLog", Modifier.PRIVATE, Modifier.FINAL)
             .addJavadoc("The consumer's log for fetcher exceptions, or {@code null} for Graphitron's default\n"
-                + "line. Application-scoped like the sources; set by {@link #withFetcherErrorLog}.\n")
+                + "line. Set by {@link #withFetcherErrorLog}.\n")
             .build();
         var fetcherErrorResponseField = FieldSpec.builder(fetcherErrorResponse, "fetcherErrorResponse",
                 Modifier.PRIVATE, Modifier.FINAL)
             .addJavadoc("The consumer's choice of what the client reads for a fetcher exception, or\n"
-                + "{@code null} for Graphitron's default text. Application-scoped like the sources; set by\n"
-                + "{@link #withFetcherErrorResponse}.\n")
+                + "{@code null} for Graphitron's default text. Set by {@link #withFetcherErrorResponse}.\n")
             .build();
         var batchSizeLimitField = FieldSpec.builder(batchSizeLimit, "batchSizeLimit", Modifier.PRIVATE, Modifier.FINAL)
             .addJavadoc("The consumer's bound on how many keys one batched query carries, or {@code null} for\n"
-                + "no bound. Application-scoped like the sources; set by {@link #withBatchSizeLimit}.\n")
+                + "no bound. Set by {@link #withBatchSizeLimit}.\n")
             .build();
 
-        var sourceMapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), source);
-        var dataSourceMapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), DATA_SOURCE);
-
-        // Canonical constructor: a default source plus the per-tenant source map; every other
-        // constructor form delegates here.
+        // Canonical constructor; every other public form delegates here.
         var canonicalBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
-            .addParameter(source, "defaultSource")
-            .addParameter(sourceMapParamType, "sourcesByTenant");
+            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SETTINGS, "settings");
         if (multiTenant) {
             canonicalBuilder
                 .addParameter(EXECUTOR, "fanOutExecutor")
                 .addParameter(DURATION, "fanOutTimeout");
         }
         canonicalBuilder
-            .addStatement("this.defaultSource = $T.requireNonNull(defaultSource, $S)", OBJECTS, "defaultSource");
-        if (multiTenant) {
-            // The consumer's keys take the column's form here, so every comparison downstream
-            // (the acquisition gate, the fan-out domain, the source lookup) is like with like.
-            canonicalBuilder
-                .addStatement("$T<$T, $T> canonical = new $T<>()", MAP, tenantKey, source, LINKED_HASH_MAP)
-                .addStatement("$T<$T, Object> spelledAs = new $T<>()", MAP, tenantKey, HASH_MAP)
-                .beginControlFlow("for ($T<? extends $T, $T> entry :"
-                    + " $T.requireNonNull(sourcesByTenant, $S).entrySet())",
-                    ClassName.get("java.util", "Map", "Entry"), tenantKey, source, OBJECTS, "sourcesByTenant")
-                .addStatement("$T key = $T.canonicalTenantKey($T.requireNonNull(entry.getKey(), $S))",
-                    tenantKey, ownedConnections, OBJECTS, "tenant key")
-                .addStatement("Object earlier = spelledAs.putIfAbsent(key, entry.getKey())")
-                .beginControlFlow("if (earlier != null)")
-                .addStatement("throw new $T($S + earlier + $S + entry.getKey() + $S + key + $S)",
-                    IllegalArgumentException.class, "Tenant keys '", "' and '",
-                    "' name the same tenant '", "': the tenant column stores them as one value.")
-                .endControlFlow()
-                .addStatement("canonical.put(key, entry.getValue())")
-                .endControlFlow()
-                .addStatement("this.sourcesByTenant = canonical");
-        } else {
-            canonicalBuilder
-                .addStatement("this.sourcesByTenant = new $T<>($T.requireNonNull(sourcesByTenant, $S))",
-                    LINKED_HASH_MAP, OBJECTS, "sourcesByTenant");
-        }
+            .addStatement("this.dialect = $T.requireNonNull(dialect, $S)", OBJECTS, "dialect")
+            .addStatement("this.settings = settings == null ? new $T() : settings", SETTINGS);
         if (multiTenant) {
             canonicalBuilder
                 .addStatement("this.fanOutExecutor = $T.requireNonNull(fanOutExecutor, $S)", OBJECTS, "fanOutExecutor")
@@ -1041,14 +721,26 @@ public final class ConnectionRuntimeClassGenerator {
         if (failureMessages) {
             canonicalBuilder.addStatement("this.outboxAcquisitionTimeout = DEFAULT_OUTBOX_ACQUISITION_TIMEOUT");
         }
+        var canonicalConstructor = canonicalBuilder
+            .addJavadoc("Builds the runtime: the dialect and jOOQ {@code Settings} every context over a leased\n"
+                + "connection renders with, unless the lease names its own, so a consumer's schema or render\n"
+                + "mapping reaches every context graphitron mints.\n"
+                + "@param dialect the jOOQ {@code SQLDialect}; must not be {@code null}\n"
+                + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n"
+                + (multiTenant
+                    ? "@param fanOutExecutor the executor scatter workers run on; the supplier owns its\n"
+                        + "concurrency bound (e.g. virtual threads); must not be {@code null}\n"
+                        + "@param fanOutTimeout the per-scatter deadline, enforced by the join whichever\n"
+                        + "executor runs the workers; must be positive\n"
+                    : ""))
+            .build();
 
         // The wither's copy constructor: every field as-is, so a multi-tenant runtime's fan-out
-        // executor is shared rather than a second pool created, and the source map is not
-        // re-copied (neither runtime ever mutates it).
+        // executor is shared rather than a second pool created.
         var copyBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
-            .addParameter(source, "defaultSource")
-            .addParameter(ParameterizedTypeName.get(MAP, tenantKey, source), "sourcesByTenant");
+            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SETTINGS, "settings");
         if (multiTenant) {
             copyBuilder
                 .addParameter(EXECUTOR, "fanOutExecutor")
@@ -1061,8 +753,8 @@ public final class ConnectionRuntimeClassGenerator {
             copyBuilder.addParameter(DURATION, "outboxAcquisitionTimeout");
         }
         takesKeys.apply(copyBuilder)
-            .addStatement("this.defaultSource = defaultSource")
-            .addStatement("this.sourcesByTenant = sourcesByTenant");
+            .addStatement("this.dialect = dialect")
+            .addStatement("this.settings = settings");
         if (multiTenant) {
             copyBuilder
                 .addStatement("this.fanOutExecutor = fanOutExecutor")
@@ -1081,15 +773,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorLog, "log")
-            .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S),"
+            .addStatement(delegating.apply("return new $T(" + head + ", $T.requireNonNull(log, $S),"
                     + " fetcherErrorResponse, batchSizeLimit" + outboxArg + ")"),
-                runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "log")
+                runtime, OBJECTS, "log")
             .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
                 + "claims to {@code log} instead of Graphitron's own ERROR line, and every exception a\n"
                 + "handler caught to its {@code matched}. The client's response does not change. The copy\n"
-                + "shares this runtime's sources"
-                + (multiTenant ? " and fan-out executor" : "") + ", its {@code FetcherErrorResponse} and its\n"
-                + "{@code BatchSizeLimit}; this runtime is unchanged.\n"
+                + "shares everything else with this runtime; this runtime is unchanged.\n"
                 + "@param log the consumer's log; must not be {@code null}\n"
                 + "@return a runtime carrying {@code log}\n")
             .build();
@@ -1097,14 +787,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorResponse, "response")
-            .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog,"
+            .addStatement(delegating.apply("return new $T(" + head + ", fetcherErrorLog,"
                     + " $T.requireNonNull(response, $S), batchSizeLimit" + outboxArg + ")"),
-                runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "response")
+                runtime, OBJECTS, "response")
             .addJavadoc("A copy of this runtime that asks {@code response} for the reference of every fetcher\n"
                 + "exception, the {@code message:} of every error a handler caught and the top-level message\n"
-                + "of every error none caught. The copy shares this runtime's sources"
-                + (multiTenant ? " and fan-out executor" : "") + ", its\n"
-                + "{@code FetcherErrorLog} and its {@code BatchSizeLimit}; this runtime is unchanged.\n"
+                + "of every error none caught. The copy shares everything else with this runtime; this\n"
+                + "runtime is unchanged.\n"
                 + "@param response the consumer's response; must not be {@code null}\n"
                 + "@return a runtime carrying {@code response}\n")
             .build();
@@ -1112,15 +801,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(batchSizeLimit, "limit")
-            .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog, fetcherErrorResponse,"
+            .addStatement(delegating.apply("return new $T(" + head + ", fetcherErrorLog, fetcherErrorResponse,"
                     + " $T.requireNonNull(limit, $S)" + outboxArg + ")"),
-                runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "limit")
+                runtime, OBJECTS, "limit")
             .addJavadoc("A copy of this runtime that asks {@code limit} how many keys one batched query may\n"
                 + "carry: a batch over the answer runs as several queries of at most that many keys. Without\n"
-                + "one a batch is as large as the request makes it. The copy shares this runtime's sources"
-                + (multiTenant ? " and\nfan-out executor" : "") + ",\n"
-                + "its {@code FetcherErrorLog} and its {@code FetcherErrorResponse}; this runtime is\n"
-                + "unchanged.\n"
+                + "one a batch is as large as the request makes it. The copy shares everything else with\n"
+                + "this runtime; this runtime is unchanged.\n"
                 + "@param limit the consumer's limit; must not be {@code null}\n"
                 + "@return a runtime carrying {@code limit}\n")
             .build();
@@ -1143,143 +830,47 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("The response set by {@link #withFetcherErrorResponse}, or empty for Graphitron's\n"
                 + "default text.\n")
             .build();
-        var canonicalConstructor = canonicalBuilder
-            .addJavadoc("Builds the runtime over a default source (untenanted / single-tenant SQL) and a\n"
-                + "per-tenant source map for database-per-tenant routing. Each {@link Source} carries its\n"
-                + "own {@code DataSource}, dialect, and jOOQ {@code Settings}, so a consumer's schema or\n"
-                + "render mapping reaches every context graphitron mints. The consumer (or their\n"
-                + "framework) still owns pool creation and tuning.\n"
-                + "@param defaultSource source for untenanted SQL; must not be {@code null}\n"
-                + "@param sourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
-                + (multiTenant
-                    ? "Each key is reduced to the tenant column's form ({@link "
-                        + ownedConnections.simpleName() + "#canonicalTenantKey}), so\n"
-                        + "{@link #tenantKeys()} and the mount report that form whichever spelling was supplied.\n"
-                        + "@param fanOutExecutor the executor scatter workers run on; the supplier owns its\n"
-                        + "concurrency bound (e.g. virtual threads); must not be {@code null}\n"
-                        + "@param fanOutTimeout the per-scatter deadline, enforced by the join whichever\n"
-                        + "executor runs the workers; must be positive\n"
-                        + "@throws IllegalArgumentException when two keys name the same tenant, or a key is not\n"
-                        + "a value of the tenant column\n"
-                    : ""))
-            .build();
 
-        var sourceOnlyDelegating = multiTenant
+        var defaultFanOutConstructor = multiTenant
             ? takesKeys.apply(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
-                .addParameter(source, "defaultSource")
-                .addParameter(sourceMapParamType, "sourcesByTenant"))
-                .addStatement(delegating.apply("this(defaultSource, sourcesByTenant,"
+                .addParameter(SQL_DIALECT, "dialect")
+                .addParameter(SETTINGS, "settings"))
+                .addStatement(delegating.apply("this(dialect, settings,"
                     + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"))
-                .addJavadoc("Source-form constructor with the default fan-out configuration.\n")
+                .addJavadoc("Builds the runtime with the default fan-out configuration.\n"
+                    + "@param dialect the jOOQ {@code SQLDialect}; must not be {@code null}\n"
+                    + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n")
+                .build()
+            : null;
+
+        var cappedConstructor = multiTenant
+            ? takesKeys.apply(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(SQL_DIALECT, "dialect")
+                .addParameter(SETTINGS, "settings")
+                .addParameter(int.class, "fanOutConcurrency")
+                .addParameter(DURATION, "fanOutTimeout"))
+                .addStatement(delegating.apply("this(dialect, settings, boundedFanOutPool(fanOutConcurrency),"
+                    + " fanOutTimeout)"))
+                .addJavadoc("Builds the runtime with an explicit fan-out cap and deadline; the runtime owns a\n"
+                    + "bounded pool of platform threads sized by the cap. To own threading yourself (e.g.\n"
+                    + "virtual threads), use the {@code Executor}-form constructor instead.\n"
+                    + "@param dialect the jOOQ {@code SQLDialect}; must not be {@code null}\n"
+                    + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n"
+                    + "@param fanOutConcurrency the maximum scatter workers in flight; at least 1\n"
+                    + "@param fanOutTimeout the per-scatter deadline; must be positive\n")
                 .build()
             : null;
 
         var constructor = takesKeys.apply(MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
-            .addParameter(DATA_SOURCE, "dataSource")
             .addParameter(SQL_DIALECT, "dialect"))
             .addStatement(delegating.apply(multiTenant
-                    ? "this(new $T(dataSource, dialect, null), $T.of(),"
-                        + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"
-                    : "this(new $T(dataSource, dialect, null), $T.of())"),
-                source, MAP)
-            .addJavadoc("Builds the single-source runtime over one consumer-owned {@code DataSource} and\n"
-                + "dialect with default jOOQ {@code Settings} (no per-tenant routing). Delegating\n"
-                + "convenience over the {@link Source}-form constructor.\n"
-                + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
-                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
-            .build();
-
-        var settingsConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(DATA_SOURCE, "dataSource")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings"))
-            .addStatement(delegating.apply(multiTenant
-                    ? "this(new $T(dataSource, dialect, settings), $T.of(),"
-                        + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"
-                    : "this(new $T(dataSource, dialect, settings), $T.of())"),
-                source, MAP)
-            .addJavadoc("Builds the single-source runtime over one consumer-owned {@code DataSource},\n"
-                + "dialect and jOOQ {@code Settings} (no per-tenant routing), so a schema or render mapping\n"
-                + "the consumer configured reaches every context graphitron mints. Delegating convenience\n"
-                + "over the {@link Source}-form constructor.\n"
-                + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
-                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
-                + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n")
-            .build();
-
-        var dataSourceMapConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(DATA_SOURCE, "defaultDataSource")
-            .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
-            .addParameter(SQL_DIALECT, "dialect"))
-            .addStatement(multiTenant
-                    ? CodeBlock.of(delegating.apply("this(defaultDataSource, dataSourcesByTenant, dialect, DEFAULT_FAN_OUT_CONCURRENCY,"
-                        + " DEFAULT_FAN_OUT_TIMEOUT)"))
-                    : CodeBlock.of(delegating.apply("this(new $T(defaultDataSource, dialect, null),"
-                        + " wrapSources(dataSourcesByTenant, dialect))"), source))
-            .addJavadoc("Builds the tenant-routing runtime from bare {@code DataSource}s sharing one dialect\n"
-                + "and default jOOQ {@code Settings}. Delegating convenience over the {@link Source} form"
-                + (multiTenant ? ",\nwith the default fan-out configuration" : "") + ".\n"
-                + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
-                + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
-                + "@param dialect the jOOQ {@code SQLDialect} shared by every source here; must not be {@code null}\n")
-            .build();
-
-        var cappedConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(DATA_SOURCE, "defaultDataSource")
-            .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(int.class, "fanOutConcurrency")
-            .addParameter(DURATION, "fanOutTimeout"))
-            .addStatement(delegating.apply("this(new $T(defaultDataSource, dialect, null),"
-                + " wrapSources(dataSourcesByTenant, dialect),"
-                + " boundedFanOutPool(fanOutConcurrency), fanOutTimeout)"), source)
-            .addJavadoc("Builds the tenant-routing runtime with an explicit fan-out cap and deadline; the\n"
-                + "runtime owns a bounded pool of platform threads sized by the cap. To own threading\n"
-                + "yourself (e.g. virtual threads), use the {@code Executor}-form constructor instead.\n"
-                + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
-                + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
-                + "@param dialect the jOOQ {@code SQLDialect} shared by every source here; must not be {@code null}\n"
-                + "@param fanOutConcurrency the maximum scatter workers in flight; at least 1\n"
-                + "@param fanOutTimeout the per-scatter deadline; must be positive\n")
-            .build();
-
-        var executorFormConstructor = takesKeys.apply(MethodSpec.constructorBuilder()
-            .addModifiers(Modifier.PUBLIC)
-            .addParameter(DATA_SOURCE, "defaultDataSource")
-            .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(EXECUTOR, "fanOutExecutor")
-            .addParameter(DURATION, "fanOutTimeout"))
-            .addStatement(delegating.apply("this(new $T(defaultDataSource, dialect, null),"
-                + " wrapSources(dataSourcesByTenant, dialect), fanOutExecutor, fanOutTimeout)"), source)
-            .addJavadoc("Builds the tenant-routing runtime from bare {@code DataSource}s with an explicit\n"
-                + "scatter executor and deadline. Delegating convenience over the {@link Source} form.\n"
-                + "@param defaultDataSource source for untenanted SQL; must not be {@code null}\n"
-                + "@param dataSourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
-                + "@param dialect the jOOQ {@code SQLDialect} shared by every source here; must not be {@code null}\n"
-                + "@param fanOutExecutor the executor scatter workers run on; must not be {@code null}\n"
-                + "@param fanOutTimeout the per-scatter deadline; must be positive\n")
-            .build();
-
-        var wrapSources = MethodSpec.methodBuilder("wrapSources")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(ParameterizedTypeName.get(MAP, tenantKey, source))
-            .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addStatement("$T<$T, $T> sources = new $T<>()", MAP, tenantKey, source, LINKED_HASH_MAP)
-            .beginControlFlow("for ($T<? extends $T, $T> entry :"
-                + " $T.requireNonNull(dataSourcesByTenant, $S).entrySet())",
-                ClassName.get("java.util", "Map", "Entry"), tenantKey, DATA_SOURCE, OBJECTS, "dataSourcesByTenant")
-            .addStatement("sources.put(entry.getKey(), new $T(entry.getValue(), dialect, null))", source)
-            .endControlFlow()
-            .addStatement("return sources")
-            .addJavadoc("Wraps a bare per-tenant {@code DataSource} map into sources sharing one dialect and\n"
-                + "default settings, preserving the configured key order.\n")
+                ? "this(dialect, null, boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"
+                : "this(dialect, null)"))
+            .addJavadoc("Builds the runtime over {@code dialect} with default jOOQ {@code Settings}.\n"
+                + "@param dialect the jOOQ {@code SQLDialect}; must not be {@code null}\n")
             .build();
 
         var boundedFanOutPool = MethodSpec.methodBuilder("boundedFanOutPool")
@@ -1314,73 +905,30 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return fanOutTimeout")
             .addJavadoc("The per-scatter deadline, enforced by the scatter join.\n")
             .build();
-        var tenantKeysAccessor = MethodSpec.methodBuilder("tenantKeys")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(ParameterizedTypeName.get(SET, tenantKey))
-            .addStatement("return $T.unmodifiableSet(sourcesByTenant.keySet())",
-                ClassName.get("java.util", "Collections"))
-            .addJavadoc("The configured tenant keys in the map's configured order (the constructor copies\n"
-                + "into a {@code LinkedHashMap}), so the fan-out domain's concatenation order is\n"
-                + "deployment-stable. Read-only view: a live {@code keySet()} would let a caller\n"
-                + "remove tenants from the routing map through it.\n")
-            .build();
 
         var dialectAccessor = MethodSpec.methodBuilder("dialect")
             .addModifiers(Modifier.PUBLIC)
             .returns(SQL_DIALECT)
-            .addStatement("return defaultSource.dialect()")
-            .addJavadoc("The default source's jOOQ {@code SQLDialect}. A per-tenant source carries its own\n"
-                + "dialect; contexts graphitron mints read the resolved entry's source, not this accessor.\n")
+            .addStatement("return dialect")
+            .addJavadoc("The jOOQ {@code SQLDialect} contexts over a leased connection render with, unless the\n"
+                + "lease names its own.\n")
+            .build();
+        var settingsAccessor = MethodSpec.methodBuilder("settings")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(SETTINGS)
+            .addStatement("return settings")
+            .addJavadoc("The jOOQ {@code Settings} beside {@link #dialect()}; never {@code null}.\n")
             .build();
 
-        var acquireBuilder = MethodSpec.methodBuilder("acquire")
-            .addModifiers(Modifier.PUBLIC)
-            .returns(pinnedConnection);
-        var acquireForTenantBuilder = MethodSpec.methodBuilder("acquireForTenant")
-            .addModifiers(Modifier.PUBLIC)
+        var acquire = MethodSpec.methodBuilder("acquire")
             .returns(pinnedConnection)
-            .addParameter(tenantKey, "tenantKey");
-        var payloadArgs = new StringBuilder();
-        for (var p : payload) {
-            acquireBuilder.addParameter(p.javaType(), p.name());
-            acquireForTenantBuilder.addParameter(p.javaType(), p.name());
-            payloadArgs.append(", ").append(p.name());
-        }
-        // Multi-tenant builds hand the mount the tenant it is mounting for: none for the default
-        // source, the routed key for a tenant source.
-        CodeBlock defaultTenantArg = multiTenant ? CodeBlock.of(", $T.empty()", OPTIONAL) : CodeBlock.of("");
-        CodeBlock keyedTenantArg = multiTenant ? CodeBlock.of(", $T.of(tenantKey)", OPTIONAL) : CodeBlock.of("");
-        var acquire = acquireBuilder
-            .addException(SQL_EXCEPTION)
-            .addStatement("return $T.acquire(defaultSource.dataSource(), defaultSource.dialect(),"
-                + " defaultSource.settings()$L, abortExecutor$L)", pinnedConnection, defaultTenantArg,
-                payloadArgs.toString())
-            .addJavadoc("Pins one connection from the default source"
-                + (payload.isEmpty() ? "" : " and mounts identity on it from the typed\npayload")
-                + ". Fail-closed. The caller releases the returned\n"
-                + "{@code PinnedConnection} exactly once at operation completion; the per-operation\n"
-                + "carrier wired by the execution instrumentation does this, so consumers register\n"
-                + "nothing.\n")
-            .build();
-
-        var acquireForTenant = acquireForTenantBuilder
-            .addException(SQL_EXCEPTION)
-            .addStatement("$T tenantSource = sourcesByTenant.get(tenantKey)", source)
-            .beginControlFlow("if (tenantSource == null)")
-            .addComment("Unknown divined tenant: a request-level error before any SQL. Distinct from the")
-            .addComment("acquisition-failure family so callers can map it structurally, not by message.")
-            .addStatement("throw new $T($S + tenantKey)", NO_SUCH_ELEMENT, "No source configured for tenant key: ")
-            .endControlFlow()
-            .addStatement("return $T.acquire(tenantSource.dataSource(), tenantSource.dialect(),"
-                + " tenantSource.settings()$L, abortExecutor$L)", pinnedConnection, keyedTenantArg,
-                payloadArgs.toString())
-            .addJavadoc("Pins one connection from the {@code tenantKey}'s source"
-                + (payload.isEmpty() ? "" : " and mounts identity on it")
-                + ", for\ndatabase-per-tenant routing. An unknown key raises\n"
-                + "{@link java.util.NoSuchElementException} before any connection is acquired (request-level\n"
-                + "error, no SQL). Per-key deduplication within one operation is the caller's ({@code $L}); this\n"
-                + "is the raw keyed acquisition primitive.\n"
-                + "@param tenantKey the divined tenant value selecting the source\n", OWNED_CONNECTIONS_CLASS_NAME)
+            .addParameter(connectionKey, "key")
+            .addParameter(connectionSource, "source")
+            .addStatement("return $T.acquire(source, key, dialect, settings, abortExecutor)", pinnedConnection)
+            .addJavadoc("Leases the connection for {@code key} from {@code source} and pins it under this\n"
+                + "runtime's dialect and settings. The caller releases the returned {@code PinnedConnection}\n"
+                + "exactly once; the per-operation carrier wired by the execution instrumentation does this,\n"
+                + "so consumers register nothing.\n")
             .build();
 
         var graphQL = ClassName.get("graphql", "GraphQL");
@@ -1392,8 +940,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(graphQLSchema, "schema")
             .addStatement("return $T.newGraphQL(schema).instrumentation(new $T(this))", graphQL, instrumentation)
             .addJavadoc("Builds a {@link graphql.GraphQL.Builder} over {@code schema} with the connection-lifecycle\n"
-                + "instrumentation already attached: every operation pins connections on first demand, mounts\n"
-                + "identity, runs each top-level mutation field in one transaction (queries in autocommit),\n"
+                + "instrumentation already attached: every operation leases connections from the request's\n"
+                + "connection source on first demand, runs each top-level mutation field in one transaction (queries in autocommit),\n"
                 + "and releases at completion, with no registration by the consumer. This is the owned-connection engine assembly; pair it with\n"
                 + "{@code Graphitron.buildSchema(...)}: {@code var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();}.\n"
                 + "\n"
@@ -1404,11 +952,9 @@ public final class ConnectionRuntimeClassGenerator {
                 + "serial mutation strategy: a {@code .mutationExecutionStrategy(...)} that is not an\n"
                 + "{@code AsyncSerialExecutionStrategy} is refused when a mutation starts, since each\n"
                 + "top-level mutation field settles its transaction when the next one starts.\n"
-                + (identity.emitsHookImplementation()
-                    ? "\n<p>When the mount rejects the caller's identity, {@code execute} throws\n"
-                        + "{@code SessionMountException} in place of a result, with the mount's exception as\n"
-                        + "its cause.\n"
-                    : "")
+                + "\n<p>When the request's connection source fails to lease a connection, {@code execute}\n"
+                + "throws {@code AcquisitionFailedException} in place of a result, with the source's exception\n"
+                + "as its cause.\n"
                 + "\n"
                 + "<p>The escape-hatch engine ({@code Graphitron.newGraphQL()}) attaches no instrumentation;\n"
                 + "there the caller owns the {@code DSLContext}, transactions, and identity.\n"
@@ -1448,21 +994,20 @@ public final class ConnectionRuntimeClassGenerator {
         var builder = TypeSpec.classBuilder(RUNTIME_CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("Application-scoped runtime that owns the connection lifecycle: built once at wiring\n"
-                + "time via {@code Graphitron.runtime(dataSource, dialect)} (or a {@link Source}-form\n"
-                + "constructor carrying jOOQ {@code Settings}), it pins connections on first demand, mounts\n"
-                + "and unmounts per-request identity through the generated hook's static methods, and\n"
-                + "demarcates one transaction per top-level mutation field (via the instrumentation {@link #newGraphQL}\n"
-                + "attaches). Holds no per-request state and no hook state: the mount choice is emitted\n"
-                + "code, never a held value. The callbacks it holds are the consumer's application-scoped\n"
-                + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}), {@code FetcherErrorResponse}\n"
+                + "time via {@code Graphitron.runtime(dialect)}, it leases each request's connections from the\n"
+                + "request's {@code ConnectionSource} on first demand, demarcates one transaction per\n"
+                + "top-level mutation field (via the instrumentation {@link #newGraphQL} attaches), and\n"
+                + "releases every lease exactly once. Holds no per-request state and no connection. The\n"
+                + "callbacks it holds are the consumer's application-scoped {@code FetcherErrorLog}\n"
+                + "({@link #withFetcherErrorLog}), {@code FetcherErrorResponse}\n"
                 + "({@link #withFetcherErrorResponse}) and {@code BatchSizeLimit}\n"
                 + "({@link #withBatchSizeLimit}).\n");
         if (multiTenant) {
             builder.addField(defaultFanOutConcurrencyField)
                 .addField(defaultFanOutTimeoutField);
         }
-        builder.addField(defaultSourceField)
-            .addField(tenantSourcesField)
+        builder.addField(dialectField)
+            .addField(settingsField)
             .addField(abortExecutorField);
         if (multiTenant) {
             builder.addField(fanOutExecutorField)
@@ -1489,18 +1034,13 @@ public final class ConnectionRuntimeClassGenerator {
         builder.addMethod(canonicalConstructor)
             .addMethod(copyConstructor);
         if (multiTenant) {
-            builder.addMethod(sourceOnlyDelegating)
-                .addMethod(executorFormConstructor)
-                .addMethod(cappedConstructor)
-                .addMethod(dataSourceMapConstructor);
-        } else {
-            builder.addMethod(dataSourceMapConstructor);
+            builder.addMethod(defaultFanOutConstructor)
+                .addMethod(cappedConstructor);
         }
         builder.addMethod(constructor)
-            .addMethod(settingsConstructor)
             .addMethod(dialectAccessor)
+            .addMethod(settingsAccessor)
             .addMethod(acquire)
-            .addMethod(acquireForTenant)
             .addMethod(newGraphQL)
             .addMethod(newGraphQLWithInstrumentations)
             .addMethod(withFetcherErrorLog)
@@ -1508,15 +1048,12 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(withFetcherErrorResponse)
             .addMethod(fetcherErrorResponseAccessor)
             .addMethod(withBatchSizeLimit)
-            .addMethod(batchSizeLimitAccessor)
-            .addMethod(wrapSources);
+            .addMethod(batchSizeLimitAccessor);
         if (multiTenant) {
             builder.addMethod(fanOutExecutorAccessor)
                 .addMethod(fanOutTimeoutAccessor)
-                .addMethod(tenantKeysAccessor)
                 .addMethod(boundedFanOutPool);
         }
-        builder.addType(sourceType(source));
         return builder.build();
     }
 
@@ -1550,7 +1087,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addStatement("throw new $T($S + timeout)", IllegalArgumentException.class,
                     "outboxAcquisitionTimeout must be positive, got: ")
                 .endControlFlow()
-                .addStatement(delegating.apply("return new $T(defaultSource, sourcesByTenant" + fanOut
+                .addStatement(delegating.apply("return new $T(dialect, settings" + fanOut
                     + ", fetcherErrorLog, fetcherErrorResponse, batchSizeLimit, timeout)"), runtime)
                 .addJavadoc("A copy of this runtime that waits at most {@code timeout} for a fresh connection to\n"
                     + "write a mutation field's {@code @outbox(on: ERROR)} messages on, when the field's\n"
@@ -1595,57 +1132,6 @@ public final class ConnectionRuntimeClassGenerator {
                 .build())
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .build());
-    }
-
-    /**
-     * The runtime's nested {@code Source}: one pool graphitron can check a connection out of,
-     * with the dialect and jOOQ {@code Settings} every context minted over that pool renders
-     * through. A future role axis (e.g. an optional read pool routed by operation type) becomes
-     * part of the routing map's key, never a second field here, so the value type is not
-     * rewritten when it arrives.
-     */
-    private static TypeSpec sourceType(ClassName source) {
-        return TypeSpec.classBuilder(SOURCE_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("One connection source: a consumer-owned pooled {@code DataSource}, its jOOQ\n"
-                + "dialect, and the jOOQ {@code Settings} (schema and render mapping above all) every\n"
-                + "context minted over it renders through, the consumer's own mount method included.\n"
-                + "{@code Settings} is the part of a jOOQ {@code Configuration} that is safe to accept\n"
-                + "here; the providers graphitron must own are not in it.\n")
-            .addField(FieldSpec.builder(DATA_SOURCE, "dataSource", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(SETTINGS, "settings", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(DATA_SOURCE, "dataSource")
-                .addParameter(SQL_DIALECT, "dialect")
-                .addParameter(SETTINGS, "settings")
-                .addStatement("this.dataSource = $T.requireNonNull(dataSource, $S)", OBJECTS, "dataSource")
-                .addStatement("this.dialect = $T.requireNonNull(dialect, $S)", OBJECTS, "dialect")
-                .addStatement("this.settings = settings == null ? new $T() : settings", SETTINGS)
-                .addJavadoc("@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
-                    + "@param dialect the jOOQ {@code SQLDialect} for this source; must not be {@code null}\n"
-                    + "@param settings the jOOQ {@code Settings} for this source; {@code null} means defaults\n")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("dataSource")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(DATA_SOURCE)
-                .addStatement("return dataSource")
-                .addJavadoc("The pool connections are checked out of.\n")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("dialect")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(SQL_DIALECT)
-                .addStatement("return dialect")
-                .addJavadoc("The jOOQ dialect for this source.\n")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("settings")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(SETTINGS)
-                .addStatement("return settings")
-                .addJavadoc("The jOOQ {@code Settings} for this source; never {@code null}.\n")
-                .build())
-            .build();
     }
 
     /**
@@ -1699,10 +1185,9 @@ public final class ConnectionRuntimeClassGenerator {
                                               boolean multiTenant, SessionIdentityRows identity,
                                               ClassName requestTenants, CodeBlock tenantColumn,
                                               ClassName errorRouter, ClassName columnValues,
-                                              ClassName sessionMountException, TypeName keyType,
+                                              ClassName acquisitionFailed, ClassName keyNotPermitted,
+                                              ClassName connectionSource, TypeName keyType,
                                               ClassName connectionKey, boolean failureMessages) {
-        var payload = payloadParams(identity, self);
-        boolean mounts = identity.emitsHookImplementation();
         TypeName handleType = identity.handleType().orElse(null);
         boolean handled = handleType != null;
         var clientException = ClassName.get(self.packageName(),
@@ -1735,12 +1220,16 @@ public final class ConnectionRuntimeClassGenerator {
                 + "again, and {@link #releaseAll} routes it through {@code PinnedConnection.abort()}\n"
                 + "instead of a close that would return a possibly-live connection to the pool.\n")
             .build();
-        var mountFailureField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, sessionMountException),
-                "firstMountFailure", Modifier.PRIVATE, Modifier.FINAL)
+        var acquisitionFailureField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, acquisitionFailed),
+                "firstAcquisitionFailure", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", ATOMIC_REFERENCE)
-            .addJavadoc("The operation's first rejected mount, set once ({@code compareAndSet}, so concurrent\n"
-                + "scatter workers resolve to one winner). Every later acquisition on any key rethrows it\n"
-                + "rather than retrying the mount: the payload is one identity for every key.\n")
+            .addJavadoc("The operation's first failed acquisition, set once ({@code compareAndSet}, so concurrent\n"
+                + "acquisitions resolve to one winner). Every later acquisition on any key rethrows it\n"
+                + "rather than asking the source again: the request is rejected as a whole.\n")
+            .build();
+        var sourceField = FieldSpec.builder(connectionSource, SOURCE_SLOT, Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The request's connection source, held for the life of the request: any fetcher may\n"
+                + "trigger the first acquisition for a key.\n")
             .build();
         var closedField = FieldSpec.builder(boolean.class, "closed", Modifier.PRIVATE, Modifier.VOLATILE)
             .addJavadoc("Set by {@link #releaseAll} before draining. An acquisition that starts after it is set\n"
@@ -1781,9 +1270,7 @@ public final class ConnectionRuntimeClassGenerator {
         if (multiTenant) {
             constructorBuilder.addParameter(requestTenants, "requestTenants");
         }
-        for (var p : payload) {
-            constructorBuilder.addParameter(p.javaType(), p.name());
-        }
+        constructorBuilder.addParameter(connectionSource, SOURCE_SLOT);
         constructorBuilder
             .addStatement("this.runtime = runtime")
             .addStatement("this.commitPolicy = commitPolicy");
@@ -1794,9 +1281,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addStatement("this.defaultTenant = requestTenants.defaultTenant()")
                 .addStatement("this.entityDefaultTenant = requestTenants.entityDefaultTenant()");
         }
-        for (var p : payload) {
-            constructorBuilder.addStatement("this.$L = $L", p.name(), p.name());
-        }
+        constructorBuilder.addStatement("this.$L = $T.requireNonNull($L, $S)", SOURCE_SLOT, OBJECTS, SOURCE_SLOT,
+            SOURCE_SLOT);
         var constructor = constructorBuilder
             .addJavadoc((multiTenant
                 ? "Builds a per-operation carrier over {@code runtime} for one request. One instance per\n"
@@ -1809,19 +1295,11 @@ public final class ConnectionRuntimeClassGenerator {
                     + "entity dispatcher resolves {@code @defaultTenant} types on.\n"
                 : "Builds a per-operation carrier over {@code runtime} for one request. One instance per\n"
                     + "operation; entries are pinned on first demand.\n")
-                + (payload.isEmpty() ? ""
-                    : "The payload parameters are held for the life of the request: any fetcher may trigger\n"
-                        + "the first mount for a key, and every mount receives the same payload.\n"))
+                + "{@code source} is the request's connection source, held for the life of the request:\n"
+                + "any fetcher may trigger the first acquisition for a key.\n")
             .build();
 
-        var payloadArgs = new StringBuilder();
-        for (var p : payload) {
-            payloadArgs.append(", ").append(p.name());
-        }
-        String acquireDefault = "runtime.acquire(" + (payload.isEmpty() ? ""
-            : payloadArgs.substring(2)) + ")";
-        String acquireKeyed = "runtime.acquireForTenant(" + "k.tenant().get()"
-            + payloadArgs + ")";
+        String acquisition = "runtime.acquire(k, " + SOURCE_SLOT + ")";
 
         var entryForBuilder = MethodSpec.methodBuilder("entryFor")
             .addModifiers(Modifier.PRIVATE)
@@ -1840,7 +1318,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addComment("reaches the entry map, and the refusal runs ahead of the runtime's hosting check,")
                 .addComment("so an unauthorized caller cannot probe which tenants this deployment hosts. Every")
                 .addComment("keyed acquisition funnels through here (the static and instance dslFor, and the")
-                .addComment("scatter worker); nothing calls runtime.acquireForTenant directly.")
+                .addComment("scatter worker); nothing calls runtime.acquire directly.")
                 .beginControlFlow("if (key.tenant().isPresent() && !tenants.contains(key.tenant().get()))")
                 .addStatement("throw new $T($S + key.tenant().get() + $S)", clientException,
                     "Tenant '", "' is not permitted for this request.")
@@ -1852,15 +1330,13 @@ public final class ConnectionRuntimeClassGenerator {
                     "Tenant '", "' timed out earlier in this operation; its connection is never reused.")
                 .endControlFlow();
         }
-        if (mounts) {
-            entryForBuilder
-                .addComment("A rejected mount is remembered for the operation: answer every later acquisition")
-                .addComment("with it, after the tenant refusals above so their order is unchanged.")
-                .addStatement("$T rejected = firstMountFailure.get()", sessionMountException)
-                .beginControlFlow("if (rejected != null)")
-                .addStatement("throw rejected")
-                .endControlFlow();
-        }
+        entryForBuilder
+            .addComment("A failed acquisition is remembered for the operation: answer every later one with it,")
+            .addComment("after the tenant refusals above so their order is unchanged.")
+            .addStatement("$T rejected = firstAcquisitionFailure.get()", acquisitionFailed)
+            .beginControlFlow("if (rejected != null)")
+            .addStatement("throw rejected")
+            .endControlFlow();
         entryForBuilder
             .beginControlFlow("if (closed)")
             .addComment("The operation already released its connections. Refuse before borrowing: nothing")
@@ -1871,42 +1347,32 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("$T entry", entryType)
             .beginControlFlow("try")
             .addComment("Per-key single acquisition: exactly one pin per key, the map's one minting")
-            .addComment("mechanism. The checked acquisition failure tunnels out of the compute lambda")
-            .addComment("unchanged. The whole entry is minted here: pin and mount, bind a DSLContext to the")
-            .addComment("pinned connection through the resolved source's dialect and settings, swap in one")
+            .addComment("mechanism. The whole entry is minted here: lease the key's connection from the")
+            .addComment("request's source, bind a DSLContext to it through the lease's dialect and settings, swap in one")
             .addComment("transaction provider (one per pinned connection, so its scope stack is the only")
             .addComment("record of open transactions on that connection). jOOQ's single-connection provider treats release as a")
             .addComment("no-op, so the runtime keeps sole ownership of close/evict.")
             .addCode("entry = entries.computeIfAbsent(key, k -> {\n")
-            .addCode("    try {\n")
-            .addCode("        $T pinned = $L ? $L : $L;\n", pinnedConnection,
-                "k.tenant().isPresent()", acquireKeyed, acquireDefault)
-            .addCode("        $T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings());\n",
+            .addCode("    $T pinned = $L;\n", pinnedConnection, acquisition)
+            .addCode("    $T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings());\n",
                 DSL_CONTEXT, DSL)
-            .addCode("        $T provider = new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin);\n", provider, provider)
-            .addCode("        dsl.configuration().set(provider);\n");
+            .addCode("    $T provider = new $T(pinned.connection(), commitPolicy, this::warnConsumerJoin);\n", provider, provider)
+            .addCode("    dsl.configuration().set(provider);\n");
         if (handled) {
-            entryForBuilder.addCode("        dsl.configuration().data($S, pinned.handle());\n",
-                SessionIdentityRows.HANDLE_DATA_KEY);
+            entryForBuilder.addCode("    if (pinned.handle() != null) {\n")
+                .addCode("        dsl.configuration().data($S, pinned.handle());\n", SessionIdentityRows.HANDLE_DATA_KEY)
+                .addCode("    }\n");
         }
         entryForBuilder
-            .addCode("        return new Entry(pinned, dsl, provider);\n")
-            .addCode("    } catch ($T e) {\n", SQL_EXCEPTION)
-            .addCode("        throw new $T(e);\n", COMPLETION_EXCEPTION)
-            .addCode("    }\n")
-            .addCode("});\n");
-        if (mounts) {
-            entryForBuilder
-                .nextControlFlow("catch ($T e)", sessionMountException)
-                .addStatement("firstMountFailure.compareAndSet(null, e)")
-                .addStatement("throw firstMountFailure.get()");
-        }
-        entryForBuilder
-            .nextControlFlow("catch ($T e)", COMPLETION_EXCEPTION)
-            .beginControlFlow("if (e.getCause() instanceof $T sql)", SQL_EXCEPTION)
-            .addStatement("throw sql")
-            .endControlFlow()
-            .addStatement("throw e")
+            .addCode("    return new Entry(pinned, dsl, provider);\n")
+            .addCode("});\n")
+            .nextControlFlow("catch ($T refused)", keyNotPermitted)
+            .addComment("The source refused the key: the field that asked answers with an error, as a refused")
+            .addComment("tenant does, and the rest of the request runs.")
+            .addStatement("throw new $T(refused.getMessage())", clientException)
+            .nextControlFlow("catch ($T e)", acquisitionFailed)
+            .addStatement("firstAcquisitionFailure.compareAndSet(null, e)")
+            .addStatement("throw firstAcquisitionFailure.get()")
             .endControlFlow();
         entryForBuilder
             .beginControlFlow(multiTenant
@@ -1930,8 +1396,9 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow();
         var entryFor = entryForBuilder
             .addStatement("return entry")
-            .addJavadoc("Resolves (minting on first demand) the carrier entry for {@code key}:\n"
-                + "{@code Optional.empty()} is the default source, a present value routes per tenant.\n"
+            .addJavadoc("Resolves (minting on first demand) the carrier entry for {@code key}, leasing its\n"
+                + "connection from the request's source. A key the source refuses answers with a client error;\n"
+                + "any other failure to lease is remembered and rejects the request.\n"
                 + (multiTenant
                     ? "A present key outside the request tenant set is refused with a client error before\n"
                         + "any connection is taken. This is the one enforcer: every keyed acquisition in the\n"
@@ -2088,21 +1555,14 @@ public final class ConnectionRuntimeClassGenerator {
                 .addField(defaultTenantField)
                 .addField(entityDefaultTenantField);
         }
-        for (var p : payload) {
-            carrier.addField(FieldSpec.builder(p.javaType(), p.name(), Modifier.PRIVATE, Modifier.FINAL)
-                .addJavadoc("Mount payload, held for the life of the request; any fetcher may trigger the\n"
-                    + "first mount for a key.\n")
-                .build());
-        }
+        carrier.addField(sourceField);
         carrier.addField(entriesField)
             .addField(MutationFieldScopeEmitter.activeField(self))
             .addField(MutationFieldScopeEmitter.brokenKeys(keyType));
         if (multiTenant) {
             carrier.addField(MutationFieldScopeEmitter.scatterField(self));
         }
-        if (mounts) {
-            carrier.addField(mountFailureField);
-        }
+        carrier.addField(acquisitionFailureField);
         if (multiTenant) {
             carrier.addField(timedOutField);
         }
@@ -2114,8 +1574,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
             .addMethod(staticDslDefault(self))
-            .addMethod(mountCause(mounts ? sessionMountException : null))
-            .addMethod(isMountFailure())
+            .addMethod(acquisitionCause(acquisitionFailed))
+            .addMethod(isAcquisitionFailure())
             .addMethod(MutationFieldScopeEmitter.beginField(self))
             .addMethod(MutationFieldScopeEmitter.enlist(self, provider, keyType, multiTenant))
             .addMethod(MutationFieldScopeEmitter.await(self))
@@ -2127,25 +1587,22 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(MutationFieldScopeEmitter.markFieldRefused(self))
             .addMethod(MutationFieldScopeEmitter.runningField(self));
         if (failureMessages) {
-            String freshAcquisition = "k.tenant().isPresent()"
-                + " ? " + acquireKeyed + " : " + acquireDefault;
+            String freshAcquisition = acquisition;
             carrier.addType(MutationFieldScopeEmitter.fieldRollbackType())
                 .addMethod(MutationFieldScopeEmitter.onFieldRollback(self))
-                .addMethod(MutationFieldScopeEmitter.afterRollback(self, keyType, multiTenant, mounts))
+                .addMethod(MutationFieldScopeEmitter.afterRollback(self, keyType, multiTenant, true))
                 .addMethod(MutationFieldScopeEmitter.dropped(self))
                 .addMethod(MutationFieldScopeEmitter.writeOnFreshConnection(self, provider, pinnedConnection, keyType,
                     freshAcquisition, handled))
                 .addMethod(MutationFieldScopeEmitter.endedOverTransaction());
         }
-        if (mounts) {
-            carrier.addMethod(MethodSpec.methodBuilder("mountFailure")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), sessionMountException))
-                .addStatement("return $T.ofNullable(firstMountFailure.get())", ClassName.get("java.util", "Optional"))
-                .addJavadoc("The operation's first rejected mount, if any. Read by the instrumentation when the\n"
-                    + "operation completes, to throw it in place of the result.\n")
-                .build());
-        }
+        carrier.addMethod(MethodSpec.methodBuilder("acquisitionFailure")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), acquisitionFailed))
+            .addStatement("return $T.ofNullable(firstAcquisitionFailure.get())", ClassName.get("java.util", "Optional"))
+            .addJavadoc("The operation's first failed acquisition, if any. Read by the instrumentation when the\n"
+                + "operation completes, to throw it in place of the result.\n")
+            .build());
         if (handled) {
             carrier.addMethod(sessionHandleAccessor(handleType));
             for (var member : identity.handle().orElseThrow().members()) {
@@ -2180,7 +1637,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(fanOutRows(self, tenantKey))
                 .addMethod(fanOutBatchRows(self, tenantKey))
                 .addMethod(collapseFanOut(self))
-                .addMethod(logFanOutFailure(self, errorRouter, mounts))
+                .addMethod(logFanOutFailure(self, errorRouter, true))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(keyedDslFor(connectionKey))
                 .addMethod(staticKeyedDslFor(self, connectionKey))
@@ -2208,16 +1665,8 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static List<K> fanOutDomain(DataFetchingEnvironment env)}: the request's fan-out
-     * domain, the intersection of the configured tenant map's keys and the carrier's request
-     * tenant set (the tenants this request may touch in this deployment), with the two directions
-     * of the difference treated differently: a hosted tenant outside the set is silently never
-     * queried (the authorization pre-filter), while a tenant in the set that the deployment does
-     * not host is a request-level error before any SQL runs (graphitron cannot tell a tenant
-     * served by another deployment from a {@code DataSource} nobody wired, and skipping would
-     * return incomplete results presented as complete). Iteration order is the tenant map's
-     * configured key order filtered by the request set, so the union's concatenation order is
-     * deployment-stable and the request collection's own iteration order is never load-bearing.
+     * {@code static List<K> fanOutDomain(DataFetchingEnvironment env)}: the request's fan-out domain,
+     * the request tenant set. Whether a tenant in it is served is the connection source's to say.
      */
     private static MethodSpec fanOutDomain(ClassName self, TypeName tenantKey) {
         return MethodSpec.methodBuilder("fanOutDomain")
@@ -2225,28 +1674,9 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(ParameterizedTypeName.get(LIST, tenantKey))
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addStatement("$T carrier = of(env)", self)
-            .addStatement("$T<$T> requested = carrier.tenants", SET, tenantKey)
-            .addStatement("$T<$T> hosted = carrier.runtime.tenantKeys()", SET, tenantKey)
-            .beginControlFlow("for ($T claimed : requested)", tenantKey)
-            .beginControlFlow("if (!hosted.contains(claimed))")
-            .addStatement("throw new $T($S + claimed + $S)", NO_SUCH_ELEMENT,
-                "The request's tenant set names tenant '",
-                "', but this deployment hosts no DataSource for it; skipping it would return"
-                    + " incomplete results presented as complete. Narrow the set at the factory"
-                    + " when claims legitimately span more tenants than this subgraph hosts.")
-            .endControlFlow()
-            .endControlFlow()
-            .addStatement("$T<$T> domain = new $T<>()", LIST, tenantKey, ARRAY_LIST)
-            .beginControlFlow("for ($T hostedKey : hosted)", tenantKey)
-            .beginControlFlow("if (requested.contains(hostedKey))")
-            .addStatement("domain.add(hostedKey)")
-            .endControlFlow()
-            .endControlFlow()
-            .addStatement("return domain")
-            .addJavadoc("The request's fan-out domain: the configured tenant map's keys, in configured\n"
-                + "order, filtered by the request tenant set. A hosted tenant the request may not touch\n"
-                + "is never queried; a tenant in the set that the deployment does not host is a\n"
-                + "request-level error before any SQL runs.\n"
+            .addStatement("return new $T<>(carrier.tenants)", ARRAY_LIST)
+            .addJavadoc("The request's fan-out domain: the request tenant set, in its order. Each tenant in it\n"
+                + "is asked of the request's connection source, which may refuse it.\n"
                 + "@param env the fanned field's {@code DataFetchingEnvironment}\n")
             .build();
     }
@@ -2601,7 +2031,7 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)");
         if (mounts) {
             builder
-                .beginControlFlow("if (isMountFailure(failed.cause()))")
+                .beginControlFlow("if (isAcquisitionFailure(failed.cause()))")
                 .addComment("A rejected mount fails the whole request when the operation completes; this marker")
                 .addComment("never reaches a client, so nothing is logged and no reference is minted.")
                 .addStatement("return new FanOutFailure($S, FanOutFailure.FAILED)", "")
@@ -2648,54 +2078,44 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static Optional<Throwable> mountCause(Throwable thrown)}: the exception the mount
-     * itself threw, when a rejected mount is anywhere on {@code thrown}'s cause chain. Emitted in
-     * every build so the facade's {@code sessionMountFailure} and the fixed {@code ErrorRouter} can
-     * ask without naming {@code SessionMountException}, which exists only with a mount; without
-     * one ({@code sessionMountException == null}) the answer is always empty.
+     * {@code static Optional<Throwable> acquisitionCause(Throwable thrown)}: what the connection source
+     * threw, when a failed acquisition is anywhere on {@code thrown}'s cause chain. The facade's
+     * {@code acquisitionFailure} and the fixed {@code ErrorRouter} ask through it.
      */
-    private static MethodSpec mountCause(ClassName sessionMountException) {
+    private static MethodSpec acquisitionCause(ClassName acquisitionFailed) {
         var optionalThrowable = ParameterizedTypeName.get(OPTIONAL, ClassName.get(Throwable.class));
-        var builder = MethodSpec.methodBuilder("mountCause")
+        return MethodSpec.methodBuilder("acquisitionCause")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(optionalThrowable)
-            .addParameter(Throwable.class, "thrown");
-        if (sessionMountException == null) {
-            builder.addStatement("return $T.empty()", OPTIONAL);
-        } else {
-            builder
-                .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", Throwable.class)
-                .beginControlFlow("if (t instanceof $T)", sessionMountException)
-                .addStatement("return $T.ofNullable(t.getCause())", OPTIONAL)
-                .endControlFlow()
-                .endControlFlow()
-                .addStatement("return $T.empty()", OPTIONAL);
-        }
-        return builder
-            .addJavadoc("The exception the configured mount threw, when a rejected session mount is on\n"
-                + "{@code thrown}'s cause chain; empty otherwise, and always empty without a mount. The\n"
-                + "facade's {@code sessionMountFailure} returns this, so an application can answer a rejected\n"
-                + "identity from the mount's own exception without naming {@code SessionMountException}.\n"
+            .addParameter(Throwable.class, "thrown")
+            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", Throwable.class)
+            .beginControlFlow("if (t instanceof $T)", acquisitionFailed)
+            .addStatement("return $T.ofNullable(t.getCause())", OPTIONAL)
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return $T.empty()", OPTIONAL)
+            .addJavadoc("What the request's connection source threw, when a failed acquisition is on\n"
+                + "{@code thrown}'s cause chain; empty otherwise. The facade's {@code acquisitionFailure}\n"
+                + "returns this, so an application can answer a rejected request from the source's own\n"
+                + "exception.\n"
                 + "@param thrown what was caught\n"
-                + "@return the mount's own exception, if a rejected mount is on the chain\n")
+                + "@return the source's own exception, if a failed acquisition is on the chain\n")
             .build();
     }
 
     /**
-     * {@code static boolean isMountFailure(Throwable thrown)}: whether a rejected mount is anywhere
-     * on {@code thrown}'s cause chain, which is whether {@link #mountCause} is present. Emitted in
-     * every build so the fixed {@code ErrorRouter} can ask without naming
-     * {@code SessionMountException}.
+     * {@code static boolean isAcquisitionFailure(Throwable thrown)}: whether a failed acquisition is
+     * anywhere on {@code thrown}'s cause chain, which is whether {@link #acquisitionCause} is present.
      */
-    private static MethodSpec isMountFailure() {
-        return MethodSpec.methodBuilder("isMountFailure")
+    private static MethodSpec isAcquisitionFailure() {
+        return MethodSpec.methodBuilder("isAcquisitionFailure")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(boolean.class)
             .addParameter(Throwable.class, "thrown")
-            .addStatement("return mountCause(thrown).isPresent()")
-            .addJavadoc("Whether {@code thrown}'s cause chain carries a rejected session mount. The error\n"
-                + "router declines such a throw: the operation fails as a whole when it completes, so no\n"
-                + "field logs it, mints a reference for it, or places it in a payload.\n"
+            .addStatement("return acquisitionCause(thrown).isPresent()")
+            .addJavadoc("Whether {@code thrown}'s cause chain carries a failed acquisition. The error router\n"
+                + "declines such a throw: the operation fails as a whole when it completes, so no field logs\n"
+                + "it, mints a reference for it, or places it in a payload.\n"
                 + "@param thrown what a fetcher caught\n")
             .build();
     }
@@ -3339,7 +2759,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("canonical.add($T.canonicalTenantKey($T.requireNonNull(tenant, $S)))",
                 ownedConnections, OBJECTS, "tenant")
             .endControlFlow()
-            .addStatement("$T<$T> copy = $T.copyOf(canonical)", SET, tenantKey, SET)
+            .addComment("In the order given: the fan-out domain asks the source for each tenant in this order.")
+            .addStatement("$T<$T> copy = $T.unmodifiableSet(new $T<>(canonical))", SET, tenantKey,
+                ClassName.get("java.util", "Collections"), LINKED_HASH_SET)
             .addStatement("$T<$T> canonicalDefault = $T.requireNonNull(defaultTenant, $S)"
                 + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "defaultTenant", ownedConnections)
             .beginControlFlow("if (canonicalDefault.isPresent() && !copy.contains(canonicalDefault.get()))")
@@ -3386,8 +2808,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(self)
             .addParameter(collectionType, "tenants")
-            .addStatement("return new $T($T.copyOf($T.requireNonNull(tenants, $S)), $T.empty())",
-                self, SET, OBJECTS, "tenants", OPTIONAL)
+            .addStatement("return new $T(new $T<>($T.requireNonNull(tenants, $S)), $T.empty())",
+                self, LINKED_HASH_SET, OBJECTS, "tenants", OPTIONAL)
             .addJavadoc("A request tenant set with no default tenant: global tables read the default\n"
                 + "source, and {@code @defaultTenant} entities answer {@code null} unless\n"
                 + "{@link #withEntityDefault} names a tenant for them.\n"
@@ -3398,8 +2820,8 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(self)
             .addParameter(collectionType, "tenants")
             .addParameter(tenantKey, "defaultTenant")
-            .addStatement("return new $T($T.copyOf($T.requireNonNull(tenants, $S)), $T.of(defaultTenant))",
-                self, SET, OBJECTS, "tenants", OPTIONAL)
+            .addStatement("return new $T(new $T<>($T.requireNonNull(tenants, $S)), $T.of(defaultTenant))",
+                self, LINKED_HASH_SET, OBJECTS, "tenants", OPTIONAL)
             .addJavadoc("A request tenant set whose member {@code defaultTenant} serves graphitron's reads\n"
                 + "of global tables, on that tenant's connection and under its session mount, and is also\n"
                 + "the entity default tenant unless {@link #withEntityDefault} or\n"
@@ -3662,11 +3084,11 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw new $T($S + fieldCoordinate + $S)", IllegalStateException.class,
                 "Field '",
                 "' binds a parameter to " + ArgMappingSigil.SESSION_LITERAL + ", but this DSLContext"
-                    + " carries no mounted session handle: graphitron never mounted this connection."
-                    + " Only owned acquisition mounts, so the operation must be built with"
-                    + " Graphitron.newOwnedExecutionInput(...) and executed through"
-                    + " GraphitronRuntime.newGraphQL(schema); a caller-supplied DSLContext"
-                    + " (Graphitron.newExecutionInput(dsl, ...)) cannot carry mounted identity.")
+                    + " carries no session handle: the connection source's lease gave none, or the operation"
+                    + " ran on a caller-supplied DSLContext (Graphitron.newExecutionInput(dsl, ...)), which"
+                    + " cannot carry one. Build it with Graphitron.newOwnedExecutionInput(source, ...),"
+                    + " execute it through GraphitronRuntime.newGraphQL(schema), and lease each connection"
+                    + " with its handle.")
             .endControlFlow()
             .addStatement("return ($T) handle", handleType)
             .addJavadoc("The mounted session handle riding {@code dsl}'s per-{@code Configuration} data map,\n"
@@ -3958,19 +3380,204 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code SessionMountException}: what {@code PinnedConnection.acquire} turns a throwing mount
-     * into. A request-scoped fault, unlike the field-scoped {@code GraphitronClientException}: the
-     * carrier remembers the first one per operation, and the instrumentation throws it out of
-     * {@code GraphQL.execute} so the consumer can answer the request as a whole.
+     * {@code ConnectionSource}: the consumer's side of the connection contract, given with each request
+     * to {@code Graphitron.newOwnedExecutionInput}. Graphitron calls {@code acquire} the first time a
+     * field needs the connection for a key, never twice for one key in one request, and releases the
+     * lease it returns exactly once. A source is built when the request is, so it captures what the
+     * consumer needs of the request, and acquires nothing until called.
      */
-    private static TypeSpec sessionMountException(ClassName self) {
+    private static TypeSpec connectionSource(ClassName self, ClassName lease, ClassName connectionKey,
+                                             ClassName keyNotPermitted) {
+        return TypeSpec.interfaceBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(FunctionalInterface.class)
+            .addJavadoc("Where a request's connections come from: one {@link $T} per distinct {@link $T}.\n"
+                + "Given with each request to {@code Graphitron.newOwnedExecutionInput(source, ...)}, so it\n"
+                + "captures what it needs of the request (a token, a principal) when it is built and acquires\n"
+                + "nothing until Graphitron calls it. Graphitron calls {@link #acquire} the first time a field\n"
+                + "needs a key's connection, never twice for one key in one request, and releases every lease\n"
+                + "exactly once on every path. It may call it for distinct keys from several threads at once,\n"
+                + "so a source must be safe to call concurrently. {@code $T.of} and\n"
+                + "{@code $T.mounting} build one over a pool.\n",
+                lease, connectionKey, self.peerClass(CONNECTION_SOURCES_CLASS_NAME),
+                self.peerClass(CONNECTION_SOURCES_CLASS_NAME))
+            .addMethod(MethodSpec.methodBuilder("acquire")
+                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                .returns(lease)
+                .addParameter(connectionKey, "key")
+                .addException(Exception.class)
+                .addJavadoc("Leases the connection {@code key} runs on, with any session state the request needs\n"
+                    + "already set on it and autocommit on. Throw {@link $T} to refuse the key: the field\n"
+                    + "that asked answers with an error, and an entity or node lookup with {@code null}. Any\n"
+                    + "other throw rejects the request as a whole, before or instead of its result.\n"
+                    + "@param key what the connection is for\n"
+                    + "@return the lease, released by Graphitron exactly once\n", keyNotPermitted)
+                .build())
+            .build();
+    }
+
+    /**
+     * {@code Lease}: what a {@code ConnectionSource} hands back. A final class built by its static
+     * factories, so a consumer writes no class: the connection, the session handle where the build
+     * configures one, the release action, and optionally a dialect and jOOQ {@code Settings} of the
+     * lease's own, which otherwise are the runtime's.
+     */
+    private static TypeSpec lease(ClassName self, TypeName handleType) {
+        var release = self.nestedClass("Release");
+        var builder = TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .addJavadoc("One leased connection: what a {@code ConnectionSource} returns for a key. Graphitron runs\n"
+                + "the key's fields on {@link #connection()}, demarcates each mutation field's transaction on it,\n"
+                + "and calls {@link #release()} exactly once when the request is done with it, after rolling\n"
+                + "back anything left open. A connection Graphitron had to stop (a fan-out worker past its\n"
+                + "deadline, a connection it could not settle) is aborted through JDBC before the release, so\n"
+                + "a release finding it closed has nothing to clean up.\n")
+            .addField(FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build());
+        if (handleType != null) {
+            builder.addField(FieldSpec.builder(handleType, "handle", Modifier.PRIVATE, Modifier.FINAL).build());
+        }
+        builder.addField(FieldSpec.builder(SQL_DIALECT, "dialect", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(SETTINGS, "settings", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(release, "release", Modifier.PRIVATE, Modifier.FINAL).build());
+
+        var constructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PRIVATE)
+            .addParameter(CONNECTION, "connection");
+        if (handleType != null) {
+            constructor.addParameter(handleType, "handle");
+        }
+        constructor.addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SETTINGS, "settings")
+            .addParameter(release, "release")
+            .addStatement("this.connection = $T.requireNonNull(connection, $S)", OBJECTS, "connection");
+        if (handleType != null) {
+            constructor.addStatement("this.handle = handle");
+        }
+        constructor.addStatement("this.dialect = dialect")
+            .addStatement("this.settings = settings")
+            .addStatement("this.release = $T.requireNonNull(release, $S)", OBJECTS, "release");
+        builder.addMethod(constructor.build());
+
+        String handleArg = handleType == null ? "" : "handle, ";
+        var of = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(CONNECTION, "connection");
+        var ofOwn = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(self)
+            .addParameter(CONNECTION, "connection");
+        if (handleType != null) {
+            of.addParameter(handleType, "handle");
+            ofOwn.addParameter(handleType, "handle");
+        }
+        builder.addMethod(of.addParameter(release, "release")
+                .addStatement("return new $T(connection, $Lnull, null, release)", self, handleArg)
+                .addJavadoc("A lease over {@code connection}"
+                    + (handleType == null ? "" : " carrying {@code handle}, what {@code $$session} bindings read")
+                    + ", rendered\nwith the runtime's dialect and settings, released by {@code release}.\n")
+                .build())
+            .addMethod(ofOwn.addParameter(SQL_DIALECT, "dialect")
+                .addParameter(SETTINGS, "settings")
+                .addParameter(release, "release")
+                .addStatement("return new $T(connection, $L$T.requireNonNull(dialect, $S), settings, release)",
+                    self, handleArg, OBJECTS, "dialect")
+                .addJavadoc("A lease whose connection is rendered with a dialect and settings of its own, for a\n"
+                    + "pool of another database or another configuration than the runtime's.\n"
+                    + "{@code settings} {@code null} means jOOQ's defaults.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("connection")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(CONNECTION)
+                .addStatement("return connection")
+                .addJavadoc("The leased connection.\n")
+                .build());
+        if (handleType != null) {
+            builder.addMethod(MethodSpec.methodBuilder("handle")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(handleType)
+                .addStatement("return handle")
+                .addJavadoc("The session handle {@code $$session} bindings read on this connection, or {@code null}.\n")
+                .build());
+        }
+        return builder
+            .addMethod(MethodSpec.methodBuilder("dialect")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(SQL_DIALECT)
+                .addStatement("return dialect")
+                .addJavadoc("The lease's own dialect, or {@code null} for the runtime's.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("settings")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(SETTINGS)
+                .addStatement("return settings")
+                .addJavadoc("The lease's own jOOQ {@code Settings}, or {@code null}: the runtime's where the lease\n"
+                    + "has no dialect of its own, jOOQ's defaults where it has.\n")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("release")
+                .addModifiers(Modifier.PUBLIC)
+                .addException(Exception.class)
+                .addStatement("release.release()")
+                .addJavadoc("Runs the release action. Graphitron calls it exactly once.\n")
+                .build())
+            .addType(TypeSpec.interfaceBuilder("Release")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(FunctionalInterface.class)
+                .addJavadoc("Gives a leased connection back: clears what the source set on it and returns it to its\n"
+                    + "pool.\n")
+                .addMethod(MethodSpec.methodBuilder("release")
+                    .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+                    .addException(Exception.class)
+                    .build())
+                .build())
+            .build();
+    }
+
+    /**
+     * {@code KeyNotPermitted}: the one refusal a {@code ConnectionSource} may throw. The carrier turns
+     * it into the field error a refused tenant answered with before, so an entity or node lookup
+     * answers {@code null}; its message is what the client reads.
+     */
+    private static TypeSpec keyNotPermitted(ClassName self) {
+        return TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .superclass(RuntimeException.class)
+            .addJavadoc("Thrown by a {@code ConnectionSource} that refuses a key: this request may not have that\n"
+                + "connection. The field that asked answers with an error carrying this exception's message,\n"
+                + "which the client reads, and an entity or node lookup answers {@code null}. The rest of the\n"
+                + "request runs.\n")
+            .addField(FieldSpec.builder(long.class, "serialVersionUID",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("1L")
+                .build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addStatement("this($S)", "This request may not use that connection.")
+                .build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(String.class, "message")
+                .addStatement("super(message)")
+                .addJavadoc("@param message what the client reads\n")
+                .build())
+            .build();
+    }
+
+    /**
+     * {@code AcquisitionFailedException}: what {@code PinnedConnection.acquire} turns any throw of the
+     * source other than {@code KeyNotPermitted} into. A request-scoped fault, unlike the field-scoped
+     * {@code GraphitronClientException}: the carrier remembers the first one per operation, and the
+     * instrumentation throws it out of {@code GraphQL.execute} so the consumer can answer the request
+     * as a whole.
+     */
+    private static TypeSpec acquisitionFailed(ClassName self) {
         return TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .superclass(RuntimeException.class)
-            .addJavadoc("The database rejected this request's session identity: the configured\n"
-                + "{@code <sessionState>} mount threw. Thrown out of {@code GraphQL.execute} on the\n"
-                + "owned-connection path in place of a result, since no field can run without identity.\n"
-                + "The mount's own exception is the {@linkplain #getCause() cause}, so its SQLState stays\n"
+            .addJavadoc("The request's connection source failed to lease a connection: its {@code acquire} threw\n"
+                + "something other than {@code KeyNotPermitted}, or leased a connection Graphitron could not\n"
+                + "use. Thrown out of {@code GraphQL.execute} on the owned-connection path in place of a\n"
+                + "result. What the source threw is the {@linkplain #getCause() cause}, so its SQLState stays\n"
                 + "inspectable; the message carries none of it.\n")
             .addField(FieldSpec.builder(long.class, "serialVersionUID",
                     Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -3979,248 +3586,195 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(Throwable.class, "cause")
-                .addStatement("super($S, cause)", "The session identity mount was rejected")
-                .addJavadoc("@param cause what the mount threw\n")
+                .addStatement("super($S, cause)", "The connection source failed to lease a connection")
+                .addJavadoc("@param cause what the source threw\n")
                 .build())
             .build();
     }
 
     /**
-     * {@code MountedSession}: what graphitron knows about the connection a callback is mounting
-     * identity on. {@code configuration()} is the provider-free {@code Configuration} carrying the
-     * resolved source's dialect and settings, so the consumer's schema and render mapping apply to
-     * their own SQL there as everywhere else, and the transaction-demarcation provider structurally
-     * cannot. In multi-tenant builds {@code tenant()} is the tenant the connection is mounted for,
-     * {@code Optional.empty()} for the default source; a single-tenant build declares no such
-     * method, so a callback cannot ask a question that has no answer.
+     * {@code ConnectionSources}: the ready-made sources, shipped with the contract so a consumer keeps
+     * the behaviour graphitron used to own without writing a lease: {@code of} over a pool per key, and
+     * {@code mounting} over a pool per key with a mount and an unmount. {@code mounting} carries what
+     * {@code PinnedConnection} used to: autocommit forced before the mount, on PostgreSQL a capture of
+     * the session-set built-in settings and a {@code RESET ALL} and restore after the unmount, and a
+     * connection evicted rather than pooled when either callback or the reset fails.
      */
-    private static TypeSpec mountedSession(String schemaPackage, TypeName tenantKey, boolean multiTenant) {
-        var self = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
-        var tenantType = ParameterizedTypeName.get(OPTIONAL, tenantKey);
-        var configuration = FieldSpec.builder(CONFIGURATION, "configuration", Modifier.PRIVATE, Modifier.FINAL).build();
-        var constructor = MethodSpec.constructorBuilder()
-            .addParameter(CONFIGURATION, "configuration");
-        if (multiTenant) {
-            constructor.addParameter(tenantType, "tenant");
-        }
-        constructor.addStatement("this.configuration = configuration");
-        if (multiTenant) {
-            constructor.addStatement("this.tenant = tenant");
-        }
-        var builder = TypeSpec.classBuilder(self)
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("What graphitron knows about the connection a session callback is mounting identity\n"
-                + "on: the provider-free {@code Configuration}"
-                + (multiTenant ? " and the tenant the connection is mounted for" : "") + ".\n"
-                + "Everything else a callback needs is the consumer's own, captured when the input was built.\n")
-            .addField(configuration);
-        if (multiTenant) {
-            builder.addField(FieldSpec.builder(tenantType, "tenant", Modifier.PRIVATE, Modifier.FINAL).build());
-        }
-        builder.addMethod(constructor.build())
-            .addMethod(MethodSpec.methodBuilder("configuration")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(CONFIGURATION)
-                .addStatement("return configuration")
-                .addJavadoc("The provider-free {@code Configuration} over the pinned connection, carrying the\n"
-                    + "resolved source's dialect and settings. Valid for the duration of the callback.\n")
-                .build());
-        if (multiTenant) {
-            builder.addMethod(MethodSpec.methodBuilder("tenant")
-                .addModifiers(Modifier.PUBLIC)
-                .returns(tenantType)
-                .addStatement("return tenant")
-                .addJavadoc("The tenant this connection is mounted for: the routed key, or\n"
-                    + "{@code Optional.empty()} for the default source.\n")
-                .build());
-        }
-        return builder.build();
-    }
+    private static TypeSpec connectionSources(ClassName self, ClassName source, ClassName lease,
+                                              ClassName connectionKey, TypeName handleType) {
+        var pool = ParameterizedTypeName.get(FUNCTION, connectionKey, DATA_SOURCE);
+        var mount = self.nestedClass("Mount");
+        var unmount = self.nestedClass("Unmount");
+        String handleArg = handleType == null ? "" : "handle, ";
+        String nullHandle = handleType == null ? "" : "null, ";
 
-    /**
-     * {@code SessionState}: the per-request pair of a mount callback and an unmount callback that
-     * clears what the mount set, which the consumer builds with {@code SessionState.of(mount, unmount)}
-     * and hands to {@code newOwnedExecutionInput}. Both are required, so every connection released
-     * has run the consumer's clear before the pool hands it to a borrower that does not mount. One
-     * shape per build, from whether the graph names a handle class: without one the mount returns
-     * nothing and the unmount takes the {@code MountedSession} alone; with one the mount returns the
-     * handle and the unmount receives it. Not generic, so a build has one {@code of} form and a
-     * lambda never faces overload ambiguity. The callbacks may throw anything; what the mount throws
-     * is reported as the cause of a {@code SessionMountException}.
-     */
-    private static TypeSpec sessionState(String schemaPackage, SessionIdentityRows identity) {
-        var self = ClassName.get(schemaPackage, SESSION_STATE_CLASS_NAME);
-        var mountedSession = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
-        TypeName handleType = identity.handleType().orElse(null);
-        var mountType = self.nestedClass("Mount");
-        var unmountType = self.nestedClass("Unmount");
+        var of = MethodSpec.methodBuilder("of")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(source)
+            .addParameter(pool, "pool")
+            .addStatement("$T.requireNonNull(pool, $S)", OBJECTS, "pool")
+            .addCode("return key -> {\n$>")
+            .addStatement("$T connection = pool.apply(key).getConnection()", CONNECTION)
+            .addStatement("return $T.of(connection, $Lconnection::close)", lease, nullHandle)
+            .addCode("$<};\n")
+            .addJavadoc("A source leasing each key's connection from the pool {@code pool} names for it, with no\n"
+                + "session state set and none to clear: the release returns it to the pool.\n"
+                + "@param pool the pool for a key; called once per distinct key per request\n")
+            .build();
 
-        var mountInterface = TypeSpec.interfaceBuilder("Mount")
-            .addAnnotation(FunctionalInterface.class)
-            .addModifiers(Modifier.PUBLIC)
-            .addJavadoc("Mounts the request's identity on the connection {@code session} describes"
-                + (handleType == null ? "" : " and returns the handle the unmount and the\n"
-                    + "{@code $$session} bindings read") + ".\n")
-            .addMethod(MethodSpec.methodBuilder("mount")
-                .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-                .returns(handleType == null ? TypeName.VOID : handleType)
-                .addParameter(mountedSession, "session")
-                .addException(Exception.class)
-                .build())
+        var mounting = MethodSpec.methodBuilder("mounting")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(source)
+            .addParameter(pool, "pool")
+            .addParameter(mount, "mount")
+            .addParameter(unmount, "unmount")
+            .addStatement("$T.requireNonNull(pool, $S)", OBJECTS, "pool")
+            .addStatement("$T.requireNonNull(mount, $S)", OBJECTS, "mount")
+            .addStatement("$T.requireNonNull(unmount, $S)", OBJECTS, "unmount")
+            .addStatement("return key -> acquireMounted(pool.apply(key).getConnection(), key, mount, unmount)")
+            .addJavadoc("A source leasing each key's connection from the pool {@code pool} names for it, with the\n"
+                + "request's session state mounted by {@code mount} and cleared at release by {@code unmount}.\n"
+                + "Autocommit is forced on before the mount (rolling back what the pool left open), so the\n"
+                + "mount is its own committed statement and must set session-scoped state. On PostgreSQL the\n"
+                + "built-in settings the connection carries session-set are captured before the mount, and\n"
+                + "the unmount is followed by {@code RESET ALL} and their restore, so a defective unmount\n"
+                + "leaves the next borrower with no identity rather than this one's; the role is left alone,\n"
+                + "so a role switch is the unmount's to undo. A throwing mount, unmount or reset evicts the\n"
+                + "physical connection rather than returning it to the pool.\n"
+                + "@param pool the pool for a key; called once per distinct key per request\n"
+                + "@param mount sets the request's session state on a freshly taken connection\n"
+                + "@param unmount clears what the mount set, at release\n")
+            .build();
+
+        var acquireMounted = MethodSpec.methodBuilder("acquireMounted")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(lease)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(connectionKey, "key")
+            .addParameter(mount, "mount")
+            .addParameter(unmount, "unmount")
+            .addException(Exception.class)
+            .addStatement("final $T restore", STRING_TABLE);
+        if (handleType != null) {
+            acquireMounted.addStatement("final $T handle", handleType);
+        }
+        acquireMounted
+            .beginControlFlow("try")
+            .addComment("Autocommit is the resting state: the mount must be its own committed transaction, or")
+            .addComment("the first failing mutation field's rollback would revert it. Roll back what the pool")
+            .addComment("left open first, since JDBC commits an open transaction when autocommit is turned on.")
+            .beginControlFlow("if (!connection.getAutoCommit())")
+            .addStatement("connection.rollback()")
+            .endControlFlow()
+            .addStatement("connection.setAutoCommit(true)")
+            .addStatement("restore = isPostgres(connection) ? captureSessionSettings(connection) : null")
+            .addStatement(handleType == null ? "mount.mount(connection, key)" : "handle = mount.mount(connection, key)")
+            .nextControlFlow("catch ($T failure)", Throwable.class)
+            .addComment("Fail closed: the mount may have set part of its state before throwing.")
+            .addStatement("evict(connection)")
+            .addStatement("throw failure")
+            .endControlFlow()
+            .addStatement("return $T.of(connection, $L() -> unmountAndReturn(connection, key, $Lrestore, unmount))",
+                lease, handleArg, handleArg);
+
+        var unmountAndReturn = MethodSpec.methodBuilder("unmountAndReturn")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(connectionKey, "key");
+        if (handleType != null) {
+            unmountAndReturn.addParameter(handleType, "handle");
+        }
+        unmountAndReturn.addParameter(STRING_TABLE, "restore")
+            .addParameter(unmount, "unmount")
+            .addException(Exception.class)
+            .beginControlFlow("if (connection.isClosed())")
+            .addComment("Graphitron aborted it: the session that held the state is gone and nothing returns.")
+            .addStatement("return")
+            .endControlFlow()
+            .beginControlFlow("try")
+            .addStatement(handleType == null ? "unmount.unmount(connection, key)" : "unmount.unmount(connection, key, handle)")
+            .beginControlFlow("if (restore != null)")
+            .addComment("RESET ALL is transactional: an unmount that switched autocommit off would leave it in a")
+            .addComment("transaction the pool's return-rollback reverts. Evict instead of settling.")
+            .beginControlFlow("if (!connection.getAutoCommit())")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "the unmount left autocommit off; identity cannot be proven reset")
+            .endControlFlow()
+            .beginControlFlow("try ($T reset = connection.prepareStatement($S\n$>$>+ $S$<$<))", PREPARED_STATEMENT,
+                "RESET ALL;", " select set_config(n, v, false) from unnest(?::text[], ?::text[]) as t(n, v)")
+            .addStatement("reset.setArray(1, connection.createArrayOf($S, restore[0]))", "text")
+            .addStatement("reset.setArray(2, connection.createArrayOf($S, restore[1]))", "text")
+            .addStatement("reset.execute()")
+            .endControlFlow()
+            .endControlFlow()
+            .nextControlFlow("catch ($T failure)", Throwable.class)
+            .addComment("Identity cannot be proven cleared: evict the physical connection, never return it.")
+            .addStatement("evict(connection)")
+            .addStatement("throw failure")
+            .endControlFlow()
+            .addStatement("connection.close()");
+
+        var isPostgres = MethodSpec.methodBuilder("isPostgres")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(CONNECTION, "connection")
+            .addException(SQL_EXCEPTION)
+            .addStatement("return $S.equals(connection.getMetaData().getDatabaseProductName())", "PostgreSQL")
+            .build();
+
+        var evict = MethodSpec.methodBuilder("evict")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(CONNECTION, "connection")
+            .beginControlFlow("try")
+            .addComment("abort() is the JDBC evict primitive: pool wrappers discard the physical connection.")
+            .addStatement("connection.abort(Runnable::run)")
+            .nextControlFlow("catch ($T abortFailure)", Throwable.class)
+            .beginControlFlow("try")
+            .addStatement("connection.close()")
+            .nextControlFlow("catch ($T ignored)", Throwable.class)
+            .addComment("nothing left to do; the connection is already unusable.")
+            .endControlFlow()
+            .endControlFlow()
+            .build();
+
+        var mountMethod = MethodSpec.methodBuilder("mount")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .returns(handleType == null ? TypeName.VOID : handleType)
+            .addParameter(CONNECTION, "connection")
+            .addParameter(connectionKey, "key")
+            .addException(Exception.class)
             .build();
         var unmountMethod = MethodSpec.methodBuilder("unmount")
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
-            .returns(TypeName.VOID)
-            .addParameter(mountedSession, "session");
+            .addParameter(CONNECTION, "connection")
+            .addParameter(connectionKey, "key");
         if (handleType != null) {
             unmountMethod.addParameter(handleType, "handle");
         }
-        var unmountInterface = TypeSpec.interfaceBuilder("Unmount")
-            .addAnnotation(FunctionalInterface.class)
-            .addModifiers(Modifier.PUBLIC)
-            .addJavadoc("Unmounts the identity the mount mounted, at release, outside any transaction.\n")
-            .addMethod(unmountMethod.addException(Exception.class).build())
-            .build();
-
-        var mountField = FieldSpec.builder(mountType, "mount", Modifier.PRIVATE, Modifier.FINAL).build();
-        var unmountField = FieldSpec.builder(unmountType, "unmount", Modifier.PRIVATE, Modifier.FINAL).build();
-        var constructorBuilder = MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE);
-        var ofBuilder = MethodSpec.methodBuilder("of")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(self);
-        var constructor = constructorBuilder
-            .addParameter(mountType, "mount")
-            .addParameter(unmountType, "unmount")
-            .addStatement("this.mount = mount")
-            .addStatement("this.unmount = unmount")
-            .build();
-        var ofBoth = ofBuilder
-            .addParameter(mountType, "mount")
-            .addParameter(unmountType, "unmount")
-            .addStatement("return new $T($T.requireNonNull(mount, $S), $T.requireNonNull(unmount, $S))",
-                self, Objects.class, "mount", Objects.class, "unmount")
-            .addJavadoc("A session state that mounts at acquisition and unmounts at release. The unmount\n"
-                + "clears what the mount set; when the mount sets no database state, pass one that\n"
-                + "does nothing.\n")
-            .build();
-
-        var mountCall = MethodSpec.methodBuilder("mount")
-            .returns(handleType == null ? TypeName.VOID : handleType)
-            .addParameter(mountedSession, "session")
-            .addException(Exception.class);
-        mountCall.addStatement(handleType == null ? "mount.mount(session)" : "return mount.mount(session)");
-        var unmountCall = MethodSpec.methodBuilder("unmount")
-            .returns(TypeName.VOID)
-            .addParameter(mountedSession, "session");
-        if (handleType != null) {
-            unmountCall.addParameter(handleType, "handle");
-        }
-        unmountCall.addException(Exception.class)
-            .addStatement(handleType == null ? "unmount.unmount(session)" : "unmount.unmount(session, handle)");
-
         return TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("The request's session identity, as code: a mount callback and an unmount callback\n"
-                + "that clears what the mount set, which the consumer builds with {@code of} and passes to\n"
-                + "{@code Graphitron.newOwnedExecutionInput}. Graphitron calls the mount lazily, on whatever\n"
-                + "thread first needs a connection, so the values it needs are captured by the callbacks\n"
-                + "when the input is built rather than looked up from any ambient state.\n")
-            .addType(mountInterface)
-            .addType(unmountInterface)
-            .addField(mountField)
-            .addField(unmountField)
-            .addMethod(constructor)
-            .addMethod(ofBoth)
-            .addMethod(mountCall.build())
-            .addMethod(unmountCall.build())
-            .build();
-    }
-
-    /**
-     * Emits the generated hook class: one final class with static {@code mount} and
-     * {@code unmount} methods that build the {@code MountedSession} for a freshly pinned connection
-     * and invoke the request's {@code SessionState} callbacks. Emitted only when
-     * {@link SessionIdentityRows#emitsHookImplementation()} holds, the single membership fact the emit
-     * plan also reads. This class is where the provider-free {@code Configuration} is built, from
-     * the connection and the resolved source's dialect and settings, which {@code PinnedConnection}
-     * stays free of. In multi-tenant builds the session also carries the tenant it is mounting for.
-     */
-    private static TypeSpec sessionHookImpl(String schemaPackage, SessionIdentityRows identity,
-                                            TypeName tenantKey, boolean multiTenant) {
-        TypeName handleType = identity.handleType().orElse(null);
-        var sessionState = ClassName.get(schemaPackage, SESSION_STATE_CLASS_NAME);
-        var mountedSession = ClassName.get(schemaPackage, MOUNTED_SESSION_CLASS_NAME);
-        var tenantType = ParameterizedTypeName.get(OPTIONAL, tenantKey);
-
-        var mountBuilder = MethodSpec.methodBuilder("mount")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(handleType == null ? TypeName.VOID : handleType)
-            .addParameter(sessionState, SESSION_STATE_SLOT)
-            .addParameter(CONNECTION, "connection")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings");
-        if (multiTenant) {
-            mountBuilder.addParameter(tenantType, MOUNTED_TENANT);
-        }
-        mountBuilder.addException(Exception.class);
-        var sessionArgs = multiTenant
-            ? CodeBlock.of("$T.using(connection, dialect, settings).configuration(), $L", DSL, MOUNTED_TENANT)
-            : CodeBlock.of("$T.using(connection, dialect, settings).configuration()", DSL);
-        mountBuilder.addStatement("$T session = new $T($L)", mountedSession, mountedSession, sessionArgs);
-        mountBuilder.addStatement(handleType == null ? "$L.mount(session)" : "return $L.mount(session)",
-            SESSION_STATE_SLOT);
-        var mount = mountBuilder
-            .addJavadoc("Mounts the request's identity onto the freshly pinned {@code connection} by calling\n"
-                + "the mount callback with a {@code MountedSession}"
-                + (handleType == null ? "" : " and returning its handle") + ".\n"
-                + "Runs before any operation SQL, with autocommit asserted by the runtime: the mount is\n"
-                + "its own committed transaction, so a later transaction's rollback cannot revert it, and\n"
-                + "what the callback sets must be <em>session-scoped</em> state in the database's own\n"
-                + "vocabulary (transaction-scoped storage is gone by this call's own implicit commit).\n"
-                + "On PostgreSQL the runtime has already captured the built-in settings the connection\n"
-                + "carries session-set, so a built-in setting changed here is undone at release.\n"
-                + "A thrown exception fails the request closed: the connection is evicted, never pooled.\n")
-            .build();
-
-        var unmountBuilder = MethodSpec.methodBuilder("unmount")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(TypeName.VOID)
-            .addParameter(sessionState, SESSION_STATE_SLOT)
-            .addParameter(CONNECTION, "connection")
-            .addParameter(SQL_DIALECT, "dialect")
-            .addParameter(SETTINGS, "settings");
-        if (multiTenant) {
-            unmountBuilder.addParameter(tenantType, MOUNTED_TENANT);
-        }
-        if (handleType != null) {
-            unmountBuilder.addParameter(handleType, "handle");
-        }
-        unmountBuilder.addException(Exception.class);
-        unmountBuilder.addStatement("$T session = new $T($L)", mountedSession, mountedSession, sessionArgs);
-        unmountBuilder.addStatement(handleType == null ? "$L.unmount(session)" : "$L.unmount(session, handle)",
-            SESSION_STATE_SLOT);
-        var unmount = unmountBuilder
-            .addJavadoc("Unmounts the identity {@code mount} mounted by calling the request's unmount\n"
-                + "callback"
-                + (handleType == null ? "" : ", with the handle mount returned") + ". Fires at release on\n"
-                + "every completion path, outside any transaction (the runtime rolls back anything the\n"
-                + "operation left open and asserts autocommit first), so the clears take effect\n"
-                + "immediately. On PostgreSQL the runtime follows it with a reset ({@code RESET ALL} and\n"
-                + "a restore of the built-in settings captured before the mount) as a backstop; the role\n"
-                + "is not reset, so a role switch the mount made is this callback's to undo. If this\n"
-                + "throws, the runtime evicts the physical connection rather than returning tainted state\n"
-                + "to the pool.\n")
-            .build();
-
-        return TypeSpec.classBuilder(SESSION_HOOK_IMPL_CLASS_NAME)
-            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("Generated session-hook calls for a graph that supplies session identity per request:\n"
-                + "static {@code mount} and {@code unmount} called directly by the connection lifecycle,\n"
-                + "building the {@code MountedSession} and invoking the request's {@code SessionState}.\n"
-                + "Nothing is registered and nothing is dispatched polymorphically.\n")
+            .addJavadoc("Ready-made {@code ConnectionSource}s over a pool per key.\n")
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
-            .addMethod(mount)
-            .addMethod(unmount)
+            .addMethod(of)
+            .addMethod(mounting)
+            .addMethod(acquireMounted.build())
+            .addMethod(unmountAndReturn.build())
+            .addMethod(isPostgres)
+            .addMethod(captureSessionSettings())
+            .addMethod(evict)
+            .addType(TypeSpec.interfaceBuilder("Mount")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(FunctionalInterface.class)
+                .addJavadoc("Sets the request's session state on a freshly taken connection, in autocommit"
+                    + (handleType == null ? "" : ", and returns\nthe handle {@code $$session} bindings read") + ".\n")
+                .addMethod(mountMethod)
+                .build())
+            .addType(TypeSpec.interfaceBuilder("Unmount")
+                .addModifiers(Modifier.PUBLIC)
+                .addAnnotation(FunctionalInterface.class)
+                .addJavadoc("Clears what the mount set, at release, outside any transaction.\n")
+                .addMethod(unmountMethod.addException(Exception.class).build())
+                .build())
             .build();
     }
 }

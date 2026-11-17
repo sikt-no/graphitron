@@ -8,10 +8,10 @@ acquisition, transaction demarcation, and mounting the caller's identity, comes
 in one of two shapes, and this document is the reference for both:
 
 * *The owned-connection path (recommended).* Graphitron owns the
-  connection lifecycle. You give it a `DataSource` and a dialect once; per
-  request it pins one connection, mounts the caller's identity on it through
-  the session callbacks you pass with the request, commits each mutation field
-  independently, and unmounts and releases at completion. See
+  connection lifecycle. You give it a dialect once, and per request a
+  connection source; it leases a connection from the source when a field first
+  needs one, commits each mutation field independently, and releases every
+  lease exactly once at completion. See
   <<owned-connection-path,The owned-connection path>>.
 * *The escape-hatch path.* You bring your own `DSLContext` per request and own
   transaction demarcation and identity yourself; Graphitron's owned-connection
@@ -29,19 +29,19 @@ tutorial]; this file picks up where that leaves off.
 [#owned-connection-path]
 == The owned-connection path
 
-Build the runtime once at wiring time over your pooled `DataSource` and jOOQ
-dialect; you (or your framework) still own pool creation and tuning, Graphitron
-owns acquisition, transactions, and identity on top of it:
+Build the runtime once at wiring time over the jOOQ dialect every context
+renders with; the pools stay yours, and so does the choice of which one a
+request's connection comes from:
 
 [source,java]
 ----
-var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);
+var runtime = Graphitron.runtime(SQLDialect.POSTGRES);
 var engine  = runtime.newGraphQL(Graphitron.buildSchema()).build();
 ----
 
-`Graphitron.runtime(dataSource, dialect, settings)` is the same with the jOOQ
-`Settings` (a schema or render mapping) that reach every context Graphitron
-mints, the mount's included.
+`Graphitron.runtime(dialect, settings)` is the same with the jOOQ `Settings` (a
+schema or render mapping) that reach every context Graphitron mints over a
+leased connection.
 
 `runtime.newGraphQL(schema)` attaches the connection-lifecycle instrumentation,
 so you register nothing else. To add your own instrumentation (for example
@@ -49,56 +49,67 @@ OpenTelemetry) pass it to `runtime.newGraphQL(schema, telemetry.newInstrumentati
 Graphitron's stays first in the chain and yours follow in the order given, so
 you never write a `ChainedInstrumentation`. A later `.instrumentation(other)` on
 the returned builder still replaces the whole chain, after which nothing is
-pinned or mounted; pass instrumentations to `newGraphQL` instead. Per request you pass the `SessionState` that carries your
-mount and unmount callbacks (and any declared `contextArguments`):
+leased; pass instrumentations to `newGraphQL` instead. Per request you pass the
+`ConnectionSource` the request's connections come from (and any declared
+`contextArguments`):
 
 [source,java]
 ----
-var input = Graphitron.newOwnedExecutionInput(session, userId).query(q).build();
+var source = ConnectionSources.mounting(key -> dataSource, mount, unmount);
+var input = Graphitron.newOwnedExecutionInput(source, userId).query(q).build();
 ----
 
-For that operation Graphitron takes one connection when a field first needs it,
-runs your mount callback on it to mount identity, executes (each top-level
-mutation field, payload included, in its own transaction that commits or rolls
-back independently, see <<owned-path-transactions>>; queries in autocommit),
-then runs your unmount callback, on PostgreSQL follows it with a reset
-(`RESET ALL` and a restore of the settings captured before the mount, see
-<<hook-state-contract>>), and releases the
-connection on every completion path, including a query cancelled through
-`ExecutionInput.cancel()` or abandoned by an exception during dispatch. A connection whose unmount or reset failed is evicted, never returned to the
-pool. Once the operation has released, it takes no new connection: a request
-for one after that point, for example from one of your fetchers still running
-asynchronously after the operation was cancelled, is refused with an
-`IllegalStateException` rather than given a connection nothing would return.
+For that operation Graphitron calls the source's `acquire(key)` when a field
+first needs the connection for a key, never twice for one key, executes (each
+top-level mutation field, payload included, in its own transaction that commits
+or rolls back independently, see <<owned-path-transactions>>; queries in
+autocommit), and releases every lease it took, exactly once, on every completion
+path, including a query cancelled through `ExecutionInput.cancel()` or abandoned
+by an exception during dispatch. Once the operation has released, it takes no
+new connection: a request for one after that point, for example from one of
+your fetchers still running asynchronously after the operation was cancelled,
+is refused with an `IllegalStateException` rather than given a connection
+nothing would return.
+
+The source is the consumer's whole side of the contract. `acquire` returns a
+`Lease`: the connection, the session handle where `<handle>` names one, and the
+release, built with `Lease.of(connection, handle, release)` (or with a dialect
+and settings of the lease's own). Throwing `KeyNotPermitted` refuses a key: the
+field that asked answers with an error carrying its message, and `node`,
+`nodes` and `_entities` answer `null`. Any other throw rejects the request
+(<<rejected-mount>>). A lease must be in autocommit; one that is not is refused
+as a failed acquisition and released. Graphitron rolls back anything the
+operation left open before it releases a lease, and a connection it had to stop
+(a fan-out worker past its deadline, a connection it could not settle) is
+aborted through JDBC before its release runs. The generated
+`ConnectionSources.mounting(pool, mount, unmount)` is the ready-made source: it
+takes a connection from the pool the key names, mounts identity on it, and at
+release unmounts, resets (on PostgreSQL) and returns it, evicting it when any of
+that fails.
 
 === Session identity through `<sessionState>`
 
-Identity goes to the database, not to Java. Switching on `<sessionState>` (optionally
-naming the `<handle>` type your mount returns) makes the generator emit two types
-in the schema package, `SessionState` and `MountedSession`, and makes the generated
-`newOwnedExecutionInput` factory take a `SessionState` first. You build one per
-request, from code: a mount callback and an unmount callback that clears what the
-mount set, both required, each handed a
-`MountedSession` whose `configuration()` is bound to the connection being mounted
-(and whose `tenant()` answers the tenant in a `<tenantColumn>` build). The state
-rides the request's `GraphQLContext`, and the connection-lifecycle instrumentation
-reads it when the operation starts, so an input built without one fails before any
-SQL. Graphitron parses nothing about your identity; your callbacks and the database
-do. See
+Identity goes to the database, not to Java. The connection source sets it on
+each connection it leases; switching on `<sessionState>` (optionally naming the
+`<handle>` type the leases carry) declares that the build does so, and types the
+lease's `handle()` for `$session` bindings. The source rides the request's
+`GraphQLContext`, and the connection-lifecycle instrumentation reads it when the
+operation starts, so an input built without one fails before any SQL. Graphitron
+parses nothing about your identity; your source and the database do. See
 xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
-identity] for the configuration and the callback contract.
+identity] for the configuration and the contract.
 
 This differs from a mutation hook, which is a static method resolved from the
 schema: identity varies per request and has to carry the request's own claims, so
-it is a value the consumer builds, and the build reads only the handle type, from
+it lives in a value the consumer builds per request, the source, and the build reads only the handle type, from
 the classpath, to check `$session` bindings.
 
 [#hook-state-contract]
 ==== The hook state contract: session-scoped, never transactional
 
-Session identity is connection-scoped state, and your methods must treat it
-that way. Graphitron cannot see inside the mount or unmount you author, so the
-contract is stated here and holds for every `<sessionState>`:
+Session identity is connection-scoped state, and your mount and unmount must
+treat it that way. Graphitron cannot see inside the source you author, so the
+contract is stated here and holds for every source:
 
 * *Set and reset session-scoped state only.* On Postgres that means
   `set_config(key, value, false)` (the third argument `false` means
@@ -111,30 +122,30 @@ contract is stated here and holds for every `<sessionState>`:
   wipes (for example a global temporary table declared
   `ON COMMIT DELETE ROWS`), no work left uncommitted for a later commit to
   persist.
-* *You may assume no transaction is open.* Graphitron invokes both methods
-  outside any open transaction, structurally: acquisition puts the connection
-  in autocommit before the mount runs, first rolling back any transaction the
-  pool handed over open (switching autocommit on would otherwise commit it), so
-  a pool configured with `autoCommit=false` works and nothing it left open is
-  committed under your request; and release settles any transaction
-  the operation left open before unmount runs (so your clears take effect
-  immediately rather than being reverted by the pool's return-rollback).
-* *On PostgreSQL a reset backs your unmount up.* Graphitron captures the
-  connection's session-set built-in settings (those `pg_settings` lists with
-  `source = 'session'` and `context = 'user'`) before the mount and, after the
-  unmount, issues `RESET ALL` and restores them, so a defective unmount leaves
-  the next borrower with no identity rather than the previous caller's. It
-  neither relaxes this contract nor reverts the role: reverting an init-SQL
-  `SET ROLE` would hand the next borrower the table owner, whom RLS does not
-  apply to. An unmount that leaves autocommit off is evicted rather than reset,
-  since `RESET ALL` inside its transaction would be rolled back.
+* *Lease in autocommit.* Graphitron refuses a lease whose connection has
+  autocommit off, and settles any transaction the operation left open before
+  it releases a lease, so the release runs outside any transaction.
+  `ConnectionSources.mounting` puts the connection in autocommit before the
+  mount, first rolling back any transaction the pool handed over open
+  (switching autocommit on would otherwise commit it), so a pool configured with
+  `autoCommit=false` works.
+* *On PostgreSQL `ConnectionSources.mounting` backs your unmount up.* It
+  captures the connection's session-set built-in settings (those `pg_settings`
+  lists with `source = 'session'` and `context = 'user'`) before the mount and,
+  after the unmount, issues `RESET ALL` and restores them, so a defective
+  unmount leaves the next borrower with no identity rather than the previous
+  caller's. It neither relaxes this contract nor reverts the role: reverting an
+  init-SQL `SET ROLE` would hand the next borrower the table owner, whom RLS
+  does not apply to. An unmount that leaves autocommit off is evicted rather
+  than reset, since `RESET ALL` inside its transaction would be rolled back. A
+  source of your own carries this duty itself.
 
 A mount that violates the first two points can leave identity mounted for the
 pool's next borrower or drop it mid-operation; both are security defects, not
 performance defects. The structure is what makes the contract cheap to hold:
-`mount` runs once per taken connection with autocommit on, so what it sets is
+a lease is taken once per key with autocommit on, so what its mount set is
 committed session state, and a mutation field's transaction settling later
-cannot revert it. Graphitron therefore never re-runs your methods around
+cannot revert it. Graphitron therefore never asks the source again around
 transaction boundaries.
 
 The execution evidence that a connection is returned with identity cleared on
@@ -144,58 +155,56 @@ borrower outside Graphitron, through one real connection pool of size one, and
 its class javadoc names the paths it does not yet cover.
 
 [#rejected-mount]
-==== A rejected identity rejects the request
+==== A failed acquisition rejects the request
 
-When the database rejects the caller's identity, your mount method throws. No
-field can run without identity, so Graphitron rejects the whole request once
-rather than answering each field with a redacted error. On the owned-connection
-path, `GraphQL.execute` throws the generated `SessionMountException` (in your
+When the source throws anything but `KeyNotPermitted` (the database rejects the
+caller's identity in your mount, say, or the pool is exhausted), no field can
+run on that connection, so Graphitron rejects the whole request once rather
+than answering each field with a redacted error. On the owned-connection path,
+`GraphQL.execute` throws the generated `AcquisitionFailedException` (in your
 `<outputPackage>.schema` package) in place of a result, and `executeAsync`
-completes exceptionally with it. The exception your mount threw is its cause, so
-you can read its SQLState and choose the answer:
+completes exceptionally with it. What your source threw is its cause, so you
+can read its SQLState and choose the answer:
 
 [source,java]
 ----
 ExecutionResult result;
 try {
     result = engine.execute(input);
-} catch (SessionMountException rejected) {
-    // rejected.getCause() is what the mount threw, for example the SQLException
-    // your identity routine raised: map it to 401, 400 or whatever fits.
-    return unauthorized(rejected.getCause());
+} catch (AcquisitionFailedException failed) {
+    // failed.getCause() is what the source threw, for example the SQLException
+    // your identity routine raised: map it to 401, 400, 503 or whatever fits.
+    return answer(failed.getCause());
 }
 ----
 
 What you can rely on:
 
-* *One attempt per request.* The first rejection is remembered for the
-  operation; every later field that needs a connection, on any tenant, gets the
-  same exception without mounting again.
-* *Nothing is logged per field.* The rejection never reaches the
+* *One attempt per request.* The first failure is remembered for the
+  operation; every later field that needs a connection, on any key, gets the
+  same exception without asking the source again.
+* *Nothing is logged per field.* The failure never reaches the
   `FetcherErrorLog`, mints no reference and is never claimed by an `@error`
   channel, whatever its handlers match.
-* *Only the mount is an identity fault.* A pool or connection fault while taking
-  the connection, including a connection that refuses autocommit, propagates as
-  itself, never as `SessionMountException`, so mapping that type to 401 cannot
-  hide an outage.
-* *A request that needs no database never mounts*, so it succeeds whatever the
-  caller's identity.
+* *Every throw of the source is a failed acquisition.* A pool fault and a
+  rejected identity reach you the same way; tell them apart by the cause before
+  mapping to 401, so an outage is not answered as an identity fault.
+* *A request that needs no database never acquires*, so it succeeds whatever
+  the caller's identity.
 
 With `graphitron-jakarta-rest`, return the status from
-`GraphitronApplication.rejectedIdentity(Throwable)`, which receives the mount's
-own exception (the adapter hands the library `Graphitron::sessionMountFailure`,
+`GraphitronApplication.failedAcquisition(Throwable)`, which receives the source's
+own exception (the adapter hands the library `Graphitron::acquisitionFailure`,
 which recognises the generated exception so the library need not name it). It
 runs before `clientFault(Throwable)`, which still answers any other escape;
 without an answer the handler answers the reference-only 500.
 
-The mount runs on a connection in autocommit, with a jOOQ `Configuration`
-carrying no Graphitron transaction provider. A mount that has to write (for
-example provisioning the caller's row) may open its own transaction there with
-`transactionResult(...)`: jOOQ's default provider switches autocommit off for
-that transaction and restores it when the transaction ends, so the connection is
-back in autocommit before any field runs.
+A mount that has to write (for example provisioning the caller's row) may open
+its own transaction on the connection, as long as it leaves it in autocommit
+before the lease is returned: jOOQ's default provider switches autocommit off
+for a `transactionResult(...)` and restores it when the transaction ends.
 
-If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
+If you configure no `<sessionState>`, the build declares no per-request identity and warns at
 build time (`no-session-state`): an unsecured direct-to-database API is a
 data-exposure risk. Silence that rule only if the API is intentionally
 unsecured or uses the escape hatch exclusively.
@@ -272,12 +281,12 @@ a jOOQ `TransactionListener` if code must run as each transaction begins.
 
 === Per-tenant routing
 
-For database-per-tenant deployments, build the runtime over a default
-`DataSource` plus a `Map<TenantId, DataSource>`; Graphitron pins one connection
-per distinct divined tenant within an operation and mounts identity on each,
-handing the mount the key it is mounting for through `MountedSession.tenant()`. Only tenants in the request tenant set (the factories' leading parameter in a
-`<tenantColumn>` build) are ever acquired: the generated per-operation connection
-carrier refuses any other key with a client error before a connection is taken. The schema-side
+For database-per-tenant deployments the connection source chooses each tenant's
+pool from the connection key's tenant part; Graphitron leases one connection
+per distinct divined tenant within an operation. Only tenants in the request
+tenant set (a factory parameter in a `<tenantColumn>` build) are ever asked of
+the source: the generated per-operation connection carrier refuses any other key
+with a client error before the source is called. The schema-side
 inference that divines the tenant key is the tenant-column work; the runtime seam
 it rides is part of this path. The consumer-facing recipe is
 xref:../../manual/how-to/tenant-scoping.adoc[How-to: Tenant scoping].
@@ -288,11 +297,10 @@ test rather than in the schema: the consumer supplies a connection source, which
 `ConnectionKey` and returns the connection for it. A key's parts are each optional, the tenant
 among them; a key whose tenant part is empty is a key like any other, and what it means is the
 source's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
-child's key differs from its parent's and acquires again only then. The `Map<TenantId, DataSource>`
-seam and the default tenant above are what today's runtime does in that source's place.
+child's key differs from its parent's and acquires again only then.
 
-The contract that source takes (Alf, 2026-11-16), which replaces the runtime's own connection setup once
-it lands:
+The contract that source takes (Alf, 2026-11-16). The runtime's own connection setup is gone; the
+request tenant set stays until the source names the fan-out domain:
 
 * The consumer hands each request a connection source, a generated functional interface whose one
   method, `acquire`, takes the connection key and returns a lease; it is given to
@@ -343,7 +351,7 @@ is the connection source, not this path.
 
 `GraphitronContext` is the sealed per-request contract every generated DataFetcher reads from. It is _emitted_ per app under `<outputPackage>.schema` and sealed to permit only the generator's own `GraphitronContextImpl` singleton (nested inside the interface to inherit same-compilation-unit permits); apps no longer implement it directly. The extension surface moves to the points where per-request values cross the boundary:
 
-* *Per-request `DSLContext`*: pass it as the first parameter of `Graphitron.newExecutionInput(dsl, ...)`. On the owned-connection path you do not supply one, the instrumentation produces it from the pinned connection.
+* *Per-request `DSLContext`*: pass it as the first parameter of `Graphitron.newExecutionInput(dsl, ...)`. On the owned-connection path you do not supply one, the instrumentation produces it from the leased connection.
 * *Per-request `contextArgument` values*: pass each one as a typed parameter to `Graphitron.newExecutionInput(...)`. The factory's parameter list reflects the schema's declared `contextArguments` and their reflected Java types, so the consumer's request-entry code threads each value through a typed slot rather than stashing arbitrary entries on `GraphQLContext` by hand.
 * *Custom validator factory*: not configurable today. The default reads `Validation.buildDefaultValidatorFactory().getValidator()`; the single existing override point is currently unused, so no migration is required.
 
@@ -430,8 +438,8 @@ Every generated query method calls `getDslContext(env)` to obtain the
 ad-hoc overrides. On the escape-hatch path you build the right per-request
 `DSLContext` at request entry and pass it to
 `Graphitron.newExecutionInput(dsl, ...)`; on the owned-connection path the
-instrumentation produces the `DSLContext` from the pinned connection and
-per-tenant routing is the runtime's `Map<TenantId, DataSource>` seam
+instrumentation produces the `DSLContext` from the leased connection and
+per-tenant routing is the connection source's
 (<<owned-connection-path,above>>). The same shape composes with PostgreSQL
 row-level security; see <<row-level-security,Row-Level Security and the
 integrity gradient>> below.
@@ -555,7 +563,7 @@ closed: an RLS policy must treat both a `NULL` and an empty session variable as
 dialect and pattern, and it is a spectrum, not a yes/no. Choosing where on it to
 sit is the load-bearing security decision.
 
-The gradient is read off the routine your mount callback calls, not off
+The gradient is read off the routine your mount calls, not off
 graphitron configuration: what the routine's own definition says is the
 whole story, and the callback is the one place of consumer Java between the
 request and the database, so it is the one more place to read.
@@ -563,16 +571,16 @@ request and the database, so it is the one more place to read.
 * *Enforced fence* (strongest). The mounted state lives behind a privilege
   fence: an Oracle package-bound context or RAS session attached by a
   definer-rights package, so code on the connection cannot set identity state
-  except through the trusted package. Your mount callback calls the package's executing
+  except through the trusted package. Your mount calls the package's executing
   method; the fence is the package's own definition.
 * *Convention fence.* Plain PostgreSQL GUCs written by your mount (directly,
   or via a `SECURITY DEFINER` routine): any SQL on the connection can overwrite
   them, so the real guarantee is that Graphitron generates every statement and
   any `@service` code on the connection behaves. The build cannot see which
-  fence a mount callback implements, so no warning grades it; the
+  fence a mount implements, so no warning grades it; the
   choice is documented here and in xref:../../security.adoc[the security guide]
   rather than policed at build time.
-* *Cryptographic fence.* Pass the raw signed token into the mount callback and
+* *Cryptographic fence.* Pass the raw signed token into the mount and
   have the routine verify the signature in-database, reading claims only from
   verified state, so even arbitrary SQL on the connection cannot forge another
   user's identity. The fence is the routine's verification logic; the callback
@@ -580,8 +588,8 @@ request and the database, so it is the one more place to read.
 
 === On the owned-connection path
 
-Identity is mounted by the mount callback of your `SessionState` (see
-<<owned-connection-path,above>>); your RLS policies read whatever it set. For a
+Identity is mounted by your connection source, typically the mount of
+`ConnectionSources.mounting` (see <<owned-connection-path,above>>); your RLS policies read whatever it set. For a
 mount that writes a session GUC per request (and an unmount that clears it to
 the empty string, since a touched GUC cannot return to unset), a fail-closed
 policy reads:
@@ -596,7 +604,7 @@ CREATE POLICY caller_isolation ON documents
 ----
 
 Generated code is unaware of RLS: it issues plain `SELECT` statements on the
-pinned connection and the database enforces the policies automatically.
+leased connection and the database enforces the policies automatically.
 
 === On the escape-hatch path
 
@@ -668,10 +676,10 @@ runs this shape against PostgreSQL with row-level security.
 
 === Producing the claims payload
 
-On the owned-connection path the generated factory takes one typed parameter
-per payload parameter of your mount method; no auth-framework type enters
-generated code. For the common single-`String` payload you pass an opaque
-claims string to `Graphitron.newOwnedExecutionInput(claims, ...)`. From
+On the owned-connection path the claims reach your mount through the closure
+of the connection source you build per request; no auth-framework type enters
+generated code. For the common single-`String` payload your mount takes an
+opaque claims string. From
 MicroProfile JWT (or any JWS bearer) the two forms come straight off the
 injected `JsonWebToken`, and which you pick is the integrity-gradient decision:
 
@@ -687,7 +695,7 @@ injected `JsonWebToken`, and which you pick is the integrity-gradient decision:
 String claims = new String(
     Base64.getUrlDecoder().decode(jwt.getRawToken().split("\\.")[1]),
     StandardCharsets.UTF_8);
-return Graphitron.newOwnedExecutionInput(claims);
+return Graphitron.newOwnedExecutionInput(sourceFor(claims));
 ----
 
 `getRawToken()` returns the three-segment compact serialization, not JSON;

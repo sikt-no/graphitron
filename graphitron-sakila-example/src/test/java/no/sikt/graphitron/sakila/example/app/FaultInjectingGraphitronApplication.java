@@ -13,7 +13,7 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
 import jakarta.ws.rs.core.Response;
 import no.sikt.graphitron.generated.Graphitron;
-import no.sikt.graphitron.generated.schema.SessionMountException;
+import no.sikt.graphitron.generated.schema.AcquisitionFailedException;
 
 import java.util.Optional;
 
@@ -66,7 +66,7 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
     /** {@code off} answers {@code 404} for the GraphiQL page and its assets, built-in or mounted. */
     static final String GRAPHIQL_HEADER = "X-Graphitron-Graphiql";
 
-    /** The rejected-identity hook's modes; see {@link #rejectedIdentity(Throwable)}. */
+    /** The failed-acquisition hook's modes; see {@link #failedAcquisition(Throwable)}. */
     static final String HOOK_ANSWERS = "hook";
     static final String HOOK_DECLINES = "hook-declines";
 
@@ -106,20 +106,20 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
     }
 
     /**
-     * With {@link #HOOK_ANSWERS} as the rejected-identity mode, answers a mount failure with a 401
+     * With {@link #HOOK_ANSWERS} as the rejected-identity mode, answers a failed acquisition with a 401
      * naming this hook and the class of the exception it was given; {@code clientFault} below would
      * answer the same failure with a 403, so which status arrives shows which hook ran. Any other
      * mode declines, leaving the decision to {@code clientFault}.
      */
     @Override
-    public Optional<WebApplicationException> rejectedIdentity(Throwable mountCause) {
+    public Optional<WebApplicationException> failedAcquisition(Throwable acquisitionCause) {
         if (HOOK_ANSWERS.equals(headers.getHeaderString(REJECTED_IDENTITY_HEADER))) {
             return Optional.of(new WebApplicationException(Response.status(401)
-                .header(ANSWERED_BY_HEADER, "rejectedIdentity")
-                .header(CAUSE_CLASS_HEADER, mountCause.getClass().getName())
+                .header(ANSWERED_BY_HEADER, "failedAcquisition")
+                .header(CAUSE_CLASS_HEADER, acquisitionCause.getClass().getName())
                 .build()));
         }
-        return super.rejectedIdentity(mountCause);
+        return super.failedAcquisition(acquisitionCause);
     }
 
     @Override
@@ -140,7 +140,7 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
                 "could not open JDBC connection to db-fault-host:5432 in no.sikt.graphitron.internal");
         }
         if (headers.getHeaderString(REJECTED_IDENTITY_HEADER) != null) {
-            return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}"), "{\"sub\":\"reject-me\"}", "reject-me");
+            return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}", dataSource), "{\"sub\":\"reject-me\"}", "reject-me");
         }
         String traceId = headers.getHeaderString(TRACE_HEADER);
         if (traceId != null) {
@@ -164,13 +164,13 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
             return null;
         }
         if (HOOK_ANSWERS.equals(mode) || HOOK_DECLINES.equals(mode)) {
-            // Reached for a mount failure only when rejectedIdentity declined (or never ran); the 403
-            // distinguishes this hook's answer from rejectedIdentity's 401.
+            // Reached for a failed acquisition only when failedAcquisition declined (or never ran); the 403
+            // distinguishes this hook's answer from failedAcquisition's 401.
             return Optional.of(new WebApplicationException(Response.status(403)
                 .header(ANSWERED_BY_HEADER, "clientFault")
                 .build()));
         }
-        if (thrown instanceof SessionMountException mount && mount.getCause() != null) {
+        if (thrown instanceof AcquisitionFailedException failed && failed.getCause() != null) {
             return Optional.of(new NotAuthorizedException("identity rejected", "Bearer"));
         }
         return Optional.empty();

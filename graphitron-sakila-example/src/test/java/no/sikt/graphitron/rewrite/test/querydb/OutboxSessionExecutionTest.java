@@ -44,14 +44,19 @@ class OutboxSessionExecutionTest {
         return "outbox-session-" + UUID.randomUUID();
     }
 
-    /** An owned engine over a plain connection, which may write, unlike the session tests' probe role. */
+    /** An owned engine; its requests lease from {@link #pool()}. */
     private static GraphQL ownedEngine() {
+        return Graphitron.runtime(SQLDialect.POSTGRES)
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+    }
+
+    /** A plain pool, which may write, unlike the session tests' probe role. */
+    private static PGSimpleDataSource pool() {
         var dataSource = new PGSimpleDataSource();
         dataSource.setUrl(SakilaDatabase.url());
         dataSource.setUser(SakilaDatabase.user());
         dataSource.setPassword(SakilaDatabase.password());
-        return Graphitron.runtime(dataSource, SQLDialect.POSTGRES)
-            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        return dataSource;
     }
 
     private List<Map<String, Object>> messages(String title) {
@@ -66,7 +71,7 @@ class OutboxSessionExecutionTest {
         var title = marker();
         var claims = "{\"sub\":\"alice\"}";
         var result = ownedEngine().execute(Graphitron
-            .newOwnedExecutionInput(SakilaSessions.of(claims), claims, "alice")
+            .newOwnedExecutionInput(SakilaSessions.of(claims, pool()), claims, "alice")
             .query("mutation { createFilmSessionOutbox(in: {title: \"" + title + "\", languageId: 1}) { id } }")
             .build());
 

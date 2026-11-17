@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.SQLDialect;
+import org.jooq.conf.Settings;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -467,10 +468,9 @@ class TenantScatterSubstrateTest {
             }
             delegate.execute(task);
         };
-        Object runtime = runtimeClass
-            .getConstructor(DataSource.class, Map.class, SQLDialect.class, Executor.class, Duration.class)
-            .newInstance(fakeDataSource("default", false), new LinkedHashMap<>(sources("A", "B")),
-                SQLDialect.POSTGRES, rejecting, Duration.ofSeconds(10));
+        Object runtime = hosted(runtimeClass
+            .getConstructor(SQLDialect.class, Settings.class, Executor.class, Duration.class)
+            .newInstance(SQLDialect.POSTGRES, new Settings(), rejecting, Duration.ofSeconds(10)), sources("A", "B"));
         Object tc = newOwnedConnections(runtime);
         var hold = new CountDownLatch(1);
 
@@ -762,7 +762,7 @@ class TenantScatterSubstrateTest {
         Method dslFor = ownedConnectionsClass.getMethod("dslFor", String.class);
         Map<String, String> keyOf = Map.of("a", "A", "b", "B");
         var fields = List.of("a", "b", "c");
-        var engine = SynchronousAbortDriver.engine(runtime, fields, ownedConnectionsClass,
+        var engine = SynchronousAbortDriver.engine(((Hosted) runtime).runtime(), fields, ownedConnectionsClass,
             field -> carrier -> {
                 if (keyOf.containsKey(field)) {
                     dslFor.invoke(carrier, keyOf.get(field));
@@ -770,10 +770,9 @@ class TenantScatterSubstrateTest {
             },
             new SynchronousAbortDriver.AbortAt("c", abort));
         Map<Object, Object> context = new java.util.HashMap<>();
-        context.put(no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY,
-            RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
+        context.put(no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY, ((Hosted) runtime).source());
         context.put(ownedConnectionsClass.getField(ConnectionRuntimeClassGenerator.TENANTS_KEY_FIELD).get(null),
-            requestTenantsOf(runtime));
+            requestTenantsOf((Hosted) runtime));
         return SynchronousAbortDriver.execute(engine, "query", fields, context);
     }
 
@@ -811,19 +810,32 @@ class TenantScatterSubstrateTest {
         return sources;
     }
 
+    /**
+     * A runtime with a bounded fan-out pool, paired with the request source over
+     * {@code tenantSources} and a default pool. Returned as {@code Object} so the cases read as they
+     * did when the runtime held the pools.
+     */
     private Object newRuntime(Map<String, DataSource> tenantSources, int cap, Duration timeout) throws Throwable {
-        DataSource defaultDs = fakeDataSource("default", false);
-        return runtimeClass.getConstructor(DataSource.class, Map.class, SQLDialect.class, int.class, Duration.class)
-            .newInstance(defaultDs, new LinkedHashMap<>(tenantSources), SQLDialect.POSTGRES, cap, timeout);
+        return hosted(runtimeClass.getConstructor(SQLDialect.class, Settings.class, int.class, Duration.class)
+            .newInstance(SQLDialect.POSTGRES, new Settings(), cap, timeout), tenantSources);
     }
 
+    private Hosted hosted(Object runtime, Map<String, DataSource> tenantSources) throws Exception {
+        var pools = new LinkedHashMap<String, DataSource>(tenantSources);
+        pools.put(RecordingSource.DEFAULT, fakeDataSource(RecordingSource.DEFAULT, false));
+        return new Hosted(runtime, RecordingSource.create(harness, SCHEMA_PACKAGE, "{}", pools),
+            List.copyOf(tenantSources.keySet()));
+    }
+
+    /** A runtime, the request's source, and the tenants that source hosts, in the order given. */
+    private record Hosted(Object runtime, Object source, List<String> tenants) {}
+
     /**
-     * A request tenant set admitting every hosted tenant: these proofs are about concurrency and
-     * release, and authorization has its own harness test.
+     * A request tenant set admitting every tenant the source hosts: these proofs are about
+     * concurrency and release, and authorization has its own harness test.
      */
-    private static Object requestTenantsOf(Object runtime) throws Throwable {
-        Object hosted = runtimeClass.getMethod("tenantKeys").invoke(runtime);
-        return requestTenantsClass().getMethod("of", java.util.Collection.class).invoke(null, hosted);
+    private static Object requestTenantsOf(Hosted hosted) throws Throwable {
+        return requestTenantsClass().getMethod("of", java.util.Collection.class).invoke(null, hosted.tenants());
     }
 
     private static Class<?> requestTenantsClass() {
@@ -831,12 +843,10 @@ class TenantScatterSubstrateTest {
     }
 
     private Object newOwnedConnections(Object runtime) throws Throwable {
-        Class<?> requestTenantsClass = requestTenantsClass();
-        Object requestTenants = requestTenantsOf(runtime);
-        Class<?> sessionState = harness.load(SCHEMA_PACKAGE + ".SessionState");
-        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass, sessionState)
-            .newInstance(runtime, commitPolicyCommit, requestTenants,
-                RecordingSessionState.create(harness, SCHEMA_PACKAGE, "{}"));
+        Hosted hosted = (Hosted) runtime;
+        Class<?> sourceClass = harness.load(SCHEMA_PACKAGE + ".ConnectionSource");
+        return ownedConnectionsClass.getConstructor(runtimeClass, commitPolicyClass, requestTenantsClass(), sourceClass)
+            .newInstance(hosted.runtime(), commitPolicyCommit, requestTenantsOf(hosted), hosted.source());
     }
 
     private List<?> scatter(Object tc, Collection<String> keys, Function<Object, Object> perTenant) throws Throwable {
@@ -943,6 +953,7 @@ class TenantScatterSubstrateTest {
 
     private Connection fakeConnection(String label, boolean failDisconnect) {
         boolean[] autoCommit = {false};
+        boolean[] closed = {false};
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
                 // The <variables> hook runs prepareStatement for both connect and disconnect; the disconnect
@@ -978,8 +989,10 @@ class TenantScatterSubstrateTest {
                 }
                 case "createStatement" -> fakeStatement(label);
                 case "rollback" -> { events.add("rollback:" + label); yield null; }
-                case "close" -> { events.add("close:" + label); yield null; }
-                case "abort" -> { events.add("abort:" + label); yield null; }
+                case "getMetaData" -> FakeSessionSettings.postgres(harness.classLoader());
+                case "isClosed" -> closed[0];
+                case "close" -> { closed[0] = true; events.add("close:" + label); yield null; }
+                case "abort" -> { closed[0] = true; events.add("abort:" + label); yield null; }
                 case "toString" -> label + "-conn";
                 default -> objectMethodOrDefault(proxy, method, args, label);
             });

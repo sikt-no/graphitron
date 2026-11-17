@@ -61,6 +61,8 @@ class TenantDivinedRoutingExecutionTest {
     static final AtomicInteger TENANT_2_OPENED = new AtomicInteger();
     static final AtomicInteger DEFAULT_OPENED = new AtomicInteger();
     static GraphQL graphql;
+    static DataSource defaultPool;
+    static Map<Integer, DataSource> byTenant;
     /** The same runtime given {@link #REFUSAL_REWORDING}, so its tenant refusals read sis's Graphitron 9 text. */
     static GraphQL rewordingGraphql;
 
@@ -160,13 +162,13 @@ class TenantDivinedRoutingExecutionTest {
         dsl.execute("insert into film_bookmark (bookmarked_film, note) values (1, ?), (2, ?), (null, ?)",
             ROUTED_BOOKMARK_NOTE, ROUTED_BOOKMARK_NOTE, UNSET_BOOKMARK_NOTE);
 
-        // Typed tenant key: Map<Integer, DataSource> compiles against the generated constructor
-        // because the catalog's film_id column types every tenant-keyed surface.
-        Map<Integer, DataSource> byTenant = Map.of(
+        // Typed tenant key: the connection key's tenant is an Integer because the catalog's
+        // film_id column types every tenant-keyed surface, so the source's pools key on it.
+        byTenant = Map.of(
             1, countingDataSource("tenant_1", TENANT_1_OPENED),
             2, countingDataSource("tenant_2", TENANT_2_OPENED));
-        var runtime = new GraphitronRuntime(
-            countingDataSource(null, DEFAULT_OPENED), byTenant, SQLDialect.POSTGRES);
+        defaultPool = countingDataSource(null, DEFAULT_OPENED);
+        var runtime = new GraphitronRuntime(SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
         rewordingGraphql = runtime.withFetcherErrorResponse(REFUSAL_REWORDING)
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
@@ -210,7 +212,7 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static ExecutionResult executeAs(String query, java.util.Collection<Integer> tenants, String sub) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"" + sub + "\"}"))
+        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"" + sub + "\"}"), tenants)
             .query(query).build());
     }
 
@@ -223,8 +225,13 @@ class TenantDivinedRoutingExecutionTest {
     private static ExecutionResult executeWithDefaultAs(String query, java.util.Collection<Integer> tenants,
                                                         int defaultTenant, String sub) {
         return graphql.execute(Graphitron.newOwnedExecutionInput(
-                RequestTenants.withDefault(tenants, defaultTenant), SessionStates.multitenant("{\"sub\":\"" + sub + "\"}"))
+                source("{\"sub\":\"" + sub + "\"}"), RequestTenants.withDefault(tenants, defaultTenant))
             .query(query).build());
+    }
+
+    /** The request's connection source over the class's pools, mounting {@code claims}. */
+    private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(String claims) {
+        return Sources.multitenant(claims, defaultPool, byTenant);
     }
 
     private static Object data(ExecutionResult result, String field) {
@@ -857,19 +864,15 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
-    void defaultTenant_notHostedByThisRuntime_failsBeforeAnyDatabaseIsOpened() {
-        Throwable failure = null;
-        ExecutionResult result = null;
-        try {
-            result = executeWithDefault("{ languages { name } }", List.of(1, 2, 99), 99);
-        } catch (RuntimeException e) {
-            failure = e;
-        }
-        if (failure != null) {
-            assertThat(failure).hasStackTraceContaining("Default tenant '99' has no DataSource");
-        } else {
-            assertThat(result.getErrors().toString()).contains("Default tenant '99' has no DataSource");
-        }
+    void defaultTenant_theSourceRefuses_answersAsAClientErrorBeforeAnyDatabaseIsOpened() {
+        // Tenant 99 is the request's default tenant but the source hosts no pool for it: the
+        // global read asks for its key, the source refuses it, and the refusal's own message
+        // answers at the field.
+        var result = executeWithDefault("{ languages { name } }", List.of(1, 2, 99), 99);
+
+        assertThat(result.getErrors().toString()).contains("No pool hosts tenant '99'.");
+        Map<String, Object> data = result.getData();
+        assertThat(data == null ? null : data.get("languages")).isNull();
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
 
@@ -1121,7 +1124,7 @@ class TenantDivinedRoutingExecutionTest {
 
     @Test
     void entities_tenantSlotThatDoesNotDecode_nullsThatSlot_andTheRestResolves() {
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"test-user\"}"))
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), List.of(1, 2))
             .query(INVENTORY_ENTITIES)
             .variables(Map.of("reps", List.of(
                 Map.of("__typename", "FilmActor", "id", TENANT_SLOT_ABC),
@@ -1171,7 +1174,7 @@ class TenantDivinedRoutingExecutionTest {
     // ===== FetcherErrorResponse.clientErrorMessage rewords an unclaimed client error =====
 
     private static ExecutionResult executeReworded(String query, java.util.Collection<Integer> tenants) {
-        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"test-user\"}"))
+        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), tenants)
             .query(query).build());
     }
 
@@ -1218,7 +1221,7 @@ class TenantDivinedRoutingExecutionTest {
         var result = execute("{ films(filmId: 99) { title } }", List.of(1));
         assertThat(result.getErrors())
             .anySatisfy(e -> assertThat(e.getMessage()).contains("'99' is not permitted for this request"))
-            .noneSatisfy(e -> assertThat(e.getMessage()).contains("No source configured"));
+            .noneSatisfy(e -> assertThat(e.getMessage()).contains("No pool hosts"));
     }
 
     @Test
@@ -1341,13 +1344,10 @@ class TenantDivinedRoutingExecutionTest {
     @Test
     void mount_tenantsSharingOneDataSource_getOneMountEach_withTheirOwnKey() {
         DataSource shared = countingDataSource("tenant_1", null);
-        Map<Integer, DataSource> byTenant = Map.of(1, shared, 2, shared);
-        var sharedEngine = new GraphitronRuntime(countingDataSource(null, null), byTenant, SQLDialect.POSTGRES)
-            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
         String sub = "mount-probe-" + java.util.UUID.randomUUID();
+        var source = Sources.multitenant("{\"sub\":\"" + sub + "\"}", countingDataSource(null, null), Map.of(1, shared, 2, shared));
 
-        var result = sharedEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2),
-                SessionStates.multitenant("{\"sub\":\"" + sub + "\"}"))
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source, List.of(1, 2))
             .query("{ a: films(filmId: 1) { title } b: films(filmId: 2) { title } }").build());
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         assertThat(mountedTenants(sub))
@@ -1728,7 +1728,7 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     private static List<Map<String, Object>> entities(RequestTenants tenants, List<Map<String, Object>> reps) {
-        var result = graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"test-user\"}"))
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), tenants)
             .query(INVENTORY_ENTITIES).variables(Map.of("reps", reps)).build());
         return (List<Map<String, Object>>) data(result, "_entities");
     }
@@ -1786,7 +1786,7 @@ class TenantDivinedRoutingExecutionTest {
         + " ... on FilmActor { actorId } } }";
 
     private static ExecutionResult entitiesAndLanguages(RequestTenants tenants, List<Map<String, Object>> reps) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{\"sub\":\"test-user\"}"))
+        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{\"sub\":\"test-user\"}"), tenants)
             .query(ENTITIES_AND_LANGUAGES).variables(Map.of("reps", reps)).build());
     }
 
@@ -1847,21 +1847,19 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
-    void entityDefaultTenant_notHostedByThisRuntime_failsBeforeAnyDatabaseIsOpened() {
-        Throwable failure = null;
-        ExecutionResult result = null;
-        try {
-            result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2, 99), 1).withEntityDefault(99),
-                List.of(inventoryRep(1)));
-        } catch (RuntimeException e) {
-            failure = e;
-        }
-        if (failure != null) {
-            assertThat(failure).hasStackTraceContaining("Entity default tenant '99' has no DataSource");
-        } else {
-            assertThat(result.getErrors().toString()).contains("Entity default tenant '99' has no DataSource");
-        }
-        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    void entityDefaultTenant_theSourceRefuses_answersAsAClientErrorAtTheEntities() {
+        // The entity default tenant 99 is in the request's set but the source hosts no pool for
+        // it: the lookup on its key is refused, with the refusal's own message at _entities, and
+        // no other database is opened for it.
+        var result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2, 99), 1).withEntityDefault(99),
+            List.of(inventoryRep(1)));
+
+        assertThat(result.getErrors())
+            .anySatisfy(e -> {
+                assertThat(e.getPath()).containsExactly("_entities");
+                assertThat(e.getMessage()).contains("No pool hosts tenant '99'.");
+            });
+        assertThat(TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
     }
 
     @Test

@@ -171,10 +171,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     LintBinding lint;
 
     /**
-     * Session identity. A {@code <sessionState>} block switches session identity on for the
-     * owned-connection engine; the consumer supplies it per request as a {@code SessionState}
-     * built from mount and unmount callbacks and passed to the generated factory. The optional
-     * {@code <handle>} names the class the mount callback returns. Threaded through
+     * Session identity. A {@code <sessionState>} block declares that the build supplies session
+     * identity per request, set by the consumer's {@code ConnectionSource} on each connection it
+     * leases. The optional {@code <handle>} names the class of the lease's handle. Threaded through
      * {@link RunContext} as authored strings and transcribed into the store. A blank
      * {@code <handle>}, or a leftover {@code <mount>} or {@code <unmount>}, fails the build here;
      * omit the block to mount no identity.

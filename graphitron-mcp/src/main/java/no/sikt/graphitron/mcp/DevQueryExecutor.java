@@ -138,9 +138,8 @@ public final class DevQueryExecutor {
             throws DevExecutionException {
         try {
             Class<?> executor = Class.forName(wiring.executorClassName(), true, loader);
-            // The fifth parameter is a String (claims) where the schema mounts no identity and the
-            // generated SessionState where it does, so the method is found by name and arity: the
-            // host never names a generated type, and passes the state as an Object.
+            // Found by name and arity: every parameter type is the JDK's, and the host never names a
+            // generated type.
             return java.util.Arrays.stream(executor.getMethods())
                 .filter(m -> m.getName().equals(EXECUTE_METHOD) && m.getParameterCount() == 6
                     && java.lang.reflect.Modifier.isStatic(m.getModifiers()))
@@ -221,52 +220,56 @@ public final class DevQueryExecutor {
     }
 
     /**
-     * What the executor takes in the fifth position: the claims string where the schema mounts no
-     * identity, and the request's session state where it does. The state is built by the
-     * consumer's own method, named in {@code <devDatabase><session>} as {@code fqcn#method} and
-     * taking the claims string, resolved here in the generated world's loader so the consumer's
-     * classes and the generated {@code SessionState} meet where they were compiled. Reflection
-     * stays in this host, the decode boundary; the generated executor carries none.
+     * What the executor takes in the fifth position: a function from the executor's one-connection
+     * {@code DataSource} to the request's {@code ConnectionSource}, or {@code null} where no
+     * {@code <devDatabase><session>} method is configured (the executor then leases the connection
+     * as it is, and refuses to run a schema that configures {@code <sessionState>}). The method is
+     * the consumer's own, named as {@code fqcn#method}, taking the claims string and a
+     * {@code DataSource} and returning the generated {@code ConnectionSource}, resolved here in the
+     * generated world's loader so the consumer's classes and the generated types meet where they
+     * were compiled. Reflection stays in this host, the decode boundary; the generated executor
+     * carries none, and the function's types are the JDK's.
      */
-    private static Object fifthArgument(java.lang.reflect.Method executeMethod, ClassLoader loader,
-            DbConfig db) throws DevExecutionException {
-        if (executeMethod.getParameterTypes()[4] == String.class) {
-            return db.claims();
-        }
+    private static java.util.function.Function<javax.sql.DataSource, Object> fifthArgument(
+            java.lang.reflect.Method executeMethod, ClassLoader loader, DbConfig db) throws DevExecutionException {
         if (db.session() == null || db.session().isBlank()) {
-            throw new DevExecutionException("This schema configures <sessionState>, so dev execution "
-                + "mounts identity through your SessionState and needs one: name the method that builds "
-                + "it from the claims payload in <devDatabase><session>fqcn#method</session> (or "
-                + "GRAPHITRON_DEV_SESSION), next to the claims payload.");
+            return null;
         }
         int hash = db.session().indexOf('#');
         if (hash <= 0 || hash == db.session().length() - 1) {
             throw new DevExecutionException("<devDatabase><session> must name a method as fqcn#method "
-                + "(e.g. com.example.DevSession#of), got '" + db.session() + "'.");
+                + "(e.g. com.example.DevSession#source), got '" + db.session() + "'.");
         }
         String className = db.session().substring(0, hash).trim();
         String methodName = db.session().substring(hash + 1).trim();
+        java.lang.reflect.Method method;
         try {
-            var method = Class.forName(className, true, loader).getMethod(methodName, String.class);
-            if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())
-                    || !executeMethod.getParameterTypes()[4].isAssignableFrom(method.getReturnType())) {
-                throw new DevExecutionException("<devDatabase><session> " + db.session()
-                    + " must be a public static method taking the claims String and returning "
-                    + executeMethod.getParameterTypes()[4].getName() + ".");
-            }
-            return method.invoke(null, db.claims());
+            method = Class.forName(className, true, loader)
+                .getMethod(methodName, String.class, javax.sql.DataSource.class);
         } catch (ClassNotFoundException | NoSuchMethodException e) {
             throw new DevExecutionException("<devDatabase><session> " + db.session()
-                + " does not resolve to a public static method taking the claims String on the "
-                + "project's compiled classes: " + e.getMessage(), e);
-        } catch (IllegalAccessException e) {
-            throw new DevExecutionException("Could not call <devDatabase><session> " + db.session()
-                + ": " + e.getMessage(), e);
-        } catch (java.lang.reflect.InvocationTargetException e) {
-            Throwable cause = e.getCause() != null ? e.getCause() : e;
-            throw new DevExecutionException(cause.getMessage() != null
-                ? cause.getMessage() : cause.getClass().getName(), cause);
+                + " does not resolve to a public static method taking the claims String and a DataSource "
+                + "on the project's compiled classes: " + e.getMessage(), e);
         }
+        if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                || !method.getReturnType().getSimpleName().equals("ConnectionSource")) {
+            throw new DevExecutionException("<devDatabase><session> " + db.session()
+                + " must be a public static method taking the claims String and a DataSource and"
+                + " returning the generated ConnectionSource.");
+        }
+        String claims = db.claims();
+        return dataSource -> {
+            try {
+                return method.invoke(null, claims, dataSource);
+            } catch (IllegalAccessException e) {
+                throw new IllegalStateException("Could not call <devDatabase><session> " + db.session()
+                    + ": " + e.getMessage(), e);
+            } catch (java.lang.reflect.InvocationTargetException e) {
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                throw cause instanceof RuntimeException runtime ? runtime
+                    : new IllegalStateException(cause.getMessage(), cause);
+            }
+        };
     }
 
     /**

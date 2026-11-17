@@ -31,21 +31,23 @@ class SessionStateWarningsTest {
             .singleElement()
             .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> {
                 assertThat(lf.rule()).isEqualTo(LintRule.NO_SESSION_STATE);
-                assertThat(lf.message()).contains("No <sessionState>").contains("mounts no database identity");
+                assertThat(lf.message()).contains("No <sessionState>").contains("declares no per-request database identity");
                 assertThat(lf.location()).as("a whole-build posture has no SDL coordinate").isNull();
             });
     }
 
     @Test
     void noSessionState_messageTeachesTheMountShapes() {
-        // Being the single build-time signal about identity, the message names the callback form
-        // and the three mount shapes a consumer chooses between and points at the security guide,
-        // instead of only saying to configure something.
+        // Being the single build-time signal about identity, the message names the connection
+        // source that sets identity, the ready-made mounting source, and the three mount shapes a
+        // consumer chooses between, and points at the security guide, instead of only saying to
+        // configure something.
         assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none()))
             .singleElement()
             .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> assertThat(lf.message())
                 .contains("<sessionState/>")
-                .contains("SessionState")
+                .contains("ConnectionSource")
+                .contains("ConnectionSources.mounting")
                 .contains("definer-rights routine")
                 .contains("token verified in-database")
                 .contains("session variable set by convention")

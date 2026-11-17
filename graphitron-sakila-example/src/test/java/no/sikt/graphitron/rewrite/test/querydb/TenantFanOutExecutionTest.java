@@ -6,7 +6,7 @@ import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.FetcherErrorLog;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
-import no.sikt.graphitron.generated.multitenant.schema.SessionMountException;
+import no.sikt.graphitron.generated.multitenant.schema.AcquisitionFailedException;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -34,10 +34,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * parent out per parent batch, tenant-blocked (each tenant's rows sorted by the field's own
  * ordering, blocks concatenated in domain order, never re-sorted globally, because the rows come
  * from different databases and one execution's ORDER BY cannot span them); the projected subtree
- * inherits the tenant within one statement; a
- * claimed-but-unmapped tenant fails the request before any SQL; a downed tenant yields partial
+ * inherits the tenant within one statement; a tenant the connection source refuses yields partial
  * data with an appended null element and a path-bearing redacted error under {@code [Film]} and a
- * bubbled null field under {@code [Film!]}; the authorization pre-filter never queries a hosted
+ * bubbled null field under {@code [Film!]}, while a tenant pool that throws rejects the whole
+ * request; the authorization pre-filter never queries a hosted
  * tenant absent from the request set; and a {@code @splitQuery} child below the fanned field
  * batches per tenant through the loader-name partition, each batch routed to its own source.
  */
@@ -52,6 +52,7 @@ class TenantFanOutExecutionTest {
     static final AtomicInteger TENANT_2_OPENED = new AtomicInteger();
     static final AtomicBoolean TENANT_2_DOWN = new AtomicBoolean(false);
     static GraphQL graphql;
+    static final Map<Integer, DataSource> BY_TENANT = new java.util.LinkedHashMap<>();
 
     @BeforeAll
     static void startDatabase() {
@@ -108,13 +109,11 @@ class TenantFanOutExecutionTest {
         dsl.execute("insert into language (language_id, name) values"
             + " (901, 'FanOutLangA'), (902, 'FanOutLangB'), (903, 'FanOutLangC')");
 
-        // Ordered: the fan-out domain (and so the union's concatenation order) follows the
-        // tenant map's configured key order, which the runtime preserves via LinkedHashMap.
-        Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
-        byTenant.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null));
-        byTenant.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, TENANT_2_DOWN));
-        var runtime = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES);
-        graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        // The fan-out domain (and so the union's concatenation order) is the request tenant set
+        // in its given order; the pools are only where each tenant's connection comes from.
+        BY_TENANT.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null));
+        BY_TENANT.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, TENANT_2_DOWN));
+        graphql = new GraphitronRuntime(SQLDialect.POSTGRES).newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
     @AfterAll
@@ -134,7 +133,7 @@ class TenantFanOutExecutionTest {
     }
 
     private static ExecutionResult execute(String query, Collection<Integer> tenants) {
-        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.multitenant("{}"))
+        return graphql.execute(Graphitron.newOwnedExecutionInput(source("{}"), tenants)
             .query(query)
             .build());
     }
@@ -147,7 +146,7 @@ class TenantFanOutExecutionTest {
         Map<String, Object> data = result.getData();
         var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
         assertThat(films).extracting(f -> f.get("title"))
-            .as("tenants concatenate in the tenant map's configured order; within a tenant the"
+            .as("tenants concatenate in the request's tenant order; within a tenant the"
                 + " field's ORDER BY (default: primary key) applies; no global re-sort")
             .containsExactly("T1 Alpha", "T1 Beta", "T2 Gamma", "T2 Delta");
     }
@@ -189,7 +188,7 @@ class TenantFanOutExecutionTest {
         // handle sequences occupy disjoint ranges (restarted at 1000 and 2000 in setup), so
         // the session number identifies which tenant's mount produced the observed handle.
         var result = graphql.execute(Graphitron
-            .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"fanout-user\"}"))
+            .newOwnedExecutionInput(source("{\"sub\":\"fanout-user\"}"), List.of(1, 2))
             .query("{ filmsEverywhere { title mountedPrincipal } }")
             .build());
 
@@ -217,7 +216,7 @@ class TenantFanOutExecutionTest {
         // connection (the statement's dsl), so tenant 1's rows see a number from its 1000s range
         // and tenant 2's from the 2000s, in one operation, and rows of one tenant share the one.
         var result = graphql.execute(Graphitron
-            .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"fanout-user\"}"))
+            .newOwnedExecutionInput(source("{\"sub\":\"fanout-user\"}"), List.of(1, 2))
             .query("{ filmsEverywhere { title mountedSessionNumber } }")
             .build());
 
@@ -263,22 +262,31 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void claimedButUnmappedTenant_failsTheRequestBeforeAnySql() {
+    void tenantTheSourceRefuses_yieldsPartialDataWithAnAppendedNullElementAndAPathBearingRedactedError() {
+        // Tenant 99 is in the request's set but the source hosts no pool for it, so it refuses
+        // the key: that tenant's share of the fan-out fails and the others answer.
         var result = execute("{ filmsEverywhere { title } }", List.of(1, 99));
+
+        Map<String, Object> data = result.getData();
+        var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
+        assertThat(films).hasSize(3);
+        assertThat(films.get(0)).extracting(f -> f.get("title")).isEqualTo("T1 Alpha");
+        assertThat(films.get(1)).extracting(f -> f.get("title")).isEqualTo("T1 Beta");
+        assertThat(films.get(2)).as("the refused tenant's single appended null element").isNull();
 
         // The correlation id is random hex and can legitimately contain the digits "99", so the
         // tenant key's absence is proven by matching the whole redacted template rather than a
         // negative contains check on the message.
-        assertThat(result.getErrors())
-            .as("the request's tenant set names an unhosted tenant: a request-level error,"
-                + " redacted on the wire (correlation-id reference; the tenant key stays in the"
-                + " server log)")
-            .anyMatch(e -> e.getMessage().matches("An error occurred\\. Reference: [0-9a-f-]{36}\\."));
-        Map<String, Object> data = result.getData();
-        assertThat(data == null || data.get("filmsEverywhere") == null).isTrue();
-        assertThat(TENANT_1_OPENED.get())
-            .as("the error precedes all SQL: no tenant connection was pinned")
-            .isZero();
+        assertThat(result.getErrors()).hasSize(1);
+        var error = result.getErrors().get(0);
+        assertThat(error.getPath())
+            .as("the error's path points at the null element's index")
+            .containsExactly("filmsEverywhere", 2);
+        assertThat(error.getMessage())
+            .as("redacted on the wire: a correlation-id reference; the tenant key stays in the server log")
+            .matches("A tenant's data did not arrive\\. Reference: [0-9a-f-]{36}\\.");
+        assertThat(error.getExtensions())
+            .containsEntry("classification", "TenantFanOutFailed");
     }
 
     @Test
@@ -296,28 +304,13 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void downedTenant_yieldsPartialDataWithAnAppendedNullElementAndAPathBearingRedactedError() {
+    void downedTenantPool_rejectsTheWholeRequest_withThePoolsCauseKept() {
+        // A pool that throws is a failed acquisition, not a refusal: the request is rejected out
+        // of execute, partial data and all, and the pool's own exception is the cause.
         TENANT_2_DOWN.set(true);
-        var result = execute("{ filmsEverywhere { title } }", List.of(1, 2));
-
-        Map<String, Object> data = result.getData();
-        var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
-        assertThat(films).hasSize(3);
-        assertThat(films.get(0)).extracting(f -> f.get("title")).isEqualTo("T1 Alpha");
-        assertThat(films.get(1)).extracting(f -> f.get("title")).isEqualTo("T1 Beta");
-        assertThat(films.get(2)).as("the downed tenant's single appended null element").isNull();
-
-        assertThat(result.getErrors()).hasSize(1);
-        var error = result.getErrors().get(0);
-        assertThat(error.getPath())
-            .as("the error's path points at the null element's index")
-            .containsExactly("filmsEverywhere", 2);
-        assertThat(error.getMessage())
-            .as("redaction discipline: a correlation-id reference, no cause details")
-            .contains("Reference: ")
-            .doesNotContain("tenant 2 is down");
-        assertThat(error.getExtensions())
-            .containsEntry("classification", "TenantFanOutFailed");
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> execute("{ filmsEverywhere { title } }", List.of(1, 2)))
+            .isInstanceOf(AcquisitionFailedException.class)
+            .hasRootCauseMessage("tenant 2 is down");
     }
 
     @Test
@@ -327,11 +320,10 @@ class TenantFanOutExecutionTest {
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
         byTenant.put(1, tenantDataSource("fanout_t1", null, null));
         byTenant.put(2, hangingDataSource("fanout_t2", 5_000));
-        var slowRuntime = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES,
-            4, java.time.Duration.ofMillis(500));
+        var slowRuntime = new GraphitronRuntime(SQLDialect.POSTGRES, null, 4, java.time.Duration.ofMillis(500));
         var slowEngine = slowRuntime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{}"))
+        var result = slowEngine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant), List.of(1, 2))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -369,24 +361,26 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void downedTenant_reachesTheRuntimesFetcherErrorLogWithTheTenantAndTheClientsReference() {
-        TENANT_2_DOWN.set(true);
+    void refusedTenant_reachesTheRuntimesFetcherErrorLogWithTheTenantAndTheClientsReference() {
+        // The source hosts no pool for tenant 2, so it refuses that key.
         var logged = new java.util.concurrent.CopyOnWriteArrayList<LoggedTenantFailure>();
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
         byTenant.put(1, tenantDataSource("fanout_t1", null, null));
-        byTenant.put(2, tenantDataSource("fanout_t2", null, TENANT_2_DOWN));
-        var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES)
+        var engine = new GraphitronRuntime(SQLDialect.POSTGRES)
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{}"))
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant), List.of(1, 2))
             .query("{ filmsEverywhere { title } }")
             .build());
 
         assertThat(result.getErrors()).hasSize(1);
         assertThat(logged).hasSize(1);
         assertThat(logged.get(0).tenantKey()).isEqualTo(2);
-        assertThat(logged.get(0).cause()).isNotInstanceOf(java.util.concurrent.TimeoutException.class);
+        assertThat(logged.get(0).cause())
+            .as("the refusal, answered as a client error carrying its message")
+            .isInstanceOf(no.sikt.graphitron.generated.multitenant.schema.GraphitronClientException.class)
+            .hasMessage("No pool hosts tenant '2'.");
         assertThat(logged.get(0).reference()).isEqualTo(referenceOf(result.getErrors().get(0)));
     }
 
@@ -399,15 +393,15 @@ class TenantFanOutExecutionTest {
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
         byTenant.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null));
         byTenant.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, null));
-        var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES)
+        var engine = new GraphitronRuntime(SQLDialect.POSTGRES)
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
         org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.execute(Graphitron
-                .newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{\"sub\":\"reject-me\"}"))
+                .newOwnedExecutionInput(source("{\"sub\":\"reject-me\"}", byTenant), List.of(1, 2))
                 .query("{ a: filmsEverywhere { title } b: filmsEverywhere { title } }")
                 .build()))
-            .isInstanceOf(SessionMountException.class)
+            .isInstanceOf(AcquisitionFailedException.class)
             .hasStackTraceContaining("unentitled principal");
         assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
             .as("each tenant's worker tried at most once; the second field reused the remembered rejection")
@@ -421,12 +415,11 @@ class TenantFanOutExecutionTest {
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
         byTenant.put(1, tenantDataSource("fanout_t1", null, null));
         byTenant.put(2, hangingDataSource("fanout_t2", 5_000));
-        var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES,
-                4, java.time.Duration.ofMillis(500))
+        var engine = new GraphitronRuntime(SQLDialect.POSTGRES, null, 4, java.time.Duration.ofMillis(500))
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
 
-        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), SessionStates.multitenant("{}"))
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(source("{}", byTenant), List.of(1, 2))
             .query("{ filmsEverywhere { title } }")
             .build());
 
@@ -438,9 +431,8 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
-    void downedTenant_underStrictElements_bubblesTheNullToTheWholeField() {
-        TENANT_2_DOWN.set(true);
-        var result = execute("{ filmsEverywhereStrict { title } }", List.of(1, 2));
+    void refusedTenant_underStrictElements_bubblesTheNullToTheWholeField() {
+        var result = execute("{ filmsEverywhereStrict { title } }", List.of(1, 99));
 
         Map<String, Object> data = result.getData();
         assertThat(data.get("filmsEverywhereStrict"))
@@ -574,6 +566,17 @@ class TenantFanOutExecutionTest {
         assertThat(emptyList.getErrors()).as("errors: " + emptyList.getErrors()).isEmpty();
         assertThat(TENANT_1_OPENED.get()).isPositive();
         assertThat(TENANT_2_OPENED.get()).isPositive();
+    }
+
+    /** The request's connection source over the class's pools. */
+    private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(String claims) {
+        return source(claims, BY_TENANT);
+    }
+
+    /** The request's connection source over the default pool and {@code byTenant}. */
+    private static no.sikt.graphitron.generated.multitenant.schema.ConnectionSource source(
+            String claims, Map<Integer, DataSource> byTenant) {
+        return Sources.multitenant(claims, defaultDataSource(), byTenant);
     }
 
     private static DataSource defaultDataSource() {

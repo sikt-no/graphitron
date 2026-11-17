@@ -57,8 +57,8 @@ public final class GraphitronFacadeGenerator {
     /** The factories' request-tenant-set parameter, present in every {@code <tenantColumn>} build. */
     public static final String TENANTS_PARAM = "tenants";
 
-    /** The owned factories' parameter carrying the request's {@code SessionState}. */
-    public static final String SESSION_PARAM = "session";
+    /** The owned factories' first parameter, the request's {@code ConnectionSource}. */
+    public static final String SOURCE_PARAM = "source";
     /** The owned factory overload's typed request-tenancy parameter ({@code RequestTenants}). */
     public static final String REQUEST_TENANTS_PARAM = "requestTenants";
 
@@ -71,9 +71,7 @@ public final class GraphitronFacadeGenerator {
      *                       routes {@code schemaSdl} through the generated {@code OneOfDirectiveSdl}
      *                       helper, the same gate {@link GraphitronSchemaClassGenerator} applies to
      *                       its federation build
-     * @param identity the graph's session identity as the store states it; when the graph supplies
-     *                 it, both owned factories take the request's {@code SessionState} and write it
-     *                 where the connection instrumentation reads it
+     * @param identity the graph's session identity as the store states it
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
                                           boolean federationLink, boolean usesOneOf,
@@ -91,12 +89,12 @@ public final class GraphitronFacadeGenerator {
         var graphQLBuilder = ClassName.get("graphql", "GraphQL", "Builder");
         var dataLoaderRegistry = ClassName.get("org.dataloader", "DataLoaderRegistry");
         var dslContext = ClassName.get("org.jooq", "DSLContext");
-        // The request's session state parameter exists only where the graph supplies identity, and
-        // only on the owned factories: the escape hatch's caller owns identity.
-        ClassName sessionState = identity.emitsHookImplementation()
-            ? ClassName.get(schemaPackage,
-                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME)
-            : null;
+        // The request's connection source: the owned factories' first parameter, written where the
+        // connection instrumentation reads it. The escape hatch's caller brings a DSLContext instead.
+        ClassName connectionSource = ClassName.get(schemaPackage,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.CONNECTION_SOURCE_CLASS_NAME);
+        CodeBlock sourcePut = CodeBlock.of("b.put($S, $L);",
+            no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY, SOURCE_PARAM);
 
         var buildSchema = MethodSpec.methodBuilder("buildSchema")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -143,26 +141,26 @@ public final class GraphitronFacadeGenerator {
             CodeBlock.of("b.put($T.class, defaultDsl);", dslContext),
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, requestTenantKey, ownedConnections, requestTenants, false,
-            escapeHatchJavadoc(contextArgs, requestTenantKey != null), null);
+            escapeHatchJavadoc(contextArgs, requestTenantKey != null));
 
         // The owned-connection factory: the caller brings only the declared contextArguments
         // (the mount's payload parameters among them, ordinary name-keyed slots); the execution
         // instrumentation publishes the connection carrier, and fetchers pin on first demand.
         var newOwnedExecutionInput = buildExecutionInputFactory(
-            "newOwnedExecutionInput", null, null, null,
+            "newOwnedExecutionInput", connectionSource, SOURCE_PARAM, sourcePut,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, requestTenantKey, ownedConnections, requestTenants, false,
-            ownedExecutionInputJavadoc(contextArgs, requestTenantKey != null, false), sessionState);
+            ownedExecutionInputJavadoc(contextArgs, requestTenantKey != null, false));
 
         // In a <tenantColumn> build the owned path also takes the typed RequestTenants value, which
         // can name a default tenant for global reads. It differs from the Collection form by the
         // first parameter's type, so the two never collide whatever the contextArguments. The
         // escape hatch gets no such overload: nothing on that path reads a default tenant.
         var newOwnedExecutionInputTyped = requestTenantKey == null ? null : buildExecutionInputFactory(
-            "newOwnedExecutionInput", null, null, null,
+            "newOwnedExecutionInput", connectionSource, SOURCE_PARAM, sourcePut,
             graphitronContext, graphitronContextImpl, executionInput, executionInputBuilder,
             dataLoaderRegistry, contextArgs, requestTenantKey, ownedConnections, requestTenants, true,
-            ownedExecutionInputJavadoc(contextArgs, true, true), sessionState);
+            ownedExecutionInputJavadoc(contextArgs, true, true));
 
         // Emit the caller-owns-everything notice once per process, even if the engine is rebuilt.
         var newGraphQL = MethodSpec.methodBuilder("newGraphQL")
@@ -180,7 +178,6 @@ public final class GraphitronFacadeGenerator {
             .build();
 
         var graphitronRuntime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
-        var dataSource = ClassName.get("javax.sql", "DataSource");
         var sqlDialect = ClassName.get("org.jooq", "SQLDialect");
         var voucherKeys = ClassName.get(schemaPackage, no.sikt.graphitron.emit.VoucherRuntime.KEYS);
         String keysArg = vouches ? ", voucherKeys" : "";
@@ -190,13 +187,12 @@ public final class GraphitronFacadeGenerator {
         var runtimeBuilder = MethodSpec.methodBuilder("runtime")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphitronRuntime)
-            .addParameter(dataSource, "dataSource")
             .addParameter(sqlDialect, "dialect");
         if (vouches) {
             runtimeBuilder.addParameter(voucherKeys, "voucherKeys");
         }
         var runtime = runtimeBuilder
-            .addStatement("return new $T(dataSource, dialect$L)", graphitronRuntime, keysArg)
+            .addStatement("return new $T(dialect$L)", graphitronRuntime, keysArg)
             .addJavadoc(runtimeJavadoc().replace("@return", keysParamDoc + "@return"))
             .build();
 
@@ -204,19 +200,17 @@ public final class GraphitronFacadeGenerator {
         var runtimeWithSettingsBuilder = MethodSpec.methodBuilder("runtime")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(graphitronRuntime)
-            .addParameter(dataSource, "dataSource")
             .addParameter(sqlDialect, "dialect")
             .addParameter(settings, "settings");
         if (vouches) {
             runtimeWithSettingsBuilder.addParameter(voucherKeys, "voucherKeys");
         }
         var runtimeWithSettings = runtimeWithSettingsBuilder
-            .addStatement("return new $T(dataSource, dialect, settings$L)", graphitronRuntime, keysArg)
-            .addJavadoc("Builds the application-scoped runtime over a {@code DataSource}, dialect and jOOQ\n"
-                + "{@code Settings} (schema or render mapping), so they reach every context graphitron mints.\n"
-                + "Otherwise as {@link #runtime(javax.sql.DataSource, org.jooq.SQLDialect"
+            .addStatement("return new $T(dialect, settings$L)", graphitronRuntime, keysArg)
+            .addJavadoc("Builds the application-scoped runtime over a dialect and jOOQ {@code Settings} (schema\n"
+                + "or render mapping), so they reach every context graphitron mints over a leased connection.\n"
+                + "Otherwise as {@link #runtime(org.jooq.SQLDialect"
                 + (vouches ? ", " + voucherKeys.canonicalName() : "") + ")}.\n"
-                + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
                 + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
                 + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n"
                 + keysParamDoc
@@ -224,18 +218,18 @@ public final class GraphitronFacadeGenerator {
             .build();
 
         var optional = ClassName.get("java.util", "Optional");
-        var sessionMountFailure = MethodSpec.methodBuilder("sessionMountFailure")
+        var acquisitionFailure = MethodSpec.methodBuilder("acquisitionFailure")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(optional, ClassName.get(Throwable.class)))
             .addParameter(Throwable.class, "thrown")
-            .addStatement("return $T.mountCause(thrown)", ownedConnections)
-            .addJavadoc("The exception the configured session mount threw, when {@code thrown} is, or is\n"
-                + "caused by, a rejected mount; empty otherwise, and always empty in a build without a\n"
-                + "session identity. {@code execute} throws a rejected mount in place of a result, so an\n"
-                + "application that serves over HTTP passes this to its adapter and answers a rejected\n"
-                + "identity from the mount's own exception, without naming the generated exception.\n"
+            .addStatement("return $T.acquisitionCause(thrown)", ownedConnections)
+            .addJavadoc("What the request's connection source threw, when {@code thrown} is, or is caused by, a\n"
+                + "failed acquisition; empty otherwise. {@code execute} throws a failed acquisition in place\n"
+                + "of a result, so an application that serves over HTTP passes this to its adapter and\n"
+                + "answers the request from the source's own exception, without naming the generated\n"
+                + "exception.\n"
                 + "@param thrown what escaped execution\n"
-                + "@return the mount's own exception, if a rejected mount is on the cause chain\n")
+                + "@return the source's own exception, if a failed acquisition is on the cause chain\n")
             .build();
 
         var self = ClassName.get(outputPackage, CLASS_NAME);
@@ -270,7 +264,7 @@ public final class GraphitronFacadeGenerator {
             .addMethod(runtime)
             .addMethod(runtimeWithSettings)
             .addMethod(schemaSdl(graphQLSchema, outputPackage, federationLink, usesOneOf))
-            .addMethod(sessionMountFailure);
+            .addMethod(acquisitionFailure);
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
@@ -370,8 +364,7 @@ public final class GraphitronFacadeGenerator {
             ClassName executionInput, ClassName executionInputBuilder,
             ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs,
             com.palantir.javapoet.TypeName requestTenantKey, ClassName ownedConnections,
-            ClassName requestTenants, boolean typedRequestTenants, String javadoc,
-            ClassName sessionState) {
+            ClassName requestTenants, boolean typedRequestTenants, String javadoc) {
         String tenantsParam = typedRequestTenants ? REQUEST_TENANTS_PARAM : TENANTS_PARAM;
         var method = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -385,17 +378,11 @@ public final class GraphitronFacadeGenerator {
                 : ParameterizedTypeName.get(ClassName.get("java.util", "Collection"), requestTenantKey),
                 tenantsParam);
         }
-        if (sessionState != null) {
-            method.addParameter(sessionState, SESSION_PARAM);
-        }
         for (ResolvedContextArg arg : contextArgs) {
             method.addParameter(arg.javaType(), arg.name());
         }
         if (firstParamType != null) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, firstParamName, firstParamName);
-        }
-        if (sessionState != null) {
-            method.addStatement("$T.requireNonNull($L, $S)", Objects.class, SESSION_PARAM, SESSION_PARAM);
         }
         if (requestTenantKey != null) {
             method.addStatement("$T.requireNonNull($L, $S)", Objects.class, tenantsParam, tenantsParam);
@@ -421,12 +408,6 @@ public final class GraphitronFacadeGenerator {
                     ? CodeBlock.of("$L", tenantsParam)
                     : CodeBlock.of("$T.of($L)", requestTenants, tenantsParam));
         }
-        if (sessionState != null) {
-            // The identity key constant, so the write here and the instrumentation's read cannot
-            // drift, and no contextArgument name can collide with it.
-            method.addCode("        b.put($S, $L);\n",
-                no.sikt.graphitron.emit.SessionIdentityRows.CONTEXT_KEY, SESSION_PARAM);
-        }
         for (ResolvedContextArg arg : contextArgs) {
             method.addCode("        b.put($S, $L);\n", arg.name(), arg.name());
         }
@@ -439,21 +420,16 @@ public final class GraphitronFacadeGenerator {
 
     private static String runtimeJavadoc() {
         return "Builds the application-scoped {@code GraphitronRuntime} that owns the connection\n"
-            + "lifecycle: it pins connections on first demand, mounts and unmounts per-request identity\n"
-            + "through the configured {@code <sessionState>} methods, and demarcates operation-typed\n"
-            + "transactions. Built once at wiring time over a consumer-owned pooled {@code DataSource}\n"
-            + "and its jOOQ dialect:\n"
-            + "{@code var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);}. To carry jOOQ\n"
-            + "{@code Settings} (schema or render mapping), construct the runtime from its\n"
-            + "{@code Source}-form constructor instead.\n"
+            + "lifecycle: it leases each request's connections from the request's {@code ConnectionSource}\n"
+            + "on first demand, demarcates operation-typed transactions, and releases every lease exactly\n"
+            + "once. Built once at wiring time over the jOOQ dialect every context renders with:\n"
+            + "{@code var runtime = Graphitron.runtime(SQLDialect.POSTGRES);}.\n"
             + "\n"
             + "<p>This is the opinionated path: per request you call\n"
-            + "{@code Graphitron.newOwnedExecutionInput(...)} and graphitron acquires connections,\n"
-            + "runs the mount method, and releases at completion. The lower-opinion escape\n"
+            + "{@code Graphitron.newOwnedExecutionInput(source, ...)} and graphitron leases connections\n"
+            + "from {@code source} and releases them at completion. The lower-opinion escape\n"
             + "hatch is the static {@code Graphitron.newExecutionInput(dsl, ...)} form, where the caller\n"
             + "owns the {@code DSLContext}, transaction demarcation, and identity state.\n"
-            + "@param dataSource the consumer's pooled {@code DataSource} (the consumer owns pool\n"
-            + "creation and tuning); must not be {@code null}\n"
             + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
             + "@return the application-scoped runtime, to be held for the app's lifetime\n";
     }
@@ -499,10 +475,8 @@ public final class GraphitronFacadeGenerator {
             sb.append("tenant an operation routes to against it before taking a connection: a routed field\n");
             sb.append("whose tenant is outside it fails with a client error, and {@code node}/{@code nodes}/\n");
             sb.append("{@code _entities} answer such an id with {@code null}. It also bounds\n");
-            sb.append("{@code @tenantFanOut} fields, where a tenant in it that this deployment has no\n");
-            sb.append("{@code DataSource} for fails the field before any SQL. There is no unrestricted\n");
-            sb.append("value: a caller entitled to everything passes {@code runtime.tenantKeys()}. Must not\n");
-            sb.append("be {@code null}; may be empty\n");
+            sb.append("{@code @tenantFanOut} fields: each tenant in it is asked of the connection source.\n");
+            sb.append("There is no unrestricted value. Must not be {@code null}; may be empty\n");
         }
     }
 
@@ -543,19 +517,17 @@ public final class GraphitronFacadeGenerator {
                                                      boolean typedRequestTenants) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
-        sb.append("pass the {@code SessionState} and then only the declared {@code contextArguments}, which\n");
-        sb.append("no longer include any session identity payload. Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
+        sb.append("pass the request's {@code ConnectionSource} and then only the declared\n");
+        sb.append("{@code contextArguments}. Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
         sb.append("here; the execution instrumentation wired by\n");
-        sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} pins connections on first demand,\n");
-        sb.append("mounts identity through the mount method, produces every {@code DSLContext}, demarcates\n");
+        sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} leases connections from the source on\n");
+        sb.append("first demand, produces every {@code DSLContext}, demarcates\n");
         sb.append("the operation's transactions, and releases at completion. Pair this factory with that\n");
         sb.append("engine.\n");
         sb.append("\n");
         sb.append("<p>An empty {@link org.dataloader.DataLoaderRegistry} is attached (generated fetchers\n");
         sb.append("populate it lazily). The contextArgument parameters, in alphabetical order, are\n");
-        sb.append("null-checked and read back the same way as on the escape-hatch path; a mount payload\n");
-        sb.append("value and a same-named {@code @service} contextArgument are the same fact, supplied\n");
-        sb.append("once in the one slot.\n");
+        sb.append("null-checked and read back the same way as on the escape-hatch path.\n");
         if (typedRequestTenants) {
             sb.append("\n");
             sb.append("<p>This form takes the request's tenancy as one {@code RequestTenants} value, which can\n");
@@ -565,12 +537,13 @@ public final class GraphitronFacadeGenerator {
             sb.append("source.\n");
             sb.append("@param ").append(REQUEST_TENANTS_PARAM)
               .append(" the request tenant set and, optionally, its default tenant; see the\n");
-            sb.append("{@code Collection} overload for what the set bounds. A default tenant this runtime has\n");
-            sb.append("no {@code DataSource} for fails the operation before any field runs. Must not be\n");
-            sb.append("{@code null}\n");
+            sb.append("{@code Collection} overload for what the set bounds. Must not be {@code null}\n");
         } else {
             appendTenantsParam(sb, multiTenant);
         }
+        sb.append("@param ").append(SOURCE_PARAM)
+          .append(" where this request's connections come from: one lease per connection key,\n");
+        sb.append("released by graphitron exactly once; must not be {@code null}\n");
         appendContextArgParams(sb, contextArgs);
         sb.append("@return a builder ready for {@code .query(...).build()}\n");
         return sb.toString();

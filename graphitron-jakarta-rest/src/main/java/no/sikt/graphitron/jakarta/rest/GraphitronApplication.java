@@ -21,7 +21,7 @@ import java.util.Optional;
  * the set of implementations is open by design, owned by each consuming subgraph rather than by the
  * generator. {@link AbstractGraphitronApplication} removes the boilerplate so a concrete adapter
  * passes the facade's schema builder and SDL printer and, optionally, overrides
- * {@link #engineBuilder()} and {@link #rejectedIdentity(Throwable)}. A resource builds each request's
+ * {@link #engineBuilder()} and {@link #failedAcquisition(Throwable)}. A resource builds each request's
  * input itself and hands it to {@link GraphqlEndpoint}; {@link #newExecutionInput()} is only the
  * built-in {@code /graphql} endpoint's seam.
  *
@@ -110,27 +110,28 @@ public interface GraphitronApplication {
     }
 
     /**
-     * The exception the session mount itself threw, when {@code thrown} is, or is caused by, a
-     * rejected mount; empty otherwise. On the owned-connection engine a mount the database rejects
-     * makes {@code GraphQL.execute} throw the generated {@code SessionMountException} (in your
-     * {@code <outputPackage>.schema}), which this module cannot name; the generated facade's
-     * {@code sessionMountFailure} recognises it, and {@link AbstractGraphitronApplication} takes that
-     * method reference at construction. The default is empty, so an application that does not mount
-     * identity never sees {@link #rejectedIdentity(Throwable)} called.
+     * The exception the request's connection source threw, when {@code thrown} is, or is caused by,
+     * a failed acquisition; empty otherwise. On the owned-connection engine a source that fails to
+     * lease a connection (a mount the database rejects, say) makes {@code GraphQL.execute} throw the
+     * generated {@code AcquisitionFailedException} (in your {@code <outputPackage>.schema}), which
+     * this module cannot name; the generated facade's {@code acquisitionFailure} recognises it, and
+     * {@link AbstractGraphitronApplication} takes that method reference at construction. The default
+     * is empty, so {@link #failedAcquisition(Throwable)} is never called.
      *
      * @param thrown the exception that escaped
-     * @return the mount's own exception, or empty when {@code thrown} is not a rejected mount
+     * @return the source's own exception, or empty when {@code thrown} is not a failed acquisition
      */
-    default Optional<Throwable> mountCause(Throwable thrown) {
+    default Optional<Throwable> acquisitionCause(Throwable thrown) {
         return Optional.empty();
     }
 
     /**
-     * Answers a rejected session identity as a client fault, from the mount's own exception:
+     * Answers a failed acquisition (a rejected session identity, say) as a client fault, from the
+     * connection source's own exception:
      * a rejected-identity {@code SQLState} to {@link jakarta.ws.rs.NotAuthorizedException}, say. Called
-     * only when {@link #mountCause(Throwable)} found one, and before
+     * only when {@link #acquisitionCause(Throwable)} found one, and before
      * {@link #clientFault(Throwable)}, so an application that overrides both gets this one for a
-     * mount failure and {@code clientFault} for everything else.
+     * failed acquisition and {@code clientFault} for everything else.
      *
      * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from the
      * input is, and the library logs nothing about the fault. Empty, the default, falls through to
@@ -138,18 +139,18 @@ public interface GraphitronApplication {
      * returns {@code null}, the fault is redacted and one ERROR line names your class and the class
      * of what it threw.
      *
-     * @param mountCause what the mount threw
+     * @param acquisitionCause what the connection source threw
      * @return the client fault to answer with, or empty to leave the decision to
      *         {@link #clientFault(Throwable)}
      */
-    default Optional<WebApplicationException> rejectedIdentity(Throwable mountCause) {
+    default Optional<WebApplicationException> failedAcquisition(Throwable acquisitionCause) {
         return Optional.empty();
     }
 
     /**
      * Answers any other exception that escaped the input or execution as a client fault instead of
-     * redacting it. A rejected session identity is better answered by
-     * {@link #rejectedIdentity(Throwable)}, which receives the mount's own exception; this is for
+     * redacting it. A failed acquisition is better answered by
+     * {@link #failedAcquisition(Throwable)}, which receives the source's own exception; this is for
      * everything else a subgraph wants mapped to a status.
      *
      * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from the

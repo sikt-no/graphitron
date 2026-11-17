@@ -36,18 +36,21 @@ class DevQueryExecutorTest {
 
         import java.sql.Connection;
         import java.util.Map;
+        import java.util.function.Function;
+        import javax.sql.DataSource;
 
         public final class GraphitronDevExecutor {
             public static String execute(Connection connection, String dialect, String query,
-                    Map<String, Object> variables, String claims, Map<String, Object> contextArgs) {
-                if ("boom".equals(claims)) {
+                    Map<String, Object> variables, Function<DataSource, Object> session,
+                    Map<String, Object> contextArgs) {
+                if ("{ boom }".equals(query)) {
                     throw new IllegalStateException("mount method rejected the payload: missing claim 'sub'");
                 }
                 boolean tccl = Thread.currentThread().getContextClassLoader()
                     == GraphitronDevExecutor.class.getClassLoader();
                 return "dialect=" + dialect
                     + ";query=" + query
-                    + ";claims=" + claims
+                    + ";session=" + (session != null)
                     + ";vars=" + (variables == null ? 0 : variables.size())
                     + ";userId=" + (contextArgs == null ? null : contextArgs.get("userId"))
                     + ";tccl=" + tccl
@@ -57,22 +60,27 @@ class DevQueryExecutorTest {
         """;
 
     /**
-     * A schema that mounts identity: the generated executor takes the generated {@code SessionState}
-     * in the fifth position, and the consumer's own {@code DevSession} builds one from the claims.
+     * A schema that mounts identity: the generated executor takes a function from its one-connection
+     * {@code DataSource} to the generated {@code ConnectionSource}, which the host builds from the
+     * consumer's own {@code DevSession} and the claims, and refuses to run without one.
      */
     private static final String SESSION_EXECUTOR_SOURCE = """
         package com.example.sess;
 
         import java.sql.Connection;
         import java.util.Map;
+        import java.util.function.Function;
+        import javax.sql.DataSource;
 
         public final class GraphitronDevExecutor {
             public static String execute(Connection connection, String dialect, String query,
-                    Map<String, Object> variables, SessionState session, Map<String, Object> contextArgs) {
+                    Map<String, Object> variables, Function<DataSource, Object> session,
+                    Map<String, Object> contextArgs) {
                 if (session == null) {
-                    throw new IllegalStateException("needs a session state");
+                    throw new IllegalStateException("This schema configures <sessionState>, so name the method"
+                        + " in <devDatabase><session> (or GRAPHITRON_DEV_SESSION)");
                 }
-                return "session=" + session.claims();
+                return "session=" + ((ConnectionSource) session.apply(null)).claims();
             }
         }
         """;
@@ -80,26 +88,28 @@ class DevQueryExecutorTest {
     private static final String SESSION_STATE_SOURCE = """
         package com.example.sess;
 
-        public record SessionState(String claims) {}
+        public record ConnectionSource(String claims) {}
         """;
 
     private static final String DEV_SESSION_SOURCE = """
         package com.example.sess;
 
+        import javax.sql.DataSource;
+
         public final class DevSession {
-            public static SessionState of(String claims) {
+            public static ConnectionSource of(String claims, DataSource dataSource) {
                 if ("reject".equals(claims)) {
                     throw new IllegalArgumentException("claims refused by the session builder");
                 }
-                return new SessionState(claims);
+                return new ConnectionSource(claims);
             }
 
-            public static String wrongReturn(String claims) {
+            public static String wrongReturn(String claims, DataSource dataSource) {
                 return claims;
             }
 
-            public SessionState notStatic(String claims) {
-                return new SessionState(claims);
+            public ConnectionSource notStatic(String claims, DataSource dataSource) {
+                return new ConnectionSource(claims);
             }
         }
         """;
@@ -187,7 +197,7 @@ class DevQueryExecutorTest {
         classesDir = Files.createDirectories(tempDir.resolve("graphitron-classes"));
         libDir = Files.createDirectories(tempDir.resolve("lib"));
         compile(EXECUTOR_SOURCE, "com/example/GraphitronDevExecutor.java", classesDir);
-        compile(SESSION_STATE_SOURCE, "com/example/sess/SessionState.java", classesDir);
+        compile(SESSION_STATE_SOURCE, "com/example/sess/ConnectionSource.java", classesDir);
         compile(SESSION_EXECUTOR_SOURCE, "com/example/sess/GraphitronDevExecutor.java", classesDir);
         compile(DEV_SESSION_SOURCE, "com/example/sess/DevSession.java", classesDir);
         compile(DRIVER_SOURCE, "com/example/fakedb/FakeDriver.java", libDir);
@@ -220,7 +230,7 @@ class DevQueryExecutorTest {
         assertThat(result)
             .contains("dialect=POSTGRES")
             .contains("query={ films { title } }")
-            .contains("claims={\"sub\":\"u1\"}")
+            .contains("session=false")
             .contains("vars=1")
             .contains("userId=u1")
             .contains("conn=true")
@@ -240,7 +250,7 @@ class DevQueryExecutorTest {
         // failure (here the synthetic connect-hook rejection) must reach the caller with its own
         // message, not a reflection wrapper's.
         assertThatThrownBy(() ->
-            DevQueryExecutor.execute(wiring(), db("boom"), "{ ping }", null, null))
+            DevQueryExecutor.execute(wiring(), db("c"), "{ boom }", null, null))
             .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
             .hasMessage("mount method rejected the payload: missing claim 'sub'");
         assertThat(System.getProperty(CLOSED)).as("connection closed on failure too").isEqualTo("true");
@@ -327,8 +337,8 @@ class DevQueryExecutorTest {
                 .as(wrong)
                 .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
                 .hasMessageContaining(wrong)
-                .hasMessageContaining("public static method taking the claims String and returning")
-                .hasMessageContaining("com.example.sess.SessionState");
+                .hasMessageContaining("public static method taking the claims String and a DataSource")
+                .hasMessageContaining("ConnectionSource");
         }
     }
 

@@ -38,18 +38,20 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Unit-tier behavioural coverage of {@link ConnectionRuntimeClassGenerator}'s lifecycle contract.
- * Because the runtime is emitted (never shipped as a graphitron artifact), the only honest way to
- * assert acquire/mount/unmount/release <em>ordering</em> over a fake {@code DataSource} is to
- * compile the real emitted {@code TypeSpec}s and drive them: {@link EmittedCodeHarness} compiles
- * them once, and every assertion reads the interleaved call log recorded by the fake
- * {@code DataSource}/{@code Connection} proxies and the {@link LifecycleHookFixture} the emitted
- * hook class calls directly, never the emitted source text.
+ * Unit-tier behavioural coverage of {@link ConnectionRuntimeClassGenerator}'s lifecycle contract:
+ * the emitted {@code PinnedConnection} wrapping a lease from the ready-made
+ * {@code ConnectionSources.mounting} source. Because the runtime is emitted (never shipped as a
+ * graphitron artifact), the only honest way to assert acquire/mount/unmount/release
+ * <em>ordering</em> over a fake {@code DataSource} is to compile the real emitted {@code TypeSpec}s
+ * and drive them: {@link EmittedCodeHarness} compiles them once, and every assertion reads the
+ * interleaved call log recorded by the fake {@code DataSource}/{@code Connection} proxies and the
+ * {@link LifecycleHookFixture} the {@link RecordingSource} callbacks call, never the emitted
+ * source text.
  *
- * <p>The autocommit facts asserted here carry the deleted re-fire's guarantee: graphitron asserts
- * the transaction mode on a connection it owns (before the mount, so the mount is its own
- * committed transaction; at both acquire and release, rolling back first because switching
- * autocommit on commits an open transaction). No {@code afterSettle} and no re-fire exist.
+ * <p>The autocommit facts asserted here: {@code mounting} forces the transaction mode before the
+ * mount (rolling back first because switching autocommit on commits an open transaction), so the
+ * mount is its own committed transaction; {@code PinnedConnection} refuses a lease in autocommit
+ * off, and settles an open transaction at release before the lease's release runs.
  */
 @UnitTier
 class ConnectionRuntimeClassGeneratorTest {
@@ -110,6 +112,7 @@ class ConnectionRuntimeClassGeneratorTest {
         arrivesInAutocommit = false;
         rollbackThrows = null;
         valid = true;
+        product = "PostgreSQL";
         LifecycleHookFixture.reset(events);
     }
 
@@ -128,7 +131,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
         assertThatThrownBy(() -> acquire(fakeDataSource()))
             .as("a throwing mount becomes the request-scoped rejection, the mount's throw as its cause")
-            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("SessionMountException"))
+            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("AcquisitionFailedException"))
             .hasCause(LifecycleHookFixture.mountThrows);
 
         // Connection acquired, mount attempted and failed, connection evicted (aborted) rather
@@ -176,19 +179,43 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void notConfigured_acquireAssertsAutocommitAndMountsNothing() throws Throwable {
-        // The NotConfigured arm emits no hook class and no mount call at all, which is stronger
-        // than holding a no-op; the autocommit assertion stays, as the resting state graphitron
-        // holds an owned connection in.
+    void plainSource_leasesThePoolsConnectionAndClosesIt_mountingNothing() throws Throwable {
+        // ConnectionSources.of sets no session state and clears none: the lease's release returns the
+        // connection to the pool, and PinnedConnection asserts autocommit without forcing it.
+        arrivesInAutocommit = true;
         try (var plain = compile(SessionIdentityRows.empty())) {
-            Class<?> plainRuntime = plain.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
-            Object runtime = plainRuntime.getConstructor(DataSource.class, SQLDialect.class)
-                .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
-            Object pinned = plainRuntime.getMethod("acquire").invoke(runtime);
-            plain.load(SCHEMA_PACKAGE + ".PinnedConnection")
-                .getMethod("release").invoke(pinned);
+            Object pinned = acquirePlain(plain);
+            Accessible.method(plain.load(SCHEMA_PACKAGE + ".PinnedConnection"), "release").invoke(pinned);
 
-            assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "close");
+            assertThat(events).containsExactly("getConnection", "close");
+        }
+    }
+
+    @Test
+    void plainSource_leasingAConnectionInAutocommitOff_isRefusedAsAFailedAcquisition_andClosed() throws Throwable {
+        // The pool lent the connection with autocommit off; ConnectionSources.of does not force it,
+        // so PinnedConnection refuses the lease rather than roll back what it cannot see.
+        try (var plain = compile(SessionIdentityRows.empty())) {
+            assertThatThrownBy(() -> acquirePlain(plain))
+                .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("AcquisitionFailedException"))
+                .hasRootCauseMessage("the connection source leased a connection with autocommit off");
+
+            assertThat(events).containsExactly("getConnection", "close");
+        }
+    }
+
+    private Object acquirePlain(EmittedCodeHarness plain) throws Throwable {
+        DataSource dataSource = fakeDataSource();
+        Class<?> plainRuntime = plain.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
+        Class<?> keyClass = plain.load(SCHEMA_PACKAGE + ".ConnectionKey");
+        Class<?> sourceClass = plain.load(SCHEMA_PACKAGE + ".ConnectionSource");
+        Object runtime = plainRuntime.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
+        Object source = RecordingSource.plain(plain, SCHEMA_PACKAGE, Map.of(RecordingSource.DEFAULT, dataSource));
+        try {
+            return Accessible.method(plainRuntime, "acquire", keyClass, sourceClass)
+                .invoke(runtime, keyClass.getMethod("defaultSource").invoke(null), source);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
         }
     }
 
@@ -222,16 +249,14 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void acquire_rollbackFailure_evictsBeforeTheMount_andIsNeverARejectedMount() {
-        // Discarding what the pool left open is a deployment concern, not an identity rejection:
-        // a refused rollback evicts like a refused setAutoCommit and never reaches the consumer's
-        // mapping of mount failures.
+    void acquire_rollbackFailure_evictsBeforeTheMount() {
+        // A refused rollback of what the pool left open evicts the connection before any mount, and
+        // fails the acquisition with the rollback's own exception as the cause.
         rollbackThrows = new java.sql.SQLException("connection is broken", "08006");
 
         assertThatThrownBy(() -> acquire(fakeDataSource()))
-            .as("a refused rollback at acquire is never mapped as an identity rejection; it surfaces "
-                + "as the acquire's unchecked rethrow, like a refused setAutoCommit")
-            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isNotEqualTo("SessionMountException"))
+            .as("a refused rollback at acquire fails the acquisition, its SQLState kept on the cause")
+            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("AcquisitionFailedException"))
             .hasCause(rollbackThrows);
         assertThat(events).containsExactly("getConnection", "abort");
     }
@@ -243,7 +268,7 @@ class ConnectionRuntimeClassGeneratorTest {
         // never settled. Release must roll back and assert autocommit before the unmount (in
         // that order: switching autocommit on commits an open transaction), so the unmount's
         // clears commit immediately instead of being reverted by the pool's return-rollback.
-        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        Connection connection = (Connection) Accessible.method(pinnedConnectionClass, "connection").invoke(pinned);
         connection.setAutoCommit(false);
         release(pinned);
 
@@ -259,7 +284,7 @@ class ConnectionRuntimeClassGeneratorTest {
         Object pinned = acquire(fakeDataSource());
         // The server ended the session over the operation's open transaction: the rollback before
         // the unmount fails, and the driver no longer reports the connection valid.
-        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        Connection connection = (Connection) Accessible.method(pinnedConnectionClass, "connection").invoke(pinned);
         connection.setAutoCommit(false);
         events.clear();
         rollbackThrows = new java.sql.SQLException("This connection has been closed.", "08003");
@@ -275,7 +300,7 @@ class ConnectionRuntimeClassGeneratorTest {
     @Test
     void release_rollbackFailingOnAConnectionStillValid_evictsAndRethrows() throws Throwable {
         Object pinned = acquire(fakeDataSource());
-        Connection connection = (Connection) pinnedConnectionClass.getMethod("connection").invoke(pinned);
+        Connection connection = (Connection) Accessible.method(pinnedConnectionClass, "connection").invoke(pinned);
         connection.setAutoCommit(false);
         events.clear();
         rollbackThrows = new java.sql.SQLException("could not roll back", "08006");
@@ -290,7 +315,7 @@ class ConnectionRuntimeClassGeneratorTest {
     void handle_isCarriedFromMountToRelease_andExposedForTheCarrierEntry() throws Throwable {
         Object pinned = acquire(fakeDataSource());
 
-        assertThat(pinnedConnectionClass.getMethod("handle").invoke(pinned))
+        assertThat(Accessible.method(pinnedConnectionClass, "handle").invoke(pinned))
             .as("the mount's returned handle is the pinned carrier's one retained field, "
                 + "read by release and published on the carrier entry's Configuration")
             .isEqualTo("H1");
@@ -300,28 +325,22 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void sessionState_cannotBeBuiltWithoutAnUnmount() throws Throwable {
-        Class<?> state = harness.load(SCHEMA_PACKAGE + ".SessionState");
-        Class<?> mount = harness.load(SCHEMA_PACKAGE + ".SessionState$Mount");
-        Class<?> unmount = harness.load(SCHEMA_PACKAGE + ".SessionState$Unmount");
+    void mounting_cannotBeBuiltWithoutAnUnmount() throws Throwable {
+        Class<?> sources = harness.load(SCHEMA_PACKAGE + ".ConnectionSources");
+        Class<?> mount = harness.load(SCHEMA_PACKAGE + ".ConnectionSources$Mount");
+        Class<?> unmount = harness.load(SCHEMA_PACKAGE + ".ConnectionSources$Unmount");
 
-        List<Method> factories = java.util.Arrays.stream(state.getDeclaredMethods())
-            .filter(m -> m.getName().equals("of") && java.lang.reflect.Modifier.isStatic(m.getModifiers()))
+        List<Method> factories = java.util.Arrays.stream(sources.getDeclaredMethods())
+            .filter(m -> m.getName().equals("mounting") && java.lang.reflect.Modifier.isStatic(m.getModifiers()))
             .toList();
         assertThat(factories)
-            .as("one factory, taking both callbacks: a mount-only state has no way to be built")
+            .as("one factory, taking the pool and both callbacks: a mount-only source has no way to be built")
             .singleElement()
-            .satisfies(of -> assertThat(of.getParameterTypes()).containsExactly(mount, unmount));
+            .satisfies(of -> assertThat(of.getParameterTypes())
+                .containsExactly(java.util.function.Function.class, mount, unmount));
 
-        Object aMount = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{mount},
-            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "aMount"));
-        assertThatThrownBy(() -> {
-            try {
-                factories.get(0).invoke(null, aMount, null);
-            } catch (InvocationTargetException e) {
-                throw e.getCause();
-            }
-        })
+        assertThatThrownBy(() -> RecordingSource.mounting(harness, SCHEMA_PACKAGE, key -> fakeDataSource(),
+                (connection, key) -> "aHandle", null))
             .as("a null unmount is refused at construction, not discovered at release")
             .isInstanceOf(NullPointerException.class)
             .hasMessage("unmount");
@@ -353,12 +372,13 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void captureFailure_evictsBeforeTheMount_andPropagatesAsItselfNotAsARejectedMount() {
+    void captureFailure_evictsBeforeTheMount_andFailsTheAcquisitionWithItAsTheCause() {
         captureThrows = new IllegalStateException("pg_settings unreadable");
 
         assertThatThrownBy(() -> acquire(fakeDataSource()))
-            .as("a failed capture is a deployment fault, never mapped as an identity rejection")
-            .isSameAs(captureThrows);
+            .as("a failed capture fails the acquisition, the capture's own throw as its cause")
+            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("AcquisitionFailedException"))
+            .hasCause(captureThrows);
         assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "capture", "abort");
     }
 
@@ -390,9 +410,10 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void nonPostgresDialect_neitherCapturesNorResets() throws Throwable {
-        Object pinned = acquire(fakeDataSource(), SQLDialect.H2,
-            RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+    void nonPostgresConnection_neitherCapturesNorResets() throws Throwable {
+        // mounting decides by the connection's own database, not by the runtime's dialect.
+        product = "H2";
+        Object pinned = acquire(fakeDataSource());
         release(pinned);
 
         assertThat(events).containsExactly(
@@ -403,17 +424,11 @@ class ConnectionRuntimeClassGeneratorTest {
     void reset_runsWhenTheUnmountDoesNothing() throws Throwable {
         // The consumer's unmount is the clear; the reset backs it up whatever it does, including
         // nothing at all.
-        Class<?> state = harness.load(SCHEMA_PACKAGE + ".SessionState");
-        Class<?> mount = harness.load(SCHEMA_PACKAGE + ".SessionState$Mount");
-        Class<?> unmount = harness.load(SCHEMA_PACKAGE + ".SessionState$Unmount");
-        Object aMount = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{mount},
-            (proxy, method, args) -> method.getName().equals("mount")
-                ? "H-noop" : objectMethodOrDefault(proxy, method, args, "aMount"));
-        Object doesNothing = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{unmount},
-            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "doesNothing"));
-        Object sessionState = state.getMethod("of", mount, unmount).invoke(null, aMount, doesNothing);
+        DataSource dataSource = fakeDataSource();
+        Object source = RecordingSource.mounting(harness, SCHEMA_PACKAGE, key -> dataSource,
+            (connection, key) -> "H-noop", (connection, key, handle) -> { });
 
-        release(acquire(fakeDataSource(), SQLDialect.POSTGRES, sessionState));
+        release(acquire(source, SQLDialect.POSTGRES));
 
         assertThat(events).containsExactly("getConnection", "rollback", "setAutoCommit:true", "capture", "reset", "close");
     }
@@ -487,9 +502,8 @@ class ConnectionRuntimeClassGeneratorTest {
             graphql.schema.idl.RuntimeWiring.newRuntimeWiring().build());
     }
 
-    private Object runtimeOverFakeSource() throws Throwable {
-        return runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
-            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+    private Object newRuntime() throws Throwable {
+        return runtimeClass.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
     }
 
     private static List<graphql.execution.instrumentation.Instrumentation> chainOf(graphql.GraphQL engine) {
@@ -506,7 +520,7 @@ class ConnectionRuntimeClassGeneratorTest {
             graphql.execution.instrumentation.Instrumentation[].class);
         assertThat(newGraphQL.isVarArgs()).isTrue();
 
-        var builder = (graphql.GraphQL.Builder) newGraphQL.invoke(runtimeOverFakeSource(), trivialSchema(),
+        var builder = (graphql.GraphQL.Builder) newGraphQL.invoke(newRuntime(), trivialSchema(),
             new graphql.execution.instrumentation.Instrumentation[] {first, second});
         var chain = chainOf(builder.build());
 
@@ -520,7 +534,7 @@ class ConnectionRuntimeClassGeneratorTest {
     void newGraphQL_withNoInstrumentations_isTheConnectionInstrumentationAlone() throws Throwable {
         Method newGraphQL = runtimeClass.getMethod("newGraphQL", graphql.schema.GraphQLSchema.class,
             graphql.execution.instrumentation.Instrumentation[].class);
-        var builder = (graphql.GraphQL.Builder) newGraphQL.invoke(runtimeOverFakeSource(), trivialSchema(),
+        var builder = (graphql.GraphQL.Builder) newGraphQL.invoke(newRuntime(), trivialSchema(),
             new graphql.execution.instrumentation.Instrumentation[0]);
 
         assertThat(chainOf(builder.build())).extracting(i -> i.getClass().getName())
@@ -531,7 +545,7 @@ class ConnectionRuntimeClassGeneratorTest {
     void newGraphQL_refusesANullInstrumentation() throws Throwable {
         Method newGraphQL = runtimeClass.getMethod("newGraphQL", graphql.schema.GraphQLSchema.class,
             graphql.execution.instrumentation.Instrumentation[].class);
-        Object runtime = runtimeOverFakeSource();
+        Object runtime = newRuntime();
         assertThatThrownBy(() -> {
             try {
                 newGraphQL.invoke(runtime, trivialSchema(),
@@ -545,61 +559,51 @@ class ConnectionRuntimeClassGeneratorTest {
     @Test
     void runtime_settingsForm_hands_theSettingsToTheConnectionItAcquires() throws Throwable {
         Settings settings = new Settings().withRenderFormatted(true);
-        Object runtime = runtimeClass.getConstructor(DataSource.class, SQLDialect.class, Settings.class)
-            .newInstance(fakeDataSource(), SQLDialect.POSTGRES, settings);
-        Method acquire = java.util.Arrays.stream(runtimeClass.getMethods())
-            .filter(m -> m.getName().equals("acquire"))
-            .findFirst().orElseThrow();
-        Class<?>[] parameterTypes = acquire.getParameterTypes();
-        Object[] arguments = new Object[parameterTypes.length];
-        for (int i = 0; i < arguments.length; i++) {
-            if (parameterTypes[i].getName().equals(SCHEMA_PACKAGE + ".SessionState")) {
-                arguments[i] = RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE);
-            }
-        }
+        Object runtime = runtimeClass.getConstructor(SQLDialect.class, Settings.class)
+            .newInstance(SQLDialect.POSTGRES, settings);
+        Class<?> keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
+        Method acquire = Accessible.method(runtimeClass, "acquire", keyClass, harness.load(SCHEMA_PACKAGE + ".ConnectionSource"));
 
-        Object pinned = acquire.invoke(runtime, arguments);
+        Object pinned = acquire.invoke(runtime, keyClass.getMethod("defaultSource").invoke(null),
+            RecordingSource.createLifecycle(harness, SCHEMA_PACKAGE, fakeDataSource()));
         try {
-            assertThat(pinned.getClass().getMethod("settings").invoke(pinned)).isSameAs(settings);
+            assertThat(Accessible.method(pinned.getClass(), "settings").invoke(pinned)).isSameAs(settings);
+            assertThat(Accessible.method(pinned.getClass(), "dialect").invoke(pinned)).isEqualTo(SQLDialect.POSTGRES);
         } finally {
             release(pinned);
         }
     }
 
     @Test
-    void mountCause_isTheMountsOwnExceptionWhereverARejectedMountIsOnTheChain() throws Throwable {
-        Class<?> ownedConnections = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
-        Class<?> mountException = harness.load(SCHEMA_PACKAGE + ".SessionMountException");
-        Method mountCause = ownedConnections.getMethod("mountCause", Throwable.class);
-        Method isMountFailure = ownedConnections.getMethod("isMountFailure", Throwable.class);
-
-        var theMountsOwn = new IllegalStateException("the routine said no");
-        Throwable rejected = (Throwable) mountException.getConstructor(Throwable.class).newInstance(theMountsOwn);
-        var wrapped = new java.util.concurrent.CompletionException(new RuntimeException("outer", rejected));
-
-        assertThat(mountCause.invoke(null, rejected)).isEqualTo(Optional.of(theMountsOwn));
-        assertThat(mountCause.invoke(null, wrapped)).isEqualTo(Optional.of(theMountsOwn));
-        assertThat(isMountFailure.invoke(null, wrapped)).isEqualTo(true);
-
-        var unrelated = new RuntimeException("not a mount", new IllegalStateException());
-        assertThat(mountCause.invoke(null, unrelated)).isEqualTo(Optional.empty());
-        assertThat(isMountFailure.invoke(null, unrelated)).isEqualTo(false);
+    void acquisitionCause_isTheSourcesOwnExceptionWhereverAFailedAcquisitionIsOnTheChain() throws Throwable {
+        assertAcquisitionCauseReadsTheChain(harness);
     }
 
     @Test
-    void mountCause_isAlwaysEmptyWithoutAMount() throws Throwable {
-        // A build with no session identity declares no SessionMountException; the facade's
-        // sessionMountFailure still compiles, and answers empty.
-        var plain = compile(SessionIdentityRows.empty());
-        try {
-            Class<?> ownedConnections = plain.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
-            assertThat(ownedConnections.getMethod("mountCause", Throwable.class)
-                .invoke(null, new RuntimeException("anything"))).isEqualTo(Optional.empty());
-            assertThat(ownedConnections.getMethod("isMountFailure", Throwable.class)
-                .invoke(null, new RuntimeException("anything"))).isEqualTo(false);
-        } finally {
-            plain.close();
+    void acquisitionCause_readsTheChainTheSameWayWithoutSessionIdentity() throws Throwable {
+        // AcquisitionFailedException is emitted in every build, session identity or not.
+        try (var plain = compile(SessionIdentityRows.empty())) {
+            assertAcquisitionCauseReadsTheChain(plain);
         }
+    }
+
+    private static void assertAcquisitionCauseReadsTheChain(EmittedCodeHarness h) throws Throwable {
+        Class<?> ownedConnections = h.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
+        Class<?> failed = h.load(SCHEMA_PACKAGE + ".AcquisitionFailedException");
+        Method acquisitionCause = ownedConnections.getMethod("acquisitionCause", Throwable.class);
+        Method isAcquisitionFailure = ownedConnections.getMethod("isAcquisitionFailure", Throwable.class);
+
+        var theSourcesOwn = new IllegalStateException("the routine said no");
+        Throwable rejected = (Throwable) failed.getConstructor(Throwable.class).newInstance(theSourcesOwn);
+        var wrapped = new java.util.concurrent.CompletionException(new RuntimeException("outer", rejected));
+
+        assertThat(acquisitionCause.invoke(null, rejected)).isEqualTo(Optional.of(theSourcesOwn));
+        assertThat(acquisitionCause.invoke(null, wrapped)).isEqualTo(Optional.of(theSourcesOwn));
+        assertThat(isAcquisitionFailure.invoke(null, wrapped)).isEqualTo(true);
+
+        var unrelated = new RuntimeException("not an acquisition", new IllegalStateException());
+        assertThat(acquisitionCause.invoke(null, unrelated)).isEqualTo(Optional.empty());
+        assertThat(isAcquisitionFailure.invoke(null, unrelated)).isEqualTo(false);
     }
 
     @Test
@@ -661,8 +665,7 @@ class ConnectionRuntimeClassGeneratorTest {
             (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLog"));
         Object response = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{responseClass},
             (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingResponse"));
-        Object original = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
-            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+        Object original = runtimeClass.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
 
         Object limited = runtimeClass.getMethod("withBatchSizeLimit", limitClass).invoke(original, limit);
         Object logged = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(limited, log);
@@ -693,8 +696,7 @@ class ConnectionRuntimeClassGeneratorTest {
             (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLog"));
         Object response = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{responseClass},
             (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingResponse"));
-        Object original = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
-            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+        Object original = runtimeClass.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
 
         Object logged = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(original, log);
         Object both = runtimeClass.getMethod("withFetcherErrorResponse", responseClass).invoke(logged, response);
@@ -718,8 +720,7 @@ class ConnectionRuntimeClassGeneratorTest {
         Class<?> logClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
         Object log = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{logClass},
             (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLog"));
-        Object original = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
-            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+        Object original = runtimeClass.getConstructor(SQLDialect.class).newInstance(SQLDialect.POSTGRES);
 
         Object copy = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(original, log);
 
@@ -766,10 +767,10 @@ class ConnectionRuntimeClassGeneratorTest {
             throws Throwable {
         Class<?> carrierClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.OWNED_CONNECTIONS_CLASS_NAME);
         Method dslDefault = carrierClass.getMethod("dslDefault");
-        var engine = SynchronousAbortDriver.engine(runtimeOverFakeSource(), ROOT_FIELDS, carrierClass,
+        var engine = SynchronousAbortDriver.engine(newRuntime(), ROOT_FIELDS, carrierClass,
             field -> dslDefault::invoke, new SynchronousAbortDriver.AbortAt("b", abort));
         Map<Object, Object> context = new HashMap<>();
-        context.put(SessionIdentityRows.CONTEXT_KEY, RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+        context.put(SessionIdentityRows.CONTEXT_KEY, RecordingSource.createLifecycle(harness, SCHEMA_PACKAGE, fakeDataSource()));
         return SynchronousAbortDriver.execute(engine, operation, ROOT_FIELDS, context);
     }
 
@@ -865,16 +866,19 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     private Object acquire(DataSource dataSource) throws Throwable {
-        return acquire(dataSource, SQLDialect.POSTGRES, RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE));
+        return acquire(RecordingSource.createLifecycle(harness, SCHEMA_PACKAGE, dataSource), SQLDialect.POSTGRES);
     }
 
-    private Object acquire(DataSource dataSource, SQLDialect dialect, Object sessionState) throws Throwable {
+    /** {@code PinnedConnection.acquire} of the default key from {@code source}. */
+    private Object acquire(Object source, SQLDialect dialect) throws Throwable {
         Executor sameThread = Runnable::run;
-        Method acquire = pinnedConnectionClass.getMethod(
-            "acquire", DataSource.class, SQLDialect.class, Settings.class, Executor.class,
-            harness.load(SCHEMA_PACKAGE + ".SessionState"));
+        Class<?> keyClass = harness.load(SCHEMA_PACKAGE + ".ConnectionKey");
+        Method acquire = Accessible.method(pinnedConnectionClass,
+            "acquire", harness.load(SCHEMA_PACKAGE + ".ConnectionSource"), keyClass, SQLDialect.class,
+            Settings.class, Executor.class);
         try {
-            return acquire.invoke(null, dataSource, dialect, new Settings(), sameThread, sessionState);
+            return acquire.invoke(null, source, keyClass.getMethod("defaultSource").invoke(null), dialect,
+                new Settings(), sameThread);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -882,7 +886,7 @@ class ConnectionRuntimeClassGeneratorTest {
 
     private void release(Object pinned) throws Throwable {
         try {
-            pinned.getClass().getMethod("release").invoke(pinned);
+            Accessible.method(pinned.getClass(), "release").invoke(pinned);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
@@ -907,10 +911,14 @@ class ConnectionRuntimeClassGeneratorTest {
         // connections that way, and the lifecycle forces the mode rather than trusting the pool's
         // configuration. This default is the fixture in which removing the forcing fails.
         boolean[] autoCommit = {arrivesInAutocommit};
+        boolean[] closed = {false};
+        String database = product;
         return (Connection) Proxy.newProxyInstance(
             harness.classLoader(), new Class<?>[]{Connection.class}, (proxy, method, args) -> switch (method.getName()) {
-                case "close" -> { log.add("close"); yield null; }
-                case "abort" -> { log.add("abort"); yield null; }
+                case "close" -> { closed[0] = true; log.add("close"); yield null; }
+                case "abort" -> { closed[0] = true; log.add("abort"); yield null; }
+                case "isClosed" -> closed[0];
+                case "getMetaData" -> FakeSessionSettings.metaData(harness.classLoader(), database);
                 case "setAutoCommit" -> { autoCommit[0] = (Boolean) args[0]; log.add("setAutoCommit:" + args[0]); yield null; }
                 case "getAutoCommit" -> autoCommit[0];
                 case "isValid" -> { log.add("isValid"); yield valid; }
@@ -943,6 +951,8 @@ class ConnectionRuntimeClassGeneratorTest {
             });
     }
 
+    /** The database the fake connection's metadata names; PostgreSQL by default. */
+    private String product = "PostgreSQL";
     /** The autocommit mode the fake connection arrives in; off by default, as a pool may lend it. */
     private boolean arrivesInAutocommit;
     /** When set, the fake connection's {@code rollback} throws it instead of logging. */

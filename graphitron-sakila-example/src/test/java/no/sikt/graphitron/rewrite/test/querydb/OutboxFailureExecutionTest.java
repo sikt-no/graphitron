@@ -11,8 +11,8 @@ import no.sikt.graphitron.generated.schema.GraphitronConnectionInstrumentation;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider;
 import no.sikt.graphitron.generated.schema.OwnedConnections;
-import no.sikt.graphitron.generated.schema.SessionMountException;
-import no.sikt.graphitron.generated.schema.SessionState;
+import no.sikt.graphitron.generated.schema.AcquisitionFailedException;
+import no.sikt.graphitron.generated.schema.ConnectionSources;
 import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import no.sikt.graphitron.sakila.example.app.SakilaSessions;
@@ -92,16 +92,24 @@ class OutboxFailureExecutionTest {
         return dataSource;
     }
 
-    private static GraphQL engine(GraphitronRuntime runtime, graphql.execution.instrumentation.Instrumentation... more) {
-        return runtime.newGraphQL(Graphitron.buildSchema(b -> {}), more).build();
+    /** An engine and the pool its requests lease from. */
+    private record Engine(GraphQL graphql, DataSource pool) {}
+
+    private static Engine engine(GraphitronRuntime runtime, DataSource pool,
+                                 graphql.execution.instrumentation.Instrumentation... more) {
+        return new Engine(runtime.newGraphQL(Graphitron.buildSchema(b -> {}), more).build(), pool);
     }
 
-    private static GraphQL engine() {
-        return engine(Graphitron.runtime(dataSource(), SQLDialect.POSTGRES));
+    private static Engine engine(DataSource pool, graphql.execution.instrumentation.Instrumentation... more) {
+        return engine(Graphitron.runtime(SQLDialect.POSTGRES), pool, more);
     }
 
-    private static ExecutionResult execute(GraphQL engine, String query) {
-        return engine.execute(Graphitron.newOwnedExecutionInput(SakilaSessions.of(CLAIMS), CLAIMS, "alice")
+    private static Engine engine() {
+        return engine(dataSource());
+    }
+
+    private static ExecutionResult execute(Engine engine, String query) {
+        return engine.graphql().execute(Graphitron.newOwnedExecutionInput(SakilaSessions.of(CLAIMS, engine.pool()), CLAIMS, "alice")
             .query(query).build());
     }
 
@@ -110,7 +118,7 @@ class OutboxFailureExecutionTest {
      * dead connection at the end of the operation evicts it without failing the operation, so the
      * response the operation computed reaches the caller, the field failed at its path.
      */
-    private static ExecutionResult executeOnADyingSession(GraphQL engine, String query, String alias) {
+    private static ExecutionResult executeOnADyingSession(Engine engine, String query, String alias) {
         var result = execute(engine, query);
         assertThat(result.getErrors()).as("the field whose connection died fails at its path, and only it")
             .isNotEmpty()
@@ -274,11 +282,11 @@ class OutboxFailureExecutionTest {
 
     @Test
     void underRollbackOnly_theFailureMessageIsWrittenInsideTheOperation_andDiscardedWithIt() {
-        var runtime = Graphitron.runtime(dataSource(), SQLDialect.POSTGRES);
-        var devEngine = GraphQL.newGraphQL(Graphitron.buildSchema(b -> {}))
+        var runtime = Graphitron.runtime(SQLDialect.POSTGRES);
+        var devEngine = new Engine(GraphQL.newGraphQL(Graphitron.buildSchema(b -> {}))
             .instrumentation(new GraphitronConnectionInstrumentation(runtime,
                 GraphitronTransactionProvider.CommitPolicy.ROLLBACK_ONLY))
-            .build();
+            .build(), dataSource());
         var title = marker();
         var refused = alias();
         try (var log = OwnedConnectionsLog.capture()) {
@@ -312,17 +320,18 @@ class OutboxFailureExecutionTest {
     void aSessionMountThatFails_writesNothing_andTheLossIsLogged() {
         var title = marker();
         var a = alias();
-        var rejecting = SessionState.of(session -> {
+        var pool = dataSource();
+        var rejecting = ConnectionSources.mounting(key -> pool, (connection, key) -> {
             throw new IllegalStateException("identity rejected");
-        }, (session, handle) -> {});
+        }, (connection, key, handle) -> {});
         try (var log = OwnedConnectionsLog.capture()) {
-            assertThatThrownBy(() -> engine().execute(Graphitron.newOwnedExecutionInput(rejecting, CLAIMS, "alice")
+            assertThatThrownBy(() -> engine(pool).graphql().execute(Graphitron.newOwnedExecutionInput(rejecting, CLAIMS, "alice")
                     .query("mutation { " + insert(a, "{title: \"" + title + "\", languageId: 999999}") + " }").build()))
-                .isInstanceOf(SessionMountException.class);
+                .isInstanceOf(AcquisitionFailedException.class);
 
             assertThat(failures(title)).isEmpty();
             assertThat(log.mentioning(a)).singleElement()
-                .satisfies(r -> assertThat(r.getMessage()).contains("the session mount failed"));
+                .satisfies(r -> assertThat(r.getMessage()).contains("the connection source failed to lease a connection"));
         }
     }
 
@@ -373,7 +382,7 @@ class OutboxFailureExecutionTest {
         var a = alias();
         var dataSource = dataSource();
         dataSource.setOptions("-c idle_in_transaction_session_timeout=300");
-        var engine = engine(Graphitron.runtime(dataSource, SQLDialect.POSTGRES), whilePayloadResolves(a, () -> sleep(1_000)));
+        var engine = engine(dataSource, whilePayloadResolves(a, () -> sleep(1_000)));
 
         executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }", a);
 
@@ -393,7 +402,7 @@ class OutboxFailureExecutionTest {
         var a = alias();
         var dataSource = dataSource();
         dataSource.setOptions("-c idle_in_transaction_session_timeout=300");
-        var engine = engine(Graphitron.runtime(dataSource, SQLDialect.POSTGRES), whilePayloadResolves(a, () -> sleep(1_000)));
+        var engine = engine(dataSource, whilePayloadResolves(a, () -> sleep(1_000)));
 
         executeOnADyingSession(engine, "mutation { " + a + ": insertFilmReportingFailure(in: {title: \"" + title
             + "\", languageId: 1}) { errors { __typename } } }", a);
@@ -409,9 +418,9 @@ class OutboxFailureExecutionTest {
         var plain = dataSource();
         plain.setOptions("-c idle_in_transaction_session_timeout=300");
         var exhausted = new CountDownLatch(1);
-        var runtime = Graphitron.runtime(exhaustedAfterFirst(plain, exhausted), SQLDialect.POSTGRES)
+        var runtime = Graphitron.runtime(SQLDialect.POSTGRES)
             .withOutboxAcquisitionTimeout(Duration.ofMillis(500));
-        var engine = engine(runtime, whilePayloadResolves(a, () -> sleep(1_000)));
+        var engine = engine(runtime, exhaustedAfterFirst(plain, exhausted), whilePayloadResolves(a, () -> sleep(1_000)));
         try (var log = OwnedConnectionsLog.capture()) {
             long started = System.nanoTime();
             executeOnADyingSession(engine, "mutation { " + insert(a, "{title: \"" + title + "\", languageId: 1}") + " }", a);
@@ -434,7 +443,7 @@ class OutboxFailureExecutionTest {
         var a = alias();
         var dataSource = dataSource();
         dataSource.setApplicationName(a);
-        var engine = engine(Graphitron.runtime(dataSource, SQLDialect.POSTGRES), whilePayloadResolves(a, () -> {
+        var engine = engine(dataSource, whilePayloadResolves(a, () -> {
             dsl.execute("select pg_terminate_backend(pid) from pg_stat_activity where application_name = ?", a);
             sleep(200);
         }));

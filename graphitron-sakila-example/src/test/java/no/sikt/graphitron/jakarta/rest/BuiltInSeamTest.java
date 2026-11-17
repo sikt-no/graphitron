@@ -75,12 +75,12 @@ class BuiltInSeamTest {
     }
 
     @Test
-    @DisplayName("Without a mount-cause finder, no failure is a mount failure; with one, its answer is used.")
-    void mountCauseFollowsTheFinder() {
+    @DisplayName("Without an acquisition-cause finder, no failure is an acquisition failure; with one, its answer is used.")
+    void acquisitionCauseFollowsTheFinder() {
         var failure = new RuntimeException("boom");
-        assertThat(new WithoutSeam().mountCause(failure)).isEmpty();
+        assertThat(new WithoutSeam().acquisitionCause(failure)).isEmpty();
         var withFinder = new AbstractGraphitronApplication(() -> new WithoutSeam().schema(), s -> "",
             thrown -> java.util.Optional.of(failure)) { };
-        assertThat(withFinder.mountCause(new IllegalStateException())).containsSame(failure);
+        assertThat(withFinder.acquisitionCause(new IllegalStateException())).containsSame(failure);
     }
 }

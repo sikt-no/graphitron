@@ -131,8 +131,8 @@ public final class SessionIdentityDefects {
                 + ") but no <sessionState> is configured; add <sessionState> to the build or bind "
                 + "the parameter another way.";
             case "SESSION_HANDLE_UNNAMED" -> "argMapping reads $session (" + row.detail()
-                + ") but <sessionState> names no <handle>; name the class the mount callback "
-                + "returns in <handle>.";
+                + ") but <sessionState> names no <handle>; name the class of the lease's "
+                + "handle in <handle>.";
             case "SESSION_MEMBER_UNKNOWN" -> "argMapping reads a member of $session that the "
                 + "handle class does not offer: " + row.detail() + ".";
             case "SESSION_MEMBER_AMBIGUOUS" -> "argMapping reads a member of $session that two "
