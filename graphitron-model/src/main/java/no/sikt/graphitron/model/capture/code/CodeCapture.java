@@ -61,7 +61,8 @@ import static org.jooq.impl.DSL.val;
  * classpath, because what they admit is a library's to declare: the constants
  * {@code @scalarType(scalar:)} names, and the throwables an {@code @error} handler names. Declared
  * rather than whole, a dependency the module did not declare being nameable at no coordinate at
- * all; {@link #nameable} is where that bound is stated. Two read the
+ * all; the classpath reading, {@link ClasspathSourceCapture}, is where that bound is stated, opening
+ * no entry the build classified {@link ClasspathEntry.Origin#TRANSITIVE}. Two read the
  * reactor, a condition and a lifter both being consumer code by construction, and the three
  * still to come join them, for what a consumer writes at {@code @service}, {@code @enum} and a
  * reference's condition. Arguments, return types and declared exceptions get no arm of their own,
@@ -111,26 +112,6 @@ public final class CodeCapture {
             ClasspathEntry.Origin.SIBLING.name());
 
     private CodeCapture() {}
-
-    /**
-     * The entries any arm here may read: everything but a dependency the module did not declare.
-     *
-     * <p>The bound is the same one the arms are, one scope up. An arm says what may be written at a
-     * coordinate, and nothing a transitive dependency carries may be written anywhere: naming one
-     * is the undeclared-dependency antipattern, and the build refuses it rather than resolving it
-     * quietly. Admitting such a class would make the store offer an author a name the run then
-     * rejects, which is worse than not offering it, the refusal arriving after the writing.
-     *
-     * <p>In front of the reading rather than over its result, because the cost of the reading is
-     * decompression and the only cut that moves it is opening fewer jars. The reactor arms narrow
-     * again from here, and they narrow the classes rather than the entries: those two arms read the
-     * whole of what this leaves, so one reading of the bytes still serves all four.
-     */
-    private static List<ClasspathEntry> nameable(List<ClasspathEntry> entries) {
-        return entries.stream()
-            .filter(entry -> entry.origin() != ClasspathEntry.Origin.TRANSITIVE)
-            .toList();
-    }
 
     /**
      * Makes the code rows of the classpath be what its classfiles now declare.
