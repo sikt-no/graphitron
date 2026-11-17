@@ -1113,13 +1113,11 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmCardWrapper_recordExample_resolvesAllThreeAccessorArms() {
-        // Execution-tier fixture: a Java-record-backed type whose three SDL fields each
-        // exercise a different accessor-resolution arm — bare-name (Java record component
-        // fieldA()), get-prefixed (getFieldB()), and @field(name:) override redirecting to
-        // get-prefixed (getRebound()). The classifier resolves each arm at validate-time,
-        // and the emitter switches on the pre-resolved Method handles per
-        // FetcherEmitter.propertyOrRecordValue.
+    void filmCardWrapper_recordExample_readsItsComponents() {
+        // Execution-tier fixture: a Java-record-backed type whose SDL fields read its components,
+        // fieldA() and fieldB() under their own names and rebound() through an @field(name:)
+        // override. The classifier resolves each at validate-time, and the emitter switches on
+        // the pre-resolved Method handles per FetcherEmitter.propertyOrRecordValue.
         Map<String, Object> data = execute(
             "{ inventoryById(inventory_id: [1]) { filmCardData { example { fieldA fieldB fieldC } } } }");
         @SuppressWarnings("unchecked")

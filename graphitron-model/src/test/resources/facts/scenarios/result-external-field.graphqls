@@ -17,7 +17,7 @@ type FilmCard { filmId: Int @field(name: "film_id") }
 type FilmCardWrapper {
   "A table child under the value: its key is read off the record's film() accessor."
   film: Film
-  "Read off FilmCardData.example(), not a component: a record offers its components only, so no class backs it."
+  "Read off FilmCardData's example component, so RecordExampleType backs it."
   example: RecordExample
 }
 
@@ -46,6 +46,7 @@ extend schema @expectEquals(relation: "graphitron_type_backing", where: "type_na
   type_name,       class_name,                                                             declared_via
   FilmCard,        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PRODUCER
   FilmCardWrapper, no.sikt.graphitron.rewrite.test.services.FilmCardData,                  PRODUCER
+  RecordExample,   no.sikt.graphitron.rewrite.test.services.RecordExampleType,             ACCESSOR
   """)
 
 extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('FilmCard', 'FilmCardWrapper', 'RecordExample', 'Film')", rows: """
@@ -63,6 +64,7 @@ extend schema @expectEquals(relation: "graphitron_result_class", where: "type_na
   type_name,       class_name
   FilmCard,        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
   FilmCardWrapper, no.sikt.graphitron.rewrite.test.services.FilmCardData
+  RecordExample,   no.sikt.graphitron.rewrite.test.services.RecordExampleType
   """)
 
 extend schema @assertContains(relation: "graphitron_reader", rows: """
@@ -80,12 +82,14 @@ extend schema @assertContains(relation: "graphitron_reader", rows: """
 # What each occurrence under an @externalField reads is the value its Field carries, not the
 # parent's row. Field<FilmRecord> carries a table's own record, so filmId reads film. FilmCardData is
 # no table's record, so example and film read an instance of it; film reads its key off the value
-# through the film() accessor, the lift being its producer's, so film itself has no need.
+# through the film() accessor, the lift being its producer's, so film itself has no need. example's
+# component is a RecordExampleType, which fieldA reads an instance of.
 extend schema @expectEquals(relation: "graphitron_occurrence_source",
     where: "coordinate LIKE 'Inventory.film%'", rows: """
   coordinate,                    kind
   Inventory.filmCardData,         TABLE
   Inventory.filmCardData.example, OBJECT
+  Inventory.filmCardData.example.fieldA, OBJECT
   Inventory.filmCardData.film,    OBJECT
   Inventory.filmRef,              TABLE
   Inventory.filmRef.filmId,       TABLE
@@ -103,6 +107,7 @@ extend schema @expectEquals(relation: "graphitron_occurrence_source_object",
     where: "coordinate LIKE 'Inventory.film%'", rows: """
   coordinate,                     class_name
   Inventory.filmCardData.example, no.sikt.graphitron.rewrite.test.services.FilmCardData
+  Inventory.filmCardData.example.fieldA, no.sikt.graphitron.rewrite.test.services.RecordExampleType
   Inventory.filmCardData.film,    no.sikt.graphitron.rewrite.test.services.FilmCardData
   """)
 
@@ -113,18 +118,6 @@ extend schema @expectEquals(relation: "graphitron_path_need_table",
   Inventory.filmRef,        FilmCard,        inventory,   inventory
   Inventory.filmRef.filmId, Int,             film,        film
   """)
-
-# Under example, read off an object of no class, fieldA has nowhere to read from.
-extend schema @assertContains(relation: "graphitron_occurrence", rows: """
-  coordinate
-  Inventory.filmCardData.example.fieldA
-  """)
-
-extend schema @assertEmpty(relation: "graphitron_occurrence_source",
-    where: "coordinate = 'Inventory.filmCardData.example.fieldA'")
-
-extend schema @assertEmpty(relation: "graphitron_path_need_table",
-    where: "coordinate = 'Inventory.filmCardData.example.fieldA'")
 
 # An @externalField returning an object hands that object over: no nesting field, though its path
 # is empty and it has no producer, so a child under it is lifted off the value, not off the row.

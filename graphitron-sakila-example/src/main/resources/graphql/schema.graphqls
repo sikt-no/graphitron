@@ -2633,18 +2633,17 @@ type FilmCardWrapper {
     # returns are admitted, so this fixture exercises the KeyLift.Accessor (Arity.ONE) path
     # end-to-end.
     film: Film
-    # R88 execution-tier fixture: exercises three accessor-resolution arms via the FilmCardData
-    # `example()` accessor. RecordExample's three fields each resolve through a different arm
-    # — see RecordExampleType's javadoc.
+    # R88 execution-tier fixture: FilmCardData's `example` component, a record whose fields are
+    # read through its components; see RecordExampleType's javadoc.
     example: RecordExample
 }
 
 type RecordExample {
-    # BareName: matches the canonical Java record component accessor `fieldA()`.
+    # The component accessor `fieldA()`.
     fieldA: String
-    # GetterPrefixed: matches the bean-style getter `getFieldB()`.
+    # The component accessor `fieldB()`.
     fieldB: String
-    # GetterPrefixed via @field(name:) override: resolves "rebound" → `getRebound()`.
+    # A component reached via @field(name:): resolves "rebound" to `rebound()`.
     fieldC: String @field(name: "rebound")
 }
 
