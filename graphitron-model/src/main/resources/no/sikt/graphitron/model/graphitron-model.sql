@@ -19616,7 +19616,22 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                                 AND ar.arrival_class = COALESCE(ws.element_class, ws.erased_class, ws.slot_type)
                              OR ar.arrival_kind = 'ANY_NON_JDK'
                                 AND POSITION('.', COALESCE(ws.element_class, ws.erased_class, ws.slot_type)) > 0
-                                AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) NOT LIKE 'java.%')));
+                                AND COALESCE(ws.element_class, ws.erased_class, ws.slot_type) NOT LIKE 'java.%')))
+UNION ALL
+-- An input object reached again inside itself under a class a @condition's parameter builds, at the
+-- input field that reaches it again, as the producers stage's arm says it for a @service's: the
+-- occurrences stop there, so building the class would drop the nested value. Here, where the
+-- condition's classes are stated. The detail is the input type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'INPUT_CYCLE_EXPANDED', it.type_name, 'occurrence-builds'
+  FROM graphitron_occurrence_input_type it
+  JOIN graphitron_occurrence_chain ch
+    ON ch.graph_name = it.graph_name AND ch.coordinate = it.coordinate AND ch.type_name = it.type_name
+  JOIN graphitron_occurrence o ON o.graph_name = it.graph_name AND o.coordinate = it.coordinate
+  JOIN graphitron_occurrence_built_class bc
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.stated_by = 'CONDITION'
+  JOIN graphql_ast_element_entry el ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+ WHERE it.type_kind = 'INPUT_OBJECT';
 COMMENT ON VIEW graphitron_occurrence_build_entry_defect_rule IS 'One row the build defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example occurrence-builds inserts this view''s rows for one graph into graphitron_entry_defect, a class an input object is built into that has no constructor graphitron can call giving one BUILT_CLASS_UNBUILDABLE row at the input object.';
 
 -- The defects judging the facts occurrence-bindings and occurrence-builds write, by the stage after them:

@@ -1,7 +1,8 @@
 # An input object reached again inside itself where a @service builds it into a record: CycleInput's
 # self field reaches CycleInput again, and the occurrences stop there, so the nested value would be
 # dropped. The same record built from an input with a nested input that does not reach itself again
-# draws nothing.
+# draws nothing. A bean a @condition's parameter builds is judged the same way: CyclicSearchInput's
+# again reaches it again under FilmSearchFilter.
 
 type Film @table(name: "film") { title: String }
 
@@ -19,7 +20,17 @@ input InnerInput @table(name: "film") {
   description: String
 }
 
-type Query { films: [Film!]! }
+input CyclicSearchInput {
+  title: String
+  again: CyclicSearchInput
+}
+
+type Query {
+  films: [Film!]!
+  filmsByCyclicSearch(search: CyclicSearchInput): [Film!]! @condition(condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+      method: "filmSearchBean"}, override: true)
+}
 
 type Mutation {
   modifyCycle(in: CycleInput): String
@@ -32,4 +43,5 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'INPUT_CYCLE_EXPANDED'", rows: """
   code,                 coordinate,      detail
   INPUT_CYCLE_EXPANDED, CycleInput.self, CycleInput
+  INPUT_CYCLE_EXPANDED, CyclicSearchInput.again, CyclicSearchInput
   """)
