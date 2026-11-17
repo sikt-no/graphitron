@@ -219,3 +219,21 @@ extend schema @assertContains(relation: "graphitron_occurrence_binding_member", 
   coordinate,                        bound
   Query.filmsByTitleBean(by.title:), no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter#title
   """)
+
+# What each @condition says, as written, by the site it sits on: an object field's in one relation,
+# an argument's or an input object field's in the other, and an override the author did not write
+# NULL rather than the definition's false.
+extend schema @expectEquals(relation: "graphitron_ast_field_condition_entry", rows: """
+  source_line, method,                   override
+  115,         filmTitlePrefixCondition, TRUE
+  119,         filmTitleRecord,          TRUE
+  123,         customerSeenByUser,
+  132,         filmsOfOptionalLanguage,  TRUE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_input_value_condition_entry", rows: """
+  source_line, method,                   override
+  66,          projectNameAtlas,         TRUE
+  106,         filmTitlePrefixCondition, TRUE
+  110,         filmTitlePrefixCondition, TRUE
+  """)

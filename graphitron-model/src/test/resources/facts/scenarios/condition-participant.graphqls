@@ -61,3 +61,29 @@ extend schema @expectEquals(relation: "graphitron_occurrence_binding_table",
   Query.stockByLanguage,      film
   Query.stockByLanguage,      inventory
   """)
+
+# What each @referenceFor on languageId says, as written: two applications of the repeatable
+# directive on one input field are two rows, told apart by where each was written and needing no
+# ordinal, and each path's elements hang off their own application by position.
+extend schema @expectEquals(relation: "graphitron_ast_reference_for_entry", rows: """
+  source_line, participant_type_ref
+  21,          StockFilm
+  22,          StockInventory
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_reference_key_step_entry", rows: """
+  source_line, key_ref
+  21,          film_language_id_fkey
+  22,          inventory_film_id_fkey
+  22,          film_language_id_fkey
+  """)
+
+# What each @nodeId says, as written: the type it names, and a bare one a row naming no type.
+extend schema @expectEquals(relation: "graphitron_ast_node_id_entry", rows: """
+  source_line, node_type_ref
+  20,          LanguageNode
+  27,
+  29,
+  30,
+  32,          Address
+  """)

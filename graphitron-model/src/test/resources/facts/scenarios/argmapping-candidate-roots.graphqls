@@ -2,7 +2,7 @@
 # filter. A bare name with no dots is a legal right-hand side whatever the argument's type, which is
 # the population this relation holds and the occurrence-path relation beside it does not.
 
-input FilterInput { title: String }
+input FilterInput { title: String @field(name: "title") }
 type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
 type Query { films(filter: FilterInput, limit: Int @field(name: "length")): [Film!]! }
 
@@ -10,4 +10,13 @@ extend schema @expectEquals(relation: "graphitron_argmapping_candidate", where: 
   name
   filter
   limit
+  """)
+
+# What each @field says, as written, in one relation whatever it sits on: an output field's, an
+# argument's and an input object's field's.
+extend schema @expectEquals(relation: "graphitron_ast_binding_entry", rows: """
+  name_ref
+  film_id
+  length
+  title
   """)

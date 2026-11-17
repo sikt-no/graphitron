@@ -38,3 +38,12 @@ extend schema @expectEquals(relation: "graphitron_occurrence_order", where: "coo
   FilmSort.NAME_C,               CHOICE,  FIELDS,               Category.filmsChosen(order:)
   FilmSort.TITLE,                CHOICE,  FIELDS,               Category.filmsChosen(order:)
   """)
+# What each @order field list says, as written: an element per position in the order the author wrote
+# them, each element's own fields beside it.
+extend schema @expectEquals(relation: "graphitron_ast_order_field_entry", rows: """
+  application_line, position, name_ref, collate, direction
+  23,               0,        length,   ,
+  23,               1,        film_id,  ,
+  25,               0,        title,    ,        DESC
+  27,               0,        title,    C,
+  """)

@@ -46,6 +46,13 @@ import static org.assertj.core.api.Assertions.tuple;
  * {@code @order}'s three surfaces are told apart by which columns are null
  * and whether child rows exist is the relation's whole shape. And that an element's written index
  * survives an element that decodes to nothing is the rule the position key rests on.
+ *
+ * <p>What the decode writes for a schema the generator accepts is stated by fact documents:
+ * {@code @order}'s three surfaces by {@code scenarios/order-by-argument} and
+ * {@code scenarios/order-by-index}, and a field list in written order, each element's own fields
+ * beside it, by {@code defects/inline-list-choice}. The cases here hold what no document does: an
+ * application the generator refuses, or an enum value carrying {@code @field}, which no document
+ * writes.
  */
 class GraphitronEnumValueEntriesTest {
 
@@ -81,78 +88,6 @@ class GraphitronEnumValueEntriesTest {
                 .as("the enum value's binding and the output field's, side by side")
                 .extracting(row -> row.get(GRAPHITRON_AST_BINDING_ENTRY.NAME_REF))
                 .containsExactlyInAnyOrder("rating_code", "title");
-        });
-    }
-
-    /**
-     * The directive admits exactly one of the three, and the relation states which was taken by
-     * what is null rather than by a discriminator. The field-list arm is the one that needs the
-     * parent row at all: both its own columns are null and its answer is the rows beside it.
-     */
-    @Test
-    @DisplayName("@order's three surfaces are told apart by what is null and what hangs off")
-    void theThreeSortingSurfacesAreDistinguishable(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query { films: [Film!] }
-            type Film { title: String }
-            enum FilmOrder {
-              BY_INDEX @order(index: "idx_film_title")
-              BY_KEY @order(primaryKey: true)
-              BY_FIELDS @order(fields: [{name: "title"}])
-            }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_ORDER_ENTRY;
-
-            assertThat(dsl.select(t.INDEX_REF, t.PRIMARY_KEY).from(t)
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(t.SOURCE_LINE).fetch())
-                .as("one row per application, each saying which surface by what it left null")
-                .extracting(row -> row.value1(), row -> row.value2())
-                .containsExactly(
-                    tuple("idx_film_title", null),
-                    tuple(null, true),
-                    tuple(null, null));
-
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_ORDER_FIELD_ENTRY,
-                    GRAPHITRON_AST_ORDER_FIELD_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("and only the field-list arm has children")
-                .isEqualTo(1);
-        });
-    }
-
-    /**
-     * The position an element was written at is the sort order the author asked for, so it is a key
-     * column and not a derived one, and each element's own fields are columns beside it.
-     */
-    @Test
-    @DisplayName("the field list becomes rows carrying the order they were written in")
-    void theFieldListKeepsItsWrittenOrder(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query { films: [Film!] }
-            type Film { title: String }
-            enum FilmOrder {
-              BY_TITLE @order(fields: [
-                {name: "title", collate: "xdanish_ai"},
-                {name: "release_year"}
-              ])
-            }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_ORDER_FIELD_ENTRY;
-
-            assertThat(dsl.select(writtenAt(t), t.NAME_REF, t.COLLATE).from(t)
-                    .where(t.GRAPH_NAME.eq(graph))
-                    .orderBy(writtenAt(t)).fetch())
-                .as("both elements, at the indices the author wrote them at")
-                .extracting(row -> row.value1(), row -> row.value2(), row -> row.value3())
-                .containsExactly(
-                    tuple(0, "title", "xdanish_ai"),
-                    tuple(1, "release_year", null));
         });
     }
 

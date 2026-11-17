@@ -51,6 +51,13 @@ import static org.assertj.core.api.Assertions.tuple;
  * field path. That an argument-less directive writes nothing is what keeps a relation from existing
  * only to be a coordinate. And that a repeatable directive needs no ordinal is what the position
  * keying buys.
+ *
+ * <p>What the decode writes for a schema the generator accepts is stated by fact documents:
+ * {@code @field} on an output field, an argument and an input object's field in one relation by
+ * {@code scenarios/argmapping-candidate-roots}, and two {@code @referenceFor} applications on one
+ * input field, each with its own path, and a bare {@code @nodeId} as a row naming no type by
+ * {@code scenarios/condition-participant}. The cases here hold what no document does: an
+ * application the generator refuses, an edit between two readings, or a shape no document writes.
  */
 class GraphitronInputValueEntriesTest {
 
@@ -62,84 +69,6 @@ class GraphitronInputValueEntriesTest {
 
     GraphitronInputValueEntriesTest(TestInfo info) {
         graph = "inputValueEntries." + info.getTestMethod().orElseThrow().getName();
-    }
-
-    /**
-     * The two parents a consumer schema writes, decoded into one relation. Read back through each
-     * parent's own coordinate, which is the join the design leaves as a detection rather than a
-     * key: an application names its parent by position, and a position is unique in a file whichever
-     * of the three relations holds the parent.
-     *
-     * <p>The third parent is a directive definition's own argument, and no decode row can be shown
-     * at it because no graphitron directive is written there in any corpus we read. One directive is:
-     * the bundled vocabulary deprecates {@code @asConnection(connectionName:)}, so that arm of the
-     * union carries a row on every reading and the two cases below have to say which file they mean.
-     */
-    @Test
-    @DisplayName("an input object's field and a field's argument decode into one relation")
-    void bothParentsLandInOneRelation(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query { films(titleFilter: String @field(name: "title")): [Film!] }
-            type Film { title: String }
-            input FilmFilter { category: String @field(name: "category") }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var decode = GRAPHITRON_AST_BINDING_ENTRY;
-            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-            var entry = GRAPHQL_AST_ENTRY;
-            var argument = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
-            var inputField = GRAPHQL_AST_INPUT_FIELD_ENTRY;
-            // The coordinate a declaration names sits on the element supertype now.
-            var element = GRAPHQL_AST_ELEMENT_ENTRY;
-
-            assertThat(dsl.select(element.COORDINATE, decode.NAME_REF)
-                    .from(decode)
-                    .join(applied).on(applied.GRAPH_NAME.eq(decode.GRAPH_NAME))
-                        .and(applied.SOURCE_NAME.eq(decode.SOURCE_NAME))
-                        .and(applied.SOURCE_LINE.eq(decode.SOURCE_LINE))
-                        .and(applied.SOURCE_COLUMN.eq(decode.SOURCE_COLUMN))
-                    .join(entry).on(entryOf(applied, EntryKind.INPUT_VALUE_DIRECTIVE))
-                    .join(argument).on(argument.GRAPH_NAME.eq(entry.GRAPH_NAME))
-                        .and(argument.SOURCE_NAME.eq(entry.SOURCE_NAME))
-                        .and(argument.SOURCE_LINE.eq(entry.PARENT_LINE))
-                        .and(argument.SOURCE_COLUMN.eq(entry.PARENT_COLUMN))
-                    .join(element).on(element.GRAPH_NAME.eq(argument.GRAPH_NAME))
-                        .and(element.SOURCE_NAME.eq(argument.SOURCE_NAME))
-                        .and(element.SOURCE_LINE.eq(argument.SOURCE_LINE))
-                        .and(element.SOURCE_COLUMN.eq(argument.SOURCE_COLUMN))
-                    .where(decode.GRAPH_NAME.eq(graph))
-                    .fetch())
-                .as("the decode of an application written on a field's argument")
-                .extracting(row -> row.value1(), row -> row.value2())
-                .containsExactly(tuple("Query.films(titleFilter:)", "title"));
-
-            assertThat(dsl.select(element.COORDINATE, decode.NAME_REF)
-                    .from(decode)
-                    .join(applied).on(applied.GRAPH_NAME.eq(decode.GRAPH_NAME))
-                        .and(applied.SOURCE_NAME.eq(decode.SOURCE_NAME))
-                        .and(applied.SOURCE_LINE.eq(decode.SOURCE_LINE))
-                        .and(applied.SOURCE_COLUMN.eq(decode.SOURCE_COLUMN))
-                    .join(entry).on(entryOf(applied, EntryKind.INPUT_VALUE_DIRECTIVE))
-                    .join(inputField).on(inputField.GRAPH_NAME.eq(entry.GRAPH_NAME))
-                        .and(inputField.SOURCE_NAME.eq(entry.SOURCE_NAME))
-                        .and(inputField.SOURCE_LINE.eq(entry.PARENT_LINE))
-                        .and(inputField.SOURCE_COLUMN.eq(entry.PARENT_COLUMN))
-                    .join(element).on(element.GRAPH_NAME.eq(inputField.GRAPH_NAME))
-                        .and(element.SOURCE_NAME.eq(inputField.SOURCE_NAME))
-                        .and(element.SOURCE_LINE.eq(inputField.SOURCE_LINE))
-                        .and(element.SOURCE_COLUMN.eq(inputField.SOURCE_COLUMN))
-                    .where(decode.GRAPH_NAME.eq(graph))
-                    .fetch())
-                .as("and of one written on an input object's field, out of the same relation")
-                .extracting(row -> row.value1(), row -> row.value2())
-                .containsExactly(tuple("FilmFilter.category", "category"));
-
-            assertThat(dsl.fetchCount(decode, decode.GRAPH_NAME.eq(graph)))
-                .as("two rows and one relation, which is what the incumbent's two paths are not")
-                .isEqualTo(2);
-        });
     }
 
     /**
@@ -175,44 +104,6 @@ class GraphitronInputValueEntriesTest {
                             GRAPHITRON_AST_NODE_ID_ENTRY.GRAPH_NAME.eq(graph)))
                 .as("and no decode relation holds a row for any of them")
                 .isZero();
-        });
-    }
-
-    /**
-     * Two applications of a repeatable directive on one input value. The incumbent needed an
-     * ordinal to tell them apart because a coordinate could not; each stands at its own at sign
-     * here, so the key does it.
-     */
-    @Test
-    @DisplayName("two applications of a repeatable directive are two rows and carry no ordinal")
-    void aRepeatableDirectiveNeedsNoOrdinal(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Query {
-              media(
-                target: ID
-                  @referenceFor(type: "Book", path: [{table: "book"}])
-                  @referenceFor(type: "Film", path: [{table: "film"}])
-              ): [Film!]
-            }
-            type Film { title: String }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var t = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
-
-            assertThat(dsl.select(t.PARTICIPANT_TYPE_REF, t.SOURCE_LINE)
-                    .from(t).where(t.GRAPH_NAME.eq(graph)).orderBy(t.PARTICIPANT_TYPE_REF).fetch())
-                .as("two decodes at two positions, told apart by the key and nothing else")
-                .extracting(row -> row.value1())
-                .containsExactly("Book", "Film");
-            assertThat(dsl.select(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF)
-                    .from(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY)
-                    .where(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.GRAPH_NAME.eq(graph))
-                    .orderBy(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF)
-                    .fetch(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF))
-                .as("each application's path hangs off its own decode")
-                .containsExactly("book", "film");
         });
     }
 

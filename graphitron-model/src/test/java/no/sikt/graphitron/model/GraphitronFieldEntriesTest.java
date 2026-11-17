@@ -50,6 +50,12 @@ import static org.assertj.core.api.Assertions.tuple;
  * one application's arguments meant, under the position of the {@code @} token, so the coordinate it
  * was written at is a join and a repeated application is repeated rows rather than an ordinal the
  * writer had to assign.
+ *
+ * <p>What the decode writes for a schema the generator accepts is stated by fact documents:
+ * {@code scenarios/condition-filter} states each {@code @condition} at the site it sits on, an
+ * object field's in the field site's relation and an input object field's in the input-value
+ * site's, with an override the author did not write as NULL. The cases here hold what no document
+ * does: an application the generator refuses, or a shape no document writes.
  */
 class GraphitronFieldEntriesTest {
 
@@ -61,61 +67,6 @@ class GraphitronFieldEntriesTest {
 
     GraphitronFieldEntriesTest(TestInfo info) {
         graph = "fieldEntries." + info.getTestMethod().orElseThrow().getName();
-    }
-
-    /**
-     * The row, the row it decodes, and the field that row was written on. Asserted through the join
-     * rather than by reading columns back: what the relation buys is that the coordinate is one
-     * join away and no column here repeats it.
-     */
-    @Test
-    @DisplayName("a field application's decode reaches its coordinate through the row it decodes")
-    void theDecodeReachesItsCoordinate(@TempDir Path tmp) {
-        write(tmp, "film.graphqls", """
-            type Film {
-              summary: String @condition(condition: {className: "no.example.C", method: "visible"})
-            }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-            var decode = GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
-            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-            var entry = GRAPHQL_AST_ENTRY;
-            var declared = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-            // The coordinate a declaration names now sits on the element supertype
-            // rather than on each kind that declares one.
-            var element = GRAPHQL_AST_ELEMENT_ENTRY;
-
-            assertThat(dsl.select(applied.NAME, element.COORDINATE, decode.CLASS_NAME,
-                        decode.METHOD, decode.OVERRIDE)
-                    .from(decode)
-                    .join(applied)
-                    .on(decode.GRAPH_NAME.eq(applied.GRAPH_NAME))
-                    .and(decode.SOURCE_NAME.eq(applied.SOURCE_NAME))
-                    .and(decode.SOURCE_LINE.eq(applied.SOURCE_LINE))
-                    .and(decode.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
-                    .join(entry)
-                    .on(entryOf(applied, EntryKind.FIELD_DIRECTIVE))
-                    .join(declared)
-                    .on(entry.GRAPH_NAME.eq(declared.GRAPH_NAME))
-                    .and(entry.SOURCE_NAME.eq(declared.SOURCE_NAME))
-                    .and(entry.PARENT_LINE.eq(declared.SOURCE_LINE))
-                    .and(entry.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
-                    .join(element)
-                    .on(element.GRAPH_NAME.eq(declared.GRAPH_NAME))
-                    .and(element.SOURCE_NAME.eq(declared.SOURCE_NAME))
-                    .and(element.SOURCE_LINE.eq(declared.SOURCE_LINE))
-                    .and(element.SOURCE_COLUMN.eq(declared.SOURCE_COLUMN))
-                    .where(decode.GRAPH_NAME.eq(graph))
-                    .fetch())
-                .as("the decode, the application it decodes, and the field it was written on, none "
-                    + "of which repeats what another holds; the flag the author left out is null "
-                    + "rather than the definition's own default")
-                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3(), r -> r.value4(),
-                    r -> r.value5())
-                .containsExactly(tuple("condition", "Film.summary", "no.example.C", "visible", null));
-        });
     }
 
     /**
@@ -166,40 +117,6 @@ class GraphitronFieldEntriesTest {
                 .as("one row per application, the bare one naming no type")
                 .extracting(r -> r.value1(), r -> r.value2())
                 .containsExactly(tuple("Film.id", null), tuple("Film.languageId", "Language"));
-        });
-    }
-
-    /**
-     * The site split, which is the one place this writer disagrees with the walk it replaces. An
-     * input object's field is an input value to the parser, so a directive written on one is an
-     * application of the input-value entry kind; the field site is object and interface fields and
-     * nothing else.
-     */
-    @Test
-    @DisplayName("a directive on an input object's field is not a field-site decode")
-    void anInputObjectFieldIsNotTheFieldSite(@TempDir Path tmp) {
-        write(tmp, "filter.graphqls", """
-            input FilmFilter {
-              guarded: String @condition(condition: {className: "no.example.C", method: "guard"})
-            }
-            """);
-
-        ThreadConfinedStore.run(dsl -> {
-            read(dsl, tmp);
-
-            // Restricted to this case's own document, the bundled directive vocabulary being read
-            // as part of every corpus and applying @deprecated to an input value of its own.
-            var written = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.like("%filter.graphqls");
-            assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE, written))
-                .as("the application is transcribed at the site the parser puts it")
-                .containsExactly("condition");
-            assertThat(appliedAt(dsl, EntryKind.FIELD_DIRECTIVE, DSL.noCondition()))
-                .as("and not at the field site").isEmpty();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_FIELD_CONDITION_ENTRY,
-                    GRAPHITRON_AST_FIELD_CONDITION_ENTRY.GRAPH_NAME.eq(graph)))
-                .as("so the field site's decode has nothing to say about it, which is what the "
-                    + "foreign key already required: a row here references a row there")
-                .isZero();
         });
     }
 
