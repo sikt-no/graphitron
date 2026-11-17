@@ -94,6 +94,7 @@ CREATE TABLE store_graph (
   build_file_path  VARCHAR,
   build_file_stamp VARCHAR,
   last_captured    TIMESTAMP NOT NULL,
+  configuration_stamp VARCHAR,
   PRIMARY KEY (graph_name)
 );
 COMMENT ON TABLE store_graph IS 'A graph the store holds: the anchor of the graph_name partition dimension, one row per module ever captured into this store. Two discriminators keep the DDL''s FK conventions readable against this relation. First, why the SDL roots carry an FK here while the SDL-to-store_source FK was declined: the graph is ambient before the walk begins and NOT NULL on every row, while the source rows are a summary collected last and nullable at schema-level sites, so the FK doctrine admits one and not the other. Second: any derivation joining an SDL fact to a catalog or classpath fact (graphitron_ast_field_condition_entry''s class name against code_class, graphitron_ast_table_entry''s table reference against sql_table) is underdetermined in a shared store until a membership relation says which sources are the joining graph''s; store_graph_source below is that relation, landed with its first consumer (the inferred claim view), and such a join scopes its catalog side through it.';
@@ -101,6 +102,7 @@ COMMENT ON COLUMN store_graph.graph_name IS 'the graph''s configured name (the M
 COMMENT ON COLUMN store_graph.base_dir IS 'the capturing run''s base directory, absolute and normalized. NOT NULL and deliberately not grouped with the nullable build-identity pair: every run has a directory (RunContext requires basedir of every caller) even when it has no build file, and this column is what the ownership check reads when a run''s graph_name is already recorded against a different directory';
 COMMENT ON COLUMN store_graph.build_file_path IS 'the module''s build file (its pom), absolute and normalized; NULL on a programmatic run with no build file';
 COMMENT ON COLUMN store_graph.build_file_stamp IS 'content hash of the build file, spelled <scheme>:<hex> as SourceStamp writes it and always the sha256: scheme, a build file being read rather than resolved; the graph''s build identity: the remembered recipe is trusted only while the build file still hashes to this, and a mismatch marks the recipe possibly stale until the module''s own next build repairs it';
+COMMENT ON COLUMN store_graph.configuration_stamp IS 'the configuration this graph was last captured with: a content hash, spelled <scheme>:<hex> as SourceStamp writes it, of the declared configuration and the classpath coordinates the store gatherer was handed, written once that gatherer''s rows have committed; NULL before any capture has, which reads as changed';
 COMMENT ON COLUMN store_graph.last_captured IS 'when this graph''s own run last captured it; the age half of the age/currency distinction, and the bookkeeping a future eviction surface reads';
 
 CREATE TABLE store_graph_schema_input (

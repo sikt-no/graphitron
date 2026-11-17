@@ -11,17 +11,22 @@ import no.sikt.graphitron.model.run.OutputCoordinates;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
 import org.jooq.Table;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
@@ -93,14 +98,39 @@ public final class StoreEntries {
      * current, and the graph is a parameter rather than read off the configuration: a run that
      * declared nothing at all still has rows to sweep and nothing left to say whose they were.
      *
+     * <p>Vouched as the classpath and the catalog are: the graph's row keeps a stamp of what this
+     * was last handed, written after the rows commit, so a capture stopped before it reads as
+     * changed next time.
+     *
      * @param classpath the compile classpath the build tool resolved for the run, which is
      *                  configuration the build declares rather than a corpus this reads
+     * @return whether the configuration is what the graph was last captured with
      */
-    public static void write(DSLContext dsl, String graph, SubjectConfig config,
-                             List<ClasspathEntry> classpath, LocalDateTime touchedAt) {
+    public static boolean write(DSLContext dsl, String graph, SubjectConfig config,
+                                List<ClasspathEntry> classpath, LocalDateTime touchedAt) {
+        String stamp = stampOf(config, classpath);
+        boolean unchanged = stamp.equals(dsl.select(STORE_GRAPH.CONFIGURATION_STAMP).from(STORE_GRAPH)
+            .where(STORE_GRAPH.GRAPH_NAME.eq(graph)).fetchOne(STORE_GRAPH.CONFIGURATION_STAMP));
         Progress.started(dsl, graph, GATHERER);
         dsl.transaction(tx -> gather(tx.dsl(), graph, config, classpath, touchedAt));
         Progress.completed(dsl, graph, GATHERER);
+        dsl.update(STORE_GRAPH).set(STORE_GRAPH.CONFIGURATION_STAMP, stamp)
+            .where(STORE_GRAPH.GRAPH_NAME.eq(graph)).execute();
+        return unchanged;
+    }
+
+    /**
+     * Everything {@link #gather} writes from, as one stamp. The lint's rule ids are a set, whose
+     * order can differ between JVMs, so they are sorted; every other part iterates in its declared
+     * order.
+     */
+    private static String stampOf(SubjectConfig config, List<ClasspathEntry> classpath) {
+        var parts = List.of(config.recipe(), config.jooqPackage(), config.supergraph(), config.output(),
+            config.tenantColumn(), new TreeSet<>(config.lint().disabledRuleIds()),
+            config.lint().excludedTypePatterns(), config.sessionState(), config.maxAllowedPageSize(),
+            config.outbox(), classpath);
+        var text = parts.stream().map(String::valueOf).collect(Collectors.joining("\n"));
+        return SourceStamp.of(text.getBytes(StandardCharsets.UTF_8));
     }
 
     /** This gatherer's row in {@code store_graph_progress}. */
