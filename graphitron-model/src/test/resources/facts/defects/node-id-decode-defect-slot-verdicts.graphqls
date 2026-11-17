@@ -61,6 +61,9 @@ type Query {
   # The node type's own record takes the whole tuple, at any arity.
   filmActorRecord(in: ID @nodeId(typeName: "FilmActor")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmActorRecord"})
+  "A FilmActor id named for a FilmRecord parameter, another table's record: the name is not overruled by the record."
+  filmRecordAsPairing(in: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
   # No parameter at all: a table predicate.
   films(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
   # A key column the catalog cannot type resolves no key, so nothing is judged.
@@ -127,6 +130,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   coordinate,                     code,                                 detail
   Query.pairByMistypedRow(key:),  NODE_ID_KEY_TUPLE_TYPE_DISAGREEMENT,  key
   Query.pairByWideTuple(key:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       key
+  Query.filmRecordAsPairing(in:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       in
   Query.film(id:),                NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   FilmSurveyNoteInput.note,       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       note
