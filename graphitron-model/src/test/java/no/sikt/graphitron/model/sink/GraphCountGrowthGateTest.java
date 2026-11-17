@@ -34,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * sensitive measure: an upsert matching on either of two keys grows less than the slack allows
  * here, and {@code UpsertKeyGateTest} reads the statements for that instead.
  */
+@org.junit.jupiter.api.Order(5)
 class GraphCountGrowthGateTest {
 
     @TempDir

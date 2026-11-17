@@ -49,6 +49,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the claim here is the opposite one, that a row means "this may be written at this directive", so
  * the cases are mostly about what is left out.
  */
+@org.junit.jupiter.api.Order(4)
 class CodeCaptureTest {
 
     private static final LocalDateTime FIRST = LocalDateTime.of(2026, 1, 1, 12, 0);

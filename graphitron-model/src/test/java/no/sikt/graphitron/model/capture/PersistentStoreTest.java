@@ -60,6 +60,7 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  * demote rather than wait on another process, and the capture, which gives up the anchor row on a
  * short budget while keeping the generous one for every row after it.
  */
+@org.junit.jupiter.api.Order(2)
 class PersistentStoreTest {
 
     private static final String SDL = """

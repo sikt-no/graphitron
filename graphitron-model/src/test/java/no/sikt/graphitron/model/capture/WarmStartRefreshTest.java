@@ -75,6 +75,7 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  * untouched, because a jar absent from this module's classpath may be another graph's live
  * dependency and other graphs' rows are another run's business.
  */
+@org.junit.jupiter.api.Order(1)
 class WarmStartRefreshTest {
 
     /** An instant no reading would choose, which is what makes a surviving row visible. */

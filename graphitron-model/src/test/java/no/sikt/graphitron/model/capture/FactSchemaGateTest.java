@@ -59,6 +59,7 @@ import no.sikt.graphitron.model.run.SubjectConfig;
  * application of a non-repeatable directive is author-reachable under registry capture, so it is
  * a detection and has no business failing a build.
  */
+@org.junit.jupiter.api.Order(3)
 class FactSchemaGateTest {
 
     /**
