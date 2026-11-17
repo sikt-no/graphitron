@@ -248,7 +248,7 @@ class JooqFactCaptureTest {
             int spellings = dsl.fetchCount(SQL_COLUMN_SPELLING);
             int keys = dsl.fetchCount(SQL_NAME_MATCHED_KEY_COLUMN);
             var touching = new java.util.concurrent.atomic.AtomicInteger();
-            var counting = dsl.configuration().derive(new org.jooq.impl.DefaultExecuteListenerProvider(
+            var counting = dsl.configuration().deriveAppending(new org.jooq.impl.DefaultExecuteListenerProvider(
                 new org.jooq.ExecuteListener() {
                     @Override
                     public void executeStart(org.jooq.ExecuteContext ctx) {
