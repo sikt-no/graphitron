@@ -129,7 +129,10 @@ public class TypeFetcherGenerator {
      * record parameter it can check. {@code services} is the {@code @service} fetchers the store
      * emits, which take the place of the classified model's; a field it does not emit keeps its
      * classified fetcher, and a caller with no store passes
-     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}.
+     * {@link no.sikt.graphitron.emit.ServiceEmission#none()}. {@code connectionKeyShape} is the build's
+     * connection key, which the walk's untenanted acquisition reads for one question,
+     * {@link TenantDslEmitter#readsHandedDownKey}; a caller with no store passes
+     * {@link no.sikt.graphitron.emit.ConnectionKeyShape#none()}.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, graphql.schema.GraphQLSchema assembled,
             String outputPackage,
@@ -141,7 +144,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
             no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
-            no.sikt.graphitron.emit.ServiceEmission services) {
+            no.sikt.graphitron.emit.ServiceEmission services,
+            no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -164,7 +168,7 @@ public class TypeFetcherGenerator {
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
                     nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
-                    errorChannels, outboxes, recordAccessors, services));
+                    errorChannels, outboxes, recordAccessors, services, connectionKeyShape));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -191,7 +195,8 @@ public class TypeFetcherGenerator {
                     errorChannels,
                     outboxes,
                     recordAccessors,
-                    services));
+                    services,
+                    connectionKeyShape));
             }
         }
         for (var row : errorRows) {
@@ -283,7 +288,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
             no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
-            no.sikt.graphitron.emit.ServiceEmission services) {
+            no.sikt.graphitron.emit.ServiceEmission services,
+            no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -292,7 +298,8 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes, recordAccessors, services);
+            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes, recordAccessors, services,
+            connectionKeyShape);
     }
 
     /**
@@ -560,6 +567,26 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
             no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
             no.sikt.graphitron.emit.ServiceEmission services) {
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage,
+            graphitronSchema, dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes,
+            recordAccessors, services, no.sikt.graphitron.emit.ConnectionKeyShape.none());
+    }
+
+    /** The canonical form over the build's connection key; the overload above passes none. */
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            graphql.schema.GraphQLSchema assembled,
+            String outputPackage,
+            GraphitronSchema graphitronSchema,
+            ChildField.NestingField dualWiring,
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes,
+            no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
+            no.sikt.graphitron.emit.ServiceEmission services,
+            no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -580,6 +607,8 @@ public class TypeFetcherGenerator {
         ctx.setRecordAccessors(recordAccessors);
         ctx.setServices(services);
         ctx.setConnections(launchers.connections());
+        // The walk reads the connection key for one question only, TenantDslEmitter.readsHandedDownKey.
+        ctx.setConnectionKeyShape(connectionKeyShape);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields

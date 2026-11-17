@@ -440,6 +440,19 @@ final class TenantDslEmitter {
     }
 
     /**
+     * Whether a site that does not route reads the connection key its parent was read on rather than
+     * the request's own: in a build whose key has parts and no tenant column, that is, one that accepts
+     * vouchers, a field below a vouched entity runs on the lease the entity was read on, and a root,
+     * handed no key, on the key with no parts, which is the request's own connection. The walk's one
+     * exception to reading the request's own connection where it does not route (Alf, 2026-11-17: the
+     * walk's untenanted arm reads the ConnectionKey); it goes with the walk's read path, the store's
+     * emitters each owning their query's acquisition.
+     */
+    static boolean readsHandedDownKey(TypeFetcherEmissionContext ctx) {
+        return !isMultiTenant(ctx) && ctx.connectionKeyShape().hasParts();
+    }
+
+    /**
      * The coordinate's binding at a routing site. Every coordinate the fold assigns gets an arm or
      * a rejection, the build fails on validator errors before any emission, and the fold visits
      * every classified instance that gets emitted, nested ones included; so a coordinate with no

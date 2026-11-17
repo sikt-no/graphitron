@@ -73,6 +73,11 @@ final class TypeFetcherEmissionContext {
     private no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections =
         no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty();
 
+    // The build's connection key, for TenantDslEmitter.readsHandedDownKey alone, and gone with it.
+    // No parts by default, so a context with no store keeps the request's own connection.
+    private no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape =
+        no.sikt.graphitron.emit.ConnectionKeyShape.none();
+
     // The store's record accessors, for the VALIDATION pre-step's per-column check on a jOOQ record.
     // Empty by default, so a context with no store checks no record column.
     private no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors =
@@ -213,6 +218,16 @@ final class TypeFetcherEmissionContext {
     /** The store's answer for the run's connection fields, for the renderers this class calls. */
     no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections() {
         return connections;
+    }
+
+    /** Installs the build's connection key; see {@link TenantDslEmitter#readsHandedDownKey}, which it goes with. */
+    void setConnectionKeyShape(no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape) {
+        this.connectionKeyShape = connectionKeyShape;
+    }
+
+    /** The build's connection key; read by {@link TenantDslEmitter#readsHandedDownKey} alone. */
+    no.sikt.graphitron.emit.ConnectionKeyShape connectionKeyShape() {
+        return connectionKeyShape;
     }
 
     /**

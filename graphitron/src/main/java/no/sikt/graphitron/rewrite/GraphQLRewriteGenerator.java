@@ -592,6 +592,18 @@ public class GraphQLRewriteGenerator {
         }
         var plan = captured.plan();
 
+        // The tenant key type read off the catalog's tenant column types every tenant-keyed
+        // runtime surface when <tenantColumn> is configured; null keeps the erased Object shape.
+        var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
+            ? configuredTenancy.tenantType()
+            : null;
+        // The connection key's shape, decided once here and handed to the generators that write, read
+        // or key by it, the walk's fetchers among them: its tenant part from the tenant key type above,
+        // its vouched-for parts from what the store says the graph's @accept fields vouch for.
+        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.read(store, tenantKeyType);
+        no.sikt.graphitron.emit.ConnectionQuery.requireTenancyAgrees(store,
+            schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured);
+
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
             plan.routineWrites(),
@@ -599,17 +611,13 @@ public class GraphQLRewriteGenerator {
             plan.errorChannels(),
             plan.outboxes(),
             recordAccessors,
-            services);
+            services,
+            connectionKeyShape);
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
 
         EmissionLog emittedThisRun = new EmissionLog();
-        // The tenant key type read off the catalog's tenant column types every tenant-keyed
-        // runtime surface when <tenantColumn> is configured; null keeps the erased Object shape.
-        var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
-            ? configuredTenancy.tenantType()
-            : null;
         // The representative tenant column, rendered beside the key type: its DataType and
         // converter decide which tenant spellings are one key at runtime.
         var tenantColumn = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured representative
@@ -617,10 +625,6 @@ public class GraphQLRewriteGenerator {
                 CatalogRefs.constantsClass(representative.tenantTable()),
                 representative.tenantTable().javaFieldName(), representative.tenantColumn().javaName())
             : null;
-        // The connection key's shape, decided once here and handed to the generators that write, read
-        // or key by it: its tenant part from the tenant key type above, its vouched-for parts from what
-        // the store says the graph's @accept fields vouch for.
-        var connectionKeyShape = no.sikt.graphitron.emit.ConnectionKeyShape.read(store, tenantKeyType);
         // What the graph does with vouchers, read once off the stored voucher keys and handed to every
         // generator the answer changes: the voucher runtime and the runtime's keys where it issues or
         // accepts, the per-operation issuers where it issues.

@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_OCCURRENCE_TENANT_SLOT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.min;
 import static org.jooq.impl.DSL.multiset;
@@ -82,6 +83,23 @@ public final class ConnectionQuery {
 
     private record RawSlot(List<String> names, Integer keyPosition, String typeId, String tablesClass,
                            String tableField, List<String> keyColumns) {}
+
+    /**
+     * That the walk's tenancy agrees with the store's: the walk routes on its tenant scopes,
+     * {@code walkTenanted}, and the store states each producer's connection off its tenant column, so a
+     * build where one has a tenant column and the other none would read one connection in the store's
+     * emitters and another in the walk's. Checked once where the connection key's shape is decided; gone
+     * with the walk's tenant scopes.
+     */
+    public static void requireTenancyAgrees(StoreHandle store, boolean walkTenanted) {
+        var column = STORE_GRAPH_TENANT_COLUMN;
+        var stored = store.dsl().fetchExists(column, column.GRAPH_NAME.eq(store.graphName()));
+        if (walkTenanted != stored) {
+            throw new IllegalStateException("Graphitron generator bug (tenancy): the walk "
+                + (walkTenanted ? "routes on a tenant column" : "has no tenant column") + " and the store "
+                + (stored ? "states one" : "states none") + " for graph '" + store.graphName() + "'");
+        }
+    }
 
     /** The graph's producers' connections, by the producer's occurrence. */
     public static Map<String, Row> read(StoreHandle store) {
