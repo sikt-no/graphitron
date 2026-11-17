@@ -691,7 +691,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8c.3. Tenants to the source | `ConnectionSource.of(acquire, tenants)` names the fan-out domain; the request tenant set, the default tenant and `@defaultTenant` gone | `abe204f` |
 | 8d.1. One way to read an entity | `_entities`, `node` and `nodes` load through DataLoaders per (type, alternative, connection key) in every build without a tenant column; `OwnedConnections.dslFor(env, key)` the one point, in every build | `a871d07` |
 | 8d.2. Vouchers on it | Pending; below | |
-| 8e. Fields with a fetcher of their own | Pending, as 8e.1 and 8e.2; below | |
+| 8e. Fields with a fetcher of their own | Pending, as 8e.1, 8e.2 and 8e.3; below | |
 
 Facts from the shipped slices that slice 8 builds on:
 
@@ -811,7 +811,7 @@ which is enough to try the first client's shape if its documents read that way.
   subtree admitted nothing; a plain-key representation adding no access; the limit error; every
   verification failure with nothing acquired, also among plain-key and valid representations.
 
-**Slice 8e, fields with a fetcher of their own.** In two parts. Neither waits on a tenant-routing node:
+**Slice 8e, fields with a fetcher of their own.** In three parts. None waits on a tenant-routing node:
 version 1 refuses `@accept` in a tenant-column graph.
 
 *8e.1, the connection relation's grain and a `@service` below a vouched entity.*
@@ -839,12 +839,29 @@ version 1 refuses `@accept` in a tenant-column graph.
 * Execution tests: the service under a voucher reads on the vouched lease, released once; the same
   service reached from outside the subtree reads on the request's own connection.
 
-*8e.2, batched and connection-typed fields.* Waits on R876's nodes "A batched child's fetcher is emitted
-from the store, on its stated connection" and "A connection-typed field's fetcher is emitted from the
-store, on its stated connection", not on the whole of "`TypeFetcherGenerator` reads the store, one
-family of field at a time".
+*8e.2, the walk reads the handed-down key.* Alf, 2026-11-17: the walk's untenanted arm reads the
+`ConnectionKey`, so the fields the walk still fetches need not wait for their store-fed fetchers. An
+exception R876 records in its flips in flight, gone with the walk's read path.
 
-* A batched field and a connection-typed field under the entity acquire from the inherited key.
+* The walk's emission context carries the build's `ConnectionKeyShape`, read once, and
+  `TenantDslEmitter.readsHandedDownKey` is its one reader: a build whose key has parts and no tenant
+  column. Where the shape is decided, the walk's tenant scopes must agree with the store's tenant column.
+* Its three places that do not route read the key the parent was read on: the fetcher's declaration and
+  its expression form `dslHandedDown(env)`, a loader's name `handedDownLoaderName(env, parent)`, so a
+  split query, a routine and a polymorphic field below the entity acquire from the inherited key. A
+  root, handed no key, reads on the key with no parts, as before.
+* `VOUCHER_ACCEPT_NOT_GENERATED` narrows to a connection below the accepting type, a field
+  `@asConnection` expands or one returning a connection type, whatever fetches it; the reach follows
+  every field and steps from a union or interface to its members. `accept.adoc` and the directive
+  definition say so.
+* Execution tests: a split query and a polymorphic child below the entity read on the owner's one lease;
+  a root handed no key reads on the key with no parts.
+
+*8e.3, connection-typed fields.* Waits on R876's node "A connection-typed field's fetcher is emitted
+from the store, on its stated connection": a connection's count and facets resolve their own
+`DSLContext`, which the walk's handed-down read does not reach.
+
+* A connection-typed field under the entity acquires from the inherited key.
 * `VOUCHER_ACCEPT_NOT_GENERATED` goes, with the "refused for now" sentence in `accept.adoc` and the
   directive definition.
 * The remaining execution tests under *Tests*: a nested read through fields with their own fetchers, a

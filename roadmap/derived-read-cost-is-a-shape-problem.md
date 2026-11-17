@@ -122,6 +122,10 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The walk's validator and `graphitron_entry_defect_site`, both judging a schema. Ends at
   "`validate` reads its verdict from the store".
 * The walk's own schema beside the emitted one capture builds. Ends at "The generator builds no schema".
+* The walk's untenanted acquisition reads the handed-down `ConnectionKey` in a build that accepts
+  vouchers, beside the store's stated connections (Alf, 2026-11-17: the walk's untenanted arm reads the
+  `ConnectionKey`). Ends when the walk's read path goes, at "`TypeFetcherGenerator` reads the store, one
+  family of field at a time".
 * `FederationLinkComposer` rewriting the link `graphitron_federation_link` states. Ends at "The generator builds no schema".
 * The run's configuration in the `store_graph_` relations and on `RunContext`. Ends at "The generator reads its configuration from the store".
 * `OperationMemberRelation` and `DeliveryFactRelation` beside the leaf crosswalk. Ends at "Operation members and delivery are read from their relations alone".
@@ -1695,11 +1699,10 @@ output package they are written to are settled.
   * **A batched child's fetcher is emitted from the store, on its stated connection** `blocked`, G's,
     on "The projection units are rendered from the store", "The filter conditions are emitted from the
     store, claimed by F" and "The root query fetchers are emitted from the store, claimed by F". A
-    split-query child reads its DataLoader and its connection off the store; it releases R1119's slice
-    8e.2 for batched fields below a vouched entity.
+    split-query child reads its DataLoader and its connection off the store.
   * **A connection-typed field's fetcher is emitted from the store, on its stated connection**
     `blocked`, F's, on the same three nodes. A connection field and its count and facet siblings read
-    their query and connection off the store; it releases R1119's slice 8e.2 for connection-typed
+    their query and connection off the store; it releases R1119's slice 8e.3 for connection-typed
     fields below a vouched entity.
 * **The undecided fact documents are sorted** `open`. Each document under `undecided` becomes a
   scenario or states the defect it trips over, and the folder is gone; the ones the walk refuses with
