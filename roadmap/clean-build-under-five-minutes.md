@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-17
+last-updated: 2026-11-18
 ---
 
 # A clean build runs in under five minutes
@@ -209,8 +209,6 @@ parallelises a module's tests is priced against that before it is tried.
       `StoreNodeTablesTest` 12 s and `SourceGraphScopingTest` 10 s, besides the population's own
       39 s. Each takes its schema from a document and keeps the store only where its subject is the
       store.
-   `GraphCountGrowthGateTest` spends 33 s re-preparing what its 64-entry cache evicts across sixteen
-   captures; a larger cache changes what the gate can see, so that one is Alf's call.
 4. **H2's view-index cache of 64** (A5). Measured: it is what repeats the type-backing compile, and
    step 1 removes that cost; no other rule view costs more than a few milliseconds to compile again.
    Nothing to change unless the re-measure after step 1 shows another view paying it.
@@ -244,13 +242,39 @@ parallelises a module's tests is priced against that before it is tried.
     sibling snapshot over populated stages. Two claims over the documents turned up what one fixture
     could not: an undeclared directive is a refusal its graph records, and a link's imports are told
     apart by name. The model's suite went from 468 to 410 s, its class time from 1,536 to 1,309 s.
-    `GraphCountGrowthGateTest` is held: an `EXPLAIN` over the 2,879 statements the documents' captures
-    ran, on each of the fourteen stores, explained all but `EXPLAIN ANALYZE` and `COMMIT` in 32 s and
-    found no scan of a graph-keyed table in a statement naming no `graph_name`, the kind the gate's
-    timing exists to catch; 219 tables are scanned in statements that do filter on it, most of them
-    the documents' claim checks. Whether a plan check replaces the timing gate is a design ruling.
+    `GraphCountGrowthGateTest` was replaced by a plan check, Alf's ruling: see step 13.
 12. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
-   ranked: a stage that runs with no input for the schema, the two store-wide `ANALYZE`s per capture.
+   ranked: a stage that runs with no input for the schema. The two `ANALYZE`s are step 14's.
+13. **A plan check replaces the growth gate.** Done 2026-11-18 (1d1597c077).
+    `GraphKeyedScanGateTest` plans every statement the documents' captures ran with `EXPLAIN ANALYZE`
+    and the binds it first ran with, each rolled back, and reads each table reference within its own
+    query block: a full scan of a graph-keyed table, of the table or of an index walked whole, is a
+    finding unless its block narrows that reference's `graph_name` by `=` or `IN`. A statement that
+    meets a key in the warm store has its read lifted out (an insert's `SELECT`, a merge's source, a
+    delete's `WHERE`). On the merged tree: 956 statements planned, 40 lifted, 2 explained bare, no
+    finding, 12 filtered full scans. Bare `EXPLAIN` was ruled out first: H2 optimises a view per set of
+    index conditions when it runs, and reading by alias text was ambiguous in one plan in five where
+    the per-block reading is in one in a hundred. The recording the gate reads is always on; the model
+    module took 7:00 against 7:06 in the build before it.
+14. **An unchanged reading costs only its checks** (A3's precondition, and the dev loop's). Measured
+    2026-11-17 on `generate-test-schemas`' 143 scenarios, each captured cold and then again unchanged
+    under one graph name: the warm capture cost 0.73 of the cold one.
+    - The two `ANALYZE`s are skipped when every gatherer vouches its reading unchanged, the
+      configuration given a vouch of its own (`store_graph.configuration_stamp`). Done 2026-11-17
+      (a0cdf2b573): warm 0.73 to 0.51 of cold. H2 keeps column selectivity across a reopen.
+    - A catalog left alone re-derives neither its spellings nor its name-matched keys. Done 2026-11-18
+      (061ad67af0): about 1.0 s over the 143 warm captures.
+    - A snapshot's store stamp is a hash of graphitron-model's code (R876), so a reused store is never
+      one older code derived; the precondition for the next step.
+    - Tier 1, open: a reading every gatherer vouches unchanged, whose previous capture completed,
+      skips graphitron's anchor phase and the derivation, and does not move
+      `store_graph.last_captured`, which keeps naming the reading whose marks the rows carry.
+    - Tier 2, parked: a stage skipped because its inputs did not change. Its readers select the
+      current reading's rows by mark, so a skipped stage would hand a running one nothing; priced on a
+      one-document edit before any writer changes, and what a mark means is Alf's and Filip's.
+    - For later: a warm sweep delete is now and then 100 to 1,000 times its cold cost
+      (`GRAPHITRON_OCCURRENCE_SORT_KEY_COLUMN` 2.45 s against 2 ms, `SQL_COLUMN_SPELLING` 3.0 s against
+      0.43 s), with and without the `ANALYZE`s. One look with the store-performance skill.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
 `SET QUERY_TIMEOUT` when a reader is minted, and that setting empties the statement cache of every
@@ -442,8 +466,8 @@ is what takes it out.
   413 s inside 133 s where the serial sweep took 130 s, since each comparison captures through the
   population's pooled stores and queues on a shard's one writing connection. `graphitron`'s wall went
   from 7:36 to 7:16, one run each, inside the noise. It is deleted with the walk under R876.
-- `GeneratorDeterminismTest` and `GraphCountGrowthGateTest` are split by their inputs: about 40 to
-  60 s together.
+- `GeneratorDeterminismTest` is split by its inputs. `GraphCountGrowthGateTest`, which was paired
+  with it here, went with step 13.
 
 **B4. Run the invoker in parallel.** Done 2026-11-17: `parallelThreads` 4 on the invoker. Its thirteen
 ITs ran one after another, 76 s of the chain; at four threads, interleaved pairs of

@@ -1727,13 +1727,12 @@ someone to profile.
 * **A stage's time does not grow with the other graphs in the store** `open`. The same schema
   captured into a store holding one graph and into one holding many fails a stage whose time grows
   with the number of other graphs, since a rule reading across graphs is a regression caught early.
-  `GraphCountGrowthGateTest` holds it as a backstop, one graph's write and read time per relation
-  alone and as one of eight within a generous multiple, and `UpsertKeyGateTest` holds the upsert
-  shape the slack would miss; what is left is the tables both name as known.
-  * **A stage's time includes its preparation** `open`. A capture records `prepare_ms` beside the
-    execution time; what remains is `GraphCountGrowthGateTest.times()`, which sums execution only, so
-    the backstop still misses preparation, about 70% of the store-heavy test JVMs' samples
-    (`roadmap/audits/2026-11-09-why-the-build-takes-35-minutes.md`).
+  `GraphKeyedScanGateTest` holds the shape from the plans rather than from timings: no statement the
+  documents' captures ran scans a graph-keyed table, whole or through an index walked whole, unless
+  its block narrows that reference's `graph_name`. `UpsertKeyGateTest` holds the upsert shape. What
+  is left is the full scans the plan gate reports and does not fail, those narrowed by `graph_name`
+  after reading the whole table: twelve statements on nine tables at its landing, each a cost that
+  grows with the other graphs.
   * **A stage's rows written count every row a batch writes** `open`. `store_graph_write.rows_written`
     undercounts writes that bind one row per batch entry: on sis it records 22 rows for
     `graphitron_ast_field_path_entry`, which holds 828, and 23 for `graphitron_ast_path_entry`, which
@@ -1741,16 +1740,10 @@ someone to profile.
     driver answers each entry without a count, as JDBC's `SUCCESS_NO_INFO` does, adds nothing; the
     cause is to be confirmed before the fix. Until then the column is wrong for every relation
     `BindBatch` writes, and a rows-per-millisecond comparison over it misleads.
-  * **The growth gate fails only on growth** `open`, unowned. `GraphCountGrowthGateTest` failed two
-    of about nine full builds in the CPU audit, each on a different relation and 6 to 7 ms past its
-    bound, and once in the R876 harvest builds, where a collection pause or a stalled thread inside
-    a measurement of a few milliseconds crosses it. A verification build that fails for that is not
-    one; the gate takes a margin or repeated samples a pause cannot cross, and still fails a
-    relation that reads across graphs.
   * **The entry defect rule reads one graph's rows** `open`, unowned. After the chain-break fix the
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
     what still grew was its two column-match parts, 2 to 32 ms, which read
-    `graphitron_field_target_column_match`, since gone. Inside the backstop's slack, so not on its known list.
+    `graphitron_field_target_column_match`, since gone. It was inside the timing backstop's slack, so not on its known list.
     Its merge was also the costliest statement to plan in the build: the rule reaches 116 relations
     through 18 views, 318 CPU-seconds of preparation over a `graphitron` test phase (`roadmap/audits/2026-11-02-where-the-build-spends-its-cpu.md`);
     at the 2026-11-09 re-profile it is 4% of that JVM, and each of the path-need rule's two upserts is 12%.
