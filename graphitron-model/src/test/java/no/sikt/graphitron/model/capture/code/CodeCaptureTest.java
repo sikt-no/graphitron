@@ -2,9 +2,11 @@ package no.sikt.graphitron.model.capture.code;
 
 import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.config.ClasspathEntry;
+import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.GraphitronStore;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,7 +15,9 @@ import java.nio.file.Files;
 
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 import org.jooq.DSLContext;
@@ -126,11 +130,32 @@ class CodeCaptureTest {
      * themselves to what the build compiled, which excludes a transitive jar on the way to
      * excluding every other jar, so they would pass this whatever the corpus were. The two that
      * read beyond the reactor are the ones the classification is load-bearing for.
+     *
+     * <p>The entry registry says what the reading read, so an entry no arm may read draws no row
+     * either. A row there would claim a source the store holds no facts from and cannot ever hold
+     * any from, and {@code store_source} is what a currency scan walks.
+     *
+     * <p>Each absence is set against the same jar read as declared, so it is the classification
+     * that removes the rows and not a reading that found nothing.
      */
     @Test
-    @DisplayName("a transitive dependency is nobody's to name, so no arm reads its classes")
+    @DisplayName("a transitive dependency is nobody's to name, so no arm reads it and it registers no source")
     void aTransitiveEntryIsNotRead() {
-        withCapture(TRANSITIVE_GRAPHQL_JAVA, null, FIRST, dsl -> {
+        String jar = graphqlJavaJar().toString();
+        withCapture(CLASSPATH, dsl -> {
+            assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT,
+                    CODE_SCALAR_CONSTANT.CLASS_NAME.eq("graphql.Scalars")))
+                .as("the jar read as declared admits its constants")
+                .isPositive();
+            assertThat(dsl.fetchCount(CODE_THROWABLE,
+                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
+                .as("and its throwables")
+                .isOne();
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(jar)))
+                .as("and registers as a source")
+                .isOne();
+        });
+        withCapture(TRANSITIVE_GRAPHQL_JAVA, dsl -> {
             assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT,
                     CODE_SCALAR_CONSTANT.CLASS_NAME.eq("graphql.Scalars")))
                 .as("the constants an author may not name, because this jar is undeclared")
@@ -139,6 +164,13 @@ class CodeCaptureTest {
                     CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
                 .as("and the throwables, on the same grounds")
                 .isZero();
+            assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(jar)))
+                .as("an entry read by nothing, registered by nothing")
+                .isZero();
+            assertThat(dsl.fetchCount(STORE_SOURCE,
+                    STORE_SOURCE.SOURCE_NAME.eq(TRANSITIVE_GRAPHQL_JAVA.get(0).path().toString())))
+                .as("while the declared entry beside it is registered, so the reading ran")
+                .isOne();
         });
     }
 
@@ -175,21 +207,6 @@ class CodeCaptureTest {
     }
 
     /**
-     * The entry registry says what the reading read, so an entry no arm may read draws no row
-     * either. A row here would claim a source the store holds no facts from and cannot ever hold
-     * any from, and {@code store_source} is what a currency scan walks.
-     */
-    @Test
-    @DisplayName("an entry the reading never opens registers no source")
-    void aTransitiveEntryRegistersNoSource() {
-        withCapture(TRANSITIVE_GRAPHQL_JAVA, null, FIRST, dsl ->
-            assertThat(dsl.fetchCount(STORE_SOURCE,
-                    STORE_SOURCE.SOURCE_NAME.eq(graphqlJavaJar().toString())))
-                .as("an entry read by nothing, registered by nothing")
-                .isZero());
-    }
-
-    /**
      * The package a caller names is read at the class grain: its classes are kept with their kind
      * and supertypes, so a relation can key into one, and their members are left out, which is the
      * generated code's bulk and nothing a reader asks for. A package is a name plus a dot, so a
@@ -216,7 +233,7 @@ class CodeCaptureTest {
     @Test
     @DisplayName("a GraphQLScalarType constant is admitted, with the type its scalar coerces to")
     void aScalarConstantIsAdmitted() {
-        withCapture(FIRST, dsl -> {
+        withCapture(CLASSPATH, dsl -> {
             assertThat(dsl.select(CODE_SCALAR_CONSTANT.FIELD_NAME, CODE_SCALAR_CONSTANT.INPUT_TYPE)
                     .from(CODE_SCALAR_CONSTANT)
                     .where(CODE_SCALAR_CONSTANT.CLASS_NAME.eq("graphql.Scalars"))
@@ -239,7 +256,7 @@ class CodeCaptureTest {
     @Test
     @DisplayName("a class declaring no scalar constant draws no row")
     void aClassWithNoConstantIsNotAdmitted() {
-        withCapture(FIRST, dsl -> {
+        withCapture(CLASSPATH, dsl -> {
             assertThat(dsl.fetchCount(CODE_SCALAR_CONSTANT,
                     CODE_SCALAR_CONSTANT.CLASS_NAME.eq("no.sikt.graphitron.model.run.GraphitronStore")))
                 .as("a class of this module, on the classpath and naming no scalar")
@@ -258,7 +275,7 @@ class CodeCaptureTest {
     @Test
     @DisplayName("the class census is partitioned by the classpath entry it came from")
     void theCensusIsPartitionedByEntry() {
-        withCapture(FIRST, dsl -> {
+        withCapture(CLASSPATH, dsl -> {
             assertThat(dsl.select(STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.SOURCE_KIND)
                     .from(STORE_SOURCE)
                     .where(STORE_SOURCE.SOURCE_KIND.in("DIRECTORY", "JAR"))
@@ -271,6 +288,13 @@ class CodeCaptureTest {
                     STORE_SOURCE.SOURCE_KIND.in("DIRECTORY", "JAR").and(STORE_SOURCE.STAMP.isNull())))
                 .as("a jar hashed and a directory walked, so either can be skipped while unchanged")
                 .isZero();
+            assertThat(dsl.selectDistinct(CODE_CLASS.SOURCE_NAME)
+                    .from(CODE_CLASS)
+                    .fetch(CODE_CLASS.SOURCE_NAME))
+                .as("every class is keyed by one of those entries, and each entry holds classes")
+                .containsExactlyInAnyOrder(
+                    CLASSPATH.get(0).path().toString(),
+                    CLASSPATH.get(1).path().toString());
         });
     }
 
@@ -283,7 +307,7 @@ class CodeCaptureTest {
     @Test
     @DisplayName("a throwable is admitted with the ancestry its chain leaves the classpath for")
     void aThrowableIsAdmittedWithItsAncestry() {
-        withCapture(FIRST, dsl -> {
+        withCapture(CLASSPATH, dsl -> {
             assertThat(dsl.fetchCount(CODE_THROWABLE,
                     CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
                 .as("a library throwable an @error handler could name").isEqualTo(1);
@@ -298,7 +322,7 @@ class CodeCaptureTest {
     @Test
     @DisplayName("a class that is not a throwable draws no row")
     void aPlainClassIsNotAdmitted() {
-        withCapture(FIRST, dsl -> {
+        withCapture(CLASSPATH, dsl -> {
             assertThat(dsl.fetchCount(CODE_THROWABLE,
                     CODE_THROWABLE.CLASS_NAME.eq("graphql.Scalars")))
                 .as("a class on the same jar, holding scalars and extending nothing").isZero();
@@ -306,18 +330,6 @@ class CodeCaptureTest {
                 .as("and the arm is not empty, so the case above is a filter and not a failure")
                 .isPositive();
         });
-    }
-
-    /**
-     * That the ancestry answers checked-ness is why it is stored rather than folded into a column,
-     * so the derivation is pinned at the relation rather than left to whoever reads it first.
-     */
-    @Test
-    @DisplayName("the closure is what says a throwable is unchecked")
-    void theClosureSaysUnchecked() {
-        withCapture(FIRST, dsl -> assertThat(ancestorsOf(dsl, "graphql.AssertException"))
-            .as("java.lang.RuntimeException in the closure is exactly what unchecked means")
-            .contains("java.lang.RuntimeException"));
     }
 
     @Test
@@ -449,9 +461,8 @@ class CodeCaptureTest {
 
     /**
      * The three roles over one fixture, which is what a reader asking "does this position take the
-     * source table" gets to read instead of climbing an ancestry. Every parameter of every admitted
-     * method is asserted rather than three chosen ones, so a role decided wrongly for a shape this
-     * fixture happens to carry cannot pass by not being looked at.
+     * source table" gets to read instead of climbing an ancestry. Three methods stand for the
+     * shapes: the table interface, a generated table class, and no table position at all.
      */
     @Test
     @DisplayName("each parameter position says what it is for")
@@ -550,18 +561,6 @@ class CodeCaptureTest {
                 .as("and a method declaring none has no rows rather than an empty one")
                 .isZero();
         });
-    }
-
-    /**
-     * Concrete is the declaration's answer and stands whether or not any catalog holds the class:
-     * this capture has no catalog behind it, and the position is still concrete. Which table it
-     * names is the graphitron anchor's match, not this reading's.
-     */
-    @Test
-    @DisplayName("a concrete position is concrete whether or not a catalog holds its class")
-    void aConcretePositionIsConcreteWithoutACatalog() {
-        withReactorCapture(dsl -> assertThat(rolesOn(dsl, "onOneTable"))
-            .containsExactly("TABLE_CONCRETE", "OTHER"));
     }
 
     // ===== The service arm: what a consumer may name at @service(service:) =====
@@ -830,6 +829,10 @@ class CodeCaptureTest {
      * The whole contract, admitted at once. Both spellings of a lifter qualify: one reaching
      * {@code Table} through a superclass chain, as a generated table class does, and one naming the
      * interface outright.
+     *
+     * <p>Stated as the whole set, so each clause's near miss on the fixture is excluded by name: a
+     * one-argument {@code Field}-returning method whose argument is no table, an instance method, a
+     * method returning no {@code Field}, and one taking a second parameter.
      */
     @Test
     @DisplayName("a lifter is admitted whether it names a table class or the table interface")
@@ -837,44 +840,6 @@ class CodeCaptureTest {
         withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS))
             .as("the two methods satisfying every clause of the contract")
             .containsExactlyInAnyOrder("titleUpper", "byInterface"));
-    }
-
-    /**
-     * The case the relation exists for. A method taking one argument and returning a
-     * {@code Field} is the shape an editor with nothing to ask has to settle for, and this one is
-     * not a lifter: its argument is not a table. The arm says so where a shape cannot.
-     */
-    @Test
-    @DisplayName("a one-argument Field-returning method whose argument is no table is not a lifter")
-    void theShapeIsNotTheContract() {
-        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS))
-            .as("the shape matches and the contract does not, so it is left out")
-            .doesNotContain("notATable"));
-    }
-
-    /**
-     * The other three clauses, one case each rather than one case listing them.
-     *
-     * <p>Worth the three methods: the contract is a conjunction, and a case per clause is what
-     * makes a regression name itself. Asserted together, any clause going missing fails the same
-     * test, so the failure says the arm admits too much and not which rule stopped holding.
-     */
-    @Test
-    @DisplayName("an instance method is not a lifter, however well its signature reads")
-    void aNonStaticMethodIsNotAdmitted() {
-        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("notStatic"));
-    }
-
-    @Test
-    @DisplayName("a method returning something other than a Field is not a lifter")
-    void aMethodReturningNoFieldIsNotAdmitted() {
-        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("notAField"));
-    }
-
-    @Test
-    @DisplayName("a lifter takes the table and nothing else, so a second parameter disqualifies it")
-    void aTwoParameterMethodIsNotAdmitted() {
-        withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("twoParameters"));
     }
 
     /**
@@ -1152,8 +1117,40 @@ class CodeCaptureTest {
         return counts;
     }
 
-    private static void withCapture(LocalDateTime at, Consumer<DSLContext> body) {
-        withCapture(CLASSPATH, null, at, body);
+    /**
+     * One capture per classpath, shared by every case that only reads it: captured on first use,
+     * closed after the class. Methods of one class run on one thread, so nothing races the first use.
+     */
+    private static final Map<List<ClasspathEntry>, DSLContext> SHARED = new HashMap<>();
+
+    /** The stores behind {@link #SHARED}, from the harness, closed after the class. */
+    private static final List<AutoCloseable> OPEN = new java.util.ArrayList<>();
+
+    @AfterAll
+    static void closeSharedCaptures() throws Exception {
+        for (var store : OPEN) {
+            store.close();
+        }
+        OPEN.clear();
+        SHARED.clear();
+    }
+
+    /** The shared reading of {@code entries}, transcribed and vouched for as the pass does. */
+    private static void withCapture(List<ClasspathEntry> entries, Consumer<DSLContext> body) {
+        body.accept(shared(entries, true));
+    }
+
+    private static DSLContext shared(List<ClasspathEntry> entries, boolean vouch) {
+        return SHARED.computeIfAbsent(entries, e -> {
+            var store = FactStores.inMemory();
+            OPEN.add(store);
+            var reading = ClasspathSourceCapture.read(store.dsl(), e, null, FIRST);
+            CodeCapture.capture(store.dsl(), reading, null, FIRST);
+            if (vouch) {
+                ClasspathSourceCapture.vouch(store.dsl(), reading);
+            }
+            return store.dsl();
+        });
     }
 
     /** One reading of {@code entries} with {@code headerOnlyPackage}, which is what a run hands in. */
@@ -1292,13 +1289,9 @@ class CodeCaptureTest {
         });
     }
 
-    /** Captures the reactor fixture beside jOOQ, which is the scope rule's own case. */
+    /** The reactor fixture captured beside jOOQ, which is the scope rule's own case; shared. */
     private static void withReactorCapture(Consumer<DSLContext> body) {
-        try (var store = GraphitronStore.inMemory()) {
-            CodeCapture.capture(store.dsl(),
-                ClasspathSourceCapture.read(store.dsl(), REACTOR_AND_JOOQ, null, FIRST), null, FIRST);
-            body.accept(store.dsl());
-        }
+        body.accept(shared(REACTOR_AND_JOOQ, false));
     }
 
     /** What one method results in, rendered for comparison, or null where its type names none. */
