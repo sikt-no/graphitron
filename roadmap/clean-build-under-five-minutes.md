@@ -7,7 +7,7 @@ priority: 5
 theme: tooling
 depends-on: [tests-read-shared-fact-stores]
 created: 2026-10-30
-last-updated: 2026-11-16
+last-updated: 2026-11-17
 ---
 
 # A clean build runs in under five minutes
@@ -367,9 +367,17 @@ capture reflects and upserts the whole catalog again. Measured from a second cap
 
 ### Track B: use the machine
 
-**B1. Build independent modules in parallel.** Add `.mvn/maven.config` with `-T 1C`, pinning the
-release deploy to one thread. The audit of 2026-11-01 found nothing that collides. LSP, MCP,
-roadmap-tool and docs then run beside `graphitron`: about 280 s, estimated.
+**B1. Build independent modules in parallel.** Done 2026-11-17, as a flag on the documented
+verification command, `mvn install -Plocal-db -T 1C`, rather than `.mvn/maven.config`: `.mvn/` is
+gitignored as the contributor's own, the web-session log redirect plans a file there, and
+maven-invoker-plugin's nested builds under `graphitron-maven-plugin/target/it` would inherit it. CI
+already ran `-T 1C`, so the gain is the local build's. Measured on trunk bfec416cae, one quiet run
+each: 1,483 s serial against 1,378 s parallel, 105 s where 280 s was estimated. LSP, MCP,
+roadmap-tool and docs left the chain, but `graphitron` slowed from 437 s to 545 s sharing the
+machine with them, and they slowed too (LSP 105 to 174 s, roadmap-tool 50 to 136 s). The chain the
+build now waits for is graphitron-model, graphitron, graphitron-maven-plugin and
+graphitron-sakila-example, so time off those counts in full and time elsewhere only as it frees
+the machine. The release deploy needs no pin, nothing setting `-T` for it.
 
 **B2. Run `generate-test-schemas` in parallel.** `GenerateTestSchemas.main` loops over 92 scenarios
 in one thread at 1.5 cores. Give it a pool, or read the scenarios from A3's store: about 200 s,
