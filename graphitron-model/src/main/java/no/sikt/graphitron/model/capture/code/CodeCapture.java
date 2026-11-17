@@ -160,9 +160,7 @@ public final class CodeCapture {
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         enumConstants(dsl, census.classes(), touchedAt);
         var reactor = reactorClasses(census);
-        try (var headers = new ClassHeaders(reading.sources().stream()
-                .map(source -> java.nio.file.Path.of(source.sourceName()))
-                .toList())) {
+        try (var headers = new ClassHeaders(headerEntries(reading.sources()))) {
             var ancestry = new ClassAncestry(census.classes(), headers);
             throwables(dsl, census.classes(), ancestry, touchedAt);
             methods(dsl, reactor, ancestry, touchedAt);
@@ -172,6 +170,19 @@ public final class CodeCapture {
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, reading.read(), touchedAt);
+    }
+
+    /**
+     * The entries a class header is read from: the reading's files, never the platform's source.
+     * {@link ClassHeaders} reads the platform through its own file system, and the platform's
+     * source name is a URI, which is no path on Windows.
+     */
+    static List<java.nio.file.Path> headerEntries(List<ClasspathSourceCapture.ClasspathSource> sources) {
+        return sources.stream()
+            .map(ClasspathSourceCapture.ClasspathSource::sourceName)
+            .filter(name -> !PlatformClasses.SOURCE.equals(name))
+            .map(java.nio.file.Path::of)
+            .toList();
     }
 
     /**

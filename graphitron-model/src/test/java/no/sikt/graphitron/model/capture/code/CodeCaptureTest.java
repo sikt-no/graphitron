@@ -332,6 +332,20 @@ class CodeCaptureTest {
         });
     }
 
+    /**
+     * The platform's source name is {@code jrt:/}, which Windows refuses as a path, so a header
+     * entry built from it fails the capture there; the platform is read through its own file system.
+     */
+    @Test
+    @DisplayName("the platform's source is no header entry")
+    void thePlatformSourceIsNoHeaderEntry() {
+        var jar = Path.of("lib", "a.jar").toAbsolutePath().toString();
+        assertThat(CodeCapture.headerEntries(List.of(
+                new ClasspathSourceCapture.ClasspathSource.Unchanged(PlatformClasses.SOURCE),
+                new ClasspathSourceCapture.ClasspathSource.Unchanged(jar))))
+            .containsExactly(Path.of(jar));
+    }
+
     @Test
     @DisplayName("reading twice restamps rather than doubling")
     void readingTwiceRestamps() {
