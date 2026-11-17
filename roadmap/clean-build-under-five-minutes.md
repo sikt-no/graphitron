@@ -230,7 +230,26 @@ parallelises a module's tests is priced against that before it is tried.
    build). Handed the classified list instead, they run alone in 17 and 18 s against 48.5 and
    51.8 s. Production was never affected: sis's capture store holds no class from its 42 transitive
    dependencies.
-10. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
+10. **The long own-work classes start first.** Done 2026-11-17. graphitron-model's four workers were
+    busy for 340 of a 402 s test phase, three long classes that wait on no population starting in its
+    last 80 s and running nearly alone. `@Order` on the five such classes, and the orderer named in the
+    module's `junit-platform.properties`, put the phase at 382 and 375 s against 392 and 396 s by
+    default in interleaved pairs, the module at 460.2 and 454.0 s against 468.2 and 474.9 s.
+11. **The slow model classes hold only claims nothing else holds, more cheaply.** Done 2026-11-17, by
+    a case-by-case reading of `FactSchemaGateTest`, `PersistentStoreTest`, `CodeCaptureTest` and
+    `WarmStartRefreshTest` for coverage elsewhere, claims the assertions do not hold, and cheaper
+    forms. Read-only fixture claims became per-graph claims over the fact documents in
+    `CapturedGraphInvariantsTest`; duplicate and vacuous cases went; cases that captured only to have
+    rows seed one; read-only cases share one capture per fixture; a stage's scoping is held by one
+    sibling snapshot over populated stages. Two claims over the documents turned up what one fixture
+    could not: an undeclared directive is a refusal its graph records, and a link's imports are told
+    apart by name. The model's suite went from 468 to 410 s, its class time from 1,536 to 1,309 s.
+    `GraphCountGrowthGateTest` is held: an `EXPLAIN` over the 2,879 statements the documents' captures
+    ran, on each of the fourteen stores, explained all but `EXPLAIN ANALYZE` and `COMMIT` in 32 s and
+    found no scan of a graph-keyed table in a statement naming no `graph_name`, the kind the gate's
+    timing exists to catch; 219 tables are scanned in statements that do filter on it, most of them
+    the documents' claim checks. Whether a plan check replaces the timing gate is a design ruling.
+12. **Unmeasured candidates from a code reading of one capture,** each to be measured before it is
    ranked: a stage that runs with no input for the schema, the two store-wide `ANALYZE`s per capture.
 
 A question for production rather than a step here: a bounded `ReadBudget` installs itself with
