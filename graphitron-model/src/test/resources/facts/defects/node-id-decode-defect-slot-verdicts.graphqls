@@ -47,6 +47,9 @@ type Query {
   # ... even at the key column's own type, Integer ...
   film(id: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+  # ... and so is an id: ID written without @nodeId, a node id all the same, at the argument itself ...
+  filmImplicit(id: ID): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
   # ... and so is a pair handing the whole id to a parameter, at the column's type or another ...
   filmByPair(ids: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
@@ -138,6 +141,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.pairByWideTuple(key:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       key
   Query.filmRecordAsPairing(in:), NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       in
   Query.film(id:),                NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
+  Query.filmImplicit(id:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   FilmSurveyNoteInput.note,       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       note
   Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId

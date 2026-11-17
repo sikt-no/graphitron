@@ -15091,8 +15091,6 @@ SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate, cp.call, cp.position
        mp.source_name, mp.parameter_type
   FROM graphitron_occurrence_call_parameter cp
   JOIN graphitron_occurrence o ON o.graph_name = cp.graph_name AND o.coordinate = cp.landing_coordinate
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
   JOIN graphitron_occurrence_call_method m
     ON m.graph_name = cp.graph_name AND m.coordinate = cp.coordinate AND m.call = cp.call
   JOIN code_method_parameter mp
@@ -15101,7 +15099,14 @@ SELECT cp.graph_name, cp.landing_coordinate, cp.coordinate, cp.call, cp.position
    AND mp.position = cp.position
   LEFT JOIN graphitron_argument a ON a.graph_name = o.graph_name AND a.coordinate = o.element_coordinate
   LEFT JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
- WHERE cp.fill = 'ARGUMENT';
+ -- A node id: one written with @nodeId, whether or not it binds a node table, or one the
+ -- binding infers, an id: ID with neither @nodeId nor @field.
+ WHERE cp.fill = 'ARGUMENT'
+   AND (EXISTS (SELECT 1 FROM graphitron_binding_claim cl
+                 WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+                   AND cl.kind = 'NODE_ID')
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
+                    WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate));
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_parameter_rule IS 'The call parameter a node id lands on: one row per parameter an ARGUMENT fill hands a node id, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_parameter stores. For example Query.film(id:) lands on the id parameter of FilmLookupService.lookup, and Query.languagesByPrimitive(ref:) on the languageId parameter its pair projects language_id into.';
 
 CREATE VIEW graphitron_occurrence_node_id_slot_member_rule
@@ -15111,13 +15116,18 @@ SELECT bm.graph_name, bm.coordinate, bm.bound, f.list_depth, w.erased_class, w.e
        w.delivery, w.source_name, w.slot_type
   FROM graphitron_occurrence_binding_member bm
   JOIN graphitron_occurrence o ON o.graph_name = bm.graph_name AND o.coordinate = bm.coordinate
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN code_write_slot w
     ON w.source_name = bm.slot_source_name AND w.class_name = bm.class_name
    AND w.method_name = bm.slot_method_name AND w.descriptor = bm.slot_descriptor
-   AND w.position = bm.slot_position;
+   AND w.position = bm.slot_position
+ -- A node id: one written with @nodeId, whether or not it binds a node table, or one the
+ -- binding infers, an id: ID with neither @nodeId nor @field.
+ WHERE (EXISTS (SELECT 1 FROM graphitron_binding_claim cl
+                 WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+                   AND cl.kind = 'NODE_ID')
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
+                    WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate));
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_member_rule IS 'The member of a built class a node id fills: one row per node id occurrence with a MEMBER binding, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_member stores. For example Mutation.assignOccupantRecord(in.occupant:) fills OccupantRecordAssignment#occupant.';
 
 CREATE VIEW graphitron_occurrence_node_id_slot_record_rule
@@ -15126,11 +15136,16 @@ CREATE VIEW graphitron_occurrence_node_id_slot_record_rule
 SELECT o.graph_name, o.coordinate, bc.class_name, bc.coordinate, f.list_depth, bc.class_source_ref,
        bc.class_name_ref
   FROM graphitron_occurrence o
-  JOIN graphitron_binding_claim cl
-    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'NODE_ID'
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_occurrence_built_class bc
-    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.record_table IS NOT NULL;
+    ON bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate AND bc.record_table IS NOT NULL
+ -- A node id: one written with @nodeId, whether or not it binds a node table, or one the
+ -- binding infers, an id: ID with neither @nodeId nor @field.
+ WHERE (EXISTS (SELECT 1 FROM graphitron_binding_claim cl
+                 WHERE cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate
+                   AND cl.kind = 'NODE_ID')
+        OR EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k
+                    WHERE k.graph_name = o.graph_name AND k.coordinate = o.coordinate));
 COMMENT ON VIEW graphitron_occurrence_node_id_slot_record_rule IS 'The jOOQ record a node id''s parent input object is built into: one row per node id occurrence and record class its parent is built into, with its supertype''s payload, in the shape graphitron_occurrence_node_id_slot_record stores. For example Query.countFilmRecordDatedDrafts(in.filmId:) lands on the FilmRecord its input object is built into.';
 
 CREATE VIEW graphitron_occurrence_node_id_slot_projection_rule
@@ -19333,7 +19348,9 @@ UNION ALL
 -- key's degree whose type arguments disagree with it, or any other class, a whole key landing only
 -- on its record or a tuple of it. The parameter or member is the detail, the least where uses
 -- differ.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
+-- An id written without @nodeId, inferred, is reported at the argument or input field it is.
+SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column), v.code,
        MIN(v.place_name), 'occurrence-builds'
   FROM (SELECT s.graph_name, o.element_coordinate,
                COALESCE(cp.parameter_name, SUBSTRING(sm.bound, POSITION('#', sm.bound) + 1))
@@ -19381,11 +19398,14 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
                     ELSE cp.parameter_name = o.name END)
            AND NOT EXISTS (SELECT 1 FROM graphitron_binding_claim_container k
                             WHERE k.graph_name = o.graph_name AND k.coordinate = o.element_coordinate)) v
-  JOIN graphitron_directive_application da
+  LEFT JOIN graphitron_directive_application da
     ON da.graph_name = v.graph_name AND da.coordinate = v.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
- WHERE v.code IS NOT NULL AND da.source_line IS NOT NULL
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column, v.code
+  LEFT JOIN graphql_ast_element_entry el
+    ON el.graph_name = v.graph_name AND el.coordinate = v.element_coordinate AND da.graph_name IS NULL
+ WHERE v.code IS NOT NULL AND COALESCE(da.source_line, el.source_line) IS NOT NULL
+ GROUP BY v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+          COALESCE(da.source_column, el.source_column), v.code
 UNION ALL
 -- A polymorphic id whose value reaches no Java parameter, at the @nodeId: the decode per member is
 -- a parameter's, and anywhere else the value binds a predicate or is encoded. Quiet where the field
@@ -19550,7 +19570,9 @@ UNION ALL
 -- the record is not the node's own table, nor is there one path step from it that carries every key
 -- column back, a longer path landing nothing. A written path ending off the node's table is the arm
 -- above's. Once per @nodeId, the detail the record's table.
-SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
+-- An id written without @nodeId, inferred, is reported at the argument or input field it is.
+SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column),
        'NODE_ID_LANDS_ON_TABLE', MIN(bc.record_schema || '.' || bc.record_table), 'occurrence-builds'
   FROM graphitron_occurrence_node_id_slot s
   JOIN graphitron_occurrence_node_id_slot_record sr
@@ -19561,10 +19583,12 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
   JOIN graphitron_occurrence_node_id k
     ON k.graph_name = s.graph_name AND k.coordinate = s.coordinate AND k.position = 0
   JOIN graphitron_occurrence o ON o.graph_name = s.graph_name AND o.coordinate = s.coordinate
-  JOIN graphitron_directive_application da
+  LEFT JOIN graphitron_directive_application da
     ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
    AND da.directive_name = 'nodeId' AND da.ordinal = 0
- WHERE da.source_line IS NOT NULL AND s.slot_shape <> 'MISMATCH'
+  LEFT JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate AND da.graph_name IS NULL
+ WHERE COALESCE(da.source_line, el.source_line) IS NOT NULL AND s.slot_shape <> 'MISMATCH'
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id k2
                     WHERE k2.graph_name = k.graph_name AND k2.coordinate = k.coordinate
                       AND k2.bound <> k.bound)
@@ -19578,7 +19602,8 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column,
                       AND p.origin IN ('WRITTEN', 'INHERITED', 'INFERRED')
                       AND NOT (jp.target_source_name = k.table_source_name
                                AND jp.target_schema = k.table_schema AND jp.target_table = k.table_name))
- GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
+ GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+          COALESCE(da.source_column, el.source_column)
 UNION ALL
 -- A node id inside an input object built into a jOOQ record that is a list, or the id of several node
 -- types, at the input field: a list of ids writes no one column, and a record takes one node's key, so
