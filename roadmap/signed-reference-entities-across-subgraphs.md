@@ -309,6 +309,12 @@ Decisions the user made on this item; each is stated where it applies below.
   `tenants()` is a default that throws, never called since nothing fans out there. Graphitron fans out
   over the domain, one key and one lease per tenant, and a tenant the request may not see is simply not
   named (2026-11-16).
+* One request rejection (2026-11-17): a generated sealed `RequestRejectedException` with arms for a
+  failed acquisition (`AcquisitionFailedException`), a failed voucher check (`VoucherRejectedException`)
+  and the one-vouched-value limit; the carrier's one slot, the error router's decline, the
+  instrumentation's throw and the facade read that one type. The facade's `acquisitionFailure` becomes
+  `requestRejection`, answering the source's own exception for a failed acquisition and the rejection
+  itself otherwise; graphitron-jakarta-rest's `failedAcquisition` becomes `rejectedRequest`.
 * No default tenant and no `@defaultTenant` (2026-11-17): `RequestTenants.withDefault` and the entity
   default tenant go with the request tenant set. Every read and write of a global table runs on the key
   whose tenant part is empty, whose pool the source picks, so `dslGlobal` folds into `dslDefault`.
