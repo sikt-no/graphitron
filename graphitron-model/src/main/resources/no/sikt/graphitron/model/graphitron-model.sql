@@ -19363,9 +19363,9 @@ SELECT da.graph_name, da.source_name, da.source_line, da.source_column, v.code,
           LEFT JOIN code_tuple_class tc ON tc.class_name = s.landing_class
          -- A member of a built class, or a @service's parameter taking the whole key: the one named for
          -- the argument, which no written pair fills, or one a pair fills without projecting a key
-         -- column.
+         -- column, an argument's or, along an argMapping path, an input field's.
          WHERE (s.kind = 'MEMBER'
-                OR o.kind = 'FIELD_ARGUMENT' AND cp.call_kind = 'SERVICE'
+                OR o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD') AND cp.call_kind = 'SERVICE'
            AND CASE WHEN EXISTS (SELECT 1 FROM graphitron_occurrence_call_parameter_pair pp
                                   WHERE pp.graph_name = cp.graph_name AND pp.coordinate = cp.coordinate
                                     AND pp.call = cp.call AND pp.position = cp.position)

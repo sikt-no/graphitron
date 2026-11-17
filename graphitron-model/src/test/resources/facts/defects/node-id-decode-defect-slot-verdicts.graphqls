@@ -29,6 +29,9 @@ input FilmSurveyNoteInput { note: ID @nodeId(typeName: "Film") }
 "A film id built into a record bean's FilmRecord member, the node's own record."
 input FilmRecordAssignmentInput { film: ID @nodeId(typeName: "Film") }
 
+"A composite id an argMapping path hands whole to a parameter, judged there as an argument's is; a one-column id is the column a path projects instead."
+input GreetingByPathInput { userId: ID @nodeId(typeName: "FilmActor") }
+
 input PairingInput {
   title: String
   pairingId: ID @nodeId(typeName: "FilmActor")
@@ -49,6 +52,9 @@ type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ids"})
   greetingsByPair(ids: ID @nodeId(typeName: "Film")): String
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: ids"})
+  # ... and so is a path reaching an input field's id, at the input field.
+  greetingsByPath(by: GreetingByPathInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet", argMapping: "userId: by.userId"})
   # ... which a pair projecting the column into the parameter takes as the column's value.
   filmByProjection(ref: ID @nodeId(typeName: "Film")): Film
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ref.film_id"})
@@ -135,6 +141,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   Query.filmByPair(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       id
   FilmSurveyNoteInput.note,       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       note
   Query.greetingsByPair(ids:),    NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
+  GreetingByPathInput.userId,     NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.filmsByIds(ids:),         NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       ids
   Query.greetings(userId:),       NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
   Query.pairings(userId:),        NODE_ID_KEY_ARITY_EXCEEDS_SLOT,       userId
