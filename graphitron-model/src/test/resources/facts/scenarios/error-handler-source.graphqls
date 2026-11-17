@@ -1,7 +1,11 @@
 # The class whose accessors back an @error type's fields, one per handler: a GENERIC handler's class
 # as the graph resolves it, the SQLException a DATABASE handler matches, read off the platform, and
 # graphql-java's GraphQLError for a VALIDATION handler, stated as a contract since no entry the build
-# makes nameable declares it.
+# makes nameable declares it. A handler naming the client exception a generating run emits, read by
+# a run that states no output, as this graph's is: no contract stands in for the class, which no
+# classpath holds before its first compile, so it has no row. The graphitron module generates this
+# graph under no.sikt.graphitron.generated.facts.error_handler_source, whose client exception it
+# names; error-handler-client-exception states the generating run's side.
 
 type Film @table(name: "film") { title: String }
 
@@ -11,6 +15,12 @@ type FilmNotFound @error(handlers: [{handler: GENERIC, className: "no.sikt.graph
 }
 
 type RateOverflow @error(handlers: [{handler: DATABASE, sqlState: "22003"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type ClientMistake @error(handlers: [{handler: GENERIC,
+    className: "no.sikt.graphitron.generated.facts.error_handler_source.schema.GraphitronClientException"}]) {
   path: [String!]!
   message: String!
 }

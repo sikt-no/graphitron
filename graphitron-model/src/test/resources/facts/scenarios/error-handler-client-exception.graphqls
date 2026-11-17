@@ -1,0 +1,25 @@
+# A GENERIC handler naming the client exception a generating run emits, read by the run that
+# generates it: the output it states puts the class under its package, and no classpath holds the
+# class before its first compile, so graphql-java's GraphqlErrorException, its superclass, stands in
+# as a contract. The package is the one the graphitron module generates this graph under.
+# error-handler-source states the side of a run that states no output.
+
+extend schema @withConfiguration(
+  outputPackage: "no.sikt.graphitron.generated.facts.error_handler_client_exception",
+  outputJooqPackage: "no.sikt.graphitron.rewrite.test.jooq",
+  outputDirectory: "/build/generated")
+
+type Film @table(name: "film") { title: String }
+
+type ClientMistake @error(handlers: [{handler: GENERIC,
+    className: "no.sikt.graphitron.generated.facts.error_handler_client_exception.schema.GraphitronClientException"}]) {
+  path: [String!]!
+  message: String!
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_error_handler_source", rows: """
+  kind,     class_name,                     class_source_name
+  CONTRACT, graphql.GraphqlErrorException,
+  """)
