@@ -2,6 +2,12 @@
 # @nodeId where one is written, the declaration where what is missing is a directive. film is
 # Film's and FilmAlias's table, so a bare id over it names no one node, and plain_id has a column
 # named id beside the id its node publishes.
+#
+# A bare @nodeId a @service takes as a table's generated record, as a parameter or a bean member,
+# takes its node from the record's table, ahead of the field's return table, and is refused where
+# that table has no one node; with no record and no table at all it is refused too. The record
+# cases live here rather than among the scenarios because the walk, which generates those, still
+# refuses a bare @nodeId it cannot infer from the return table.
 
 interface Node { id: ID! }
 
@@ -33,6 +39,15 @@ type FilmCard @table(name: "film") { title: String }
 
 input CardFilter { id: ID }
 
+type FilmActor implements Node @table(name: "film_actor") @node { id: ID! }
+
+input LanguagePairInput {
+  language: ID! @nodeId
+  alias: ID! @nodeId
+}
+
+input InventoryAssignmentInput { inventory: ID @nodeId }
+
 type PlainNode implements Node @table(name: "plain_id") @node {
   "No directive, and plain_id has a column named id."
   id: ID!
@@ -52,6 +67,25 @@ type Query {
   films: [Film!]!
   filmAliases: [FilmAlias!]!
   languages: [Language!]!
+  filmActors: [FilmActor!]!
+  "A FilmActorRecord parameter: film_actor's one node, though the field returns no table."
+  modifyFilmActor(in: ID! @nodeId): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmActorRecord"})
+  "A FilmRecord parameter, over film, which two nodes declare themselves over."
+  modifyCard(in: ID! @nodeId): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
+  "A bean's two LanguageRecord members: language's one node each."
+  assignLanguages(in: LanguagePairInput!): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignLanguagePair"})
+  "The same members under a field returning film's rows: the records decide, where the return table would name no one node."
+  languagePairCards(in: LanguagePairInput!): [FilmCard!]! @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignLanguagePair"})
+  "A bean's InventoryRecord member, over inventory, which no node declares itself over."
+  assignInventory(in: InventoryAssignmentInput!): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignInventoryRecord"})
+  "An Integer parameter and a field returning no table: nothing to take the node from."
+  titleOf(id: ID! @nodeId): String @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmThrowingService", method: "titleOrRuntime"})
 }
 
 input InventoryKey { inventoryId: Int @field(name: "inventory_id") }
@@ -69,6 +103,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   """, rows: """
   coordinate,                 code,                             detail
   CardFilter.id,              NODE_ID_TARGET_AMBIGUOUS,         Query.cardsBy(where.id:)
+  InventoryAssignmentInput.inventory, NODE_ID_TARGET_UNRESOLVED, Query.assignInventory(in.inventory:)
   Film.titleId,               NODE_ID_NOT_ID_TYPE,              String
   Inventory.filmNode,         NODE_ID_CONTAINING_TYPE_NOT_NODE, Inventory
   Inventory.nowhere,          NODE_ID_TYPE_NAME_NOT_NODE,       Nope
@@ -80,6 +115,17 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   PlainNode.id,               NODE_ID_SHADOWS_COLUMN,           id
   Query.cards(filmId:),       NODE_ID_TARGET_AMBIGUOUS,         Query.cards(filmId:)
   Query.inventories(filmId:), NODE_ID_TARGET_UNRESOLVED,        Query.inventories(filmId:)
+  Query.modifyCard(in:),      NODE_ID_TARGET_AMBIGUOUS,         Query.modifyCard(in:)
+  Query.titleOf(id:),         NODE_ID_TARGET_UNRESOLVED,        Query.titleOf(id:)
+  """)
+
+# A record a @service takes decides the node, whatever the field returns.
+extend schema @assertContains(relation: "graphitron_occurrence_node_id", rows: """
+  coordinate,                               basis,                  node_type_name
+  Query.modifyFilmActor(in:),               RECORD_TABLE_NODE_TYPE, FilmActor
+  Query.assignLanguages(in.language:),      RECORD_TABLE_NODE_TYPE, Language
+  Query.assignLanguages(in.alias:),         RECORD_TABLE_NODE_TYPE, Language
+  Query.languagePairCards(in.language:),    RECORD_TABLE_NODE_TYPE, Language
   """)
 
 # Neither a node id nor a column where the id shadows one.

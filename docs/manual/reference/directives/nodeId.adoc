@@ -18,7 +18,7 @@ directive @nodeId(
 [cols="1,1,1,3",options="header"]
 |===
 | Name | Type | Default | Description
-| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field, a jOOQ-record input field, or an argument whose value a xref:service.adoc[`@service`] producer parameter receives by name, exactly one `@node` type binds to the same target table. At that argument the target table is the field's own return table, or, where the return type binds none, the table xref:mutation.adoc[`@mutation`]`(table:)` names, which is what a delete surface returning a scalar binds against. Inference rule (b) is the only place the backing table decides anything: an explicit `typeName:` takes the ID's `typeId` and key columns from the named type's own xref:node.adoc[`@node`], so xref:node.adoc#several-node-types-over-one-table[several node types over one table] never make a named leaf ambiguous.
+| `typeName` | `String` | inferred | The xref:node.adoc[`@node`] type the ID belongs to. Case-sensitive. Required when the carrier site is ambiguous. Inferred when: (a) on a non-xref:reference.adoc[`@reference`] object field, the containing type is itself a `@node`; (b) on a xref:reference.adoc[`@reference`] field, a jOOQ-record input field, or an argument whose value a xref:service.adoc[`@service`] producer parameter receives by name, exactly one `@node` type binds to the same target table. At that argument, or an input field a `@service` bean member receives, the target table is the table of the jOOQ record the parameter or member takes, where it takes one, itself or as a list's element; else the field's own return table, or, where the return type binds none, the table xref:mutation.adoc[`@mutation`]`(table:)` names, which is what a delete surface returning a scalar binds against. Inference rule (b) is the only place the backing table decides anything: an explicit `typeName:` takes the ID's `typeId` and key columns from the named type's own xref:node.adoc[`@node`], so xref:node.adoc#several-node-types-over-one-table[several node types over one table] never make a named leaf ambiguous.
 |===
 
 == Canonical example
@@ -188,7 +188,8 @@ Three ways to get this wrong, and the build names each:
   columns and their types and asks for the tuple typed with them; a tuple of another degree is
   refused on the arity instead.
 
-The bare spelling works here too, and inherits its target from the table the argument binds against:
+The bare spelling works here too, and inherits its target from a table: the table of the jOOQ record
+the parameter or bean member takes, where it takes one; else the table the argument binds against,
 the field's own return table, or, where the return type binds none, the table
 xref:mutation.adoc[`@mutation`]`(table:)` names.
 
@@ -209,9 +210,30 @@ type Mutation {
 }
 ----
 
-Two shapes leave nothing to inherit, and both are refused rather than passed along: a field that
-neither returns a table-bound type nor names a table with `@mutation(table:)`, and a table more than
-one node type declares itself over, which is two different key tuples. Write `typeName:` at either.
+A record decides ahead of the return table, since the parameter's type already says which id the
+method takes. Here `film` is a Film id, from its record and its return table alike, and `language` a
+Language id, from its record, where the return table would have made it a Film id the record cannot
+take:
+
+[source,graphql]
+----
+type Mutation {
+    setFilmLanguage(film: ID! @nodeId, language: ID! @nodeId): Film
+        @service(service: {className: "com.example.FilmService", method: "setLanguage"})
+}
+----
+
+[source,java]
+----
+public static FilmRecord setLanguage(FilmRecord film, LanguageRecord language) { ... }
+----
+
+Three shapes leave nothing to inherit, and all are refused rather than passed along: a parameter or
+member taking no table's record under a field that neither returns a table-bound type nor names a
+table with `@mutation(table:)` (`NODE_ID_TARGET_UNRESOLVED`), a record or table no node type
+declares itself over (`NODE_ID_TARGET_UNRESOLVED`), and a table more than one node type declares
+itself over, which is two different key tuples (`NODE_ID_TARGET_AMBIGUOUS`). Write `typeName:` at
+any of them.
 
 The build also speaks up where nothing decodes the id at all. A `@nodeId` on a filter argument or a
 filter input field is only carried out where some lowering path installs the decode, and a
@@ -325,7 +347,7 @@ either resolves or is refused by name, and no arm hands the wire format on.
 
 * The named or inferred type must be a node type: either it carries xref:node.adoc[`@node`], or it declares `implements Node` over a table whose jOOQ class publishes node metadata. A federation stub, an entity another subgraph owns, is one too when it is declared xref:node.adoc#federation-stubs[`@node(resolvable: false)`]: the ID decodes against its `typeId` and key columns, though this subgraph does not fetch it by id. That holds wherever the decoded key binds a table predicate or a DML column, or loads a jOOQ record handed to a xref:service.adoc[`@service`], and not at a `@service` parameter that receives the decoded key value itself, which still needs a node this subgraph resolves. The build fails when `typeName:` resolves to a type that is neither, and names the fix when it is a xref:table.adoc[`@table`] type over a table publishing node metadata with no `@node`: declare it a stub.
 * At a xref:service.adoc[`@service`] slot, `typeName:` may instead name a multitable interface or union. The slot must then be typed as a supertype of every implementation's generated record (`org.jooq.Record`, `TableRecord<?>`, `UpdatableRecord<?>` over primary-keyed tables), never one implementation's record or a scalar, and every `@table` implementation must be a node type. A single-table xref:discriminate.adoc[`@discriminate`] interface that is not itself a node type is refused here: name one of its object types, or make it a node type. Naming a container anywhere the value does not reach a `@service` slot is refused too, the polymorphic decode being a slot rule. See <<polymorphic-record-slot,the record-supertype section>>.
-* `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table. At an argument feeding a producer parameter by name, that is a field that neither returns a table-bound type nor names a table with xref:mutation.adoc[`@mutation`]`(table:)`, or a table several node types declare themselves over; see <<named-parameter-decode,the producer-parameter section>>.
+* `typeName:` is required when neither inference rule fires: when the field's type is not the containing type and no `@reference` provides an unambiguous target table. At an argument feeding a producer parameter by name, or an input field filling a bean member, that is a parameter or member taking no table's jOOQ record under a field that neither returns a table-bound type nor names a table with xref:mutation.adoc[`@mutation`]`(table:)`, or a record or table several node types declare themselves over, or none does; see <<named-parameter-decode,the producer-parameter section>>.
 * `@nodeId` does not stand alone on a non-node type as its identity. Use it on the `id: ID!` field of a node type, or on slots that *reference* a node from elsewhere. On a node's own `id:` field the directive is optional: that field is a node ID by construction, and `typeName:` is rejected there because the containing type has already answered which node it is.
 * The directive is likewise optional at an input field or argument *named for the target's own `id`*: `id` on an input consumed against a node-backed table, or on an argument of a field returning a node type, reads as that node's global ID. The name is what carries it, so a differently-named slot (`ids`, `customerId`) still needs the directive; graphitron does not guess at plurals or suffixes. Where the target table backs more than one node type the build fails and asks for `typeName:` rather than picking one.
 * A directive-less slot that collides with a real column of the same name is an error at every coordinate, output field, input field and argument alike: the encoded ID and the raw column are different values and the SDL has not said which is meant. Write `@nodeId` to select the node ID or xref:field.adoc[`@field`]`(name: "…")` to select the column. The message names both.

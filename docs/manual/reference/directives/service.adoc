@@ -110,7 +110,8 @@ the `@service`:
   list where the parameter takes one value or one value where it takes a list, or arrives as a class
   the parameter is not: an `ID` as a `String`, never a `Long`; an `Int` as an `Integer` or `int`. An
   `Object` parameter takes any value whole. A member of an input bean is judged the same way, at its
-  input field, so a jOOQ record member filled from an `ID` needs `@nodeId(typeName:)` to decode it.
+  input field, so a jOOQ record member filled from an `ID` needs `@nodeId` to decode it, with
+  `typeName:` where the record's table has no one node.
   A node id decoded onto a parameter is the `@nodeId` rules' to judge.
 * *Missing constant* (`ENUM_CONSTANT_MISSING`): a GraphQL enum value it takes as a Java enum constant
   names no constant the enum declares, its `@field(name:)` or else its own name, so `Enum.valueOf`
