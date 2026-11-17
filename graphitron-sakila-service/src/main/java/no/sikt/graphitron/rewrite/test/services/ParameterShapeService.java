@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.test.services;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
+
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -16,6 +18,14 @@ public final class ParameterShapeService {
 
     /** A class of the author's own, which no parent key is put into. */
     public record FilmKey(Integer filmId) {}
+
+    /**
+     * An input bean whose members an ID cannot fill, each refused as {@code PARAMETER_MISMATCH}: a
+     * Long, which an ID does not arrive as, and a film record, which an ID decodes into only through
+     * {@code @nodeId}. Nested here rather than at the top level of its package, so the capture is
+     * shown to build a bean declared inside another class as it builds any other.
+     */
+    public record FilmIdBean(Long filmId, FilmRecord film) {}
 
     public static String byTitle(String title) {
         return title;

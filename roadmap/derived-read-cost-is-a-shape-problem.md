@@ -97,7 +97,6 @@ The walk's read path is gone
     └── The service fields are emitted from the store
         ├── A producer's fetcher parts are emitted from the store
         └── Every service verdict is emitted or a stored deferral
-            ├── A record bean nested in a class is built
             └── An @error field read off a public field or a bare accessor is judged
 ```
 
@@ -1108,13 +1107,6 @@ static method needs no holder.
     model: `ConditionResolver`, `OrderByResolver`, `ExternalFieldDirectiveResolver` (`reflectTableMethod`,
     `reflectExternalField`) and `RoutineDirectiveResolver` (`spentInput`, `argExtraction`,
     `pathLeafDeclaresNodeId`, `resolvePathLeafType`).
-    * **A record bean nested in a class is built** `open`, E's. An input bean declared as a record
-      nested in another class (`ParameterShapeService.FilmIdBean`) drew no
-      `graphitron_occurrence_binding_member` rows, and so no member defect, where the same record at
-      the top level of its package did; a service input built into it may be built with no member
-      filled and no defect said. The node finds where the nested class's write slots or members are
-      lost, whether in the code reading or in the build rules, and either builds the bean or refuses it
-      with a stored defect.
     * **An @error field read off a public field or a bare accessor is judged** `open`, E's, off the
       FS path: no @error type in FS declares a field beyond path and message. The walk reads an
       @error type's extra field off a public field or a bare `code()` method of a class that is no

@@ -160,13 +160,14 @@ public final class CodeCapture {
         scalarConstants(dsl, census.classes(), loader, touchedAt);
         enumConstants(dsl, census.classes(), touchedAt);
         var reactor = reactorClasses(census);
+        var nested = nestedClasses(reactor, deliveryContainers(dsl));
+        admitted(dsl, nested, touchedAt);
         try (var headers = new ClassHeaders(headerEntries(reading.sources()))) {
             var ancestry = new ClassAncestry(census.classes(), headers);
             throwables(dsl, census.classes(), ancestry, touchedAt);
-            methods(dsl, reactor, ancestry, touchedAt);
+            methods(dsl, reactor, nested, ancestry, touchedAt);
             throwableSlots(dsl, census, lookup(census), ancestry, touchedAt);
         }
-        nestedSlots(dsl, reading, touchedAt);
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, reading.read(), touchedAt);
@@ -218,47 +219,68 @@ public final class CodeCapture {
     }
 
     /**
-     * The members of each nested class a census method returns or takes, read as the handle's are.
-     * The census leaves a nested class out by its name, its methods being reachable through the
-     * class declaring it; its slots are not, and a value a service hands back may be one, so a
-     * parent holding it reads its keys off them like any other class's.
+     * The nested classes this reading's reactor classes name, read whole by name, and the nested
+     * classes those name in turn. The census leaves a nested class out by its name, its methods being
+     * reached through the class declaring it; what it offers and how it is made are not, and a
+     * service may return one or take one. So a nested class a method's result or parameter, or a
+     * constructor's parameter, names is read here and joins the reactor's classes for the slots and
+     * the construction walk alike: one reading of the class feeds both sides.
      *
-     * <p>Per entry, and only the entries this reading opened: an entry's nested classes are the
-     * ones its own methods name, read out of that entry and recorded under it. What the store holds
-     * for an entry is shared by every graph whose classpath carries it, so it cannot depend on which
-     * other entries were read beside it, nor on what some other graph's methods happen to name. A
-     * nested class one entry names and another declares is therefore read only where the declaring
-     * entry's own methods name it too, and an entry left unopened keeps the rows its own reading
-     * wrote.
+     * <p>Per entry, and only the entries this reading opened: a name is resolved in the entry of the
+     * class that names it, and recorded under that entry. What the store holds for an entry is shared
+     * by every graph whose classpath carries it, so it cannot depend on which other entries were read
+     * beside it, nor on what some other graph's methods happen to name. A nested class one entry
+     * names and another declares is therefore read only where the declaring entry's own classes name
+     * it too, and an entry left unopened keeps the rows its own reading wrote.
+     *
+     * <p>A non-static inner class is read like any other and is still not built: its constructors
+     * take the enclosing instance first, so it has no no-argument constructor the walk can use, and
+     * it is no record, so it has no canonical one either.
      */
-    private static void nestedSlots(DSLContext dsl, ClasspathSourceCapture.Reading reading,
-                                    LocalDateTime touchedAt) {
-        var read = reading.read();
-        if (read.isEmpty()) {
-            return;
-        }
-        var m = CODE_METHOD;
-        var p = CODE_METHOD_PARAMETER;
-        var named = new java.util.TreeMap<String, java.util.TreeSet<String>>();
-        dsl.select(m.SOURCE_NAME, m.RESULT_ELEMENT_CLASS).from(m)
-            .where(m.SOURCE_NAME.in(read)).and(m.RESULT_ELEMENT_CLASS.contains("$"))
-            .union(dsl.select(m.SOURCE_NAME, m.RESULT_ERASED_CLASS).from(m)
-                .where(m.SOURCE_NAME.in(read)).and(m.RESULT_ERASED_CLASS.contains("$")))
-            .union(dsl.select(p.SOURCE_NAME, p.ELEMENT_CLASS).from(p)
-                .where(p.SOURCE_NAME.in(read)).and(p.ELEMENT_CLASS.contains("$")))
-            .forEach(row -> named.computeIfAbsent(row.value1(), ignored -> new java.util.TreeSet<>())
-                .add(row.value2()));
-        named.forEach((source, classNames) -> {
-            var entry = List.of(java.nio.file.Path.of(source));
-            for (String className : classNames) {
-                readWhole(dsl, entry, className, touchedAt);
+    private static List<ClassfileCensus.ClassAt> nestedClasses(List<ClassfileCensus.ClassAt> reactor,
+                                                              Map<String, Container> containers) {
+        var found = new ArrayList<ClassfileCensus.ClassAt>();
+        var seen = new java.util.HashSet<String>();
+        var queue = new java.util.ArrayDeque<ClassfileCensus.ClassAt>(reactor);
+        while (!queue.isEmpty()) {
+            ClassfileCensus.ClassAt at = queue.poll();
+            for (String name : nestedNames(at, containers)) {
+                if (!seen.add(at.source() + '\u0000' + name)) {
+                    continue;
+                }
+                ClassfileCensus.readNamed(List.of(java.nio.file.Path.of(at.source())), name)
+                    .ifPresent(nested -> {
+                        found.add(nested);
+                        queue.add(nested);
+                    });
             }
-        });
+        }
+        return found;
+    }
+
+    /**
+     * The nested classes {@code at}'s signatures name: each method's result, erased and as the
+     * element it delivers, and each method's and constructor's parameters as the element they take.
+     */
+    private static java.util.Set<String> nestedNames(ClassfileCensus.ClassAt at,
+                                                    Map<String, Container> containers) {
+        var names = new java.util.TreeSet<String>();
+        for (ClassfileCensus.MethodAt method : at.methods()) {
+            names.add(String.valueOf(rootOf(method.returnTypeRefs())));
+            names.add(String.valueOf(elementOf(deliveryOf(method.returnTypeRefs(), containers))));
+        }
+        java.util.stream.Stream.concat(at.methods().stream(), at.constructors().stream())
+            .flatMap(method -> method.parameters().stream())
+            .forEach(parameter -> names.add(
+                String.valueOf(elementOf(deliveryOf(parameter.typeRefs(), containers)))));
+        names.removeIf(name -> name.indexOf('$') < 0);
+        return names;
     }
 
     /**
      * {@code className} read whole from {@code entries}, its class and its slots written; nothing
-     * where no entry holds it.
+     * where no entry holds it. The session handle's reading: the handle is read on its own, its
+     * slots the members it declares.
      */
     private static void readWhole(DSLContext dsl, List<java.nio.file.Path> entries, String className,
                                   LocalDateTime touchedAt) {
@@ -266,26 +288,38 @@ public final class CodeCapture {
         if (at.isEmpty()) {
             return;
         }
-        // The rows the slots key to, written here because a nested class is no census class, so
-        // the reading left it no file row, and a top-level one is only written after this runs.
-        // The census's own write of the same keys is an idempotent upsert, and a file row left
-        // alone where it exists is the corpus reader's.
-        var file = STORE_CLASS_FILE;
-        dsl.insertInto(file, file.SOURCE_NAME, file.FILE_PATH, file.BYTE_SIZE, file.MTIME, file.TOUCHED_AT)
-            .values(at.get().source(), at.get().filePath(),
-                at.get().byteSize() < 0 ? null : at.get().byteSize(),
-                at.get().mtimeMillis() < 0 ? null : LocalDateTime.ofInstant(
-                    java.time.Instant.ofEpochMilli(at.get().mtimeMillis()), java.time.ZoneId.systemDefault()),
-                touchedAt)
-            .onDuplicateKeyIgnore()
-            .execute();
-        classes(dsl, List.of(at.get()), touchedAt);
+        admitted(dsl, List.of(at.get()), touchedAt);
         var containers = deliveryContainers(dsl);
         // The spellings its members declare, so a slot's type is in the dictionary as a method's is.
         types(dsl, at.get().methods().stream()
             .map(method -> new Member(at.get().source(), at.get().className(), method))
             .toList(), containers, touchedAt);
         slots(dsl, List.of(at.get()), List.of(at.get()), containers, touchedAt);
+    }
+
+    /**
+     * The classes read by name rather than by the census, written as the census writes its own: a
+     * class read by name is no census class, so the reading left it no file row, and the rows its
+     * slots and its construction key to hang on one. The census's own write of the same keys is an
+     * idempotent upsert, and a file row left alone where it exists is the corpus reader's.
+     */
+    private static void admitted(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                 LocalDateTime touchedAt) {
+        if (classes.isEmpty()) {
+            return;
+        }
+        var file = STORE_CLASS_FILE;
+        for (ClassfileCensus.ClassAt at : classes) {
+            dsl.insertInto(file, file.SOURCE_NAME, file.FILE_PATH, file.BYTE_SIZE, file.MTIME, file.TOUCHED_AT)
+                .values(at.source(), at.filePath(),
+                    at.byteSize() < 0 ? null : at.byteSize(),
+                    at.mtimeMillis() < 0 ? null : LocalDateTime.ofInstant(
+                        java.time.Instant.ofEpochMilli(at.mtimeMillis()), java.time.ZoneId.systemDefault()),
+                    touchedAt)
+                .onDuplicateKeyIgnore()
+                .execute();
+        }
+        classes(dsl, classes, touchedAt);
     }
 
     /**
@@ -433,7 +467,8 @@ public final class CodeCapture {
      * answer to something else.
      */
     private static void methods(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
-                                ClassAncestry ancestry, LocalDateTime touchedAt) {
+                                List<ClassfileCensus.ClassAt> nested, ClassAncestry ancestry,
+                                LocalDateTime touchedAt) {
         record Declared(String source, String className, ClassfileCensus.MethodAt at) {}
         var found = new ArrayList<Declared>();
         for (ClassfileCensus.ClassAt at : classes) {
@@ -487,8 +522,12 @@ public final class CodeCapture {
             .map(d -> new Member(d.source(), d.className(), d.at()))
             .toList(), ancestry, containers, touchedAt);
 
-        slots(dsl, classes, classes, containers, touchedAt);
-        construction(dsl, classes, containers, touchedAt);
+        // The nested classes these name offer slots and are made like any other class, a
+        // reactor base's accessors inherited among them; their methods name no candidate.
+        var all = new ArrayList<ClassfileCensus.ClassAt>(classes);
+        all.addAll(nested);
+        slots(dsl, all, all, containers, touchedAt);
+        construction(dsl, classes, all, containers, touchedAt);
 
         arm(dsl, CODE_CONDITION_METHOD, found.stream()
             .filter(d -> isConditionMethod(d.at()))
@@ -918,9 +957,9 @@ public final class CodeCapture {
      * problem instead of about the classpath. A type at a result position is only read, so it owes
      * accessors and nothing here. A type at a parameter position has to exist before it can be
      * passed, so what it delivers is constructed, and whatever that constructor takes is
-     * constructed in turn. The walk starts at the parameter positions and closes over the
-     * constructors it finds, so a class nothing is ever passed has no row however constructible it
-     * looks.
+     * constructed in turn. The walk starts at the parameter positions of {@code classes} and closes
+     * over the constructors it finds among {@code lookup}, the nested classes those signatures name
+     * among them, so a class nothing is ever passed has no row however constructible it looks.
      *
      * <p>A class the walk reaches and cannot make is silence rather than a row saying so. An
      * interface, an enum and a class whose constructors all take arguments it cannot supply are the
@@ -928,8 +967,9 @@ public final class CodeCapture {
      * the walk stops there rather than recording a shape nobody can emit.
      */
     private static void construction(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                     List<ClassfileCensus.ClassAt> lookup,
                                      Map<String, Container> containers, LocalDateTime touchedAt) {
-        var byName = byName(classes);
+        var byName = byName(lookup);
         var queue = new java.util.ArrayDeque<ClassfileCensus.ClassAt>();
         var reached = java.util.Collections.newSetFromMap(
             new java.util.IdentityHashMap<ClassfileCensus.ClassAt, Boolean>());

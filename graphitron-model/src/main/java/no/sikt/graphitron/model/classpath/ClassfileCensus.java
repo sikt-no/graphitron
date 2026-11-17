@@ -366,8 +366,8 @@ public final class ClassfileCensus {
     /**
      * Names the reader skips. A nested class is left out: its methods are reachable through the
      * class that declares it, and admitting the mangled binary name would put a spelling in the
-     * census that no source file writes. Its slots are read by name where a census method returns
-     * or takes it, which is how a value a service hands back is read.
+     * census that no source file writes. It is read by name where a reactor method or constructor on
+     * its own entry names it, for its slots and its construction alike.
      */
     private static boolean skipOnName(String fileName) {
         if ("module-info.class".equals(fileName) || "package-info.class".equals(fileName)) {

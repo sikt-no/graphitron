@@ -2,7 +2,8 @@
 # one value against a list and a list against one value, a Long for an ID or an Int, and a jOOQ
 # record member for a scalar with no @nodeId. Near misses draw nothing: an Int handed to an int, an
 # enum to a String, any value to an Object, an Int to an Integer member, and a node id decoded onto
-# an Integer.
+# an Integer. The bean withBean takes is a record nested in ParameterShapeService, so its members
+# are judged as a top-level class's are.
 
 type Film @table(name: "film") @node { title: String }
 
