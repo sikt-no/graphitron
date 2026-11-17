@@ -5,9 +5,9 @@ status: Backlog
 bucket: bug
 priority: 5
 theme: runtime-connection
-depends-on: [cursor-carries-the-databases-own-text]
+depends-on: []
 created: 2026-11-12
-last-updated: 2026-11-12
+last-updated: 2026-11-17
 ---
 
 # A connection ordered on a date or timestamp column holding infinity cannot page past it
@@ -18,7 +18,7 @@ A connection whose order includes a plain Postgres `date`, `timestamp` or `times
 
 ## What happens today
 
-Measured against Postgres 16 with jOOQ 3.20.11, with the probe described in R1180 (`cursor-carries-the-databases-own-text.md`): one table per type, and for every row the cursor is written, read back and sought from.
+Measured against Postgres 16 with jOOQ 3.20.11, with the probe R1180 described (shipped; see `roadmap/changelog.md`): one table per type, and for every row the cursor is written, read back and sought from.
 
 - `date` holding `infinity`: jOOQ reads a sentinel `LocalDate` in the year 292278994, the cursor carries `+292278994-08-16T00:00:00`, and Postgres refuses it on the way back with `date out of range`. `timestamp` behaves the same way.
 - `timestamptz` holding `infinity`: jOOQ's own read throws (`Expected '-' at position 0 in infinity`) before graphitron's cursor code runs.
@@ -30,4 +30,4 @@ The GraphQL field over such a column is wrong today for the same reason (the cli
 
 ## Depends on
 
-R1180 settles how a database-written element travels (the extra projection, the cast on the seek). A solution here most likely reuses it for the values Java cannot carry, and should start from what that item shipped.
+R1180 settles how a database-written element travels (the extra projection, the cast on the seek). A solution here most likely reuses it for the values Java cannot carry, and should start from what that item shipped: `ColumnValues.writtenByDatabase` and `ConnectionHelper.cursorTexts`.
