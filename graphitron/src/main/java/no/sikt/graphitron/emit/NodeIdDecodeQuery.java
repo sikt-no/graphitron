@@ -214,6 +214,12 @@ public final class NodeIdDecodeQuery {
         var javaNames = new ArrayList<String>();
         for (var column : targetColumns) {
             var known = columns.get(targetKey + "." + column);
+            if (known == null && path.isEmpty()) {
+                // The node's own table: the column is the node id row's, which its foreign key into
+                // graphitron_node_keycolumn ties to a key column the catalog holds.
+                throw new IllegalStateException("Graphitron generator bug (node id decode): " + coordinate
+                    + " unpacks column " + column + " of " + target.name() + ", which the catalog does not hold");
+            }
             if (known == null) {
                 return new Resolution.Refused("column " + column + " of " + target.name() + " is not in the catalog");
             }

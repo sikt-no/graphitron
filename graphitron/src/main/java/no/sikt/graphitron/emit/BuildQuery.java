@@ -326,6 +326,13 @@ public final class BuildQuery {
         };
         var decodes = new ArrayList<NodeIdDecodeQuery.Decode>();
         for (var bound : shapes) {
+            // Both arms of graphitron_occurrence_node_id_shape_rule take a shape's bound from the
+            // graphitron_occurrence_node_id rows the decode reads, so a shape on a bound the id binds no
+            // node on is the store and this reader disagreeing.
+            if (!catalog.decodes().bounds(coordinate).contains(bound.bound())) {
+                throw new IllegalStateException("Graphitron generator bug (node id decode): " + coordinate
+                    + " states a decode shape on " + bound.bound() + ", where the id binds no node");
+            }
             switch (catalog.decodes().resolve(coordinate, bound.bound(), Optional.empty())) {
                 case NodeIdDecodeQuery.Resolution.Resolved resolved -> decodes.add(resolved.decode());
                 case NodeIdDecodeQuery.Resolution.Refused refused -> {
