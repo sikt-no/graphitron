@@ -160,6 +160,24 @@ rules], and a rule changes in the same commit as its code and that page.
   one hop; none or several is `NODE_ID_LANDS_ON_TABLE` and the author writes it. Inference never
   spans hops, and a self-referencing key is never inferred on an input. Where the node's table is
   the bound table and nothing is written, there is no path: the id is the record's own key.
+* A bare `@nodeId` takes its node from a table: the one node over it, none being
+  `NODE_ID_TARGET_UNRESOLVED` and several `NODE_ID_TARGET_AMBIGUOUS`. On an argument or input field
+  a `@service` takes as a table's generated record, as a parameter or a bean member, itself or as a
+  list's element, the table is the record's, ahead of the field's return table and
+  `@mutation(table:)`. Otherwise it is the field's return table, then `@mutation(table:)`. With
+  neither a record nor a table to take the node from, the `@nodeId` is `NODE_ID_TARGET_UNRESOLVED`,
+  and `typeName:` settles it. The record decides because the parameter's type already says which
+  id the method takes (Alf, 2026-11-17):
++
+[source,graphql]
+----
+setFilmLanguage(film: ID! @nodeId, language: ID! @nodeId): Film
+  @service(service: {className: "FilmService", method: "setLanguage"})
+----
++
+with `FilmRecord setLanguage(FilmRecord film, LanguageRecord language)`: `film` is a `Film` id,
+from its record and its return table alike, and `language` a `Language` id, from its record, where
+the return table would have made it a `Film` id the record cannot take.
 * On an input that fills a record, a written path may span several hops only where identity passes
   along composite keys: every column of the record's first-hop key traces through the path's column
   pairs to a column of the node's key, so the decoded id carries the values. A column that does not
