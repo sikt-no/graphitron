@@ -7,6 +7,7 @@ import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
@@ -86,13 +87,17 @@ class StageRosterGateTest {
                     .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
                     .and(META_STAGE.POSITION.gt(stage.getPosition()))
                     .fetch(META_STAGE.STAGE_NAME);
+                var upTo = dsl.select(META_STAGE.STAGE_NAME).from(META_STAGE)
+                    .where(META_STAGE.GATHERER_NAME.eq(stage.getGathererName()))
+                    .and(META_STAGE.POSITION.le(stage.getPosition()))
+                    .fetch(META_STAGE.STAGE_NAME);
                 String view = rule.view();
                 var reached = ViewReferences.tablesReachedBy(dsl, view);
                 for (String laterStage : later) {
                     for (String written : declared.getOrDefault(laterStage, Set.of())) {
-                        // A relation split between the two stages by a kind column is read in the
-                        // earlier stage's own kinds, which the later stage never writes.
-                        if (reached.contains(written) && !splitApart(kinds, rule.stage(), laterStage, written)) {
+                        // A relation split by a kind column is read in the kinds the reader or a stage
+                        // before it writes, which the later stage never writes.
+                        if (reached.contains(written) && !splitApart(kinds, upTo, laterStage, written)) {
                             violations.add(view + " (" + rule.stage() + ") reads " + written
                                 + ", which " + laterStage + " writes after it");
                         }
@@ -117,14 +122,18 @@ class StageRosterGateTest {
     }
 
     /**
-     * Whether {@code earlier} and {@code later} write {@code relation} split by a kind column, each
-     * declaring kinds of it and none in common: the split the fact model allows (Alf, 2026-11-12).
+     * Whether {@code later} writes {@code relation} split by a kind column from a stage in
+     * {@code earlier}, the reader or a stage before it, each declaring kinds of it and none in
+     * common: the split the fact model allows (Alf, 2026-11-12), read from the reader's own kinds
+     * or from those an earlier stage wrote, a stage being allowed to read rows earlier stages wrote
+     * (Alf, 2026-11-17).
      */
-    private static boolean splitApart(Map<String, Set<String>> kinds, String earlier, String later,
+    private static boolean splitApart(Map<String, Set<String>> kinds, List<String> earlier, String later,
                                       String relation) {
-        var mine = kinds.get(earlier + " " + relation);
         var theirs = kinds.get(later + " " + relation);
-        return mine != null && theirs != null && mine.stream().noneMatch(theirs::contains);
+        return theirs != null && earlier.stream()
+            .map(stage -> kinds.get(stage + " " + relation))
+            .anyMatch(mine -> mine != null && mine.stream().noneMatch(theirs::contains));
     }
 
     /** Each stage's declared writes, lower case. */
