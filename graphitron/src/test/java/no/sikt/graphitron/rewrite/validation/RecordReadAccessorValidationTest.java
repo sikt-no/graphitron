@@ -114,7 +114,7 @@ class RecordReadAccessorValidationTest {
             case AccessorResolution.FieldRead fr -> null;
         };
         assertThat(resolved).isNotNull();
-        assertThat(resolved.getName()).isEqualTo("fooBar");
+        assertThat(resolved.getName()).isEqualTo("getFooBar");
         assertThat(resolved.getParameterCount()).isEqualTo(1);
     }
 

@@ -20,7 +20,7 @@ public final class R461AccessorFixtures {
     public record BeanChild(String tag) {}
 
     /** Bare-side child (a plain POJO → {@code PojoResultType.Backed} when grounded). */
-    public static final class FluentChild { public String tag() { return ""; } }
+    public static final class FluentChild { public String getTag() { return ""; } }
 
     /** Neutral child used by the single-accessor cases (record → {@code JavaRecordType}). */
     public record SimpleChild(String tag) {}
@@ -56,24 +56,24 @@ public final class R461AccessorFixtures {
 
     /**
      * Zero-arg accessor; an argument-bearing SDL field no longer grounds through it (arity gate). The
-     * {@code sibling()} accessor lets a test declare a second object field so the payload is not a
+     * {@code getSibling()} accessor lets a test declare a second object field so the payload is not a
      * single-object-field carrier, isolating the sole-producer rejection from the carrier flip.
      */
     public static final class ZeroArgParent {
-        public SimpleChild child() { return null; }
-        public SimpleChild sibling() { return null; }
+        public SimpleChild getChild() { return null; }
+        public SimpleChild getSibling() { return null; }
     }
 
     /** Per-argument accessor; an argument-bearing SDL field grounds through it. */
     public static final class PerArgParent {
-        public SimpleChild child(String x) { return null; }
+        public SimpleChild getChild(String x) { return null; }
     }
 
     // ===== B3: @field(name:) =====
 
     /** The walk probes the {@code @field(name:)}-resolved accessor base name, not the raw field name. */
     public static final class RenameParent {
-        public SimpleChild renamed() { return null; }
+        public SimpleChild getRenamed() { return null; }
     }
 
     // ===== B4: non-boolean is<Name> =====
@@ -81,12 +81,12 @@ public final class R461AccessorFixtures {
     /**
      * {@code isChild()} returns a non-boolean; the is-gate stops it grounding the child. With a single
      * object data field in the SDL this flips the payload from a plain wrapper to a two-level
-     * carrier (B8 flip case 1); with a second object field ({@code sibling()}) it isolates the
+     * carrier (B8 flip case 1); with a second object field ({@code getSibling()}) it isolates the
      * sole-producer boolean-gate rejection.
      */
     public static final class NonBooleanIsParent {
         public SimpleChild isChild() { return null; }
-        public SimpleChild sibling() { return null; }
+        public SimpleChild getSibling() { return null; }
     }
 
     // ===== B5: public-field fallback =====
@@ -94,22 +94,22 @@ public final class R461AccessorFixtures {
     /** Public field of a bindable type; grounds a no-argument field, not an argument-bearing one. */
     public static final class PublicFieldParent {
         public SimpleChild child = null;
-        public SimpleChild sibling() { return null; }
+        public SimpleChild getSibling() { return null; }
     }
 
     // ===== B6: covariant-return bridge + inheritance =====
 
-    /** Covariant-return source interface: the bridge {@code Object detail()} must be skipped. */
-    public interface DetailSource { Object detail(); }
+    /** Covariant-return source interface: the bridge {@code Object getDetail()} must be skipped. */
+    public interface DetailSource { Object getDetail(); }
 
     public static final class CovariantParent implements DetailSource {
-        @Override public DetailChild detail() { return null; }
+        @Override public DetailChild getDetail() { return null; }
     }
 
     public static class BaseChildParent {
-        public InheritedChild inheritedChild() { return null; }
+        public InheritedChild getInheritedChild() { return null; }
     }
 
-    /** Inherits {@code inheritedChild()} from its superclass; the accessor is still matched. */
+    /** Inherits {@code getInheritedChild()} from its superclass; the accessor is still matched. */
     public static final class SubChildParent extends BaseChildParent {}
 }

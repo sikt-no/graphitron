@@ -150,8 +150,8 @@ class R461WalkGroundingPipelineTest {
         var schema = build("RenameParent", "child: Child @field(name: \"renamed\")", "tag: String");
         assertThat(schema.field("Parent", "child")).isInstanceOf(RecordReadField.class);
         var field = (RecordReadField) schema.field("Parent", "child");
-        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.BareName.class);
-        assertThat(((AccessorResolution.BareName) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("renamed");
+        assertThat(((ValueLocator.JavaAccessor) field.locator()).accessor()).isInstanceOf(AccessorResolution.GetterPrefixed.class);
+        assertThat(((AccessorResolution.GetterPrefixed) ((ValueLocator.JavaAccessor) field.locator()).accessor()).method().getName()).isEqualTo("getRenamed");
     }
 
     // ===== B5: public-field fallback =====
@@ -177,7 +177,7 @@ class R461WalkGroundingPipelineTest {
     @Test
     void b6_covariantReturn_skipsBridge_groundsRealReturn() {
         var schema = build("CovariantParent", "detail: Child", "tag: String");
-        // The bridge detail():Object is skipped; the real detail():DetailChild grounds the child.
+        // The bridge getDetail():Object is skipped; the real getDetail():DetailChild grounds the child.
         assertThat(schema.type("Child")).isInstanceOf(GraphitronType.JavaRecordType.class);
         assertThat(((GraphitronType.JavaRecordType) schema.type("Child")).fqClassName())
             .isEqualTo(FIX + "DetailChild");

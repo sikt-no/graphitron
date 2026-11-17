@@ -36,11 +36,11 @@ public final class R88AccessorFixtures {
 
     /**
      * Argument-bearing per-arg match: SDL {@code fooBar(x: String): String} matches
-     * {@code fooBar(String x): String}. Arity and per-parameter type match; resolution
-     * succeeds via the bare-name candidate.
+     * {@code getFooBar(String x): String}. Arity and per-parameter type match; resolution
+     * succeeds via the get-prefixed candidate.
      */
     public static final class ArgumentBearingPojo {
-        public String fooBar(String x) { return x; }
+        public String getFooBar(String x) { return x; }
     }
 
     /**
@@ -66,7 +66,7 @@ public final class R88AccessorFixtures {
      * accepts via {@code paramsMatch}'s full-env branch.
      */
     public static final class FullEnvPojo {
-        public String fooBar(DataFetchingEnvironment env) { return ""; }
+        public String getFooBar(DataFetchingEnvironment env) { return ""; }
     }
 
     /**
