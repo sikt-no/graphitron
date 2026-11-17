@@ -58,8 +58,15 @@ A new shared parameter on `AbstractRewriteMojo`, so every goal that captures (`g
 * Each field has an environment override that wins over the POM, reconciled as `DevMojo` does today
   (`firstNonBlank(env, pom)`): `GRAPHITRON_DB_URL`, `GRAPHITRON_DB_USER`, `GRAPHITRON_DB_PASSWORD`,
   `GRAPHITRON_DB_DIALECT`.
-* No url from either source means no database: the gatherer does not run and `execute` is absent.
+* No url from either source means no database: the gatherer reads nothing (it still drops the graph's
+  claims, § Who drops a claim) and `execute` is absent.
 * A url with a missing or unknown dialect fails the goal, as `<devDatabase>` does today.
+* The declared dialect is checked against the connection. On connecting, the connector asks jOOQ's
+  `JDBCUtils.dialect(Connection)`, which reads the connection's metadata, and a declared dialect the
+  connection disagrees with fails the goal, naming both: that is a misconfiguration, the same on
+  every machine, like a url no driver accepts. `<dialect>` stays required while `<devDatabase>` is
+  accepted, since `<devDatabase>` requires it explicitly; whether it becomes optional, detected from
+  the connection, is decided when `<devDatabase>` is removed.
 * The block holds the connection only. `execute`'s request fields stay with `execute` (next section).
 
 ### `<execute>`, the dev tool's request fields
@@ -136,6 +143,14 @@ collects its policies and sweeping a policy collects its roles.
   off, and the database then does not apply them: such policies are stored under their table's row,
   whose flag says they are not in force.
 * `database_policy_role`: one row per role a policy applies to; `PUBLIC` is a row.
+* `database_server`: one row per source, saying what the database reported about itself at the last
+  successful reading: product and version (`server_version_num` and the version string), the database
+  name (`current_database()`), and the role the reading connected as (`current_user`). Keyed on
+  `source_name` alone, a foreign key to `store_source` with `ON DELETE CASCADE`, swept with the rest of
+  the family. The url-derived `source_name` stays the key, because it is stable, credential-free and
+  what the author wrote; this row is the database's own answer beside it. Two urls naming one
+  database (`localhost` and `127.0.0.1`, or through a pooler and directly) remain two sources, and
+  their `database_server` rows show they are the same database.
 
 A follow-up that needs structure from an expression extracts the direct facts during the reading and
 stores them as rows beside the text: a policy reads a setting, a policy calls a function, a function
@@ -195,9 +210,11 @@ the `JOOQ_SCHEMA` kind. Every capture calls it, connector or not:
 * Without a connector, it reads nothing and drops every `DATABASE` claim the graph holds. A consumer
   who removes `<database>` stops seeing the facts on the next capture.
 
-Dropping a claim leaves the source and its rows to the existing release: once no graph claims the
-source, the delete scoped by `SourceClaims.unclaimed()` takes it, and the `database_` rows go with it
-through their `ON DELETE CASCADE` from `store_source`. "Without connection settings nothing changes"
+After dropping claims, the gatherer releases its own kind, as `GraphQLSourceCapture` and
+`ClasspathSourceCapture` do for theirs: it deletes the `DATABASE` sources no graph claims, with
+`SourceClaims.unclaimed()` in the delete's own `WHERE`, and the `database_` rows go with them through
+their `ON DELETE CASCADE` from `store_source`. There is no shared release to lean on; each gatherer owns
+the reclaim of its kinds. "Without connection settings nothing changes"
 in § Goal is about what an author sees and what is generated; in the store, a graph that never had a
 connector holds no claim, so the call is a no-op for it.
 
@@ -241,8 +258,15 @@ that.
 
 ### Postgres reading
 
-One read-only transaction, two statements:
+One read-only transaction, three statements:
 
+* First, what the database is: `server_version_num`, `version()`, `current_database()` and
+  `current_user`, written to `database_server`. The reading needs PostgreSQL 10 or later, because
+  `pg_policy.polpermissive` first exists there. Below that, the reading stops before reading any
+  policy and is recorded as a failed reading whose cause names the version and the minimum, so the
+  readers say why (§ Reader arms), rather than failing on a missing column.
+  Version-dependent catalog columns a follow-up needs (`security_invoker` on views needs 15) are that
+  follow-up's to gate the same way.
 * `pg_class` joined to `pg_namespace` where `relkind` is `r` or `p`, outside `pg_catalog`,
   `information_schema` and `pg_toast`: schema, table, `relrowsecurity`, `relforcerowsecurity`.
 * `pg_policy` joined to `pg_class` and `pg_namespace`: the policy name; `polcmd` and
@@ -282,12 +306,15 @@ stage lands without moving the call.
 * read, secured: `Row security: on` (`forced` when it is), then one line per policy: name, command,
   mode, roles, `USING`, `WITH CHECK`;
 * stale (claim stamp cleared, `read_at` kept): the same, marked as from the reading at `read_at`;
-* never read successfully (neither): `Row security: the database could not be read`.
+* never read successfully (neither): `Row security: the database could not be read`, with the cause.
+
+Every arm that shows facts names where they came from, from the stored `database_server` row:
+`read from postgres://localhost:5432/sakila (PostgreSQL 16.4, database sakila, as dev)`.
 
 ### MCP
 
-`catalog.describe` gains a `rowSecurity` member with the same arms, read through `CatalogQueries`. The
-`docs/manual/how-to/mcp-agent-context.adoc` description of `catalog.describe` says so.
+`catalog.describe` gains a `rowSecurity` member with the same arms and the same provenance, read
+through `CatalogQueries`. The `docs/manual/how-to/mcp-agent-context.adoc` description of `catalog.describe` says so.
 
 ## Definitions on request
 
@@ -311,9 +338,10 @@ has no connector and shows none. `generate`, `validate`, `capture` and CI never 
 A read-only tool `database.definition` taking an object kind and a qualified name, and answering that
 object's definition as the database renders it. The split the prefixes state is stored versus fetched
 live: `catalog.` tools answer from the store, which includes the `database_` facts that
-`catalog.describe` reports, and `database.` answers from the live database. It refuses with its
-cause where the session has no database, where the object does not exist there, and where the dialect
-is not read yet. Each call opens a connection, reads in a read-only transaction under the bounded
+`catalog.describe` reports, and `database.` answers from the live database. Its answer opens with the
+same provenance line, read from the live connection it answers on. It refuses with its cause where
+the session has no database, where the object does not exist there, where the dialect is not read
+yet, and where the declared dialect disagrees with the connection. Each call opens a connection, reads in a read-only transaction under the bounded
 connect timeout, and closes it, as `execute` does.
 
 ### Editor
@@ -409,6 +437,11 @@ Generated output must be identical whether the gatherer ran or not. Three gates 
 * The connect timeout bounds an unreachable reading: a url pointing at a port nothing answers on
   fails within the timeout.
 * `source_name` never contains the user, the password or the url's query parameters.
+* `database_server` holds sakila's version, database name and connecting role after a reading, and
+  hover and `catalog.describe` show them.
+* A declared dialect the connection disagrees with fails the goal, naming both.
+* The version gate: a server version below 10, stubbed at the version check, records a failed reading
+  whose cause names the version and the minimum, and reads no policy.
 * `polroles` entries resolve to role names through `pg_roles`, and `{0}` reads as `PUBLIC`.
 * Mojo configuration tests over the injected environment map: `<database>` alone; env overriding POM;
   `<devDatabase>` alone (works, warns); `<devDatabase>` with `<database>` (fails); legacy variables as
@@ -461,7 +494,9 @@ reads, so the `graphitron` gatherer gains no edge to an optional upstream. The c
   that it has no SDL position.
 * The application role. Policies apply `TO` roles, and without knowing which role the runtime
   connects as, the follow-up diagnostics must assume any policy may apply. A `<database>` field
-  naming the runtime role(s) is the obvious home; it is left to the follow-ups.
+  naming the runtime role(s) is the obvious home; it is left to the follow-ups. In `dev`, the role the
+  reading connected as (`database_server`) is a first answer, when the dev database is reached as the
+  application's role.
 * Views and their options. Some of the candidate rules (a view without `security_invoker`, a view
   reading an `app.` setting) reach past policies, and this item stores no view facts. Whether they join
   this family or a later one is for the follow-up that needs them.
