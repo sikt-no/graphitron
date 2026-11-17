@@ -51,6 +51,18 @@ class CursorDatabaseTextExecutionTest {
         assertWalks(root("periodsDesc", "nodes { rowId }"), expected);
     }
 
+    // A cursor written before the database wrote this column's element carries Java's text for the
+    // range, [x,) in ISO form; the database parses that through the cast, so a client holding one
+    // gets the page after the row the text names. Here that row is the one with no upper bound.
+    @Test
+    void aCursorInJavasEarlierTextStillPages() {
+        var expected = oracle("select row_id from cursor_period order by subject_id, valid_period");
+        var after = cursor("[1,\"[2021-01-01T00:00+01:00,)\"]");
+        var connection = (Map<String, Object>) execute(
+            "{ periods(first: 20, after: \"" + after + "\") { nodes { rowId } } }").get("periods");
+        assertThat(rowIds(connection)).containsExactlyElementsOf(expected.subList(expected.indexOf(2) + 1, expected.size()));
+    }
+
     @Test
     void aRangeKeyPagesAscending() {
         assertWalks(root("periods", "nodes { rowId }"),
