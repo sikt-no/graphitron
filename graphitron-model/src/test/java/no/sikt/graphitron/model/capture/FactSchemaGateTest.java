@@ -850,7 +850,14 @@ class FactSchemaGateTest {
      * The two-graph fusion test the partition dimension's motivation promises, doubling as the
      * enforcer for per-run single-graph capture now that a store legitimately holds many graphs:
      * a run writes only under its own graph, and a pre-seeded sibling partition comes out of the
-     * run byte-identical.
+     * run byte-identical, its marks included.
+     *
+     * <p>This is where a stage's scoping is held: both graphs capture the stage fixture over one
+     * catalog, so the sibling's stage-written tables hold rows and the snapshot covers them, inputs
+     * and stages alike. An unpopulated sibling cannot tell "left the sibling alone" from "there was
+     * nothing to disturb", which the populated-stages assertion refuses. That each stage table holds
+     * exactly its rule's rows, per graph, is {@code StageAnswerAgreementTest}'s, over every fact
+     * document's graph.
      */
     @Test
     @DisplayName("a run writes only under its own graph")
@@ -858,14 +865,23 @@ class FactSchemaGateTest {
         Path siblingDir = java.nio.file.Files.createDirectories(tmp.resolve("sibling"));
         Path ownDir = java.nio.file.Files.createDirectories(tmp.resolve("own"));
         try (var store = GraphitronModelStore.open()) {
-            CapturedStore.writeSource(siblingDir, "type Query { actors: [String!]! }");
-            CapturedStore.capture(store.dsl(), new GraphIdentity("sibling", siblingDir),
-                CapturedStore.corpusOf(siblingDir), null);
+            var dsl = store.dsl();
+            captureStageFixture(dsl, "sibling", siblingDir);
+            // The tables whose rows name the stage that wrote them are the defects, which the walk
+            // writes beside the rules; the rest a capture fills from its rules alone.
+            var stages = StageAnswerAgreementTest.stages(dsl).stream()
+                .filter(stage -> !columnNames(dsl, stage.target()).contains("STAGE"))
+                .filter(stage -> !StageAnswerAgreementTest.WALK_WRITTEN.contains(stage.target()))
+                .toList();
+            assertThat(stages.stream()
+                    .filter(stage -> !materializedRows(dsl, List.of(stage.target()), stage, "sibling").isEmpty())
+                    .count())
+                .as("stages the fixture populates in the sibling graph; with none, the snapshot below"
+                    + " has no stage rows to disturb")
+                .isPositive();
             var before = partitionSnapshot(store, "sibling");
 
-            CapturedStore.writeSource(ownDir, FIXTURE);
-            CapturedStore.capture(store.dsl(), new GraphIdentity("own", ownDir),
-                CapturedStore.corpusOf(ownDir), null);
+            captureStageFixture(dsl, "own", ownDir);
 
             assertThat(partitionSnapshot(store, "sibling"))
                 .as("the sibling's partition, after another graph's capture")
@@ -884,77 +900,6 @@ class FactSchemaGateTest {
     }
 
     /**
-     * The equality a stage rests on, across graphs: on a settled store a stage-written table holds
-     * exactly the rows its rule view computes, for the graph that captured it and no other.
-     *
-     * <p>The stages are the anchor phase's that fill one table from one rule view, as
-     * {@code StageAnswerAgreementTest} lists them for the one-graph half of the same equality; the
-     * defect table, which several rules fill, is that test's to compare. The comparison is over the
-     * columns rule and table both carry, a stage's table carrying the reading's mark beside them.
-     *
-     * <p>It holds by construction, the table being filled from the rule and nothing else writing it, but a construction argument is exactly the kind that outlives the
-     * edit which breaks it: a stage scoped to the wrong partition, a delete clearing more or less than
-     * the insert refills, a table whose column list drifted from its rule's. The oracle in the
-     * store's own module checks one graph; this one checks the scoping, which one graph cannot.
-     *
-     * <p>Two graphs, both populated, because a stage is scoped per graph: one graph cannot tell
-     * "refilled this graph" from "refilled everything", and an unpopulated sibling cannot tell
-     * "left the sibling alone" from "there was nothing to disturb". The non-emptiness assertion
-     * below is over the stages as a whole rather than each, the per-rule population being the
-     * oracle's to hold; what this case needs is a sibling with rows in it to disturb.
-     */
-    @Test
-    @DisplayName("a stage-written table holds its rule's rows, under its own graph only")
-    void everyStageTableEqualsItsRule(@TempDir Path tmp) throws IOException {
-        Path siblingDir = Files.createDirectories(tmp.resolve("sibling"));
-        Path ownDir = Files.createDirectories(tmp.resolve("own"));
-        try (var store = GraphitronModelStore.open()) {
-            var dsl = store.dsl();
-            captureStageFixture(dsl, "sibling", siblingDir);
-
-            // The tables whose rows name the stage that wrote them are the defects, which the walk
-            // writes beside the rules; the rest a capture fills from its rules alone.
-            var stages = StageAnswerAgreementTest.stages(dsl).stream()
-                .filter(stage -> !columnNames(dsl, stage.target()).contains("STAGE"))
-                .filter(stage -> !StageAnswerAgreementTest.WALK_WRITTEN.contains(stage.target()))
-                .toList();
-            assertThat(stages).as("stages inserting from a rule view").isNotEmpty();
-            var siblingBefore = stages.stream()
-                .map(stage -> materializedRows(dsl, List.of(stage.target()), stage, "sibling"))
-                .toList();
-            assertThat(siblingBefore.stream().filter(rows -> !rows.isEmpty()).count())
-                .as("stages the fixture populates in the sibling graph; with none, the scoping"
-                    + " claim below has nothing to disturb")
-                .isPositive();
-
-            captureStageFixture(dsl, "own", ownDir);
-
-            for (int i = 0; i < stages.size(); i++) {
-                var stage = stages.get(i);
-                String target = stage.target();
-                var held = materializedRows(dsl, List.of(target), stage, "own");
-                var computed = materializedRows(dsl, stage.ruleViews(), stage, "own");
-                // A view its stage filters in Java computes rows the table rightly lacks; each row
-                // held is still one its rules compute.
-                boolean filtered = stage.ruleViews().stream().anyMatch(view ->
-                    StageAnswerAgreementTest.FILTERED_IN_JAVA.containsKey(target + " " + view));
-                if (filtered) {
-                    assertThat(computed).as("%s holds only rows %s compute for the capturing graph",
-                            target, stage.ruleViews())
-                        .containsAll(held);
-                } else {
-                    assertThat(held).as("%s should hold exactly what %s compute for the capturing graph",
-                            target, stage.ruleViews())
-                        .isEqualTo(computed);
-                }
-                assertThat(materializedRows(dsl, List.of(target), stage, "sibling"))
-                    .as("capturing 'own' must leave the sibling's partition of %s alone", target)
-                    .isEqualTo(siblingBefore.get(i));
-            }
-        }
-    }
-
-    /**
      * A capture that populates the stage-written tables, which is a property of the fixture SDL and
      * the fixture catalog together. The catalog
      * is what {@code graphitron_spelled_table} resolves its table spellings against; the
@@ -962,8 +907,8 @@ class FactSchemaGateTest {
      * {@code @reference} whose element names a table a
      * foreign key reaches is what puts one in {@code graphitron_join_path_step}, as the
      * {@code byFilmTitle} argument's own {@code @reference} does from the argument's side. Without any
-     * of them the case above passes over an empty
-     * relation, which is exactly what its own non-empty assertion refuses to let happen quietly.
+     * of them {@link #aRunWritesOnlyUnderItsOwnGraph} would snapshot empty
+     * stage tables, which is exactly what its populated-stages assertion refuses to let happen quietly.
      */
     private static void captureStageFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
