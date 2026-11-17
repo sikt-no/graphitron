@@ -131,6 +131,13 @@ The steps below, from either track or from R876, in the order their measured eff
 Whoever works this item takes the top open step, prices it before it lands, and re-ranks the queue
 from the next recording.
 
+graphitron and graphitron-model are throughput-bound, so moving work around does not pay; only
+removing it does. Two trials on 2026-11-17 say so. Warming the population on threads of its own cut
+the time model's classes waited from 393 to 179 s and left the module's wall where it was, and
+splitting `EmittedRegistryAgreementTest` into concurrent tests took `graphitron` from 7:36 to 7:16,
+inside the noise, each comparison slowing about threefold. A step that schedules, splits or
+parallelises a module's tests is priced against that before it is tried.
+
 1. **`graphitron_type_backing_rule` stops recursing.** Done: the closure is a stage stepping one
    hop a round, and its first compile fell from about 1,000 ms to about 11 ms.
 2. **The thread store's clear keeps its thread's statements.** Measured 2026-11-16 by binning every
@@ -398,8 +405,11 @@ pool, or read the scenarios from A3's store. Most of the 59 s is the same captur
 two do not add: either takes most of it, and the estimate of about 200 s is withdrawn.
 
 **B3. Split the single-thread tails.**
-- `EmittedRegistryAgreementTest` becomes one dynamic test per document, so the pool can spread it:
-  about 120 to 160 s. It is deleted with the walk under R876.
+- `EmittedRegistryAgreementTest` becomes one dynamic test per document, so the pool can spread it.
+  Tried 2026-11-17 and not landed: the 63 documents ran about three wide, their times summing to
+  413 s inside 133 s where the serial sweep took 130 s, since each comparison captures through the
+  population's pooled stores and queues on a shard's one writing connection. `graphitron`'s wall went
+  from 7:36 to 7:16, one run each, inside the noise. It is deleted with the walk under R876.
 - `GeneratorDeterminismTest` and `GraphCountGrowthGateTest` are split by their inputs: about 40 to
   60 s together.
 
