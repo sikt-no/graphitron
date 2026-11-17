@@ -159,9 +159,6 @@ public final class GraphitronModelStore implements AutoCloseable {
      */
     private static final Map<Path, Integer> OPEN_HANDLES = new ConcurrentHashMap<>();
 
-    /** Stands in for {@code store_stamp.generator_version} when no manifest declares one. */
-    private static final String UNVERSIONED = "dev";
-
     /**
      * The lock budget a file-backed connection opens with, in milliseconds. A writer that meets a
      * row another writer holds gives up at once, and the person runs the build again.
@@ -925,9 +922,14 @@ public final class GraphitronModelStore implements AutoCloseable {
         }
     }
 
+    /**
+     * The code half of the store's stamp: a release's version, or where the version names no code,
+     * a snapshot's or a classes directory's with none, the hash of this module's code that
+     * {@link CodeStamp} says.
+     */
     private static String generatorVersion() {
         String version = GraphitronModelStore.class.getPackage().getImplementationVersion();
-        return version == null ? UNVERSIONED : version;
+        return version == null || version.endsWith("-SNAPSHOT") ? CodeStamp.current() : version;
     }
 
     private static void closeQuietly(Connection connection) {
