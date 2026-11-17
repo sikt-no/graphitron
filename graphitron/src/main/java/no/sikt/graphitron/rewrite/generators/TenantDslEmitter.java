@@ -159,7 +159,7 @@ final class TenantDslEmitter {
     private static Resolution resolve(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage,
                                       EmptyAnswerSite site) {
         if (!routes(ctx)) {
-            return singleTenant(ctx);
+            return readsHandedDownKey(ctx) ? handedDownRead(ownedConnectionsClass(outputPackage)) : singleTenant(ctx);
         }
         TenantBinding binding = requireBinding(ctx, fieldName);
         var ownedConnections = ownedConnectionsClass(outputPackage);
@@ -246,7 +246,9 @@ final class TenantDslEmitter {
      */
     static CodeBlock dslExpression(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
         if (!routes(ctx)) {
-            return CodeBlock.of("$L.getDslContext(env)", ctx.graphitronContextCall());
+            return readsHandedDownKey(ctx)
+                ? CodeBlock.of("$T.dslHandedDown(env)", ownedConnectionsClass(outputPackage))
+                : CodeBlock.of("$L.getDslContext(env)", ctx.graphitronContextCall());
         }
         TenantBinding binding = requireBinding(ctx, fieldName);
         var ownedConnections = ownedConnectionsClass(outputPackage);
@@ -388,6 +390,13 @@ final class TenantDslEmitter {
         String parentType = java.util.Objects.requireNonNull(ctx.parentTypeName(),
             () -> "DataLoader name for field '" + fieldName + "' needs the declaring parent type");
         TenantBinding binding = routes(ctx) ? requireBinding(ctx, fieldName) : null;
+        if (binding == null && readsHandedDownKey(ctx)) {
+            // One loader per key the parents were read on, so each batch is one key's.
+            return CodeBlock.builder()
+                .addStatement("$T $L = $T.handedDownLoaderName(env, $S)",
+                    String.class, localName, ownedConnectionsClass(outputPackage), parentType)
+                .build();
+        }
         if (binding == null) {
             return CodeBlock.builder()
                 .addStatement("$T $L = $T.join($S, env.getExecutionStepInfo().getPath().getKeysOnly()) + $S",
@@ -483,6 +492,14 @@ final class TenantDslEmitter {
         return new Resolution(
             CodeBlock.builder()
                 .addStatement("$T dsl = $L.getDslContext(env)", DSL_CONTEXT, ctx.graphitronContextCall())
+                .build());
+    }
+
+    /** The read of {@link #readsHandedDownKey}: the key the parent was read on, the request's own at a root. */
+    private static Resolution handedDownRead(ClassName ownedConnections) {
+        return new Resolution(
+            CodeBlock.builder()
+                .addStatement("$T dsl = $T.dslHandedDown(env)", DSL_CONTEXT, ownedConnections)
                 .build());
     }
 

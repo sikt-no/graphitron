@@ -1,6 +1,6 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
-"An accepting type's entity is read on the vouched connection, and so is everything its SELECT projects, a reference child nested in it included. A @service below it reads on the connection the entity row hands down. Any other field below it with a fetcher of its own, a split query or a service returning a connection here, does not yet read on that connection, so an accepting type with one anywhere in the subtree its SELECT reads is refused at the @accept. The walk follows the projected fields type by type, a type it reaches twice being one step, so a subtree that leads back to a type it has read ends there."
+"An accepting type's entity is read on the vouched connection, and so is every field below it: what its SELECT projects, a reference child nested in it included, in the entity's statement, and a field with a fetcher of its own, a split query or a @service here, on the connection the entity row hands down. A connection below it does not yet read on that connection, so an accepting type with one anywhere in its subtree is refused at the @accept. The walk follows the fields type by type, a type it reaches twice being one step, so a subtree that leads back to a type it has read ends there."
 type Projected @table(name: "film") @key(fields: "filmId") {
   filmId: ID! @field(name: "film_id")
   title: String!
@@ -8,6 +8,7 @@ type Projected @table(name: "film") @key(fields: "filmId") {
   voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
+# A split query runs on the key the entity row hands down, so it is accepted.
 type Split @table(name: "film") @key(fields: "filmId") {
   filmId: ID! @field(name: "film_id")
   title: String!
@@ -38,7 +39,7 @@ type Connected @table(name: "film") @key(fields: "filmId") {
   voucher: String! @accept(scope: "films", vouchesFor: "title")
 }
 
-# A projected subtree that leads back to its own types: the walk ends, and nothing below has a fetcher.
+# A subtree that leads back to its own types: the walk ends, and nothing below is a connection.
 type Cyclic @table(name: "film") @key(fields: "filmId") {
   filmId: ID! @field(name: "film_id")
   title: String!
@@ -51,7 +52,7 @@ type CycleLanguage @table(name: "language") {
   films: [Cyclic!]! @reference(path: [{key: "film_language_id_fkey"}])
 }
 
-# A projected cycle with a split query two types down: the walk reaches it.
+# A projected cycle with a connection two types down: the walk reaches it.
 type Deep @table(name: "film") @key(fields: "filmId") {
   filmId: ID! @field(name: "film_id")
   title: String!
@@ -67,6 +68,11 @@ type DeepLanguage @table(name: "language") {
 type DeepFilm @table(name: "film") {
   title: String!
   language: DeepLanguage! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+  inventories: [DeepInventory!]! @asConnection @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+}
+
+type DeepInventory @table(name: "inventory") {
+  inventoryId: Int! @field(name: "inventory_id")
 }
 
 type Query {
@@ -83,5 +89,4 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   code,                         type_name, detail
   VOUCHER_ACCEPT_NOT_GENERATED, Connected, Connected.voucher
   VOUCHER_ACCEPT_NOT_GENERATED, Deep,      Deep.voucher
-  VOUCHER_ACCEPT_NOT_GENERATED, Split,     Split.voucher
   """)

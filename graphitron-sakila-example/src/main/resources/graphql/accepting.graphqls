@@ -1,9 +1,10 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@inaccessible"])
 
 # Accepting fixture (VoucherAcceptExecutionTest): the subgraph owning the results the issuing fixture
-# vouches for. A result, the details its SELECT nests and the details its child service reads are read
-# on the vouched connection for the owner a voucher carries, where the policies on app.vouched_owner admit them. Query.results reads
-# outside any vouched subtree, on the request's own connection, where the policies admit nothing.
+# vouches for. A result and everything below it, the details its SELECT nests, the details a split query
+# and a child service read and the items a polymorphic child reads, are read on the vouched connection
+# for the owner a voucher carries, where the policies on app.vouched_owner admit them. Query.results
+# reads outside any vouched subtree, on the request's own connection, where the policies admit nothing.
 
 type Query {
   results: [VgsResultat!]!
@@ -14,11 +15,19 @@ type VgsResultat @table(name: "vouched_result") @key(fields: "id") {
   eierId: String! @field(name: "owner_id") @inaccessible
   grade: Int!
   details: [Detail!]! @reference(path: [{key: "vouched_result_detail_result_id_fkey"}])
+  splitDetails: [Detail!]! @splitQuery @reference(path: [{key: "vouched_result_detail_result_id_fkey"}])
+  items: [VouchedItem!]!
   servicedDetails: [Detail!]! @service(service: {className: "no.sikt.graphitron.rewrite.test.services.VouchedResultService",
     method: "servicedDetails"})
   voucher: String! @accept(scope: "vgs-resultater", vouchesFor: "eierId")
 }
 
-type Detail @table(name: "vouched_result_detail") {
+interface VouchedItem { subject: String! }
+
+type Detail implements VouchedItem @table(name: "vouched_result_detail") {
+  subject: String!
+}
+
+type Note implements VouchedItem @table(name: "vouched_result_note") {
   subject: String!
 }

@@ -1288,6 +1288,20 @@ CREATE POLICY vouched_result_detail_result ON public.vouched_result_detail
     USING (EXISTS (SELECT 1 FROM public.vouched_result r
                     WHERE r.result_id = vouched_result_detail.result_id));
 
+-- The accepting fixture's second kind of item under a result, beside its details, so a field below a
+-- vouched result can return either through one interface; admitted by the same policy as a detail.
+CREATE TABLE public.vouched_result_note (
+    note_id   INTEGER PRIMARY KEY,
+    result_id INTEGER NOT NULL REFERENCES public.vouched_result (result_id),
+    subject   TEXT NOT NULL
+);
+INSERT INTO public.vouched_result_note (note_id, result_id, subject) VALUES
+    (1, 1, 'late'), (2, 3, 'excused');
+ALTER TABLE public.vouched_result_note ENABLE ROW LEVEL SECURITY;
+CREATE POLICY vouched_result_note_result ON public.vouched_result_note
+    USING (EXISTS (SELECT 1 FROM public.vouched_result r
+                    WHERE r.result_id = vouched_result_note.result_id));
+
 -- R328 fixture: self-FK @nodeId reference on a Graphitron-owned DML input — the neutral
 -- `email` / `mailbox` form of the CAMPUS self-FK case. `email` has a composite PK
 -- (mailbox_id, message_no). Two foreign keys share the `mailbox_id` child column:

@@ -18329,18 +18329,15 @@ COMMENT ON VIEW graphitron_voucher_entry_defect_rule IS 'One row the voucher sta
 -- @table did not resolve is that defect's, and is not judged again here. Reported at the @key. And
 -- an @accept's refusals that read which key its vouchers decode to and how its vouched-for fields bind,
 -- both decided here, reported at the @accept: the shape of what it vouches for against the graph's
--- other @accept fields, and a field below the accepting type that runs a query of its own other than a
--- @service.
+-- other @accept fields, and a connection below the accepting type.
 CREATE VIEW graphitron_entity_key_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
--- The object types an accepting type's subtree reads on the vouched connection, the accepting type
--- first: an object type a field of the reach targets, where no occurrence of that field has a producer
--- other than a @service, is read in the statement (a table-bound one as a MULTISET nested in it) or by
--- a @service on the key the entity row hands down, which a service returning a connection is not. Walked type by type, each step one projected edge, a
--- field's occurrences found by the element they use, so a field reached elsewhere with a fetcher of
--- its own counts here too, erring toward refusal. The edges are deduplicated first, so two fields
--- between one pair of types are one step, and UNION ALL with a path guard, as
--- graphitron_argument_reachable_input walks, stops a type that reaches itself rather than
+-- The types an accepting type's subtree reads on the vouched connection, the accepting type first:
+-- every field below it reads on the key the entity row hands down, whether the statement projects it
+-- or it has a fetcher of its own, a connection excepted, so a step is a field into an object, interface
+-- or union type that is no connection, or a union or interface to a type it admits. The edges are
+-- deduplicated first, so two fields between one pair of types are one step, and UNION ALL with a path
+-- guard, as graphitron_argument_reachable_input walks, stops a type that reaches itself rather than
 -- deduplicating after the fact.
 WITH RECURSIVE accept_reach (graph_name, accept_type, type_name, path) AS (
   SELECT DISTINCT d.graph_name, i.type_name, i.type_name, '/' || i.type_name || '/'
@@ -18353,16 +18350,16 @@ WITH RECURSIVE accept_reach (graph_name, accept_type, type_name, path) AS (
     JOIN (SELECT DISTINCT ft.graph_name, ft.type_name, ft.target_type_name
             FROM graphitron_field_target ft
             JOIN graphitron_type t
-              ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name AND t.kind = 'OBJECT'
-           WHERE NOT EXISTS (SELECT 1 FROM graphitron_occurrence o
-                               JOIN graphitron_occurrence_producer p
-                                 ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
-                              WHERE o.graph_name = ft.graph_name
-                                AND o.element_coordinate = ft.type_name || '.' || ft.field_name
-                                AND (p.kind <> 'SERVICE'
-                                     OR EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
-                                                 WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
-                                                   AND cc.field_name = ft.field_name)))) e
+              ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
+             AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION')
+           WHERE NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                              WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
+                                AND cc.field_name = ft.field_name)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_connection c
+                              WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)
+          UNION
+          SELECT m.graph_name, m.container_name, m.member_type_name
+            FROM graphitron_type_member m) e
       ON e.graph_name = r.graph_name AND e.type_name = r.type_name
    WHERE POSITION('/' || e.target_type_name || '/' IN r.path) = 0
 ),
@@ -18589,27 +18586,25 @@ SELECT e.graph_name, e.source_name, e.source_line, e.source_column, 'VOUCHER_ACC
                                      AND x.field_name = y.field_name
                                      AND x.binding_type IS NOT DISTINCT FROM y.binding_type))
 UNION ALL
--- A field below an accepting type that runs a query of its own other than a @service, a producer at any
--- of its occurrences that is a split query, a connection, a routine, or a @service returning a
--- connection, at any depth through the types the entity's SELECT and its @service fields read, does not
--- yet read on the vouched connection: refused at the @accept. A field the SELECT projects, and a
--- @service handed the entity row's key, read on it already.
+-- A connection below an accepting type, at any depth through the types its subtree reads, whether the
+-- walk fetches its page or a @service returns it, does not yet read on the vouched connection: its
+-- count and facets resolve the request's own. Refused at the @accept. Every other field below it, the
+-- statement's own and a split query, a routine, a polymorphic field or a @service alike, reads on the
+-- key the entity row hands down.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'VOUCHER_ACCEPT_NOT_GENERATED',
        d.coordinate, 'entity-key-alternatives'
   FROM graphql_directive_application d
   JOIN graphql_field_element i ON i.graph_name = d.graph_name AND i.coordinate = d.coordinate
  WHERE d.directive_name = 'accept'
+   -- A connection is a field @asConnection expands or one returning a connection type.
    AND EXISTS (SELECT 1 FROM accept_reach r
                  JOIN graphitron_field_target ft ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name
-                 JOIN graphitron_occurrence o
-                   ON o.graph_name = ft.graph_name AND o.element_coordinate = ft.type_name || '.' || ft.field_name
-                 JOIN graphitron_occurrence_producer p
-                   ON p.graph_name = o.graph_name AND p.coordinate = o.coordinate
                 WHERE r.graph_name = d.graph_name AND r.accept_type = i.type_name
-                  AND (p.kind <> 'SERVICE'
-                                     OR EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
-                                                 WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
-                                                   AND cc.field_name = ft.field_name)));
+                  AND (EXISTS (SELECT 1 FROM graphitron_connection_carrier cc
+                                WHERE cc.graph_name = ft.graph_name AND cc.type_name = ft.type_name
+                                  AND cc.field_name = ft.field_name)
+                       OR EXISTS (SELECT 1 FROM graphitron_connection c
+                                   WHERE c.graph_name = ft.graph_name AND c.type_name = ft.target_type_name)));
 COMMENT ON VIEW graphitron_entity_key_entry_defect_rule IS 'One row the entity key stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a @key(fields: "titel") on a film type whose table has no such column gives one KEY_FIELD_NOT_A_COLUMN row at the @key.';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_entity_key_entry_defect_rule.source_name IS 'the @key''s file, or the @accept''s';
@@ -28962,7 +28957,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('VOUCHER_ISSUE_ON_ROOT_TYPE', 'error', 'GRAPHITRON', 'GRAPHITRON_VOUCHER_ISSUE_ON_ROOT_TYPE',
    'A root operation field returns a type with @issue, and a voucher vouches for rows reached below a parent A''s own rules admitted: return it from a field below one.'),
   ('VOUCHER_ACCEPT_NOT_GENERATED', 'error', 'UNSUPPORTED', 'GRAPHITRON_VOUCHER_ACCEPT_NOT_GENERATED',
-   '@accept is on a type with a field below it, at any depth through the types its SELECT and its @service fields read, that runs a query of its own other than a @service (a split query, a connection, a routine, or a @service returning a connection), and such a field does not yet read on the vouched connection: read the subtree in the entity''s SELECT or through a @service.'),
+   '@accept is on a type with a connection below it, at any depth through the types its subtree reads, and a connection does not yet read on the vouched connection: read those rows as a list, in the entity''s SELECT, a split query or a @service.'),
   ('ROUTINE_LOOKUP_DEFERRED', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROUTINE_LOOKUP_DEFERRED',
    '@routine with @lookupKey on a root field classifies but graphitron does not generate it yet.'),
   ('MUTATION_WITHOUT_VERB', 'error', 'GRAPHITRON', 'GRAPHITRON_MUTATION_WITHOUT_VERB',

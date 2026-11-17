@@ -39,9 +39,9 @@ import static org.assertj.core.groups.Tuple.tuple;
 
 /**
  * The voucher handover end to end: the {@code issuing} package vouches for each result an application
- * references, and the {@code accepting} package verifies those vouchers and reads the vouched results,
- * the details their SELECT nests and the details a service below them reads, on the connection its
- * source leases for the key carrying the
+ * references, and the {@code accepting} package verifies those vouchers and reads the vouched results
+ * and everything below them, the details their SELECT nests and what a split query, a polymorphic
+ * child and a service below them read, on the connection its source leases for the key carrying the
  * owner each voucher vouches for. The accepting side reads as a role the row-level security policies
  * apply to, which admit a result and its details only to a connection whose session set
  * {@code app.vouched_owner} to the result's owner; the test's source sets it from the key's vouched-for
@@ -81,7 +81,7 @@ class VoucherAcceptExecutionTest {
         superDsl = DSL.using(url, user, password);
         dropProbeRole();
         superDsl.execute("create role " + PROBE_USER + " login password '" + PROBE_PASSWORD + "'");
-        superDsl.execute("grant select on vouched_result, vouched_result_detail to " + PROBE_USER);
+        superDsl.execute("grant select on vouched_result, vouched_result_detail, vouched_result_note to " + PROBE_USER);
 
         pair = KeyPairGenerator.getInstance(VoucherKeys.ALGORITHM).generateKeyPair();
         var issuingKeys = no.sikt.graphitron.generated.issuing.schema.VoucherKeys.ed25519(
@@ -226,6 +226,39 @@ class VoucherAcceptExecutionTest {
             .containsExactly(List.of("math", "norwegian"), List.of("english"));
         assertThat(LEASED).singleElement()
             .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void aSplitQueryAndAPolymorphicChildReadOnTheConnectionTheVouchedEntityHandsDown() {
+        var found = new ArrayList<>(entities(present(
+            ENTITIES.replace("details {", "splitDetails { subject } items { subject } details {"),
+            representations(vouchers(1)))));
+        found.sort(Comparator.comparing(e -> (String) e.get("id")));
+        java.util.function.Function<Object, List<Object>> subjectsOf = list -> ((List<Map<String, Object>>) list)
+            .stream().map(d -> d.get("subject")).sorted().map(Object.class::cast).toList();
+        assertThat(found).extracting(e -> subjectsOf.apply(e.get("splitDetails")))
+            .containsExactly(List.of("math", "norwegian"), List.of("english"));
+        assertThat(found).extracting(e -> subjectsOf.apply(e.get("items")))
+            .containsExactly(List.of("late", "math", "norwegian"), List.of("english"));
+        assertThat(LEASED).singleElement()
+            .satisfies(key -> assertThat(key.eierId()).contains("olivia"));
+        assertThat(RELEASED).containsExactlyElementsOf(LEASED);
+    }
+
+    /**
+     * A root handed no key reads what it read before the walk read the handed-down key: the key with
+     * no parts, the request's own, on one lease. The policies admit no row there, so nothing below it runs.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void aRootHandedNoKeyReadsOnTheKeyWithNoParts() {
+        var result = accepting.execute(Graphitron.newOwnedExecutionInput(acceptingSource())
+            .query("{ results { id splitDetails { subject } items { subject } } }").build());
+        assertThat(result.getErrors()).isEmpty();
+        assertThat((List<?>) ((Map<String, Object>) result.getData()).get("results")).isEmpty();
+        assertThat(LEASED).containsExactly(ConnectionKey.defaultSource());
         assertThat(RELEASED).containsExactlyElementsOf(LEASED);
     }
 
