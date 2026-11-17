@@ -683,7 +683,8 @@ every owned-connection build, as the connection contract is every build's.
 | 8c.1. Keyed by `ConnectionKey` | Every build keys its connections by the generated `ConnectionKey`, its tenant part typed `Object` without a tenant column | `674c051` |
 | 8c.2. The contract | `ConnectionSource`, `Lease`, `KeyNotPermitted`, `AcquisitionFailedException` and `ConnectionSources`; the runtime on dialect and settings; the session units gone | `e3a3ecf` |
 | 8c.3. Tenants to the source | `ConnectionSource.of(acquire, tenants)` names the fan-out domain; the request tenant set, the default tenant and `@defaultTenant` gone | `abe204f` |
-| 8d. Dispatch | Pending, in two steps; below | |
+| 8d.1. One way to read an entity | `_entities`, `node` and `nodes` load through DataLoaders per (type, alternative, connection key) in every build without a tenant column; `OwnedConnections.dslFor(env, key)` the one point, in every build | `a871d07` |
+| 8d.2. Vouchers on it | Pending; below | |
 | 8e. Fields with a fetcher of their own | Pending; below | |
 
 Facts from the shipped slices that slice 8 builds on:
