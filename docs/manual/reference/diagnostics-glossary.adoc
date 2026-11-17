@@ -66,6 +66,8 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Cause.* The `@field` directive's `name:` argument did not match any column on the `@table`-bound parent. Typical typos: case (`firstName` vs `FIRST_NAME`) or a stale rename (column dropped at the database side, schema not updated).
 
+Under an input object built into a jOOQ record, a nested input groups onto the record's columns, and a field of it naming none is `COLUMN_UNRESOLVED` at that field. Where the nested input is named like a jOOQ embeddable of the record's table, the detail says so: binding an input to an embeddable is not supported yet, so name the columns the embeddable covers instead.
+
 *Next step.* Correct the `name:` argument, or update the database schema and regenerate the jOOQ catalog if the column was supposed to exist. xref:directives/field.adoc[`@field` directive reference] covers the column-name resolution rules.
 
 [#attempt-table]

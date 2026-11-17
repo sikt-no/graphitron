@@ -4,6 +4,12 @@
 # member, a @condition taking a jOOQ record, and a field naming no column of the record it writes. A
 # node id with no route onto the record is node-id-lands-on-table's.
 #
+# A nested input under a record groups onto its columns, and where it is named like a jOOQ embeddable
+# of the record's table (Alf, 2026-11-18) a field of it naming no column says so in its detail:
+# binding an input to the embeddable is not supported yet. embedded_period's period covers starts_on
+# and ends_on; a period grouping whose fields bind columns says nothing, and the same failing field
+# under span, no embeddable, draws the plain detail.
+#
 # A field nothing takes is reported once, at the outermost such field (Alf, 2026-11-17): Length, a
 # nested input object whose own fields fill nothing of FilmSearchFilter, is the misspelt member
 # (the setter is setLength, matched exactly), and its min and max are not reported. A nested input
@@ -24,6 +30,12 @@ input FilmRecordDraftInput {
   filmId: ID @nodeId(typeName: "Film")
 }
 input FilmRecordExtraInput { title: String @field(name: "title"), subtitle: String }
+input PeriodLeaves { starts: String }
+input PeriodColumns { starts_on: String, ends_on: String }
+input SpanLeaves { starts: String }
+input PeriodByEmbeddable { label: String, period: PeriodLeaves }
+input PeriodByColumns { label: String, period: PeriodColumns }
+input PeriodBySpan { label: String, span: SpanLeaves }
 input FilmLengthBoundsInput { min: Int, max: Int }
 input FilmSearchMisspeltInput { title: String, Length: FilmLengthBoundsInput, subtitle: String }
 input FilmSearchNamingInput { title: String }
@@ -32,6 +44,12 @@ input FilmSearchGroupedInput { naming: FilmSearchNamingInput, length: FilmLength
 input FilmSearchColumnInput { title: String, releaseYear: Int @field(name: "release_year") }
 
 type Query {
+  periodsByEmbeddable(in: [PeriodByEmbeddable!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EmbeddedPeriodService", method: "count", argMapping: "periods: in"})
+  periodsByColumns(in: [PeriodByColumns!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EmbeddedPeriodService", method: "count", argMapping: "periods: in"})
+  periodsBySpan(in: [PeriodBySpan!]!): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.EmbeddedPeriodService", method: "count", argMapping: "periods: in"})
   # Every field fills a member of FilmDraft.
   countDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload @service(service: {
       className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService", method: "count", argMapping: "drafts: in"})
@@ -85,4 +103,6 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   FilmBundleExtrasInput.extras,        GROUPING_LIST,              no.sikt.graphitron.rewrite.test.services.FilmBundleDraft
   FilmDraftTwiceInput.title,           MEMBER_FILLED_TWICE,        no.sikt.graphitron.rewrite.test.services.FilmDraft#title
   FilmRecordExtraInput.subtitle,       COLUMN_UNRESOLVED,          subtitle
+  PeriodLeaves.starts,                 COLUMN_UNRESOLVED,          "starts, under period, named like the embeddable period of embedded_period, which an input does not bind to yet"
+  SpanLeaves.starts,                   COLUMN_UNRESOLVED,          starts
   """)

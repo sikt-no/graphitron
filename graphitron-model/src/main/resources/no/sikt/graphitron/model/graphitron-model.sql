@@ -25242,11 +25242,29 @@ UNION ALL
 -- its value lost, which a defect says rather than a build dropping it (Alf, 2026-11-16: "a defect is
 -- better than a data loss"). A node id decodes into the record instead, and an input object groups
 -- onto it. Reported at the @field where one is written and at the field otherwise, the detail the
--- spelling.
-SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code, MIN(v.spelling), 'occurrence-depth-defects'
+-- spelling. Where the field's input object is named, by its own name or its @field, like an
+-- embeddable of the record's table (Alf, 2026-11-18), the detail names the embeddable too: the
+-- author likely meant the input to bind to it, which is not supported yet, and the field only groups
+-- onto the record's columns. A grouping whose every field binds a column says nothing.
+SELECT v.graph_name, v.source_name, v.source_line, v.source_column, v.code,
+       MIN(CASE WHEN v.code = 'COLUMN_UNRESOLVED' THEN v.detail ELSE v.spelling END), 'occurrence-depth-defects'
   FROM (SELECT o.graph_name, COALESCE(da.source_name, el.source_name) AS source_name,
                COALESCE(da.source_line, el.source_line) AS source_line,
                COALESCE(da.source_column, el.source_column) AS source_column,
+               COALESCE(cl.named, o.name)
+               || COALESCE((SELECT ', under ' || MIN(po.name) || ', named like the embeddable '
+                                   || MIN(tf.field_name) || ' of ' || st.table_name
+                                   || ', which an input does not bind to yet'
+                              FROM graphitron_occurrence po
+                              LEFT JOIN graphitron_binding_claim pcl
+                                ON pcl.graph_name = po.graph_name AND pcl.coordinate = po.element_coordinate
+                               AND pcl.kind = 'COLUMN'
+                              JOIN sql_table_field tf
+                                ON tf.source_name = st.source_name AND tf.table_schema = st.table_schema
+                               AND tf.table_name = st.table_name AND tf.kind = 'EMBEDDABLE'
+                               AND UPPER(COALESCE(pcl.named, po.name)) IN (tf.field_name_upper, tf.jooq_name_upper)
+                             WHERE po.graph_name = o.graph_name AND po.coordinate = o.parent_coordinate
+                               AND po.kind = 'INPUT_FIELD'), '') AS detail,
                COALESCE(cl.named, o.name) AS spelling,
                CASE WHEN EXISTS (SELECT 1 FROM sql_column_spelling sp
                                   WHERE sp.source_name = st.source_name AND sp.table_schema = st.table_schema

@@ -211,7 +211,6 @@ census it replaced is gone.
 * **The client exception resolves through the code family, as a class the run is about to write** `open`, off the critical path.
   `graphitron_error_handler_source_rule` builds the class's name from the output package, which is the emitter's naming held in a rule (Alf, 2026-11-17: the model names no class the generator emits); the generating run hands its own classes to the code capture instead, so the handler resolves as any class does and the rule's special case goes,
   which first needs a ruling on whether the code family may hold a class a run has not yet compiled, and `scenarios/error-handler-client-exception` pins what must not change.
-* **jOOQ embeddables are recognized** `open`, E's, off the critical path, ahead of E's other open nodes. Alf, 2026-11-17: "Embeddable can be deferred, but we should at least recognize it." The catalog reads every public `Field` a jOOQ table class declares, so a generated embeddable may read as a fake column today, a false positive or a wrong binding in a real catalog. `sql_embeddable` and `sql_embeddable_column`, read from the live `Table`, state each embeddable and the columns it covers; `columnFactsOf` and `findColumn` leave embeddable fields out; and a nested input object under a jOOQ record whose name matches an embeddable of the record's table is a stored `UNSUPPORTED` deferral rather than unnested past. It needs the first `<embeddables>` fixture in graphitron-sakila-db, which regenerates the catalog. R234, an embeddable or UDT record as an input's whole backing, is adjacent.
 * **A graph's `code_` and `sql_` answers are a function of its own sources, whatever else the store holds** `open`.
   A classpath entry or catalog source is shared by every graph that reads it, so what the store holds
   for it may depend on the source alone; of two entries declaring one class name, the first in the
@@ -1070,8 +1069,9 @@ static method needs no holder.
     * **Grouping under a record is decided once** `open`, off the critical path.
       `BuildQuery.columns` decides in Java that a nested input object under a jOOQ record groups onto
       it, which `graphitron_occurrence_built_class` states as a `GROUPING` row; it reads the row.
-      * **A nested input under a jOOQ record binds to the embeddable it names** `blocked`, E's, off the
-        critical path, on "jOOQ embeddables are recognized". Alf, 2026-11-17: under a jOOQ record a
+      * **A nested input under a jOOQ record binds to the embeddable it names** `open`, E's, off the
+        critical path; an embeddable is an EMBEDDABLE field of `sql_table_field`, its record class the
+        value class (Alf, 2026-11-18). Alf, 2026-11-17: under a jOOQ record a
         nested input unnests and its leaves look for the record's fields, an unmatched leaf its own
         defect; where the record has an embedded field matching the nested input, the input binds to
         it rather than unnesting, and graphitron should support it. Store side only: a
