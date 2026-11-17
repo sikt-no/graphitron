@@ -300,6 +300,14 @@ among them; a key whose tenant part is empty is a key like any other, and what i
 source's decision, not a fallback graphitron picks. The key is a value, so graphitron knows when a
 child's key differs from its parent's and acquires again only then.
 
+One request rejection (Alf, 2026-11-17). A failed acquisition, a failed voucher check and a second
+vouched-for value in one request all reject the request the same way: one generated sealed request
+rejection, remembered once per request by the carrier and thrown in place of the result. The facade's
+`requestRejection(thrown)` answers what rejected it (the source's own exception for a failed acquisition,
+the rejection itself for a voucher check or the limit, which carries no token content), and
+graphitron-jakarta-rest's `rejectedRequest(Throwable)` receives that value, so an adapter tells an
+identity fault from an outage by it.
+
 No default tenant and no `@defaultTenant` (Alf, 2026-11-17). The request names no default tenant:
 which pool serves the key whose tenant part is empty is the source's decision, so every read and write
 of a global table runs on that key and there is no separate global-read route. `@defaultTenant` goes
