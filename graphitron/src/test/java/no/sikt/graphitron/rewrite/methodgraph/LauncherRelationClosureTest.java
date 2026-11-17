@@ -125,9 +125,8 @@ class LauncherRelationClosureTest {
             workDir, "LauncherRelationClosureTest",
             workDir.resolve("generated-sources"),
             OUTPUT_PACKAGE,
-            TestConfiguration.DEFAULT_JOOQ_PACKAGE,
-            TestSchemaHelper.testClasspath().stream()
-                .map(no.sikt.graphitron.model.config.ClasspathEntry::path).toList());
+            TestConfiguration.DEFAULT_JOOQ_PACKAGE)
+            .withClasspathRoots(TestSchemaHelper.testClasspath());
         var result = CapturedGraphs.read(ctx, store -> {
             services = no.sikt.graphitron.emit.ServiceEmission.read(store.handle());
             return new GraphQLRewriteGenerator(ctx, store.handle(), store.schema()).generate();

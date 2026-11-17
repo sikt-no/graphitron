@@ -248,6 +248,18 @@ public record RunContext(
     }
 
     /**
+     * Returns a copy with {@code classpathRoots} replaced, so a convenience-constructor caller can
+     * hand over a classified classpath: the path-list constructors read every entry as the project's
+     * own, and the classpath reading skips only the entries classified {@link ClasspathEntry.Origin#TRANSITIVE}.
+     */
+    public RunContext withClasspathRoots(List<ClasspathEntry> classpathRoots) {
+        return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
+    }
+
+    /**
      * Returns a copy with {@code storeDirectory} replaced, so a convenience-constructor caller can
      * layer the fact store's home on afterwards. The convenience constructors leave it null, which
      * gives a private in-memory store that dies with the run; a caller that wants the run's rows to
