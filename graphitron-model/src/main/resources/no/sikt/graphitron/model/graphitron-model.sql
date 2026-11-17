@@ -9505,9 +9505,10 @@ SELECT cr.graph_name, cr.source_name, cr.source_line, cr.source_column,
                     WHERE b.source_name = cr.method_source_name AND b.class_name = cr.method_class_name
                       AND b.is_buildable)
 UNION ALL
--- An @error type's field, other than path and message, which no accessor of a handler's source class
--- answers, at the field: the accessor named get, is or nothing before the field's @field(name:), or
--- else its own name, capitalised, among the class's slots or graphql-java's contract, returning what
+-- An @error type's field, other than path and message, which no getter of a handler's source class
+-- answers, at the field: the getter named get or is before the field's @field(name:), or else its own
+-- name, capitalised, among the class's slots or graphql-java's contract, a bare accessor or a public
+-- field not being read, since a handler's class is no record, returning what
 -- the field's scalar is where the field is one scalar of a known class and no @nodeId, which encodes
 -- what the accessor yields into the id rather than handing it over as it is. Each handler's class is read
 -- off graphitron_error_handler_source; a handler resolving to no class is judged nowhere. The detail
@@ -9533,8 +9534,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
                     WHERE hs.kind = 'CLASS' AND s.source_name = hs.class_source_name
                       AND s.class_name = hs.class_name
                       AND s.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
-                                    'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
-                                    COALESCE(b.name_ref, f.field_name))
+                                    'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2))
                       AND (f.is_list
                          OR EXISTS (SELECT 1 FROM graphql_directive_application nid
                                      WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
@@ -9548,8 +9548,7 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
    AND NOT EXISTS (SELECT 1 FROM code_contract_slot c
                     WHERE hs.kind = 'CONTRACT' AND c.class_name = hs.class_name
                       AND c.method_name IN ('get' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
-                                    'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2),
-                                    COALESCE(b.name_ref, f.field_name))
+                                    'is' || UPPER(SUBSTRING(COALESCE(b.name_ref, f.field_name), 1, 1)) || SUBSTRING(COALESCE(b.name_ref, f.field_name), 2))
                       AND (f.is_list
                          OR EXISTS (SELECT 1 FROM graphql_directive_application nid
                                      WHERE nid.graph_name = f.graph_name AND nid.coordinate = f.coordinate
@@ -28464,7 +28463,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('ENUM_CONSTANT_MISSING', 'error', 'GRAPHITRON', 'GRAPHITRON_ENUM_CONSTANT_MISSING',
    'A GraphQL enum value a @service parameter or input member takes as a Java enum constant has no constant of its name on that enum, its @field(name:) or else its own, so Enum.valueOf throws when a client sends it: rename the value or its @field(name:) to a constant the enum declares, or take the value as a String.'),
   ('ERROR_FIELD_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_ERROR_FIELD_UNREADABLE',
-   'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no accessor of the field''s name or @field(name:), get, is or bare, returning what the field''s scalar is: name an accessor the class has with @field(name:), or give the field the type its accessor returns.'),
+   'An @error type''s field, other than path and message, is read off the exception its handler matches, and that class has no get or is getter of the field''s name or @field(name:) returning what the field''s scalar is, a bare accessor or a public field not being read: name a getter the class has with @field(name:), give the class one, or give the field the type its getter returns.'),
   ('CHECKED_EXCEPTION_UNHANDLED', 'error', 'GRAPHITRON', 'GRAPHITRON_CHECKED_EXCEPTION_UNHANDLED',
    'A @service method declares a checked exception no handler of its field''s outcome covers, so the generated fetcher, which catches only what a handler claims, does not compile: add an @error type whose GENERIC handler names the exception or a supertype of it, or a DATABASE handler for an SQLException, or remove the throws clause. IOException and InterruptedException are exempt, as infrastructure failures that redact rather than surface; a declared exception the build resolves to no class, one on a transitive jar among them, is not judged here and is left to the compile.'),
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',

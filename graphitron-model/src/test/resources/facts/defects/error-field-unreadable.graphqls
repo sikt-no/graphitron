@@ -4,7 +4,8 @@
 # localizedMessage is read and bogus is not, and stackTrace, an array, cannot fill an Int. SQLException's
 # getSQLState is reached by @field(name: "SQLState") and not by sqlState, whose getter would be
 # getSqlState; its getErrorCode, an int, fills an Int. GraphQLError offers path and extensions and no
-# bogus.
+# bogus. FilmLookupCodedException answers code through a bare code() and hint through a public field,
+# neither of which is read: an extra field reads a get or is getter.
 
 type Film @table(name: "film") { title: String }
 
@@ -14,6 +15,13 @@ type FilmNotFound @error(handlers: [{handler: GENERIC, className: "no.sikt.graph
   localizedMessage: String
   bogus: String
   stackTrace: Int
+}
+
+type FilmCoded @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException"}]) {
+  path: [String!]!
+  message: String!
+  code: String
+  hint: String
 }
 
 type RateOverflow @error(handlers: [{handler: DATABASE, sqlState: "22003"}]) {
@@ -37,6 +45,8 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site",
   code,                   coordinate,                    detail
   ERROR_FIELD_UNREADABLE, FilmNotFound.bogus,            no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
   ERROR_FIELD_UNREADABLE, FilmNotFound.stackTrace,       no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException
+  ERROR_FIELD_UNREADABLE, FilmCoded.code,                no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException
+  ERROR_FIELD_UNREADABLE, FilmCoded.hint,                no.sikt.graphitron.rewrite.test.services.FilmLookupCodedException
   ERROR_FIELD_UNREADABLE, RateOverflow.sqlState,         java.sql.SQLException
   ERROR_FIELD_UNREADABLE, Invalid.bogus,                 graphql.GraphQLError
   """)
