@@ -314,7 +314,15 @@ so the model's tests, `generate-test-schemas`, `graphitron`, LSP, MCP and the pl
 same documents again. This step goes beyond R1160: the model's run writes its shards to store files
 under `graphitron-model/target`, published with the test jar, and the downstream populations and
 `generate-test-schemas` open those instead of capturing. A file whose DDL hash or document set does
-not match is refused and captured afresh.
+not match is refused and captured afresh. Priced on 2026-11-17 from `StoreCostExtension`'s totals
+over model and `graphitron` under `-T 1C`: the model captures the 363 documents once, about 110 s of
+class time at 0.27 s a capture, on the population's shard threads; `graphitron`'s classes capture
+the 192 documents they read again, about 50 s of class time, 15 to 25 s of wall; and
+`generate-test-schemas` runs 144 scenarios in 59 s on one thread, capture and generation together.
+Opening the files instead takes 40 to 65 s off `graphitron`'s chain, less the opening, which is not
+measured. It removes work rather than moving it: warming the population on threads of its own from
+the JVM's start, measured the same day, cut the time classes spent waiting from 393 to 179 s and left
+the module's wall where it was, the classes' own work slowing by what the waiting fell.
 
 **A4. Capture code lives in the model, and `graphitron` captures only through its harnesses (Alf,
 2026-11-13).** The test stores are then managed in one place, so A2a's pool and A3's shared files
@@ -355,10 +363,15 @@ the next prepare under a millisecond. Only the type-backing view, the one recurs
 second to compile; the others cost 1 to 3 ms, so the eviction matters for it alone. Queue step 1
 removes the cost.
 
-**A6. A fresh store opens cheaply.** Opening took 161 s over 335 stores in the model's tests. A store
-runs its whole DDL one statement at a time, including 3,661 `COMMENT ON` statements that no capture
-reads, and hashes the DDL twice on every open. Priced by timing `create()` with and without the
-comments; the comments' readers are checked first.
+**A6. A fresh store opens cheaply.** Set aside 2026-11-17: no longer a lever. Opening took 161 s
+over 335 stores in the model's tests on 2026-11-15; the model now boots 142 stores a run and
+`graphitron` 20. Timed over 20 opens in a warm JVM, a fresh in-memory store opens in 292 ms: views
+106, tables 79, the 3,708 `COMMENT ON` statements 42, the rest under 20 each; a file-backed one in
+459 ms, hashing the DDL twice. The comments stay, `StoreCatalog` reading them for the MCP's relation
+descriptions. Run as one JDBC batch they cost 38 ms against 42; the DDL cannot run as one script,
+H2 recursing once per remaining statement; hashing once and keeping the split DDL saves about 30 ms
+an open; opening a copy of a fresh store's file costs 241 ms against 459. Over 142 boots the best of
+these is about 4 s of class time.
 
 **A7. A test's catalog is read once.** The catalog skip vouches a catalog by the stamp of the
 classpath entry it is generated into. Tests that capture with no classpath pass no entry, so every
@@ -379,9 +392,10 @@ build now waits for is graphitron-model, graphitron, graphitron-maven-plugin and
 graphitron-sakila-example, so time off those counts in full and time elsewhere only as it frees
 the machine. The release deploy needs no pin, nothing setting `-T` for it.
 
-**B2. Run `generate-test-schemas` in parallel.** `GenerateTestSchemas.main` loops over 92 scenarios
-in one thread at 1.5 cores. Give it a pool, or read the scenarios from A3's store: about 200 s,
-estimated.
+**B2. Run `generate-test-schemas` in parallel.** `GenerateTestSchemas.main` loops over the
+scenarios in one thread: 144 scenarios in 59 s on 2026-11-17, plus about 6 s of JVM start. Give it a
+pool, or read the scenarios from A3's store. Most of the 59 s is the same capture A3 removes, so the
+two do not add: either takes most of it, and the estimate of about 200 s is withdrawn.
 
 **B3. Split the single-thread tails.**
 - `EmittedRegistryAgreementTest` becomes one dynamic test per document, so the pool can spread it:
