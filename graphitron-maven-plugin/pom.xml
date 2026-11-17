@@ -163,6 +163,9 @@
                 <version>3.10.1</version>
                 <configuration>
                     <cloneProjectsTo>${project.build.directory}/it</cloneProjectsTo>
+                    <!-- Four ITs at a time: each is cloned to its own directory and keeps its store
+                         there, and only the setup projects install, ordered by invoker.ordinal. -->
+                    <parallelThreads>4</parallelThreads>
                     <settingsFile>src/it/settings.xml</settingsFile>
                     <postBuildHookScript>verify.groovy</postBuildHookScript>
                     <!-- Setup projects install the stub jOOQ jars, and the service jar carrying one,
