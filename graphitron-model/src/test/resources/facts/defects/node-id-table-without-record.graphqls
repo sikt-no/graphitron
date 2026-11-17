@@ -1,0 +1,23 @@
+# A node id is decoded into its node's key through the node table's generated record, so a node over a
+# table jOOQ generated no record for cannot be decoded where a decode shape fits: NODE_ID_TABLE_WITHOUT_RECORD
+# at the @nodeId, the table as the detail. recordless_note is generated without a record class
+# (sakila-db's recordsExcludes). The same projection over a node with a record decodes, the near miss.
+
+type RecordlessNote @table(name: "recordless_note") @node { body: String }
+
+type Film @table(name: "film") @node { title: String }
+
+type Query {
+  # A key column projected into the parameter: a shape fits, and the node has no record to read it off.
+  filmByNote(ref: ID @nodeId(typeName: "RecordlessNote")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ref.note_id"})
+  # The same over a node with a record.
+  filmByFilm(ref: ID @nodeId(typeName: "Film")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup", argMapping: "id: ref.film_id"})
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site",
+    where: "code = 'NODE_ID_TABLE_WITHOUT_RECORD'", rows: """
+  coordinate,               code,                         detail
+  Query.filmByNote(ref:),   NODE_ID_TABLE_WITHOUT_RECORD, public.recordless_note
+  """)

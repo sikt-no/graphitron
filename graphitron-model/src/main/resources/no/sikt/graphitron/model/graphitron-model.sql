@@ -19436,6 +19436,28 @@ SELECT v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
  GROUP BY v.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
           COALESCE(da.source_column, el.source_column), v.code
 UNION ALL
+-- A node id whose decode lands, but on a node table jOOQ generated no record for: every decode reads
+-- the key off the node's own record, which such a table does not have. At the @nodeId, or at the
+-- argument or input field an inferred id is; the detail the table.
+SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column),
+       'NODE_ID_TABLE_WITHOUT_RECORD', MIN(k.table_schema || '.' || k.table_name), 'occurrence-builds'
+  FROM graphitron_occurrence_node_id_shape d
+  JOIN graphitron_occurrence_node_id k
+    ON k.graph_name = d.graph_name AND k.coordinate = d.coordinate AND k.bound = d.bound AND k.position = 0
+  JOIN sql_table st
+    ON st.source_name = k.table_source_name AND st.table_schema = k.table_schema
+   AND st.table_name = k.table_name AND st.record_class_fqn = 'org.jooq.Record'
+  JOIN graphitron_occurrence o ON o.graph_name = d.graph_name AND o.coordinate = d.coordinate
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'nodeId' AND da.ordinal = 0
+  LEFT JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate AND da.graph_name IS NULL
+ WHERE COALESCE(da.source_line, el.source_line) IS NOT NULL
+ GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+          COALESCE(da.source_column, el.source_column)
+UNION ALL
 -- A polymorphic id whose value reaches no Java parameter, at the @nodeId: the decode per member is
 -- a parameter's, and anywhere else the value binds a predicate or is encoded. Quiet where the field
 -- runs an @externalField or a @routine, whose parameters are not stated here, and where its
@@ -29025,6 +29047,8 @@ INSERT INTO graphitron_defect_type VALUES
    '@mutation names the write graphitron generates by its typeName, and without one there is no write to generate.'),
   ('CONDITION_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_CONDITION_WITHOUT_METHOD',
    '@condition adds the predicate of the method its condition: names by className and method, and defaults neither, so without both there is no predicate to add.'),
+  ('NODE_ID_TABLE_WITHOUT_RECORD', 'error', 'UNSUPPORTED', 'GRAPHITRON_NODE_ID_TABLE_WITHOUT_RECORD',
+   'A node id is decoded into its node''s key through the node table''s generated record, and jOOQ generated none for this table: generate records for it, or take the id somewhere it is not decoded.'),
   ('SERVICE_INPUT_AS_MAP', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_INPUT_AS_MAP',
    'A @service parameter takes an input object as a Map or Object, and a map at the service boundary is a permanent anti-pattern: take a typed bean, a record or a class with a public no-arg constructor mirroring the input object, or, for open-ended JSON, declare a custom scalar with @scalarType and take its Java type.'),
   ('SERVICE_WITHOUT_METHOD', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_WITHOUT_METHOD',
