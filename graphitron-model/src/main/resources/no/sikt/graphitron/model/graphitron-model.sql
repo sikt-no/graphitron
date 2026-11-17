@@ -13225,7 +13225,13 @@ CREATE TABLE graphitron_occurrence_binding_member (
   slot_descriptor   VARCHAR   NOT NULL,
   slot_position     INT       NOT NULL,
   stated_by         VARCHAR   NOT NULL,
+  record_source_name VARCHAR,
+  record_schema      VARCHAR,
+  record_table       VARCHAR,
   touched_at        TIMESTAMP NOT NULL,
+  record_source_ref  VARCHAR,
+  record_schema_ref  VARCHAR,
+  record_table_ref   VARCHAR,
   PRIMARY KEY (graph_name, coordinate, bound),
   -- The binding it details, pinned to the kind that fills a member of a built class.
   FOREIGN KEY (graph_name, coordinate, bound, kind)
@@ -13236,6 +13242,15 @@ CREATE TABLE graphitron_occurrence_binding_member (
     REFERENCES graphitron_occurrence_built_class (graph_name, coordinate, class_name, stated_by) ON DELETE CASCADE,
   FOREIGN KEY (slot_source_name, class_name, slot_method_name, slot_descriptor, slot_position)
     REFERENCES code_write_slot (source_name, class_name, method_name, descriptor, position) ON DELETE CASCADE,
+  -- The table whose jOOQ record the member takes, through the row's own copy of its key: the sweep
+  -- removes the member the reading no longer finds.
+  FOREIGN KEY (record_source_ref, record_schema_ref, record_table_ref)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE SET NULL,
+  CHECK ((record_source_name IS NULL) = (record_table IS NULL)),
+  CHECK ((record_schema IS NULL) = (record_table IS NULL)),
+  CHECK (record_source_ref IS NULL OR record_source_ref = record_source_name),
+  CHECK (record_schema_ref IS NULL OR record_schema_ref = record_schema),
+  CHECK (record_table_ref IS NULL OR record_table_ref = record_table),
   CHECK (kind = 'MEMBER'),
   -- The member a bound names follows its class and a '#', which class_name is generated from.
   CHECK (POSITION('#', bound) > 0)
@@ -13252,6 +13267,12 @@ COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_source_name IS 'the 
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_method_name IS 'the call that fills the member, the constructor or the setter, as on code_write_slot';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_descriptor IS 'that call''s descriptor';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.slot_position IS 'the argument of the call carrying the member';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.record_source_name IS 'the catalog partition of the table whose generated jOOQ record the member takes, itself or as its element type; NULL where it takes no table''s record';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.record_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.record_table IS 'the table whose record the member takes, as graphitron_occurrence_call_parameter.record_table states it for a parameter. NULL where the member takes no table''s record';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.record_source_ref IS 'the catalog half of the record table''s sql_table key, nullable so the table''s removal sets the reference null rather than cascading';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.record_schema_ref IS 'the schema half of the record table''s key, equal to record_schema while the table stands';
+COMMENT ON COLUMN graphitron_occurrence_binding_member.record_table_ref IS 'the table half of the record table''s key, equal to record_table while the table stands';
 COMMENT ON COLUMN graphitron_occurrence_binding_member.touched_at IS 'the reading that last wrote this row; the sweep deletes the MEMBER bindings an older reading wrote, this row with them';
 
 -- The key columns a node id at an occurrence packs or unpacks: the NODE_ID subtype of the binding,
@@ -15256,10 +15277,12 @@ COMMENT ON VIEW graphitron_occurrence_node_id_shape_rule IS 'How a node id lands
 -- A record's fields write columns, so a record's setters are no members here, however they are named.
 CREATE VIEW graphitron_occurrence_binding_member_rule
   (graph_name, coordinate, bound, kind, parent_coordinate, class_name, slot_source_name, slot_method_name,
-   slot_descriptor, slot_position, stated_by, parent_touched_at) AS
+   slot_descriptor, slot_position, stated_by, record_source_name, record_schema, record_table,
+   parent_touched_at) AS
 SELECT o.graph_name, o.coordinate, pr.class_name || '#' || w.slot_name, 'MEMBER',
        o.parent_coordinate,
-       pr.class_name, w.source_name, w.method_name, w.descriptor, w.position, pr.stated_by, pr.touched_at
+       pr.class_name, w.source_name, w.method_name, w.descriptor, w.position, pr.stated_by,
+       rc.source_name, rc.table_schema, rc.table_name, pr.touched_at
   FROM graphitron_occurrence o
   JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
   JOIN graphitron_occurrence_built_class pr
@@ -15267,6 +15290,15 @@ SELECT o.graph_name, o.coordinate, pr.class_name || '#' || w.slot_name, 'MEMBER'
   JOIN code_write_slot w
     ON w.source_name = pr.class_source_ref AND w.class_name = pr.class_name
    AND w.slot_name = CASE WHEN pr.member_names = 'GRAPHQL' THEN o.name ELSE f.bound_name END
+  -- The table whose generated record the member takes, itself or as its element, among the graph's
+  -- catalog sources.
+  LEFT JOIN (SELECT gs.graph_name, st.record_class_fqn, MIN(st.source_name) AS source_name,
+                    MIN(st.table_schema) AS table_schema, MIN(st.table_name) AS table_name
+               FROM store_graph_source gs
+               JOIN sql_table st ON st.source_name = gs.source_name
+              WHERE st.record_class_fqn <> 'org.jooq.Record'
+              GROUP BY gs.graph_name, st.record_class_fqn) rc
+    ON rc.graph_name = o.graph_name AND rc.record_class_fqn = COALESCE(w.element_class, w.erased_class)
  WHERE o.kind = 'INPUT_FIELD' AND pr.record_table IS NULL
    AND NOT EXISTS (SELECT 1 FROM code_write_slot w2
                     WHERE w2.source_name = w.source_name AND w2.class_name = w.class_name

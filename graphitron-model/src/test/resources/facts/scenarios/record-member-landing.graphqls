@@ -27,3 +27,9 @@ extend schema @expectEquals(relation: "graphitron_occurrence_column", where: "co
   coordinate,                               table_name, column_name
   Query.filmRecordBundle(in.films.title:),  film,       title
   """)
+
+extend schema @expectEquals(relation: "graphitron_occurrence_binding_member", where: "coordinate LIKE 'Query.filmRecordBundle%'", rows: """
+  coordinate,                        record_table, stated_by
+  Query.filmRecordBundle(in.name:),  ,             SERVICE
+  Query.filmRecordBundle(in.films:), film,         SERVICE
+  """)

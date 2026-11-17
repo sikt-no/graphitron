@@ -121,11 +121,13 @@ public final class OccurrenceBuilds {
         dsl.insertInto(m)
             .columns(m.GRAPH_NAME, m.COORDINATE, m.BOUND, m.KIND, m.PARENT_COORDINATE,
                 m.SLOT_SOURCE_NAME, m.SLOT_METHOD_NAME, m.SLOT_DESCRIPTOR, m.SLOT_POSITION, m.STATED_BY,
-                m.TOUCHED_AT)
+                m.RECORD_SOURCE_NAME, m.RECORD_SCHEMA, m.RECORD_TABLE, m.TOUCHED_AT, m.RECORD_SOURCE_REF,
+                m.RECORD_SCHEMA_REF, m.RECORD_TABLE_REF)
             .select(dsl
                 .select(r.GRAPH_NAME, r.COORDINATE, r.BOUND, r.KIND, r.PARENT_COORDINATE,
                     r.SLOT_SOURCE_NAME, r.SLOT_METHOD_NAME, r.SLOT_DESCRIPTOR, r.SLOT_POSITION, r.STATED_BY,
-                    val(touchedAt, m.TOUCHED_AT))
+                    r.RECORD_SOURCE_NAME, r.RECORD_SCHEMA, r.RECORD_TABLE, val(touchedAt, m.TOUCHED_AT),
+                    r.RECORD_SOURCE_NAME, r.RECORD_SCHEMA, r.RECORD_TABLE)
                 .from(r)
                 .join(o).on(o.GRAPH_NAME.eq(r.GRAPH_NAME), o.COORDINATE.eq(r.COORDINATE))
                 .where(current))
@@ -137,7 +139,13 @@ public final class OccurrenceBuilds {
             .set(m.SLOT_DESCRIPTOR, excluded(m.SLOT_DESCRIPTOR))
             .set(m.SLOT_POSITION, excluded(m.SLOT_POSITION))
             .set(m.STATED_BY, excluded(m.STATED_BY))
+            .set(m.RECORD_SOURCE_NAME, excluded(m.RECORD_SOURCE_NAME))
+            .set(m.RECORD_SCHEMA, excluded(m.RECORD_SCHEMA))
+            .set(m.RECORD_TABLE, excluded(m.RECORD_TABLE))
             .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT))
+            .set(m.RECORD_SOURCE_REF, excluded(m.RECORD_SOURCE_REF))
+            .set(m.RECORD_SCHEMA_REF, excluded(m.RECORD_SCHEMA_REF))
+            .set(m.RECORD_TABLE_REF, excluded(m.RECORD_TABLE_REF))
             .execute();
     }
 
