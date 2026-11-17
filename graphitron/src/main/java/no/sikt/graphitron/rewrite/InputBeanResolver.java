@@ -1046,7 +1046,7 @@ final class InputBeanResolver {
             }
         }
         return new Built.Ok(new CallSiteExtraction.InputBean(
-            ClassName.bestGuess(beanClass.getName()),
+            ClassName.get(beanClass),
             CallSiteExtraction.InputBean.Target.RECORD, bindings));
     }
 
@@ -1091,7 +1091,7 @@ final class InputBeanResolver {
                 + "' has no fields matching the SDL input type '" + iot.getName() + "'"));
         }
         return new Built.Ok(new CallSiteExtraction.InputBean(
-            ClassName.bestGuess(beanClass.getName()),
+            ClassName.get(beanClass),
             CallSiteExtraction.InputBean.Target.JAVA_BEAN, bindings));
     }
 

@@ -85,7 +85,7 @@ class ConditionParameterCarrierPipelineTest {
     @Test
     void aRecordAtAFieldLevelConditionIsBuiltFromTheMap() {
         var bean = inputBean(fieldCondition(fieldLevel("filter: CarrierFilter", "carrierRecord", "input: filter")), "input");
-        assertThat(bean.beanClass().simpleName()).isEqualTo("TestConditionCarrierStub$CarrierRecord");
+        assertThat(bean.beanClass().simpleNames()).containsExactly("TestConditionCarrierStub", "CarrierRecord");
         assertThat(bean.target()).isEqualTo(CallSiteExtraction.InputBean.Target.RECORD);
         assertThat(bean.fields()).extracting(CallSiteExtraction.FieldBinding::javaFieldName)
             .containsExactly("title");
