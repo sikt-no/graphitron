@@ -1,10 +1,15 @@
 package no.sikt.graphitron.model.derive;
 
+import no.sikt.graphitron.model.Public;
 import no.sikt.graphitron.model.sink.WriteTimes;
 import no.sikt.graphitron.model.test.FactGraphs;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.Field;
+import org.jooq.ForeignKey;
 import org.jooq.Record;
 import org.jooq.Select;
+import org.jooq.Table;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.RegisterExtension;
@@ -23,9 +28,15 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Function;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_LINK_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_DEFINITION;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
@@ -38,6 +49,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.META_RELATION;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_PROGRESS;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_READ;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -46,9 +58,11 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE_STAGE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.lower;
 import static org.jooq.impl.DSL.max;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.sum;
 import static org.jooq.impl.DSL.val;
@@ -57,8 +71,9 @@ import static org.jooq.impl.DSL.when;
 /**
  * What holds of any captured graph, whatever it states, checked over every fact document's graph
  * ({@link FactGraphs}): the element anchors agree with their attribute relations, every source the
- * reading drew on is recorded as the file it is, the capture timed its own writes and reads, and it
- * completed every gatherer it ran.
+ * reading drew on is recorded as the file it is, the capture timed its own writes and reads, it
+ * completed every gatherer it ran, and its ordinals, wrapping decode and directive decodes agree
+ * with what was written.
  *
  * <p>Each case compares one graph at a time, graphs being the inner loop, so one statement's text
  * repeats with only the graph bound and stays planned; a comparison over a whole store at once holds
@@ -304,6 +319,283 @@ class CapturedGraphInvariantsTest {
         assertThat(graphs[0]).as("the population holds graphs").isPositive();
         assertThat(wrong).as("graphs whose finished reading did not complete every progress row")
             .isEmpty();
+    }
+
+    /**
+     * The wrapping decode agrees with the type expression it was read from, on a field and an
+     * argument alike: an outermost {@code !} is {@code non_null}, a leading {@code [} is
+     * {@code is_list}, and the named type is a substring of the expression. Deeper interior
+     * structure is out of a LIKE's reach and stays the decode's own business.
+     */
+    @Test
+    @DisplayName("the wrapping decode agrees with the captured type expression, on fields and arguments")
+    void wrappingDecodeAgreesWithTypeSdl() {
+        var f = GRAPHQL_FIELD;
+        var a = GRAPHQL_ARGUMENT;
+        var disagreeing = new ArrayList<String>();
+        int[] decoded = {0, 0};
+        eachGraph((dsl, graph) -> {
+            decoded[0] += dsl.fetchCount(f, f.GRAPH_NAME.eq(graph));
+            decoded[1] += dsl.fetchCount(a, a.GRAPH_NAME.eq(graph));
+            dsl.select(f.TYPE_NAME, f.FIELD_NAME, f.TYPE_SDL).from(f)
+                .where(f.GRAPH_NAME.eq(graph),
+                    f.NON_NULL.ne(f.TYPE_SDL.like("%!"))
+                        .or(f.IS_LIST.ne(f.TYPE_SDL.like("[%")))
+                        .or(f.TYPE_SDL.contains(f.NAMED_TYPE).isFalse()))
+                .fetch()
+                .forEach(row -> disagreeing.add(graph + " field " + row.intoList()));
+            dsl.select(a.TYPE_NAME, a.FIELD_NAME, a.ARGUMENT_NAME, a.TYPE_SDL).from(a)
+                .where(a.GRAPH_NAME.eq(graph),
+                    a.NON_NULL.ne(a.TYPE_SDL.like("%!"))
+                        .or(a.IS_LIST.ne(a.TYPE_SDL.like("[%")))
+                        .or(a.TYPE_SDL.contains(a.NAMED_TYPE).isFalse()))
+                .fetch()
+                .forEach(row -> disagreeing.add(graph + " argument " + row.intoList()));
+        });
+        assertThat(decoded[0]).as("the documents declare fields, so this pins something").isPositive();
+        assertThat(decoded[1]).as("the documents declare arguments, so this pins something").isPositive();
+        assertThat(disagreeing).as("fields and arguments whose decode contradicts type_sdl").isEmpty();
+    }
+
+    /** A type's declaration sites number densely from zero, its extensions after its definition. */
+    @Test
+    @DisplayName("merge ordinals are dense from zero within each type")
+    void mergeOrdinalsAreDense() {
+        var d = GRAPHQL_TYPE_DECLARATION;
+        var gaps = new ArrayList<String>();
+        int[] merged = {0};
+        eachGraph((dsl, graph) -> {
+            merged[0] += dsl.fetchCount(d, d.GRAPH_NAME.eq(graph), d.MERGE_ORDINAL.gt(0));
+            dsl.select(d.TYPE_NAME).from(d)
+                .where(d.GRAPH_NAME.eq(graph))
+                .groupBy(d.TYPE_NAME)
+                .having(max(d.MERGE_ORDINAL).ne(count().minus(1)))
+                .fetch(d.TYPE_NAME)
+                .forEach(type -> gaps.add(graph + " " + type));
+        });
+        assertThat(merged[0]).as("the documents extend a type, so a type has more than one site")
+            .isPositive();
+        assertThat(gaps).as("types whose declaration sites do not number densely from 0").isEmpty();
+    }
+
+    /**
+     * A directive's applications at one coordinate number densely from zero. The partition the
+     * ordinal is dense within is the coordinate, which is what the relation is keyed by, so one
+     * check covers every site.
+     */
+    @Test
+    @DisplayName("application ordinals are dense from zero within each coordinate")
+    void applicationOrdinalsAreDense() {
+        var app = GRAPHQL_DIRECTIVE_APPLICATION;
+        var gaps = new ArrayList<String>();
+        int[] repeated = {0};
+        eachGraph((dsl, graph) -> {
+            repeated[0] += dsl.fetchCount(app, app.GRAPH_NAME.eq(graph), app.ORDINAL.gt(0));
+            dsl.select(app.COORDINATE, app.DIRECTIVE_NAME).from(app)
+                .where(app.GRAPH_NAME.eq(graph))
+                .groupBy(app.COORDINATE, app.DIRECTIVE_NAME)
+                .having(max(app.ORDINAL).ne(count().minus(1)))
+                .fetch()
+                .forEach(row -> gaps.add(graph + " " + row.intoList()));
+        });
+        assertThat(repeated[0]).as("the documents repeat a directive at one coordinate, so this pins"
+            + " more than a lone application").isPositive();
+        assertThat(gaps).as("application ordinals, at every coordinate that carries one").isEmpty();
+    }
+
+    /**
+     * Node key-column positions are dense from zero within each table. It matters more here than
+     * for an ordinal a reader only orders by: an encoded identity is built position by position, so
+     * a gap would silently shorten a key. The rows are a catalog source's rather than a graph's, so
+     * this is stated once per store.
+     */
+    @Test
+    @DisplayName("node key-column positions are dense from zero within each table")
+    void nodeKeyColumnPositionsAreDense() {
+        var k = SQL_NODE_KEY_COLUMN;
+        var gaps = new ArrayList<String>();
+        int[] stated = {0};
+        FACTS.warm(FACTS.paths());
+        FACTS.eachStore((dsl, graphs) -> {
+            stated[0] += dsl.fetchCount(k);
+            dsl.select(k.SOURCE_NAME, k.TABLE_SCHEMA, k.TABLE_NAME).from(k)
+                .groupBy(k.SOURCE_NAME, k.TABLE_SCHEMA, k.TABLE_NAME)
+                .having(max(k.POSITION).ne(count().minus(1)))
+                .fetch()
+                .forEach(row -> gaps.add(row.intoList().toString()));
+            return null;
+        });
+        assertThat(stated[0]).as("the catalogs state node key columns, so this pins something")
+            .isPositive();
+        assertThat(gaps).as("tables whose stated entries do not number densely from 0").isEmpty();
+    }
+
+    /**
+     * Graphitron's bundled vocabulary is transcribed like an author's definitions, so an
+     * application of a directive the graph or that vocabulary defines resolves to a definition. Two
+     * kinds of application have none, and are told apart by name rather than by graph: a federation
+     * directive a graph's link brings in, under the local name {@code graphitron_federation_definition}
+     * states for it, and the {@code @link} application itself, the link specification's own. Every
+     * other application in every graph, a linked graph's included, resolves, or its graph records the
+     * refusal: assembly's {@code DirectiveUndeclaredError} naming that directive, which is what a
+     * document applying an undeclared directive on purpose states as its defect. Matched on the
+     * directive's name in the problem's message, so one undeclared directive sets aside no other.
+     */
+    @Test
+    @DisplayName("every application of a defined or bundled directive resolves to its definition")
+    void everyApplicationResolvesToItsDefinition() {
+        var app = GRAPHQL_DIRECTIVE_APPLICATION;
+        var dir = GRAPHQL_DIRECTIVE;
+        var federation = GRAPHITRON_FEDERATION_DEFINITION;
+        var link = GRAPHITRON_AST_LINK_ENTRY;
+        var problem = GRAPHQL_SCHEMA_PROBLEM;
+        var unresolved = new TreeSet<String>();
+        var refused = new TreeSet<String>();
+        int[] checked = {0};
+        int[] checkedInLinkedGraphs = {0};
+        eachGraph((dsl, graph) -> {
+            var federated = selectOne().from(federation)
+                .where(federation.GRAPH_NAME.eq(app.GRAPH_NAME),
+                    federation.LOCAL_NAME.eq(inline("@").concat(app.DIRECTIVE_NAME)));
+            var underTheClaim = app.GRAPH_NAME.eq(graph).and(app.DIRECTIVE_NAME.ne("link"))
+                .andNotExists(federated);
+            int count = dsl.fetchCount(app, underTheClaim);
+            checked[0] += count;
+            if (dsl.fetchExists(link, link.GRAPH_NAME.eq(graph))) {
+                checkedInLinkedGraphs[0] += count;
+            }
+            var undefined = dsl.selectDistinct(app.DIRECTIVE_NAME).from(app)
+                .where(underTheClaim)
+                .andNotExists(selectOne().from(dir)
+                    .where(dir.GRAPH_NAME.eq(app.GRAPH_NAME), dir.DIRECTIVE_NAME.eq(app.DIRECTIVE_NAME)))
+                .fetch(app.DIRECTIVE_NAME);
+            for (var name : undefined) {
+                boolean recorded = dsl.fetchExists(problem, problem.GRAPH_NAME.eq(graph),
+                    problem.STAGE.eq("ASSEMBLY"), problem.ERROR_CLASS.eq("DirectiveUndeclaredError"),
+                    problem.MESSAGE.contains("undeclared directive '" + name + "'"));
+                (recorded ? refused : unresolved).add(graph + " @" + name);
+            }
+        });
+        assertThat(checked[0]).as("applications under the claim, so this pins something").isPositive();
+        assertThat(checkedInLinkedGraphs[0])
+            .as("a linked graph's own applications stay under the claim, only what the link brings in"
+                + " being told apart")
+            .isPositive();
+        assertThat(unresolved).as("applications with no definition and no recorded refusal naming them,"
+                + " federation's and @link's set aside")
+            .isEmpty();
+        assertThat(refused).as("an undeclared directive a document applies on purpose is refused and"
+                + " recorded, so the second arm is exercised")
+            .isNotEmpty();
+    }
+
+    /**
+     * The decode is an addition to the transcription, never a substitute for it, so a graphitron
+     * application is reachable from both families and a consumer never has to know which one holds
+     * a given directive: every decode row keyed into {@code graphql_ast_directive_application_entry}
+     * has the application row it decodes. The decode relations are the ones whose foreign key names
+     * that relation, read off the generated model.
+     */
+    @Test
+    @DisplayName("a decoded graphitron application keeps its verbatim row too")
+    void theDecodeDoesNotReplaceTheTranscription() {
+        var entry = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        var decodes = new ArrayList<ForeignKey<?, ?>>();
+        for (Table<?> table : Public.PUBLIC.getTables()) {
+            for (ForeignKey<?, ?> key : table.getReferences()) {
+                if (key.getKey().getTable().equals(entry)) {
+                    decodes.add(key);
+                }
+            }
+        }
+        assertThat(decodes).as("relations decoding an application, read off the generated model")
+            .isNotEmpty();
+        var orphaned = new ArrayList<String>();
+        int[] decoded = {0};
+        eachGraph((dsl, graph) -> decodes.forEach(key -> {
+            var decode = key.getTable();
+            var graphName = decode.field("GRAPH_NAME", String.class);
+            var matching = new ArrayList<Condition>();
+            for (int i = 0; i < key.getFields().size(); i++) {
+                matching.add(same(key.getFields().get(i), key.getKeyFields().get(i)));
+            }
+            decoded[0] += dsl.fetchCount(decode, graphName.eq(graph));
+            dsl.select(key.getFields()).from(decode)
+                .where(graphName.eq(graph))
+                .andNotExists(selectOne().from(entry).where(matching))
+                .fetch()
+                .forEach(row -> orphaned.add(graph + " " + decode.getName() + " " + row.intoList()));
+        }));
+        assertThat(decoded[0]).as("the documents apply decoded directives, so this pins something")
+            .isPositive();
+        assertThat(orphaned).as("decode rows with no application row at their position").isEmpty();
+    }
+
+    /**
+     * The federation key decode agrees with its verbatim twin. The decode keys each application by
+     * its at sign, which is where the verbatim twin sits too, so the two agree position for position.
+     */
+    @Test
+    @DisplayName("the federation dual projection agrees with its verbatim twin")
+    void federationKeyProjectionsAgree() {
+        var k = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
+        var app = GRAPHQL_DIRECTIVE_APPLICATION;
+        var disagreeing = new ArrayList<String>();
+        int[] decodedKeys = {0};
+        eachGraph((dsl, graph) -> {
+            var decoded = new TreeSet<String>(dsl.select(k.SOURCE_NAME, k.SOURCE_LINE, k.SOURCE_COLUMN)
+                .from(k)
+                .where(k.GRAPH_NAME.eq(graph))
+                .fetch(row -> row.value1() + ":" + row.value2() + ":" + row.value3()));
+            var verbatim = new TreeSet<String>(dsl.select(app.SOURCE_NAME, app.SOURCE_LINE, app.SOURCE_COLUMN)
+                .from(app)
+                .join(GRAPHQL_TYPE_ELEMENT)
+                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(app.GRAPH_NAME),
+                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(app.COORDINATE))
+                .where(app.GRAPH_NAME.eq(graph), app.DIRECTIVE_NAME.eq("key"))
+                .fetch(row -> row.value1() + ":" + row.value2() + ":" + row.value3()));
+            decodedKeys[0] += decoded.size();
+            decoded.stream().filter(at -> !verbatim.contains(at))
+                .forEach(at -> disagreeing.add(graph + " decoded only at " + at));
+            verbatim.stream().filter(at -> !decoded.contains(at))
+                .forEach(at -> disagreeing.add(graph + " verbatim only at " + at));
+        });
+        assertThat(decodedKeys[0]).as("the documents apply @key, so this pins something").isPositive();
+        assertThat(disagreeing).as("@key applications on one side of the dual projection only").isEmpty();
+    }
+
+    /**
+     * Every field hangs off a declaration site of its own type. No constraint holds this: the
+     * foreign key to the site runs through the nullable {@code declaration_*_ref} columns, which
+     * {@code ON DELETE SET NULL} empties, so the site is restated here from the field's own
+     * columns.
+     */
+    @Test
+    @DisplayName("every element hangs off a declaration site of its own type")
+    void elementSiteReferencesAreTotal() {
+        var f = GRAPHQL_FIELD;
+        var d = GRAPHQL_TYPE_DECLARATION;
+        var orphans = new ArrayList<String>();
+        int[] fields = {0};
+        eachGraph((dsl, graph) -> {
+            fields[0] += dsl.fetchCount(f, f.GRAPH_NAME.eq(graph));
+            dsl.select(f.TYPE_NAME, f.FIELD_NAME).from(f)
+                .where(f.GRAPH_NAME.eq(graph))
+                .andNotExists(selectOne().from(d)
+                    .where(d.GRAPH_NAME.eq(f.GRAPH_NAME), d.TYPE_NAME.eq(f.TYPE_NAME),
+                        d.SOURCE_NAME.eq(f.SOURCE_NAME), d.SOURCE_LINE.eq(f.DECLARATION_LINE),
+                        d.SOURCE_COLUMN.eq(f.DECLARATION_COLUMN)))
+                .fetch()
+                .forEach(row -> orphans.add(graph + " " + row.intoList()));
+        });
+        assertThat(fields[0]).as("the documents declare fields, so this pins something").isPositive();
+        assertThat(orphans).as("fields with no declaration site").isEmpty();
+    }
+
+    /** One column of a foreign key equal to the column it references. */
+    @SuppressWarnings("unchecked")
+    private static Condition same(Field<?> column, Field<?> referenced) {
+        return ((Field<Object>) column).eq((Field<Object>) referenced);
     }
 
     /** Every gatherer a capture runs, and the capture as a whole. */

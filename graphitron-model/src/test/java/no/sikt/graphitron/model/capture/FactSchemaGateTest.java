@@ -35,6 +35,11 @@ import static no.sikt.graphitron.model.Tables.META_STAGE;
 import static no.sikt.graphitron.model.Tables.META_PREFIXLESS_RELATION;
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
+import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.jooq.impl.DSL.asterisk;
 import static org.jooq.impl.DSL.count;
@@ -48,6 +53,8 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
+import no.sikt.graphitron.model.schema.input.SchemaSource;
 
 /**
  * The fact schema's gate family: the invariants the DDL itself cannot state, each as its own
@@ -62,10 +69,14 @@ import no.sikt.graphitron.model.run.SubjectConfig;
 @org.junit.jupiter.api.Order(3)
 class FactSchemaGateTest {
 
+    /** The empty store the gates that read only the schema's own metadata share. */
+    @org.junit.jupiter.api.extension.RegisterExtension
+    static final FactStores.ClassStore STORE = FactStores.perClass();
+
     /**
-     * A slice broad enough for the structural gates: extended types, both field families, a
-     * repeatable federation application with its verbatim twin, and applications at all five
-     * element sites.
+     * The slice the supergraph case captures under each graph: extended types, both field
+     * families, and repeated applications, so each graph's partition holds rows beside its
+     * membership.
      */
     private static final String FIXTURE = """
         directive @audit(note: String) repeatable on OBJECT | FIELD_DEFINITION | ARGUMENT_DEFINITION | ENUM_VALUE
@@ -108,8 +119,8 @@ class FactSchemaGateTest {
      * {@code graphitron_spelled_table} to resolve against the catalog, a {@code @routine} application
      * carrying an {@code argMapping} so {@code graphitron_argmapping_site} has a row, and a
      * {@code @nodeId} argument whose decode actually walks a foreign key so the two decode targets
-     * are non-empty. Separate from {@code FIXTURE} because the structural gates above want breadth
-     * of declaration sites, and this one wants every stage-written table to be non-empty.
+     * are non-empty. Separate from {@code FIXTURE} because that one wants breadth of declaration
+     * sites, and this one wants every stage-written table to be non-empty.
      *
      * <p>Populating all of them is a property of this fixture and the fixture catalog together, and
      * it has to be maintained as stages are added: a table the fixture leaves empty makes
@@ -178,84 +189,81 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("every table and every column carries a COMMENT ON")
     void commentCoverageIsTotal() {
-        try (var store = GraphitronModelStore.open()) {
-            var tables = store.dsl()
-                .select(field(name("TABLE_NAME"), String.class))
-                .from(table(name("INFORMATION_SCHEMA", "TABLES")))
-                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-                .and(field(name("REMARKS"), String.class).isNull())
-                .fetch(0, String.class);
-            assertThat(tables).as("uncommented relations").isEmpty();
+        var store = STORE.handle();
+        var tables = store.dsl()
+            .select(field(name("TABLE_NAME"), String.class))
+            .from(table(name("INFORMATION_SCHEMA", "TABLES")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("REMARKS"), String.class).isNull())
+            .fetch(0, String.class);
+        assertThat(tables).as("uncommented relations").isEmpty();
 
-            // A view's columns are left out: H2 2.5 refuses a comment on a view's column, and the
-            // graph node "A view's column prose lives where the store keeps it" widens this back.
-            var columns = store.dsl()
-                .select(field(name("TABLE_NAME"), String.class)
-                    .concat(".").concat(field(name("COLUMN_NAME"), String.class)))
-                .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
-                .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-                .and(field(name("TABLE_NAME"), String.class).notIn(
-                    select(field(name("TABLE_NAME"), String.class))
-                        .from(table(name("INFORMATION_SCHEMA", "TABLES")))
-                        .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
-                        .and(field(name("TABLE_TYPE"), String.class).eq("VIEW"))))
-                .and(field(name("REMARKS"), String.class).isNull())
-                .fetch(0, String.class);
-            assertThat(columns).as("uncommented columns").isEmpty();
-        }
+        // A view's columns are left out: H2 2.5 refuses a comment on a view's column, and the
+        // graph node "A view's column prose lives where the store keeps it" widens this back.
+        var columns = store.dsl()
+            .select(field(name("TABLE_NAME"), String.class)
+                .concat(".").concat(field(name("COLUMN_NAME"), String.class)))
+            .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
+            .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+            .and(field(name("TABLE_NAME"), String.class).notIn(
+                select(field(name("TABLE_NAME"), String.class))
+                    .from(table(name("INFORMATION_SCHEMA", "TABLES")))
+                    .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+                    .and(field(name("TABLE_TYPE"), String.class).eq("VIEW"))))
+            .and(field(name("REMARKS"), String.class).isNull())
+            .fetch(0, String.class);
+        assertThat(columns).as("uncommented columns").isEmpty();
     }
 
     @Test
     @DisplayName("every relation resolves to one family page or carries an exemption row")
     void everyRelationHasExactlyOneDocumentationHome() {
-        try (var store = GraphitronModelStore.open()) {
-            var unhoused = store.dsl()
-                .select(META_RELATION_FAMILY.RELATION_NAME)
-                .from(META_RELATION_FAMILY)
-                .where(META_RELATION_FAMILY.PREFIX.isNull())
-                .and(META_RELATION_FAMILY.EXEMPTED.isFalse())
-                .fetch(0, String.class);
-            assertThat(unhoused)
-                .as("relations outside every family and carrying no exemption row; add the"
-                    + " meta_family row or argue the meta_prefixless_relation exemption in")
-                .isEmpty();
+        var store = STORE.handle();
+        var unhoused = store.dsl()
+            .select(META_RELATION_FAMILY.RELATION_NAME)
+            .from(META_RELATION_FAMILY)
+            .where(META_RELATION_FAMILY.PREFIX.isNull())
+            .and(META_RELATION_FAMILY.EXEMPTED.isFalse())
+            .fetch(0, String.class);
+        assertThat(unhoused)
+            .as("relations outside every family and carrying no exemption row; add the"
+                + " meta_family row or argue the meta_prefixless_relation exemption in")
+            .isEmpty();
 
-            var doublyHoused = store.dsl()
-                .select(META_RELATION_FAMILY.RELATION_NAME)
-                .from(META_RELATION_FAMILY)
-                .where(META_RELATION_FAMILY.PREFIX.isNotNull())
-                .and(META_RELATION_FAMILY.EXEMPTED.isTrue())
-                .fetch(0, String.class);
-            assertThat(doublyHoused)
-                .as("exemption rows for relations a family already covers")
-                .isEmpty();
+        var doublyHoused = store.dsl()
+            .select(META_RELATION_FAMILY.RELATION_NAME)
+            .from(META_RELATION_FAMILY)
+            .where(META_RELATION_FAMILY.PREFIX.isNotNull())
+            .and(META_RELATION_FAMILY.EXEMPTED.isTrue())
+            .fetch(0, String.class);
+        assertThat(doublyHoused)
+            .as("exemption rows for relations a family already covers")
+            .isEmpty();
 
-            var duplicated = store.dsl()
-                .select(META_RELATION_FAMILY.RELATION_NAME)
-                .from(META_RELATION_FAMILY)
-                .groupBy(META_RELATION_FAMILY.RELATION_NAME)
-                .having(count().gt(1))
-                .fetch(0, String.class);
-            assertThat(duplicated)
-                .as("relations the census matched more than once; no family prefix may prefix another")
-                .isEmpty();
-        }
+        var duplicated = store.dsl()
+            .select(META_RELATION_FAMILY.RELATION_NAME)
+            .from(META_RELATION_FAMILY)
+            .groupBy(META_RELATION_FAMILY.RELATION_NAME)
+            .having(count().gt(1))
+            .fetch(0, String.class);
+        assertThat(duplicated)
+            .as("relations the census matched more than once; no family prefix may prefix another")
+            .isEmpty();
     }
 
     @Test
     @DisplayName("every family row covers at least one observed relation")
     void everyFamilyRowHasAnObservedRelation() {
-        try (var store = GraphitronModelStore.open()) {
-            var vacant = store.dsl()
-                .select(META_FAMILY.PREFIX)
-                .from(META_FAMILY)
-                .whereNotExists(select().from(META_RELATION_FAMILY)
-                    .where(META_RELATION_FAMILY.PREFIX.eq(META_FAMILY.PREFIX)))
-                .fetch(0, String.class);
-            assertThat(vacant)
-                .as("family rows no observed relation carries; a roster entry outlived its family")
-                .isEmpty();
-        }
+        var store = STORE.handle();
+        var vacant = store.dsl()
+            .select(META_FAMILY.PREFIX)
+            .from(META_FAMILY)
+            .whereNotExists(select().from(META_RELATION_FAMILY)
+                .where(META_RELATION_FAMILY.PREFIX.eq(META_FAMILY.PREFIX)))
+            .fetch(0, String.class);
+        assertThat(vacant)
+            .as("family rows no observed relation carries; a roster entry outlived its family")
+            .isEmpty();
     }
 
     /**
@@ -266,94 +274,91 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("the family roster is well-formed: unique prefixes and ordinals, exact-match safe")
     void theFamilyRosterIsWellFormed() {
-        try (var store = GraphitronModelStore.open()) {
-            var rows = store.dsl()
-                .select(META_FAMILY.PREFIX, META_FAMILY.ORDINAL)
-                .from(META_FAMILY)
-                .fetch();
-            assertThat(rows).as("family rows to gate").isNotEmpty();
-            var prefixes = rows.map(org.jooq.Record2::value1);
-            assertThat(prefixes)
-                .as("family prefixes, the roster's key")
-                .doesNotHaveDuplicates();
-            assertThat(prefixes)
-                .as("family prefixes end with their underscore")
-                .allSatisfy(prefix -> assertThat(prefix).endsWith("_"));
-            var nested = new java.util.ArrayList<String>();
-            for (String outer : prefixes) {
-                for (String inner : prefixes) {
-                    if (!outer.equals(inner) && outer.startsWith(inner)) {
-                        nested.add(inner + " prefixes " + outer);
-                    }
+        var store = STORE.handle();
+        var rows = store.dsl()
+            .select(META_FAMILY.PREFIX, META_FAMILY.ORDINAL)
+            .from(META_FAMILY)
+            .fetch();
+        assertThat(rows).as("family rows to gate").isNotEmpty();
+        var prefixes = rows.map(org.jooq.Record2::value1);
+        assertThat(prefixes)
+            .as("family prefixes, the roster's key")
+            .doesNotHaveDuplicates();
+        assertThat(prefixes)
+            .as("family prefixes end with their underscore")
+            .allSatisfy(prefix -> assertThat(prefix).endsWith("_"));
+        var nested = new java.util.ArrayList<String>();
+        for (String outer : prefixes) {
+            for (String inner : prefixes) {
+                if (!outer.equals(inner) && outer.startsWith(inner)) {
+                    nested.add(inner + " prefixes " + outer);
                 }
             }
-            assertThat(nested)
-                .as("family prefixes that prefix another; the census's exact match relies on none")
-                .isEmpty();
-            assertThat(rows.map(org.jooq.Record2::value2))
-                .as("family ordinals, the reference's page order")
-                .doesNotHaveDuplicates();
         }
+        assertThat(nested)
+            .as("family prefixes that prefix another; the census's exact match relies on none")
+            .isEmpty();
+        assertThat(rows.map(org.jooq.Record2::value2))
+            .as("family ordinals, the reference's page order")
+            .doesNotHaveDuplicates();
     }
 
     @Test
     @DisplayName("every exemption row names an observed relation and a resolvable page")
     void everyExemptionRowResolves() {
-        try (var store = GraphitronModelStore.open()) {
-            var danglingRelations = store.dsl()
-                .select(META_PREFIXLESS_RELATION.RELATION_NAME)
-                .from(META_PREFIXLESS_RELATION)
-                .whereNotExists(select().from(META_RELATION_FAMILY)
-                    .where(META_RELATION_FAMILY.RELATION_NAME
-                        .eq(META_PREFIXLESS_RELATION.RELATION_NAME)))
-                .fetch(0, String.class);
-            assertThat(danglingRelations)
-                .as("exemption rows naming relations the schema does not declare")
-                .isEmpty();
+        var store = STORE.handle();
+        var danglingRelations = store.dsl()
+            .select(META_PREFIXLESS_RELATION.RELATION_NAME)
+            .from(META_PREFIXLESS_RELATION)
+            .whereNotExists(select().from(META_RELATION_FAMILY)
+                .where(META_RELATION_FAMILY.RELATION_NAME
+                    .eq(META_PREFIXLESS_RELATION.RELATION_NAME)))
+            .fetch(0, String.class);
+        assertThat(danglingRelations)
+            .as("exemption rows naming relations the schema does not declare")
+            .isEmpty();
 
-            var danglingPages = store.dsl()
-                .select(META_PREFIXLESS_RELATION.RELATION_NAME)
-                .from(META_PREFIXLESS_RELATION)
-                .where(META_PREFIXLESS_RELATION.PAGE.isNotNull())
-                .andNotExists(select().from(META_FAMILY)
-                    .where(META_FAMILY.PREFIX.eq(META_PREFIXLESS_RELATION.PAGE)))
-                .fetch(0, String.class);
-            assertThat(danglingPages)
-                .as("exemption rows whose page is not a family prefix; NULL means the index,"
-                    + " anything else must resolve")
-                .isEmpty();
-        }
+        var danglingPages = store.dsl()
+            .select(META_PREFIXLESS_RELATION.RELATION_NAME)
+            .from(META_PREFIXLESS_RELATION)
+            .where(META_PREFIXLESS_RELATION.PAGE.isNotNull())
+            .andNotExists(select().from(META_FAMILY)
+                .where(META_FAMILY.PREFIX.eq(META_PREFIXLESS_RELATION.PAGE)))
+            .fetch(0, String.class);
+        assertThat(danglingPages)
+            .as("exemption rows whose page is not a family prefix; NULL means the index,"
+                + " anything else must resolve")
+            .isEmpty();
     }
 
     /**
      * The gatherer roster names each gatherer's class precisely so it cannot become a second
      * vocabulary that outlives the code, and this is the gate that makes the claim true: a
-     * renamed or deleted gatherer fails here until its row is repointed. In this module rather
-     * than beside the store's declaration gates because the gatherer classes live here and
-     * {@code graphitron-model} cannot see them, its dependency pointing the other way.
+     * renamed or deleted gatherer fails here until its row is repointed. The roster and the
+     * classes it names are both this module's, so the gate resolves each name on the test
+     * classpath.
      */
     @Test
     @DisplayName("every gatherer row names a Java class that exists")
     void everyGathererRowNamesAClassThatExists() {
-        try (var store = GraphitronModelStore.open()) {
-            var rows = store.dsl()
-                .select(META_GATHERER.GATHERER_NAME, META_GATHERER.GATHERER_CLASS)
-                .from(META_GATHERER)
-                .fetch();
-            assertThat(rows).as("gatherer rows to gate").isNotEmpty();
-            var dangling = new java.util.ArrayList<String>();
-            for (var row : rows) {
-                try {
-                    Class.forName(row.value2(), false, FactSchemaGateTest.class.getClassLoader());
-                } catch (ClassNotFoundException e) {
-                    dangling.add(row.value1() + " names " + row.value2());
-                }
+        var store = STORE.handle();
+        var rows = store.dsl()
+            .select(META_GATHERER.GATHERER_NAME, META_GATHERER.GATHERER_CLASS)
+            .from(META_GATHERER)
+            .fetch();
+        assertThat(rows).as("gatherer rows to gate").isNotEmpty();
+        var dangling = new java.util.ArrayList<String>();
+        for (var row : rows) {
+            try {
+                Class.forName(row.value2(), false, FactSchemaGateTest.class.getClassLoader());
+            } catch (ClassNotFoundException e) {
+                dangling.add(row.value1() + " names " + row.value2());
             }
-            assertThat(dangling)
-                .as("gatherer rows naming classes the reactor no longer declares;"
-                    + " repoint the row at the class that took the job")
-                .isEmpty();
         }
+        assertThat(dangling)
+            .as("gatherer rows naming classes the reactor no longer declares;"
+                + " repoint the row at the class that took the job")
+            .isEmpty();
     }
 
     /**
@@ -363,172 +368,24 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("every stage row names a Java class that exists")
     void everyStageRowNamesAClassThatExists() {
-        try (var store = GraphitronModelStore.open()) {
-            var rows = store.dsl()
-                .select(META_STAGE.STAGE_NAME, META_STAGE.STAGE_CLASS)
-                .from(META_STAGE)
-                .fetch();
-            assertThat(rows).as("stage rows to gate").isNotEmpty();
-            var dangling = new java.util.ArrayList<String>();
-            for (var row : rows) {
-                try {
-                    Class.forName(row.value2(), false, FactSchemaGateTest.class.getClassLoader());
-                } catch (ClassNotFoundException e) {
-                    dangling.add(row.value1() + " names " + row.value2());
-                }
+        var store = STORE.handle();
+        var rows = store.dsl()
+            .select(META_STAGE.STAGE_NAME, META_STAGE.STAGE_CLASS)
+            .from(META_STAGE)
+            .fetch();
+        assertThat(rows).as("stage rows to gate").isNotEmpty();
+        var dangling = new java.util.ArrayList<String>();
+        for (var row : rows) {
+            try {
+                Class.forName(row.value2(), false, FactSchemaGateTest.class.getClassLoader());
+            } catch (ClassNotFoundException e) {
+                dangling.add(row.value1() + " names " + row.value2());
             }
-            assertThat(dangling)
-                .as("stage rows naming classes the reactor no longer declares;"
-                    + " repoint the row at the class that took the job")
-                .isEmpty();
         }
-    }
-
-    @Test
-    @DisplayName("merge ordinals are dense from zero within each type")
-    void mergeOrdinalsAreDense(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            var gaps = store.dsl()
-                .select(GRAPHQL_TYPE_DECLARATION.TYPE_NAME)
-                .from(GRAPHQL_TYPE_DECLARATION)
-                .groupBy(GRAPHQL_TYPE_DECLARATION.TYPE_NAME)
-                .having(max(GRAPHQL_TYPE_DECLARATION.MERGE_ORDINAL)
-                    .ne(count().minus(1)))
-                .fetch(0, String.class);
-            assertThat(gaps).as("types whose declaration sites do not number densely from 0").isEmpty();
-        }
-    }
-
-    /**
-     * Node key-column positions are dense, the third case in the shape the two ordinal gates above
-     * pin for other relations. It matters more here than for an ordinal a reader only orders by: an
-     * encoded identity is built position by position, so a gap would silently shorten a key.
-     */
-    @Test
-    @DisplayName("node key-column positions are dense from zero within each table")
-    void nodeKeyColumnPositionsAreDense(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStoreOfCatalog(tmp, FIXTURE, fixtureCatalog())) {
-            var gaps = store.dsl()
-                .select(SQL_NODE_KEY_COLUMN.TABLE_SCHEMA, SQL_NODE_KEY_COLUMN.TABLE_NAME)
-                .from(SQL_NODE_KEY_COLUMN)
-                .groupBy(SQL_NODE_KEY_COLUMN.SOURCE_NAME, SQL_NODE_KEY_COLUMN.TABLE_SCHEMA,
-                    SQL_NODE_KEY_COLUMN.TABLE_NAME)
-                .having(max(SQL_NODE_KEY_COLUMN.POSITION).ne(count().minus(1)))
-                .fetch();
-            assertThat(gaps).as("tables whose stated entries do not number densely from 0").isEmpty();
-        }
-    }
-
-    /** The generated catalog the node-metadata gate above reads; a composite key lives in it. */
-    private static CatalogInput fixtureCatalog() {
-        var ctx = TestRunContext.of();
-        return CatalogInput.of(ctx);
-    }
-
-    @Test
-    @DisplayName("application ordinals are dense from zero within each coordinate")
-    void applicationOrdinalsAreDense(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            // One check where this was one per site, and it now covers every site rather than the
-            // two that had a relation worth spelling twice: the partition the ordinal is dense
-            // within is the coordinate, which is what the relation is keyed by.
-            assertThat(store.dsl()
-                .select(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
-                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
-                .from(GRAPHQL_DIRECTIVE_APPLICATION)
-                .groupBy(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE,
-                    GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME)
-                .having(max(GRAPHQL_DIRECTIVE_APPLICATION.ORDINAL).ne(count().minus(1)))
-                .fetch()).as("application ordinals, at every coordinate that carries one").isEmpty();
-        }
-    }
-
-    @Test
-    @DisplayName("the wrapping decode agrees with the captured type expression")
-    void wrappingDecodeAgreesWithTypeSdl(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            // The correspondences SQL can express: an outermost '!' is non_null, a leading '['
-            // is is_list, and the named type is a substring of the expression. Deeper interior
-            // structure is out of a LIKE's reach and stays the decode's own business.
-            var disagreements = store.dsl()
-                .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL)
-                .from(GRAPHQL_FIELD)
-                .where(GRAPHQL_FIELD.NON_NULL.ne(GRAPHQL_FIELD.TYPE_SDL.like("%!"))
-                    .or(GRAPHQL_FIELD.IS_LIST.ne(GRAPHQL_FIELD.TYPE_SDL.like("[%")))
-                    .or(GRAPHQL_FIELD.TYPE_SDL.contains(GRAPHQL_FIELD.NAMED_TYPE).isFalse()))
-                .fetch();
-            assertThat(disagreements).as("fields whose decode contradicts type_sdl").isEmpty();
-        }
-    }
-
-    @Test
-    @DisplayName("default values appear only under INPUT_OBJECT parents")
-    void defaultValuesOnlyOnInputFields(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            var offenders = store.dsl()
-                .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME)
-                .from(GRAPHQL_FIELD)
-                .join(GRAPHQL_TYPE).on(GRAPHQL_TYPE.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME))
-                .where(GRAPHQL_FIELD.DEFAULT_VALUE_SDL.isNotNull())
-                .and(GRAPHQL_TYPE.KIND.ne("INPUT_OBJECT"))
-                .fetch();
-            assertThat(offenders).as("output fields carrying a default value").isEmpty();
-        }
-    }
-
-    /**
-     * Graphitron's bundled vocabulary is transcribed like an author's definitions, so a corpus that
-     * applies only directives it or that vocabulary defines has every application resolve to a
-     * definition. This is the invariant that replaced an exclusion: the graphitron namespace used to
-     * be withheld from these relations, which made the family a transcription with a hole in it and
-     * pushed a question about {@code source_name} into the choice of table. It is the fixture's and
-     * no key's: a federation directive imported through {@code @link} has no definition row.
-     */
-    @Test
-    @DisplayName("every application of a defined or bundled directive resolves to its definition")
-    void everyApplicationResolvesToItsDefinition(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
-                .from(GRAPHQL_DIRECTIVE);
-            assertThat(store.dsl().fetchCount(GRAPHQL_DIRECTIVE_APPLICATION,
-                GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.notIn(defined))).isZero();
-        }
-    }
-
-    /**
-     * The decode is an addition to the transcription, never a substitute for it, so a graphitron
-     * application is reachable from both families and a consumer never has to know which one holds
-     * a given directive.
-     */
-    @Test
-    @DisplayName("a decoded graphitron application keeps its verbatim row too")
-    void theDecodeDoesNotReplaceTheTranscription(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            var t = GRAPHITRON_AST_TABLE_ENTRY;
-            var decoded = store.dsl()
-                .select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
-                .from(t)
-                .join(GRAPHQL_DIRECTIVE_APPLICATION)
-                    .on(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME.eq(t.GRAPH_NAME),
-                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME.eq(t.SOURCE_NAME),
-                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_LINE.eq(t.SOURCE_LINE),
-                        GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_COLUMN.eq(t.SOURCE_COLUMN))
-                .join(GRAPHQL_TYPE_ELEMENT)
-                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),
-                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE))
-                .fetch(GRAPHQL_TYPE_ELEMENT.TYPE_NAME);
-            assertThat(decoded).as("the fixture applies @table, so the gate has something to pin")
-                .isNotEmpty();
-            var verbatim = store.dsl()
-                .select(GRAPHQL_TYPE_ELEMENT.TYPE_NAME)
-                .from(GRAPHQL_DIRECTIVE_APPLICATION)
-                .join(GRAPHQL_TYPE_ELEMENT)
-                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),
-                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE))
-                .where(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("table"))
-                .fetch(GRAPHQL_TYPE_ELEMENT.TYPE_NAME);
-            assertThat(verbatim).containsExactlyInAnyOrderElementsOf(decoded);
-        }
+        assertThat(dangling)
+            .as("stage rows naming classes the reactor no longer declares;"
+                + " repoint the row at the class that took the job")
+            .isEmpty();
     }
 
     /**
@@ -551,107 +408,60 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("every key reachable from the graphql_ anchors deletes with them")
     void everyKeyReachableFromTheAnchorsCascades() {
-        try (var store = FactStores.inMemory()) {
-            var parents = new java.util.HashMap<String, List<String>>();
-            var rules = new java.util.HashMap<String, String>();
-            store.dsl().resultQuery("""
-                    select fk.table_name, pk.table_name, rc.delete_rule, rc.constraint_name
-                    from information_schema.referential_constraints rc
-                    join information_schema.table_constraints fk
-                      on fk.constraint_name = rc.constraint_name
-                    join information_schema.table_constraints pk
-                      on pk.constraint_name = rc.unique_constraint_name
-                    """)
-                .fetch()
-                .forEach(row -> {
-                    String child = String.valueOf(row.get(0)).toLowerCase(Locale.ROOT);
-                    String parent = String.valueOf(row.get(1)).toLowerCase(Locale.ROOT);
-                    parents.computeIfAbsent(child, key -> new java.util.ArrayList<>()).add(parent);
-                    if (!"CASCADE".equals(String.valueOf(row.get(2)))) {
-                        rules.put(child + " -> " + parent, String.valueOf(row.get(3)));
-                    }
-                });
-            assertThat(parents)
-                .as("the schema's foreign keys, read back; an empty read would pass vacuously")
-                .isNotEmpty();
+        var store = STORE.handle();
+        var parents = new java.util.HashMap<String, List<String>>();
+        var rules = new java.util.HashMap<String, String>();
+        store.dsl().resultQuery("""
+                select fk.table_name, pk.table_name, rc.delete_rule, rc.constraint_name
+                from information_schema.referential_constraints rc
+                join information_schema.table_constraints fk
+                  on fk.constraint_name = rc.constraint_name
+                join information_schema.table_constraints pk
+                  on pk.constraint_name = rc.unique_constraint_name
+                """)
+            .fetch()
+            .forEach(row -> {
+                String child = String.valueOf(row.get(0)).toLowerCase(Locale.ROOT);
+                String parent = String.valueOf(row.get(1)).toLowerCase(Locale.ROOT);
+                parents.computeIfAbsent(child, key -> new java.util.ArrayList<>()).add(parent);
+                if (!"CASCADE".equals(String.valueOf(row.get(2)))) {
+                    rules.put(child + " -> " + parent, String.valueOf(row.get(3)));
+                }
+            });
+        assertThat(parents)
+            .as("the schema's foreign keys, read back; an empty read would pass vacuously")
+            .isNotEmpty();
 
-            var closure = parents.keySet().stream().filter(t -> t.startsWith("graphql_"))
-                .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
-            parents.values().forEach(list -> list.stream().filter(t -> t.startsWith("graphql_"))
-                .forEach(closure::add));
-            for (boolean grew = true; grew; ) {
-                grew = false;
-                for (var entry : parents.entrySet()) {
-                    if (!closure.contains(entry.getKey())
-                        && entry.getValue().stream().anyMatch(closure::contains)) {
-                        closure.add(entry.getKey());
-                        grew = true;
-                    }
+        var closure = parents.keySet().stream().filter(t -> t.startsWith("graphql_"))
+            .collect(java.util.stream.Collectors.toCollection(java.util.LinkedHashSet::new));
+        parents.values().forEach(list -> list.stream().filter(t -> t.startsWith("graphql_"))
+            .forEach(closure::add));
+        for (boolean grew = true; grew; ) {
+            grew = false;
+            for (var entry : parents.entrySet()) {
+                if (!closure.contains(entry.getKey())
+                    && entry.getValue().stream().anyMatch(closure::contains)) {
+                    closure.add(entry.getKey());
+                    grew = true;
                 }
             }
-
-            var restricting = rules.keySet().stream()
-                .filter(key -> {
-                    String child = key.substring(0, key.indexOf(" -> "));
-                    String parent = key.substring(key.indexOf(" -> ") + 4);
-                    return !child.startsWith("graphql_") && closure.contains(parent)
-                        && !"store_graph".equals(parent);
-                })
-                .sorted()
-                .toList();
-            assertThat(restricting)
-                .as("keys into a relation the anchor sweep can delete, which merely restrict. The"
-                    + " sweep runs before the writers keyed into it, so a restricting key here"
-                    + " fails the run on the author edit it is supposed to record. Declare"
-                    + " ON DELETE CASCADE on each.")
-                .isEmpty();
         }
-    }
 
-    @Test
-    @DisplayName("the federation dual projection agrees with its verbatim twin")
-    void federationKeyProjectionsAgree(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            // The decode keys each application by its at sign, which is where the verbatim twin
-            // sits too, so the two agree position for position.
-            var k = GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
-            var decoded = store.dsl()
-                .select(k.SOURCE_NAME, k.SOURCE_LINE, k.SOURCE_COLUMN)
-                .from(k)
-                .fetch();
-            assertThat(decoded).as("the fixture applies @key twice, so the gate has something to pin")
-                .hasSize(2);
-            var verbatim = store.dsl()
-                .select(GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_NAME,
-                    GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_LINE, GRAPHQL_DIRECTIVE_APPLICATION.SOURCE_COLUMN)
-                .from(GRAPHQL_DIRECTIVE_APPLICATION)
-                .join(GRAPHQL_TYPE_ELEMENT)
-                    .on(GRAPHQL_TYPE_ELEMENT.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_APPLICATION.GRAPH_NAME),
-                        GRAPHQL_TYPE_ELEMENT.COORDINATE.eq(GRAPHQL_DIRECTIVE_APPLICATION.COORDINATE))
-                .where(GRAPHQL_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))
-                .fetch();
-            assertThat(verbatim).containsExactlyInAnyOrderElementsOf(decoded);
-        }
-    }
-
-    @Test
-    @DisplayName("every element hangs off a declaration site of its own type")
-    void elementSiteReferencesAreTotal(@TempDir Path tmp) {
-        try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
-            // The FK already guarantees this; the gate exists because a NULL source_name would
-            // silently disable it under MATCH SIMPLE, which is the reason that column is NOT NULL.
-            var orphans = store.dsl()
-                .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME)
-                .from(GRAPHQL_FIELD)
-                .whereNotExists(select(GRAPHQL_TYPE_DECLARATION.TYPE_NAME)
-                    .from(GRAPHQL_TYPE_DECLARATION)
-                    .where(GRAPHQL_TYPE_DECLARATION.TYPE_NAME.eq(GRAPHQL_FIELD.TYPE_NAME))
-                    .and(GRAPHQL_TYPE_DECLARATION.SOURCE_NAME.eq(GRAPHQL_FIELD.SOURCE_NAME))
-                    .and(GRAPHQL_TYPE_DECLARATION.SOURCE_LINE.eq(GRAPHQL_FIELD.DECLARATION_LINE))
-                    .and(GRAPHQL_TYPE_DECLARATION.SOURCE_COLUMN.eq(GRAPHQL_FIELD.DECLARATION_COLUMN)))
-                .fetch();
-            assertThat(orphans).as("fields with no declaration site").isEmpty();
-        }
+        var restricting = rules.keySet().stream()
+            .filter(key -> {
+                String child = key.substring(0, key.indexOf(" -> "));
+                String parent = key.substring(key.indexOf(" -> ") + 4);
+                return !child.startsWith("graphql_") && closure.contains(parent)
+                    && !"store_graph".equals(parent);
+            })
+            .sorted()
+            .toList();
+        assertThat(restricting)
+            .as("keys into a relation the anchor sweep can delete, which merely restrict. The"
+                + " sweep runs before the writers keyed into it, so a restricting key here"
+                + " fails the run on the author edit it is supposed to record. Declare"
+                + " ON DELETE CASCADE on each.")
+            .isEmpty();
     }
 
     /**
@@ -688,60 +498,59 @@ class FactSchemaGateTest {
     @Test
     @DisplayName("every base relation leads its key with its partition dimension")
     void everyRelationLeadsWithItsPartitionDimension() {
-        try (var store = GraphitronModelStore.open()) {
-            var leading = leadingPrimaryKeyColumns(store);
-            var stated = statedRelations(store);
-            var offenders = new java.util.ArrayList<String>();
-            for (var entry : leading.entrySet()) {
-                String table = entry.getKey();
-                String column = entry.getValue();
-                String expected;
-                // A stated relation holds rows this file supplies, so there is no graph to keep
-                // apart and its key is its own vocabulary's: which one that is varies by relation
-                // and is not this gate's to know. The claim inverts rather than lapsing, because
-                // leading with the partition dimension here would mean a relation partitioned by
-                // something its rows cannot vary by.
-                if (stated.contains(table)) {
-                    if ("graph_name".equals(column)) {
-                        offenders.add(table + " states its own rows yet leads with graph_name");
-                    }
-                    continue;
+        var store = STORE.handle();
+        var leading = leadingPrimaryKeyColumns(store);
+        var stated = statedRelations(store);
+        var offenders = new java.util.ArrayList<String>();
+        for (var entry : leading.entrySet()) {
+            String table = entry.getKey();
+            String column = entry.getValue();
+            String expected;
+            // A stated relation holds rows this file supplies, so there is no graph to keep
+            // apart and its key is its own vocabulary's: which one that is varies by relation
+            // and is not this gate's to know. The claim inverts rather than lapsing, because
+            // leading with the partition dimension here would mean a relation partitioned by
+            // something its rows cannot vary by.
+            if (stated.contains(table)) {
+                if ("graph_name".equals(column)) {
+                    offenders.add(table + " states its own rows yet leads with graph_name");
                 }
-                if ("code_graph_class".equals(table)) {
-                    expected = "graph_name";
-                } else if (table.startsWith("sql_")
-                    || table.startsWith("code_")
-                    || table.startsWith("federation_")) {
-                    expected = "source_name";
-                } else if (table.startsWith("java_")) {
-                    expected = "java_source_root".equals(table) ? "source_root" : "file";
-                } else if (table.startsWith("store_")) {
-                    expected = switch (table) {
-                        case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"
-                            -> "graph_name";
-                        case "store_source", "store_class_file" -> "source_name";
-                        case "store_stamp" -> "singleton";
-                        default -> "graph_name";
-                    };
-                } else if (table.startsWith("meta_")) {
-                    expected = switch (table) {
-                        case "meta_corpus" -> "corpus_name";
-                        case "meta_gatherer", "meta_gatherer_corpus", "meta_gatherer_dependency"
-                            -> "gatherer_name";
-                        case "meta_grain" -> "grain_name";
-                        case "meta_stage", "meta_stage_write" -> "stage_name";
-                        case "meta_relation" -> "relation_name";
-                        default -> "graph_name";
-                    };
-                } else {
-                    expected = "graph_name";
-                }
-                if (!expected.equals(column)) {
-                    offenders.add(table + " leads with " + column + ", expected " + expected);
-                }
+                continue;
             }
-            assertThat(offenders).as("relations keyed without their partition dimension").isEmpty();
+            if ("code_graph_class".equals(table)) {
+                expected = "graph_name";
+            } else if (table.startsWith("sql_")
+                || table.startsWith("code_")
+                || table.startsWith("federation_")) {
+                expected = "source_name";
+            } else if (table.startsWith("java_")) {
+                expected = "java_source_root".equals(table) ? "source_root" : "file";
+            } else if (table.startsWith("store_")) {
+                expected = switch (table) {
+                    case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"
+                        -> "graph_name";
+                    case "store_source", "store_class_file" -> "source_name";
+                    case "store_stamp" -> "singleton";
+                    default -> "graph_name";
+                };
+            } else if (table.startsWith("meta_")) {
+                expected = switch (table) {
+                    case "meta_corpus" -> "corpus_name";
+                    case "meta_gatherer", "meta_gatherer_corpus", "meta_gatherer_dependency"
+                        -> "gatherer_name";
+                    case "meta_grain" -> "grain_name";
+                    case "meta_stage", "meta_stage_write" -> "stage_name";
+                    case "meta_relation" -> "relation_name";
+                    default -> "graph_name";
+                };
+            } else {
+                expected = "graph_name";
+            }
+            if (!expected.equals(column)) {
+                offenders.add(table + " leads with " + column + ", expected " + expected);
+            }
         }
+        assertThat(offenders).as("relations keyed without their partition dimension").isEmpty();
     }
 
     /** The relations the schema supplies the rows of, which carry no graph partition. */
@@ -858,6 +667,11 @@ class FactSchemaGateTest {
      * nothing to disturb", which the populated-stages assertion refuses. That each stage table holds
      * exactly its rule's rows, per graph, is {@code StageAnswerAgreementTest}'s, over every fact
      * document's graph.
+     *
+     * <p>It holds a refresh too: a second capture of the own graph, under a revised recipe, leaves
+     * the sibling's partition as it was, its {@code store_graph} row and recipe included, while
+     * the own graph's recipe is rewritten by its own run. And it holds a catalog source no run
+     * reads: rows seeded under a foreign source keep their whole partition through both captures.
      */
     @Test
     @DisplayName("a run writes only under its own graph")
@@ -880,12 +694,59 @@ class FactSchemaGateTest {
                     + " has no stage rows to disturb")
                 .isPositive();
             var before = partitionSnapshot(store, "sibling");
+            var siblingGraph = graphRow(dsl, "sibling");
+            var siblingRecipe = recipeRows(dsl, "sibling");
+            assertThat(siblingRecipe).as("the sibling's recipe rows, which the refresh must leave")
+                .isNotEmpty();
+
+            // Rows of a catalog source no run reads: well-formed and foreign is all they need be.
+            String foreign = "com.example.othermodule.jooq";
+            dsl.insertInto(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME, STORE_SOURCE.SOURCE_KIND,
+                    STORE_SOURCE.LAST_SEEN)
+                .values(foreign, "JOOQ_SCHEMA", java.time.LocalDateTime.now())
+                .execute();
+            dsl.insertInto(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLE_SCHEMA)
+                .values(foreign, "public").execute();
+            dsl.insertInto(SQL_ROUTINE, SQL_ROUTINE.SOURCE_NAME, SQL_ROUTINE.TABLE_SCHEMA,
+                    SQL_ROUTINE.ROUTINE_NAME, SQL_ROUTINE.ROUTINE_TYPE)
+                .values(foreign, "public", "reported_films", "FUNCTION").execute();
 
             captureStageFixture(dsl, "own", ownDir);
 
             assertThat(partitionSnapshot(store, "sibling"))
                 .as("the sibling's partition, after another graph's capture")
                 .isEqualTo(before);
+            var ownRecipe = recipeRows(dsl, "own");
+            assertThat(ownRecipe).as("the own graph's recipe rows, before its refresh").isNotEmpty();
+
+            // The refresh: the same file under a tag, so the recipe the run writes differs.
+            var tagged = SubjectConfig.of(new SchemaRecipe(ownDir.resolve("pom.xml"),
+                List.of(new SchemaRecipe.Binding(
+                    new SchemaRecipe.Entry.Literal(SchemaSource.file(CapturedStore.fixtureFile(ownDir))),
+                    java.util.Optional.of("v2"), java.util.Optional.empty())),
+                List.of("graphqls")));
+            captureStageFixture(dsl, "own", ownDir, tagged);
+
+            assertThat(partitionSnapshot(store, "sibling"))
+                .as("the sibling's partition, after another graph's refresh")
+                .isEqualTo(before);
+            assertThat(graphRow(dsl, "sibling"))
+                .as("the sibling's store_graph row, after another graph's refresh")
+                .isEqualTo(siblingGraph);
+            assertThat(recipeRows(dsl, "sibling"))
+                .as("the sibling's recipe rows, after another graph's refresh")
+                .isEqualTo(siblingRecipe);
+            assertThat(dsl.select(STORE_GRAPH_SCHEMA_INPUT.TAG).from(STORE_GRAPH_SCHEMA_INPUT)
+                .where(STORE_GRAPH_SCHEMA_INPUT.GRAPH_NAME.eq("own")).fetch(STORE_GRAPH_SCHEMA_INPUT.TAG))
+                .as("the own graph's recipe, written fresh by its own run")
+                .containsExactly("v2");
+            assertThat(dsl.fetchCount(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME.eq(foreign)))
+                .as("the unread source's schema row, after two captures that never read it")
+                .isEqualTo(1);
+            assertThat(dsl.fetchCount(SQL_ROUTINE, SQL_ROUTINE.SOURCE_NAME.eq(foreign)))
+                .as("and the routine row under it, on the same terms; a partition kept by halves"
+                    + " reads as a schema that declares no routine")
+                .isEqualTo(1);
             for (org.jooq.Table<?> table : no.sikt.graphitron.model.Public.PUBLIC.getTables()) {
                 var graphField = table.field("GRAPH_NAME", String.class);
                 if (graphField == null
@@ -912,9 +773,20 @@ class FactSchemaGateTest {
      */
     private static void captureStageFixture(DSLContext dsl, String graphName,
                                                       Path directory) {
-        var registry = CapturedStore.registryOf(directory, STAGE_FIXTURE);
-        CapturedStore.capture(dsl, new GraphIdentity(graphName, directory),
-            CapturedStore.corpusOf(directory), fixtureCatalog());
+        captureStageFixture(dsl, graphName, directory, CapturedStore.corpusOf(directory));
+    }
+
+    /** {@link #captureStageFixture(DSLContext, String, Path)} under the recipe {@code corpus} states. */
+    private static void captureStageFixture(DSLContext dsl, String graphName, Path directory,
+                                            SubjectConfig corpus) {
+        CapturedStore.registryOf(directory, STAGE_FIXTURE);
+        CapturedStore.capture(dsl, new GraphIdentity(graphName, directory), corpus, fixtureCatalog());
+    }
+
+    /** The generated catalog the stage fixture resolves against; a composite key lives in it. */
+    private static CatalogInput fixtureCatalog() {
+        var ctx = TestRunContext.of();
+        return CatalogInput.of(ctx);
     }
 
     /**
@@ -1029,6 +901,21 @@ class FactSchemaGateTest {
             .and(theirs.GRAPH_NAME.ne(mine.GRAPH_NAME))
             .orderBy(theirs.GRAPH_NAME)
             .fetch(0, String.class);
+    }
+
+    /** The graph's {@code store_graph} row. */
+    private static Record graphRow(DSLContext dsl, String graphName) {
+        return dsl.selectFrom(STORE_GRAPH).where(STORE_GRAPH.GRAPH_NAME.eq(graphName)).fetchOne();
+    }
+
+    /** The graph's recipe rows, in recipe order, rendered for comparison. */
+    private static List<String> recipeRows(DSLContext dsl, String graphName) {
+        var r = STORE_GRAPH_SCHEMA_INPUT;
+        return dsl.select(r.ORDINAL, r.KIND, r.ENTRY_VALUE, r.TAG, r.DESCRIPTION_NOTE, r.TOUCHED_AT)
+            .from(r)
+            .where(r.GRAPH_NAME.eq(graphName))
+            .orderBy(r.ORDINAL)
+            .fetch(Record::toString);
     }
 
     /** Every graph-keyed relation's rows for {@code graphName}, rendered stably for comparison. */
