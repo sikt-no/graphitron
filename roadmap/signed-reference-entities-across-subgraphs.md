@@ -682,7 +682,7 @@ every owned-connection build, as the connection contract is every build's.
 | 8b. No caller | The voucher carries no caller; format version 2; `VOUCHER_WITHOUT_SESSION_STATE` gone | `71c0917` |
 | 8c.1. Keyed by `ConnectionKey` | Every build keys its connections by the generated `ConnectionKey`, its tenant part typed `Object` without a tenant column | `674c051` |
 | 8c.2. The contract | `ConnectionSource`, `Lease`, `KeyNotPermitted`, `AcquisitionFailedException` and `ConnectionSources`; the runtime on dialect and settings; the session units gone | `e3a3ecf` |
-| 8c.3. Tenants to the source | Pending; below | |
+| 8c.3. Tenants to the source | `ConnectionSource.of(acquire, tenants)` names the fan-out domain; the request tenant set, the default tenant and `@defaultTenant` gone | `abe204f` |
 | 8d. Dispatch | Pending, in two steps; below | |
 | 8e. Fields with a fetcher of their own | Pending; below | |
 
