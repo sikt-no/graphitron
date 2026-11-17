@@ -1,7 +1,7 @@
 ---
 id: R1180
 title: "A connection pages wrong, or not at all, on an order column whose value Java does not carry exactly"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: runtime-connection
@@ -158,3 +158,11 @@ Question 1 passes on the goal: read on its own it says what changes for a consum
 Non-blocking: the predicate's character family should be pinned against `citext` explicitly in `ColumnValuesTest`, since the module's codegen binds `citext` through `CitextBinding`, and the spec's group 1 lists it only "read without its binding".
 
 *Response:* added to the `ColumnValuesTest` paragraph.
+
+### Round 2: In Review → Done, rework requested (session_01FY5Uvvvt2LYT4eUscKjGhB, 2026-11-17)
+
+Question 2 passes. The descending walk over `cursor_period` is the evidence the spec named, and it demonstrates the goal: with the three generator files put back to their state before `cf7b8f99`, it repeats row 7, the range ending in `infinity` (`[8, 7, 7, …]`), and ten of the twelve cases in `CursorDatabaseTextExecutionTest` fail; with them as delivered, all twelve pass, and `mvn install -Plocal-db` is green. Question 1 passes on the code: the predicate, `cursorTexts`, the stage-2 sources map, the cast read-back and the documentation are the change the spec approved, and the departures are recorded in the body. One finding stops the delivery.
+
+1. **Three new `CursorEncodingTest` cases assert on the SQL text the emitted helpers produce (question 1, a delivered test in a banned form).** `databaseWrittenColumn_readsBackAsTheDatabaseReadsItsText` renders the seek fields through `seekSql` and asserts `cast('[a,b)' as "pg_catalog"."tstzrange")` and its siblings; `thePageSelectsADatabaseWrittenColumnAsItsTextAlone` asserts `select cast("period" as varchar) as "__cursor_1"`; `cursorTexts_castsTheSourceStandingAtEachDatabaseWrittenPosition` asserts the same shape for a participant column. "Behaviour is pinned at the pipeline tier and above" in `docs/architecture/principles/development-principles.adoc` bans asserting on generated SQL text, and `docs/architecture/how-to/testing.adoc` says it again, "whether one fragment or a whole statement". The ban is enforced at review, so this gate is where it is held. The spec's Tests section did not ask for these pins, and the execution walk already covers the behaviour they describe: the cast read-back, the select list with and without the order column selected, and the multi-table stage-2 sources. Satisfied when no test in the delivery asserts rendered SQL text. Where a case pins something the walk does not, assert the outcome, not the SQL. For example, that a JSON number or text that is no value of the type is *not* refused at decode for a database-read column (`decodeCursor` returns rather than throwing `cursor is not valid`), or that a page's select list carries the cursor alias `encodeCursor` reads and leaves the unselected order column out. The `bound([null])` assertion and the JSON-byte assertions on `encodeCursor` are not affected.
+
+Non-blocking: `buildPerTypenameSelect` gained a generation-time throw for order slots outside connection mode, which no plan section names. It guards a shape no call site produces, so it needs no gate, only a line under "Where the implementation departs from the plan" if the next pass touches the body.
