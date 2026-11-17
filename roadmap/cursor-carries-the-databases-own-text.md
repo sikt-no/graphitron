@@ -1,13 +1,13 @@
 ---
 id: R1180
 title: "A connection pages wrong, or not at all, on an order column whose value Java does not carry exactly"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: runtime-connection
 depends-on: []
 created: 2026-11-12
-last-updated: 2026-11-16
+last-updated: 2026-11-17
 ---
 
 # A connection pages wrong, or not at all, on an order column whose value Java does not carry exactly
