@@ -20,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -131,6 +132,12 @@ class JooqFactCaptureTest {
                 .as("the second reading replaces the first rather than adding to or emptying it")
                 .isEqualTo(afterFirst).isPositive();
             assertThat(store.dsl().fetchCount(SQL_COLUMN)).isEqualTo(columnsAfterFirst);
+            assertThat(store.dsl().fetchCount(SQL_REFERENTIAL_CONSTRAINT,
+                SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME.ne(
+                    SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)))
+                .as("the fixture's foreign key across package partitions, still standing after the"
+                    + " second reading cleared and rewrote each package in turn")
+                .isPositive();
             assertThat(store.dsl().fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(SECOND)))
                 .as("and every row now carries the second reading").isEqualTo(afterFirst);
         }
