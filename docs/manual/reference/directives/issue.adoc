@@ -51,7 +51,7 @@ type VgsResultat @table(name: "soknad_vgs_resultat") {
 
 * The voucher field's fetcher signs one voucher per row it is selected on, after the row is read. Whenever the voucher is selected, the row's query also selects the absorbed fields' columns, so the voucher costs no extra statement. Each value is serialized by its field's scalar before it is signed, so the voucher carries what a plain representation of the field would.
 * Every voucher of one operation under one scope shares a random vouch id and an expiry of the operation's start plus `ttl`. A voucher is bound to no caller: within one supergraph operation the router calls both subgraphs for the same user, and the voucher never leaves the router.
-* Every `Graphitron.runtime(...)` overload, and every `GraphitronRuntime` constructor, takes the `VoucherKeys` last, so a runtime without them does not compile. `VoucherKeys.issuing(keyId, privateKey)` signs with a JDK Ed25519 key; implement `VoucherKeys` to sign elsewhere.
+* Every `Graphitron.runtime(...)` overload, and every `GraphitronRuntime` constructor, takes the `VoucherKeys` last, so a runtime without them does not compile. `VoucherKeys.issuing(keyId, privateKey)` signs with a JDK Ed25519 key under `keyId`, which every voucher carries. xref:../../how-to/voucher-handover.adoc[How-to: Voucher handover] makes the keys and wires both subgraphs.
 
 == Constraints
 

@@ -1,0 +1,55 @@
+// Rendered by ManualExampleTest from voucher-handover.graphql. Do not edit.
+
+// tag::IssuingHandover-graphitron_voucher_vouched_for[]
+[cols="1,1,1",options="header"]
+|===
+| position
+| type_name
+| field_name
+
+| `0`
+| `VgsResultat`
+| `eierId`
+|===
+// end::IssuingHandover-graphitron_voucher_vouched_for[]
+
+// tag::IssuingHandover-graphitron_minted_key[]
+[cols="1,1,1,1",options="header"]
+|===
+| type_name
+| role
+| fields
+| resolvable
+
+| `VgsResultat`
+| `ISSUE`
+| `voucher`
+| `FALSE`
+|===
+// end::IssuingHandover-graphitron_minted_key[]
+
+// tag::AcceptingEntity-graphitron_accept_vouched_for[]
+[cols="1,1",options="header"]
+|===
+| type_name
+| field_name
+
+| `VgsResultat`
+| `eierId`
+|===
+// end::AcceptingEntity-graphitron_accept_vouched_for[]
+
+// tag::AcceptingEntity-graphitron_minted_key[]
+[cols="1,1,1,1",options="header"]
+|===
+| type_name
+| role
+| fields
+| resolvable
+
+| `VgsResultat`
+| `ACCEPT`
+| `voucher`
+| `TRUE`
+|===
+// end::AcceptingEntity-graphitron_minted_key[]

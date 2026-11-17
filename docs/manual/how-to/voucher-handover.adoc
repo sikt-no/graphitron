@@ -1,0 +1,126 @@
+= How-to: Hand a row's access to another subgraph with a voucher
+:description: One subgraph vouches for a row; another resolves the entity under row-level security on a connection your source mounts for the vouched-for value.
+:!toc:
+
+Two subgraphs hold two halves of one story. Subgraph A knows that an application has results and who owns each; subgraph B owns the results themselves, behind row-level security on their owner. A client asking A for an application's results should see B's results for exactly those owners, without B trusting the client's word for whose rows they are.
+
+A voucher carries that word for you. A signs one per row it reads: the row's lookup key and its *vouched-for values*, here the owner. The router hands it to B as the entity's key, and B checks the signature, reads the owner off it, and resolves the entity on a connection your connection source sets up for that owner. Your database's policies then decide what the owner may see; Graphitron never reads the voucher's values as data.
+
+This page wires both halves end to end. The reference pages for the two directives are xref:../reference/directives/issue.adoc[`@issue`] and xref:../reference/directives/accept.adoc[`@accept`].
+
+== 1. Subgraph A issues
+
+Mark a field `@issue`. Every other field of its type is absorbed into the voucher, signed and withheld from what A publishes; `vouchesFor` names the absorbed fields whose values become the vouched-for part, and the rest are the lookup part, named and typed as B's key fields:
+
+[source,graphql]
+----
+include::examples/voucher-handover.graphqls[tag=IssuingHandover]
+----
+
+A publishes `VgsResultat` keyed by `voucher` alone, not resolvable here and kept from clients, so a router reaches B's entity from A only through the voucher. The store states the vouched-for field and the minted key:
+
+include::examples/_voucher-handover.adoc[tag=IssuingHandover-graphitron_voucher_vouched_for]
+
+include::examples/_voucher-handover.adoc[tag=IssuingHandover-graphitron_minted_key]
+
+== 2. Subgraph B accepts
+
+On B, the entity is table-bound and keyed by its own key. Mark the voucher field `@accept` with the same scope and the same vouched-for fields:
+
+[source,graphql]
+----
+include::examples/voucher-handover.graphqls[tag=AcceptingEntity]
+----
+
+B resolves `VgsResultat` by `id` as before, and by `voucher` beside it. The store states the vouched-for field and the minted key:
+
+include::examples/_voucher-handover.adoc[tag=AcceptingEntity-graphitron_accept_vouched_for]
+
+include::examples/_voucher-handover.adoc[tag=AcceptingEntity-graphitron_minted_key]
+
+Name and type the absorbed fields on A exactly as B's key field and vouched-for field: a mismatch shows up as every voucher being rejected on B.
+
+== 3. Keys
+
+Make one Ed25519 key pair per signing subgraph. With OpenSSL 1.1.1 or later:
+
+[source,shell]
+----
+openssl genpkey -algorithm ed25519 -out voucher-2026-11.pem              # private key, stays with A
+openssl pkcs8 -topk8 -nocrypt -in voucher-2026-11.pem -outform DER -out voucher-2026-11.key.der
+openssl pkey -in voucher-2026-11.pem -pubout -outform DER -out voucher-2026-11.pub.der   # public key, for B
+----
+
+or with the JDK alone, whose encodings are the same PKCS#8 and X.509 DER:
+
+[source,java]
+----
+KeyPair pair = KeyPairGenerator.getInstance("Ed25519").generateKeyPair();
+byte[] privateDer = pair.getPrivate().getEncoded();   // PKCS#8, A's secret
+byte[] publicDer  = pair.getPublic().getEncoded();    // X.509, B's verification key
+----
+
+Keep the private key in A's secret store only; the public key is not secret and goes to every subgraph that accepts A's vouchers. The key id you sign under (`2026-11` below) is a label of your choosing, carried in every voucher, which B uses to pick the public key; naming it for when the pair was made keeps rotation readable.
+
+Both runtimes take the generated `VoucherKeys` as the last argument of every `Graphitron.runtime(...)` overload, so a runtime without them does not compile. The keys are Ed25519 from the JDK; load them from wherever your platform keeps secrets:
+
+[source,java]
+----
+// Subgraph A: signs under a key id
+PrivateKey signing = KeyFactory.getInstance("Ed25519")
+    .generatePrivate(new PKCS8EncodedKeySpec(privateDer));
+var runtimeA = Graphitron.runtime(SQLDialect.POSTGRES, settings,
+    VoucherKeys.issuing("2026-11", signing));
+
+// Subgraph B: verifies by the key id a voucher carries
+PublicKey verifying = KeyFactory.getInstance("Ed25519")
+    .generatePublic(new X509EncodedKeySpec(publicDer));
+var runtimeB = Graphitron.runtime(SQLDialect.POSTGRES, settings,
+    VoucherKeys.accepting(Map.of("2026-11", verifying)));
+----
+
+*Where the keys live.* Keep the key pair in your secret store, for example HashiCorp Vault's key/value engine: the private key under A's path, and every public key B should accept, each under its key id, where B reads its configuration. Both runtimes read them once at startup, and signing and verifying stay in process. Do not reach for a signing service such as Vault's Transit engine here: Graphitron signs one voucher per row read, so a remote signature would cost one round trip per row, and an Ed25519 key is small and cheap enough to hold in memory. Keeping the pair in the secret store is what makes rotation a matter of writing new secrets:
+
+To rotate, add the new public key to B under a new id and deploy B, then switch A to sign with it; drop the old id from B once the vouchers signed with it have expired, `ttl` after they were issued. `VoucherKeys` is an interface, so a key that must never leave a signing service can still be served by implementing it, at that round trip per voucher.
+
+== 4. B's connection source mounts the vouched-for value
+
+A vouched-for value never filters anything in B's SQL. It becomes a part of the generated `ConnectionKey`, here `key.eierId()`, and B reads the entity on the connection its source leases for that key. Set the value where your policies read it:
+
+[source,java]
+----
+var source = ConnectionSources.mounting(
+    key -> dataSource,
+    (connection, key) -> DSL.using(connection, SQLDialect.POSTGRES)
+        .execute("select set_config('app.vouched_owner', ?, false)", key.eierId().orElse("")),
+    (connection, key) -> DSL.using(connection, SQLDialect.POSTGRES)
+        .execute("select set_config('app.vouched_owner', '', false)"));
+
+var input = Graphitron.newOwnedExecutionInput(source).query(query).build();
+----
+
+The key whose parts are empty is the request's own connection, for every field outside a vouched entity; here it gets the empty owner, so it sees no results. Every voucher carrying the same owner shares one connection.
+
+[source,sql]
+----
+ALTER TABLE vouched_result ENABLE ROW LEVEL SECURITY;
+CREATE POLICY vouched_result_owner ON vouched_result
+    USING (owner_id = nullif(current_setting('app.vouched_owner', true), ''));
+----
+
+A session variable is a convention any SQL on the connection could overwrite; see xref:../../security.adoc[the security guide] for the stronger fences, a definer-rights routine or a token verified in the database.
+
+== 5. What a client sees
+
+* A voucher that fails any check (signature, expiry, scope, the `__typename` it was signed for, a value no column takes) rejects the whole request, and no connection is taken for its representations: `GraphQL.execute` throws the generated `VoucherRejectedException`, naming the check and nothing from the token. Answer it from `Graphitron.requestRejection(thrown)`, usually with 401 or 403.
+* A request presenting vouchers for more than one owner is rejected with `VouchedValueLimitExceededException`, an error naming the limit rather than a `null` that would read as a denial. The limit is met when the second owner's connection is asked for, so the first owner's may already be leased; it is released with the rest.
+* A plain representation of B's own key resolves on the request's own connection, under the caller's own access: a voucher only ever adds access.
+* Every redemption and rejection is logged with its vouch id, scope and outcome on the `no.sikt.graphitron.voucher.audit` logger at INFO; never the token or its values.
+* A build that accepts vouchers has no escape hatch: `Graphitron.newExecutionInput(dsl, ...)` is not generated.
+
+== Limits for now
+
+* B reads the entity and every field its SELECT reads on the vouched connection, reference children nested in it included. A field below it with a fetcher of its own is refused with `VOUCHER_ACCEPT_NOT_GENERATED` until it too reads on that connection.
+* B has no `<tenantColumn>`: a voucher is not yet paired with a tenant.
+
+xref:index.adoc[← How-to index]

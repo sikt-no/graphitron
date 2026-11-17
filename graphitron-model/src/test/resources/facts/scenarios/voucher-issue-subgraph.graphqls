@@ -1,6 +1,6 @@
 extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
-"The issuing half of the handover voucher-accept-subgraph accepts: an application's results, each written the way the accepting subgraph's key looks. `id` is the accepting subgraph's key field and `eierId` the vouched-for field, both absorbed into the voucher and withheld from what this subgraph publishes, so it publishes VgsResultat with the voucher alone. The scope, the vouched-for field and the absorbed fields' names and types are the accepting subgraph's, which is what lets its vouchers decode there."
+"Subgraph A: an application's results, each vouched for to subgraph B. `id` and `eierId` are absorbed into the voucher under B's names and types, `eierId` being vouched for, and A publishes VgsResultat with the voucher alone."
 type Query {
   applications: [Application!]!
 }

@@ -34,6 +34,7 @@ a|
 * xref:split-vs-inline.adoc[When to split queries]: choose between inline correlated subqueries and `@splitQuery`-batched fetches.
 * xref:tenant-scoping.adoc[Tenant scoping]: database-per-tenant wiring end to end: the `<tenantColumn>` configuration, choosing each tenant's pool in your connection source, divined routing, and fanning a field out across tenants with `@tenantFanOut`.
 * xref:test-your-schema.adoc[Test your schema]: wire a consumer-side execution-tier test against a real Postgres.
+* xref:voucher-handover.adoc[Voucher handover]: let one subgraph vouch for a row's owner so another resolves the entity under row-level security, keys and connection source included.
 
 a|
 == By category
@@ -60,7 +61,7 @@ xref:result-types.adoc[Result-type variants], xref:polymorphic-types.adoc[Polymo
 xref:error-channel.adoc[The errors channel], xref:relay-outbox-messages.adoc[Relay outbox messages]
 
 *Global IDs and federation* +
-xref:global-id.adoc[Global object IDs], xref:federation-keys.adoc[Federation key fields], xref:apollo-federation.adoc[Apollo Federation transport]
+xref:global-id.adoc[Global object IDs], xref:federation-keys.adoc[Federation key fields], xref:apollo-federation.adoc[Apollo Federation transport], xref:voucher-handover.adoc[Voucher handover]
 
 *Multi-tenant* +
 xref:tenant-scoping.adoc[Tenant scoping]
