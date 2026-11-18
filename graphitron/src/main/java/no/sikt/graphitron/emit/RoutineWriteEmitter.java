@@ -54,6 +54,7 @@ public final class RoutineWriteEmitter {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
+    private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
     /**
@@ -195,16 +196,36 @@ public final class RoutineWriteEmitter {
     /**
      * {@code <keysType> keys = <Provider>.owned(dsl).transactionResult(tx -> DSL.using(tx).select(...).from(source)
      * [.coerce(...)].fetch[One]());}, the write half both result shapes emit.
+     *
+     * <p>A list's keys are captured in the order the routine returned its rows: the function's table is
+     * read {@code WITH ORDINALITY}, the one order a set-returning function defines, and the capture is
+     * ordered by it, so every re-read keyed on the captured list keeps that order.
      */
     private static CodeBlock captureTransaction(TypeName keysType, List<Column> capturedColumns,
             CodeBlock coerceTo, boolean isList, ClassName transactionProvider) {
-        var b = CodeBlock.builder()
-            .add("$T keys = $L$T.using(tx)\n", keysType, OwnedScope.transactionResult(transactionProvider, "dsl"), DSL).indent()
+        var b = CodeBlock.builder();
+        String from = "source";
+        if (isList) {
+            // Unaliased: jOOQ aliases the numbered table itself, naming the ordinal column it reads back.
+            b.addStatement("$T<$T> numbered = source.withOrdinality()", TABLE, RECORD);
+            from = "numbered";
+        }
+        b.add("$T keys = $L$T.using(tx)\n", keysType, OwnedScope.transactionResult(transactionProvider, "dsl"), DSL).indent()
             .add(".select($L)\n", CodeBlock.join(capturedColumns.stream()
-                .map(c -> CodeBlock.of("source.$L", c.javaName())).toList(), ", "))
-            .add(".from(source)\n");
+                .map(c -> isList
+                    ? CodeBlock.of("numbered.field(source.$L)", c.javaName())
+                    : CodeBlock.of("source.$L", c.javaName()))
+                .toList(), ", "))
+            .add(".from($L)\n", from);
+        if (isList) {
+            b.add(".orderBy(numbered.field($S, $T.class))\n", "ordinal", Long.class);
+        }
         if (coerceTo != null) {
             b.add(".coerce($L)\n", coerceTo);
+        } else if (isList) {
+            // Back under the function table's own fields, which the re-read reads the keys by.
+            b.add(".coerce($L)\n", CodeBlock.join(capturedColumns.stream()
+                .map(c -> CodeBlock.of("source.$L", c.javaName())).toList(), ", "));
         }
         return b.add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent().build();
     }

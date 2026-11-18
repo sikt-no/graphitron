@@ -1143,10 +1143,12 @@ static method needs no holder.
   places in one statement. Its position is a stable role name rather than where something was
   written, so the hazard is small; the unique goes, or a test pins that no edit moves two rows past
   each other.
-* **A routine write's re-read keeps its rows in the order the write returned them** `open`, E's, off the critical path. A routine write's rows are re-read by
-  the keys it returned through an unordered `IN`, so they can come back in another order than the
-  write handed them; the re-read keeps the write's order. A fix of its own, not a gate on the
-  service flip.
+* **A routine write's re-read keeps its rows in the order the write returned them** `open`, E's, off the critical path. A list routine write captures its
+  keys in the order the routine returned its rows (`WITH ORDINALITY`), so a payload's data field,
+  which re-reads them by position, keeps it; a write returning its records directly still re-reads
+  them through an unordered `IN`, so they can come back in another order than the write handed them,
+  until the re-read is the lift along the write's path, ordered by position. A fix of its own, not a
+  gate on the service flip.
 * **A field's followed claim is stored per field and target type** `open`, E's, off the critical path.
   Which claim a field follows, its own `@referenceFor` or field claim or one inherited from an
   interface field, is decided per need by `graphitron_join_path_claimed_rule`, whose target types come
