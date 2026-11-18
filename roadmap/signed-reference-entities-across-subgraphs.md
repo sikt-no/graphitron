@@ -57,7 +57,7 @@ key carrying vouched-for values, a connection whose session sets them for the po
 | *Voucher* | A signed token Graphitron computes for one row in A and verifies in B. It is Graphitron's own format, decoded the way a node id is. |
 | *Issuing type* | The type in A marked `@issue`. |
 | *Accepting type* | The type in B marked `@accept`. |
-| *Voucher field* | `_voucher: String!`, the field Graphitron mints on an issuing or accepting type (slice 8f). Its name and type are fixed, so A and B cannot disagree on them; it is `@inaccessible` and the minted key's one field. |
+| *Voucher field* | `_voucher`, the field Graphitron mints on an issuing or accepting type (slice 8f): `String!` on A, which signs one for every row, and `String` on B, which never computes one. Its name is fixed, so A and B cannot disagree on it; it is `@inaccessible` and the minted key's one field. |
 | *Absorbed fields* | Every field the author wrote on the issuing type. Their values are sealed inside the voucher, and A does not publish them. |
 | *Vouched-for fields* | The absorbed fields named by `vouchesFor:` on both markers. They say whose rows are vouched for, and they are the access decision. In the first client's case this is the owner's id number, a different person from the user the request is for. |
 | *Lookup part* | The other absorbed fields: the key of the vouched row in B. Navigation only. |
@@ -259,7 +259,7 @@ per value.
 ### What each side publishes, and why A withholds the absorbed fields
 
 Both subgraphs' published shape is derived, not written. On a type marked `@issue` or `@accept`
-Graphitron mints the field `_voucher: String! @inaccessible` and `@key(fields: "_voucher")` (slice 8f;
+Graphitron mints the field `_voucher @inaccessible`, `String!` in A and `String` in B, and `@key(fields: "_voucher")` (slice 8f;
 until then the author writes the field, marks it, and the key names it). In A the key is
 `resolvable: false` and is the type's only key; in B it is `resolvable: true` and sits beside the authored
 key. Both are minted applications, the mechanism that gives a node type its `@key(fields: "id")`, so the
@@ -902,7 +902,7 @@ from the store, on its stated connection": a connection's count and facets resol
 
 **Slice 8f, markers on the type.** `@issue` and `@accept` move from a field the author writes onto
 the type, and Graphitron mints the voucher field on both sides (*Rulings*, 2026-11-18). What it buys: the
-field's name and type are fixed, so A and B cannot disagree on them, a disagreement neither build can
+field's name is fixed, and its type is Graphitron's, so A and B cannot disagree on them, a disagreement neither build can
 check; on A, "absorb every other field" becomes "absorb every field written", so the membership loses its
 marked-field exception, and the minted key's field set is a constant rather than a read of the marked
 field's name. A `feat!` whose `BREAKING-CHANGE:` footer says what an author changes: move the marker from
@@ -910,7 +910,9 @@ the voucher field onto its type and delete the field. Nothing outside the repo a
 Independent of 8e.3. As built:
 
 * *Directives.* Both definitions' location is `OBJECT`, and their descriptions say Graphitron adds
-  `_voucher: String!`. Capture admits an application only at its declared location, so the decode moved
+  `_voucher`, `String!` on an issuing type and `String` on an accepting one, since B never computes a
+  voucher for a row it reads by another route (Alf, 2026-11-18). Capture admits an application only at
+  its declared location, so the decode moved
   from the field site to the type site, in a class of its own (`GraphitronVoucherEntries`). The entries
   are keyed by the application's written position and did not change; every join that went from the
   entry through the marked field's element to its type now reaches the type, the application's

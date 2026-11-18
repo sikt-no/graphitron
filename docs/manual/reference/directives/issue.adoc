@@ -39,7 +39,7 @@ type VgsResultat @table(name: "soknad_vgs_resultat")
 }
 ----
 
-`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `_voucher` alone. You do not write the voucher field; its name and type are the same in every subgraph, so the issuing and accepting sides cannot disagree on them. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
+`id` and `eierId` are absorbed: the voucher carries them, signed, and the subgraph publishes `VgsResultat` with `_voucher` alone. You do not write the voucher field; its name is the same in every subgraph, so the issuing and accepting sides cannot disagree on it. It is non-null here, every row being signed one, and nullable on the accepting side, which never computes one. Name and type the absorbed fields exactly as the other subgraph's key fields and vouched-for fields; a mismatch shows up as every voucher being rejected there.
 
 == What the subgraph publishes
 

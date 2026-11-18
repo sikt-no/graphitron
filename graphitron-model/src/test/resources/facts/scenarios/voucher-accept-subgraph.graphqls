@@ -38,3 +38,10 @@ extend schema @expectEquals(relation: "graphitron_occurrence_connection", rows: 
   coordinate,                  outcome
   VgsResultat.servicedDetails, INHERIT
   """)
+
+# The minted voucher field is nullable here: this subgraph receives a voucher in a representation but
+# never computes one, so a row it reads by any other route has none to give.
+extend schema @expectEquals(relation: "graphitron_field", where: "coordinate = 'VgsResultat._voucher'", rows: """
+  type_sdl, non_null
+  String,   FALSE
+  """)
