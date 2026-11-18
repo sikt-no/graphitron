@@ -64,6 +64,7 @@ public final class OccurrenceTenants {
         dsl.deleteFrom(b).where(b.GRAPH_NAME.eq(graph), b.KIND.eq(TENANT), b.TOUCHED_AT.ne(touchedAt)).execute();
         taken(dsl, graph, touchedAt);
         EntryDefects.derive(dsl, graph, touchedAt, EntryDefects.TENANTS);
+        EntryDefectTables.deriveFilterColumns(dsl, graph, touchedAt, EntryDefects.TENANTS.stage());
     }
 
     /**

@@ -10135,7 +10135,7 @@ COMMENT ON COLUMN graphitron_entry_defect_table.graph_name IS 'the owning graph'
 COMMENT ON COLUMN graphitron_entry_defect_table.source_name IS 'the defect''s file';
 COMMENT ON COLUMN graphitron_entry_defect_table.source_line IS 'the defect''s line, 1-based';
 COMMENT ON COLUMN graphitron_entry_defect_table.source_column IS 'the defect''s column, 1-based';
-COMMENT ON COLUMN graphitron_entry_defect_table.code IS 'the defect''s code, TABLE_AMBIGUOUS';
+COMMENT ON COLUMN graphitron_entry_defect_table.code IS 'the defect''s code: TABLE_AMBIGUOUS, its candidate tables, or COLUMN_UNRESOLVED, the table a filter''s name was looked for in';
 COMMENT ON COLUMN graphitron_entry_defect_table.stage IS 'the stage that raised the defect it details, which wrote this row and sweeps it; with the defect''s other key columns, the defect';
 COMMENT ON COLUMN graphitron_entry_defect_table.table_source_name IS 'the catalog source of a table the defect names';
 COMMENT ON COLUMN graphitron_entry_defect_table.table_schema IS 'that table''s schema';
@@ -19767,6 +19767,87 @@ SELECT el.graph_name, el.source_name, el.source_line, el.source_column,
  GROUP BY el.graph_name, el.source_name, el.source_line, el.source_column;
 COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_rule IS 'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.';
 
+-- The table a filter's argument or input field naming no column was looked for in, under its
+-- COLUMN_UNRESOLVED: the arm of graphitron_occurrence_tenant_entry_defect_rule restated row for row, so
+-- the defect and the table it names agree, one row per defect and landing. The diagnostic view ranks
+-- that table's columns against the spelling, so every reader of a defect offers the same names.
+CREATE VIEW graphitron_occurrence_tenant_entry_defect_table_rule
+  (graph_name, source_name, source_line, source_column, code,
+   table_source_name, table_schema, table_name) AS
+SELECT DISTINCT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
+       COALESCE(da.source_column, el.source_column), 'COLUMN_UNRESOLVED',
+       COALESCE(jp.target_source_name, n.landing_source_name), COALESCE(jp.target_schema, n.landing_schema),
+       COALESCE(jp.target_table, n.landing_table)
+  FROM graphitron_occurrence o
+  JOIN graphql_ast_element_entry el
+    ON el.graph_name = o.graph_name AND el.coordinate = o.element_coordinate
+  JOIN graphitron_path_need_table n
+    ON n.graph_name = o.graph_name AND n.coordinate = o.coordinate
+  -- Where a written @reference path lands, its join path says, the need's landing staying null.
+  LEFT JOIN graphitron_join_path jp
+    ON jp.graph_name = n.graph_name AND jp.coordinate = n.coordinate AND jp.target_type = n.target_type
+  JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
+  JOIN graphitron_field ff ON ff.graph_name = fo.graph_name AND ff.coordinate = fo.element_coordinate
+  -- The type the field's rows are of, unwrapped from a connection where it returns one.
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = ff.graph_name AND ft.type_name = ff.type_name AND ft.field_name = ff.field_name
+  LEFT JOIN graphitron_routine_result rr
+    ON rr.graph_name = ff.graph_name AND rr.type_name = ff.type_name AND rr.field_name = ff.field_name
+  LEFT JOIN graphitron_binding_claim cl
+    ON cl.graph_name = o.graph_name AND cl.coordinate = o.element_coordinate AND cl.kind = 'COLUMN'
+  LEFT JOIN graphitron_directive_application da
+    ON da.graph_name = o.graph_name AND da.coordinate = o.element_coordinate
+   AND da.directive_name = 'field' AND da.ordinal = 0
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND COALESCE(jp.target_table, n.landing_table) IS NOT NULL
+   AND (rr.field_name IS NOT NULL
+        OR EXISTS (SELECT 1 FROM graphitron_tabletype tt
+                    WHERE tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence c
+                    WHERE c.graph_name = o.graph_name AND c.parent_coordinate = o.coordinate)
+   -- A routine reading rows is judged; one writing them, which returns no function's rows, is not.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_producer p
+                    WHERE p.graph_name = o.graph_name AND p.coordinate = o.field_coordinate
+                      AND (p.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'UPSERT')
+                           OR p.kind = 'ROUTINE' AND rr.field_name IS NULL))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_built_class bc
+                    WHERE bc.graph_name = o.graph_name AND bc.coordinate = o.parent_coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_binding b
+                    WHERE b.graph_name = o.graph_name AND b.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_column c
+                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.coordinate)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_node_id ni
+                    WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
+   -- An overriding condition stands in for a filter's predicate, not for a lookup's join.
+   AND (NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
+                     WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+        OR EXISTS (SELECT 1 FROM graphitron_directive_application lk
+                    WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
+                      AND lk.directive_name = 'lookupKey'))
+   -- A @lookupKey argument naming no column is judged here too, a lookup needing a column to drive its
+   -- join; one that decodes a node id is the lookup's own node-id rules'.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application lk
+                    WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
+                      AND lk.directive_name = 'lookupKey'
+                      AND EXISTS (SELECT 1 FROM graphitron_directive_application ni
+                                   WHERE ni.graph_name = lk.graph_name AND ni.coordinate = lk.coordinate
+                                     AND ni.directive_name = 'nodeId'))
+   -- Nothing takes it, a lookup aside, which needs the column as much as a filter does.
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
+                     JOIN graphitron_occurrence_taken t
+                       ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                      AND t.taken_by <> 'LOOKUP_KEY'
+                    WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate);
+COMMENT ON VIEW graphitron_occurrence_tenant_entry_defect_table_rule IS 'One table a COLUMN_UNRESOLVED filter defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk. For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect.';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.graph_name IS 'the graph_name of a row of this rule, which the stage writes into graphitron_entry_defect_table.graph_name';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.source_name IS 'the source_name of a row of this rule, which the stage writes into graphitron_entry_defect_table.source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.source_line IS 'the source_line of a row of this rule, which the stage writes into graphitron_entry_defect_table.source_line';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.source_column IS 'the source_column of a row of this rule, which the stage writes into graphitron_entry_defect_table.source_column';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.code IS 'the code of a row of this rule, which the stage writes into graphitron_entry_defect_table.code';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.table_source_name IS 'the table_source_name of a row of this rule, which the stage writes into graphitron_entry_defect_table.table_source_name';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.table_schema IS 'the table_schema of a row of this rule, which the stage writes into graphitron_entry_defect_table.table_schema';
+-- COMMENT ON COLUMN graphitron_occurrence_tenant_entry_defect_table_rule.table_name IS 'the table_name of a row of this rule, which the stage writes into graphitron_entry_defect_table.table_name';
+
 CREATE VIEW graphitron_occurrence_build_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail, stage) AS
 WITH
@@ -28850,6 +28931,7 @@ INSERT INTO meta_stage_write VALUES
   ('occurrence-routes', 'graphitron_occurrence_connection'),
   ('occurrence-routes', 'graphitron_occurrence_connection_part'),
   ('occurrence-tenants', 'graphitron_entry_defect'),
+  ('occurrence-tenants', 'graphitron_entry_defect_table'),
   ('occurrence-tenants', 'graphitron_occurrence_binding'),
   ('occurrence-tenants', 'graphitron_occurrence_binding_tenant'),
   ('occurrence-tenants', 'graphitron_occurrence_taken'),
@@ -29240,6 +29322,7 @@ INSERT INTO meta_stage_rule VALUES
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_record_parameter_rule'),
   ('occurrence-source-claims', 'graphitron_occurrence_source_claim_table', 'graphitron_occurrence_source_claim_root_routine_rule'),
   ('occurrence-tenants', 'graphitron_entry_defect', 'graphitron_occurrence_tenant_entry_defect_rule'),
+  ('occurrence-tenants', 'graphitron_entry_defect_table', 'graphitron_occurrence_tenant_entry_defect_table_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_binding', 'graphitron_occurrence_binding_tenant_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_taken', 'graphitron_occurrence_taken_rule'),
   ('occurrence-tenants', 'graphitron_occurrence_tenant_slot', 'graphitron_occurrence_tenant_slot_authored_rule'),
@@ -31785,6 +31868,10 @@ INSERT INTO meta_relation VALUES
    'One row the occurrence-tenants stage''s entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example $tenant: input.org beside @tenant on input.code, for one call, gives one TENANT_NAMED_TWICE row at the pair, and @tenant on an Int under a String tenant column one TENANT_VALUE_TYPE_DISAGREES row at the @tenant.',
    'The stage''s own defects, decided from the pairs, the directive applications and the bindings it has just written, so each reads only what is upstream of it.'),
+  ('graphitron_occurrence_tenant_entry_defect_table_rule', 'entry-defect-table', 'graphitron',
+   'One table a COLUMN_UNRESOLVED filter defect names, in the shape graphitron_entry_defect_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example Query.filmsBy(bogus:) looks for bogus in film, and the occurrence-tenants stage writes a row naming film under its defect.',
+   'The filter arm of the stage''s COLUMN_UNRESOLVED restated row for row, so the defect and the table it was looked for in agree; the table is the fact, and ranking its columns against the spelling is the diagnostic view''s, so the build, the editor and the MCP server offer the same names.'),
   ('graphitron_occurrence_producer_empty', 'graph-occurrence', 'graphitron',
    'The empty answer a service producer has for a call given nothing: one row per service occurrence whose result is a collection the generated code can build empty.',
    'For example Mutation.rateFilms, returning [Film!]! over film, answers an empty list, and a service returning a single Film has no row.',

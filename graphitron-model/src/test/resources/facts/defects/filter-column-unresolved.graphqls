@@ -60,3 +60,16 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   COLUMN_UNRESOLVED, Query.actorFilmsBy(actorId:)
   COLUMN_UNRESOLVED, Query.actorFilmsBy(minLength:)
   """)
+
+# Under each defect, the table its name was looked for in, whose columns the message offers: film for
+# the filters on Film, language at the end of languageBogus's path, the function's result for
+# actorFilmsBy.
+extend schema @expectEquals(relation: "graphitron_entry_defect_table", where: "code = 'COLUMN_UNRESOLVED'", rows: """
+  source_line, table_name
+  21,          film
+  22,          film
+  23,          film
+  27,          film
+  31,          language
+  33,          films_for_actor
+  """)
