@@ -921,10 +921,11 @@ Independent of 8e.3. As built:
   own. It is not an arm of `graphitron_field_minted_candidate`, whose `position` and
   `carrier_coordinate` are the connection's and whose rows stand down to an authored field. Minted
   fields already get occurrences, so the voucher field needed nothing new to have one.
-* *Collision and the double marker* (Alf, 2026-11-18, in `defects-as-facts.adoc`). An authored
-  `_voucher` on a marked type is `VOUCHER_FIELD_NAME_TAKEN` at the marker; it keeps the coordinate, is
-  never absorbed, and nothing is minted beside it. A type marked both is `VOUCHER_MARKERS_BOTH` at each
-  marker and is given the issuing field, which absorbs what it declares. Both shapes leave the type a
+* *Collision* (Alf, 2026-11-18, in `defects-as-facts.adoc`). An authored `_voucher` on a marked type is
+  `VOUCHER_FIELD_NAME_TAKEN` at the marker; it keeps the coordinate, is never absorbed, and nothing is
+  minted beside it.
+* *The double marker* (the author's call, not ruled; see *Open questions*). A type marked both is
+  `VOUCHER_MARKERS_BOTH` at each marker and is given the issuing field, which absorbs what it declares. Both shapes leave the type a
   field, so the refused schema still assembles and its defects are reported. They replace
   `VOUCHER_FIELD_REPEATED`.
 * *Membership.* Every field written on the issuing type but an authored `_voucher`.
@@ -1044,6 +1045,17 @@ want to see the plan.
 * Whether the 2026-11-15 ruling that a name Graphitron would mint is never silently withheld, written for
   types, covers fields too. Slice 8f's collision refusal rests on it if so, and needs a ruling of its own
   if not; for Alf and Filip, and the answer belongs in `defects-as-facts.adoc`.
+* A type marked both `@issue` and `@accept` (slice 8f): refused at each marker, and given the issuing
+  voucher field so the refused schema still assembles for capture to report it. `defects-as-facts.adoc`
+  § The supertype says a refused macro shape is refused before the mint; minting here departs from that
+  for capture's sake. For Alf and Filip: rule the refusal, and whether capture should instead judge a
+  field-less type itself, which would let both refused shapes (this and the name collision) mint nothing
+  and drop the member rule's `_voucher` exception.
+* The voucher refusals restate the mint rule's predicates (slice 8f): `VOUCHER_FIELD_NAME_TAKEN` and
+  `VOUCHER_MARKERS_BOTH` are worked out again from the transcription rather than read as the absence of
+  a `graphitron_voucher_field` row, against the ruling that a stage decides once in its relation's rule
+  (`defects-as-facts.adoc` § Ownership). A refactor that changes no behaviour; folded in with the
+  question above, since the double marker's mint is what keeps it from being a pure absence.
 * `<sessionState>`: once it only names the handle class, whether it keeps its name.
 * Key provider shape and default: Ed25519 over JDK keys, with the public key distributed to B; whether the
   default also reads PEM or only takes key objects.

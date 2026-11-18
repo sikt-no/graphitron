@@ -3770,7 +3770,9 @@ COMMENT ON VIEW graphitron_connection_carrier_rule IS 'One row the connection ca
 -- written. Decided from structure alone, before the population is built and independently of every
 -- refusal, so a member whose column fails to resolve, or an @issue refused for any reason, still
 -- absorbs: A never publishes what the voucher seals. The voucher field Graphitron mints is no
--- declaration and so no member.
+-- declaration and so no member. The one structural exception is a field declared at the minted name,
+-- which is refused and stays the author's: absorbing it would leave its type with no field to
+-- assemble, so the refused schema could not be captured to report the refusal.
 CREATE TABLE graphitron_voucher_member (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -31153,7 +31155,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_voucher_member', 'voucher-member', 'graphitron',
    'One field declaration an @issue absorbs into its voucher, withheld from the emitted population.',
    'For example a VgsResultat marked @issue absorbs its id and eierId, two rows; the voucher field Graphitron mints on it is no declaration and no member.',
-   'An absorbed field is not a field classified and then hidden: the store keeps no binding, claim or occurrence for a coordinate that is no graphitron_element row, so the membership is decided before the population is built and the authored sets anti-join it. Decided from structure alone, the issue application and the type''s transcribed fields, and independently of every refusal, so a resolution failure or a refused @issue is a defect and never a field A publishes. Written by its own stage ahead of macro-expansion, since it has to exist before the population does.'),
+   'An absorbed field is not a field classified and then hidden: the store keeps no binding, claim or occurrence for a coordinate that is no graphitron_element row, so the membership is decided before the population is built and the authored sets anti-join it. Decided from structure alone, the issue application and the type''s transcribed fields, and independently of every refusal, so a resolution failure or a refused @issue is a defect and never a field A publishes. The exception is a field declared at the minted name _voucher, refused and left the author''s, so a type whose every field would be absorbed still has one to assemble and the refusal can be captured. Written by its own stage ahead of macro-expansion, since it has to exist before the population does.'),
   ('graphitron_voucher_field', 'voucher-field', 'graphitron',
    'The voucher field Graphitron mints on one type marked @issue or @accept.',
    'For example type VgsResultat @issue(...) gives one row, VgsResultat._voucher in the ISSUE role.',
