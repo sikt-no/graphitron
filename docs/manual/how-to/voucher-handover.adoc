@@ -120,7 +120,7 @@ A session variable is a convention any SQL on the connection could overwrite; se
 
 == Limits for now
 
-* B reads the entity and every field its SELECT reads on the vouched connection, reference children nested in it included. A field below it with a fetcher of its own is refused with `VOUCHER_ACCEPT_NOT_GENERATED` until it too reads on that connection.
+* B reads the entity and every field below it on the vouched connection: a field its SELECT reads in the entity's own statement, and a split query, a routine, a polymorphic field or a `@service` below it on the connection the entity hands down. A connection-typed field below it is refused with `VOUCHER_ACCEPT_NOT_GENERATED` until it too reads on that connection.
 * B has no `<tenantColumn>`: a voucher is not yet paired with a tenant.
 
 xref:index.adoc[← How-to index]

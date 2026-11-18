@@ -58,11 +58,12 @@ These are compatible; the first is the floor whatever else lands.
    carrying that set lets the consumer's source mount one connection that reads the superset, and one
    SELECT resolves every entity. The limit then becomes a cap on the set's size, a safety bound on the
    policy and array size rather than "one", configurable with a generous default, enforced as in 1.
-3. *Several values in turn on one lease.* Since `VOUCHER_ACCEPT_NOT_GENERATED` refuses a field below an
-   accepting type that has a fetcher of its own, everything vouched is read in the entity's own SELECT,
-   and a value's connection is done when that SELECT returns. Values could be read one after another,
-   releasing (or re-mounting) between them, keeping per-value isolation at the cost of a round trip each.
-   This stops holding once nested fetchers read on the vouched connection.
+3. *A connection per value.* Each value keeps a connection of its own, as the one-value rule's
+   reasoning assumed. Since slices 8e.1 and 8e.2 a child `@service`, a split query and a polymorphic
+   field below a vouched entity read later, on the key the entity hands down, so a value's connection is
+   not done when the entity's SELECT returns: it is held until that value's subtree is read. This keeps
+   per-value isolation at the cost of one leased connection per value for the operation, the cost the
+   limit exists to bound, and so needs R1192's release when a value's reads finish.
 
 The recommendation so far is 1 now, then 2, with 3 as the fallback for a consumer that needs per-entity
 isolation.
@@ -91,6 +92,7 @@ isolation.
 * A request rejection that a consumer does not map reaches the router as an uncaught `500`. Consider a
   default answer for the limit (if any request-level form of it survives) that names the cause, and say
   in the how-to which rejections a consumer must map.
-* When nested fetchers are allowed on the vouched connection, the release point moves from the entity's
-  SELECT back to the operation's end; that change and R1192's per-worker release should be decided
-  together.
+* Fields below a vouched entity with fetchers of their own read on the handed-down key (slices 8e.1 and
+  8e.2, connection-typed fields to follow in 8e.3), so a vouched lease is held to the operation's end.
+  Releasing it earlier, under option 3 or not, is R1192's per-worker release and should be decided with
+  it.
