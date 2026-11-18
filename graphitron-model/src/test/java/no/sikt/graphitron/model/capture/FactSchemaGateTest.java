@@ -705,8 +705,9 @@ class FactSchemaGateTest {
                     STORE_SOURCE.LAST_SEEN)
                 .values(foreign, "JOOQ_SCHEMA", java.time.LocalDateTime.now())
                 .execute();
-            dsl.insertInto(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLE_SCHEMA)
-                .values(foreign, "public").execute();
+            dsl.insertInto(SQL_SCHEMA, SQL_SCHEMA.SOURCE_NAME, SQL_SCHEMA.TABLE_SCHEMA,
+                    SQL_SCHEMA.SCHEMA_PACKAGE)
+                .values(foreign, "public", "com.example.othermodule.jooq.public_").execute();
             dsl.insertInto(SQL_ROUTINE, SQL_ROUTINE.SOURCE_NAME, SQL_ROUTINE.TABLE_SCHEMA,
                     SQL_ROUTINE.ROUTINE_NAME, SQL_ROUTINE.ROUTINE_TYPE)
                 .values(foreign, "public", "reported_films", "FUNCTION").execute();

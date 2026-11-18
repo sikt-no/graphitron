@@ -35,7 +35,8 @@ class GraphitronStoreTest {
 
     /** This module's own compiled classes, which every tier has on disk by the time it runs. */
     private static final List<ClasspathEntry> CLASSPATH =
-        List.of(ClasspathEntry.project(Path.of("target", "classes")));
+        List.of(ClasspathEntry.project(Path.of("target", "classes")),
+            no.sikt.graphitron.model.test.ClasspathCorpus.catalog());
 
     @Test
     @DisplayName("a run opens a store, captures its configured schema into it, and closes it")

@@ -67,6 +67,14 @@ public final class ClasspathFixtures {
             entries.add(library("library-named"));
             return List.copyOf(entries);
         });
+        // The corpus with its catalog inherited rather than declared: what a graph naming no catalog
+        // has when the generated classes reach it only through another module.
+        fixtures.put("corpus-catalog-inherited", () -> ClasspathCorpus.entries().stream()
+            .map(entry -> entry.equals(ClasspathCorpus.catalog())
+                ? new ClasspathEntry(entry.path(), ClasspathEntry.Origin.TRANSITIVE,
+                    entry.coordinate(), entry.suppliedStamp())
+                : entry)
+            .toList());
         return Map.copyOf(fixtures);
     }
 

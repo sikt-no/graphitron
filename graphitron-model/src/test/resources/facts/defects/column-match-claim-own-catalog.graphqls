@@ -18,9 +18,9 @@ type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_occurrence_column",
-    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId')", rows: """
-  coordinate , table_source_name                             , table_schema, table_name , column_name
-  Parent.name, no.sikt.graphitron.rewrite.singleschemafixture, singleschema, solo_parent, name
+    where: "coordinate NOT IN ('Query.anchor', 'FactAnchor.paymentId') AND table_source_name LIKE '%!no.sikt.graphitron.rewrite.singleschemafixture'", rows: """
+  coordinate , table_schema, table_name , column_name
+  Parent.name, singleschema, solo_parent, name
   """)
 
 # Film binds no table of this catalog.

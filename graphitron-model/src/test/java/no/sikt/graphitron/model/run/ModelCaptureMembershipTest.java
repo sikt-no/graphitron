@@ -45,7 +45,8 @@ class ModelCaptureMembershipTest {
                 CatalogInput.of(TestRunContext.JOOQ_PACKAGE), classpath)) {
             var expectedA = new LinkedHashSet<>(sdlSourceNames(store.registry()));
             for (var entry : jooq.allTableEntries()) {
-                expectedA.add(entry.table().getSchema().getClass().getPackageName());
+                expectedA.add(ClasspathCorpus.catalog().path() + "!"
+                    + entry.table().getSchema().getClass().getPackageName());
             }
             expectedA.addAll(declaredEntries(classpath));
             // The platform, read off the runtime image and claimed by every graph reading a classpath.

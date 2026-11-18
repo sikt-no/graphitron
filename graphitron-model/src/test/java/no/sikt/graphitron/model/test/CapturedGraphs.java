@@ -48,6 +48,15 @@ public final class CapturedGraphs {
             throw new IllegalArgumentException("a store of one's own lives in a store directory, "
                 + "and this run names none; read it from the population with read(ctx, ...) instead");
         }
-        return GraphitronStore.captured(ctx);
+        return GraphitronStore.captured(withClasspath(ctx));
+    }
+
+    /**
+     * {@code ctx} with the catalog it configures declared on its classpath, a graph reading its
+     * catalog only from an entry it does not inherit.
+     */
+    static RunContext withClasspath(RunContext ctx) {
+        return ctx.jooqPackage() == null ? ctx
+            : ctx.withClasspathRoots(CatalogInput.of(ctx).declaredOn(ctx.classpathRoots()));
     }
 }

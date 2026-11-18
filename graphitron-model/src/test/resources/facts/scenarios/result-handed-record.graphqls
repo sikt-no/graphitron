@@ -3,7 +3,7 @@
 # same in a graph with no catalog at all, which is this one: the record's class is on the classpath
 # whatever the run declared, and the table it is the record of plays no part.
 
-extend schema @withConfiguration(jooqPackage: null)
+extend schema @withConfiguration(jooqPackage: null, classpath: "corpus-catalog-inherited")
 
 "Backed by FilmRecord through the service that produces it."
 type FilmDetailsCarrier { filmId: Int @field(name: "film_id") }
@@ -14,7 +14,7 @@ type Query {
 }
 
 # The graph claims no catalog.
-extend schema @assertEmpty(relation: "store_graph_source", where: "source_name LIKE 'no.sikt.graphitron.rewrite.test.jooq%'")
+extend schema @assertEmpty(relation: "store_graph_source", where: "source_name LIKE '%!no.sikt.graphitron.rewrite.test.jooq.%'")
 
 # The class still backs the type: the classpath is read whatever the catalog.
 extend schema @assertContains(relation: "graphitron_type_backing", rows: """

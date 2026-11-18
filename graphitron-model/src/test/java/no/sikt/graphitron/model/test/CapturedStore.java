@@ -708,7 +708,8 @@ public final class CapturedStore implements AutoCloseable {
             configuration.lint(), configuration.sessionState(),
             configuration.maxAllowedPageSize(), configuration.outbox());
         return ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
-            withCatalog(subject, jooq), classpath, loaderOf(jooq), readAt);
+            withCatalog(subject, jooq), CatalogInput.declaredOn(jooq, classpath), loaderOf(jooq),
+            readAt);
     }
 
     /**
@@ -777,7 +778,8 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig corpus,
                                          CatalogInput jooq, List<ClasspathEntry> classpath) {
         FactStores.countCapture(dsl);
-        return ModelCapture.capture(dsl, graph, withCatalog(corpus, jooq), classpath, loaderOf(jooq),
+        return ModelCapture.capture(dsl, graph, withCatalog(corpus, jooq),
+            CatalogInput.declaredOn(jooq, classpath), loaderOf(jooq),
             LocalDateTime.now().truncatedTo(ChronoUnit.MICROS));
     }
 

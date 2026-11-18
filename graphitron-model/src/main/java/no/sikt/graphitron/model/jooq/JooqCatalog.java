@@ -334,7 +334,7 @@ public class JooqCatalog {
      * how jOOQ calls it. {@code parameters} are the IN parameters in declaration order, the
      * {@code Configuration} the method takes first not among them.
      */
-    public record ExecutableRoutineFacts(String schemaName, String sourceName, String sqlName,
+    public record ExecutableRoutineFacts(String schemaName, String schemaPackage, String sqlName,
                                          boolean returnsValue, String routinesClassFqn,
                                          String methodName, List<ExecutableParamFacts> parameters) {
         public ExecutableRoutineFacts { parameters = List.copyOf(parameters); }

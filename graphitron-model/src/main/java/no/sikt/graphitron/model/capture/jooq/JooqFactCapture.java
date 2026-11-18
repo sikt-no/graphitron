@@ -63,9 +63,11 @@ import static org.jooq.impl.SQLDataType.INTEGER;
  *
  * <p>The {@code sql_} family and nothing else: one source of one shape behind one entry point.
  *
- * <p>Keyed on the source rather than on a graph, because a jOOQ package describes one database and
- * several graphs may read it. The sweep is scoped the same way, so a source that has left the build
- * keeps its rows until the registry drops it.
+ * <p>Keyed on the source rather than on a graph, because a catalog describes one database and
+ * several graphs may read it. A source is one schema package as one classpath entry holds it, which
+ * {@link #sourceName} spells: two builds of one package, a stale jar and a fresh compile say, are
+ * two sources, so neither reading's sweep reaches the other's rows. The sweep is scoped to the
+ * sources, so a source that has left the build keeps its rows until the registry drops it.
  *
  * <p>Reads {@link JooqCatalog} directly rather than a consumer-shaped view of it. A view built for
  * one reader carries that reader's narrowings, and a narrowing landing here would become a fact
@@ -75,7 +77,7 @@ public final class JooqFactCapture {
 
     private JooqFactCapture() {}
 
-    /** The source kind a generated jOOQ package is registered under. */
+    /** The source kind one schema package of a classpath entry is registered under. */
     private static final String JOOQ_SCHEMA = "JOOQ_SCHEMA";
 
     /** This gatherer's row in {@code store_graph_progress}. */
@@ -85,19 +87,16 @@ public final class JooqFactCapture {
      * Makes the {@code sql_} rows of the catalog generated into {@code jooqPackage} be what it now
      * says, then the catalog's own closure over them, the keys a name alone matches; one
      * transaction, its progress recorded by {@link Progress}. The catalog is read through
-     * {@code loader}, jOOQ building its tables in static initialisers. No package is no catalog,
-     * and the graph drops whatever catalog sources it claimed before.
-     */
-    public static void capture(DSLContext dsl, String graphName, String jooqPackage,
-                               ClassLoader loader, LocalDateTime touchedAt) {
-        var read = capture(dsl, graphName,
-            jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader), touchedAt);
-        vouch(dsl, read, null);
-    }
-
-    /**
-     * {@link #capture(DSLContext, String, String, ClassLoader, LocalDateTime)}, leaving a catalog
-     * alone where the entry it is generated into is what it was last read from.
+     * {@code loader}, jOOQ building its tables in static initialisers, and left alone where the entry
+     * it is generated into is what it was last read from.
+     *
+     * <p>The catalog is the one in the entry {@code loader} loads its {@code DefaultCatalog} class
+     * from, and only where that entry is one of {@code classpath}'s own: an entry the graph inherits
+     * ({@link ClasspathEntry.Origin#TRANSITIVE}) holds no catalog of the graph's, so a graph naming a
+     * package only such an entry holds claims no catalog, as does a graph naming none. Either way the
+     * graph drops whatever catalog sources it claimed before. A run handed no classpath has said
+     * nothing about which entries are its own, the classpath reading reading none of them, so its
+     * catalog is the entry the loader reads it from.
      *
      * <p>The catalog's bytes are its entry's, so its stamp is the entry's stamp, decided by
      * {@link ClasspathSourceCapture#entryStamp} on the classpath reading's own terms, with the
@@ -114,13 +113,18 @@ public final class JooqFactCapture {
     public static boolean capture(DSLContext dsl, String graphName, String jooqPackage, ClassLoader loader,
                                   List<ClasspathEntry> classpath, Observation observation,
                                   LocalDateTime touchedAt) {
-        String stamp = jooqPackage == null ? null : stampOf(dsl, jooqPackage, loader, classpath, observation);
+        ClasspathEntry entry = jooqPackage == null ? null : entryOf(jooqPackage, loader, classpath);
+        if (entry == null) {
+            capture(dsl, graphName, null, null, touchedAt);
+            return jooqPackage == null;
+        }
+        String stamp = stampOf(dsl, entry, observation);
         Set<String> current = stamp == null ? Set.of() : vouched(dsl, jooqPackage, stamp);
         if (current.isEmpty()) {
-            var read = capture(dsl, graphName,
-                jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader), touchedAt);
+            var read = capture(dsl, graphName, new JooqCatalog(jooqPackage, loader), entryName(entry),
+                touchedAt);
             vouch(dsl, read, stamp);
-            return jooqPackage == null;
+            return false;
         }
         Progress.started(dsl, graphName, GATHERER);
         // No catalog read, so no sql_ row moved: the name-matched keys and the column spellings,
@@ -134,10 +138,10 @@ public final class JooqFactCapture {
     }
 
     private static Set<String> capture(DSLContext dsl, String graphName, JooqCatalog jooq,
-                                       LocalDateTime touchedAt) {
+                                       String entryName, LocalDateTime touchedAt) {
         Progress.started(dsl, graphName, GATHERER);
         Set<String> read = dsl.transactionResult(tx -> {
-            var sources = gather(tx.dsl(), graphName, jooq, touchedAt);
+            var sources = gather(tx.dsl(), graphName, jooq, entryName, touchedAt);
             NameMatchedKeys.derive(tx.dsl());
             ColumnSpellings.derive(tx.dsl());
             return sources;
@@ -147,12 +151,35 @@ public final class JooqFactCapture {
     }
 
     /**
-     * The catalog's stamp: the stamp of the entry its {@code DefaultCatalog} class is loaded from,
-     * with that entry's path. Null where no entry of {@code classpath} holds it or the entry cannot be
-     * stamped, which reads as changed.
+     * The name a catalog source is registered under: the classpath entry its classes were read from,
+     * as the classpath reading names that entry's own source, then {@code !}, then the schema's
+     * generated package. A reactor build's catalog is
+     * {@code /work/db/target/classes!com.example.db.public_} and a jar's
+     * {@code /home/u/.m2/.../db-1.0.jar!com.example.db.public_}. The entry is half the key because
+     * two builds of one package are two catalogs; the package is the other half because one entry
+     * carries every schema a codegen run produced, each in a package of its own. One build reachable
+     * at two paths is stored twice.
+     *
+     * <p>A name to join on, never to take apart: the package is {@code sql_schema.schema_package}
+     * and the catalog it belongs to {@code sql_schema.catalog_package}.
      */
-    private static String stampOf(DSLContext dsl, String jooqPackage, ClassLoader loader,
-                                  List<ClasspathEntry> classpath, Observation observation) {
+    static String sourceName(String entryName, String schemaPackage) {
+        return entryName + "!" + schemaPackage;
+    }
+
+    /** The entry as the classpath reading names its own source of it. */
+    private static String entryName(ClasspathEntry entry) {
+        return entry.path().toString();
+    }
+
+    /**
+     * The entry of {@code classpath} the catalog's {@code DefaultCatalog} class is loaded from, where
+     * that is one the graph does not inherit. Null where the loader finds no such class, or finds it
+     * in an entry the classpath does not name or names as {@link ClasspathEntry.Origin#TRANSITIVE}.
+     * An empty classpath classifies nothing, so the entry is the one the loader found.
+     */
+    private static ClasspathEntry entryOf(String jooqPackage, ClassLoader loader,
+                                          List<ClasspathEntry> classpath) {
         String resource = jooqPackage.replace('.', '/') + "/DefaultCatalog.class";
         var url = loader.getResource(resource);
         if (url == null) {
@@ -175,22 +202,37 @@ public final class JooqFactCapture {
             return null;
         }
         Path held = root.toAbsolutePath().normalize();
+        if (classpath.isEmpty()) {
+            return ClasspathEntry.project(held);
+        }
         for (ClasspathEntry entry : classpath) {
             if (entry.path().toAbsolutePath().normalize().equals(held)) {
-                String entryStamp = ClasspathSourceCapture.entryStamp(dsl, entry, observation);
-                return entryStamp == null ? null : SourceStamp.of((entry.path() + "\u0001" + entryStamp)
-                    .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                return entry.origin() == ClasspathEntry.Origin.TRANSITIVE ? null : entry;
             }
         }
         return null;
     }
 
-    /** The package's catalog sources last read from the bytes {@code stamp} names. */
+    /**
+     * The catalog's stamp: the stamp of the entry it is generated into, with that entry's path. Null
+     * where the entry cannot be stamped, which reads as changed.
+     */
+    private static String stampOf(DSLContext dsl, ClasspathEntry entry, Observation observation) {
+        String entryStamp = ClasspathSourceCapture.entryStamp(dsl, entry, observation);
+        return entryStamp == null ? null : SourceStamp.of((entry.path() + "\u0001" + entryStamp)
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    /**
+     * The catalog sources last read from the bytes {@code stamp} names, which are one entry's, under
+     * the catalog {@code jooqPackage} names: one entry may hold several catalogs.
+     */
     private static Set<String> vouched(DSLContext dsl, String jooqPackage, String stamp) {
         var s = STORE_SOURCE;
-        return Set.copyOf(dsl.select(s.SOURCE_NAME).from(s)
-            .where(s.SOURCE_KIND.eq(JOOQ_SCHEMA), s.STAMP.eq(stamp))
-            .and(s.SOURCE_NAME.eq(jooqPackage).or(s.SOURCE_NAME.startsWith(jooqPackage + ".")))
+        var c = SQL_SCHEMA;
+        return Set.copyOf(dsl.selectDistinct(s.SOURCE_NAME).from(s)
+            .join(c).on(c.SOURCE_NAME.eq(s.SOURCE_NAME))
+            .where(s.SOURCE_KIND.eq(JOOQ_SCHEMA), s.STAMP.eq(stamp), c.CATALOG_PACKAGE.eq(jooqPackage))
             .fetch(s.SOURCE_NAME));
     }
 
@@ -207,8 +249,8 @@ public final class JooqFactCapture {
     }
 
     private static Set<String> gather(DSLContext dsl, String graphName, JooqCatalog jooq,
-                                      LocalDateTime touchedAt) {
-        List<TableAt> tables = jooq == null ? List.of() : tablesOf(jooq);
+                                      String entryName, LocalDateTime touchedAt) {
+        List<TableAt> tables = jooq == null ? List.of() : tablesOf(jooq, entryName);
         dropMembership(dsl, graphName, sourceNames(tables));
         if (tables.isEmpty()) {
             return Set.of();
@@ -239,7 +281,7 @@ public final class JooqFactCapture {
         nodeLegacyKeyUnreadable(dsl, legacyKeys, touchedAt);
         routines(dsl, jooq, tables, touchedAt);
         routineParameters(dsl, jooq, tables, touchedAt);
-        executableRoutines(dsl, jooq, tables, touchedAt);
+        executableRoutines(dsl, jooq, tables, entryName, touchedAt);
         recordSupertypes(dsl, tables);
         recordAccessors(dsl, jooq, tables, touchedAt);
         enumBindings(dsl, tables, touchedAt);
@@ -251,7 +293,8 @@ public final class JooqFactCapture {
 
     /**
      * One table of the generated model, with the parts every row about it repeats. Its source is
-     * the schema package it was generated into, {@link JooqCatalog#schemaPackageOf}.
+     * the schema package it was generated into, {@link JooqCatalog#schemaPackageOf}, in the entry
+     * the catalog was read from, as {@link #sourceName} spells the two.
      */
     private record TableAt(String source, String schema, String name, Table<?> table,
                            String jooqName) {}
@@ -302,14 +345,18 @@ public final class JooqFactCapture {
             at -> val(at.schema(), t.TABLE_SCHEMA),
             at -> val(jooq.keysClassFqn(at.table().getSchema()).orElse(null), t.KEYS_CLASS_FQN),
             at -> val(jooq.tablesClassFqn(at.table().getSchema()).orElse(null), t.TABLES_CLASS_FQN),
+            at -> val(JooqCatalog.schemaPackageOf(at.table().getSchema()).orElseThrow(), t.SCHEMA_PACKAGE),
+            at -> val(catalogPackageOf(at.table().getSchema()), t.CATALOG_PACKAGE),
             at -> val(touchedAt, t.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.KEYS_CLASS_FQN, t.TABLES_CLASS_FQN,
-                    t.TOUCHED_AT)
+                    t.SCHEMA_PACKAGE, t.CATALOG_PACKAGE, t.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.KEYS_CLASS_FQN, excluded(t.KEYS_CLASS_FQN))
                 .set(t.TABLES_CLASS_FQN, excluded(t.TABLES_CLASS_FQN))
+                .set(t.SCHEMA_PACKAGE, excluded(t.SCHEMA_PACKAGE))
+                .set(t.CATALOG_PACKAGE, excluded(t.CATALOG_PACKAGE))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
@@ -996,21 +1043,23 @@ public final class JooqFactCapture {
      * writers above own.
      */
     private static void executableRoutines(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
-                                           LocalDateTime touchedAt) {
+                                           String entryName, LocalDateTime touchedAt) {
         Set<String> schemas = new LinkedHashSet<>();
         tables.forEach(at -> schemas.add(at.source() + " " + at.schema()));
         Set<String> tableValued = new LinkedHashSet<>();
         functionsOf(tables).forEach(at -> tableValued.add(at.source() + " " + at.schema() + " " + at.name()));
+        // The catalog names a routine's schema package; its source is that package in this entry.
         var routines = jooq.executableRoutineFacts().stream()
-            .filter(r -> schemas.contains(r.sourceName() + " " + r.schemaName()))
-            .filter(r -> !tableValued.contains(r.sourceName() + " " + r.schemaName() + " " + r.sqlName()))
+            .filter(r -> schemas.contains(sourceName(entryName, r.schemaPackage()) + " " + r.schemaName()))
+            .filter(r -> !tableValued.contains(sourceName(entryName, r.schemaPackage()) + " "
+                + r.schemaName() + " " + r.sqlName()))
             .toList();
         if (routines.isEmpty()) {
             return;
         }
         var t = SQL_ROUTINE;
         var rows = routines.stream().collect(Rows.toRowList(
-            r -> val(r.sourceName(), t.SOURCE_NAME),
+            r -> val(sourceName(entryName, r.schemaPackage()), t.SOURCE_NAME),
             r -> val(r.schemaName(), t.TABLE_SCHEMA),
             r -> val(r.sqlName(), t.ROUTINE_NAME),
             r -> val(r.returnsValue() ? "FUNCTION" : "PROCEDURE", t.ROUTINE_TYPE),
@@ -1042,7 +1091,7 @@ public final class JooqFactCapture {
             return;
         }
         var parameterRows = indices(found.size()).stream().collect(Rows.toRowList(
-            i -> val(owners.get(i).sourceName(), p.SOURCE_NAME),
+            i -> val(sourceName(entryName, owners.get(i).schemaPackage()), p.SOURCE_NAME),
             i -> val(owners.get(i).schemaName(), p.TABLE_SCHEMA),
             i -> val(owners.get(i).sqlName(), p.ROUTINE_NAME),
             i -> val(positions.get(i), p.POSITION),
@@ -1089,7 +1138,7 @@ public final class JooqFactCapture {
     /**
      * Which graph read the sources this family is keyed by.
      *
-     * <p>Two rows per generated package, in the order their keys require. The registry row says the
+     * <p>Two rows per catalog source, in the order their keys require. The registry row says the
      * source exists at all, which every source-keyed fact hangs a foreign key on and which the
      * membership row below references in turn.
      *
@@ -1382,12 +1431,13 @@ public final class JooqFactCapture {
 
     // ----------------------------------------------------------------- reading the catalog's parts
 
-    private static List<TableAt> tablesOf(JooqCatalog jooq) {
+    private static List<TableAt> tablesOf(JooqCatalog jooq, String entryName) {
         List<TableAt> tables = new ArrayList<>();
         for (JooqCatalog.TableEntry entry : jooq.allTableEntries()) {
             Table<?> table = entry.table();
-            tables.add(new TableAt(JooqCatalog.schemaPackageOf(table.getSchema()).orElse(""), schemaOf(table), table.getName(), table,
-                entry.javaFieldName()));
+            tables.add(new TableAt(
+                sourceName(entryName, JooqCatalog.schemaPackageOf(table.getSchema()).orElse("")),
+                schemaOf(table), table.getName(), table, entry.javaFieldName()));
         }
         return tables;
     }
@@ -1459,6 +1509,15 @@ public final class JooqFactCapture {
             positions.put(declared[i].getName(), i);
         }
         return positions;
+    }
+
+    /**
+     * The package of the catalog class a schema belongs to, the one a graph's {@code jooqPackage}
+     * names; null where the schema has no catalog.
+     */
+    private static String catalogPackageOf(Schema schema) {
+        var catalog = schema.getCatalog();
+        return catalog == null ? null : catalog.getClass().getPackageName();
     }
 
     private static String schemaOf(Table<?> table) {

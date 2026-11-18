@@ -1,22 +1,32 @@
-# The catalog is partitioned by the generated package a schema's classes live in, which is the unit
-# codegen rewrites. The classpath entry the classes came from would also be true of these rows and is
-# the wrong unit: one jar carries every schema a codegen run produced, so invalidating the entry
-# would discard schemas nothing touched.
+# The catalog is partitioned by the generated package a schema's classes live in, as the classpath
+# entry they were read from holds it. The package is the unit codegen rewrites: one jar carries every
+# schema a codegen run produced, so a source per entry alone would discard schemas nothing touched.
+# The entry is the other half: two builds of one package are two catalogs, and keyed by the package
+# alone either reading's sweep would delete the other's rows. A source's name spells both, and the
+# package is stated beside it, so nothing takes the name apart.
 #
 # The fixture catalog is one codegen over several schemas, so its tables sit in a package per schema
-# inside one jar. event is declared in two of them, and each is its own row under its own source.
+# inside one entry. event is declared in two of them, and each is its own row under its own source.
 extend schema @withFacts(docs: [{path: "layouts/anchor"}])
 
-extend schema @assertContains(relation: "store_source", rows: """
-  source_name,                                     source_kind
-  no.sikt.graphitron.rewrite.test.jooq.public_,       JOOQ_SCHEMA
-  no.sikt.graphitron.rewrite.test.jooq.multischema_a, JOOQ_SCHEMA
-  no.sikt.graphitron.rewrite.test.jooq.multischema_b, JOOQ_SCHEMA
+extend schema @assertContains(relation: "sql_schema", rows: """
+  table_schema,  schema_package,                                      catalog_package
+  public,        no.sikt.graphitron.rewrite.test.jooq.public_,        no.sikt.graphitron.rewrite.test.jooq
+  multischema_a, no.sikt.graphitron.rewrite.test.jooq.multischema_a,  no.sikt.graphitron.rewrite.test.jooq
+  multischema_b, no.sikt.graphitron.rewrite.test.jooq.multischema_b,  no.sikt.graphitron.rewrite.test.jooq
   """)
 
-extend schema @assertContains(relation: "sql_table", rows: """
-  table_schema,  table_name, source_name
-  public,        film,       no.sikt.graphitron.rewrite.test.jooq.public_
-  multischema_a, event,      no.sikt.graphitron.rewrite.test.jooq.multischema_a
-  multischema_b, event,      no.sikt.graphitron.rewrite.test.jooq.multischema_b
+extend schema @assertContains(relation: "sql_table", where: "source_name LIKE '%!no.sikt.graphitron.rewrite.test.jooq.multischema_a'", rows: """
+  table_schema,  table_name
+  multischema_a, event
+  """)
+
+extend schema @assertContains(relation: "sql_table", where: "source_name LIKE '%!no.sikt.graphitron.rewrite.test.jooq.multischema_b'", rows: """
+  table_schema,  table_name
+  multischema_b, event
+  """)
+
+extend schema @assertContains(relation: "sql_table", where: "source_name LIKE '%!no.sikt.graphitron.rewrite.test.jooq.public_'", rows: """
+  table_schema,  table_name
+  public,        film
   """)

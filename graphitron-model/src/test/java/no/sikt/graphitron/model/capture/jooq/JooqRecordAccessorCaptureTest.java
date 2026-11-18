@@ -32,7 +32,7 @@ class JooqRecordAccessorCaptureTest {
     void anUpperCaseColumnReadsThroughItsDefaultGetter() {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            JooqFactCapture.capture(store.dsl(), GRAPH, PACKAGE, loader(), AT);
+            JooqFactCapture.capture(store.dsl(), GRAPH, PACKAGE, loader(), classpath(), null, AT);
             var t = SQL_COLUMN_RECORD_ACCESSOR;
             assertThat(store.dsl().select(t.COLUMN_NAME, t.GETTER_NAME, t.PROPERTY_NAME).from(t)
                     .where(t.TABLE_NAME.eq("PERSONBILDE")).orderBy(t.COLUMN_NAME)
@@ -46,7 +46,7 @@ class JooqRecordAccessorCaptureTest {
     void aRenamedGetterHasNoRow() {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            JooqFactCapture.capture(store.dsl(), GRAPH, PACKAGE, loader(), AT);
+            JooqFactCapture.capture(store.dsl(), GRAPH, PACKAGE, loader(), classpath(), null, AT);
             var t = SQL_COLUMN_RECORD_ACCESSOR;
             assertThat(store.dsl().fetchCount(SQL_COLUMN, SQL_COLUMN.TABLE_NAME.eq("renamed")))
                 .as("both columns are captured").isEqualTo(2);
@@ -69,5 +69,16 @@ class JooqRecordAccessorCaptureTest {
 
     private static ClassLoader loader() {
         return Thread.currentThread().getContextClassLoader();
+    }
+
+    /** This module's test classes, which hold the hand-written catalog, as the graph's own output. */
+    private static java.util.List<no.sikt.graphitron.model.config.ClasspathEntry> classpath() {
+        try {
+            return java.util.List.of(no.sikt.graphitron.model.config.ClasspathEntry.project(
+                java.nio.file.Path.of(JooqRecordAccessorCaptureTest.class.getProtectionDomain()
+                    .getCodeSource().getLocation().toURI())));
+        } catch (java.net.URISyntaxException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }

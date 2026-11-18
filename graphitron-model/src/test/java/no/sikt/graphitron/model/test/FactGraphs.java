@@ -236,7 +236,8 @@ public final class FactGraphs implements AutoCloseable {
      * schema of its catalog and classpath lands in, under a graph name of its own, and read through
      * that store's select-only reader. For {@link CapturedGraphs#read}.
      */
-    <T> T readRun(RunContext ctx, Function<RunGraph, T> body) {
+    <T> T readRun(RunContext run, Function<RunGraph, T> body) {
+        var ctx = CapturedGraphs.withClasspath(run);
         var graphName = "run-" + INLINE.incrementAndGet();
         var catalog = ctx.jooqPackage() == null ? null : CatalogInput.of(ctx);
         return holding(inlineKeyOf(graphName, catalog, ctx.classpathRoots()), shard -> {
@@ -627,8 +628,8 @@ public final class FactGraphs implements AutoCloseable {
                     catalog, ctx.classpathRoots());
                 inlineGraphs.add(BALLAST);
             }
-            var schema = GraphitronStore.capture(store, graph, SubjectConfig.of(ctx), ctx.classpathRoots(),
-                ctx.codegenLoader());
+            var schema = GraphitronStore.capture(store, graph, SubjectConfig.of(ctx),
+                CatalogInput.declaredOn(catalog, ctx.classpathRoots()), ctx.codegenLoader());
             inlineGraphs.add(graph.name());
             return schema;
         }

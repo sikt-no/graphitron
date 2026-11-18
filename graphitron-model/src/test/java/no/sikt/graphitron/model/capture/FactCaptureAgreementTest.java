@@ -206,8 +206,8 @@ class FactCaptureAgreementTest {
     private static void capture(GraphitronModelStore store, GraphIdentity graph,
                                 SubjectConfig corpus, List<ClasspathEntry> classpath,
                                 CatalogInput jooq) {
-        ModelCapture.capture(store.dsl(), graph, CapturedStore.withCatalog(corpus, jooq), classpath,
-            CapturedStore.loaderOf(jooq),
+        ModelCapture.capture(store.dsl(), graph, CapturedStore.withCatalog(corpus, jooq),
+            CatalogInput.declaredOn(jooq, classpath), CapturedStore.loaderOf(jooq),
             java.time.LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MICROS));
     }
 

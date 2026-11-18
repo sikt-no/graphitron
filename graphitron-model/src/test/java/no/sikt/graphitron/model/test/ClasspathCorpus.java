@@ -37,18 +37,23 @@ public final class ClasspathCorpus {
      * {@code @scalarType(scalar:)} reaching a library constant by its fully qualified name far more
      * often than one of their own. A corpus holding only the first could not state that case at all.
      *
-     * <p>Beside them, what the service code is compiled against and the reading skips: the generated
-     * catalog and the jOOQ runtime, as transitive entries. A run's classpath carries both, and the
+     * <p>Beside them, what the service code is compiled against: the generated catalog, which a run
+     * declares, its graphs' catalog being read only from an entry the graph does not inherit, and the
+     * jOOQ runtime, a transitive entry the reading skips. A run's classpath carries both, and the
      * ancestry a parameter's role is decided by is read from their classfiles.
      */
     public static List<ClasspathEntry> entries() {
         return List.of(service(), scalars(), catalog(), jooqRuntime());
     }
 
-    /** The generated sakila catalog, which the reading skips and the ancestry reads. */
+    /**
+     * The generated sakila catalog, a module every graph here declares, as the sakila example
+     * declares it: the catalog a graph reads is the one in an entry of its own classpath, never an
+     * inherited one.
+     */
     public static ClasspathEntry catalog() {
         return new ClasspathEntry(rootOf(no.sikt.graphitron.rewrite.test.jooq.DefaultCatalog.class,
-            "the generated catalog"), ClasspathEntry.Origin.TRANSITIVE,
+            "the generated catalog"), ClasspathEntry.Origin.DECLARED,
             "no.sikt:graphitron-sakila-db", null);
     }
 

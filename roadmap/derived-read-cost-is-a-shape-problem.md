@@ -238,14 +238,14 @@ census it replaced is gone.
     * **A graph's catalog claims are dropped when it stops claiming them** `done`. Each pass drops
       the graph's `JOOQ_SCHEMA` memberships it did not claim, all of them when it names no package;
       an unclaimed source keeps its rows, as a schema file's does.
-    * **A catalog source is the entry its classes were read from, not its package name** `open`. The source is keyed by the jOOQ package and filled through the
-      reading graph's loader, so two graphs loading different builds of one package (a stale jar, a
-      release against a reactor build) share one source, and the last capture's sweep deletes the
-      other's rows. Keyed by the entry `code_graph_class` names for the package's classes, plus the
-      package, two builds are two sources and nothing is left to detect; the jooq gatherer reads the
-      code gatherer upstream, never the loader. Entry plus package first (Alf, 2026-11-13): one
-      build reachable at two paths is stored twice, and keying by content instead is the refinement
-      if that turns out common.
+    * **A catalog source is the entry its classes were read from, not its package name** `done`.
+      A source is named by the classpath entry the loader finds the catalog's `DefaultCatalog` in,
+      then the schema package; `sql_schema` carries the schema and catalog packages, so no reader
+      takes a name apart. Two builds of one package are two sources, one build two graphs read is
+      one, and a catalog only a transitive entry holds is no graph's. Entry plus package first
+      (Alf, 2026-11-13): one build reachable at two paths is stored twice, and keying by content
+      instead is the refinement if that turns out common. A capture handed no classpath still takes
+      the loader's entry; only tests do that, and the node below removes it.
     * **Every read of `sql_table` by record class goes through the graph's sources** `done`. The
       key-row and result-shape defect arms and the emitters' `BuildQuery` and `NodeIdDecodeQuery`
       catalog reads join the graph's sources; every other `sql_table` read already did.
@@ -259,10 +259,12 @@ census it replaced is gone.
     are one code fact". Throwable, lifter, enum and parameter role are classified through
     `ClassAncestry` over the reading graph's classpath and written into shared rows, so the first
     graph's answer is everyone's.
-  * **The test population shares stores across classpaths and catalogs** `blocked`, on the two above.
+  * **The test population shares stores across classpaths and catalogs** `blocked`, on "What a class is by its supertypes is derived per graph".
     `FactGraphs` shards by name alone, the library fixtures are distinct classes compiled
     with and without `-parameters`, graphitron-model's heap pin goes, and a document's `code_` claims
-    read through its graph's entries rather than additively.
+    read through its graph's entries rather than additively. Every capture in the harness passes a
+    classpath, the seven graphitron pipeline runs that pass none among them, and the catalog capture's
+    empty-classpath branch is deleted.
   * **A source declaration is read through the graph's own source roots** `open`. The editor's
     `java_` readers (`DeclarationFacts`' class, field and method declarations) match a class by name
     alone, so a store holding two source roots that declare one class answers a hover or a goto from

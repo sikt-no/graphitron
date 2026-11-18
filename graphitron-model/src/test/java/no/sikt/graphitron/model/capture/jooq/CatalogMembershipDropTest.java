@@ -75,7 +75,7 @@ class CatalogMembershipDropTest {
                 NO_CLASSPATH);
 
             var second = catalogClaims(store.dsl());
-            assertThat(second).isNotEmpty().allMatch(source -> source.startsWith(OTHER_PACKAGE));
+            assertThat(second).isNotEmpty().allMatch(source -> source.endsWith("!" + OTHER_PACKAGE));
             assertThat(second).doesNotContainAnyElementsOf(first);
             assertThat(nodes(store.dsl()))
                 .as("the other catalog has no published_elsewhere, so the type binds no table here")

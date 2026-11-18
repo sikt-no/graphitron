@@ -417,8 +417,8 @@ COMMENT ON COLUMN store_graph_source.source_name IS 'a source the graph''s run r
 COMMENT ON COLUMN store_graph_source.stamp IS 'what this graph''s rows of this source were derived from, or null where it holds a claim but no transcription it may trust. Per graph rather than per source: the stamp on store_source says what the file last hashed to for whoever read it, which answers nothing about whether a given graph has transcribed those bytes, so only this column can tell a reading that a scope is already current and may be left alone';
 COMMENT ON COLUMN store_graph_source.read_at IS 'when this graph last transcribed this source, which is the instant its rows of it carry. The stamp says what the bytes were and this says when they were read, and a reading deciding whether it may leave a scope alone needs both. Not advanced by a reading that skipped the source: the rows still date from the reading that wrote them, and a column claiming otherwise would describe a transcription that never ran';
 COMMENT ON TABLE store_source IS 'A source the store read, store-global rather than graph-keyed: it can say what a file hashed to, never which graph read it. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
-COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, the generated package a jOOQ schema lives in, as the reader spelled it, or a library graphitron itself depends on, by its group and artifact';
-COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, a generated jOOQ schema package, a library on graphitron''s own classpath whose content the store reads, federation-jvm''s federation versions being the one, or the platform, the runtime image the generator runs on, read for its throwables as jrt:/ and stamped by its version and vendor, which is the generator''s JDK rather than the consumer''s --release. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
+COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, a generated jOOQ schema package as one classpath entry holds it (the entry''s path, then !, then the package), or a library graphitron itself depends on, by its group and artifact';
+COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, a generated jOOQ schema package in one classpath entry, a library on graphitron''s own classpath whose content the store reads, federation-jvm''s federation versions being the one, or the platform, the runtime image the generator runs on, read for its throwables as jrt:/ and stamped by its version and vendor, which is the generator''s JDK rather than the consumer''s --release. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
 COMMENT ON COLUMN store_source.stamp IS 'the source''s content identity, spelled <scheme>:<hex> by SourceStamp, so an unchanged source is read once and a currency check can re-hash a cold graph''s files without building its module. Two schemes: sha256: is a hash of bytes this store read, and sha1: is an identity the resolver already established for an artifact it downloaded, supplied by whoever resolved the classpath and never recomputed here, which is what lets a jar whose coordinate cannot be republished under new bytes go unhashed. The tag is load-bearing rather than decorative, comparison being string equality: two schemes never compare equal, so a source whose scheme changed reads as changed and is re-walked once. Schema files are stamped at capture time (one file re-read per schema file, priced against exactly that reader); NULL where nothing resolves to a regular file to hash: a directory root changes on every compile, the bundled directives.graphqls is a resource name, a programmatic caller may hand a bare name, and a jOOQ schema is a package spread across the classpath whose walk is cheap enough not to need one. Also NULL while the source''s rows are being written, and set only once they are all in, so a run that dies mid-load leaves a partition that is re-walked rather than one that claims to be complete';
 COMMENT ON COLUMN store_source.mtime IS 'the filesystem''s last-modified time for this source, read when the source was read. Not a currency signal and deliberately not one: stamp answers whether the bytes changed, and this column exists because a modification time answers a question a hash cannot, which of two sources was written later. That is what orders candidates when several documents declare one coordinate, so a report can say which declaration is the incumbent and which is the incursion rather than naming whichever the reader happened to walk first. Null where the source is not a regular file, a generated jOOQ package and a programmatic label having no modification time to read.';
 COMMENT ON COLUMN store_source.last_seen IS 'when a run last named this source in its input set; the age half of the age/currency distinction, and the bookkeeping a future eviction surface reads';
@@ -5853,15 +5853,19 @@ CREATE TABLE sql_schema (
   table_schema     VARCHAR NOT NULL,
   keys_class_fqn   VARCHAR,
   tables_class_fqn VARCHAR,
+  schema_package   VARCHAR NOT NULL,
+  catalog_package  VARCHAR,
   touched_at       TIMESTAMP,
   PRIMARY KEY (source_name, table_schema),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
 COMMENT ON TABLE sql_schema IS 'One schema the consumer''s catalog declares, carrying the generated artifacts that belong to the schema rather than to any one of its tables. For example the public schema of a codegen source, naming the Keys class holding its key constants and the Tables class holding its table constants.';
-COMMENT ON COLUMN sql_schema.source_name IS 'the generated package the schema lives in; the partition this row belongs to and the key''s leading dimension, as on sql_table';
+COMMENT ON COLUMN sql_schema.source_name IS 'the catalog source the schema was read from, as on sql_table; the partition this row belongs to and the key''s leading dimension';
 COMMENT ON COLUMN sql_schema.table_schema IS 'SQL schema name; empty string when the generated model declares no schema for its tables, which is the same fallback sql_table applies';
 COMMENT ON COLUMN sql_schema.keys_class_fqn IS 'the fully qualified name of the generated Keys class holding this schema''s key constants, resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Keys". The guess and the fact diverge under multi-schema layouts, where each schema gets its own Keys class in its own package. Null when the generated model carries no Keys class for the schema, which is a fact: a schema with no keys has no constants to name. Goto-definition on @reference(key:) lands in this class, so it is a join key rather than a completion nicety.';
 COMMENT ON COLUMN sql_schema.tables_class_fqn IS 'the fully qualified name of the generated Tables class holding this schema''s table constants, on exactly the terms the column beside it states: resolved by loading it off the codegen classpath rather than by concatenating a configured package with ".Tables", the guess and the fact diverging under multi-schema layouts where each schema gets its own Tables class in its own package. Null when the generated model carries no Tables class for the schema, which is a fact rather than a gap. This is the column that lets a reader assemble a table reference without a live catalog: every other part of one is already here or on sql_table, and the constants class was the single piece reachable only through the codegen loader, so its absence was what kept table references a walk-side construction';
+COMMENT ON COLUMN sql_schema.schema_package IS 'the Java package the schema''s classes were generated into, the package half of the source''s name, stated so a reader wanting the package reads it rather than taking the name apart';
+COMMENT ON COLUMN sql_schema.catalog_package IS 'the Java package of the catalog class the schema belongs to, which is what a graph''s jooqPackage names: the column a capture finds the sources of one catalog by, one classpath entry being able to hold several catalogs. Null where jOOQ gives the schema no catalog';
 COMMENT ON COLUMN sql_schema.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_table (
@@ -5881,7 +5885,7 @@ CREATE TABLE sql_table (
   FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
 );
 COMMENT ON TABLE sql_table IS 'One table the consumer''s catalog declares. For example public.film, carrying the kind of object it is, the generated jOOQ table class and the record class its rows bind to.';
-COMMENT ON COLUMN sql_table.source_name IS 'the generated package the table''s schema lives in; the partition this row belongs to and the key''s leading dimension, so two modules'' catalogs carrying one (schema, table) coordinate coexist instead of the second build clobbering the first. The package rather than the classpath entry it was loaded from, because one jar carries every schema a codegen run produced and invalidating the jar would discard them all, while the package is the granularity codegen actually rewrites. Schemas flattened into one package (jOOQ''s outputSchemaToDefault) share a source, which is correct: they are regenerated together';
+COMMENT ON COLUMN sql_table.source_name IS 'the catalog source: the generated package the table''s schema lives in, as the classpath entry it was read from holds it, spelled entry!package; the partition this row belongs to and the key''s leading dimension, so two modules'' catalogs carrying one (schema, table) coordinate coexist, and so do two builds of one package, a stale jar beside a fresh compile, instead of either reading sweeping the other''s rows. Both halves, because one entry carries every schema a codegen run produced, each in a package of its own, and one package may be built twice. One build reachable at two paths is two sources. Schemas flattened into one package (jOOQ''s outputSchemaToDefault) share a source, which is correct: they are regenerated together. A name to join on: the package is sql_schema.schema_package';
 COMMENT ON COLUMN sql_table.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_table.table_type IS 'what kind of table-like object this is, in jOOQ''s TableOptions.TableType vocabulary: TABLE, TEMPORARY, VIEW, MATERIALIZED_VIEW, FUNCTION, EXPRESSION or UNKNOWN. A property of the object every catalog states and this family recorded none of, so the store could not tell a base table from a view. FUNCTION is the value that carries weight today: it marks a table-valued function''s result, which has no primary key and no foreign keys by construction, and that one property is what every carve-out on a function-backed field turns on. A reader asking whether a name is table-valued asks this column rather than reaching back into the live catalog. The callable behind a FUNCTION row is its own subject in sql_routine, joined on the shared (source, schema, name).';
@@ -5909,7 +5913,7 @@ CREATE TABLE sql_table_record_supertype (
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE sql_table_record_supertype IS 'Every type a table''s generated jOOQ record is, itself excluded: the superclass chain above the record class and every interface it or they implement, transitively. For example public.customer''s CustomerRecord being an UpdatableRecordImpl, an UpdatableRecord, a TableRecord and a Record. Captured rather than derived, which is the one thing about this relation a reader has to know before reading it: the classpath census reads the generated jOOQ package''s classes as headers, without their members, and the store holds no supertype edge above CustomerRecord, so no closure could climb from one. The catalog walk holds the record Class itself, Table.getRecordType() being what sql_table.record_class_fqn is read from, so its declared ancestry is one more fact off a class the walk already has. It holds the closure and not the edges, unlike the census pair below it, and the reason is the same fact: the chain above a generated record runs through jOOQ''s own runtime classes, which no census scans and which are not tables, so the store holds no edges a closure could be recomputed from. A census-side twin of this relation once existed, a closure over the classpath''s own supertype edges, and it is gone: nothing ever read it, and what a reader wanting to climb a consumer class actually asks is the code family, where the reading resolves a supertype chain while it has the classfiles open. java.lang.Object is a row here, where a relation of declared edges would have left it out to keep itself to what the source wrote: this states what the class is rather than what it declared, and a record is an Object, which is also what a live Class.isAssignableFrom says. Absent for a table jOOQ generated no record for, the catalog answering org.jooq.Record there, which is no record class rather than a record named that.';
-COMMENT ON COLUMN sql_table_record_supertype.source_name IS 'the generated package the table''s schema lives in, as on sql_table; the key''s leading dimension and the refresh unit the whole sql_ family is scoped by';
+COMMENT ON COLUMN sql_table_record_supertype.source_name IS 'the catalog source the table was read from, as on sql_table; the key''s leading dimension and the refresh unit the whole sql_ family is scoped by';
 COMMENT ON COLUMN sql_table_record_supertype.table_schema IS 'the table''s SQL schema, as on sql_table';
 COMMENT ON COLUMN sql_table_record_supertype.table_name IS 'the table''s SQL name, as on sql_table; with the two columns above, the table whose record class this row is about. Keyed on the table rather than on the record class, so the row is deleted with its table and no reader has to reconcile two spellings of one identity';
 COMMENT ON COLUMN sql_table_record_supertype.supertype_name IS 'the fully-qualified binary name of one type the record class is, a nested one spelled with the $ the JVM uses, and spelled the way the reading spells a class name so a declared parameter type compares to it exactly. Every element of the closure and not only the declared parents, the relation holding a closure for the reason its own comment gives; the record class itself is deliberately not a row, a reader asking about it holding sql_table.record_class_fqn already. Frequently not a class the reading reached and never a foreign key: jOOQ''s runtime classes are not scanned, which is what makes capturing this necessary rather than derivable';
@@ -5934,7 +5938,7 @@ CREATE TABLE sql_table_field (
   CHECK (kind IN ('COLUMN', 'EMBEDDABLE'))
 );
 COMMENT ON TABLE sql_table_field IS 'One field one table''s generated class declares, a column or an embeddable, which jOOQ reads and writes as one typed value. For example film.title, a column whose value is a String, and period on public.embedded_period, an embeddable whose value is its record.';
-COMMENT ON COLUMN sql_table_field.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_table_field.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_table_field.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_table_field.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_table_field.field_name IS 'the field''s name: a column''s SQL name, or the embeddable''s name, which names no column of the table. A field of the generated table class, a jOOQ TableField, not a GraphQL field';
@@ -5973,7 +5977,7 @@ CREATE TABLE sql_column (
 );
 COMMENT ON TABLE sql_column IS 'One column of one table the consumer''s catalog declares. For example film.title, a varchar the generated model binds to java.lang.String.';
 COMMENT ON COLUMN sql_column.kind IS 'always COLUMN: a column is the COLUMN subtype of sql_table_field, holding the facts a database column has and an embeddable does not, and the kind is carried so the foreign key into it holds the kind as well as the field';
-COMMENT ON COLUMN sql_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_column.column_name IS 'SQL column name';
@@ -6003,7 +6007,7 @@ CREATE TABLE sql_column_record_accessor (
     REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE sql_column_record_accessor IS 'The public no-argument getter this table''s generated record reads one column through. For example film.title, which FilmRecord reads through getTitle, the Bean Validation property title.';
-COMMENT ON COLUMN sql_column_record_accessor.source_name IS 'the generated package the table''s schema lives in, as on sql_column; the key''s leading dimension and the refresh unit the sweep is scoped by';
+COMMENT ON COLUMN sql_column_record_accessor.source_name IS 'the catalog source the table was read from, as on sql_column; the key''s leading dimension and the refresh unit the sweep is scoped by';
 COMMENT ON COLUMN sql_column_record_accessor.table_schema IS 'the table''s SQL schema, as on sql_column';
 COMMENT ON COLUMN sql_column_record_accessor.table_name IS 'the table''s SQL name, as on sql_column';
 COMMENT ON COLUMN sql_column_record_accessor.column_name IS 'the column''s SQL name, as on sql_column; with the three columns above, the column this row is about';
@@ -6021,7 +6025,7 @@ CREATE TABLE sql_enum_binding (
   FOREIGN KEY (source_name) REFERENCES store_source (source_name)
 );
 COMMENT ON TABLE sql_enum_binding IS 'One Java enum class some column of one catalog source binds to. For example the class generated for the mpaa_rating database type, which film.rating binds to, and equally a hand-written enum a configured converter binds a column to.';
-COMMENT ON COLUMN sql_enum_binding.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension. A class reachable from two sources is two rows, on code_class.source_name''s terms';
+COMMENT ON COLUMN sql_enum_binding.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension. A class reachable from two sources is two rows, on code_class.source_name''s terms';
 COMMENT ON COLUMN sql_enum_binding.class_fqn IS 'the fully qualified name of the enum class, as Field.getType() reports it; the value a declared parameter type is compared against, and the reason the comparison can be an equality rather than a fold: both sides are binary names nobody wrote by hand. An array-typed column contributes no row, its bound type being the array and not the element';
 COMMENT ON COLUMN sql_enum_binding.table_schema IS 'the SQL schema declaring the database enum type this class was generated for; NULL where the class names no catalog type, which is the converter-bound Java enum the table comment describes, and NULL again where it names one that is not schema-scoped. Not a foreign key into sql_schema for the first reason: that half is not a schema the walk failed to resolve, it is a row for which no schema is the right answer';
 COMMENT ON COLUMN sql_enum_binding.type_name IS 'the database enum type''s own name, as the generated class reports it; NULL where the class names no catalog type, which is the wider of the two silences beside it. Carried so a reader can name the type an author would see in their database rather than only the class jOOQ generated from it';
@@ -6040,7 +6044,7 @@ CREATE TABLE sql_enum_binding_literal (
   FOREIGN KEY (source_name, class_fqn) REFERENCES sql_enum_binding (source_name, class_fqn) ON DELETE CASCADE
 );
 COMMENT ON TABLE sql_enum_binding_literal IS 'One constant of one bound enum class, with the value the database stores for it. For example the constant PG_13 of the class generated for mpaa_rating, whose literal is PG-13.';
-COMMENT ON COLUMN sql_enum_binding_literal.source_name IS 'the owning partition''s generated-package source, as on sql_enum_binding';
+COMMENT ON COLUMN sql_enum_binding_literal.source_name IS 'the owning partition''s catalog source, as on sql_enum_binding';
 COMMENT ON COLUMN sql_enum_binding_literal.class_fqn IS 'the bound enum class, as on sql_enum_binding';
 COMMENT ON COLUMN sql_enum_binding_literal.constant_name IS 'the constant''s Java name, Enum.name(); with the class, the key';
 COMMENT ON COLUMN sql_enum_binding_literal.literal IS 'the value the database stores for the constant: EnumType.getLiteral() on a jOOQ-generated enum, where it differs from the name whenever the literal is not a Java identifier (PG-13 against PG_13), and the name itself on a converter-bound Java enum, which has no literal of its own and whose converter is what the column stores';
@@ -6069,7 +6073,7 @@ CREATE TABLE sql_constraint (
 COMMENT ON TABLE sql_constraint IS 'One named constraint of one table. For example film_pkey on public.film, of type PRIMARY KEY, at its position in the table''s uniqueness enumeration.';
 COMMENT ON COLUMN sql_constraint.jooq_name IS 'the generated Keys-class constant name for this constraint, which is what an author types in @reference(key:). Resolved by reference identity over the Keys class''s fields rather than by any formula over the constraint name, so a name colliding across schemas cannot mis-resolve; that resolution needs the live key on the codegen classpath and is unrecoverable afterwards. Null when the constraint resolves to no constant, which is a fact and not a failure: a generated model need not carry a Keys class, and a key with no constant is one nobody can name. Nullable where sql_table.jooq_name and sql_column.jooq_name are not, because a table and a column always have a generated Java name and a constraint need not.';
 COMMENT ON COLUMN sql_constraint.key_position IS 'where this constraint sits in the table''s uniqueness enumeration, jOOQ''s Table.getKeys() order with the primary key folded in, counting from zero. Captured rather than derived because the order is the generated model''s and nothing in the constraint''s own name or columns recovers it. It exists because a consumer picking one row-identifying key out of several has to pick the one the generator picks, and the generator walks this enumeration; without the position a relation ranking candidate keys would have to invent a tiebreaker among unique keys, and an invented precedence that happens to agree today is the kind of second answer that diverges silently later. Null on a FOREIGN KEY row, which is not in this enumeration at all: absence here means the constraint identifies no row rather than that its position is unknown.';
-COMMENT ON COLUMN sql_constraint.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_constraint.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_constraint.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_constraint.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_constraint.constraint_name IS 'SQL constraint name';
@@ -6098,7 +6102,7 @@ CREATE TABLE sql_constraint_column (
     REFERENCES sql_column (source_name, table_schema, table_name, column_name)
 );
 COMMENT ON TABLE sql_constraint_column IS 'One position in one constraint''s column list, naming the column that sits there. For example position 0 of film_actor''s primary key, naming actor_id.';
-COMMENT ON COLUMN sql_constraint_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_constraint_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_constraint_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_constraint_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_constraint_column.constraint_name IS 'SQL constraint name';
@@ -6119,7 +6123,7 @@ CREATE TABLE sql_primary_key (
   CHECK (constraint_type = 'PRIMARY KEY')
 );
 COMMENT ON TABLE sql_primary_key IS 'One table''s primary key, naming the constraint that is it. For example public.film, whose primary key is the constraint film_pkey.';
-COMMENT ON COLUMN sql_primary_key.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_primary_key.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_primary_key.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_primary_key.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_primary_key.constraint_name IS 'the name of the PRIMARY KEY constraint in sql_constraint';
@@ -6148,7 +6152,7 @@ CREATE TABLE sql_name_matched_key_column (
     REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE
 );
 COMMENT ON TABLE sql_name_matched_key_column IS 'One column of the key that matches a table-valued function''s result to a table by column name. For example a function result exposing organisasjonskode, matched against the primary key of public.organisasjon, is one row at position 0.';
-COMMENT ON COLUMN sql_name_matched_key_column.source_name IS 'the departing function result''s generated-package source, as on sql_table';
+COMMENT ON COLUMN sql_name_matched_key_column.source_name IS 'the departing function result''s catalog source, as on sql_table';
 COMMENT ON COLUMN sql_name_matched_key_column.table_schema IS 'the departing function result''s SQL schema';
 COMMENT ON COLUMN sql_name_matched_key_column.table_name IS 'the departing function result''s SQL name; always a table of type FUNCTION, this rule having no subject where a foreign key could be read instead';
 COMMENT ON COLUMN sql_name_matched_key_column.to_source_name IS 'the arriving table''s catalog source';
@@ -6173,7 +6177,7 @@ CREATE TABLE sql_column_spelling (
   CHECK (reach >= 1)
 );
 COMMENT ON TABLE sql_column_spelling IS 'One column a written name reaches on a table, folded by case: by its SQL name where any column of the table carries that name, else by its generated jOOQ name. For example the spelling FILM_ID reaches public.film.film_id by SQL_NAME, with a reach of one.';
-COMMENT ON COLUMN sql_column_spelling.source_name IS 'the table''s generated-package source, as on sql_table';
+COMMENT ON COLUMN sql_column_spelling.source_name IS 'the table''s catalog source, as on sql_table';
 COMMENT ON COLUMN sql_column_spelling.table_schema IS 'the table''s SQL schema';
 COMMENT ON COLUMN sql_column_spelling.table_name IS 'the table''s SQL name';
 COMMENT ON COLUMN sql_column_spelling.spelling_upper IS 'the name folded by case, which is where an authored spelling meets the catalog: a reader folds the author''s @field(name:) or field name and joins here, and compares nothing else';
@@ -6206,11 +6210,11 @@ CREATE TABLE sql_referential_constraint (
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name)
 );
 COMMENT ON TABLE sql_referential_constraint IS 'One foreign key''s reference to the constraint it resolves against. For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.';
-COMMENT ON COLUMN sql_referential_constraint.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_referential_constraint.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_referential_constraint.table_schema IS 'schema of the declaring table';
 COMMENT ON COLUMN sql_referential_constraint.table_name IS 'the declaring (source) table';
 COMMENT ON COLUMN sql_referential_constraint.constraint_name IS 'SQL constraint name';
-COMMENT ON COLUMN sql_referential_constraint.referenced_source_name IS 'the referenced constraint''s own generated-package source: equal to source_name for the ordinary in-package reference, different exactly when a foreign key crosses schemas that codegen wrote into different packages, which the multi-schema layout produces. Part of the composite reference, since the constraint''s key leads with its source';
+COMMENT ON COLUMN sql_referential_constraint.referenced_source_name IS 'the referenced constraint''s own catalog source: equal to source_name for the ordinary in-package reference, different exactly when a foreign key crosses schemas that codegen wrote into different packages, which the multi-schema layout produces. Part of the composite reference, since the constraint''s key leads with its source';
 COMMENT ON COLUMN sql_referential_constraint.referenced_schema IS 'schema of the referenced constraint''s table; part of the composite reference, not a denormalisation';
 COMMENT ON COLUMN sql_referential_constraint.referenced_table IS 'the referenced constraint''s table';
 COMMENT ON COLUMN sql_referential_constraint.referenced_constraint_name IS 'the referenced constraint''s name';
@@ -6241,12 +6245,12 @@ CREATE TABLE sql_referential_constraint_column (
     REFERENCES sql_constraint_column (source_name, table_schema, table_name, constraint_name, position)
 );
 COMMENT ON TABLE sql_referential_constraint_column IS 'One column of one foreign key, and the position of the referenced key it names. For example position 0 of reordered_fk_child_parent_fkey, fk_b, names position 1 of reordered_pk_parent_pkey, pk_b.';
-COMMENT ON COLUMN sql_referential_constraint_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_referential_constraint_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_referential_constraint_column.table_schema IS 'schema of the declaring table';
 COMMENT ON COLUMN sql_referential_constraint_column.table_name IS 'the declaring (source) table';
 COMMENT ON COLUMN sql_referential_constraint_column.constraint_name IS 'the foreign key''s name';
 COMMENT ON COLUMN sql_referential_constraint_column.position IS 'the place in the foreign key''s own column list, 0-based; with the four columns above, the foreign key''s own sql_constraint_column row';
-COMMENT ON COLUMN sql_referential_constraint_column.referenced_source_name IS 'the referenced constraint''s generated-package source, forwarded from sql_referential_constraint so the column can only name a position of the constraint its key references';
+COMMENT ON COLUMN sql_referential_constraint_column.referenced_source_name IS 'the referenced constraint''s catalog source, forwarded from sql_referential_constraint so the column can only name a position of the constraint its key references';
 COMMENT ON COLUMN sql_referential_constraint_column.referenced_schema IS 'schema of the referenced constraint''s table, forwarded as the source above is';
 COMMENT ON COLUMN sql_referential_constraint_column.referenced_table IS 'the referenced constraint''s table, forwarded as the source above is';
 COMMENT ON COLUMN sql_referential_constraint_column.referenced_constraint_name IS 'the referenced constraint''s name, forwarded as the source above is';
@@ -6267,10 +6271,10 @@ CREATE TABLE sql_table_reference (
                referenced_source_name, referenced_schema, referenced_table)
 );
 COMMENT ON TABLE sql_table_reference IS 'One ordered pair of tables at least one foreign key connects, and how many connect it. For example film_actor to film is one row saying 1, and a pair two foreign keys join is one row saying 2.';
-COMMENT ON COLUMN sql_table_reference.source_name IS 'the declaring table''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_table_reference.source_name IS 'the declaring table''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_table_reference.table_schema IS 'schema of the declaring table, the end the foreign keys sit on';
 COMMENT ON COLUMN sql_table_reference.table_name IS 'the declaring table''s SQL name';
-COMMENT ON COLUMN sql_table_reference.referenced_source_name IS 'the referenced table''s own generated-package source, equal to source_name for the ordinary in-package reference and different exactly where a foreign key crosses schemas codegen wrote into different packages';
+COMMENT ON COLUMN sql_table_reference.referenced_source_name IS 'the referenced table''s own catalog source, equal to source_name for the ordinary in-package reference and different exactly where a foreign key crosses schemas codegen wrote into different packages';
 COMMENT ON COLUMN sql_table_reference.referenced_schema IS 'schema of the referenced table';
 COMMENT ON COLUMN sql_table_reference.referenced_table IS 'the referenced table''s SQL name. The pair is ordered: the declaring end and the referenced end are not interchangeable, and a pair keyed the other way round is a different row or no row at all';
 COMMENT ON COLUMN sql_table_reference.constraints IS 'how many foreign keys connect the pair in this direction; 1 where the route between the two tables is unambiguous, which is what a reader discovering a key rather than naming one tests for. Counted here rather than by each reader, because a reader that counts is a per-row aggregate over the census and this is a fact about the catalog that does not vary with who asks';
@@ -6286,7 +6290,7 @@ CREATE TABLE sql_index (
   FOREIGN KEY (source_name, table_schema, table_name) REFERENCES sql_table (source_name, table_schema, table_name)
 );
 COMMENT ON TABLE sql_index IS 'One index of one table, which is the population @order(index:) and @index resolve against. For example idx_actor_last_name on public.actor.';
-COMMENT ON COLUMN sql_index.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_index.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_index.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_index.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_index.index_name IS 'SQL index name';
@@ -6305,7 +6309,7 @@ CREATE TABLE sql_index_column (
     REFERENCES sql_index (source_name, table_schema, table_name, index_name)
 );
 COMMENT ON TABLE sql_index_column IS 'One position in one index''s column list, naming the column that sits there. For example position 0 of idx_actor_last_name, naming last_name.';
-COMMENT ON COLUMN sql_index_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_index_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_index_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_index_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_index_column.index_name IS 'SQL index name';
@@ -6331,7 +6335,7 @@ CREATE TABLE sql_embeddable_column (
   CHECK (position >= 0)
 );
 COMMENT ON TABLE sql_embeddable_column IS 'One column one embeddable covers, at its position. For example position 0 of period on public.embedded_period, naming starts_on.';
-COMMENT ON COLUMN sql_embeddable_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_embeddable_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_embeddable_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_embeddable_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_embeddable_column.embeddable_name IS 'the embeddable covering the column, an EMBEDDABLE field of sql_table_field';
@@ -6354,7 +6358,7 @@ CREATE TABLE sql_routine (
   FOREIGN KEY (source_name, table_schema) REFERENCES sql_schema (source_name, table_schema)
 );
 COMMENT ON TABLE sql_routine IS 'One callable the consumer''s catalog declares. For example the table-valued function public.films_for_actor, whose generated call surface is the Routines method filmsForActor.';
-COMMENT ON COLUMN sql_routine.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_routine.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_routine.table_schema IS 'SQL schema the routine lives in';
 COMMENT ON COLUMN sql_routine.routine_name IS 'SQL routine name; for a table-valued function this is also its sql_table row''s table_name, the two being one database object read two ways. The key inherits sql_table''s one hole with it: an overload set sharing a SQL name collides in both relations, jOOQ distinguishing overloads only by generated class name';
 COMMENT ON COLUMN sql_routine.routine_type IS 'the standard''s ROUTINE_TYPE vocabulary: FUNCTION or PROCEDURE. FUNCTION for a table-valued function and for a scalar function, PROCEDURE for a routine that returns no value; a routine with a sql_table row of the same name is table-valued, one without is called through its Configuration-first method. It is the discriminator that lets the other form arrive without reshaping, which is the whole argument for a supertype relation';
@@ -6378,7 +6382,7 @@ CREATE TABLE sql_routine_parameter (
     REFERENCES sql_routine (source_name, table_schema, routine_name)
 );
 COMMENT ON TABLE sql_routine_parameter IS 'One position in one routine''s call-surface parameter list, as the generated method takes it. For example position 0 of public.films_for_actor, a java.lang.Integer the generated method names pActorId.';
-COMMENT ON COLUMN sql_routine_parameter.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_routine_parameter.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_routine_parameter.table_schema IS 'SQL schema the routine lives in';
 COMMENT ON COLUMN sql_routine_parameter.routine_name IS 'SQL routine name';
 COMMENT ON COLUMN sql_routine_parameter.position IS '0-based position in the call surface''s parameter list, which is the routine''s declaration order';
@@ -6399,7 +6403,7 @@ CREATE TABLE sql_node_metadata (
   CHECK (type_id <> '')
 );
 COMMENT ON TABLE sql_node_metadata IS 'One table whose generated jOOQ class publishes node-identity metadata graphitron can use. For example a film table class stating a type id of film and a key-columns array naming film_id, against a table class stating neither, which has no row here at all.';
-COMMENT ON COLUMN sql_node_metadata.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_metadata.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_metadata.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_metadata.table_name IS 'SQL table name. With the two columns above this is sql_table''s full key: the metadata is a property of the table rather than of the class, which is why the key is the table''s and not a class name';
 COMMENT ON COLUMN sql_node_metadata.type_id IS 'the type id the class states, a non-empty string';
@@ -6419,7 +6423,7 @@ CREATE TABLE sql_node_key_column (
     REFERENCES sql_column (source_name, table_schema, table_name, column_name)
 );
 COMMENT ON TABLE sql_node_key_column IS 'One position in the key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to. For example position 0 of a film table class''s array, naming film_id.';
-COMMENT ON COLUMN sql_node_key_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_key_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_key_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_key_column.table_name IS 'SQL table name';
 COMMENT ON COLUMN sql_node_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: the encoded identity depends on the declared order, so a reader that recovered the order from the table''s columns or from a key would encode ids that disagree with the ones already issued';
@@ -6436,7 +6440,7 @@ CREATE TABLE sql_node_metadata_unreadable (
     REFERENCES sql_table (source_name, table_schema, table_name)
 );
 COMMENT ON TABLE sql_node_metadata_unreadable IS 'One table whose generated class declares node-identity metadata graphitron cannot use. For example a table class stating __NODE_TYPE_ID and no __NODE_KEY_COLUMNS, or a key-columns array naming a column the table does not have.';
-COMMENT ON COLUMN sql_node_metadata_unreadable.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_metadata_unreadable.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_metadata_unreadable.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_metadata_unreadable.table_name IS 'SQL table name; with the two columns above, sql_table''s key';
 COMMENT ON COLUMN sql_node_metadata_unreadable.touched_at IS 'when the reading that produced this row ran, swept with the catalog''s other rows';
@@ -6455,7 +6459,7 @@ CREATE TABLE sql_node_legacy_key_column (
     REFERENCES sql_column (source_name, table_schema, table_name, column_name)
 );
 COMMENT ON TABLE sql_node_legacy_key_column IS 'One position in the legacy key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to. For example position 2 of an inventory table class''s __NODE_LEGACY_KEY_COLUMNS, naming last_update.';
-COMMENT ON COLUMN sql_node_legacy_key_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_legacy_key_column.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_legacy_key_column.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_legacy_key_column.table_name IS 'SQL table name. The foreign key is into sql_node_metadata, so a legacy array on a class publishing no usable identity pair has no row here';
 COMMENT ON COLUMN sql_node_legacy_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: it is the order the values sit in inside every id issued under the old key';
@@ -6472,7 +6476,7 @@ CREATE TABLE sql_node_legacy_key_unreadable (
     REFERENCES sql_table (source_name, table_schema, table_name)
 );
 COMMENT ON TABLE sql_node_legacy_key_unreadable IS 'One table whose generated class declares a legacy node key-columns array graphitron cannot use. For example a table class stating __NODE_LEGACY_KEY_COLUMNS with a null entry, or stating it with no usable __NODE_TYPE_ID and __NODE_KEY_COLUMNS beside it.';
-COMMENT ON COLUMN sql_node_legacy_key_unreadable.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_legacy_key_unreadable.source_name IS 'the owning partition''s catalog source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_node_legacy_key_unreadable.table_schema IS 'SQL schema the table lives in';
 COMMENT ON COLUMN sql_node_legacy_key_unreadable.table_name IS 'SQL table name; with the two columns above, sql_table''s key';
 COMMENT ON COLUMN sql_node_legacy_key_unreadable.touched_at IS 'when the reading that produced this row ran, swept with the catalog''s other rows';

@@ -41,8 +41,8 @@ class StoreFixtureTest {
     void aSharedStoreACaseInsertedIntoFailsItsClass() {
         var shared = StoreFixture.held().sharedCatalog();
         shared.open(tmp);
-        shared.handle().dsl().execute("INSERT INTO sql_schema (source_name, table_schema)"
-            + " SELECT source_name, 'written_by_a_case' FROM store_source LIMIT 1");
+        shared.handle().dsl().execute("INSERT INTO sql_schema (source_name, table_schema, schema_package)"
+            + " SELECT source_name, 'written_by_a_case', 'written.by.a.case' FROM store_source LIMIT 1");
 
         assertThatThrownBy(shared::close)
             .isInstanceOf(IllegalStateException.class)

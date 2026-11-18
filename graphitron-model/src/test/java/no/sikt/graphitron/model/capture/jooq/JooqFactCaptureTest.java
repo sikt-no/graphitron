@@ -124,11 +124,11 @@ class JooqFactCaptureTest {
     void capturingTwiceIsIdempotent() {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), FIRST);
+            capture(store.dsl(), GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
             int afterFirst = store.dsl().fetchCount(SQL_TABLE);
             int columnsAfterFirst = store.dsl().fetchCount(SQL_COLUMN);
 
-            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), SECOND);
+            readAgain(store.dsl(), GRAPH, loader(), List.of(ClasspathCorpus.catalog()), SECOND);
 
             assertThat(store.dsl().fetchCount(SQL_TABLE))
                 .as("the second reading replaces the first rather than adding to or emptying it")
@@ -186,7 +186,7 @@ class JooqFactCaptureTest {
     void aTableTheCatalogNoLongerHasIsSwept() {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), FIRST);
+            capture(store.dsl(), GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
             String source = store.dsl().select(SQL_TABLE.SOURCE_NAME).from(SQL_TABLE)
                 .limit(1).fetchOne(SQL_TABLE.SOURCE_NAME);
             String schema = store.dsl().select(SQL_TABLE.TABLE_SCHEMA).from(SQL_TABLE)
@@ -198,7 +198,7 @@ class JooqFactCaptureTest {
                     "gone.Dropped", "gone.DroppedRecord", FIRST.minusDays(1))
                 .execute();
 
-            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), SECOND);
+            readAgain(store.dsl(), GRAPH, loader(), List.of(ClasspathCorpus.catalog()), SECOND);
 
             assertThat(store.dsl().fetchCount(SQL_TABLE,
                     SQL_TABLE.TABLE_NAME.eq("dropped_by_the_dba")))
@@ -329,18 +329,37 @@ class JooqFactCaptureTest {
                 }
             }
         };
-        var other = new ClasspathEntry(elsewhere, ClasspathEntry.Origin.TRANSITIVE, "elsewhere", null);
+        var other = new ClasspathEntry(elsewhere, ClasspathEntry.Origin.DECLARED, "elsewhere", null);
         try (var store = GraphitronStore.inMemory()) {
             var dsl = store.dsl();
             SeededStore.seedGraph(dsl, GRAPH);
             SeededStore.seedGraph(dsl, OTHER);
             capture(dsl, GRAPH, loader(), List.of(ClasspathCorpus.catalog()), FIRST);
 
+            int tables = dsl.fetchCount(SQL_TABLE);
+
             capture(dsl, OTHER, moved, List.of(ClasspathCorpus.catalog(), other), SECOND);
 
-            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.ne(SECOND)))
-                .as("every row is the second reading's").isZero();
+            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(SECOND)))
+                .as("the second reading wrote the catalog again, under the other entry's sources")
+                .isEqualTo(tables).isPositive();
+            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(FIRST)))
+                .as("and the first entry's rows stand, another source no sweep of it reaches")
+                .isEqualTo(tables);
+            assertThat(claims(dsl, OTHER)).as("each graph claims its own entry's sources")
+                .doesNotContainAnyElementsOf(claims(dsl, GRAPH));
         }
+    }
+
+    /**
+     * A capture that reads the catalog again rather than finding it vouched for: what a rebuilt
+     * entry leaves, its stamp no longer the one the catalog was read under.
+     */
+    private static void readAgain(DSLContext dsl, String graph, ClassLoader loader,
+                                  List<ClasspathEntry> classpath, LocalDateTime touchedAt) {
+        dsl.update(STORE_SOURCE).setNull(STORE_SOURCE.STAMP)
+            .where(STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA")).execute();
+        capture(dsl, graph, loader, classpath, touchedAt);
     }
 
     private static void capture(DSLContext dsl, String graph, ClassLoader loader,
@@ -359,7 +378,7 @@ class JooqFactCaptureTest {
     private static void withCapture(LocalDateTime touchedAt, java.util.function.Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
             SeededStore.seedGraph(store.dsl(), GRAPH);
-            JooqFactCapture.capture(store.dsl(), GRAPH, JOOQ_PACKAGE, loader(), touchedAt);
+            capture(store.dsl(), GRAPH, loader(), List.of(ClasspathCorpus.catalog()), touchedAt);
             body.accept(store.dsl());
         }
     }
