@@ -1,7 +1,9 @@
 # A filter argument compares the column it names, and one naming no column of the table the field
 # filters is compared by nothing: the value a client sends goes nowhere. Query.filmsBy's bogus is
 # COLUMN_UNRESOLVED, the detail its spelling, and so is Query.filmsPaged's, a filter on the rows a
-# connection pages. An argument naming a column, rating through
+# connection pages. A @lookupKey argument naming no column, Query.filmsByKey's bogusKey, has no
+# column to drive its lookup and is COLUMN_UNRESOLVED as well, where filmId, naming film_id, draws
+# nothing. An argument naming a column, rating through
 # @field(name:), draws nothing, and neither does one its own @condition takes. A filter's input field
 # naming no column is input-object-build's.
 
@@ -9,6 +11,7 @@ type Film @table(name: "film") { title: String }
 
 type Query {
   filmsBy(rating: String @field(name: "rating"), bogus: String): [Film!]! @defaultOrder(primaryKey: true)
+  filmsByKey(filmId: [Int!] @field(name: "film_id") @lookupKey, bogusKey: [Int!] @lookupKey): [Film]
   filmsPaged(rating: String @field(name: "rating"), bogus: String): [Film!]!
     @asConnection @defaultOrder(primaryKey: true)
   filmsByTitlePrefix(titlePrefix: String @condition(condition: {
@@ -20,11 +23,13 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   code,              coordinate,            detail
   COLUMN_UNRESOLVED, Query.filmsBy(bogus:), bogus
   COLUMN_UNRESOLVED, Query.filmsPaged(bogus:), bogus
+  COLUMN_UNRESOLVED, Query.filmsByKey(bogusKey:), bogusKey
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,              coordinate
   COLUMN_UNRESOLVED, Query.filmsBy(rating:)
   COLUMN_UNRESOLVED, Query.filmsPaged(rating:)
+  COLUMN_UNRESOLVED, Query.filmsByKey(filmId:)
   COLUMN_UNRESOLVED, Query.filmsByTitlePrefix(titlePrefix:)
   """)

@@ -19624,7 +19624,7 @@ UNION ALL
 -- it, an overriding condition or a call reading the object; so no predicate compares it and the value
 -- a client sends goes nowhere.
 -- Its leaves only: an input object is judged by its fields. One built into a class or record is judged
--- member by member, and a @lookupKey argument by the lookup's own rules. The detail is the spelling.
+-- member by member. The detail is the spelling.
 SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
        COALESCE(da.source_column, el.source_column),
        'COLUMN_UNRESOLVED', MIN(COALESCE(cl.named, o.name)), 'occurrence-tenants'
@@ -19661,9 +19661,14 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
                     WHERE ni.graph_name = o.graph_name AND ni.coordinate = o.coordinate)
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_overridden ov
                     WHERE ov.graph_name = o.graph_name AND ov.coordinate = o.coordinate)
+   -- A @lookupKey argument naming no column is judged here too, a lookup needing a column to drive its
+   -- join; one that decodes a node id is the lookup's own node-id rules'.
    AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application lk
                     WHERE lk.graph_name = o.graph_name AND lk.coordinate = o.element_coordinate
-                      AND lk.directive_name = 'lookupKey')
+                      AND lk.directive_name = 'lookupKey'
+                      AND EXISTS (SELECT 1 FROM graphitron_directive_application ni
+                                   WHERE ni.graph_name = lk.graph_name AND ni.coordinate = lk.coordinate
+                                     AND ni.directive_name = 'nodeId'))
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
                      JOIN graphitron_occurrence_taken t
                        ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
