@@ -18957,8 +18957,9 @@ WITH argmapping (graph_name, coordinate, call_coordinate, call, key_position) AS
      AND kc.call_coordinate = l.call_coordinate
    WHERE l.target_kind = 'TENANT' AND l.directive_name = 'service' AND l.owner = 'service'
 ),
--- An argument or input field written @tenant, under the @service call of the field it is read by.
--- One also written @nodeId binds nothing: its decoded id names the tenant, and the marker is refused.
+-- An argument or input field written @tenant, under the root @service call of the field it is read
+-- by. One also written @nodeId binds nothing: its decoded id names the tenant, and the marker is
+-- refused; nor does one a child service reads, which runs on its parent's tenant.
 directive (graph_name, coordinate, call_coordinate, call) AS (
   SELECT o.graph_name, o.coordinate, c.coordinate, c.call
     FROM graphql_directive_application da
@@ -18967,6 +18968,8 @@ directive (graph_name, coordinate, call_coordinate, call) AS (
      AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
     JOIN graphitron_occurrence_call c
       ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE'
+    JOIN graphitron_occurrence_producer op
+      ON op.graph_name = c.graph_name AND op.coordinate = c.coordinate AND op.start = 'ROOT'
    WHERE da.directive_name = 'tenant'
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application n
                       WHERE n.graph_name = da.graph_name AND n.coordinate = da.coordinate
@@ -19228,6 +19231,25 @@ SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_VALU
 -- A scalar whose class is unknown is not judged here; its own rule says so.
  WHERE x.value_class <> x.tenant_class AND x.source_name IS NOT NULL
  GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
+UNION ALL
+-- An argument or input field written @tenant and read by a field that is not a root @service, at the
+-- @tenant: a child service runs on its parent's tenant, and a query binds it through @field(name:)
+-- on the tenant column. The detail is the first such field, as declared.
+SELECT da.graph_name, da.source_name, da.source_line, da.source_column, 'TENANT_SITE_UNSUPPORTED',
+       MIN(fo.element_coordinate), 'occurrence-tenants'
+  FROM graphql_directive_application da
+  JOIN graphitron_occurrence o
+    ON o.graph_name = da.graph_name AND o.element_coordinate = da.coordinate
+   AND o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+  JOIN graphitron_occurrence fo ON fo.graph_name = o.graph_name AND fo.coordinate = o.field_coordinate
+ WHERE da.directive_name = 'tenant'
+   AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_call c
+                     JOIN graphitron_occurrence_producer op
+                       ON op.graph_name = c.graph_name AND op.coordinate = c.coordinate
+                      AND op.start = 'ROOT'
+                    WHERE c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate
+                      AND c.call_kind = 'SERVICE')
+ GROUP BY da.graph_name, da.source_name, da.source_line, da.source_column
 UNION ALL
 -- An argument or input field written both @tenant and @nodeId, at the @tenant: the decoded id already
 -- names its tenant, so the marker says nothing the key does not.
@@ -29237,7 +29259,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_TENANT_FAN_OUT_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_TENANT_FAN_OUT_UNSUPPORTED',
    'A child @service under a global table reads a tenant''s rows by a key landing on the tenant column, so its parents would be grouped by the tenant each names, which is not generated for a service yet: read the rows with a field graphitron fetches, or move the service under a type whose rows a tenant holds.'),
   ('TENANT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_SITE_UNSUPPORTED',
-   'An argMapping names $tenant where nothing routes by it yet: $tenant names the tenant of a @service''s call, so write it in the @service''s argMapping.'),
+   'An argMapping names $tenant, or @tenant marks an argument or input field, where nothing routes by it yet: the tenant is named for a root @service''s call, so write $tenant in that @service''s argMapping, or mark a value it reads. A child service runs on its parent''s tenant, and a query binds it through @field(name:) on the tenant column.'),
   ('CONTEXT_SITE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_CONTEXT_SITE_UNSUPPORTED',
    'An argMapping binds a parameter to $context.<key>, which this site does not read yet: name the key in contextArguments where the directive takes them, which fills the parameter of the same name.'),
   ('DISCRIMINATE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_DISCRIMINATE_WITHOUT_TABLE',
