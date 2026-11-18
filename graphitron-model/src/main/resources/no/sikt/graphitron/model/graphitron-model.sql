@@ -19317,12 +19317,13 @@ CREATE TABLE graphitron_occurrence_taken (
   PRIMARY KEY (graph_name, coordinate, taken_by),
   FOREIGN KEY (graph_name, coordinate)
     REFERENCES graphitron_occurrence (graph_name, coordinate) ON DELETE CASCADE,
-  CHECK (taken_by IN ('MEMBER', 'PARAMETER', 'TENANT', 'OUTBOX', 'CONDITION', 'COMPARED', 'ORDER', 'PAGE'))
+  CHECK (taken_by IN ('MEMBER', 'PARAMETER', 'TENANT', 'OUTBOX', 'CONDITION', 'COMPARED', 'LOOKUP_KEY', 'ORDER',
+                      'PAGE'))
 );
 COMMENT ON TABLE graphitron_occurrence_taken IS 'One binder that takes one argument or input-field occurrence: one row per occurrence and kind of binder taking it directly, whatever takes the occurrences under it. For example Query.films(filter.title:), a column the filter compares, has one COMPARED row, and Query.films(orderBy:) one ORDER row, which covers its fields.';
 COMMENT ON COLUMN graphitron_occurrence_taken.graph_name IS 'the owning graph''s partition, carried from the occurrence';
 COMMENT ON COLUMN graphitron_occurrence_taken.coordinate IS 'the argument or input-field occurrence taken';
-COMMENT ON COLUMN graphitron_occurrence_taken.taken_by IS 'what takes it: MEMBER, a member of the class its parent is built into; PARAMETER, a call''s parameter; TENANT, a call''s tenant; OUTBOX, an @outbox message''s key; CONDITION, its own @condition; COMPARED, a column or node id a filter compares, so not under an overriding condition or a @service; ORDER, an @orderBy argument; PAGE, a connection''s page argument';
+COMMENT ON COLUMN graphitron_occurrence_taken.taken_by IS 'what takes it: MEMBER, a member of the class its parent is built into; PARAMETER, a call''s parameter; TENANT, a call''s tenant; OUTBOX, an @outbox message''s key; CONDITION, its own @condition; COMPARED, a column or node id a filter compares, so not under an overriding condition or a @service; LOOKUP_KEY, a @lookupKey, which drives its lookup whatever condition stands in for the filter; ORDER, an @orderBy argument; PAGE, a connection''s page argument';
 COMMENT ON COLUMN graphitron_occurrence_taken.covers_below IS 'whether the binder takes everything under the occurrence as well: only one that builds nothing from it, an ordering or a page argument; a parameter or member taking an input object whole builds it, and its fields are judged member by member';
 COMMENT ON COLUMN graphitron_occurrence_taken.touched_at IS 'when the occurrence-tenants stage last wrote the row; rows it no longer writes are swept';
 
@@ -19390,6 +19391,15 @@ SELECT o.graph_name, o.coordinate, 'COMPARED'
                        ON sp.graph_name = a.graph_name AND sp.coordinate = a.parent_coordinate
                       AND sp.kind = 'SERVICE'
                     WHERE a.graph_name = o.graph_name AND a.coordinate = o.argument_coordinate)
+UNION
+-- A @lookupKey, which drives its lookup's join whether or not an overriding condition stands in for
+-- the field's filter.
+SELECT o.graph_name, o.coordinate, 'LOOKUP_KEY'
+  FROM graphitron_occurrence o
+ WHERE o.kind IN ('FIELD_ARGUMENT', 'INPUT_FIELD')
+   AND EXISTS (SELECT 1 FROM graphitron_directive_application d
+                WHERE d.graph_name = o.graph_name AND d.coordinate = o.element_coordinate
+                  AND d.directive_name = 'lookupKey')
 UNION
 -- An @orderBy argument, which graphitron reads itself.
 SELECT o.graph_name, o.coordinate, 'ORDER'
@@ -19669,9 +19679,11 @@ SELECT o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.sourc
                       AND EXISTS (SELECT 1 FROM graphitron_directive_application ni
                                    WHERE ni.graph_name = lk.graph_name AND ni.coordinate = lk.coordinate
                                      AND ni.directive_name = 'nodeId'))
+   -- Nothing takes it, a lookup aside, which needs the column as much as a filter does.
    AND NOT EXISTS (SELECT 1 FROM graphitron_occurrence_argument_step s
                      JOIN graphitron_occurrence_taken t
                        ON t.graph_name = s.graph_name AND t.coordinate = s.step_coordinate
+                      AND t.taken_by <> 'LOOKUP_KEY'
                     WHERE s.graph_name = o.graph_name AND s.coordinate = o.coordinate)
  GROUP BY o.graph_name, COALESCE(da.source_name, el.source_name), COALESCE(da.source_line, el.source_line),
        COALESCE(da.source_column, el.source_column)
