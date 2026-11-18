@@ -24,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.WhereFilter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Predicate;
 
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
@@ -41,6 +42,21 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * references.
  */
 public class GraphitronSchemaValidator {
+
+    /** The fields whose fetchers the store emits, by coordinate; the walk does not wire them. */
+    private final Predicate<String> storeEmits;
+
+    public GraphitronSchemaValidator() {
+        this(coordinate -> false);
+    }
+
+    /**
+     * A validator that leaves the fields {@code storeEmits} names to the store: their fetchers are
+     * emitted from it, so whether the walk could wire them at their depth decides nothing.
+     */
+    public GraphitronSchemaValidator(Predicate<String> storeEmits) {
+        this.storeEmits = storeEmits;
+    }
 
     public List<ValidationError> validate(GraphitronSchema schema) {
         var types = schema.types();
@@ -1459,6 +1475,9 @@ public class GraphitronSchemaValidator {
     private void validateVariantIsSupportedAtNestedDepth(GraphitronField field, List<ValidationError> errors) {
         // Stubbed variants already surfaced by validateVariantIsImplemented, don't double-report.
         if (TypeFetcherGenerator.STUBBED_VARIANTS.containsKey(field.getClass())) {
+            return;
+        }
+        if (storeEmits.test(field.qualifiedName())) {
             return;
         }
         if (!isNestedWireableLeaf(field)) {

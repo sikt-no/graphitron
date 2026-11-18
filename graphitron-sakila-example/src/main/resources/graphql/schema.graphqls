@@ -1438,6 +1438,11 @@ type Query {
     # Surface 1 (input-object filter field — the motivating utdanningsregisteret bug shape):
     # a filter input field whose @reference reaches a column on a joined table.
     citiesByCountryFilter(filter: CityCountryFilter): [City!]!
+    # A child @service under a plain object nested in a @table type, its key read off the outer
+    # row: reached from this field alone, as a service on a type with no table is.
+    namedCitiesByCountryName(
+        countryName: String @reference(path: [{table: "country"}]) @field(name: "country")
+    ): [NamedCity!]!
 
     # Condition-join hops in filter paths. The reach EXISTS dispatches per hop on the join's
     # kind, so a developer-supplied predicate becomes the hop's ON exactly where an FK hop's
@@ -1538,6 +1543,24 @@ type City @table(name: "city") {
     cityLowercase: String @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.CityService",
         method: "cityLowercase"
+    })
+}
+
+type NamedCity @table(name: "city") {
+    cityName: String! @field(name: "CITY")
+    names: CityNames
+}
+
+# Nested in NamedCity's row: each service batches over the outer cities' keys, a Row1 and a
+# CityRecord, read off that row.
+type CityNames {
+    lowercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.CityService",
+        method: "cityLowercase"
+    })
+    uppercase: String @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.CityService",
+        method: "cityUppercase"
     })
 }
 

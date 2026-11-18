@@ -3555,6 +3555,24 @@ class GraphQLQueryTest {
 
     @SuppressWarnings("unchecked")
     @Test
+    void namedCities_servicesUnderNesting_resolvePerCityOffTheOuterRow() {
+        // A plain object nested in the city's row, whose @service children batch over the outer
+        // cities' keys: each city gets its own names back.
+        Map<String, Object> data = execute(
+            "{ namedCitiesByCountryName { cityName names { lowercase uppercase } } }");
+        assertThat(data).extractingByKey("namedCitiesByCountryName", as(list(Map.class)))
+            .hasSize(3)
+            .allSatisfy(c -> {
+                var cityName = (String) c.get("cityName");
+                var names = (Map<String, Object>) c.get("names");
+                assertThat(names).as("names of '%s'", cityName)
+                    .containsEntry("lowercase", cityName.toLowerCase())
+                    .containsEntry("uppercase", cityName.toUpperCase());
+            });
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
     void multiParentSharedNesting_inlineTableField_returnsAddressPerParent() {
         // OccupantLocation is a plain-object nested type shared across two @table parents,
         // Customer and Store, both of which FK to address. Its `address` field carries no

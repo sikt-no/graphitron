@@ -348,14 +348,16 @@ public class GraphQLRewriteGenerator {
                                   boolean federationLink, String outputPackage,
                                   StoreDetections storeFacts,
                                   List<EmittedRegistry.TagNarrowing> narrowings,
-                                  no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors) {
+                                  no.sikt.graphitron.emit.RecordAccessorQuery.Rows recordAccessors,
+                                  no.sikt.graphitron.emit.ServiceEmission services) {
         var warnings = withLintFindings(schema, attributed, store, narrowings, recordAccessors);
         // The store owns validation, the walk's verdict being retired: on the voucher field Graphitron
         // mints, which the store owns whole, the walk's verdict is not asked, the store's defects being
         // the only refusals that field has. Which fields those are was read where the walk was handed
         // its registry.
         var storeOwned = attributed.storeOwned();
-        var walkErrors = new GraphitronSchemaValidator().validate(schema).stream()
+        // A @service fetcher the store emits is the store's to wire, at any depth.
+        var walkErrors = new GraphitronSchemaValidator(services::emits).validate(schema).stream()
             .filter(error -> !storeOwned.contains(error.coordinate()))
             .toList();
         var fused = new ArrayList<>(walkErrors);
@@ -564,7 +566,7 @@ public class GraphQLRewriteGenerator {
         // record columns a VALIDATION pre-step cannot check, and the pre-step itself.
         var recordAccessors = no.sikt.graphitron.emit.RecordAccessorQuery.read(store);
         var captured = capturedFrom(projection, schema, attributed, bundle, federationLink,
-            outputPackage, storeFacts, schemas.narrowings(), recordAccessors);
+            outputPackage, storeFacts, schemas.narrowings(), recordAccessors, services);
 
         var warnings = captured.warnings();
         if (captured.plan() == null) {

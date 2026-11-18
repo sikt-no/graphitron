@@ -75,7 +75,7 @@ class EmissionCensusTest {
         var byVerdict = new TreeMap<String, List<String>>(census.entrySet().stream().collect(
             Collectors.groupingBy(Map.Entry::getValue, Collectors.mapping(Map.Entry::getKey, Collectors.toList()))));
         byVerdict.values().forEach(java.util.Collections::sort);
-        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(152);
+        assertThat(byVerdict.get(ServiceEmission.EMITTED)).as("the services the store emits").hasSize(154);
         assertThat(byVerdict.get(ServiceEmission.EMITTED))
             .as("a list argument into a Set parameter, copied into a set")
             .contains("Query.filmsByIdSet");
@@ -95,6 +95,9 @@ class EmissionCensusTest {
         assertThat(byVerdict.get(ServiceEmission.EMITTED))
             .as("a bean member that is a list of jOOQ records, each built on its table's columns")
             .contains("Query.filmRecordBundle");
+        assertThat(byVerdict.get(ServiceEmission.EMITTED))
+            .as("a child service of a plain object nested in a table's row, its keys read off that row")
+            .contains("NamedCity.names.lowercase", "NamedCity.names.uppercase");
         // A service the store does not emit is a change to look at, not to re-pin.
         assertThat(byVerdict).containsOnlyKeys(ServiceEmission.EMITTED);
     }
@@ -221,7 +224,7 @@ class EmissionCensusTest {
             "Query.filmsWithInputFieldCondition film", "Query.filmsWithInputFieldOverride film",
             "Query.filmsWithMultiImplicit film", "Query.filmsWithNestedImplicit film",
             "Query.inventoryItemsByIds inventory", "Query.languagesByKeyFiltered language",
-            "Query.languagesByKeyGenerated language", "Query.levelIntervals level_interval",
+            "Query.languagesByKeyGenerated language", "Query.levelIntervals level_interval", "Query.namedCitiesByCountryName city",
             "Query.occupantById customer", "Query.occupantById staff",
             "Query.occupantByOptionalId customer", "Query.occupantByOptionalId staff",
             "Query.occupantsByAddress customer", "Query.occupantsByAddress staff",
@@ -309,7 +312,7 @@ class EmissionCensusTest {
             "DivergedRefChild", "DivergedRefOrg", "Email", "FanDetail", "FanMark", "FanOwner", "FanTarget",
             "FilmBookmark", "FilmCategoryNode", "FilmContent", "FilmEndorsement", "FilmEndorsementNode",
             "FilmInventory", "HostLabelsRow", "Individual", "InvCondMember", "InventoryItem",
-            "InventoryUnit", "KeyedNode", "LanguageAlias", "LanguageNode", "LevelInterval", "Mailbox",
+            "InventoryUnit", "KeyedNode", "LanguageAlias", "LanguageNode", "LevelInterval", "Mailbox", "NamedCity",
             "PagedA", "PagedB", "Party", "PaymentLegacyProbe", "Person", "PresenceDetail",
             "PresenceDetailNode", "PresenceHost", "PresenceHostRefs", "PresenceItem", "Project",
             "ProjectEvent", "ProjectNote", "Rental", "RoleAssignment", "RoleHolder", "SecureNote",
