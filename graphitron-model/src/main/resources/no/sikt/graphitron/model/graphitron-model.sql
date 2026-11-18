@@ -21299,6 +21299,40 @@ SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
         OR COALESCE(m.result_erased_class, '') NOT IN ('java.util.Map', 'java.util.List', 'org.jooq.Result')
         OR m.result_erased_class IN ('java.util.List', 'org.jooq.Result') AND mp.erased_class = 'java.util.Set')
 UNION ALL
+-- A @service whose payload's data field encodes the records it hands back into ids of a node,
+-- @nodeId(typeName:) written, and the records are another table's than the node's: an id is encoded
+-- from the node table's own record, so the keys read off another table's would name rows of the wrong
+-- type. Read off the payload's data field and the @nodeId as written, which an earlier stage states
+-- than the node id this stage would otherwise wait for. The detail is the declared result type.
+SELECT DISTINCT el.graph_name, el.source_name, el.source_line, el.source_column,
+       'SERVICE_RETURN_MISMATCH', m.result_type, 'occurrence-producers'
+  FROM graphitron_occurrence_producer p
+  JOIN graphitron_occurrence o ON o.graph_name = p.graph_name AND o.coordinate = p.coordinate
+  JOIN graphitron_field f ON f.graph_name = o.graph_name AND f.coordinate = o.element_coordinate
+  JOIN graphql_ast_element_entry el ON el.graph_name = f.graph_name AND el.coordinate = f.coordinate
+  JOIN graphitron_occurrence_call_method cm ON cm.graph_name = p.graph_name AND cm.coordinate = p.coordinate
+  JOIN code_method m
+    ON m.source_name = cm.method_source_name AND m.class_name = cm.method_class_name
+   AND m.method_name = cm.method_name AND m.descriptor = cm.method_descriptor
+  JOIN graphitron_payload_data_field d
+    ON d.graph_name = f.graph_name AND d.type_name = f.named_type AND d.kind = 'NODE_ID'
+  JOIN graphitron_field df
+    ON df.graph_name = d.graph_name AND df.type_name = d.type_name AND df.field_name = d.field_name
+  JOIN graphql_directive_application na
+    ON na.graph_name = df.graph_name AND na.coordinate = df.coordinate AND na.directive_name = 'nodeId'
+  JOIN graphitron_ast_node_id_entry ne
+    ON ne.graph_name = na.graph_name AND ne.source_name = na.source_name
+   AND ne.source_line = na.source_line AND ne.source_column = na.source_column
+  JOIN graphitron_tabletype nt ON nt.graph_name = ne.graph_name AND nt.type_name = ne.node_type_ref
+  JOIN sql_table st
+    ON st.source_name = nt.table_source_name AND st.table_schema = nt.table_schema
+   AND st.table_name = nt.table_name
+ WHERE p.kind = 'SERVICE' AND m.result_element_class IS NOT NULL
+   AND m.result_element_class <> st.record_class_fqn
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_outcome po
+                    WHERE po.graph_name = f.graph_name AND po.type_name = f.type_name
+                      AND po.field_name = f.field_name)
+UNION ALL
 -- A @service whose answer does not match its field, at the field: the records it answers are not the
 -- record of the table the field's type is bound to, the values it answers are not of the class the
 -- field's scalar arrives as, or it answers many where the field is one table
@@ -29121,7 +29155,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('SERVICE_UNION_RETURN', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_UNION_RETURN',
    'A @service field answers a union, and a Java method cannot declare one: its result type says nothing of which member it answers. Answer an interface the members implement instead.'),
   ('SERVICE_RETURN_MISMATCH', 'error', 'GRAPHITRON', 'GRAPHITRON_SERVICE_RETURN_MISMATCH',
-   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one.'),
+   'A @service answers something its field cannot be handed: records of another table than the one the field''s type is bound to, values of another class than the one the field''s scalar arrives as, many where the field is one record, scalar or enum, or, under an object, a List in the keys'' order handing each key one where the field is a list. Under an object the answer is read per key, from a Map''s values or from a List''s elements in the keys'' order: answer the field''s table record or its scalar''s class, in a list exactly where the field is one. Where the field''s payload encodes the records into ids of a node, @nodeId(typeName:) written, answer that node table''s records.'),
   ('SERVICE_CONNECTION_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_SERVICE_CONNECTION_UNSUPPORTED',
    'A @service field returns a connection, which graphitron would page from the rows the service answers, and that is not generated for a service yet: return a list, or read the rows with a field graphitron fetches and pages.'),
   ('UNROUTED_CHILD', 'error', 'GRAPHITRON', 'GRAPHITRON_UNROUTED_CHILD',

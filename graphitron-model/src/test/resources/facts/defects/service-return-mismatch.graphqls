@@ -46,12 +46,23 @@ type Query {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "filmCount"})
   filmsInPayload: FilmsPayload @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  filmIds: FilmIdsPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "films"})
+  languagesAsFilmIds: FilmIdsPayload @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.FilmReturnShapeService", method: "languagesAsFilms"})
+}
+
+# A payload encoding the records a service hands back into Film ids: film records encode, language
+# records would name language rows as films.
+type FilmIdsPayload {
+  ids: [ID!] @nodeId(typeName: "Film")
 }
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site",
     where: "code = 'SERVICE_RETURN_MISMATCH'", rows: """
   code,                    coordinate,                 detail
   SERVICE_RETURN_MISMATCH, Query.languagesAsFilms,     org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
+  SERVICE_RETURN_MISMATCH, Query.languagesAsFilmIds,   org.jooq.Result<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord>
   SERVICE_RETURN_MISMATCH, Query.filmCountText,        java.lang.Integer
   SERVICE_RETURN_MISMATCH, Film.lengthText,"java.util.Map<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, java.lang.Integer>"
   SERVICE_RETURN_MISMATCH, Query.filmsAsOne,           java.util.List<no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord>
