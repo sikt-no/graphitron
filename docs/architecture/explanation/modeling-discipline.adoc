@@ -151,6 +151,9 @@ anchoring. A plain view is only for a trivial join and filter of stored relation
 another view, and a rule view that grows complex is a sign a derivation was skipped upstream and
 belongs stored there. xref:fact-model.adoc#grain[The fact model] states the rule in full.
 
+A derived fact is stored at the finest grain it holds at, and a coarser reader collapses it in its
+own query; xref:fact-model.adoc#grain[the fact model] states the ruling.
+
 == Gathering and deriving are kept apart
 
 The discipline that makes the two provenances tractable is that a gatherer does not mix them. Put the
