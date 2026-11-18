@@ -130,8 +130,9 @@ public final class RoutineWriteQuery {
     /**
      * One IN parameter of the routine, in declaration order. {@code path} is where the value is read
      * from the request: the author's {@code argMapping} right-hand side as written, or the
-     * parameter's own name where the author wrote none. {@code javaTypeName} is the source form
-     * ({@code java.lang.Integer[]} for an array).
+     * parameter's own name where the author wrote none. {@code javaTypeName} is the parameter's
+     * binding type as captured, in {@code Class.getName()}'s spelling ({@code [Ljava.lang.Integer;}
+     * for an array).
      */
     public record Argument(String parameterName, String javaTypeName, String path) {
 

@@ -177,7 +177,7 @@ public final class RoutineWriteEmitter {
         var call = row.call();
         var args = CodeBlock.join(call.arguments().stream()
             .map(a -> RoutineCallEmitter.envArgumentRead(a.segments(),
-                CatalogRefs.typeName(a.javaTypeName()), argHelpers, keys))
+                CatalogRefs.decodeBindingType(a.javaTypeName()), argHelpers, keys))
             .toList(), ", ");
         return CodeBlock.of("$T.$L($L)", CatalogRefs.className(call.routinesClassName()),
             call.methodName(), args);
