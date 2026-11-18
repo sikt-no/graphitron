@@ -9,6 +9,7 @@ import no.sikt.graphitron.emit.ConnectionQuery;
 import no.sikt.graphitron.emit.ErrorChannelRelation;
 import no.sikt.graphitron.emit.FrameQuery;
 import no.sikt.graphitron.emit.OutboxQuery;
+import no.sikt.graphitron.emit.LiftQuery;
 import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -212,11 +213,11 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));
         globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         var conditions = ConditionCommands.produce(schema, outputPackage);
-        // Each routine write's frame and connection are read beside its rows, so its fetcher is the
-        // frame around its body.
+        // Each routine write's frame, connection and lift are read beside its rows, so its fetcher is
+        // the frame around its body, and a records result's body hands its keys to its lift.
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty()
             : RoutineWriteQuery.read(store).framed(FrameQuery.read(store),
-                ConnectionQuery.read(store));
+                ConnectionQuery.read(store), LiftQuery.read(store));
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage,

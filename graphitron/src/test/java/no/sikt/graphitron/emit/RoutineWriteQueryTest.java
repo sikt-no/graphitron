@@ -29,8 +29,8 @@ import static org.assertj.core.api.Assertions.tuple;
  * should read, so a divergence fails here rather than as changed output several tiers down.
  *
  * <p>One schema carries every mutation shape so membership is tested against a live non-member: a
- * one-hop chain write, a two-hop chain write (which states the alias numbering and the per-hop
- * keying a one-hop chain leaves unstated), an object-result write, and a DML insert. It is the
+ * one-hop chain write, a two-hop chain write (which states the lift's hop and its keying a one-hop
+ * chain leaves unstated), an object-result write, and a DML insert. It is the
  * {@code scenarios/routine-write} fact document's, read as text: the comparison is between the store
  * and the classified model, which the shared fact graphs do not build, so it goes with the walk.
  */
@@ -120,14 +120,23 @@ class RoutineWriteQueryTest {
     }
 
     /**
-     * The aliases run continuously across the chain rather than restarting per {@code @reference}
-     * element, which a one-hop chain cannot show.
+     * The write captures the anchor's key and the lift reads on from there: the classified chain's
+     * second hop is the lift's one hop, and the one-hop chain's lift has none.
      */
     @Test
-    void aTwoHopChainNumbersItsAliasesAlongTheWholeChain() {
+    void aTwoHopChainLiftsAlongTheHopAfterItsAnchor() {
         assertMatchesItsClassifiedChain("rentFilmCustomer");
-        assertThat(chainRow("rentFilmCustomer").hops().stream().map(RoutineWriteQuery.Hop::alias))
-            .containsExactly("rentFilmCustomer_0", "rentFilmCustomer_1");
+        var hop1 = (JoinStep.Hop) hopsOf("rentFilmCustomer").get(1);
+        assertThat(liftOf("rentFilmCustomer").hops())
+            .extracting(h -> h.table().tableClassName())
+            .as("one hop after the anchor, to the classified second hop's table")
+            .containsExactly(CatalogRefs.tableClass(hop1.targetTable()).canonicalName());
+        assertThat(liftOf("rentFilmCustomer").terminal().sqlName())
+            .as("the lift reads its target off the last hop's table")
+            .isEqualTo("customer");
+        assertThat(liftOf("rentFilm").hops())
+            .as("a one-hop chain lifts off its anchor itself")
+            .isEmpty();
     }
 
     /**
@@ -136,18 +145,21 @@ class RoutineWriteQueryTest {
      */
     @Test
     void aHopAfterTheAnchorNamesTheForeignKeyItCrosses() {
-        var hop = chainRow("rentFilmCustomer").hops().get(1);
+        var hop = liftOf("rentFilmCustomer").hops().getFirst();
         var fk = (On.Keying.ForeignKey) ((On.ColumnPairs)
             ((JoinStep.Hop) hopsOf("rentFilmCustomer").get(1)).on()).keying();
 
         assertThat(hop.keying())
             .as("the hop is keyed by the classified foreign key, named as its generated constant")
-            .isEqualTo(new RoutineWriteQuery.Keying.ForeignKey(
+            .isEqualTo(new LiftQuery.Keying.ForeignKey(
                 fk.fk().keysClassName(), fk.fk().constantName()));
         assertThat(hop.pairs())
-            .extracting(p -> p.source().javaName(), p -> p.target().javaName())
+            .extracting(p -> p.from().javaName(), p -> p.to().javaName())
             .as("and pairs the two ends of that key, side for side")
             .containsExactly(tuple("CUSTOMER_ID", "CUSTOMER_ID"));
+        assertThat(hop.toOne())
+            .as("a rental reaches one customer along the key it declares")
+            .isTrue();
     }
 
     @Test
@@ -173,22 +185,25 @@ class RoutineWriteQueryTest {
         var hops = hopsOf(fieldName);
         var hop0 = (JoinStep.Hop) hops.get(0);
 
-        assertThat(row.hops().stream().map(RoutineWriteQuery.Hop::alias))
-            .as("one hop per classified hop, aliased as the walk aliases it")
-            .containsExactlyElementsOf(hops.stream().map(h -> ((JoinStep.Hop) h).alias()).toList());
-        assertThat(row.hops().getFirst().table().tableClassName())
-            .as("the re-read departs from hop 0's table, carried as its captured class name")
+        assertThat(row.anchor().tableClassName())
+            .as("the write captures the key of hop 0's table, carried as its captured class name")
             .isEqualTo(CatalogRefs.tableClass(hop0.targetTable()).canonicalName());
+        assertThat(liftOf(fieldName).table().tableClassName())
+            .as("and the lift departs from that table")
+            .isEqualTo(row.anchor().tableClassName());
+        assertThat(liftOf(fieldName).hops())
+            .as("one lift hop per classified hop after the anchor")
+            .hasSize(hops.size() - 1);
         var hop0Slots = ((On.ColumnPairs) hop0.on()).slots();
-        assertThat(row.hops().getFirst().pairs())
+        assertThat(row.capturedPairs())
             .as("the captured pairing is hop 0's own, cell for cell and side for side")
             .extracting(p -> p.source().javaName(), p -> p.target().javaName())
             .containsExactlyElementsOf(hop0Slots.stream()
                 .map(s -> tuple(s.sourceSide().javaName(), s.targetSide().javaName())).toList());
-        assertThat(row.hops().getFirst().pairs().stream().map(p -> p.source().javaName()))
+        assertThat(row.capturedPairs().stream().map(p -> p.source().javaName()))
             .as("the routine's result rows carry the rental key")
             .containsExactly("RENTAL_ID");
-        assertThat(row.hops().getFirst().pairs().stream().map(p -> p.source().bindingType()))
+        assertThat(row.capturedPairs().stream().map(p -> p.source().bindingType()))
             .as("each captured column carries its bound Java type as a name, which is what lets"
                 + " the emitter declare the key record with no live catalog")
             .containsExactly("java.lang.Integer");
@@ -197,6 +212,11 @@ class RoutineWriteQueryTest {
     private static RoutineWriteQuery.RecordsResult chainRow(String fieldName) {
         return (RoutineWriteQuery.RecordsResult) plan.routineWrites().rowFor("Mutation", fieldName)
             .orElseThrow();
+    }
+
+    /** The lift read beside a records result's row. */
+    private static LiftQuery.Row liftOf(String fieldName) {
+        return plan.routineWrites().liftFor(chainRow(fieldName)).orElseThrow();
     }
 
     /** The leaf's own classified chain, which every chain check above joins back to. */

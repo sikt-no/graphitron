@@ -286,8 +286,6 @@ class PackageImportDirectionTest {
             "the catch arm's disposition has one spelling"),
         java.util.Map.entry("no.sikt.graphitron.render.ConnectionKeyHandDown",
             "a routed root frame hands its key down in the one spelling, so only tenant code fills localContext"),
-        java.util.Map.entry("no.sikt.graphitron.render.ProjectionCall",
-            "the $project call has one spelling"),
         java.util.Map.entry("no.sikt.graphitron.render.NodeIdDecodeFailure",
             "a refused node id fails with one client error whichever emitter decoded it"),
         java.util.Map.entry("no.sikt.graphitron.render.TableAliasFragments",

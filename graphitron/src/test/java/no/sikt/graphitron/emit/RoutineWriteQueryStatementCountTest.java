@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Three
  * statements at three grains, and three however many coordinates the graph holds, however many
- * hops their paths cross and however many arguments their routines take.
+ * steps their paths take and however many arguments their routines take.
  *
  * <p>An enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for being
  * slow. The shape it pins is invisible from every other gate. A fan-out into a statement per
@@ -28,16 +28,18 @@ import static org.assertj.core.api.Assertions.assertThat;
  * natural move and the one this test refuses.
  *
  * <p>The query is the body's only store read. The frame around the body reads its outcome and its
- * connection through {@link FrameQuery} and {@link ConnectionQuery}, each read once per run beside
- * these rows ({@link RoutineWriteQuery.Rows#framed}), so neither is counted here.
+ * connection through {@link FrameQuery} and {@link ConnectionQuery}, and a records result's lift is
+ * read through {@link LiftQuery}, each read once per run beside these rows
+ * ({@link RoutineWriteQuery.Rows#framed}), so none of them is counted here. The lift reads the path,
+ * so the hops after a records result's anchor cost this query nothing.
  */
 @PipelineTier
 class RoutineWriteQueryStatementCountTest {
 
     /**
-     * One per grain: the occurrence, a records result's step pairing, an object result's captured
-     * pairing. Three rather than four since admission is read off the occurrence statement's own
-     * facts instead of a statement of its own ahead of it.
+     * One per grain: the occurrence, a records result's captured pairing, an object result's
+     * captured pairing. Three rather than four since admission is read off the occurrence
+     * statement's own facts instead of a statement of its own ahead of it.
      */
     private static final int GRAINS = 3;
 

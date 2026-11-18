@@ -166,12 +166,14 @@ public final class ServiceEmission {
         var builds = new HashMap<String, Map<Integer, BuildQuery.Result>>();
         BuildQuery.read(store).forEach((root, result) ->
             builds.computeIfAbsent(root.callCoordinate(), k -> new HashMap<>()).put(root.position(), result));
-        var lifts = byCoordinate(LiftQuery.read(store), LiftQuery.Row::coordinate);
-        var targets = new HashMap<String, String>();
-        lifts.forEach((coordinate, row) -> targets.put(coordinate, row.targetType()));
         var p = GRAPHITRON_OCCURRENCE_PRODUCER;
         var services = Set.copyOf(store.dsl().select(p.COORDINATE).from(p)
             .where(p.GRAPH_NAME.eq(store.graphName()), p.KIND.eq("SERVICE")).fetch(p.COORDINATE));
+        // The services' lifts: a routine write's is rendered beside its own body.
+        var lifts = byCoordinate(LiftQuery.read(store).stream().filter(l -> services.contains(l.coordinate())).toList(),
+            LiftQuery.Row::coordinate);
+        var targets = new HashMap<String, String>();
+        lifts.forEach((coordinate, row) -> targets.put(coordinate, row.targetType()));
         return new ServiceEmission(
             services,
             // The services' frames: a routine write's is framed by its own emitter.
@@ -372,7 +374,7 @@ public final class ServiceEmission {
         Optional<CallEmitter.Lift> liftRef = Optional.empty();
         if (lift.isPresent()) {
             var row = lift.get();
-            var source = runtime.fetchersClass().nestedClass(sourceName(row.table()));
+            var source = runtime.fetchersClass().nestedClass(LiftEmitter.sourceTableName(row.table()));
             nested.add(LiftEmitter.sourceTable(source, row.table(), row.key()).toBuilder()
                 .addModifiers(javax.lang.model.element.Modifier.STATIC).build());
             String liftName = fieldName + "Lift";
@@ -391,7 +393,7 @@ public final class ServiceEmission {
         if (poly != null) {
             var each = new ArrayList<CallEmitter.Polymorphic.Member>();
             for (var participant : poly.participants()) {
-                var source = runtime.fetchersClass().nestedClass(sourceName(participant.table()));
+                var source = runtime.fetchersClass().nestedClass(LiftEmitter.sourceTableName(participant.table()));
                 nested.add(LiftEmitter.sourceTable(source, participant.table(), participant.key()).toBuilder()
                     .addModifiers(javax.lang.model.element.Modifier.STATIC).build());
                 String liftName = fieldName + participant.typeName() + "Lift";
@@ -688,19 +690,4 @@ public final class ServiceEmission {
             .anyMatch(f -> Set.of("DSL_CONTEXT", "SESSION", "SESSION_MEMBER").contains(f.fill()));
     }
 
-    /** The nested derived source table's name: the lifted table's field name, as the tables class spells it. */
-    private static String sourceName(LiftQuery.Table table) {
-        var name = table.javaFieldName();
-        var camel = new StringBuilder();
-        boolean upper = true;
-        for (char c : name.toCharArray()) {
-            if (c == '_') {
-                upper = true;
-            } else {
-                camel.append(upper ? Character.toUpperCase(c) : Character.toLowerCase(c));
-                upper = false;
-            }
-        }
-        return camel + "Source";
-    }
 }

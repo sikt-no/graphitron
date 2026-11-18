@@ -1122,6 +1122,25 @@ AS $$
     RETURNING rental.rental_id
 $$;
 
+-- Routine-write fixture: rent_films delivering its two rentals newest first, so a field answering the
+-- rows in the order the routine delivers them answers them by descending rental id, where reading
+-- the written rentals back by key alone would answer them ascending.
+CREATE OR REPLACE FUNCTION public.rent_films_reversed(
+    p_first_inventory_id  INTEGER,
+    p_second_inventory_id INTEGER,
+    p_customer_id         INTEGER
+) RETURNS TABLE(rental_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    WITH written AS (
+        INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+        SELECT now(), i, p_customer_id, 1
+        FROM unnest(ARRAY[p_first_inventory_id, p_second_inventory_id]) AS i
+        RETURNING rental.rental_id
+    )
+    SELECT written.rental_id FROM written ORDER BY written.rental_id DESC
+$$;
+
 -- Routine-write fixture: rents the copy only where the inventory holds it, so an unknown inventory id
 -- writes nothing and the routine returns no row, rather than failing on the foreign key.
 CREATE OR REPLACE FUNCTION public.rent_film_when_stocked(

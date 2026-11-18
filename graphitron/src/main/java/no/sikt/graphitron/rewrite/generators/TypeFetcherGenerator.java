@@ -883,9 +883,9 @@ public class TypeFetcherGenerator {
                 // projected-key host, the request-context seam), drains rather than decisions: an
                 // emitted call and the helper it names have to land on one class together.
                 case MutationField.MutationRoutineWriteField f ->
-                    renderRoutineWrite(ctx, f, routineWrites, outputPackage).forEach(builder::addMethod);
+                    renderRoutineWrite(ctx, builder, f, routineWrites, outputPackage);
                 case MutationField.MutationRoutineWriteRecordField f ->
-                    renderRoutineWrite(ctx, f, routineWrites, outputPackage).forEach(builder::addMethod);
+                    renderRoutineWrite(ctx, builder, f, routineWrites, outputPackage);
                 case MutationField.MutationServiceTableField f -> builder.addMethod(
                     buildMutationServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
@@ -1578,14 +1578,16 @@ public class TypeFetcherGenerator {
 
 
     /**
-     * Renders the fetcher of one {@code @routine}-writing mutation coordinate from the coordinate's
+     * Adds the fetcher of one {@code @routine}-writing mutation coordinate from the coordinate's
      * store rows: {@link no.sikt.graphitron.emit.FrameEmitter}'s frame under the entry point's name,
      * and beside it the body {@link no.sikt.graphitron.emit.RoutineWriteEmitter} renders, which the
-     * frame calls. The frame's outcome and connection are the store's, read beside the routine-write
-     * rows; the generated names come from {@link no.sikt.graphitron.plan.GeneratedUnits} like every
-     * other reference to them.
+     * frame calls. A records result's body hands its captured keys to its lift,
+     * {@link no.sikt.graphitron.emit.LiftEmitter#lift}, added beside the body with the lifted table's
+     * derived source table nested once per class, as a service's is. The frame's outcome and
+     * connection are the store's, read beside the routine-write rows; the generated names come from
+     * {@link no.sikt.graphitron.plan.GeneratedUnits} like every other reference to them.
      */
-    private static List<MethodSpec> renderRoutineWrite(TypeFetcherEmissionContext ctx,
+    private static void renderRoutineWrite(TypeFetcherEmissionContext ctx, TypeSpec.Builder builder,
             no.sikt.graphitron.rewrite.model.OutputField field,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites, String outputPackage) {
         var row = routineWrites.rowFor(ctx.parentTypeName(), field.name())
@@ -1603,16 +1605,30 @@ public class TypeFetcherGenerator {
         var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
         var coordinate = graphql.schema.FieldCoordinates.coordinates(ctx.parentTypeName(), field.name());
         String bodyName = field.name() + "Call";
-        var body = no.sikt.graphitron.emit.RoutineWriteEmitter.render(row, bodyName,
-            className(units.typeClass(row.returnTypeName())),
-            className(units.selectionOccurrences()),
+        var fetchers = className(units.fetchers(ctx.parentTypeName()));
+        Optional<no.sikt.graphitron.emit.CallEmitter.Lift> liftRef = Optional.empty();
+        var lift = routineWrites.liftFor(row);
+        if (lift.isPresent()) {
+            var liftRow = lift.get();
+            var source = fetchers.nestedClass(no.sikt.graphitron.emit.LiftEmitter.sourceTableName(liftRow.table()));
+            if (ctx.claimNestedType(source.simpleName())) {
+                builder.addType(no.sikt.graphitron.emit.LiftEmitter.sourceTable(source, liftRow.table(), liftRow.key())
+                    .toBuilder().addModifiers(javax.lang.model.element.Modifier.STATIC).build());
+            }
+            String liftName = field.name() + "Lift";
+            builder.addMethod(no.sikt.graphitron.emit.LiftEmitter.lift(liftRow, liftName, source,
+                className(units.typeClass(liftRow.targetType())), className(units.selectionOccurrences())));
+            liftRef = Optional.of(new no.sikt.graphitron.emit.CallEmitter.Lift(fetchers, liftName, liftRow.list()));
+        }
+        var body = no.sikt.graphitron.emit.RoutineWriteEmitter.render(row, bodyName, liftRef,
             ctx.argPathHelpers(), ctx.projectedKeyHost().at(coordinate), OwnedScope.provider(outputPackage));
         var entry = no.sikt.graphitron.emit.FrameEmitter.render(frame,
             units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
-            body.returnType(), className(units.fetchers(ctx.parentTypeName())), bodyName,
+            body.returnType(), fetchers, bodyName,
             frameRuntime(ctx, units), true, false,
             routineWriteConnection(routineWrites.connectionFor(row), coordinate, outputPackage));
-        return List.of(entry, body);
+        builder.addMethod(entry);
+        builder.addMethod(body);
     }
 
     /**

@@ -8018,6 +8018,42 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void rentFilmsReversed_aListChainAnswersTheRowsInTheOrderTheRoutineDeliversThem() {
+        // rent_films_reversed writes one rental per inventory id, first then second, and delivers
+        // them newest first. The field reads them back along its path in that order, so the second
+        // inventory's rental, written last, answers first.
+        int before = maxRentalId();
+        try {
+            var result = executeRaw("""
+                mutation {
+                    rentFilmsReversed(firstInventoryId: 3, secondInventoryId: 1, customerId: 2) {
+                        rentalId inventoryId customerId
+                    }
+                }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            var rentals = (List<Map<String, Object>>) ((Map<String, Object>) result.getData())
+                .get("rentFilmsReversed");
+            assertThat(rentals)
+                .extracting(r -> r.get("inventoryId"), r -> r.get("customerId"))
+                .as("the routine's delivered order, the last written first")
+                .containsExactly(tuple(1, 2), tuple(3, 2));
+            assertThat(rentals)
+                .extracting(r -> (Integer) r.get("rentalId"))
+                .as("descending rental id, which is the order delivered and not the key's")
+                .isSortedAccordingTo(java.util.Comparator.reverseOrder())
+                .doesNotHaveDuplicates()
+                .allSatisfy(id -> assertThat(id).isGreaterThan(before));
+            assertThat(rentalsAfter(before))
+                .as("the one call committed both rentals")
+                .containsExactly(List.of(3, 2), List.of(1, 2));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void rentFilmCopy_anAuthoredAndAnInferredNodeIdEachReachTheirOwnParameter() {
         // filmId spells film_id past its node id; customerId stops on its node id and the build
         // infers customer_id. Film 3 and customer 2 are both valid keys of the other kind too, so

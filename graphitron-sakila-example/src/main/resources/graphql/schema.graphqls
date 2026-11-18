@@ -5582,6 +5582,15 @@ type Mutation {
             argMapping: "pFirstInventoryId: firstInventoryId, pSecondInventoryId: secondInventoryId, pCustomerId: customerId"
         )
 
+    # Two rentals delivered newest first, read back along the path to rental in the order the
+    # routine delivers them rather than in key order.
+    rentFilmsReversed(firstInventoryId: Int!, secondInventoryId: Int!, customerId: Int!): [Rental!]!
+        @routine(
+            name: "rent_films_reversed"
+            argMapping: "pFirstInventoryId: firstInventoryId, pSecondInventoryId: secondInventoryId, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}])
+
     # Composite captured key, in both forms: the chain re-reads email by (mailbox_id, message_no)
     # off the routine's result, the carrier captures both columns for its data field.
     postEmail(mailboxId: Int!, messageNo: Int!, subject: String!): [Email!]!

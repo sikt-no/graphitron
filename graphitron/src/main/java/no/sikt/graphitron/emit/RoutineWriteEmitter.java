@@ -1,8 +1,6 @@
 package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.emit.RoutineWriteQuery.Column;
-import no.sikt.graphitron.emit.RoutineWriteQuery.Hop;
-import no.sikt.graphitron.emit.RoutineWriteQuery.Keying;
 import no.sikt.graphitron.emit.RoutineWriteQuery.ObjectResult;
 import no.sikt.graphitron.emit.RoutineWriteQuery.Pair;
 import no.sikt.graphitron.emit.RoutineWriteQuery.RecordsResult;
@@ -15,14 +13,11 @@ import com.palantir.javapoet.ParameterizedTypeName;
 import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.ArgPathHelperRegistry;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.render.ColumnComparison;
 import no.sikt.graphitron.render.ProjectedKeyReads;
-import no.sikt.graphitron.render.ProjectionCall;
 import no.sikt.graphitron.render.RoutineCallEmitter;
 
 import javax.lang.model.element.Modifier;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -35,16 +30,16 @@ import java.util.List;
  * <p><b>The two-statements rule.</b> The write transaction holds the routine call and a projection
  * of the routine's own result columns, and nothing else. Anything past that capture is a
  * post-commit query under the caller's identity, and the two result shapes differ only there: a
- * {@link RecordsResult} re-reads from its first hop's table keyed by the captured values, joining the
- * remaining hops forward and projecting the type the path lands on; an {@link ObjectResult} returns
- * the captured keys, typed as the re-read table's key fields, and leaves the re-read to the field
- * under it that takes them. The routine never
- * appears in the follow-up {@code FROM}: re-invoking it would re-execute the write. An error in the
- * routine rolls back at the {@code transactionResult} boundary; an error in the follow-up cannot
- * undo the committed write.
+ * {@link RecordsResult} hands the captured keys, typed as its anchor's key fields, to its lift,
+ * {@link LiftEmitter#lift}, which reads the type the path lands on along the path from the anchor in
+ * the order the routine delivered the keys; an {@link ObjectResult} returns the captured keys, typed
+ * as the re-read table's key fields, and leaves the re-read to the field under it that takes them.
+ * The routine never appears in the follow-up {@code FROM}: re-invoking it would re-execute the write.
+ * An error in the routine rolls back at the {@code transactionResult} boundary; an error in the
+ * follow-up cannot undo the committed write.
  *
- * <p>Generated names (the body, the projection unit, the transaction provider) are the caller's, minted
- * where every other reference to them is.
+ * <p>Generated names (the body, the lift, the transaction provider) are the caller's, minted where
+ * every other reference to them is.
  */
 public final class RoutineWriteEmitter {
 
@@ -54,92 +49,57 @@ public final class RoutineWriteEmitter {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
     private static final ClassName RESULT = ClassName.get("org.jooq", "Result");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName TABLE = ClassName.get("org.jooq", "Table");
     private static final ClassName ENV = ClassName.get("graphql.schema", "DataFetchingEnvironment");
 
     /**
-     * Renders the body for {@code row}, answering what the write produces: the re-read's
-     * {@code Result<Record>} or {@code Record} for a records result, the captured keys'
+     * Renders the body for {@code row}, answering what the write produces: the lifted rows as a
+     * {@code List<Record>}, or the one {@code Record}, for a records result, the captured keys'
      * {@code Result<RecordN>} or {@code RecordN} for an object result, {@code null} where a single
      * capture finds no row. Its return type is the value type the frame declares.
      *
      * @param bodyName          the body's generated name, which the frame calls
-     * @param returnTypeClass   the return type's projection unit; read for a records result only
-     * @param selectionOccurrences the generated selection scaffold a records result's re-read
-     *                          groups the fetched field's own fields through
+     * @param lift              the method {@link LiftEmitter#lift} rendered for a records result's
+     *                          lift; read for a records result only
      * @param argHelpers        the host class's collector of dotted-path descent helpers
      * @param keys              the method's node-id decodes, for an argument whose path projects a
      *                          key column
      * @param transactionProvider the emitted provider the write's transaction is opened through,
      *                          from {@link OwnedScope#provider}
      */
-    public static MethodSpec render(Row row, String bodyName, ClassName returnTypeClass,
-            ClassName selectionOccurrences, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys,
-            ClassName transactionProvider) {
+    public static MethodSpec render(Row row, String bodyName, java.util.Optional<CallEmitter.Lift> lift,
+            ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys, ClassName transactionProvider) {
         var call = routineCall(row, argHelpers, keys);
         return switch (row) {
-            case RecordsResult records -> recordsReRead(records, bodyName, returnTypeClass,
-                selectionOccurrences, call, keys, transactionProvider);
+            case RecordsResult records -> recordsLift(records, bodyName, lift.orElseThrow(
+                () -> new IllegalArgumentException("the records result at " + records.typeName() + "."
+                    + records.fieldName() + " is rendered with no lift to hand its keys to")),
+                call, keys, transactionProvider);
             case ObjectResult object -> objectResultKeys(object, bodyName, call, keys, transactionProvider);
         };
     }
 
-    private static MethodSpec recordsReRead(RecordsResult row, String bodyName, ClassName returnTypeClass,
-            ClassName selectionOccurrences, CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
+    private static MethodSpec recordsLift(RecordsResult row, String bodyName, CallEmitter.Lift lift,
+            CodeBlock call, ProjectedKeyReads keys, ClassName transactionProvider) {
         boolean isList = row.listReturn();
-        TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
+        TypeName valueType = isList ? ParameterizedTypeName.get(LIST, RECORD) : RECORD;
         var builder = body(bodyName, valueType);
-        var anchor = row.hops().getFirst();
-        var tail = row.hops().subList(1, row.hops().size());
+        var anchorKeyColumns = row.capturedPairs().stream().map(Pair::target).toList();
+        TypeName keyRowType = keyRecordType(anchorKeyColumns);
 
         // Node-id decodes go first, ahead of the routine call and the write's transaction: a
         // malformed id is a client error about an argument, raised before anything is written.
         builder.addCode(keys.declarations());
         builder.addStatement("$T source = $L", tableClass(row.call().resultTable()), call);
-        for (var hop : row.hops()) {
-            builder.addStatement(aliasDeclaration(hop.table(), hop.alias()));
-        }
-
-        var capturedColumns = anchor.pairs().stream().map(Pair::source).toList();
-        TypeName keyRowType = keyRecordType(capturedColumns);
+        // Re-typed under the anchor's key fields, which the lift's derived source table reads them by.
         builder.addCode(captureTransaction(
             isList ? ParameterizedTypeName.get(RESULT, keyRowType) : keyRowType,
-            capturedColumns, null, isList, transactionProvider));
-        builder.addCode(nullKeysGuard(isList));
-
-        // The post-commit re-read: from the anchor keyed by the captured values, the tail hops
-        // joining forward as a read chain does.
-        String anchorAlias = anchor.alias();
-        String terminalAlias = row.hops().getLast().alias();
-        var sel = CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType)
-            .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(returnTypeClass, terminalAlias,
-                selectionOccurrences, ProjectionCall.SelectionScope.OWN_FIELDS))
-            .add(".from($L)\n", anchorAlias);
-        var filters = new ArrayList<CodeBlock>();
-        String prev = anchorAlias;
-        for (var hop : tail) {
-            sel.add("$L\n", forwardJoin(hop, prev));
-            if (hop.filter() != null) {
-                filters.add(CodeBlock.of("$T.$L($L, $L)", ClassName.bestGuess(hop.filter().className()),
-                    hop.filter().methodName(), prev, hop.alias()));
-            }
-            prev = hop.alias();
-        }
-        var anchorCols = anchor.pairs().stream()
-            .map(p -> CodeBlock.of("$L.$L", anchorAlias, p.target().javaName()))
-            .toList();
-        var capturedCols = anchor.pairs().stream()
-            .map(p -> CodeBlock.of("source.$L", p.source().javaName()))
-            .toList();
-        var where = filters.stream().reduce(keysCondition(anchorCols, capturedCols, isList),
-            (a, b) -> CodeBlock.of("$L.and($L)", a, b));
-        sel.add(".where($L)\n", where);
-        sel.add(isList ? ".fetch();\n" : ".fetchOne();\n").unindent();
-        builder.addCode(sel.build());
-
-        return builder.addStatement("return payload").build();
+            row.capturedPairs().stream().map(Pair::source).toList(),
+            keyFields(row.anchor(), anchorKeyColumns), isList, transactionProvider));
+        // The post-commit read: the lift reads the path from the anchor, keyed by the captured
+        // values, in the order the routine delivered them.
+        return builder.addStatement("return $T.$L(env, dsl, keys)", lift.host(), lift.method()).build();
     }
 
     private static MethodSpec objectResultKeys(ObjectResult row, String bodyName, CodeBlock call,
@@ -156,13 +116,9 @@ public final class RoutineWriteEmitter {
 
         // Re-typed under the re-read table's key fields, so the re-reading field reads them back by
         // field identity rather than by jOOQ's name-lookup fallback.
-        var target = reRead.table();
-        var coerceTo = CodeBlock.join(targetKeyColumns.stream()
-            .map(c -> CodeBlock.of("$T.$L.$L", CatalogRefs.className(target.constantsClassName()),
-                target.javaFieldName(), c.javaName()))
-            .toList(), ", ");
         builder.addCode(captureTransaction(valueType,
-            reRead.capturedPairs().stream().map(Pair::source).toList(), coerceTo, isList, transactionProvider));
+            reRead.capturedPairs().stream().map(Pair::source).toList(),
+            keyFields(reRead.table(), targetKeyColumns), isList, transactionProvider));
         builder.addCode(nullKeysGuard(isList));
 
         return builder.addStatement("return keys").build();
@@ -195,11 +151,12 @@ public final class RoutineWriteEmitter {
 
     /**
      * {@code <keysType> keys = <Provider>.owned(dsl).transactionResult(tx -> DSL.using(tx).select(...).from(source)
-     * [.coerce(...)].fetch[One]());}, the write half both result shapes emit.
+     * .coerce(...).fetch[One]());}, the write half both result shapes emit, the keys re-typed under
+     * {@code coerceTo}'s fields.
      *
      * <p>A list's keys are captured in the order the routine returned its rows: the function's table is
      * read {@code WITH ORDINALITY}, the one order a set-returning function defines, and the capture is
-     * ordered by it, so every re-read keyed on the captured list keeps that order.
+     * ordered by it, so the lift and every re-read keyed on the captured list keep that order.
      */
     private static CodeBlock captureTransaction(TypeName keysType, List<Column> capturedColumns,
             CodeBlock coerceTo, boolean isList, ClassName transactionProvider) {
@@ -220,14 +177,16 @@ public final class RoutineWriteEmitter {
         if (isList) {
             b.add(".orderBy(numbered.field($S, $T.class))\n", "ordinal", Long.class);
         }
-        if (coerceTo != null) {
-            b.add(".coerce($L)\n", coerceTo);
-        } else if (isList) {
-            // Back under the function table's own fields, which the re-read reads the keys by.
-            b.add(".coerce($L)\n", CodeBlock.join(capturedColumns.stream()
-                .map(c -> CodeBlock.of("source.$L", c.javaName())).toList(), ", "));
-        }
+        b.add(".coerce($L)\n", coerceTo);
         return b.add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent().build();
+    }
+
+    /** {@code <Tables>.<TABLE>.<COLUMN>, ...}: {@code table}'s own fields for {@code columns}. */
+    private static CodeBlock keyFields(Table table, List<Column> columns) {
+        return CodeBlock.join(columns.stream()
+            .map(c -> CodeBlock.of("$T.$L.$L", CatalogRefs.className(table.constantsClassName()),
+                table.javaFieldName(), c.javaName()))
+            .toList(), ", ");
     }
 
     /**
@@ -238,65 +197,8 @@ public final class RoutineWriteEmitter {
         return isList ? CodeBlock.of("") : CodeBlock.of("if (keys == null) return null;\n");
     }
 
-    /**
-     * One tail hop's {@code .join(...)}: on its foreign key's generated constant, or by name, each
-     * pair compared through {@link ColumnComparison} so a converter on one side still compiles.
-     */
-    private static CodeBlock forwardJoin(Hop hop, String prevAlias) {
-        return switch (hop.keying()) {
-            case Keying.ForeignKey k -> CodeBlock.of(".join($L).onKey($T.$L)",
-                hop.alias(), CatalogRefs.className(k.keysClassName()), k.constantName());
-            case Keying.NameMatched ignored -> {
-                var on = CodeBlock.builder();
-                int i = 0;
-                for (var pair : hop.pairs()) {
-                    if (i > 0) on.add(".and(");
-                    on.add("$L", ColumnComparison.equality(
-                        CodeBlock.of("$L.$L", prevAlias, pair.source().javaName()),
-                        CatalogRefs.decodeBindingType(pair.source().bindingType()),
-                        CodeBlock.of("$L.$L", hop.alias(), pair.target().javaName()),
-                        CatalogRefs.decodeBindingType(pair.target().bindingType())));
-                    if (i > 0) on.add(")");
-                    i++;
-                }
-                yield CodeBlock.of(".join($L).on($L)", hop.alias(), on.build());
-            }
-        };
-    }
-
-    /**
-     * The re-read's key predicate: the anchor's target-side columns against the captured
-     * source-side values. A {@code Result} of keys reads through {@code getValues} or a row-value
-     * {@code IN}, a single record through {@code eq}; a composite key goes through
-     * {@code DSL.row(...)}.
-     */
-    private static CodeBlock keysCondition(List<CodeBlock> conditionCols, List<CodeBlock> keyCols,
-            boolean isList) {
-        boolean single = conditionCols.size() == 1;
-        if (isList) {
-            if (single) {
-                return CodeBlock.of("$L.in(keys.getValues($L))", conditionCols.getFirst(), keyCols.getFirst());
-            }
-            return CodeBlock.of("$T.row($L).in(keys.stream().map(r -> $T.row($L)).toList())",
-                DSL, CodeBlock.join(conditionCols, ", "), DSL,
-                CodeBlock.join(keyCols.stream().map(k -> CodeBlock.of("r.get($L)", k)).toList(), ", "));
-        }
-        if (single) {
-            return CodeBlock.of("$L.eq(keys.value1())", conditionCols.getFirst());
-        }
-        return CodeBlock.of("$T.row($L).eq($T.row($L))",
-            DSL, CodeBlock.join(conditionCols, ", "), DSL,
-            CodeBlock.join(keyCols.stream().map(k -> CodeBlock.of("keys.get($L)", k)).toList(), ", "));
-    }
-
     private static ClassName tableClass(Table table) {
         return CatalogRefs.className(table.tableClassName());
-    }
-
-    /** {@code <Table> <alias> = <Tables>.<TABLE>.as("<alias>");} */
-    private static CodeBlock aliasDeclaration(Table table, String alias) {
-        return CodeBlock.of("$T $L = $T.$L.as($S)", tableClass(table), alias,
-            CatalogRefs.className(table.constantsClassName()), table.javaFieldName(), alias);
     }
 
     /** {@code Record<n><T1, ...>}: the type of a captured key tuple. */

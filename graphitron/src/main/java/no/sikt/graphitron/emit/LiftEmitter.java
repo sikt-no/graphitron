@@ -9,6 +9,9 @@ import com.palantir.javapoet.TypeName;
 import com.palantir.javapoet.TypeSpec;
 import com.palantir.javapoet.WildcardTypeName;
 
+import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.ColumnComparison;
+
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.List;
@@ -169,6 +172,13 @@ public final class LiftEmitter {
      * as a list of lists, each record keeping its slot in its parent's and a parent with no list
      * keeping none.
      *
+     * <p>A row with hops reads its target off the last hop's table: each hop joins forward from the
+     * one before, starting at the lifted table, as {@link LiftQuery.Hop} states it. A hop with no
+     * condition is a left join and one with a condition an inner join, so a row gone along the path
+     * is a null in its slot and a row the condition refuses is no row. The rows stand in the records'
+     * order, and where a hop may reach several rows, the rows one record reaches stand in the order
+     * of the terminal table's key.
+     *
      * @param methodName           the method's generated name
      * @param source               the class {@link #sourceTable} rendered for the row's table
      * @param projection           the target type's projection unit, whose {@code $project} selects
@@ -190,30 +200,49 @@ public final class LiftEmitter {
                                   ClassName projection, ClassName selectionOccurrences,
                                   java.util.Optional<String> typeName) {
         requireKey(row.table(), row.key());
+        requireKey(row.terminal(), row.terminalKey());
         var table = row.table();
+        String terminal = row.hops().isEmpty() ? TARGET : row.hops().getLast().alias();
         // A polymorphic row projects only its own type's occurrences, so a field another member's
         // fragment selects under the same key never reaches this member's projection.
         var selection = typeName
             .map(name -> CodeBlock.of("$T.restrictTo($T.ownFields(env.getSelectionSet()), $S)",
                 selectionOccurrences, selectionOccurrences, name))
             .orElse(CodeBlock.of("$T.ownFields(env.getSelectionSet())", selectionOccurrences));
-        var project = CodeBlock.of("$T.$$project($L, $L, env)", projection, selection, TARGET);
+        var project = CodeBlock.of("$T.$$project($L, $L, env)", projection, selection, terminal);
         var on = new ArrayList<CodeBlock>();
         for (var column : row.key()) {
             on.add(CodeBlock.of("$L.$L.eq($T.$L)", TARGET, column.javaName(), source, column.javaName()));
         }
+        // Read off the table the target is read off, so a row missing anywhere along the hops is a
+        // null in its slot. With hops that table's key is not the derived table's, so it is read back
+        // by the label alone rather than converted to the derived table's key type.
+        String foundColumn = row.terminalKey().getFirst().javaName();
+        CodeBlock foundLabel = row.hops().isEmpty()
+            ? CodeBlock.of("$T.FOUND", source) : CodeBlock.of("$T.FOUND.getName()", source);
         var found = typeName
-            .map(name -> CodeBlock.of(".select($L.$L.as($T.FOUND))\n.select($T.inline($S).as($S))", TARGET,
-                row.key().getFirst().javaName(), source, DSL, name, TYPENAME))
-            .orElse(CodeBlock.of(".select($L.$L.as($T.FOUND))", TARGET, row.key().getFirst().javaName(), source));
-        var joined = CodeBlock.of(".leftJoin($L).on($L)", TARGET, chained(on));
+            .map(name -> CodeBlock.of(".select($L.$L.as($L))\n.select($T.inline($S).as($S))", terminal,
+                foundColumn, foundLabel, DSL, name, TYPENAME))
+            .orElse(CodeBlock.of(".select($L.$L.as($L))", terminal, foundColumn, foundLabel));
+        var joined = CodeBlock.builder().add(".leftJoin($L).on($L)", TARGET, chained(on));
+        String previous = TARGET;
+        for (var hop : row.hops()) {
+            joined.add("\n$L", hopJoin(hop, previous));
+            previous = hop.alias();
+        }
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .addParameter(ENV, "env")
             .addParameter(DSL_CONTEXT, "dsl");
         var listOfRecords = ParameterizedTypeName.get(LIST, WildcardTypeName.subtypeOf(RECORD));
-        var targetDecl = CodeBlock.of("$T $L = $L.as($S);\n", ClassName.bestGuess(table.tableClassName()),
+        var targetDecl = CodeBlock.builder().add("$T $L = $L.as($S);\n", ClassName.bestGuess(table.tableClassName()),
             TARGET, constants(table), TARGET);
+        for (var hop : row.hops()) {
+            targetDecl.add("$T $L = $L.as($S);\n", ClassName.bestGuess(hop.table().tableClassName()), hop.alias(),
+                constants(hop.table()), hop.alias());
+        }
+        var order = orderBy(row, source, terminal);
+        var unfound = CodeBlock.of("r -> r.get($L) == null ? null : r", foundLabel);
 
         if (row.list() && !row.root()) {
             var perParentType = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, RECORD));
@@ -227,16 +256,16 @@ public final class LiftEmitter {
                 .addStatement("return lifted.stream().map(records -> records == null ? null : $T.<$T>of()).toList()",
                     LIST, RECORD)
                 .endControlFlow()
-                .addCode(targetDecl)
+                .addCode(targetDecl.build())
                 .addCode(CodeBlock.builder()
                     .add("$T byParent = dsl.select($L)\n", byParentType, project)
                     .indent()
                     .add("$L\n", found)
                     .add(".select($T.PARENT)\n", source)
                     .add(".from($T.perParent(lifted))\n", source)
-                    .add("$L\n", joined)
-                    .add(".orderBy($T.IDX)\n", source)
-                    .add(".fetchGroups($T.PARENT, r -> r.get($T.FOUND) == null ? null : r);\n", source, source)
+                    .add("$L\n", joined.build())
+                    .add(".orderBy($L)\n", order)
+                    .add(".fetchGroups($T.PARENT, $L);\n", source, unfound)
                     .unindent()
                     .build())
                 .addStatement("$T result = new $T<>(lifted.size())", perParentType,
@@ -264,11 +293,59 @@ public final class LiftEmitter {
                 .addStatement("if (lifted == null) return null");
             select.add(".from($T.of($T.of(lifted)))\n", source, LIST);
         }
-        select.add("$L\n", joined).add(".orderBy($T.IDX)\n", source);
+        select.add("$L\n", joined.build()).add(".orderBy($L)\n", order);
         select.add(row.list() || !row.root()
-            ? CodeBlock.of(".fetch(r -> r.get($T.FOUND) == null ? null : r);\n", source)
-            : CodeBlock.of(".fetchOptional(r -> r.get($T.FOUND) == null ? null : r).orElse(null);\n", source));
-        return builder.addCode(targetDecl).addCode(select.unindent().build()).build();
+            ? CodeBlock.of(".fetch($L);\n", unfound)
+            : CodeBlock.of(".fetchOptional($L).orElse(null);\n", unfound));
+        return builder.addCode(targetDecl.build()).addCode(select.unindent().build()).build();
+    }
+
+    /**
+     * One hop's join from {@code previous}: on its foreign key's generated constant, or on its column
+     * pairs, each compared through {@link ColumnComparison} so a converter on one side still compiles.
+     * A hop reaching one row with no condition is a left join, so a row missing along the path leaves
+     * its slot null. A hop with a condition is an inner join carrying it, so a row the condition refuses
+     * is no row; and so is a hop that can reach many, or that no fact says reaches one, so a key with
+     * nothing on the far side answers no rows rather than one null.
+     */
+    private static CodeBlock hopJoin(LiftQuery.Hop hop, String previous) {
+        String join = hop.filter() == null && Boolean.TRUE.equals(hop.toOne()) ? "leftJoin" : "join";
+        var on = switch (hop.keying()) {
+            case LiftQuery.Keying.ForeignKey k -> CodeBlock.of(".$L($L).onKey($T.$L)", join, hop.alias(),
+                CatalogRefs.className(k.keysClassName()), k.constantName());
+            case LiftQuery.Keying.NameMatched ignored -> {
+                var pairs = new ArrayList<CodeBlock>();
+                for (var pair : hop.pairs()) {
+                    pairs.add(ColumnComparison.equality(
+                        CodeBlock.of("$L.$L", previous, pair.from().javaName()),
+                        CatalogRefs.decodeBindingType(pair.from().bindingType()),
+                        CodeBlock.of("$L.$L", hop.alias(), pair.to().javaName()),
+                        CatalogRefs.decodeBindingType(pair.to().bindingType())));
+                }
+                yield CodeBlock.of(".$L($L).on($L)", join, hop.alias(), chained(pairs));
+            }
+        };
+        if (hop.filter() == null) {
+            return on;
+        }
+        return CodeBlock.of("$L.and($T.$L($L, $L))", on, ClassName.bestGuess(hop.filter().className()),
+            hop.filter().methodName(), previous, hop.alias());
+    }
+
+    /**
+     * The lift's order: the records' positions, then, where a hop may reach several rows, the
+     * terminal table's key, so the rows one record reaches stand in a stated order. A hop whose reach
+     * the store does not state counts as one that may reach several.
+     */
+    private static CodeBlock orderBy(LiftQuery.Row row, ClassName source, String terminal) {
+        var columns = new ArrayList<CodeBlock>();
+        columns.add(CodeBlock.of("$T.IDX", source));
+        if (row.hops().stream().anyMatch(hop -> !Boolean.TRUE.equals(hop.toOne()))) {
+            for (var column : row.terminalKey()) {
+                columns.add(CodeBlock.of("$L.$L", terminal, column.javaName()));
+            }
+        }
+        return CodeBlock.join(columns, ", ");
     }
 
     /**
@@ -379,6 +456,25 @@ public final class LiftEmitter {
                 : CodeBlock.of(".fetchOptional(r -> r.get($T.FOUND) == null ? null : r).orElse(null);\n", source))
             .unindent();
         return builder.addCode(select.build()).build();
+    }
+
+    /**
+     * The derived source table's class name for {@code table}: the table's constant name in camel
+     * case, then {@code Source}, so every lift onto one table in a class shares one.
+     */
+    public static String sourceTableName(LiftQuery.Table table) {
+        var name = table.javaFieldName();
+        var camel = new StringBuilder();
+        boolean upper = true;
+        for (char c : name.toCharArray()) {
+            if (c == '_') {
+                upper = true;
+            } else {
+                camel.append(upper ? Character.toUpperCase(c) : Character.toLowerCase(c));
+                upper = false;
+            }
+        }
+        return camel + "Source";
     }
 
     /** The column the generated type resolver reads a discriminated row's participant value under. */
