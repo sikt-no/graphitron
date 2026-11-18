@@ -18937,6 +18937,7 @@ WITH argmapping (graph_name, coordinate, call_coordinate, call, key_position) AS
    WHERE l.target_kind = 'TENANT' AND l.directive_name = 'service' AND l.owner = 'service'
 ),
 -- An argument or input field written @tenant, under the @service call of the field it is read by.
+-- One also written @nodeId binds nothing: its decoded id names the tenant, and the marker is refused.
 directive (graph_name, coordinate, call_coordinate, call) AS (
   SELECT o.graph_name, o.coordinate, c.coordinate, c.call
     FROM graphql_directive_application da
@@ -18946,6 +18947,9 @@ directive (graph_name, coordinate, call_coordinate, call) AS (
     JOIN graphitron_occurrence_call c
       ON c.graph_name = o.graph_name AND c.coordinate = o.field_coordinate AND c.call_kind = 'SERVICE'
    WHERE da.directive_name = 'tenant'
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application n
+                      WHERE n.graph_name = da.graph_name AND n.coordinate = da.coordinate
+                        AND n.directive_name = 'nodeId')
 ),
 -- A call the two forms name different values for: neither names its tenant, and the defect says so.
 named_twice (graph_name, call_coordinate, call) AS (
@@ -19203,6 +19207,16 @@ SELECT x.graph_name, x.source_name, x.source_line, x.source_column, 'TENANT_VALU
 -- A scalar whose class is unknown is not judged here; its own rule says so.
  WHERE x.value_class <> x.tenant_class AND x.source_name IS NOT NULL
  GROUP BY x.graph_name, x.source_name, x.source_line, x.source_column
+UNION ALL
+-- An argument or input field written both @tenant and @nodeId, at the @tenant: the decoded id already
+-- names its tenant, so the marker says nothing the key does not.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column, 'TENANT_MARKER_BESIDE_NODE_ID',
+       CAST(NULL AS VARCHAR), 'occurrence-tenants'
+  FROM graphql_directive_application t
+ WHERE t.directive_name = 'tenant'
+   AND EXISTS (SELECT 1 FROM graphql_directive_application n
+                WHERE n.graph_name = t.graph_name AND n.coordinate = t.coordinate
+                  AND n.directive_name = 'nodeId')
 UNION ALL
 -- An argument of a @service field nothing binds, at the argument: a service composes with no filter,
 -- so an argument nothing binds, itself or anything under it, has nowhere to go: no call's parameter,
@@ -29131,6 +29145,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A call''s tenant is named twice, by a $tenant pair and by @tenant on another argument or input field, so nothing says which it runs on: name it once.'),
   ('TENANT_VALUE_TYPE_DISAGREES', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_VALUE_TYPE_DISAGREES',
    'A value named as a call''s tenant arrives as another class than the tenant column''s, and a tenant is read as it was sent, with no conversion: declare it a scalar arriving as the column''s class, String or ID for a String key, Int for an Integer key.'),
+  ('TENANT_MARKER_BESIDE_NODE_ID', 'error', 'GRAPHITRON', 'GRAPHITRON_TENANT_MARKER_BESIDE_NODE_ID',
+   'An argument or input field is written both @tenant and @nodeId, and the node id''s decoded key already names its tenant, so the marker says nothing: remove @tenant.'),
   ('TENANT_FAN_OUT_NESTED_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_NESTED_UNSUPPORTED',
    'A field of a type nested under a global table reaches a tenant''s rows by a key landing on the tenant column, which is not routed by the parent row''s tenant yet: declare the field on a type with its own @table, or read the rows through an argument naming the tenant.'),
   ('TENANT_FAN_OUT_INLINE_UNSUPPORTED', 'error', 'UNSUPPORTED', 'GRAPHITRON_TENANT_FAN_OUT_INLINE_UNSUPPORTED',
