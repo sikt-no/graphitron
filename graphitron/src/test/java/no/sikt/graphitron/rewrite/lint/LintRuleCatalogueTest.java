@@ -38,7 +38,6 @@ class LintRuleCatalogueTest {
         assertThat(classifier).containsExactlyInAnyOrder(
             "splitquery-redundant-on-record-parent",
             "splitquery-redundant-on-discriminated-interface-child",
-            "splitquery-redundant-on-service-child",
             "redundant-record-directive",
             "asconnection-same-table-pk-in",
             "dml-write-length-unrouted",

@@ -7593,10 +7593,6 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            // A child service is always called through a DataLoader, so a @splitQuery beside it is
-            // redundant. Fired ahead of the resolver's guards so that an
-            // unrelated rejection does not suppress it.
-            warnIfSplitQueryBesideChildService(fieldDef, parentTypeName, name, location);
             var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
                 new ServiceDirectiveResolver.ParentContext.RecordParent(parentResultType));
             if (resolved instanceof ServiceDirectiveResolver.Resolved.Rejected r) {
@@ -7737,14 +7733,6 @@ class FieldBuilder {
             LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT,
             "@splitQuery is redundant on a record-backed parent field; the record handoff already "
             + "opens a new DataLoader-backed scope. The directive will be ignored.");
-    }
-
-    private void warnIfSplitQueryBesideChildService(GraphQLFieldDefinition fieldDef, String parentTypeName,
-            String name, SourceLocation location) {
-        warnIfSplitQueryRedundant(fieldDef, parentTypeName, name, location,
-            LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD,
-            "@splitQuery is redundant on a child @service field; the service call is already "
-            + "batched through a DataLoader. The directive will be ignored.");
     }
 
     /**
@@ -8890,8 +8878,6 @@ class FieldBuilder {
         }
 
         if (fieldDef.hasAppliedDirective(DIR_SERVICE)) {
-            // Ahead of the resolver, as on the record-parent arm: a rejection must not suppress it.
-            warnIfSplitQueryBesideChildService(fieldDef, parentTypeName, name, location);
             var parentTable = tableType.table();
             var resolved = serviceResolver.resolve(parentTypeName, fieldDef,
                 new ServiceDirectiveResolver.ParentContext.TableParent(parentTable));

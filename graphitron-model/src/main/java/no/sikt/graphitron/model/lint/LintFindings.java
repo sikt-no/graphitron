@@ -24,7 +24,7 @@ import static no.sikt.graphitron.model.Tables.LINT_VIOLATION;
  * grammar around them.
  *
  * <p>The rule alone does not choose the wording, which is the one thing worth knowing before
- * reading the switch below. Nine rules carry twelve templates: a missing description reads one way
+ * reading the switch below. Ten rules carry thirteen templates: a missing description reads one way
  * for a type and another for a root operation's field, and a retired directive reads three ways
  * depending on whether the author wrote the directive, an argument of it, or a field of an input
  * object passed to one. The pair of rule and subject kind decides it, and the kind is
@@ -68,6 +68,8 @@ public final class LintFindings {
     private static final String REASON_FIX = "Add a reason placeholder";
     private static final String REASON_PLACEHOLDER = "(reason: \"TODO: describe the deprecation\")";
     private static final String DEPRECATED = "deprecated";
+    private static final String SPLIT_QUERY_FIX = "Remove the redundant @splitQuery";
+    private static final String SPLIT_QUERY = "splitQuery";
 
     /** Every finding this graph's rows assert, in the order the store returns them. */
     public static List<BuildWarning.LintFinding> of(StoreHandle store) {
@@ -128,6 +130,9 @@ public final class LintFindings {
             case "no-deprecated-directive-usage/INPUT_FIELD" ->
                 "Field '%s' of input '%s' is deprecated; see its definition for the replacement."
                     .formatted(subject, parent);
+            case "splitquery-redundant-on-service-child/DIRECTIVE" ->
+                ("%s: @splitQuery is redundant on a child @service field; the service call is already "
+                    + "batched through a DataLoader. The directive will be ignored.").formatted(parent);
             default -> throw new IllegalStateException(
                 "no wording for rule " + rule + " about a " + kind);
         };
@@ -136,7 +141,7 @@ public final class LintFindings {
     /**
      * The edit offered beside the finding, where one is safe to offer.
      *
-     * <p>Four rules carry a fix and each withholds it on its own terms. Three withhold where the
+     * <p>Five rules carry a fix and each withholds it on its own terms. Three withhold where the
      * position is not the declaration's own, a described declaration being reported at its
      * description instead, and they withhold there for two different reasons. The two renames would
      * replace characters, so the edit would land in the author's prose. The description insert
@@ -147,7 +152,9 @@ public final class LintFindings {
      *
      * <p>The camel-case rename withholds again when the candidate is not a name or is the name it
      * started with. The reason placeholder withholds where the application already carries
-     * arguments, its insertion point being the character after the directive's own name.
+     * arguments, its insertion point being the character after the directive's own name, and the
+     * {@code @splitQuery} deletion there too, a bare directive's span being the only one a position
+     * and a name give.
      *
      * <p>Withholding is the whole remedy and not a step towards one. Offering to replace the blank
      * description would need the extent it was written across, and the entry relations hold the
@@ -185,6 +192,10 @@ public final class LintFindings {
                     at.getLine(), at.getColumn() + 1 + DEPRECATED.length(), at.getSourceName());
                 yield Optional.of(LintFix.insertAt(REASON_FIX, after, REASON_PLACEHOLDER));
             }
+            case "splitquery-redundant-on-service-child" ->
+                withArguments.contains(positionKey(at))
+                    ? Optional.empty()
+                    : Optional.of(LintFix.deleteToken(SPLIT_QUERY_FIX, at, 1 + SPLIT_QUERY.length()));
             default -> Optional.empty();
         };
     }

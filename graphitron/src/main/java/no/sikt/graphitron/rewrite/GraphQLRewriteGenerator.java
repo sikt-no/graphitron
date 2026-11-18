@@ -889,7 +889,7 @@ public class GraphQLRewriteGenerator {
                                              List<EmittedRegistry.TagNarrowing> narrowings) {
         LintConfig lintConfig = ctx.lintConfig();
         var all = new java.util.ArrayList<BuildWarning>();
-        // The nine rules, read off this run's rows. Both things the walk was handed here are gone
+        // The engine rules, read off this run's rows. Both things the walk was handed here are gone
         // rather than moved: excludedTypes is a relation the configuration gatherer writes and the
         // rules join, so a consumer's exclusion is applied once where the rule is stated instead of
         // being passed down a call chain; and injectedNames has nothing to exclude, the federation

@@ -64,6 +64,7 @@ class LintRuleCasesTest {
           arg(Locale: String, fine: String): String
           old: String @deprecated
           older: String @deprecated(reason: "use name")
+          rated: String @splitQuery @service(service: {className: "Ratings", method: "rated"})
         }
 
         interface named { name: String }
@@ -210,7 +211,8 @@ class LintRuleCasesTest {
         "types-and-fields-have-descriptions", List.of("named", "anything", "Kind", "WidgetFilter",
             "WidgetSearchInput", "dateTime", "Query", "widgets", "documented"),
         "deprecations-have-a-reason", List.of("deprecated"),
-        "no-deprecated-directive-usage", List.of("index")));
+        "no-deprecated-directive-usage", List.of("index"),
+        "splitquery-redundant-on-service-child", List.of("splitQuery")));
 
     private static Map<String, List<String>> subjectsByRule(DSLContext dsl, String graph) {
         var byRule = new TreeMap<String, List<String>>();

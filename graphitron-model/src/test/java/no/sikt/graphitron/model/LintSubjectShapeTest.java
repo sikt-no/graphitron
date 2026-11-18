@@ -30,8 +30,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>A rule does not determine its own wording. {@code types-and-fields-have-descriptions} reads one
  * way for a type and another for a root operation's field; {@code no-deprecated-directive-usage}
- * reads three ways, for a directive, an argument of one and a field of an input object. Nine rules
- * carry twelve templates between them, so a reader holding one template per rule would word three
+ * reads three ways, for a directive, an argument of one and a field of an input object. Ten rules
+ * carry thirteen templates between them, so a reader holding one template per rule would word three
  * findings wrongly and no test of the rules themselves would notice: the row is at the right
  * position, under the right rule, saying the wrong thing about it.
  *
@@ -79,14 +79,16 @@ class LintSubjectShapeTest {
         "deprecations-have-a-reason/DIRECTIVE",
         "no-deprecated-directive-usage/DIRECTIVE",
         "no-deprecated-directive-usage/DIRECTIVE_ARGUMENT",
-        "no-deprecated-directive-usage/INPUT_FIELD");
+        "no-deprecated-directive-usage/INPUT_FIELD",
+        "splitquery-redundant-on-service-child/DIRECTIVE");
 
     /** The pairs whose template interpolates a second name, which is what the parent column is for. */
     private static final Set<String> TWO_NAMES = Set.of(
         "no-typename-prefix/FIELD",
         "types-and-fields-have-descriptions/FIELD",
         "no-deprecated-directive-usage/DIRECTIVE_ARGUMENT",
-        "no-deprecated-directive-usage/INPUT_FIELD");
+        "no-deprecated-directive-usage/INPUT_FIELD",
+        "splitquery-redundant-on-service-child/DIRECTIVE");
 
     @Test
     @DisplayName("every finding says what it is about, in a pair some template covers")

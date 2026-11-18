@@ -36,12 +36,12 @@ public enum LintRule {
     INPUT_OBJECT_NAME_SUFFIX("input-object-name-suffix", Source.ENGINE),
     NO_DEPRECATED_DIRECTIVE_USAGE("no-deprecated-directive-usage", Source.ENGINE),
     NO_TYPENAME_PREFIX("no-typename-prefix", Source.ENGINE),
+    SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD("splitquery-redundant-on-service-child", Source.ENGINE),
 
     // Classifier-owned advisories (surfaced and tagged here, not re-derived; no engine visitor).
     SPLITQUERY_REDUNDANT_ON_RECORD_PARENT("splitquery-redundant-on-record-parent", Source.CLASSIFIER),
     SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD(
         "splitquery-redundant-on-discriminated-interface-child", Source.CLASSIFIER),
-    SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD("splitquery-redundant-on-service-child", Source.CLASSIFIER),
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
     DML_WRITE_LENGTH_UNROUTED("dml-write-length-unrouted", Source.CLASSIFIER),

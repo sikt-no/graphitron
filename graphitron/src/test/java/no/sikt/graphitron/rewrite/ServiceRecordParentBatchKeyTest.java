@@ -306,9 +306,12 @@ class ServiceRecordParentBatchKeyTest {
             .contains("declares no Sources parameter");
     }
 
-    /** A @splitQuery beside the class-backed parent's service child is redundant, and says so. */
+    /**
+     * A @splitQuery beside the class-backed parent's service child is not the record-parent
+     * advisory's: the service-child rule says it, read off the schema rather than this walk.
+     */
     @Test
-    void splitQueryBesideServiceOnClassBackedParent_getsTheRedundancyAdvisory() {
+    void splitQueryBesideServiceOnClassBackedParent_drawsNoRecordParentAdvisory() {
         var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
                 rank: Int @splitQuery
                     @service(service: {className: "%s", method: "getRankMappedByRecord"})
@@ -317,11 +320,7 @@ class ServiceRecordParentBatchKeyTest {
         assertThat(schema.field("Parent", "rank")).isInstanceOf(ChildField.ServiceRecordField.class);
         assertThat(schema.warnings())
             .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
-                && (lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD
-                    || lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT)
-                && lf.message().contains("Parent.rank"))
-            .singleElement()
-            .satisfies(w -> assertThat(((BuildWarning.LintFinding) w).rule())
-                .isEqualTo(LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD));
+                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT)
+            .isEmpty();
     }
 }

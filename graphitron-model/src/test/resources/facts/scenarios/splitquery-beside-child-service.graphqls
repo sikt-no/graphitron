@@ -1,0 +1,22 @@
+# @splitQuery beside a child @service asks for the split the service's batch already is, so it draws
+# splitquery-redundant-on-service-child at the directive. The same service without it, and
+# @splitQuery on a child graphitron fetches, draw nothing under the rule.
+
+type Language @table(name: "language") { name: String }
+
+type Film @table(name: "film") {
+  title: String
+  rated: String @splitQuery
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  plainRated: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "lint_violation",
+    where: "lint_rule = 'splitquery-redundant-on-service-child'", rows: """
+  subject,    subject_parent, subject_kind
+  splitQuery, Film.rated,     DIRECTIVE
+  """)

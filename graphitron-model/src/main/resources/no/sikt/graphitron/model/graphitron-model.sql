@@ -26864,9 +26864,9 @@ INSERT INTO lint_rule VALUES
   ('input-object-name-suffix', 'ENGINE', 'WARNING'),
   ('no-deprecated-directive-usage', 'ENGINE', 'WARNING'),
   ('no-typename-prefix', 'ENGINE', 'WARNING'),
+  ('splitquery-redundant-on-service-child', 'ENGINE', 'WARNING'),
   ('splitquery-redundant-on-record-parent', 'CLASSIFIER', 'WARNING'),
   ('splitquery-redundant-on-discriminated-interface-child', 'CLASSIFIER', 'WARNING'),
-  ('splitquery-redundant-on-service-child', 'CLASSIFIER', 'WARNING'),
   ('redundant-record-directive', 'CLASSIFIER', 'WARNING'),
   ('asconnection-same-table-pk-in', 'CLASSIFIER', 'WARNING'),
   ('dml-write-length-unrouted', 'CLASSIFIER', 'WARNING'),
@@ -27008,6 +27008,28 @@ broken (graph_name, lint_rule, source_name, source_line, source_column, type_nam
         WHERE g.graph_name = a.graph_name AND g.source_name = a.source_name
           AND g.parent_line = a.source_line AND g.parent_column = a.source_column
           AND g.name = 'reason' AND v.kind = 'STRING' AND TRIM(v.written_text) <> '')
+   UNION ALL
+  -- @splitQuery beside @service on a field of a type no root operation names: a child service is
+  -- called once per batch of parents, so the split the directive asks for is already its delivery.
+  SELECT a.graph_name, 'splitquery-redundant-on-service-child', a.source_name, a.source_line,
+         a.source_column, a.type_name, a.name, f.type_name || '.' || f.name, 'DIRECTIVE', TRUE
+    FROM applied a
+    JOIN graphql_ast_entry e
+      ON e.graph_name = a.graph_name AND e.source_name = a.source_name
+     AND e.source_line = a.source_line AND e.source_column = a.source_column
+    JOIN graphql_ast_field_definition_entry f
+      ON f.graph_name = e.graph_name AND f.source_name = e.source_name
+     AND f.source_line = e.parent_line AND f.source_column = e.parent_column
+   WHERE a.name = 'splitQuery'
+     AND EXISTS (SELECT 1 FROM graphql_ast_directive_application_entry s
+                   JOIN graphql_ast_entry se
+                     ON se.graph_name = s.graph_name AND se.source_name = s.source_name
+                    AND se.source_line = s.source_line AND se.source_column = s.source_column
+                  WHERE s.graph_name = f.graph_name AND s.name = 'service'
+                    AND se.source_name = f.source_name AND se.parent_line = f.source_line
+                    AND se.parent_column = f.source_column)
+     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                      WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name)
    UNION ALL
   -- An author writing something the vocabulary has retired. Three arms, because three different
   -- things can be deprecated and each is written somewhere different, so each arm draws its row at
