@@ -128,37 +128,43 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     }
 
     /**
-     * The facets family's row, read off each faceted connection's facet specs, the one source the
-     * per-connection facets delegate reads too, so the record's components and the values the
-     * delegate passes them are in one order: each facets type a component per facet, each naming
-     * the facet value type its buckets are. Absent without a faceted connection.
+     * The facets family's row, read off the store's answer for the connection fields
+     * ({@link no.sikt.graphitron.emit.ConnectionsQuery#byField}), the one source the producers'
+     * facets closures read too, so the record's components and the values a closure passes them are
+     * in one order: each faceted connection type's facets record a component per facet its
+     * producers surface, which the store holds them to agree on, each naming the facet value type
+     * its buckets are. Absent without a faceted connection.
      */
-    private static java.util.Optional<GlobalCommand> facetsCommand(GraphitronSchema schema,
-            GeneratedUnits units) {
-        var connections = schema.types().values().stream()
-            .filter(t -> t instanceof no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType)
-            .map(t -> (no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType) t)
-            .filter(ct -> !ct.facets().isEmpty())
-            .sorted(java.util.Comparator.comparing(
-                no.sikt.graphitron.rewrite.model.GraphitronType.ConnectionType::name))
-            .toList();
-        if (connections.isEmpty()) {
+    private static java.util.Optional<GlobalCommand> facetsCommand(
+            no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections connections, GeneratedUnits units) {
+        var byType = new java.util.TreeMap<String, java.util.List<no.sikt.graphitron.emit.ConnectionsQuery.Facet>>();
+        for (var connection : connections.byCoordinate().values()) {
+            if (connection.faceted() && !connection.facets().isEmpty()) {
+                byType.putIfAbsent(connection.connectionTypeName(), connection.facets());
+            }
+        }
+        if (byType.isEmpty()) {
             return java.util.Optional.empty();
         }
-        var facetsTypes = connections.stream()
-            .map(ct -> new GlobalCommand.FacetsRecord(
-                no.sikt.graphitron.model.grammar.FacetNaming.facetsTypeName(ct.name()),
-                ct.facets().stream()
-                    .map(spec -> new GlobalCommand.FacetComponent(spec.inputFieldName(), spec.facetValueTypeName()))
+        var facetsTypes = byType.entrySet().stream()
+            .map(e -> new GlobalCommand.FacetsRecord(
+                no.sikt.graphitron.model.grammar.FacetNaming.facetsTypeName(e.getKey()),
+                e.getValue().stream()
+                    .map(facet -> new GlobalCommand.FacetComponent(facet.name(), facetValueTypeName(facet)))
                     .toList()))
             .toList();
-        var facetValueTypes = connections.stream()
-            .flatMap(ct -> ct.facets().stream())
-            .map(no.sikt.graphitron.rewrite.model.FacetSpec::facetValueTypeName)
+        var facetValueTypes = byType.values().stream()
+            .flatMap(java.util.List::stream)
+            .map(EmitPlan::facetValueTypeName)
             .distinct()
             .sorted()
             .toList();
         return java.util.Optional.of(new GlobalCommand.Facets(units.facets(), facetValueTypes, facetsTypes));
+    }
+
+    private static String facetValueTypeName(no.sikt.graphitron.emit.ConnectionsQuery.Facet facet) {
+        return no.sikt.graphitron.model.grammar.FacetNaming.facetValueTypeName(
+            facet.valueTypeName(), facet.valueNullable());
     }
 
     private static EmitPlan produce(GraphitronSchema schema,
@@ -187,7 +193,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         globals.add(one(GlobalUnitKind.CONNECTION_HELPER, units.connectionHelper()));
         globals.add(one(GlobalUnitKind.PAGE_INFO, units.pageInfo()));
-        facetsCommand(schema, units).ifPresent(globals::add);
+        facetsCommand(store == null ? no.sikt.graphitron.emit.ConnectionsQuery.FieldConnections.empty()
+            : no.sikt.graphitron.emit.ConnectionsQuery.byField(store), units).ifPresent(globals::add);
         // The runtime _Service.sdl helper serves only the federation build arm (the wrapped
         // `return` in GraphitronSchemaClassGenerator's two-arg build, itself inside `if
         // (federationLink)`). A non-federation schema that uses @oneOf has no _Service.sdl to

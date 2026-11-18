@@ -48,9 +48,10 @@ public final class ConnectionConstruction {
 
     /**
      * {@code new Connections.<Type>(...)} over the over-fetched rows in {@code rowsLocal}.
-     * {@code countOf} is the count closure (read only where the class counts), {@code facetsOf}
-     * the facets closure, or {@code null} for a producer with no facet plan, whose facets field
-     * then resolves to {@code null}, as it does on every connection a batched producer builds.
+     * {@code countOf} is the count closure (read only where the producer counts), {@code facetsOf}
+     * the facets closure (read only where it fills facets), {@code null} for a producer that builds
+     * none: only a root producer over one table buckets facets, and the store refuses every other
+     * faceted producer before anything is emitted.
      */
     public static CodeBlock build(ClassName helper, FieldConnection connection, String rowsLocal,
             CodeBlock countOf, CodeBlock facetsOf) {
@@ -88,25 +89,26 @@ public final class ConnectionConstruction {
     /**
      * The facets closure of a faceted root producer: when the client reads the facets field it
      * buckets the producer's {@code facetBase}, {@code facetConditions} and {@code facetSpecs}
-     * locals, then builds the type's facets record from the buckets, one component per facet in
-     * {@code specs} order, each bucket a record of the facet's value type. A facet the client did
-     * not select has no buckets and its component stays {@code null}, unread.
+     * locals, then builds the type's facets record from the buckets, one component per facet the
+     * producer surfaces, in the store's order ({@link FieldConnection#facets()}), each bucket a record
+     * of the facet's value type. A facet the client did not select has no buckets and its component
+     * stays {@code null}, unread.
      */
-    public static CodeBlock facetsOf(ClassName helper, FieldConnection connection,
-            java.util.List<no.sikt.graphitron.rewrite.model.FacetSpec> specs, boolean routed) {
+    public static CodeBlock facetsOf(ClassName helper, FieldConnection connection, boolean routed) {
         var facets = ClassName.get(helper.packageName(), FACETS_CLASS_NAME);
         var record = facets.nestedClass(
             no.sikt.graphitron.model.grammar.FacetNaming.facetsTypeName(connection.connectionTypeName()));
         var components = CodeBlock.builder();
-        for (int i = 0; i < specs.size(); i++) {
-            var spec = specs.get(i);
+        for (int i = 0; i < connection.facets().size(); i++) {
+            var facet = connection.facets().get(i);
             if (i > 0) {
                 components.add(",\n");
             }
             components.add("buckets.get($S) == null ? null : buckets.get($S).stream()"
                 + ".map(bucket -> new $T(bucket.get(\"value\"), ($T) bucket.get(\"count\"))).toList()",
-                spec.inputFieldName(), spec.inputFieldName(),
-                facets.nestedClass(spec.facetValueTypeName()), Integer.class);
+                facet.name(), facet.name(),
+                facets.nestedClass(no.sikt.graphitron.model.grammar.FacetNaming.facetValueTypeName(
+                    facet.valueTypeName(), facet.valueNullable())), Integer.class);
         }
         var map = ClassName.get("java.util", "Map");
         var buckets = com.palantir.javapoet.ParameterizedTypeName.get(map, ClassName.get(String.class),
@@ -138,7 +140,12 @@ public final class ConnectionConstruction {
             code.add(",\n$L", countOf);
         }
         if (connection.faceted()) {
-            code.add(",\n$L", facetsOf != null ? facetsOf : CodeBlock.of("$L -> null", FACETS_ENV));
+            if (facetsOf == null) {
+                throw new IllegalStateException("Graphitron generator bug: connection field '"
+                    + connection.parentTypeName() + "." + connection.fieldName() + "' fills facets, which"
+                    + " only a root producer over one table builds; the store refuses any other");
+            }
+            code.add(",\n$L", facetsOf);
         }
     }
 }
