@@ -400,8 +400,9 @@ A routine write's rows are lifted the same way, in the order the routine returne
 2026-11-18): a row gone by the time it is read leaves a `null` in its slot rather than shortening
 the list, while a filter on the path drops the row, since the filter says the row is not part of
 the answer. A single-record routine write whose path fans out is a defect. A routine write that
-answers a payload and finds no row answers the payload with `null` data and no errors, the errors
-field `null` where it is nullable and empty otherwise, as a `@service` does.
+answers a payload and finds no row answers the payload with `null` data and a `null` errors
+field, as a `@service` does; an errors field that cannot hold `null` is refused at build as
+`ERRORS_FIELD_NON_NULL`, so no other answer arises.
 
 A field returning a `@table` type on its parent's own table is refused unless the schema says how
 it is reached: a nesting type, with no table of its own, or a `@reference` keyed on the table's
